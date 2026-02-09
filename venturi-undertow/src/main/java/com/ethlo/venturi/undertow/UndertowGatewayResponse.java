@@ -35,7 +35,9 @@ public final class UndertowGatewayResponse implements GatewayResponse
     @Override
     public void addStreamListener(final OutputStream out)
     {
-        exchange.addResponseWrapper((factory, ex) -> new TeeingStreamSinkConduit(factory.create(), out));
+        exchange.addResponseWrapper((factory, ex) ->
+                new TeeingStreamSinkConduit(factory.create(), out, ex.getConnection().getBufferPool())
+        );
     }
 
     @Override

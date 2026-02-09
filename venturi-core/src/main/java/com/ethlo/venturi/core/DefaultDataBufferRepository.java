@@ -65,7 +65,7 @@ public class DefaultDataBufferRepository implements DataBufferRepository
     }
 
     @Override
-    public void putHeaders(ServerDirection direction, String requestId, GatewayHeaders headers)
+    public void putHeaders(ServerDirection direction, CharSequence requestId, GatewayHeaders headers)
     {
         final Path path = getPath(direction, requestId, "headers");
         try (FileChannel fc = FileChannel.open(path,
@@ -233,6 +233,31 @@ public class DefaultDataBufferRepository implements DataBufferRepository
         writeFully(fc, data, startOffset);
     }
 
+    @Override
+    public void closePayloadChannels(CharSequence requestId)
+    {
+        logger.debug("Close {}", requestId);
+        closeDirection(ServerDirection.REQUEST, requestId);
+        closeDirection(ServerDirection.RESPONSE, requestId);
+    }
+
+    private void closeDirection(ServerDirection serverDirection, CharSequence requestId)
+    {
+        final String key = getPoolKey(serverDirection, requestId);
+        final DataState state = statePool.remove(key);
+        if (state != null && state.channel != null)
+        {
+            try
+            {
+                state.channel.close();
+            }
+            catch (IOException e)
+            {
+                logger.warn("Failed to close channel for {}", requestId, e);
+            }
+        }
+    }
+
     public void cleanup(String requestId)
     {
         logger.debug("Cleanup {}", requestId);
@@ -279,14 +304,14 @@ public class DefaultDataBufferRepository implements DataBufferRepository
         }
     }
 
-    private String getPoolKey(ServerDirection dir, String id)
+    private String getPoolKey(ServerDirection dir, CharSequence id)
     {
         return id + "_" + dir.name();
     }
 
-    private Path getPath(ServerDirection dir, String id, String suffix)
+    private Path getPath(ServerDirection dir, CharSequence requestId, String suffix)
     {
-        return basePath.resolve(id + "_" + dir.name().toLowerCase() + "." + suffix);
+        return basePath.resolve(requestId + "_" + dir.name().toLowerCase() + "." + suffix);
     }
 
     @Override

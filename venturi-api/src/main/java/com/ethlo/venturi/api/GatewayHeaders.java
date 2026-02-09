@@ -19,12 +19,14 @@ public interface GatewayHeaders
     /**
      * Replaces any existing values with this single value.
      */
-    void setHeader(CharSequence name, CharSequence value);
+    void set(CharSequence name, CharSequence value);
+
+    void remove(CharSequence name);
 
     /**
      * Replaces any existing values with these multiple values.
      */
-    void setHeaders(CharSequence name, Iterable<? extends CharSequence> values);
+    void set(CharSequence name, Iterable<? extends CharSequence> values);
 
     /**
      * Adds a value to any existing values for this header.

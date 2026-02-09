@@ -2,14 +2,15 @@ package com.ethlo.venturi.undertow;
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.core.DataBufferRepository;
 import com.ethlo.venturi.core.RequestIdGenerator;
+import com.ethlo.venturi.core.ServerDirection;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import io.undertow.server.HttpHandler;
@@ -20,35 +21,56 @@ public final class VenturiUndertowHandler implements HttpHandler
 {
     public static final ScopedValue<CharSequence> REQUEST_ID = ScopedValue.newInstance();
     public static final ScopedValue<GatewayAttributes> ATTRS = ScopedValue.newInstance();
+
     private final GatewayRoute route;
     private final ProxyHandler proxyHandler;
+    private final DataBufferRepository repository; // Added repository
     private final GatewayErrorHandler errorHandler = new StandardErrorHandler();
-    private final Executor executor = Executors.newFixedThreadPool(100); //VirtualThreadPerTaskExecutor();
+    private final Executor executor = Executors.newFixedThreadPool(100);
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
-    private final AtomicLong requestNumber = new AtomicLong(0);
 
-    public VenturiUndertowHandler(final GatewayRoute route, final ProxyHandler proxyHandler)
+    public VenturiUndertowHandler(final GatewayRoute route, final ProxyHandler proxyHandler, final DataBufferRepository repository)
     {
         this.route = route;
         this.proxyHandler = proxyHandler;
+        this.repository = repository;
     }
 
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
-        exchange.dispatch(executor, () -> {
+        exchange.dispatch(executor, () ->
+                {
+                    final CharSequence requestId = requestIdGenerator.generate();
 
                     final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange);
                     final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
-                    final MapGatewayAttributes attrs = new MapGatewayAttributes();
-                    final CharSequence id = requestIdGenerator.generate();
-                    final GatewayExchange gatewayExchange = new GatewayExchange(id, req, res, attrs, route);
 
-                    ScopedValue.where(REQUEST_ID, id).where(ATTRS, attrs).run(() ->
+                    req.addStreamListener(new RepositoryOutputStream(repository, requestId, ServerDirection.REQUEST));
+                    res.addStreamListener(new RepositoryOutputStream(repository, requestId, ServerDirection.RESPONSE));
+
+                    final MapGatewayAttributes attrs = new MapGatewayAttributes();
+
+                    final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
+
+                    exchange.addExchangeCompleteListener((ex, nextListener) ->
                     {
                         try
                         {
-                            // Monitor for "Silent" errors (503s from saturated ProxyClient)
+                            repository.closePayloadChannels(requestId);
+                        } finally
+                        {
+                            nextListener.proceed();
+                        }
+                    });
+
+                    ScopedValue.where(REQUEST_ID, requestId).where(ATTRS, attrs).run(() ->
+                    {
+                        try
+                        {
+                            repository.putHeaders(ServerDirection.REQUEST, requestId, req.headers());
+
+                            // Monitor for "Silent" errors
                             exchange.addDefaultResponseListener(ex -> {
                                 if (ex.getStatusCode() >= 400 && !ex.isResponseStarted())
                                 {

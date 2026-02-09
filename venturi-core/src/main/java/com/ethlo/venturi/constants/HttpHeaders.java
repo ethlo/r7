@@ -15,7 +15,11 @@ public final class HttpHeaders
     public static final String SET_COOKIE = "Set-Cookie";
     public static final String LOCATION = "Location";
     public static final String SERVER = "Server";
+
     public static final String CACHE_CONTROL = "Cache-Control";
+    public static final CharSequence IF_MODIFIED_SINCE = "If-Modified-Since";
+    public static final CharSequence IF_NONE_MATCH = "If-None-Match";
+    public static final CharSequence PRAGMA = "Pragma";
 
     // Gateway Custom Headers (Standardized)
     public static final String X_CORRELATION_ID = "X-Correlation-Id";

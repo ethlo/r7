@@ -57,13 +57,19 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public void setHeader(final CharSequence name, final CharSequence value)
+    public void set(final CharSequence name, final CharSequence value)
     {
         headerMap.put(HttpString.tryFromString(name.toString()), value.toString());
     }
 
     @Override
-    public void setHeaders(final CharSequence name, final Iterable<? extends CharSequence> values)
+    public void remove(final CharSequence name)
+    {
+        headerMap.remove(HttpString.tryFromString(name.toString()));
+    }
+
+    @Override
+    public void set(final CharSequence name, final Iterable<? extends CharSequence> values)
     {
         final HttpString hs = HttpString.tryFromString(name.toString());
         headerMap.remove(hs);

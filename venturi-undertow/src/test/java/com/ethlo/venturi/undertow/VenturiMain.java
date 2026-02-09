@@ -1,7 +1,11 @@
 package com.ethlo.venturi.undertow;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Paths;
 import java.util.List;
+
+import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,8 +16,9 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
+import com.ethlo.venturi.core.DataBufferRepository;
+import com.ethlo.venturi.core.DefaultDataBufferRepository;
 import com.ethlo.venturi.core.filters.CorrelationIdFilter;
-import com.ethlo.venturi.core.filters.RequireAuthorizationHeaderFilter;
 import com.ethlo.venturi.core.predicates.RegexPathPredicate;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
@@ -29,7 +34,7 @@ public final class VenturiMain
 {
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
 
-    public static void main(String[] args)
+    public static void main(String[] args) throws IOException
     {
         final URI target = URI.create("http://localhost:8090/baz.txt");
 
@@ -68,7 +73,7 @@ public final class VenturiMain
             @Override
             public Iterable<GatewayFilter> filters()
             {
-                return List.of(new CorrelationIdFilter());
+                return List.of(new CorrelationIdFilter(), new StripCacheHeadersFilter());
                 //, new RequireAuthorizationHeaderFilter());
                 // , new GhostProxyFilter());
             }
@@ -80,9 +85,10 @@ public final class VenturiMain
             exchange.getResponseSender().send("OK");
         };
 
+        final DataBufferRepository repository = new DefaultDataBufferRepository(Paths.get("/tmp/venturi/logs"), 0L);
         // Add it to your PathHandler as a separate path
         final HttpHandler rootHandler = Handlers.path()
-                .addPrefixPath("/foobar", new VenturiUndertowHandler(route, proxyHandler))
+                .addPrefixPath("/foobar", new VenturiUndertowHandler(route, proxyHandler, repository))
                 .addExactPath("/benchmark", benchMarkHandler);
 
 

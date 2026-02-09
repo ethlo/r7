@@ -44,7 +44,7 @@ public class SimpleGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public void setHeader(CharSequence name, CharSequence value)
+    public void set(CharSequence name, CharSequence value)
     {
         final List<String> values = new ArrayList<>();
         values.add(value.toString());
@@ -52,7 +52,13 @@ public class SimpleGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public void setHeaders(CharSequence name, Iterable<? extends CharSequence> values)
+    public void remove(final CharSequence name)
+    {
+        headers.remove(name.toString());
+    }
+
+    @Override
+    public void set(CharSequence name, Iterable<? extends CharSequence> values)
     {
         final List<String> list = new ArrayList<>();
         for (CharSequence v : values)
