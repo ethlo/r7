@@ -1,5 +1,7 @@
 package com.ethlo.venturi.core.helpers;
 
+import com.ethlo.venturi.api.GatewayHeaders;
+
 import java.util.*;
 import java.util.function.BiConsumer;
 

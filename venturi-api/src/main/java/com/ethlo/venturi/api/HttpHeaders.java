@@ -1,9 +1,10 @@
 package com.ethlo.venturi.api;
 
-public final class GatewayHeader {
+public final class HttpHeaders {
     // Request Headers
     public static final String AUTHORIZATION = "Authorization";
     public static final String CONTENT_TYPE = "Content-Type";
+    public static final String CONTENT_ENCODING = "Content-Encoding";
     public static final String CONTENT_LENGTH = "Content-Length";
     public static final String USER_AGENT = "User-Agent";
     public static final String ACCEPT = "Accept";
@@ -20,5 +21,6 @@ public final class GatewayHeader {
     public static final String X_REQUEST_ID = "X-Request-Id";
     public static final String X_FORWARDED_FOR = "X-Forwarded-For";
 
-    private GatewayHeader() {}
+    private HttpHeaders() {
+    }
 }

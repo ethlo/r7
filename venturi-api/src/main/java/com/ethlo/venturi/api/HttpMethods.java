@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public final class GatewayMethods {
+public final class HttpMethods {
     public static final String GET = "GET";
     public static final String POST = "POST";
     public static final String PUT = "PUT";
@@ -9,5 +9,5 @@ public final class GatewayMethods {
     public static final String HEAD = "HEAD";
     public static final String OPTIONS = "OPTIONS";
 
-    private GatewayMethods() {}
+    private HttpMethods() {}
 }

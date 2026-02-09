@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public final class GatewayHttpStatus {
+public final class HttpStatuses {
     // 2xx Success
     public static final int OK = 200;
     public static final int CREATED = 201;
@@ -28,5 +28,5 @@ public final class GatewayHttpStatus {
     public static final int SERVICE_UNAVAILABLE = 503;
     public static final int GATEWAY_TIMEOUT = 504;
 
-    private GatewayHttpStatus() {}
+    private HttpStatuses() {}
 }

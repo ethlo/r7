@@ -21,7 +21,7 @@ public final class HttpStringCharSequence implements CharSequence {
     @Override
     public char charAt(final int index) {
         // HttpString uses byte-based Latin-1; this is O(1)
-        return (char) (httpString.getByte(index) & 0xFF);
+        return (char) (httpString.byteAt(index) & 0xFF);
     }
 
     @Override

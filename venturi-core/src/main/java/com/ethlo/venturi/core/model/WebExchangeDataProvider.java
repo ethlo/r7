@@ -1,33 +1,27 @@
 package com.ethlo.venturi.core.model;
 
-import com.ethlo.http.DataBufferRepository;
-import com.ethlo.http.Route;
-import com.ethlo.http.netty.PredicateConfig;
-import com.ethlo.http.netty.ServerDirection;
-import com.ethlo.http.processors.auth.RealmUser;
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.api.HttpHeaders;
+import com.ethlo.venturi.core.DataBufferRepository;
+import com.ethlo.venturi.core.ServerDirection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
 
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.*;
 
-public class WebExchangeDataProvider
-{
+public class WebExchangeDataProvider {
     private static final Logger logger = LoggerFactory.getLogger(WebExchangeDataProvider.class);
     private final DataBufferRepository dataBufferRepository;
-    private final PredicateConfig predicateConfig;
     private String requestId;
-    private Route route;
-    private HttpMethod method;
+    private GatewayRoute route;
+    private String method;
     private String path;
     private String uri;
-    private HttpStatusCode statusCode;
+    private int statusCode;
     private String protocol;
     private HeaderProvider requestHeaders;
     private HeaderProvider responseHeaders;
@@ -39,227 +33,193 @@ public class WebExchangeDataProvider
     private Runnable cleanupTask;
     private Map<String, Object> metamap;
 
-    public WebExchangeDataProvider(DataBufferRepository dataBufferRepository, final PredicateConfig predicateConfig)
-    {
+    public WebExchangeDataProvider(DataBufferRepository dataBufferRepository) {
         this.dataBufferRepository = Objects.requireNonNull(dataBufferRepository);
-        this.predicateConfig = Objects.requireNonNull(predicateConfig);
     }
 
-    public WebExchangeDataProvider cleanupTask(Runnable cleanupTask)
-    {
+    public WebExchangeDataProvider cleanupTask(Runnable cleanupTask) {
         this.cleanupTask = cleanupTask;
         return this;
     }
 
-    public void cleanup()
-    {
-        if (cleanupTask != null)
-        {
+    public void cleanup() {
+        if (cleanupTask != null) {
             cleanupTask.run();
-        }
-        else
-        {
+        } else {
             logger.warn("No cleanup task for request {}", requestId);
         }
     }
 
-    public WebExchangeDataProvider requestId(String requestId)
-    {
+    public WebExchangeDataProvider requestId(String requestId) {
         this.requestId = requestId;
         return this;
     }
 
-    public WebExchangeDataProvider method(HttpMethod method)
-    {
+    public WebExchangeDataProvider method(String method) {
         this.method = method;
         return this;
     }
 
-    public WebExchangeDataProvider path(String path)
-    {
+    public WebExchangeDataProvider path(String path) {
         this.path = path;
         return this;
     }
 
-    public WebExchangeDataProvider uri(String uri)
-    {
+    public WebExchangeDataProvider uri(String uri) {
         this.uri = uri;
         return this;
     }
 
-    public WebExchangeDataProvider statusCode(HttpStatusCode statusCode)
-    {
+    public WebExchangeDataProvider statusCode(int statusCode) {
         this.statusCode = statusCode;
         return this;
     }
 
-    public WebExchangeDataProvider timestamp(OffsetDateTime timestamp)
-    {
+    public WebExchangeDataProvider timestamp(OffsetDateTime timestamp) {
         this.timestamp = timestamp;
         return this;
     }
 
-    public WebExchangeDataProvider duration(Duration duration)
-    {
+    public WebExchangeDataProvider duration(Duration duration) {
         this.duration = duration;
         return this;
     }
 
-    public WebExchangeDataProvider remoteAddress(InetSocketAddress remoteAddress)
-    {
+    public WebExchangeDataProvider remoteAddress(InetSocketAddress remoteAddress) {
         this.remoteAddress = remoteAddress;
         return this;
     }
 
-    public Optional<BodyProvider> getRequestBody()
-    {
+    public Optional<BodyProvider> getRequestBody() {
         return dataBufferRepository.getBody(ServerDirection.REQUEST, requestId);
     }
 
-    public Optional<BodyProvider> getResponseBody()
-    {
+    public Optional<BodyProvider> getResponseBody() {
         return dataBufferRepository.getBody(ServerDirection.RESPONSE, requestId);
     }
 
-    public String getRequestId()
-    {
+    public String getRequestId() {
         return requestId;
     }
 
-    public HttpMethod getMethod()
-    {
+    public String getMethod() {
         return method;
     }
 
-    public String getPath()
-    {
+    public String getPath() {
         return path;
     }
 
-    public String getUri()
-    {
+    public String getUri() {
         return uri;
     }
 
-    public HttpStatusCode getStatusCode()
-    {
+    public int getStatusCode() {
         return statusCode;
     }
 
-    public HttpHeaders getRequestHeaders()
-    {
-        if (requestHeaders == null)
-        {
+    public GatewayHeaders getRequestHeaders() {
+        if (requestHeaders == null) {
             requestHeaders = new HeaderProvider(dataBufferRepository, requestId, ServerDirection.REQUEST);
         }
         return requestHeaders.getHeaders();
     }
 
-    public HttpHeaders getResponseHeaders()
-    {
-        if (responseHeaders == null)
-        {
+    public GatewayHeaders getResponseHeaders() {
+        if (responseHeaders == null) {
             responseHeaders = new HeaderProvider(dataBufferRepository, requestId, ServerDirection.RESPONSE);
         }
         return responseHeaders.getHeaders();
     }
 
-    public OffsetDateTime getTimestamp()
-    {
+    public OffsetDateTime getTimestamp() {
         return timestamp;
     }
 
-    public Duration getDuration()
-    {
+    public Duration getDuration() {
         return duration;
     }
 
-    public InetSocketAddress getRemoteAddress()
-    {
+    public InetSocketAddress getRemoteAddress() {
         return remoteAddress;
     }
 
-    public Map<String, Object> asMetaMap()
-    {
-        if (metamap == null)
-        {
-            metamap = new TreeMap<>();
-            metamap.put("route_id", route.id());
-            metamap.put("route_uri", route.uri().toString());
-            metamap.put("realm_claim", getUser().map(RealmUser::realm).orElse(null));
-            metamap.put("user_claim", getUser().map(RealmUser::username).orElse(null));
+    public Map<String, Object> asMetaMap() {
+        if (metamap == null) {
+            Map<String, Object> m = new HashMap<>(20);
 
-            metamap.put("host", getRequestHeaders().getFirst(HttpHeaders.HOST));
-            metamap.put("user_agent", getRequestHeaders().getFirst(HttpHeaders.USER_AGENT));
+            // Standard Route metadata
+            if (route != null) {
+                m.put("route_id", route.id());
+                m.put("route_uri", route.uri().toString());
+            }
 
-            metamap.put("request_content_type", Optional.ofNullable(getRequestHeaders().getContentType()).map(MediaType::toString).orElse(null));
-            metamap.put("response_content_type", Optional.ofNullable(getResponseHeaders().getContentType()).map(MediaType::toString).orElse(null));
+            // Identity
+            getUser().ifPresent(u -> {
+                m.put("realm_claim", u.realm());
+                m.put("user_claim", u.principal());
+            });
 
-            metamap.put("timestamp", getTimestamp());
-            metamap.put("gateway_request_id", getRequestId());
-            metamap.put("method", getMethod().name());
-            metamap.put("path", getPath());
-            metamap.put("duration", getDuration().toMillis());
-            metamap.put("status", getStatusCode().value());
-            metamap.put("is_error", getStatusCode().isError());
-            metamap.put("request_headers", getRequestHeaders());
-            metamap.put("response_headers", getResponseHeaders());
-            metamap = Collections.unmodifiableMap(metamap);
+            GatewayHeaders reqH = getRequestHeaders();
+            GatewayHeaders resH = getResponseHeaders();
+            m.put("host", reqH.getFirst(HttpHeaders.HOST));
+            m.put("user_agent", reqH.getFirst(HttpHeaders.USER_AGENT));
+            m.put("request_content_type", reqH.getFirst(HttpHeaders.CONTENT_TYPE));
+            m.put("response_content_type", resH.getFirst(HttpHeaders.CONTENT_TYPE));
+            m.put("request_headers", reqH);
+            m.put("response_headers", resH);
+
+            // Timing & Status
+            m.put("timestamp", timestamp);
+            m.put("gateway_request_id", requestId);
+            m.put("method", method);
+            m.put("path", path);
+            m.put("duration_ms", duration != null ? duration.toMillis() : 0);
+            m.put("status", statusCode);
+            m.put("is_error", statusCode >= 400);
+
+            this.metamap = Collections.unmodifiableMap(m);
         }
         return metamap;
     }
 
-    public Route getRoute()
-    {
+    public GatewayRoute getRoute() {
         return route;
     }
 
-    public WebExchangeDataProvider protocol(final String protocol)
-    {
+    public WebExchangeDataProvider protocol(final String protocol) {
         this.protocol = protocol;
         return this;
     }
 
-    public String getProtocol()
-    {
+    public String getProtocol() {
         return protocol;
     }
 
-    public WebExchangeDataProvider route(final Route route)
-    {
+    public WebExchangeDataProvider route(final GatewayRoute route) {
         this.route = route;
         return this;
     }
 
-    public WebExchangeDataProvider user(RealmUser user)
-    {
+    public WebExchangeDataProvider user(RealmUser user) {
         this.user = user;
         return this;
     }
 
-    public Optional<RealmUser> getUser()
-    {
+    public Optional<RealmUser> getUser() {
         return Optional.ofNullable(user);
     }
 
-    public PredicateConfig getPredicateConfig()
-    {
-        return predicateConfig;
-    }
-
-    public WebExchangeDataProvider exception(Throwable exc)
-    {
+    public WebExchangeDataProvider exception(Throwable exc) {
         this.exception = exc;
         return this;
     }
 
-    public Optional<Throwable> getException()
-    {
+    public Optional<Throwable> getException() {
         return Optional.ofNullable(exception);
     }
 
-    public void loggerError()
-    {
+    public void loggerError() {
         logger.warn("Unable to ingest into all loggers for request {}, leaving request/response files behind", requestId);
         dataBufferRepository.persistForError(requestId);
     }

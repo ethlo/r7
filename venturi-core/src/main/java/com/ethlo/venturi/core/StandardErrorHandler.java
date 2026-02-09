@@ -17,7 +17,9 @@ public final class StandardErrorHandler implements GatewayErrorHandler {
 
         // 2. Standardized JSON error response
         final String jsonError = String.format("{\"id\":\"%s\",\"error\":\"%s\"}", id, message);
-        res.setStatus(503); // Service Unavailable
-        res.localResponse(jsonError.getBytes(), "application/json");
+        if (!res.isCommitted()) {
+            res.setStatus(503); // Service Unavailable
+            res.localResponse(jsonError.getBytes(), "application/json");
+        }
     }
 }

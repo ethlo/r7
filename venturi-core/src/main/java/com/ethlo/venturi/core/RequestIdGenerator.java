@@ -1,4 +1,6 @@
-package com.ethlo.venturi.core.predicates;
+package com.ethlo.venturi.core;
 
-public interface RequestIdGenerator {
+public interface RequestIdGenerator
+{
+    CharSequence generate();
 }

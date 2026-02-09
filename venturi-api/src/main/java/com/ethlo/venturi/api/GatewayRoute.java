@@ -3,10 +3,10 @@ package com.ethlo.venturi.api;
 /**
  * Defines a single routing rule.
  */
-public interface Route {
+public interface GatewayRoute {
 
     /**
-     * Unique identifier for the route (useful for auditing/logging)
+     * Unique identifier for the route
      */
     CharSequence id();
 

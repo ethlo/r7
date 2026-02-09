@@ -18,7 +18,7 @@ public final class UndertowGatewayRequest implements GatewayRequest {
 
     @Override
     public CharSequence method() {
-        return exchange.getRequestMethod().toString();
+        return new HttpStringCharSequence(exchange.getRequestMethod());
     }
 
     @Override
@@ -33,8 +33,6 @@ public final class UndertowGatewayRequest implements GatewayRequest {
 
     @Override
     public void addStreamListener(final OutputStream out) {
-        // Taps the request stream at the conduit level
-        exchange.addRequestWrapper((factory, exchange) -> 
-            new TeeingStreamSourceConduit(factory.create(), out));
+        exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), out));
     }
 }

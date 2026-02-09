@@ -2,9 +2,9 @@ package com.ethlo.venturi.undertow;
 
 import org.xnio.conduits.AbstractStreamSinkConduit;
 import org.xnio.conduits.StreamSinkConduit;
+
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 
 public class TeeingStreamSinkConduit extends AbstractStreamSinkConduit<StreamSinkConduit> {
     private final OutputStream auditLog;
@@ -23,7 +23,9 @@ public class TeeingStreamSinkConduit extends AbstractStreamSinkConduit<StreamSin
             int limit = src.limit();
             src.limit(pos + written);
             src.position(pos);
-            while(src.hasRemaining()) auditLog.write(src.get());
+            while (src.hasRemaining()) {
+                auditLog.write(src.get());
+            }
             src.limit(limit);
         }
         return written;

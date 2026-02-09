@@ -1,9 +1,9 @@
 package com.ethlo.venturi.undertow;
 
+import com.ethlo.venturi.api.GatewayAttributes;
+
 import java.util.HashMap;
 import java.util.Map;
-
-import com.ethlo.venturi.api.GatewayAttributes;
 
 public final class MapGatewayAttributes implements GatewayAttributes {
     private final Map<CharSequence, Object> attributes = new HashMap<>();

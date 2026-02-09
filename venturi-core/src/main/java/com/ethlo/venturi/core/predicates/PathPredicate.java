@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core;
+package com.ethlo.venturi.core.predicates;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayPredicate;

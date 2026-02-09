@@ -1,7 +1,9 @@
 package com.ethlo.venturi.core.predicates;
 
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRequest;
+
 import java.util.regex.Pattern;
 
 public final class RegexPathPredicate implements GatewayPredicate {
@@ -13,8 +15,7 @@ public final class RegexPathPredicate implements GatewayPredicate {
     }
 
     @Override
-    public boolean test(GatewayRequest req) {
-        // This engages the regex engine for every single request
-        return pattern.matcher(req.path()).matches();
+    public boolean test(GatewayRequest req, GatewayAttributes attrs) {
+        return pattern.matcher(req.uri()).matches();
     }
 }

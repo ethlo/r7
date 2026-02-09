@@ -1,7 +1,5 @@
 package com.ethlo.venturi.core.model;
 
-import org.jspecify.annotations.Nullable;
-
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,55 +13,42 @@ import java.util.zip.InflaterInputStream;
  * Provides a unified way to access the request/response body,
  * regardless of whether it is stored in memory or on disk.
  */
-public record BodyProvider(@Nullable Path file, byte @Nullable [] bytes, @Nullable String contentEncoding)
-{
+public record BodyProvider(Path file, byte[] bytes, CharSequence contentEncoding) {
     public static final BodyProvider NONE = new BodyProvider("<<None>>".getBytes(StandardCharsets.UTF_8), null);
 
     // Constructor for Disk-based storage
-    public BodyProvider(Path file, String contentEncoding)
-    {
+    public BodyProvider(Path file, CharSequence contentEncoding) {
         this(Objects.requireNonNull(file), null, contentEncoding);
     }
 
     // Constructor for Memory-based storage
-    public BodyProvider(byte[] bytes, String contentEncoding)
-    {
+    public BodyProvider(byte[] bytes, CharSequence contentEncoding) {
         this(null, Objects.requireNonNull(bytes), contentEncoding);
     }
 
-    public InputStream getInputStream()
-    {
-        try
-        {
+    public InputStream getInputStream() {
+        try {
             final InputStream rawStream = createRawStream();
 
-            if (contentEncoding == null)
-            {
+            if (contentEncoding == null) {
                 return rawStream;
             }
 
-            return switch (contentEncoding.toLowerCase())
-            {
+            return switch (contentEncoding.toString().toLowerCase()) {
                 case "gzip" -> new GZIPInputStream(rawStream);
                 case "deflate" -> new InflaterInputStream(rawStream);
                 default -> rawStream;
             };
-        }
-        catch (IOException exc)
-        {
+        } catch (IOException exc) {
             throw new UncheckedIOException(exc);
         }
     }
 
-    private InputStream createRawStream() throws IOException
-    {
-        if (bytes != null)
-        {
+    private InputStream createRawStream() throws IOException {
+        if (bytes != null) {
             // Data is in RAM
             return new ByteArrayInputStream(bytes);
-        }
-        else if (file != null)
-        {
+        } else if (file != null) {
             // Data is on Disk
             return new BufferedInputStream(Files.newInputStream(file));
         }
@@ -80,28 +65,21 @@ public record BodyProvider(@Nullable Path file, byte @Nullable [] bytes, @Nullab
      * @return A new BodyProvider instance pointing to the new location
      * @throws UncheckedIOException if an I/O error occurs while creating directories, moving, or writing the file
      */
-    public BodyProvider moveTo(Path target)
-    {
-        try
-        {
-            if (file != null)
-            {
+    public BodyProvider moveTo(Path target) {
+        try {
+            if (file != null) {
                 // Atomically move the file if on the same partition
                 Files.createDirectories(target.getParent());
                 Files.move(file, target, StandardCopyOption.REPLACE_EXISTING);
                 return new BodyProvider(target, contentEncoding);
-            }
-            else if (bytes != null)
-            {
+            } else if (bytes != null) {
                 // If it was only in memory, persist it to the target path now
                 Files.createDirectories(target.getParent());
                 Files.write(target, bytes);
                 return new BodyProvider(target, contentEncoding);
             }
             return this; // Nothing to do
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
