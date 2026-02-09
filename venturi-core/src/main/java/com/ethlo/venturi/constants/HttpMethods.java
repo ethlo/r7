@@ -1,6 +1,7 @@
-package com.ethlo.venturi.api;
+package com.ethlo.venturi.constants;
 
-public final class HttpMethods {
+public final class HttpMethods
+{
     public static final String GET = "GET";
     public static final String POST = "POST";
     public static final String PUT = "PUT";
@@ -9,5 +10,7 @@ public final class HttpMethods {
     public static final String HEAD = "HEAD";
     public static final String OPTIONS = "OPTIONS";
 
-    private HttpMethods() {}
+    private HttpMethods()
+    {
+    }
 }

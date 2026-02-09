@@ -1,6 +1,7 @@
-package com.ethlo.venturi.api;
+package com.ethlo.venturi.constants;
 
-public final class HttpHeaders {
+public final class HttpHeaders
+{
     // Request Headers
     public static final String AUTHORIZATION = "Authorization";
     public static final String CONTENT_TYPE = "Content-Type";
@@ -21,6 +22,7 @@ public final class HttpHeaders {
     public static final String X_REQUEST_ID = "X-Request-Id";
     public static final String X_FORWARDED_FOR = "X-Forwarded-For";
 
-    private HttpHeaders() {
+    private HttpHeaders()
+    {
     }
 }

@@ -1,8 +1,17 @@
 package com.ethlo.venturi.undertow;
 
+import java.net.URI;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.xnio.Options;
+
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.constants.HttpStatuses;
+import com.ethlo.venturi.constants.MediaTypes;
 import com.ethlo.venturi.core.filters.CorrelationIdFilter;
 import com.ethlo.venturi.core.filters.RequireAuthorizationHeaderFilter;
 import com.ethlo.venturi.core.predicates.RegexPathPredicate;
@@ -12,59 +21,62 @@ import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.ResponseCodeHandler;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
+import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.Headers;
-import org.xnio.Options;
 
-import java.net.URI;
-import java.util.List;
+public final class VenturiMain
+{
+    private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
 
-public final class VenturiMain {
-    public static void main(String[] args) {
+    public static void main(String[] args)
+    {
         final URI target = URI.create("http://localhost:8090/baz.txt");
 
-        // 1. TUNE: The High-Capacity Proxy Client
-        final var proxyClient = new LoadBalancingProxyClient()
+        final ProxyClient proxyClient = new LoadBalancingProxyClient()
                 .setConnectionsPerThread(1000) // Huge pool for 100k/sec
                 .setSoftMaxConnectionsPerThread(800)
                 .setTtl(60000)
                 .addHost(target);
 
-        final var proxyHandler = ProxyHandler.builder()
+        final ProxyHandler proxyHandler = ProxyHandler.builder()
                 .setProxyClient(proxyClient)
                 .setMaxRequestTime(-1)
                 .setNext(ResponseCodeHandler.HANDLE_404)
                 .build();
 
-        final var route = new GatewayRoute() {
+        final GatewayRoute route = new GatewayRoute()
+        {
             @Override
-            public CharSequence id() {
+            public CharSequence id()
+            {
                 return "nitro-route";
             }
 
             @Override
-            public CharSequence uri() {
+            public CharSequence uri()
+            {
                 return target.toString();
             }
 
             @Override
-            public GatewayPredicate predicate() {
-                //return new PathPredicate("/foobar", false);
+            public GatewayPredicate predicate()
+            {
                 return new RegexPathPredicate("^/foobar");
             }
 
             @Override
-            public Iterable<GatewayFilter> filters() {
-                return List.of(new CorrelationIdFilter(), new RequireAuthorizationHeaderFilter()); //, new GhostProxyFilter());
+            public Iterable<GatewayFilter> filters()
+            {
+                return List.of(new CorrelationIdFilter());
+                //, new RequireAuthorizationHeaderFilter());
+                // , new GhostProxyFilter());
             }
         };
 
-        final int processors = Runtime.getRuntime().availableProcessors();
-
         final HttpHandler benchMarkHandler = exchange -> {
-            // High-speed response without touching the heap
-            exchange.setStatusCode(200);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/plain");
+            exchange.setStatusCode(HttpStatuses.OK);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send("OK");
         };
 
@@ -73,13 +85,23 @@ public final class VenturiMain {
                 .addPrefixPath("/foobar", new VenturiUndertowHandler(route, proxyHandler))
                 .addExactPath("/benchmark", benchMarkHandler);
 
-        final Undertow server = Undertow.builder()
-                .addHttpListener(9999, "0.0.0.0")
 
-                // SOCKET & TCP LAYER (Fixes the 15k bottleneck)
-                .setSocketOption(Options.TCP_NODELAY, true)         // Disable Nagle's
+        final Undertow.Builder builder = Undertow.builder()
+                .addHttpListener(9999, "0.0.0.0")
+                .setHandler(rootHandler);
+        performanceTune(builder);
+        final Undertow server = builder.build();
+        server.start();
+
+        logger.info("🚀 " + server.getListenerInfo().getFirst().getAddress() + "  -> " + target);
+    }
+
+    private static void performanceTune(Undertow.Builder builder)
+    {
+        final int processors = Runtime.getRuntime().availableProcessors();
+        builder.setSocketOption(Options.TCP_NODELAY, true)         // Disable Nagle's
                 .setSocketOption(Options.REUSE_ADDRESSES, true)     // Fast socket recycling
-                .setSocketOption(Options.BACKLOG, 10000)            // Handle massive bursts
+                .setSocketOption(Options.BACKLOG, 1_000)            // Handle massive bursts
 
                 // WORKER LAYER
                 .setWorkerOption(Options.WORKER_IO_THREADS, processors * 2)
@@ -88,18 +110,10 @@ public final class VenturiMain {
 
                 // PROTOCOL LAYER
                 .setServerOption(UndertowOptions.ENABLE_HTTP2, true)
-                .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, false)
                 .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, true)
 
                 // ZERO-COPY MEMORY LAYER
                 .setBufferSize(16 * 1024)      // 16KB Sweet spot
-                .setDirectBuffers(true)        // Off-heap memory (Zero copy)
-
-                .setHandler(rootHandler)
-                .build();
-
-        server.start();
-
-        System.out.println("🚀 " + server.getListenerInfo().getFirst().getAddress() + "  -> " + target);
+                .setDirectBuffers(true);   // Off-heap memory (Zero copy)
     }
 }

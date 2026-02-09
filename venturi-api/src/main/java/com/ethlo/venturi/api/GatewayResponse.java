@@ -2,7 +2,8 @@ package com.ethlo.venturi.api;
 
 import java.io.OutputStream;
 
-public interface GatewayResponse {
+public interface GatewayResponse
+{
 
     GatewayHeaders headers();
 

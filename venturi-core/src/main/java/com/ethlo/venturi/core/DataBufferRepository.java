@@ -1,14 +1,15 @@
 package com.ethlo.venturi.core;
 
-import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.core.model.BodyProvider;
-import com.ethlo.venturi.core.model.WebExchangeDataProvider;
-
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.Optional;
 
-public interface DataBufferRepository {
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.core.model.BodyProvider;
+import com.ethlo.venturi.core.model.WebExchangeDataProvider;
+
+public interface DataBufferRepository
+{
     void putHeaders(ServerDirection direction, String requestId, GatewayHeaders headers);
 
     Optional<GatewayHeaders> getHeaders(final ServerDirection direction, final String requestId);

@@ -2,10 +2,13 @@ package com.ethlo.venturi.api;
 
 import java.io.OutputStream;
 
-public interface GatewayRequest {
+public interface GatewayRequest
+{
     CharSequence method();
 
     CharSequence uri();
+
+    CharSequence path();
 
     GatewayHeaders headers();
 

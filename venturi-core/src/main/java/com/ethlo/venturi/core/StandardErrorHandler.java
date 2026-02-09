@@ -1,25 +1,29 @@
 package com.ethlo.venturi.core;
 
-import com.ethlo.venturi.api.*;
-import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public final class StandardErrorHandler implements GatewayErrorHandler {
+import com.ethlo.venturi.api.GatewayErrorHandler;
+import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.GatewayResponse;
+import com.ethlo.venturi.constants.HttpStatuses;
+import com.ethlo.venturi.constants.MediaTypes;
+
+public final class StandardErrorHandler implements GatewayErrorHandler
+{
+    private static final Logger log = LoggerFactory.getLogger(StandardErrorHandler.class);
+
     @Override
-    public void handleError(final GatewayRequest req, final GatewayResponse res, final GatewayAttributes attrs, final Throwable error) {
-        final CharSequence id = attrs.get("request_id");
-        final String message = error != null ? error.getMessage() : "Upstream connection failed";
+    public void handleError(final GatewayExchange exchange, final Throwable error)
+    {
+        log.warn("RequestID: {} URI: {} : {}", exchange.requestId(), exchange.request().uri(), error.getMessage(), error);
 
-        // 1. Standardized high-visibility logging
-        System.err.printf("[%s] [GATEWAY-ERROR] ID: %s | URI: %s | MSG: %s%n", 
-            Instant.now(), id, req.uri(), message);
-        
-        if (error != null) error.printStackTrace(System.err);
-
-        // 2. Standardized JSON error response
-        final String jsonError = String.format("{\"id\":\"%s\",\"error\":\"%s\"}", id, message);
-        if (!res.isCommitted()) {
-            res.setStatus(503); // Service Unavailable
-            res.localResponse(jsonError.getBytes(), "application/json");
+        final String jsonError = String.format("{\"id\":\"%s\",\"error\":\"%s\"}", exchange.requestId(), "Upstream connection failed");
+        final GatewayResponse response = exchange.response();
+        if (!response.isCommitted())
+        {
+            response.setStatus(HttpStatuses.SERVICE_UNAVAILABLE);
+            response.localResponse(jsonError.getBytes(), MediaTypes.APPLICATION_JSON);
         }
     }
 }

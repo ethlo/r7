@@ -1,19 +1,25 @@
 package com.ethlo.venturi.core.model;
 
-import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.GatewayRoute;
-import com.ethlo.venturi.api.HttpHeaders;
-import com.ethlo.venturi.core.DataBufferRepository;
-import com.ethlo.venturi.core.ServerDirection;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
-public class WebExchangeDataProvider {
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.constants.HttpHeaders;
+import com.ethlo.venturi.core.DataBufferRepository;
+import com.ethlo.venturi.core.ServerDirection;
+
+public class WebExchangeDataProvider
+{
     private static final Logger logger = LoggerFactory.getLogger(WebExchangeDataProvider.class);
     private final DataBufferRepository dataBufferRepository;
     private String requestId;
@@ -33,123 +39,154 @@ public class WebExchangeDataProvider {
     private Runnable cleanupTask;
     private Map<String, Object> metamap;
 
-    public WebExchangeDataProvider(DataBufferRepository dataBufferRepository) {
+    public WebExchangeDataProvider(DataBufferRepository dataBufferRepository)
+    {
         this.dataBufferRepository = Objects.requireNonNull(dataBufferRepository);
     }
 
-    public WebExchangeDataProvider cleanupTask(Runnable cleanupTask) {
+    public WebExchangeDataProvider cleanupTask(Runnable cleanupTask)
+    {
         this.cleanupTask = cleanupTask;
         return this;
     }
 
-    public void cleanup() {
-        if (cleanupTask != null) {
+    public void cleanup()
+    {
+        if (cleanupTask != null)
+        {
             cleanupTask.run();
-        } else {
+        }
+        else
+        {
             logger.warn("No cleanup task for request {}", requestId);
         }
     }
 
-    public WebExchangeDataProvider requestId(String requestId) {
+    public WebExchangeDataProvider requestId(String requestId)
+    {
         this.requestId = requestId;
         return this;
     }
 
-    public WebExchangeDataProvider method(String method) {
+    public WebExchangeDataProvider method(String method)
+    {
         this.method = method;
         return this;
     }
 
-    public WebExchangeDataProvider path(String path) {
+    public WebExchangeDataProvider path(String path)
+    {
         this.path = path;
         return this;
     }
 
-    public WebExchangeDataProvider uri(String uri) {
+    public WebExchangeDataProvider uri(String uri)
+    {
         this.uri = uri;
         return this;
     }
 
-    public WebExchangeDataProvider statusCode(int statusCode) {
+    public WebExchangeDataProvider statusCode(int statusCode)
+    {
         this.statusCode = statusCode;
         return this;
     }
 
-    public WebExchangeDataProvider timestamp(OffsetDateTime timestamp) {
+    public WebExchangeDataProvider timestamp(OffsetDateTime timestamp)
+    {
         this.timestamp = timestamp;
         return this;
     }
 
-    public WebExchangeDataProvider duration(Duration duration) {
+    public WebExchangeDataProvider duration(Duration duration)
+    {
         this.duration = duration;
         return this;
     }
 
-    public WebExchangeDataProvider remoteAddress(InetSocketAddress remoteAddress) {
+    public WebExchangeDataProvider remoteAddress(InetSocketAddress remoteAddress)
+    {
         this.remoteAddress = remoteAddress;
         return this;
     }
 
-    public Optional<BodyProvider> getRequestBody() {
+    public Optional<BodyProvider> getRequestBody()
+    {
         return dataBufferRepository.getBody(ServerDirection.REQUEST, requestId);
     }
 
-    public Optional<BodyProvider> getResponseBody() {
+    public Optional<BodyProvider> getResponseBody()
+    {
         return dataBufferRepository.getBody(ServerDirection.RESPONSE, requestId);
     }
 
-    public String getRequestId() {
+    public String getRequestId()
+    {
         return requestId;
     }
 
-    public String getMethod() {
+    public String getMethod()
+    {
         return method;
     }
 
-    public String getPath() {
+    public String getPath()
+    {
         return path;
     }
 
-    public String getUri() {
+    public String getUri()
+    {
         return uri;
     }
 
-    public int getStatusCode() {
+    public int getStatusCode()
+    {
         return statusCode;
     }
 
-    public GatewayHeaders getRequestHeaders() {
-        if (requestHeaders == null) {
+    public GatewayHeaders getRequestHeaders()
+    {
+        if (requestHeaders == null)
+        {
             requestHeaders = new HeaderProvider(dataBufferRepository, requestId, ServerDirection.REQUEST);
         }
         return requestHeaders.getHeaders();
     }
 
-    public GatewayHeaders getResponseHeaders() {
-        if (responseHeaders == null) {
+    public GatewayHeaders getResponseHeaders()
+    {
+        if (responseHeaders == null)
+        {
             responseHeaders = new HeaderProvider(dataBufferRepository, requestId, ServerDirection.RESPONSE);
         }
         return responseHeaders.getHeaders();
     }
 
-    public OffsetDateTime getTimestamp() {
+    public OffsetDateTime getTimestamp()
+    {
         return timestamp;
     }
 
-    public Duration getDuration() {
+    public Duration getDuration()
+    {
         return duration;
     }
 
-    public InetSocketAddress getRemoteAddress() {
+    public InetSocketAddress getRemoteAddress()
+    {
         return remoteAddress;
     }
 
-    public Map<String, Object> asMetaMap() {
-        if (metamap == null) {
+    public Map<String, Object> asMetaMap()
+    {
+        if (metamap == null)
+        {
             Map<String, Object> m = new HashMap<>(20);
 
             // Standard Route metadata
-            if (route != null) {
+            if (route != null)
+            {
                 m.put("route_id", route.id());
                 m.put("route_uri", route.uri().toString());
             }
@@ -183,43 +220,52 @@ public class WebExchangeDataProvider {
         return metamap;
     }
 
-    public GatewayRoute getRoute() {
+    public GatewayRoute getRoute()
+    {
         return route;
     }
 
-    public WebExchangeDataProvider protocol(final String protocol) {
+    public WebExchangeDataProvider protocol(final String protocol)
+    {
         this.protocol = protocol;
         return this;
     }
 
-    public String getProtocol() {
+    public String getProtocol()
+    {
         return protocol;
     }
 
-    public WebExchangeDataProvider route(final GatewayRoute route) {
+    public WebExchangeDataProvider route(final GatewayRoute route)
+    {
         this.route = route;
         return this;
     }
 
-    public WebExchangeDataProvider user(RealmUser user) {
+    public WebExchangeDataProvider user(RealmUser user)
+    {
         this.user = user;
         return this;
     }
 
-    public Optional<RealmUser> getUser() {
+    public Optional<RealmUser> getUser()
+    {
         return Optional.ofNullable(user);
     }
 
-    public WebExchangeDataProvider exception(Throwable exc) {
+    public WebExchangeDataProvider exception(Throwable exc)
+    {
         this.exception = exc;
         return this;
     }
 
-    public Optional<Throwable> getException() {
+    public Optional<Throwable> getException()
+    {
         return Optional.ofNullable(exception);
     }
 
-    public void loggerError() {
+    public void loggerError()
+    {
         logger.warn("Unable to ingest into all loggers for request {}, leaving request/response files behind", requestId);
         dataBufferRepository.persistForError(requestId);
     }

@@ -3,7 +3,8 @@ package com.ethlo.venturi.api;
 /**
  * Defines a single routing rule.
  */
-public interface GatewayRoute {
+public interface GatewayRoute
+{
 
     /**
      * Unique identifier for the route

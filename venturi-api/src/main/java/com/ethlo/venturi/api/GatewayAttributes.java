@@ -1,7 +1,7 @@
 package com.ethlo.venturi.api;
 
-public interface GatewayAttributes {
-
+public interface GatewayAttributes
+{
     Iterable<CharSequence> attributeNames();
 
     <T> T get(CharSequence key);

@@ -1,6 +1,7 @@
-package com.ethlo.venturi.api;
+package com.ethlo.venturi.constants;
 
-public final class HttpStatuses {
+public final class HttpStatuses
+{
     // 2xx Success
     public static final int OK = 200;
     public static final int CREATED = 201;
@@ -28,5 +29,7 @@ public final class HttpStatuses {
     public static final int SERVICE_UNAVAILABLE = 503;
     public static final int GATEWAY_TIMEOUT = 504;
 
-    private HttpStatuses() {}
+    private HttpStatuses()
+    {
+    }
 }

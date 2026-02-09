@@ -1,24 +1,26 @@
 package com.ethlo.venturi.api;
 
-public interface GatewayFilter {
+public interface GatewayFilter
+{
 
     /**
-     * Initial Phase: Only Request & Attributes exist.
+     * Before we call upstream service
      */
-    default void beforeUpstream(GatewayRequest req, GatewayResponse res, GatewayAttributes attrs) {
+    default void beforeUpstream(GatewayExchange exchange)
+    {
     }
 
     /**
-     * Middle Phase: Upstream has responded with headers.
-     * Now the Response object is "born."
+     * Upstream has responded with headers.
      */
-    default void onResponseHeaders(GatewayRequest req, GatewayResponse res, GatewayAttributes attrs) {
+    default void onResponseHeaders(GatewayExchange exchange)
+    {
     }
 
     /**
-     * Final Phase: Body is gone.
-     * Perfect for Chronograph timing and closing audit files.
+     * After the gateway has pushed both the headers and body back to the client
      */
-    default void afterResponseBody(GatewayRequest req, GatewayResponse res, GatewayAttributes attrs) {
+    default void finished(GatewayExchange exchange)
+    {
     }
 }
