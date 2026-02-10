@@ -1,15 +1,17 @@
 package com.ethlo.venturi.undertow;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.constants.HttpHeaders;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
 
 public final class GhostProxyFilter implements GatewayFilter
 {
-    private final byte[] mockPayload = "{\"status\": \"proxied\"}".getBytes(StandardCharsets.UTF_8);
+    private final ByteBuffer mockPayload = ByteBuffer.wrap("{\"status\": \"proxied\"}".getBytes(StandardCharsets.UTF_8));
 
     @Override
     public void beforeUpstream(GatewayExchange exchange)
@@ -27,6 +29,7 @@ public final class GhostProxyFilter implements GatewayFilter
 
         // 2. Return a local response AFTER the "wait"
         exchange.response().setStatus(HttpStatuses.OK);
-        exchange.response().localResponse(mockPayload, MediaTypes.APPLICATION_JSON);
+        exchange.request().headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
+        exchange.response().localResponse(mockPayload);
     }
 }

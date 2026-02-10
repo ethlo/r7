@@ -1,5 +1,7 @@
 package com.ethlo.venturi.core;
 
+import com.ethlo.venturi.constants.HttpHeaders;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,6 +10,8 @@ import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
+
+import java.nio.ByteBuffer;
 
 public final class StandardErrorHandler implements GatewayErrorHandler
 {
@@ -23,7 +27,8 @@ public final class StandardErrorHandler implements GatewayErrorHandler
         if (!response.isCommitted())
         {
             response.setStatus(HttpStatuses.SERVICE_UNAVAILABLE);
-            response.localResponse(jsonError.getBytes(), MediaTypes.APPLICATION_JSON);
+            response.headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
+            response.localResponse(ByteBuffer.wrap(jsonError.getBytes()));
         }
     }
 }

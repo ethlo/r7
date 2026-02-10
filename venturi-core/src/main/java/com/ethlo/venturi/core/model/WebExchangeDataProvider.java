@@ -15,13 +15,13 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.constants.HttpHeaders;
-import com.ethlo.venturi.core.DataBufferRepository;
+import com.ethlo.venturi.core.GatewayExchangeDataReader;
 import com.ethlo.venturi.core.ServerDirection;
 
 public class WebExchangeDataProvider
 {
     private static final Logger logger = LoggerFactory.getLogger(WebExchangeDataProvider.class);
-    private final DataBufferRepository dataBufferRepository;
+    private final GatewayExchangeDataReader gatewayExchangeDataReader;
     private String requestId;
     private GatewayRoute route;
     private String method;
@@ -36,30 +36,11 @@ public class WebExchangeDataProvider
     private InetSocketAddress remoteAddress;
     private RealmUser user;
     private Throwable exception;
-    private Runnable cleanupTask;
     private Map<String, Object> metamap;
 
-    public WebExchangeDataProvider(DataBufferRepository dataBufferRepository)
+    public WebExchangeDataProvider(GatewayExchangeDataReader gatewayExchangeDataReader)
     {
-        this.dataBufferRepository = Objects.requireNonNull(dataBufferRepository);
-    }
-
-    public WebExchangeDataProvider cleanupTask(Runnable cleanupTask)
-    {
-        this.cleanupTask = cleanupTask;
-        return this;
-    }
-
-    public void cleanup()
-    {
-        if (cleanupTask != null)
-        {
-            cleanupTask.run();
-        }
-        else
-        {
-            logger.warn("No cleanup task for request {}", requestId);
-        }
+        this.gatewayExchangeDataReader = Objects.requireNonNull(gatewayExchangeDataReader);
     }
 
     public WebExchangeDataProvider requestId(String requestId)
@@ -110,16 +91,6 @@ public class WebExchangeDataProvider
         return this;
     }
 
-    public Optional<BodyProvider> getRequestBody()
-    {
-        return dataBufferRepository.getBody(ServerDirection.REQUEST, requestId);
-    }
-
-    public Optional<BodyProvider> getResponseBody()
-    {
-        return dataBufferRepository.getBody(ServerDirection.RESPONSE, requestId);
-    }
-
     public String getRequestId()
     {
         return requestId;
@@ -149,7 +120,7 @@ public class WebExchangeDataProvider
     {
         if (requestHeaders == null)
         {
-            requestHeaders = new HeaderProvider(dataBufferRepository, requestId, ServerDirection.REQUEST);
+            requestHeaders = new HeaderProvider(gatewayExchangeDataReader, requestId, ServerDirection.REQUEST);
         }
         return requestHeaders.getHeaders();
     }
@@ -158,7 +129,7 @@ public class WebExchangeDataProvider
     {
         if (responseHeaders == null)
         {
-            responseHeaders = new HeaderProvider(dataBufferRepository, requestId, ServerDirection.RESPONSE);
+            responseHeaders = new HeaderProvider(gatewayExchangeDataReader, requestId, ServerDirection.RESPONSE);
         }
         return responseHeaders.getHeaders();
     }
@@ -262,11 +233,5 @@ public class WebExchangeDataProvider
     public Optional<Throwable> getException()
     {
         return Optional.ofNullable(exception);
-    }
-
-    public void loggerError()
-    {
-        logger.warn("Unable to ingest into all loggers for request {}, leaving request/response files behind", requestId);
-        dataBufferRepository.persistForError(requestId);
     }
 }

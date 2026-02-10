@@ -1,82 +1,66 @@
 package com.ethlo.venturi.undertow;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import java.util.function.Consumer;
 
 import org.xnio.conduits.AbstractStreamSourceConduit;
 import org.xnio.conduits.StreamSourceConduit;
 
-/**
- * A conduit that "tees" data from a source (Request Body) into an OutputStream
- * while it is being read by the engine.
- */
 public final class TeeingStreamSourceConduit extends AbstractStreamSourceConduit<StreamSourceConduit>
 {
-    private final OutputStream out;
+    private final Consumer<ByteBuffer> listener;
 
-    public TeeingStreamSourceConduit(final StreamSourceConduit next, final OutputStream out)
+    public TeeingStreamSourceConduit(StreamSourceConduit next, Consumer<ByteBuffer> listener)
     {
         super(next);
-        this.out = out;
+        this.listener = listener;
     }
 
     @Override
-    public int read(final ByteBuffer dst) throws IOException
+    public int read(ByteBuffer dst) throws IOException
     {
-        // Record starting position to identify the new data read
-        final int pos = dst.position();
+        final int posBefore = dst.position();
         final int read = next.read(dst);
-
         if (read > 0)
         {
-            // Synchronously copy the read bytes to the audit stream
-            final int limit = dst.limit();
-            dst.limit(dst.position());
-            dst.position(pos);
-            try
-            {
-                while (dst.hasRemaining())
-                {
-                    out.write(dst.get());
-                }
-            } finally
-            {
-                // Restore the original buffer state for the engine
-                dst.limit(limit);
-            }
+            tee(dst, posBefore, read);
         }
         return read;
     }
 
     @Override
-    public long read(final ByteBuffer[] dsts, final int offs, final int len) throws IOException
+    public long read(ByteBuffer[] dsts, int offset, int length) throws IOException
     {
-        long totalRead = 0;
-        for (int i = offs; i < offs + len; i++)
+        final int[] positions = new int[length];
+        for (int i = 0; i < length; i++)
         {
-            final int read = read(dsts[i]);
-            if (read > 0)
+            positions[i] = dsts[offset + i].position();
+        }
+
+        final long totalRead = next.read(dsts, offset, length);
+        if (totalRead > 0)
+        {
+            long remaining = totalRead;
+            for (int i = 0; i < length && remaining > 0; i++)
             {
-                totalRead += read;
-            }
-            else if (read == -1 && totalRead == 0)
-            {
-                return -1;
-            }
-            else
-            {
-                break;
+                final ByteBuffer buf = dsts[offset + i];
+                final int readInBuf = (int) Math.min(buf.position() - positions[i], remaining);
+                if (readInBuf > 0)
+                {
+                    tee(buf, positions[i], readInBuf);
+                    remaining -= readInBuf;
+                }
             }
         }
         return totalRead;
     }
 
-    @Override
-    public long transferTo(final long position, final long count, final FileChannel target) throws IOException
+    private void tee(ByteBuffer buf, int position, int length)
     {
-        // Fallback to standard read to ensure auditing is not bypassed by zero-copy OS transfers
-        return next.transferTo(position, count, target);
+        final ByteBuffer slice = buf.duplicate();
+        slice.position(position);
+        slice.limit(position + length);
+        listener.accept(slice);
     }
 }

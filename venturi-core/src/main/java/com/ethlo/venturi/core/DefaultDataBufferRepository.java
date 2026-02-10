@@ -1,457 +1,216 @@
 package com.ethlo.venturi.core;
 
-
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.Optional;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.constants.HttpHeaders;
-import com.ethlo.venturi.core.helpers.SimpleGatewayHeaders;
-import com.ethlo.venturi.core.model.BodyProvider;
-import com.ethlo.venturi.core.model.WebExchangeDataProvider;
+import com.ethlo.venturi.core.storage.StorageLayoutStrategy;
 
-public class DefaultDataBufferRepository implements DataBufferRepository
+public class DefaultDataBufferRepository implements GatewayExchangeDataWriter
 {
     private static final Logger logger = LoggerFactory.getLogger(DefaultDataBufferRepository.class);
-    private final Path basePath;
-    private final long thresholdBytes;
+    private static final byte[] CRLF = {13, 10};
+    private static final byte COLON_SPACE = 58;
+    private static final byte SPACE = 32;
 
-    // A single map to track the state (RAM or DISK) for every unique request/direction pair
-    private final ConcurrentMap<String, DataState> statePool = new ConcurrentHashMap<>();
+    private static final ThreadLocal<ByteBuffer> HEADER_WORK_BUFFER = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(2048));
 
-    public DefaultDataBufferRepository(Path logDirectory, long thresholdBytes) throws IOException
+    // Reduced set of options to speed up kernel parsing of the open request
+    private static final StandardOpenOption[] CREATE_OPTIONS = {StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING};
+    private static final StandardOpenOption[] FINAL_OPTIONS = {StandardOpenOption.CREATE, StandardOpenOption.WRITE};
+
+    private final StorageLayoutStrategy layoutStrategy;
+    private final Path tempDir;
+    private final Path archiveDir;
+    private final int thresholdBytes;
+    private final Map<CharSequence, RequestState> activeRequests = new ConcurrentHashMap<>(16384);
+
+    public DefaultDataBufferRepository(Path baseDir, int thresholdBytes, StorageLayoutStrategy strategy) throws IOException
     {
-        this.basePath = logDirectory.toAbsolutePath();
+        this.tempDir = baseDir.resolve("processing");
+        this.archiveDir = baseDir.resolve("completed");
         this.thresholdBytes = thresholdBytes;
-    }
-
-    private static GatewayHeaders parseHttpHeaders(byte[] data)
-    {
-        final String content = new String(data, StandardCharsets.UTF_8);
-        final GatewayHeaders headers = new SimpleGatewayHeaders();
-
-        // Split by CRLF to get individual lines
-        final String[] lines = content.split("\r\n");
-        for (String line : lines)
-        {
-            if (line.isBlank())
-            {
-                continue;
-            }
-
-            int colonIndex = line.indexOf(':');
-            if (colonIndex != -1)
-            {
-                final String name = line.substring(0, colonIndex).trim();
-                final String value = line.substring(colonIndex + 1).trim();
-                headers.addHeader(name, value);
-            }
-        }
-        return headers;
+        this.layoutStrategy = strategy;
+        Files.createDirectories(tempDir);
+        Files.createDirectories(archiveDir);
     }
 
     @Override
-    public void putHeaders(ServerDirection direction, CharSequence requestId, GatewayHeaders headers)
+    public void begin(ServerDirection direction, CharSequence requestId, ByteBuffer startLine, GatewayHeaders headers)
     {
-        final Path path = getPath(direction, requestId, "headers");
-        try (FileChannel fc = FileChannel.open(path,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.TRUNCATE_EXISTING
-        ))
-        {
-            writeFully(fc, ByteBuffer.wrap(serialize(headers)));
-        }
-        catch (IOException e)
-        {
-            logger.error("Failed to write headers {} for {}", direction, requestId, e);
-        }
-    }
+        final RequestState state = activeRequests.computeIfAbsent(requestId, k -> new RequestState(thresholdBytes));
+        final PayloadState payload = state.getPayload(direction);
 
-    private byte[] serialize(GatewayHeaders headers)
-    {
-        final StringBuilder sb = new StringBuilder(512);
-        headers.forEachGroup((name, values) ->
+        synchronized (payload)
         {
-            for (CharSequence value : values)
-            {
-                // We repeat the header name for multi-values (Standard Wire Format)
-                // This is safer than comma-separation for things like Set-Cookie
-                sb.append(name).append(": ").append(value).append("\r\n");
-            }
-        });
-        return sb.toString().getBytes(StandardCharsets.UTF_8);
+            internalWrite(payload, requestId, direction, startLine);
+            internalWrite(payload, requestId, direction, ByteBuffer.wrap(CRLF));
+
+            final ByteBuffer workBuf = HEADER_WORK_BUFFER.get();
+            headers.forEach((name, value) -> {
+                workBuf.clear();
+                putAscii(workBuf, name);
+                workBuf.put(COLON_SPACE).put(SPACE);
+                putAscii(workBuf, value);
+                workBuf.put(CRLF);
+                workBuf.flip();
+                internalWrite(payload, requestId, direction, workBuf);
+            });
+
+            internalWrite(payload, requestId, direction, ByteBuffer.wrap(CRLF));
+        }
     }
 
     @Override
-    public Optional<GatewayHeaders> getHeaders(final ServerDirection direction, final String requestId)
+    public void writeBody(ServerDirection direction, CharSequence requestId, ByteBuffer data)
     {
-        final Path path = getPath(direction, requestId, "headers");
-
-        if (!Files.exists(path))
+        final RequestState state = activeRequests.get(requestId);
+        if (state != null)
         {
-            return Optional.empty();
-        }
-
-        try
-        {
-            final byte[] data = Files.readAllBytes(path);
-            final GatewayHeaders headers = parseHttpHeaders(data);
-            return Optional.of(headers);
-        }
-        catch (IOException e)
-        {
-            logger.error("Failed to read durable headers for {}", requestId, e);
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * Deterministic write logic. Checks threshold and spills to disk if necessary.
-     */
-    @Override
-    public void writeBody(ServerDirection direction, String requestId, ByteBuffer data)
-    {
-        final String key = getPoolKey(direction, requestId);
-        final int bytesToWrite = data.remaining();
-
-        statePool.compute(key, (k, state) -> {
-                    try
-                    {
-                        // First write, initialize in memory
-                        if (state == null)
-                        {
-                            if (bytesToWrite > thresholdBytes)
-                            {
-                                return spillNewToDisk(direction, requestId, data);
-                            }
-                            return createInMemoryState(data);
-                        }
-
-                        // Already on disk, write to channel
-                        if (state.channel != null)
-                        {
-                            writeToChannel(state.channel, state.position, data);
-                            return state;
-                        }
-
-                        // Currently in memory, check if this write triggers spill
-                        if (state.memoryBuffer.size() + bytesToWrite > thresholdBytes)
-                        {
-                            return spillExistingToDisk(direction, requestId, state.memoryBuffer, data);
-                        }
-                        else
-                        {
-                            state.memoryBuffer.write(data.array(), data.position(), bytesToWrite);
-                            state.position.addAndGet(bytesToWrite);
-                            return state;
-                        }
-                    }
-                    catch (IOException e)
-                    {
-                        throw new UncheckedIOException(e);
-                    }
-                }
-        );
-    }
-
-    private DataState createInMemoryState(ByteBuffer data) throws IOException
-    {
-        final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        byte[] bytes = new byte[data.remaining()];
-        data.get(bytes);
-        outputStream.write(bytes);
-        return new DataState(outputStream, null, new AtomicLong(bytes.length));
-    }
-
-    private DataState spillNewToDisk(ServerDirection dir, String id, ByteBuffer data) throws IOException
-    {
-        Path path = getPath(dir, id, "body");
-        FileChannel fc = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-        int written = fc.write(data);
-        return new DataState(null, fc, new AtomicLong(written));
-    }
-
-    private void writeFully(FileChannel fc, ByteBuffer src) throws IOException
-    {
-        writeFully(fc, src, null);
-    }
-
-    private void writeFully(FileChannel fc, ByteBuffer src, Long offset) throws IOException
-    {
-        while (src.hasRemaining())
-        {
-            // If offset is null, use the channel's current position (and update it)
-            // If offset is provided, use absolute position (does NOT update channel position)
-            int written = (offset == null) ? fc.write(src) : fc.write(src, offset);
-
-            if (written == 0)
+            final PayloadState payload = state.getPayload(direction);
+            synchronized (payload)
             {
-                // Standard retry logic for edge cases/interrupts
-                Thread.yield();
-            }
-            else if (offset != null)
-            {
-                offset += written;
+                internalWrite(payload, requestId, direction, data);
             }
         }
     }
 
-    private DataState spillExistingToDisk(ServerDirection dir, String id, ByteArrayOutputStream existing, ByteBuffer data) throws IOException
+    private void internalWrite(PayloadState payload, CharSequence id, ServerDirection dir, ByteBuffer data)
     {
-        final Path path = getPath(dir, id, "body");
-        final FileChannel fc = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-
-        // Write the accumulated memory buffer fully
-        writeFully(fc, ByteBuffer.wrap(existing.toByteArray()));
-
-        // Write the new incoming chunk fully
-        int dataSize = data.remaining();
-        writeFully(fc, data);
-
-        return new DataState(null, fc, new AtomicLong(existing.size() + dataSize));
-    }
-
-    private void writeToChannel(FileChannel fc, AtomicLong pos, ByteBuffer data) throws IOException
-    {
-        final int bytesToWrite = data.remaining();
-        final long startOffset = pos.getAndAdd(bytesToWrite);
-        writeFully(fc, data, startOffset);
-    }
-
-    @Override
-    public void closePayloadChannels(CharSequence requestId)
-    {
-        logger.debug("Close {}", requestId);
-        closeDirection(ServerDirection.REQUEST, requestId);
-        closeDirection(ServerDirection.RESPONSE, requestId);
-    }
-
-    private void closeDirection(ServerDirection serverDirection, CharSequence requestId)
-    {
-        final String key = getPoolKey(serverDirection, requestId);
-        final DataState state = statePool.remove(key);
-        if (state != null && state.channel != null)
+        if (payload.fileChannel != null)
         {
-            try
-            {
-                state.channel.close();
-            }
-            catch (IOException e)
-            {
-                logger.warn("Failed to close channel for {}", requestId, e);
-            }
+            safeWrite(payload.fileChannel, data, id);
         }
-    }
-
-    public void cleanup(String requestId)
-    {
-        logger.debug("Cleanup {}", requestId);
-        cleanupDirection(ServerDirection.REQUEST, requestId);
-        cleanupDirection(ServerDirection.RESPONSE, requestId);
-    }
-
-    private void cleanupDirection(ServerDirection dir, String requestId)
-    {
-        String key = getPoolKey(dir, requestId);
-        DataState state = statePool.remove(key);
-        if (state != null && state.channel != null)
+        else if (payload.memoryBuffer.remaining() < data.remaining())
         {
-            try
-            {
-                state.channel.close();
-                deleteAndReport(dir, requestId, "body", "Unable to clean up body file for {} for {}");
-                if (logger.isDebugEnabled())
-                {
-                    logger.debug("Deleted {} disk buffer for {}. File size {}B", dir, requestId, state.position.get());
-                }
-            }
-            catch (IOException exc)
-            {
-                logger.warn(exc.getMessage(), exc);
-            }
-        }
-
-        deleteAndReport(dir, requestId, "headers", "Unable to clean up headers file for {} for {}");
-    }
-
-    private void deleteAndReport(ServerDirection dir, String requestId, String headers, String format)
-    {
-        try
-        {
-            if (!Files.deleteIfExists(getPath(dir, requestId, headers)))
-            {
-                logger.warn(format, dir.name().toLowerCase(), requestId);
-            }
-        }
-        catch (IOException exc)
-        {
-            logger.warn("Error deleting transient file {}", requestId, exc);
-        }
-    }
-
-    private String getPoolKey(ServerDirection dir, CharSequence id)
-    {
-        return id + "_" + dir.name();
-    }
-
-    private Path getPath(ServerDirection dir, CharSequence requestId, String suffix)
-    {
-        return basePath.resolve(requestId + "_" + dir.name().toLowerCase() + "." + suffix);
-    }
-
-    @Override
-    public Optional<BodyProvider> getBody(ServerDirection dir, String id)
-    {
-        final CharSequence contentEncoding = getHeaders(dir, id)
-                .orElseThrow(() -> new IllegalArgumentException("Missing headers for " + id))
-                .getFirst(HttpHeaders.CONTENT_ENCODING);
-        final DataState state = statePool.get(getPoolKey(dir, id));
-        if (state == null) return Optional.empty();
-
-        if (state.memoryBuffer != null)
-        {
-            return Optional.of(new BodyProvider(state.memoryBuffer.toByteArray(), contentEncoding));
-        }
-        return Optional.of(new BodyProvider(getPath(dir, id, "body"), contentEncoding));
-    }
-
-    public void archive(WebExchangeDataProvider data, final Path archiveDir)
-    {
-        final String requestId = data.getRequestId();
-        archive(data, ServerDirection.REQUEST, archiveDir);
-        archive(data, ServerDirection.RESPONSE, archiveDir);
-    }
-
-    public void persistForError(String requestId)
-    {
-        persistDirection(ServerDirection.REQUEST, requestId);
-        persistDirection(ServerDirection.RESPONSE, requestId);
-    }
-
-    private void persistDirection(ServerDirection dir, String requestId)
-    {
-        final String key = getPoolKey(dir, requestId);
-        final DataState state = statePool.get(key);
-
-        if (state != null && state.memoryBuffer() != null)
-        {
-            // It was in RAM, move it to disk so it survives a bit longer
-            try
-            {
-                Path errorPath = basePath.resolve("error_" + requestId + "_" + dir.name().toLowerCase() + ".body");
-                Files.write(errorPath, state.memoryBuffer().toByteArray());
-                logger.error("Logger failed. Saved RAM buffer to {}", errorPath);
-            }
-            catch (IOException e)
-            {
-                logger.error("Double failure: Could not even save RAM buffer to disk!", e);
-            }
-        }
-    }
-
-
-    private void archive(WebExchangeDataProvider data, ServerDirection direction, Path archiveDir)
-    {
-        final String requestId = data.getRequestId();
-        getHeaders(direction, requestId)
-                .ifPresent(headers -> archiveCombined(data, direction, headers, getBody(direction, requestId).orElse(BodyProvider.NONE), archiveDir));
-
-    }
-
-    private void archiveCombined(WebExchangeDataProvider data, ServerDirection dir, GatewayHeaders headers, BodyProvider bodyProvider, Path archiveDir)
-    {
-        final String requestId = data.getRequestId();
-        final String fileName = requestId + "_" + dir.name().toLowerCase() + ".raw";
-        final Path target = archiveDir.resolve(fileName);
-
-        try (FileChannel out = FileChannel.open(target,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.TRUNCATE_EXISTING
-        ))
-        {
-            // HTTP line
-            writeFully(out, ByteBuffer.wrap(buildStartLine(data, dir).getBytes(StandardCharsets.UTF_8)));
-
-            // Headers
-            byte[] headerBytes = serialize(headers);
-            writeFully(out, ByteBuffer.wrap(headerBytes));
-            writeFully(out, ByteBuffer.wrap("\r\n".getBytes(StandardCharsets.US_ASCII)));
-
-            // Body (zero copy)
-            if (bodyProvider.file() != null && Files.exists(bodyProvider.file()))
-            {
-                try (FileChannel in = FileChannel.open(bodyProvider.file(), StandardOpenOption.READ))
-                {
-                    // transferTo appends at 'out's current position
-                    long totalTransferred = 0;
-                    long size = in.size();
-                    while (totalTransferred < size)
-                    {
-                        totalTransferred += in.transferTo(totalTransferred, size - totalTransferred, out);
-                    }
-                }
-            }
-            // Handle memory-based bodies if they exist
-            else if (bodyProvider.bytes() != null)
-            {
-                writeFully(out, ByteBuffer.wrap(bodyProvider.bytes()));
-            }
-
-            logger.debug("Archived combined {} for {}", fileName, requestId);
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException("Failed to archive " + requestId, e);
-        }
-    }
-
-    private String buildStartLine(WebExchangeDataProvider data, ServerDirection dir)
-    {
-        if (dir == ServerDirection.REQUEST)
-        {
-            return String.format("%s %s %s\r\n",
-                    data.getMethod(),
-                    data.getUri(),
-                    data.getProtocol()
-            );
+            spillToDisk(payload, id, dir, data);
         }
         else
         {
-            return String.format("%s %d %s\r\n",
-                    "HTTP/1.1",
-                    data.getStatusCode(),
-                    getReasonPhrase(data.getStatusCode())
-            );
+            payload.memoryBuffer.put(data);
         }
     }
 
-    private String getReasonPhrase(int code)
+    private void safeWrite(FileChannel fc, ByteBuffer data, CharSequence id)
     {
-        return "Status " + code;
+        try
+        {
+            while (data.hasRemaining())
+            {
+                if (fc.write(data) == 0) Thread.onSpinWait();
+            }
+        }
+        catch (IOException e)
+        {
+            logger.error("I/O Error {}: {}", id, e.getMessage());
+        }
     }
 
-    // Helper record to manage the toggle between RAM and Disk
-    private record DataState(
-            ByteArrayOutputStream memoryBuffer,
-            FileChannel channel,
-            AtomicLong position
-    )
+    private void spillToDisk(PayloadState payload, CharSequence id, ServerDirection dir, ByteBuffer incoming)
     {
+        final Path tempFile = tempDir.resolve(id + "_" + dir.name().toLowerCase() + ".raw");
+        try
+        {
+            // Hot Path: Open is the bottleneck
+            payload.fileChannel = FileChannel.open(tempFile, CREATE_OPTIONS);
+
+            payload.memoryBuffer.flip();
+            safeWrite(payload.fileChannel, payload.memoryBuffer, id);
+            safeWrite(payload.fileChannel, incoming, id);
+            payload.memoryBuffer = null;
+        }
+        catch (IOException e)
+        {
+            logger.error("Spill failed {}: {}", id, e.getMessage());
+        }
+    }
+
+    @Override
+    public void complete(CharSequence id)
+    {
+        final RequestState state = activeRequests.remove(id);
+        if (state != null)
+        {
+            finalizePayload(id, ServerDirection.REQUEST, state.request);
+            finalizePayload(id, ServerDirection.RESPONSE, state.response);
+        }
+    }
+
+    private void finalizePayload(CharSequence id, ServerDirection dir, PayloadState payload)
+    {
+        synchronized (payload)
+        {
+            final String requestId = id.toString();
+            final Path shardDir = layoutStrategy.resolveAndPrepare(this.archiveDir, requestId);
+            final Path finalPath = shardDir.resolve(requestId + "_" + dir.name().toLowerCase() + ".raw");
+
+            try
+            {
+                if (payload.fileChannel != null)
+                {
+                    payload.fileChannel.close();
+                    Files.move(tempDir.resolve(id + "_" + dir.name().toLowerCase() + ".raw"), finalPath, StandardCopyOption.ATOMIC_MOVE);
+                }
+                else if (payload.memoryBuffer != null)
+                {
+                    payload.memoryBuffer.flip();
+                    if (payload.memoryBuffer.hasRemaining())
+                    {
+                        // This 'open' is also part of that 61.5%!
+                        try (FileChannel out = FileChannel.open(finalPath, FINAL_OPTIONS))
+                        {
+                            safeWrite(out, payload.memoryBuffer, id);
+                        }
+                    }
+                }
+            }
+            catch (IOException e)
+            {
+                logger.error("Finalize failed {}: {}", requestId, e.getMessage());
+            }
+        }
+    }
+
+    private void putAscii(ByteBuffer buffer, CharSequence s)
+    {
+        for (int i = 0, len = s.length(); i < len; i++) buffer.put((byte) s.charAt(i));
+    }
+
+    private static class RequestState
+    {
+        final PayloadState request;
+        final PayloadState response;
+
+        RequestState(int bufSize)
+        {
+            this.request = new PayloadState(bufSize);
+            this.response = new PayloadState(bufSize);
+        }
+
+        PayloadState getPayload(ServerDirection dir)
+        {
+            return dir == ServerDirection.REQUEST ? request : response;
+        }
+    }
+
+    private static class PayloadState
+    {
+        ByteBuffer memoryBuffer;
+        FileChannel fileChannel;
+
+        PayloadState(int bufSize)
+        {
+            this.memoryBuffer = ByteBuffer.allocateDirect(bufSize);
+        }
     }
 }

@@ -5,8 +5,6 @@ import java.net.URI;
 import java.nio.file.Paths;
 import java.util.List;
 
-import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -16,10 +14,12 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
-import com.ethlo.venturi.core.DataBufferRepository;
 import com.ethlo.venturi.core.DefaultDataBufferRepository;
+import com.ethlo.venturi.core.GatewayExchangeDataWriter;
 import com.ethlo.venturi.core.filters.CorrelationIdFilter;
+import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
 import com.ethlo.venturi.core.predicates.RegexPathPredicate;
+import com.ethlo.venturi.core.storage.ShardedStorageLayoutStrategy;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -36,7 +36,7 @@ public final class VenturiMain
 
     public static void main(String[] args) throws IOException
     {
-        final URI target = URI.create("http://localhost:8090/baz.txt");
+        final URI target = URI.create("http://localhost:8090/bar.txt");
 
         final ProxyClient proxyClient = new LoadBalancingProxyClient()
                 .setConnectionsPerThread(1000) // Huge pool for 100k/sec
@@ -85,7 +85,8 @@ public final class VenturiMain
             exchange.getResponseSender().send("OK");
         };
 
-        final DataBufferRepository repository = new DefaultDataBufferRepository(Paths.get("/tmp/venturi/logs"), 0L);
+        final GatewayExchangeDataWriter repository = new DefaultDataBufferRepository(Paths.get("/tmp/venturi"), 64_000, new ShardedStorageLayoutStrategy());
+
         // Add it to your PathHandler as a separate path
         final HttpHandler rootHandler = Handlers.path()
                 .addPrefixPath("/foobar", new VenturiUndertowHandler(route, proxyHandler, repository))

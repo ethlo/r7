@@ -1,6 +1,7 @@
 package com.ethlo.venturi.api;
 
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
 public interface GatewayResponse
 {
@@ -10,16 +11,18 @@ public interface GatewayResponse
     void setStatus(int status);
 
     /**
-     * Registers a target to receive a copy of the response body
-     * as it is streamed back from the upstream server.
+     * Receives the raw ByteBuffers as they flow through the engine.
+     * The engine guarantees the buffer is in 'read mode', i.e. ready for a writ operation.
      */
-    void addStreamListener(OutputStream out);
+    void addBodyListener(Consumer<ByteBuffer> listener);
 
     /**
      * Terminate the request here and return a fixed body.
      * This signals the engine to NOT call the upstream.
      */
-    void localResponse(byte[] body, CharSequence contentType);
+    void localResponse(ByteBuffer body);
 
     boolean isCommitted();
+
+    int status();
 }

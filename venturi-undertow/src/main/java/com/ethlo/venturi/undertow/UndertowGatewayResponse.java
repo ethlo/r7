@@ -1,12 +1,11 @@
 package com.ethlo.venturi.undertow;
 
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayResponse;
 import io.undertow.server.HttpServerExchange;
-import io.undertow.util.Headers;
 
 public final class UndertowGatewayResponse implements GatewayResponse
 {
@@ -33,18 +32,16 @@ public final class UndertowGatewayResponse implements GatewayResponse
     }
 
     @Override
-    public void addStreamListener(final OutputStream out)
+    public void addBodyListener(final Consumer<ByteBuffer> listener)
     {
         exchange.addResponseWrapper((factory, ex) ->
-                new TeeingStreamSinkConduit(factory.create(), out, ex.getConnection().getBufferPool())
-        );
+                new TeeingStreamSinkConduit(factory.create(), listener));
     }
 
     @Override
-    public void localResponse(final byte[] body, final CharSequence contentType)
+    public void localResponse(final ByteBuffer body)
     {
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, contentType.toString());
-        exchange.getResponseSender().send(ByteBuffer.wrap(body));
+        exchange.getResponseSender().send(body);
         isCommitted = true;
     }
 
@@ -52,5 +49,11 @@ public final class UndertowGatewayResponse implements GatewayResponse
     public boolean isCommitted()
     {
         return isCommitted;
+    }
+
+    @Override
+    public int status()
+    {
+        return exchange.getStatusCode();
     }
 }

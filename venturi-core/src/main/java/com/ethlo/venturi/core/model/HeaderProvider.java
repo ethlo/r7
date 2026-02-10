@@ -1,24 +1,20 @@
 package com.ethlo.venturi.core.model;
 
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.core.DataBufferRepository;
+import com.ethlo.venturi.core.GatewayExchangeDataReader;
 import com.ethlo.venturi.core.ServerDirection;
 import com.ethlo.venturi.core.helpers.SimpleGatewayHeaders;
 
-/**
- * Provides a unified way to access request/response headers,
- * regardless of whether they are in memory or need to be read from disk.
- */
 public class HeaderProvider
 {
-    private final DataBufferRepository repository;
+    private final GatewayExchangeDataReader gatewayExchangeDataReader;
     private final String requestId;
     private final ServerDirection serverDirection;
     private GatewayHeaders cache;
 
-    public HeaderProvider(final DataBufferRepository repository, final String requestId, final ServerDirection serverDirection)
+    public HeaderProvider(final GatewayExchangeDataReader gatewayExchangeDataReader, final String requestId, final ServerDirection serverDirection)
     {
-        this.repository = repository;
+        this.gatewayExchangeDataReader = gatewayExchangeDataReader;
         this.requestId = requestId;
         this.serverDirection = serverDirection;
     }
@@ -27,7 +23,7 @@ public class HeaderProvider
     {
         if (cache == null)
         {
-            cache = repository.getHeaders(serverDirection, requestId).orElseGet(SimpleGatewayHeaders::new);
+            cache = gatewayExchangeDataReader.getHeaders(serverDirection, requestId).orElseGet(SimpleGatewayHeaders::new);
         }
         return cache;
     }

@@ -1,6 +1,8 @@
 package com.ethlo.venturi.api;
 
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
 public interface GatewayRequest
 {
@@ -13,8 +15,8 @@ public interface GatewayRequest
     GatewayHeaders headers();
 
     /**
-     * Registers a target that will receive a copy of all body bytes
-     * as they are processed by the engine.
+     * Receives the raw ByteBuffers as they flow through the engine.
+     * The engine guarantees the buffer is in 'read mode', i.e. ready for a writ operation.
      */
-    void addStreamListener(OutputStream out);
+    void addBodyListener(Consumer<ByteBuffer> listener);
 }
