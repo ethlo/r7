@@ -16,8 +16,8 @@ public final class ShortCircuitFilter implements GatewayFilter
     @Override
     public void beforeUpstream(GatewayExchange exchange)
     {
-        exchange.response().setStatus(HttpStatuses.OK);
+        exchange.response().status(HttpStatuses.OK);
         exchange.response().headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-        exchange.response().localResponse(responseBytes);
+        exchange.response().commitResponse(responseBytes);
     }
 }

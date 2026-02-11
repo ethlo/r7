@@ -8,7 +8,7 @@ public interface GatewayResponse
 
     GatewayHeaders headers();
 
-    void setStatus(int status);
+    void status(int status);
 
     /**
      * Receives the raw ByteBuffers as they flow through the engine.
@@ -20,7 +20,7 @@ public interface GatewayResponse
      * Terminate the request here and return a fixed body.
      * This signals the engine to NOT call the upstream.
      */
-    void localResponse(ByteBuffer body);
+    void commitResponse(ByteBuffer body);
 
     boolean isCommitted();
 

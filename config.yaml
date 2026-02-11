@@ -1,0 +1,15 @@
+routes:
+  - id: secure-api
+    uri: http://127.0.0.1:8090/bar.txt
+    match:
+      and:
+        - pathStartsWith: /foobar
+        - method: GET
+    audit:
+      request: FULL
+      response: HEADERS
+    filters:
+      - type: AddResponseHeader
+        args:
+          name: X-Gateway
+          value: Venturi

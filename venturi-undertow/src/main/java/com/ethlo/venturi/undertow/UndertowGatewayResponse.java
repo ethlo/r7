@@ -26,7 +26,7 @@ public final class UndertowGatewayResponse implements GatewayResponse
     }
 
     @Override
-    public void setStatus(final int status)
+    public void status(final int status)
     {
         exchange.setStatusCode(status);
     }
@@ -39,7 +39,7 @@ public final class UndertowGatewayResponse implements GatewayResponse
     }
 
     @Override
-    public void localResponse(final ByteBuffer body)
+    public void commitResponse(final ByteBuffer body)
     {
         exchange.getResponseSender().send(body);
         isCommitted = true;

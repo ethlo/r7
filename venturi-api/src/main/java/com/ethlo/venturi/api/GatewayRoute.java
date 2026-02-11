@@ -5,7 +5,6 @@ package com.ethlo.venturi.api;
  */
 public interface GatewayRoute
 {
-
     /**
      * Unique identifier for the route
      */

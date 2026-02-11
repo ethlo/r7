@@ -2,8 +2,8 @@ package com.ethlo.venturi.core.predicates;
 
 import java.util.regex.Pattern;
 
-import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayPredicate;
+import com.ethlo.venturi.api.GatewayRequest;
 
 public final class RegexPathPredicate implements GatewayPredicate
 {
@@ -16,8 +16,8 @@ public final class RegexPathPredicate implements GatewayPredicate
     }
 
     @Override
-    public boolean test(GatewayExchange exchange)
+    public boolean test(GatewayRequest request)
     {
-        return pattern.matcher(exchange.request().uri()).matches();
+        return pattern.matcher(request.uri()).matches();
     }
 }

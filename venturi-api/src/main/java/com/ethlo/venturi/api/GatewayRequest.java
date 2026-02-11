@@ -1,6 +1,5 @@
 package com.ethlo.venturi.api;
 
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 

@@ -26,9 +26,9 @@ public final class StandardErrorHandler implements GatewayErrorHandler
         final GatewayResponse response = exchange.response();
         if (!response.isCommitted())
         {
-            response.setStatus(HttpStatuses.SERVICE_UNAVAILABLE);
+            response.status(HttpStatuses.SERVICE_UNAVAILABLE);
             response.headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
-            response.localResponse(ByteBuffer.wrap(jsonError.getBytes()));
+            response.commitResponse(ByteBuffer.wrap(jsonError.getBytes()));
         }
     }
 }

@@ -18,9 +18,9 @@ public final class RequireAuthorizationHeaderFilter implements GatewayFilter
         if (sig == null || !sig.startsWith("Bearer ") || !sig.startsWith("Basic "))
         {
             final GatewayResponse response = exchange.response();
-            response.setStatus(HttpStatuses.UNAUTHORIZED);
+            response.status(HttpStatuses.UNAUTHORIZED);
             response.headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            response.localResponse(ByteBuffer.wrap("Unauthorized".getBytes()));
+            response.commitResponse(ByteBuffer.wrap("Unauthorized".getBytes()));
         }
     }
 }

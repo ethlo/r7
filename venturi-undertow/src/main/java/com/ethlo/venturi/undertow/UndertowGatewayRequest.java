@@ -33,7 +33,7 @@ public final class UndertowGatewayRequest implements GatewayRequest
     @Override
     public CharSequence path()
     {
-        return exchange.getRelativePath();
+        return exchange.getRequestPath();
     }
 
     @Override
@@ -46,5 +46,10 @@ public final class UndertowGatewayRequest implements GatewayRequest
     public void addBodyListener(final Consumer<ByteBuffer> listener)
     {
         exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), listener));
+    }
+
+    public HttpServerExchange getExchange()
+    {
+        return exchange;
     }
 }

@@ -1,32 +1,27 @@
 package com.ethlo.venturi.undertow;
 
 import java.io.IOException;
-import java.net.URI;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
 
-import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.api.GatewayPredicate;
-import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.config.RouteRegistry;
+import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
-import com.ethlo.venturi.core.DefaultDataBufferRepository;
+import com.ethlo.venturi.core.DefaultGatewayExchangeDataWriter;
 import com.ethlo.venturi.core.GatewayExchangeDataWriter;
-import com.ethlo.venturi.core.filters.CorrelationIdFilter;
-import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
-import com.ethlo.venturi.core.predicates.RegexPathPredicate;
 import com.ethlo.venturi.core.storage.ShardedStorageLayoutStrategy;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
-import io.undertow.server.handlers.ResponseCodeHandler;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
-import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.Headers;
 
@@ -34,64 +29,45 @@ public final class VenturiMain
 {
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
 
-    public static void main(String[] args) throws IOException
+    private final Map<CharSequence, ProxyHandler> hostProxyCache = new HashMap<>();
+    private final VenturiLoader loader = new VenturiLoader();
+
+    public VenturiMain(Path configFile) throws IOException
     {
-        final URI target = URI.create("http://localhost:8090/bar.txt");
-
-        final ProxyClient proxyClient = new LoadBalancingProxyClient()
-                .setConnectionsPerThread(1000) // Huge pool for 100k/sec
-                .setSoftMaxConnectionsPerThread(800)
-                .setTtl(60000)
-                .addHost(target);
-
-        final ProxyHandler proxyHandler = ProxyHandler.builder()
-                .setProxyClient(proxyClient)
-                .setMaxRequestTime(-1)
-                .setNext(ResponseCodeHandler.HANDLE_404)
-                .build();
-
-        final GatewayRoute route = new GatewayRoute()
-        {
-            @Override
-            public CharSequence id()
-            {
-                return "nitro-route";
-            }
-
-            @Override
-            public CharSequence uri()
-            {
-                return target.toString();
-            }
-
-            @Override
-            public GatewayPredicate predicate()
-            {
-                return new RegexPathPredicate("^/foobar");
-            }
-
-            @Override
-            public Iterable<GatewayFilter> filters()
-            {
-                return List.of(new CorrelationIdFilter(), new StripCacheHeadersFilter());
-                //, new RequireAuthorizationHeaderFilter());
-                // , new GhostProxyFilter());
-            }
-        };
-
         final HttpHandler benchMarkHandler = exchange -> {
             exchange.setStatusCode(HttpStatuses.OK);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send("OK");
         };
 
-        final GatewayExchangeDataWriter repository = new DefaultDataBufferRepository(Paths.get("/tmp/venturi"), 64_000, new ShardedStorageLayoutStrategy());
+        final GatewayExchangeDataWriter gatewayExchangeDataWriter = new DefaultGatewayExchangeDataWriter(Paths.get("/tmp/venturi"), 64_000, new ShardedStorageLayoutStrategy());
 
         // Add it to your PathHandler as a separate path
-        final HttpHandler rootHandler = Handlers.path()
-                .addPrefixPath("/foobar", new VenturiUndertowHandler(route, proxyHandler, repository))
-                .addExactPath("/benchmark", benchMarkHandler);
+        final RouteRegistry routeRegistry = new RouteRegistry();
 
+        loader.load(configFile, routeRegistry, (def, dataRoute) -> {
+                    // Resolve or create the ProxyHandler for this host
+                    final ProxyHandler proxyHandler = hostProxyCache.computeIfAbsent(dataRoute.uri(), uri -> {
+                                final LoadBalancingProxyClient client = new LoadBalancingProxyClient()
+                                        .addHost(java.net.URI.create(uri.toString()))
+                                        .setConnectionsPerThread(1000)
+                                        .setTtl(60000);
+
+                                return ProxyHandler.builder()
+                                        .setProxyClient(client)
+                                        .setMaxRequestTime(-1)
+                                        .build();
+                            }
+                    );
+
+                    // Return the Executable version that bridges Core to Undertow
+                    return new VenturiExecutableRoute(dataRoute, proxyHandler);
+                }
+        );
+
+        final HttpHandler rootHandler = Handlers.path()
+                .addExactPath("/benchmark", benchMarkHandler)
+                .addPrefixPath("/", new VenturiUndertowHandler(routeRegistry, gatewayExchangeDataWriter));
 
         final Undertow.Builder builder = Undertow.builder()
                 .addHttpListener(9999, "0.0.0.0")
@@ -100,7 +76,13 @@ public final class VenturiMain
         final Undertow server = builder.build();
         server.start();
 
-        logger.info("🚀 " + server.getListenerInfo().getFirst().getAddress() + "  -> " + target);
+        logger.info("🚀 {}", server.getListenerInfo().getFirst().getAddress());
+    }
+
+    static void main(String[] args) throws IOException
+    {
+        final Path configFile = Paths.get(args.length == 0 ? "config.yaml" : args[0]);
+        new VenturiMain(configFile);
     }
 
     private static void performanceTune(Undertow.Builder builder)

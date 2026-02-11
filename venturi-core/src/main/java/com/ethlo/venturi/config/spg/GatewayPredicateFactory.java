@@ -20,7 +20,7 @@ public interface GatewayPredicateFactory
     GatewayPredicate create(Map<String, String> args);
 
     /**
-     * The name used in YAML (e.g., "Path", "Header", "Method")
+     * The type used in YAML (e.g., "Path", "Header", "Method")
      */
     String getName();
 }

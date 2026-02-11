@@ -16,9 +16,9 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.core.storage.StorageLayoutStrategy;
 
-public class DefaultDataBufferRepository implements GatewayExchangeDataWriter
+public class DefaultGatewayExchangeDataWriter implements GatewayExchangeDataWriter
 {
-    private static final Logger logger = LoggerFactory.getLogger(DefaultDataBufferRepository.class);
+    private static final Logger logger = LoggerFactory.getLogger(DefaultGatewayExchangeDataWriter.class);
     private static final byte[] CRLF = {13, 10};
     private static final byte COLON_SPACE = 58;
     private static final byte SPACE = 32;
@@ -35,7 +35,7 @@ public class DefaultDataBufferRepository implements GatewayExchangeDataWriter
     private final int thresholdBytes;
     private final Map<CharSequence, RequestState> activeRequests = new ConcurrentHashMap<>(16384);
 
-    public DefaultDataBufferRepository(Path baseDir, int thresholdBytes, StorageLayoutStrategy strategy) throws IOException
+    public DefaultGatewayExchangeDataWriter(Path baseDir, int thresholdBytes, StorageLayoutStrategy strategy) throws IOException
     {
         this.tempDir = baseDir.resolve("processing");
         this.archiveDir = baseDir.resolve("completed");
