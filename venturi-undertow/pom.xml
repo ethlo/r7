@@ -36,4 +36,32 @@
             <scope>compile</scope>
         </dependency>
     </dependencies>
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <configuration>
+                            <imageName>venturi-server</imageName>
+                            <mainClass>com.ethlo.venturi.undertow.VenturiMain</mainClass>
+                            <buildArgs>
+                                <buildArg>--no-fallback</buildArg>
+                                <buildArg>-H:+StaticExecutableWithDynamicLibC</buildArg>
+                                <buildArg>-H:+AllowIncompleteClasspath</buildArg>
+                                <buildArg>--install-exit-handlers</buildArg>
+                                <buildArg>--initialize-at-build-time=ch.qos.logback,org.slf4j,org.jboss.logging,com.ethlo.venturi.config</buildArg>
+
+                                <buildArg>--initialize-at-build-time=io.undertow.util,io.undertow.client.http</buildArg>
+
+                                <buildArg>--initialize-at-run-time=io.undertow.server.protocol.http.AlpnOpenListener,org.xnio.nio.NioXnio</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

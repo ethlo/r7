@@ -2,6 +2,10 @@ package com.ethlo.venturi.api;
 
 public interface GatewayFilter
 {
+    default void init(GatewayExchange exchange)
+    {
+
+    }
 
     /**
      * Before we call upstream service

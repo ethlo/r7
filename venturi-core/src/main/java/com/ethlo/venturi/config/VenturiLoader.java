@@ -8,13 +8,24 @@ import java.util.function.BiFunction;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 public final class VenturiLoader
 {
-    private final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-    private final FilterBuilder filterBuilder = new FilterBuilder();
+    private final ObjectMapper mapper;
+    private final FilterBuilder filterBuilder;
+
+    public VenturiLoader()
+    {
+        this.mapper = YAMLMapper.builder()
+                .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .build();
+        filterBuilder = new FilterBuilder();
+    }
 
     /**
      * @param configurator Takes the raw RouteDefinition and returns a server-specific ExecutableRoute
@@ -22,23 +33,21 @@ public final class VenturiLoader
     public void load(Path yamlFile, RouteRegistry registry,
                      BiFunction<RouteDefinition, GatewayRoute, ExecutableRoute> configurator) throws IOException
     {
-
-        final VenturiConfig config = mapper.readValue(yamlFile.toFile(), VenturiConfig.class);
-
+        final VenturiConfig config = load(yamlFile, VenturiConfig.class);
         final List<ExecutableRoute> routes = config.routes.stream()
                 .map(def -> {
 
-                    final List<GatewayFilter> instantiatedFilters = def.filters().stream()
-                            .map(filterBuilder::resolveFilter)
-                            .toList();
-                    // 1. Build the API-level data route
+                    final List<GatewayFilter> instantiatedFilters = filterBuilder.resolve(def);
                     final GatewayRoute dataRoute = new DefaultGatewayRoute(def.id(), def.uri(), def.match().build(), instantiatedFilters);
-
-                    // 2. Use the provided function to "upgrade" it to an ExecutableRoute
                     return configurator.apply(def, dataRoute);
                 })
                 .toList();
 
         registry.updateRoutes(routes);
+    }
+
+    public <T> T load(Path yamlFile, Class<T> type)
+    {
+        return mapper.readValue(yamlFile, type);
     }
 }

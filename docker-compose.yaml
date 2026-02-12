@@ -1,0 +1,35 @@
+services:
+  venturi:
+    ports:
+      - "9999:9999"
+    image: ethlo-venturi
+    container_name: ethlo-venturi
+    restart: unless-stopped
+    networks:
+      - gateway-net
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx128m -Xms128m -Xss256k
+    volumes:
+      - ./server.yaml:/app/server.yaml
+      - ./routes.yaml:/app/routes.yaml
+      - ./logback.xml:/app/logback.xml
+    deploy:
+      resources:
+        limits:
+          memory: 500M # Hard ceiling (kill-zone)
+          #cpus: '8.0'
+
+
+  test-backend:
+    container_name: test-backend
+    ports:
+      - "11111:80"
+    networks:
+      - gateway-net
+    image: nginx:alpine
+    # No ports exposed to host - keeps it private/fast
+    command: /bin/sh -c "echo 'OK' > /usr/share/nginx/html/foo.txt && nginx -g 'daemon off;'"
+
+networks:
+  gateway-net:
+    driver: bridge

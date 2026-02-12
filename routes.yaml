@@ -1,13 +1,13 @@
 routes:
-  - id: secure-api
-    uri: http://127.0.0.1:8090/bar.txt
+  - id: performance test to nginx
+    uri: http://test-backend:80
     match:
       and:
-        - pathStartsWith: /foobar
+        - pathStartsWith:
         - method: GET
     audit:
-      request: FULL
-      response: HEADERS
+      request: NONE
+      response: NONE
     filters:
       - type: AddResponseHeader
         args:

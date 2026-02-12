@@ -5,8 +5,6 @@ import java.util.List;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.constants.VenturiConstants;
-import com.ethlo.venturi.core.AuditLevel;
 import com.ethlo.venturi.core.filters.CorrelationIdFilter;
 import com.ethlo.venturi.core.filters.RequireAuthorizationHeaderFilter;
 import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
@@ -14,14 +12,10 @@ import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
 public class FilterBuilder
 {
 
-    public List<GatewayFilter> build(RouteDefinition routeDef)
+    public List<GatewayFilter> resolve(RouteDefinition routeDef)
     {
-        List<GatewayFilter> filters = new ArrayList<>();
+        final List<GatewayFilter> filters = new ArrayList<>();
 
-        // Always inject the Audit Filter first to stamp the exchange
-        filters.add(createAuditFilter(routeDef.audit()));
-
-        // Add user-defined filters from YAML
         if (routeDef.filters() != null)
         {
             for (FilterDefinition f : routeDef.filters())
@@ -31,23 +25,6 @@ public class FilterBuilder
         }
 
         return filters;
-    }
-
-    private GatewayFilter createAuditFilter(AuditDefinition audit)
-    {
-        final AuditLevel req = audit.request;
-        final AuditLevel res = audit.response;
-
-        return new GatewayFilter()
-        {
-            @Override
-            public void beforeUpstream(GatewayExchange exchange)
-            {
-                // Stamp the requirements onto the exchange attributes
-                exchange.attributes().put(VenturiConstants.AUDIT_LEVEL_REQUEST, req);
-                exchange.attributes().put(VenturiConstants.AUDIT_LEVEL_RESPONSE, res);
-            }
-        };
     }
 
     public GatewayFilter resolveFilter(FilterDefinition def)

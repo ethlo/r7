@@ -9,10 +9,10 @@ import java.util.function.Consumer;
 
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.config.AuditDefinition;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.constants.HttpHeaders;
 import com.ethlo.venturi.constants.HttpStatuses;
-import com.ethlo.venturi.constants.VenturiConstants;
 import com.ethlo.venturi.core.AuditLevel;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.GatewayExchangeDataWriter;
@@ -62,6 +62,17 @@ public final class VenturiUndertowHandler implements HttpHandler
         exchange.dispatch(executor, () ->
                 {
                     final CharSequence requestId = requestIdGenerator.generate();
+                    exchange.addExchangeCompleteListener((ex, next) -> {
+                        try
+                        {
+                            gatewayExchangeDataWriter.complete(requestId);
+                        } finally
+                        {
+                            // Critical
+                            next.proceed();
+                        }
+                    });
+
                     final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
                     final MapGatewayAttributes attrs = new MapGatewayAttributes();
                     final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
@@ -72,45 +83,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void handleRoute(ExecutableRoute route, GatewayExchange gatewayExchange)
     {
-        // Pre-calculate audit flags once per exchange
-        final boolean captureReqHeaders = shouldCaptureRequestHeaders(gatewayExchange);
-        final boolean captureReqBody = shouldCaptureRequestBody(gatewayExchange);
-        final boolean captureResHeaders = shouldCaptureResponseHeaders(gatewayExchange);
-        final boolean captureResBody = shouldCaptureResponseBody(gatewayExchange);
-
-        // Capture Request Headers immediately
-        if (captureReqHeaders)
-        {
-            final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-            gatewayExchangeDataWriter.begin(ServerDirection.REQUEST, gatewayExchange.requestId(), startLine, gatewayExchange.request().headers());
-        }
-
-        // Listener for Request Body
-        if (captureReqBody)
-        {
-            gatewayExchange.request().addBodyListener(buffer -> gatewayExchangeDataWriter.writeBody(ServerDirection.REQUEST, gatewayExchange.requestId(), buffer));
-        }
-
-        // Optimized Response Listener
-        gatewayExchange.response().addBodyListener(new Consumer<>()
-        {
-            private boolean headersWritten = false;
-
-            @Override
-            public void accept(final ByteBuffer buffer)
-            {
-                if (!headersWritten && captureResHeaders)
-                {
-                    final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                    gatewayExchangeDataWriter.begin(ServerDirection.RESPONSE, gatewayExchange.requestId(), startLine, gatewayExchange.response().headers());
-                    headersWritten = true;
-                }
-                if (captureResBody)
-                {
-                    gatewayExchangeDataWriter.writeBody(ServerDirection.RESPONSE, gatewayExchange.requestId(), buffer);
-                }
-            }
-        });
+        setupAuditing(gatewayExchange, route.routeDefinition().audit());
 
         try
         {
@@ -118,29 +91,76 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
         catch (Throwable t)
         {
+            // If everything fails before the proxy jump
             errorHandler.handleError(gatewayExchange, t);
         }
     }
 
-    private boolean shouldCaptureRequestBody(GatewayExchange gatewayExchange)
+    private void setupAuditing(GatewayExchange gatewayExchange, final AuditDefinition audit)
     {
-        return AuditLevel.FULL == gatewayExchange.attributes().get(VenturiConstants.AUDIT_LEVEL_REQUEST);
+        final CharSequence requestId = gatewayExchange.requestId();
+
+        // Capture Request Headers immediately
+        if (shouldCaptureRequestHeaders(audit))
+        {
+            final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
+            gatewayExchangeDataWriter.begin(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
+        }
+
+        // Attach Request Body Listener
+        if (shouldCaptureRequestBody(audit))
+        {
+            gatewayExchange.request().addBodyListener(buffer ->
+                    gatewayExchangeDataWriter.writeBody(ServerDirection.REQUEST, requestId, buffer));
+        }
+
+        // Attach Response Listener (Headers + Body)
+        final boolean captureResHeaders = shouldCaptureResponseHeaders(audit);
+        final boolean captureResBody = shouldCaptureResponseBody(audit);
+
+        if (captureResHeaders || captureResBody)
+        {
+            gatewayExchange.response().addBodyListener(new Consumer<>()
+            {
+                private boolean headersWritten = false;
+
+                @Override
+                public void accept(final ByteBuffer buffer)
+                {
+                    if (!headersWritten && captureResHeaders)
+                    {
+                        final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
+                        gatewayExchangeDataWriter.begin(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
+                        headersWritten = true;
+                    }
+                    if (captureResBody)
+                    {
+                        gatewayExchangeDataWriter.writeBody(ServerDirection.RESPONSE, requestId, buffer);
+                    }
+                }
+            });
+        }
+
+
     }
 
-    private boolean shouldCaptureResponseBody(GatewayExchange gatewayExchange)
+    private boolean shouldCaptureRequestBody(AuditDefinition auditDefinition)
     {
-        return AuditLevel.FULL == gatewayExchange.attributes().get(VenturiConstants.AUDIT_LEVEL_RESPONSE);
+        return AuditLevel.FULL == auditDefinition.request;
     }
 
-    private boolean shouldCaptureRequestHeaders(GatewayExchange gatewayExchange)
+    private boolean shouldCaptureResponseBody(AuditDefinition auditDefinition)
     {
-        final AuditLevel requestedLevel = gatewayExchange.attributes().get(VenturiConstants.AUDIT_LEVEL_REQUEST);
-        return AuditLevel.FULL == requestedLevel || AuditLevel.HEADERS == requestedLevel;
+        return AuditLevel.FULL == auditDefinition.request;
     }
 
-    private boolean shouldCaptureResponseHeaders(GatewayExchange gatewayExchange)
+    private boolean shouldCaptureRequestHeaders(AuditDefinition auditDefinition)
     {
-        final AuditLevel requestedLevel = gatewayExchange.attributes().get(VenturiConstants.AUDIT_LEVEL_RESPONSE);
-        return AuditLevel.FULL == requestedLevel || AuditLevel.HEADERS == requestedLevel;
+        return AuditLevel.FULL == auditDefinition.request || AuditLevel.HEADERS == auditDefinition.request;
+    }
+
+    private boolean shouldCaptureResponseHeaders(AuditDefinition auditDefinition)
+    {
+        return AuditLevel.FULL == auditDefinition.response || AuditLevel.HEADERS == auditDefinition.response;
     }
 }

@@ -1,0 +1,35 @@
+# server
+host: 0.0.0.0
+port: 9999
+
+# Tuning for the XNIO Worker layer
+worker:
+  io_threads: 8
+  task_core_threads: 64
+  task_max_threads: 128
+  stack_size: 262144 # 256KB
+  connection_high_water: 10000
+  connection_low_water: 9000
+
+# Tuning for the Socket layer
+socket:
+  tcp_nodelay: true
+  reuse_addresses: true
+  backlog: 1000
+
+# Other
+options:
+  enable_http2: true
+  always_set_keep_alive: true
+  buffer_size: 16384 # 16KB
+  direct_buffers: true
+
+proxy:
+  connections_per_thread: 100
+  ttl: 30000
+  max_request_time: 60000
+
+# Disk/memory settings for audit and logging
+storage:
+  temp_dir: /tmp/venturi
+  memory_threshold: 65536 # 64KB (bytes)
