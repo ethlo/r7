@@ -11,6 +11,8 @@ public interface GatewayRequest
 
     CharSequence path();
 
+    CharSequence queryParams();
+
     GatewayHeaders headers();
 
     /**

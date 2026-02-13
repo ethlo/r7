@@ -37,6 +37,12 @@ public final class UndertowGatewayRequest implements GatewayRequest
     }
 
     @Override
+    public CharSequence queryParams()
+    {
+        return exchange.getDecodedQueryString();
+    }
+
+    @Override
     public GatewayHeaders headers()
     {
         return headers;
