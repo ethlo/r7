@@ -21,10 +21,13 @@ public final class HttpHeaders
     public static final CharSequence IF_NONE_MATCH = "If-None-Match";
     public static final CharSequence PRAGMA = "Pragma";
 
+    public static final CharSequence RETRY_AFTER = "Retry-After";
+
     // Gateway Custom Headers (Standardized)
     public static final String X_CORRELATION_ID = "X-Correlation-Id";
     public static final String X_REQUEST_ID = "X-Request-Id";
     public static final String X_FORWARDED_FOR = "X-Forwarded-For";
+
 
     private HttpHeaders()
     {
