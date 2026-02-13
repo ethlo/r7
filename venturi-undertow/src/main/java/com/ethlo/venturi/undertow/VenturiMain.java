@@ -1,6 +1,7 @@
 package com.ethlo.venturi.undertow;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -11,23 +12,28 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xnio.Options;
 
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
+import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
 import com.ethlo.venturi.core.DefaultGatewayExchangeDataWriter;
 import com.ethlo.venturi.core.GatewayExchangeDataWriter;
+import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.core.storage.ShardedStorageLayoutStrategy;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
+import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.accesslog.AccessLogHandler;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
+import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.Headers;
 
@@ -49,16 +55,21 @@ public final class VenturiMain
         final VenturiLoader loader = new VenturiLoader();
 
         final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
+        logger.info("Loaded server config: {}", serverConfig);
+
+        final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
         loader.load(configFile, routeRegistry, (def, dataRoute) -> {
                     final ServerConfig.ProxyConfig pConfig = serverConfig.proxy();
 
                     final ProxyHandler proxyHandler = hostProxyCache.computeIfAbsent(dataRoute.uri(), uri ->
                             {
-                                final LoadBalancingProxyClient client = new LoadBalancingProxyClient()
-                                        .addHost(java.net.URI.create(uri.toString()))
+                                final ProxyClient client = new DiagnosticProxyClient(new LoadBalancingProxyClient()
+                                        .addHost(URI.create(uri.toString()))
                                         .setConnectionsPerThread(pConfig.connectionsPerThread())
-                                        .setTtl(pConfig.ttl());
+                                        .setMaxQueueSize(serverConfig.proxy().maxQueueSize())
+                                        .setTtl(pConfig.ttl()), errorHandler
+                                );
 
                                 return ProxyHandler.builder()
                                         .setProxyClient(client)
@@ -67,6 +78,7 @@ public final class VenturiMain
                                         .build();
                             }
                     );
+
 
                     // Return the Executable version that bridges Core <--> Undertow
                     return new VenturiExecutableRoute(def, dataRoute, proxyHandler);
@@ -83,7 +95,7 @@ public final class VenturiMain
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)
-                .addPrefixPath("/", new VenturiUndertowHandler(routeRegistry, gatewayExchangeDataWriter));
+                .addPrefixPath("/", new VenturiUndertowHandler(routeRegistry, gatewayExchangeDataWriter, errorHandler));
 
         final AccessLogHandler accessLogHandler = new AccessLogHandler(
                 rootHandler,
@@ -92,8 +104,9 @@ public final class VenturiMain
                 VenturiMain.class.getClassLoader()
         );
 
-        final Undertow.Builder builder = Undertow.builder()
-                .setHandler(accessLogHandler);
+        final Undertow.Builder builder = Undertow.builder();
+
+        builder.setHandler(accessLogHandler);
 
         configureServer(builder, serverConfig);
 
@@ -117,8 +130,6 @@ public final class VenturiMain
         Instant start = ProcessHandle.current().info().startInstant().orElse(Instant.now());
         Duration uptime = Duration.between(start, Instant.now());
         return uptime.toMillis();
-        //final RuntimeMXBean rb = ManagementFactory.getRuntimeMXBean();
-        //return rb.getUptime();
     }
 
     // MUST be public
@@ -142,9 +153,7 @@ public final class VenturiMain
         {
             JoranConfigurator configurator = new JoranConfigurator();
             configurator.setContext(context);
-            // Important: clear the "build-time" state
             context.reset();
-            // Load the XML from the classpath (src/main/resources)
             configurator.doConfigure(configFilePath.toFile());
         }
         catch (JoranException je)
@@ -161,21 +170,21 @@ public final class VenturiMain
 
         builder.addHttpListener(config.port(), config.host())
                 // Socket Layer
-                .setSocketOption(org.xnio.Options.TCP_NODELAY, socket.tcpNodelay())
-                .setSocketOption(org.xnio.Options.REUSE_ADDRESSES, socket.reuseAddresses())
-                .setSocketOption(org.xnio.Options.BACKLOG, socket.backlog())
+                .setSocketOption(Options.TCP_NODELAY, socket.tcpNodelay())
+                .setSocketOption(Options.REUSE_ADDRESSES, socket.reuseAddresses())
+                .setSocketOption(Options.BACKLOG, socket.backlog())
 
                 // Worker Layer
-                .setWorkerOption(org.xnio.Options.WORKER_IO_THREADS, worker.ioThreads())
-                .setWorkerOption(org.xnio.Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
-                .setWorkerOption(org.xnio.Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
-                .setWorkerOption(org.xnio.Options.STACK_SIZE, worker.stackSize())
-                .setWorkerOption(org.xnio.Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
-                .setWorkerOption(org.xnio.Options.CONNECTION_LOW_WATER, worker.connectionLowWater())
+                .setWorkerOption(Options.WORKER_IO_THREADS, worker.ioThreads())
+                .setWorkerOption(Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
+                .setWorkerOption(Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
+                .setWorkerOption(Options.STACK_SIZE, worker.stackSize())
+                .setWorkerOption(Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
+                .setWorkerOption(Options.CONNECTION_LOW_WATER, worker.connectionLowWater())
 
                 // Protocol & Memory
-                .setServerOption(io.undertow.UndertowOptions.ENABLE_HTTP2, opts.enableHttp2())
-                .setServerOption(io.undertow.UndertowOptions.ALWAYS_SET_KEEP_ALIVE, opts.alwaysSetKeepAlive())
+                .setServerOption(UndertowOptions.ENABLE_HTTP2, opts.enableHttp2())
+                .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, opts.alwaysSetKeepAlive())
                 .setBufferSize(opts.bufferSize())
                 .setDirectBuffers(opts.directBuffers());
     }

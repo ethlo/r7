@@ -10,7 +10,6 @@ import com.ethlo.venturi.core.proxy.NoAvailableTargetException;
 import com.ethlo.venturi.core.proxy.ProxyConnectionException;
 import com.ethlo.venturi.core.proxy.ProxyPoolExhaustedException;
 import io.undertow.server.HttpServerExchange;
-import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
 import io.undertow.server.handlers.proxy.ProxyCallback;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyConnection;
@@ -21,10 +20,10 @@ public class DiagnosticProxyClient implements ProxyClient
     // Key to track if we've already logged an error for this exchange
     private static final AttachmentKey<Boolean> ERROR_HANDLED = AttachmentKey.create(Boolean.class);
 
-    private final LoadBalancingProxyClient delegate;
+    private final ProxyClient delegate;
     private final GatewayErrorHandler gatewayErrorHandler;
 
-    public DiagnosticProxyClient(LoadBalancingProxyClient delegate, final GatewayErrorHandler gatewayErrorHandler)
+    public DiagnosticProxyClient(ProxyClient delegate, final GatewayErrorHandler gatewayErrorHandler)
     {
         this.delegate = delegate;
         this.gatewayErrorHandler = gatewayErrorHandler;

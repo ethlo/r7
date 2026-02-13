@@ -31,9 +31,10 @@ public record ServerConfig(
 
     public record StorageConfig(
             String tempDir,
-            int memoryThreshold,
-            String layoutStrategy
-    ) {}
+            int memoryThreshold
+    )
+    {
+    }
 
     public record OptionsConfig(
             boolean enableHttp2,
@@ -46,7 +47,10 @@ public record ServerConfig(
 
     public record ProxyConfig(
             int connectionsPerThread,
+            int maxQueueSize,
             int ttl,
             int maxRequestTime
-    ) {}
+    )
+    {
+    }
 }

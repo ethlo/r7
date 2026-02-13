@@ -1,6 +1,5 @@
-# server
 host: 0.0.0.0
-port: 9999
+port: 8888
 
 # Tuning for the XNIO Worker layer
 worker:
@@ -25,7 +24,8 @@ options:
   direct_buffers: true
 
 proxy:
-  connections_per_thread: 100
+  connections_per_thread: 50
+  max_queue_size: 500
   ttl: 30000
   max_request_time: 60000
 

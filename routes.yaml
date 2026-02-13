@@ -1,12 +1,13 @@
 routes:
   - id: performance test to nginx
-    uri: http://test-backend:80
+    #uri: http://test-backend:80
+    uri: http://127.0.0.1:11111
     match:
       and:
         - pathStartsWith:
         - method: GET
     audit:
-      request: NONE
+      request: HEADERS
       response: NONE
     filters:
       - type: AddResponseHeader

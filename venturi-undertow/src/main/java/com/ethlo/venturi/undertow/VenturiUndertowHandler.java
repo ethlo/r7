@@ -3,8 +3,6 @@ package com.ethlo.venturi.undertow;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 import com.ethlo.venturi.api.GatewayErrorHandler;
@@ -19,23 +17,25 @@ import com.ethlo.venturi.core.GatewayExchangeDataWriter;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.ServerDirection;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
-import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.util.AttachmentKey;
 
 public final class VenturiUndertowHandler implements HttpHandler
 {
+    static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
+
     private final GatewayExchangeDataWriter gatewayExchangeDataWriter;
-    private final GatewayErrorHandler errorHandler = new StandardErrorHandler();
-    private final Executor executor = Executors.newFixedThreadPool(1_000);
+    private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final RouteRegistry routeRegistry;
 
-    public VenturiUndertowHandler(final RouteRegistry routeRegistry, final GatewayExchangeDataWriter gatewayExchangeDataWriter)
+    public VenturiUndertowHandler(final RouteRegistry routeRegistry, final GatewayExchangeDataWriter gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler)
     {
         this.routeRegistry = routeRegistry;
         this.gatewayExchangeDataWriter = gatewayExchangeDataWriter;
+        this.errorHandler = errorHandler;
     }
 
     private static void sendNotFound(UndertowGatewayResponse res)
@@ -59,26 +59,30 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         final ExecutableRoute route = routeOpt.get();
 
-        exchange.dispatch(executor, () ->
-                {
-                    final CharSequence requestId = requestIdGenerator.generate();
-                    exchange.addExchangeCompleteListener((ex, next) -> {
-                        try
-                        {
-                            gatewayExchangeDataWriter.complete(requestId);
-                        } finally
-                        {
-                            // Critical
-                            next.proceed();
-                        }
-                    });
+        exchange.dispatch(() -> execute(exchange, req, route));
+    }
 
-                    final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
-                    final MapGatewayAttributes attrs = new MapGatewayAttributes();
-                    final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
-                    handleRoute(route, gatewayExchange);
-                }
-        );
+    private void execute(HttpServerExchange exchange, UndertowGatewayRequest req, ExecutableRoute route)
+    {
+        final CharSequence requestId = requestIdGenerator.generate();
+        exchange.addExchangeCompleteListener((ex, next) -> {
+            try
+            {
+                gatewayExchangeDataWriter.complete(requestId);
+            } finally
+            {
+                // Critical
+                next.proceed();
+            }
+        });
+
+        final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
+        final MapGatewayAttributes attrs = new MapGatewayAttributes();
+        final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
+
+        exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
+
+        handleRoute(route, gatewayExchange);
     }
 
     private void handleRoute(ExecutableRoute route, GatewayExchange gatewayExchange)
@@ -140,8 +144,6 @@ public final class VenturiUndertowHandler implements HttpHandler
                 }
             });
         }
-
-
     }
 
     private boolean shouldCaptureRequestBody(AuditDefinition auditDefinition)
