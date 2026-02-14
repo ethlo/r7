@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.ethlo.venturi.api.GatewayRequest;
+import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
 
 public class RouteRegistry
@@ -35,5 +36,10 @@ public class RouteRegistry
             }
         }
         return Optional.empty();
+    }
+
+    public List<? extends GatewayRoute> getRoutes()
+    {
+        return this.routes.get();
     }
 }

@@ -10,6 +10,16 @@ public record ServerConfig(
         StorageConfig storage
 )
 {
+    public ServerConfig host(String host)
+    {
+        return new ServerConfig(host, port, worker, socket, proxy, options, storage);
+    }
+
+    public ServerConfig port(int port)
+    {
+        return new ServerConfig(host, port, worker, socket, proxy, options, storage);
+    }
+
     public record WorkerConfig(
             int ioThreads,
             int taskCoreThreads,

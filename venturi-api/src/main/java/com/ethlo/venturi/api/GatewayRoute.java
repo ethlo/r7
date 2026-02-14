@@ -1,5 +1,7 @@
 package com.ethlo.venturi.api;
 
+import java.util.List;
+
 /**
  * Defines a single routing rule.
  */
@@ -13,7 +15,7 @@ public interface GatewayRoute
     /**
      * The destination where the traffic should be proxied
      */
-    CharSequence uri();
+    List<CharSequence> uri();
 
     /**
      * The logic used to determine if this route matches a request

@@ -51,7 +51,7 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public void addHeader(final CharSequence name, final CharSequence value)
+    public void add(final CharSequence name, final CharSequence value)
     {
         headerMap.add(HttpString.tryFromString(name.toString()), value.toString());
     }

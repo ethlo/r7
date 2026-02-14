@@ -10,7 +10,7 @@ public final class CorrelationIdFilter implements GatewayFilter
     public void beforeUpstream(GatewayExchange exchange)
     {
         final CharSequence requestId = exchange.requestId();
-        exchange.request().headers().addHeader(HttpHeaders.X_CORRELATION_ID, requestId);
-        exchange.response().headers().addHeader(HttpHeaders.X_CORRELATION_ID, requestId);
+        exchange.request().headers().add(HttpHeaders.X_CORRELATION_ID, requestId);
+        exchange.response().headers().add(HttpHeaders.X_CORRELATION_ID, requestId);
     }
 }

@@ -31,7 +31,7 @@ public interface GatewayHeaders
     /**
      * Adds a value to any existing values for this header.
      */
-    void addHeader(CharSequence name, CharSequence value);
+    void add(CharSequence name, CharSequence value);
 
     /**
      * Iterates over every single Name-Value pair.

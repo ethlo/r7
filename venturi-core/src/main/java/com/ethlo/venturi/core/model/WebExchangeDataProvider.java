@@ -3,6 +3,7 @@ package com.ethlo.venturi.core.model;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -159,7 +160,7 @@ public class WebExchangeDataProvider
             if (route != null)
             {
                 m.put("route_id", route.id());
-                m.put("route_uri", route.uri().toString());
+                m.put("route_uri", Arrays.toString(route.uri().toArray()));
             }
 
             // Identity

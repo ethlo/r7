@@ -1,21 +1,23 @@
 package com.ethlo.venturi.undertow;
 
+import java.util.List;
+
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.core.ExecutableRoute;
+import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
-import io.undertow.server.handlers.proxy.ProxyHandler;
 
 public final class VenturiExecutableRoute implements ExecutableRoute
 {
     private final RouteDefinition definition;
     private final GatewayRoute delegate;
-    private final ProxyHandler proxyHandler; // Undertow-specific
+    private final HttpHandler proxyHandler; // Undertow-specific
 
-    public VenturiExecutableRoute(RouteDefinition definition, GatewayRoute delegate, ProxyHandler httpHandler)
+    public VenturiExecutableRoute(RouteDefinition definition, GatewayRoute delegate, HttpHandler httpHandler)
     {
         this.definition = definition;
         this.delegate = delegate;
@@ -42,7 +44,7 @@ public final class VenturiExecutableRoute implements ExecutableRoute
     }
 
     @Override
-    public CharSequence uri()
+    public List<CharSequence> uri()
     {
         return delegate.uri();
     }

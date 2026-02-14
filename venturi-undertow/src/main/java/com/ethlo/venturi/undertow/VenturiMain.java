@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -18,14 +19,13 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.api.GatewayErrorHandler;
+import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
-import com.ethlo.venturi.core.DefaultGatewayExchangeDataWriter;
-import com.ethlo.venturi.core.GatewayExchangeDataWriter;
 import com.ethlo.venturi.core.StandardErrorHandler;
-import com.ethlo.venturi.core.storage.ShardedStorageLayoutStrategy;
+import com.ethlo.venturi.core.storage.mmap.ShardedMmapWriter;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
@@ -41,7 +41,7 @@ public final class VenturiMain
 {
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
 
-    private final Map<CharSequence, ProxyHandler> hostProxyCache = new HashMap<>();
+    private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
 
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
@@ -57,19 +57,25 @@ public final class VenturiMain
         final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
         logger.info("Loaded server config: {}", serverConfig);
 
+        final boolean logProxyError = true;
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
         loader.load(configFile, routeRegistry, (def, dataRoute) -> {
                     final ServerConfig.ProxyConfig pConfig = serverConfig.proxy();
 
-                    final ProxyHandler proxyHandler = hostProxyCache.computeIfAbsent(dataRoute.uri(), uri ->
+                    final HttpHandler proxyHandler = routeProxyCache.computeIfAbsent(dataRoute.id(), uri ->
                             {
-                                final ProxyClient client = new DiagnosticProxyClient(new LoadBalancingProxyClient()
-                                        .addHost(URI.create(uri.toString()))
+                                final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
                                         .setConnectionsPerThread(pConfig.connectionsPerThread())
                                         .setMaxQueueSize(serverConfig.proxy().maxQueueSize())
-                                        .setTtl(pConfig.ttl()), errorHandler
-                                );
+                                        .setTtl(pConfig.ttl());
+
+                                dataRoute.uri().stream()
+                                        .map(CharSequence::toString)
+                                        .map(URI::create)
+                                        .forEach(rawClient::addHost);
+
+                                final ProxyClient client = logProxyError ? new DiagnosticProxyClient(rawClient, errorHandler) : rawClient;
 
                                 return ProxyHandler.builder()
                                         .setProxyClient(client)
@@ -85,13 +91,11 @@ public final class VenturiMain
                 }
         );
 
+        printRouteTable(routeRegistry.getRoutes());
+
         final ServerConfig.StorageConfig storage = serverConfig.storage();
 
-        final GatewayExchangeDataWriter gatewayExchangeDataWriter = new DefaultGatewayExchangeDataWriter(
-                Paths.get(storage.tempDir()),
-                storage.memoryThreshold(),
-                new ShardedStorageLayoutStrategy()
-        );
+        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(Paths.get(storage.tempDir()), 16, 10_000_000);
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)
@@ -112,9 +116,20 @@ public final class VenturiMain
 
         final Undertow server = builder.build();
 
+        final Undertow.Builder target = Undertow.builder();
+        final HttpHandler targetHandler = Handlers.path()
+                .addPrefixPath("/", benchMarkHandler);
+        target.setHandler(targetHandler);
+        //configureServer(target, serverConfig.port(1111));
+        target.addHttpListener(1111, "0.0.0.0");
+        target.build().start();
+
         // Explicit Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             logger.info("Shutdown signal received.");
+
+            gatewayExchangeDataWriter.shutdown();
+
             server.stop();
         }, "shutdown-hook"
         ));
@@ -122,7 +137,7 @@ public final class VenturiMain
         server.start();
 
         long uptime = getUptime();
-        logger.info("🚀 Started Venturi in {}ms, listening at {}", uptime, server.getListenerInfo().getFirst().getAddress());
+        logger.info("🚀 Started Venturi in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
     private static long getUptime()
@@ -159,6 +174,38 @@ public final class VenturiMain
         catch (JoranException je)
         {
             // StatusPrinter will handle the error message
+        }
+    }
+
+    public void printRouteTable(List<? extends GatewayRoute> routes)
+    {
+        System.out.println("------------------------------------------------------------------");
+        System.out.println("  _   _             _               _ ");
+        System.out.println(" | | | | ___ _ __  | |_ _   _ _ __ (_)");
+        System.out.println(" | | | |/ _ \\ '_ \\ | __| | | | '__|| |");
+        System.out.println(" \\ \\_/ /  __/ | | || |_| |_| | |   | |");
+        System.out.println("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
+        System.out.println("------------------------------------------------------------------");
+
+        for (GatewayRoute route : routes)
+        {
+            System.out.printf("► Route: [%s]%n", route.id());
+
+            // Print the Balancer URI list
+            System.out.print("  └─ Hosts (Round Robin): ");
+            String hosts = String.join(", ", route.uri());
+            System.out.println("[" + hosts + "]");
+
+            System.out.print("  └─ Predicates: ");
+
+            System.out.println();
+            // Print the Filter chain
+            //if (!route.filters().isEmpty()) {
+            System.out.print("  └─ Filters: ");
+            route.filters().forEach(f -> System.out.print("» " + f.getClass().getSimpleName() + " "));
+            System.out.println();
+            //}
+            System.out.println("------------------------------------------------------------------");
         }
     }
 

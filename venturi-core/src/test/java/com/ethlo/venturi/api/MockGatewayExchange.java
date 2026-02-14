@@ -120,7 +120,7 @@ public final class MockGatewayExchange
         return new GatewayExchange(id, request, response, attributes, null);
     }
 
-    private static final class MockHeaders implements GatewayHeaders
+    public static final class MockHeaders implements GatewayHeaders
     {
         private final Map<CharSequence, List<CharSequence>> data = new LinkedHashMap<>();
 
@@ -144,7 +144,7 @@ public final class MockGatewayExchange
         }
 
         @Override
-        public void addHeader(CharSequence name, CharSequence value)
+        public void add(CharSequence name, CharSequence value)
         {
             data.computeIfAbsent(name, k -> new ArrayList<>()).add(value);
         }

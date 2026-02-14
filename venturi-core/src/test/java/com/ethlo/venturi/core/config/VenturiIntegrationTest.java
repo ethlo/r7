@@ -8,7 +8,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.RepeatedTest;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.venturi.api.GatewayFilter;
@@ -60,7 +59,7 @@ class VenturiIntegrationTest
 
         final GatewayRoute route = routes.getFirst();
         assertThat(route.id()).hasToString("secure-api");
-        assertThat(route.uri()).hasToString("http://internal-service:8080");
+        assertThat(route.uri()).containsExactly("http://internal-service:8080");
 
         // 5. Assert Predicate Compilation
         // The predicate should be a composite 'and' tree

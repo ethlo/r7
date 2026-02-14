@@ -72,7 +72,7 @@ public class DiagnosticProxyClient implements ProxyClient
 
     private CharSequence getTarget(HttpServerExchange exchange)
     {
-        return getExchange(exchange).route().uri();
+        return getExchange(exchange).route().toString();
     }
 
     @Override

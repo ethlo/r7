@@ -69,7 +69,7 @@ public class SimpleGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public void addHeader(CharSequence name, CharSequence value)
+    public void add(CharSequence name, CharSequence value)
     {
         headers.computeIfAbsent(name.toString(), k -> new ArrayList<>()).add(value.toString());
     }

@@ -22,6 +22,7 @@ public final class VenturiLoader
     {
         this.mapper = YAMLMapper.builder()
                 .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .build();
         filterBuilder = new FilterBuilder();

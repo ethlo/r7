@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.core.storage.StorageLayoutStrategy;
+import com.ethlo.venturi.core.storage.mmap.Journal;
 
 public class DefaultGatewayExchangeDataWriter implements GatewayExchangeDataWriter
 {
@@ -184,6 +185,18 @@ public class DefaultGatewayExchangeDataWriter implements GatewayExchangeDataWrit
     private void putAscii(ByteBuffer buffer, CharSequence s)
     {
         for (int i = 0, len = s.length(); i < len; i++) buffer.put((byte) s.charAt(i));
+    }
+
+    @Override
+    public void shutdown()
+    {
+
+    }
+
+    @Override
+    public Journal getJournalForRequest(final CharSequence requestId)
+    {
+        return null;
     }
 
     private static class RequestState
