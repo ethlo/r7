@@ -13,7 +13,6 @@ import java.util.stream.Stream;
 
 public class JournalAnalyzer
 {
-
     public static void main(String[] args) throws IOException
     {
         String path = args.length > 0 ? args[0] : "/tmp/venturi/";
@@ -25,7 +24,7 @@ public class JournalAnalyzer
             return;
         }
 
-        // 1. UPDATED FILTER: Capture both active (.raw) and rotated (.tmp) files
+        final long started = System.currentTimeMillis();
         try (Stream<Path> s = Files.list(journalDir))
         {
             List<Path> files = s.filter(p -> {
@@ -58,6 +57,7 @@ public class JournalAnalyzer
             System.out.printf("%-45s | %-8d | %-8d | %-8d%n",
                     "TOTALS", totalStats.begins, totalStats.bodies, totalStats.ends
             );
+            System.out.printf("Finished processing in %s\n", System.currentTimeMillis() - started);
         }
     }
 
