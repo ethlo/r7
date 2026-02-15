@@ -69,7 +69,8 @@ public final class VenturiExecutableRoute implements ExecutableRoute
                 {
                     filter.finished(exchange);
                 }
-            } finally
+            }
+            finally
             {
                 next.proceed();
             }
@@ -89,7 +90,8 @@ public final class VenturiExecutableRoute implements ExecutableRoute
                 {
                     filter.finished(exchange);
                 }
-            } finally
+            }
+            finally
             {
                 next.proceed(); // Essential for Undertow to clean up
             }

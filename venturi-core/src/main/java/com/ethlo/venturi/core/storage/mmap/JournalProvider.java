@@ -36,19 +36,23 @@ public class JournalProvider
         return activeJournal;
     }
 
-    private void rotate() {
+    private void rotate()
+    {
         Journal journalToClose = activeJournal;
         Path oldPath = journalToClose.getPath();
         Path readyPath = oldPath.resolveSibling(oldPath.getFileName() + ".tmp");
 
-        try {
+        try
+        {
             // 1. Swap the reference first to a new journal
             // This ensures other threads immediately start using the new one
             this.activeJournal = createNewJournal();
 
             // 2. Now move the old one
             Files.move(oldPath, readyPath);
-        } catch (IOException e) {
+        }
+        catch (IOException e)
+        {
             throw new RuntimeException("Critical: Rotation failed for shard " + shardId, e);
         }
     }

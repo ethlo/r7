@@ -3,8 +3,10 @@ package com.ethlo.venturi.undertow;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.config.AuditDefinition;
@@ -13,6 +15,7 @@ import com.ethlo.venturi.constants.HttpHeaders;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.core.AuditLevel;
 import com.ethlo.venturi.core.ExecutableRoute;
+import com.ethlo.venturi.core.FastGatewayAttributes;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.ServerDirection;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
@@ -63,10 +66,15 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void execute(HttpServerExchange exchange, UndertowGatewayRequest req, ExecutableRoute route)
     {
+        final long startNanos = System.nanoTime();
         final CharSequence requestId = requestIdGenerator.generate();
         final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
-        final MapGatewayAttributes attrs = new MapGatewayAttributes();
+        final GatewayAttributes attrs = new FastGatewayAttributes();
         final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
+
+        // Track request bytes
+        final AtomicLong requestBytesRead = new AtomicLong(0);
+        exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
 
         // 1. PIN the journal to this specific request lifecycle
         final Journal requestJournal = gatewayExchangeDataWriter.getJournalForRequest(requestId);
@@ -81,7 +89,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                 {
                     synchronized (j)
                     {
-                        j.writeEnd(requestId);
+                        j.writeEnd(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
                     }
                 }
             } finally
@@ -116,14 +124,11 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         if (journal == null) return;
 
-        // Capture Request Headers
-        if (shouldCaptureRequestHeaders(audit))
+        // Always capture Request Headers for access log
+        final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
+        synchronized (journal)
         {
-            final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-            synchronized (journal)
-            {
-                journal.writeBegin(ServerDirection.REQUEST.ordinal(), requestId, startLine, gatewayExchange.request().headers());
-            }
+            journal.writeBegin(ServerDirection.REQUEST.ordinal(), requestId, startLine, gatewayExchange.request().headers());
         }
 
         // Capture Request Body
@@ -138,7 +143,8 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
 
         // Capture Response Headers + Body
-        final boolean captureResHeaders = shouldCaptureResponseHeaders(audit);
+        // Always capture response headers for access log
+        final boolean captureResHeaders = true;
         final boolean captureResBody = shouldCaptureResponseBody(audit);
 
         if (captureResHeaders || captureResBody)

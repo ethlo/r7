@@ -4,6 +4,9 @@ package com.ethlo.venturi.undertow;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.core.proxy.NoAvailableTargetException;
@@ -17,6 +20,8 @@ import io.undertow.util.AttachmentKey;
 
 public class DiagnosticProxyClient implements ProxyClient
 {
+    private static final Logger logger = LoggerFactory.getLogger(DiagnosticProxyClient.class);
+
     // Key to track if we've already logged an error for this exchange
     private static final AttachmentKey<Boolean> ERROR_HANDLED = AttachmentKey.create(Boolean.class);
 
@@ -87,13 +92,7 @@ public class DiagnosticProxyClient implements ProxyClient
         final ProxyTarget target = delegate.findTarget(exchange);
         if (target == null)
         {
-            System.err.println("DEBUG: LB returned null for thread " + Thread.currentThread().getName());
-
-            //reportError(exchange, new ProxyPoolExhaustedException("LB Refused Target: Pool saturated on this IO thread"));
-            // The LB is refusing to pick a host because they are all in 'problem' state.
-            /*gatewayErrorHandler.handleError(getExchange(exchange),
-                    new NoAvailableTargetException("Load Balancer exhausted: All hosts in problem state or thread-pool full")
-            );*/
+            logger.debug("LB returned null for thread {}", Thread.currentThread().getName());
         }
         return target;
     }

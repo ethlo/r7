@@ -1,11 +1,7 @@
 package com.ethlo.venturi.core.storage.mmap;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.RandomAccessFile;
-import java.io.StringWriter;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -17,25 +13,31 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.core.ServerDirection;
-import tools.jackson.core.JsonGenerator;
-import tools.jackson.core.json.JsonFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class VenturiTailer
 {
+    private static final Logger logger = LoggerFactory.getLogger(VenturiTailer.class);
     private final Map<Path, Long> checkpoints = new HashMap<>();
-    private final Path logDir = Paths.get("/tmp/venturi");
-    private final Path outputDir = Paths.get("/tmp/venturi-ingest");
-    private final Map<String, PendingRequest> pending = new HashMap<>();
-    private final JsonFactory jsonFactory = new JsonFactory();
+    private final Path logDir;
+    private final JournalEventListener listener;
+
+    public VenturiTailer(Path logDir, JournalEventListener listener)
+    {
+        this.logDir = logDir;
+        this.listener = listener;
+    }
 
     public static void main(String[] args) throws InterruptedException
     {
-        VenturiTailer tailer = new VenturiTailer();
-        System.out.println("Venturi Tailer started. Watching /tmp/venturi...");
+        Path logDir = Paths.get(args.length > 0 ? args[0] : "/tmp/venturi");
+        Path outputDir = Paths.get(args.length > 1 ? args[1] : "/tmp/venturi-ingest");
+
+        VenturiTailer tailer = new VenturiTailer(logDir, new JsonFileJournalEventListener(outputDir));
+        logger.info("Venturi Tailer started. Watching {}...", logDir);
 
         while (!Thread.currentThread().isInterrupted())
         {
@@ -45,8 +47,7 @@ public class VenturiTailer
             }
             catch (Exception e)
             {
-                System.err.println("Error during tailer tick: " + e.getMessage());
-                e.printStackTrace();
+                logger.error("Error during tailer tick: {}", e.getMessage(), e);
             }
 
             // 1-second heartbeat to keep latency low in low-traffic periods
@@ -56,13 +57,6 @@ public class VenturiTailer
 
     public void runTick() throws IOException
     {
-        if (!Files.exists(outputDir))
-        {
-            Files.createDirectories(outputDir);
-        }
-
-        cleanupStaleRequests();
-
         try (Stream<Path> s = Files.list(logDir))
         {
             List<Path> targets = s.filter(p -> p.toString().endsWith(".raw") || p.toString().endsWith(".tmp"))
@@ -89,40 +83,63 @@ public class VenturiTailer
         try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r"))
         {
             long fileLength = raf.length();
-            if (fileLength <= offset) return;
+            if (fileLength <= offset)
+            {
+                return;
+            }
 
             MappedByteBuffer buffer = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, fileLength);
             buffer.position((int) offset);
 
-            Path outPath = outputDir.resolve(path.getFileName().toString() + ".json");
-
-            // Use BufferedWriter + auto-flush for better performance with Jackson strings
-            try (PrintWriter writer = new PrintWriter(new BufferedWriter(new FileWriter(outPath.toFile(), true)), true))
+            // Check version byte if starting from beginning
+            if (offset == 0)
             {
-                while (buffer.remaining() > 0)
+                if (buffer.remaining() > 0)
                 {
-                    int startPos = buffer.position();
-                    byte marker = buffer.get();
-
-                    if (marker == 0)
+                    byte version = buffer.get();
+                    if (version != Marker.VERSION)
                     {
-                        buffer.position(startPos);
-                        break;
+                        logger.error("Unknown journal version: {} in {}", version, path);
+                        // Decide how to handle version mismatch - skip file or try to process?
+                        // For now, we'll just log and continue, assuming backward compatibility or manual intervention
                     }
-
-                    String json = tryParseToJson(marker, buffer);
-                    if (json != null)
-                    {
-                        writer.println(json);
-                    }
-
                     checkpoints.put(path, (long) buffer.position());
+                }
+                else
+                {
+                    // File is empty, wait for data
+                    return;
+                }
+            }
+
+            while (buffer.remaining() > 0)
+            {
+                int startPos = buffer.position();
+                byte marker = buffer.get();
+
+                if (marker == 0)
+                {
+                    buffer.position(startPos);
+                    break;
+                }
+
+                try
+                {
+                    parseEvent(marker, buffer);
+                    checkpoints.put(path, (long) buffer.position());
+                }
+                catch (Exception e)
+                {
+                    // If parsing fails, we might be reading a partial write or corrupt data
+                    // Reset position to start of this event and stop processing this file for now
+                    buffer.position(startPos);
+                    break;
                 }
             }
         }
     }
 
-    private String tryParseToJson(byte marker, MappedByteBuffer buffer) throws IOException
+    private void parseEvent(byte marker, MappedByteBuffer buffer) throws IOException
     {
         if (marker == Marker.BEGIN)
         {
@@ -130,27 +147,20 @@ public class VenturiTailer
             String reqId = readString(buffer);
             String startLine = readString(buffer);
             Map<String, String> headers = readHeaders(buffer);
-
-            PendingRequest req = pending.computeIfAbsent(reqId, id -> new PendingRequest());
-            if (dir == ServerDirection.REQUEST.ordinal())
-            {
-                req.methodPath = startLine;
-                req.reqHeaders = headers;
-            }
-            else
-            {
-                req.statusLine = startLine;
-                req.resHeaders = headers;
-            }
-            return null;
+            listener.onBegin(dir, reqId, startLine, headers);
         }
         else if (marker == Marker.BODY)
         {
-            // CRITICAL: We must skip the body data to reach the END marker
-            readString(buffer); // Skip reqId
+            String reqId = readString(buffer);
             int bodyLen = buffer.getInt();
             if (bodyLen > 0)
             {
+                // Create a read-only slice for the body content
+                ByteBuffer body = buffer.slice();
+                body.limit(bodyLen);
+                listener.onBody(reqId, body);
+
+                // Advance the main buffer past the body
                 buffer.position(buffer.position() + bodyLen);
             }
         }
@@ -158,52 +168,21 @@ public class VenturiTailer
         {
             String reqId = readString(buffer);
             long endTs = buffer.getLong();
-
-            PendingRequest req = pending.remove(reqId);
-            if (req != null)
-            {
-                return buildFinalJson(reqId, req, endTs);
-            }
+            int status = buffer.getInt();
+            long bytesSent = buffer.getLong();
+            long bytesReceived = buffer.getLong();
+            long durationNanos = buffer.getLong();
+            listener.onEnd(reqId, endTs, status, bytesSent, bytesReceived, durationNanos);
         }
-        return null;
-    }
-
-    private String buildFinalJson(String id, PendingRequest req, long endTs) throws IOException
-    {
-        StringWriter sw = new StringWriter();
-        try (JsonGenerator jg = jsonFactory.createGenerator(sw))
-        {
-            jg.writeStartObject();
-            jg.writeStringProperty("id", id);
-            jg.writeNumberProperty("ts", endTs);
-            jg.writeStringProperty("request", req.methodPath);
-            jg.writeStringProperty("status", req.statusLine);
-
-            writeHeaderMap(jg, "req_headers", req.reqHeaders);
-            writeHeaderMap(jg, "res_headers", req.resHeaders);
-
-            jg.writeEndObject();
-        }
-        return sw.toString();
-    }
-
-    private void writeHeaderMap(JsonGenerator jg, String fieldName, Map<String, String> headers) throws IOException
-    {
-        jg.writeObjectPropertyStart(fieldName);
-        if (headers != null)
-        {
-            for (Map.Entry<String, String> entry : headers.entrySet())
-            {
-                jg.writeStringProperty(entry.getKey(), entry.getValue());
-            }
-        }
-        jg.writeEndObject();
     }
 
     private Map<String, String> readHeaders(ByteBuffer buffer)
     {
         int count = buffer.getInt();
-        if (count <= 0) return Collections.emptyMap();
+        if (count <= 0)
+        {
+            return Collections.emptyMap();
+        }
         Map<String, String> headers = new HashMap<>(count);
         for (int i = 0; i < count; i++)
         {
@@ -215,7 +194,10 @@ public class VenturiTailer
     private String readString(ByteBuffer buffer)
     {
         int len = buffer.getInt();
-        if (len <= 0) return len == 0 ? "" : null;
+        if (len <= 0)
+        {
+            return len == 0 ? "" : null;
+        }
         byte[] bytes = new byte[len];
         buffer.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
@@ -225,21 +207,5 @@ public class VenturiTailer
     {
         Long processed = checkpoints.get(path);
         return processed != null && processed >= Files.size(path);
-    }
-
-    private void cleanupStaleRequests()
-    {
-        long now = System.currentTimeMillis();
-        long threshold = TimeUnit.MINUTES.toMillis(5);
-        pending.entrySet().removeIf(e -> (now - e.getValue().createdAt) > threshold);
-    }
-
-    public static class PendingRequest
-    {
-        public final long createdAt = System.currentTimeMillis();
-        public String methodPath;
-        public Map<String, String> reqHeaders;
-        public String statusLine;
-        public Map<String, String> resHeaders;
     }
 }

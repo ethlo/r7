@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MockGatewayExchange;
@@ -19,6 +21,7 @@ import com.ethlo.venturi.core.storage.mmap.JournalAnalyzer;
 
 class JournalBinaryIntegrationTest
 {
+    private static final Logger logger = LoggerFactory.getLogger(JournalBinaryIntegrationTest.class);
 
     @TempDir
     Path tempDir;
@@ -47,11 +50,12 @@ class JournalBinaryIntegrationTest
         // 1. Write the full lifecycle
         journal.writeBegin(ServerDirection.REQUEST.ordinal(), reqId, startLine, headers);
         journal.writeBody(reqId, ByteBuffer.wrap("Small Body".getBytes()));
-        journal.writeEnd(reqId);
+        journal.writeEnd(reqId, 204, 122, 211, 120_009_999);
         journal.force(); // Ensure the OS sees the bytes
 
         // 2. Use the Analyzer logic to verify
-        JournalAnalyzer.Stats stats = analyze(journalPath);
+        // The analyzer expects a directory, not a file
+        JournalAnalyzer.Stats stats = analyze(tempDir);
 
         // 3. Assertions
         try
@@ -75,30 +79,40 @@ class JournalBinaryIntegrationTest
         {
             String id = "id-" + i;
             journal.writeBegin(0, id, ByteBuffer.wrap("L".getBytes()), new MockGatewayExchange.MockHeaders());
-            journal.writeEnd(id);
+            journal.writeEnd(id, 204, 122, 211, 120_009_999);
         }
         journal.force();
 
-        JournalAnalyzer.Stats stats = analyze(journalPath);
+        // The analyzer expects a directory, not a file
+        JournalAnalyzer.Stats stats = analyze(tempDir);
         assertThat(stats.begins).isEqualTo(count);
         assertThat(stats.ends).isEqualTo(count);
     }
 
-    private JournalAnalyzer.Stats analyze(Path path)
+    private JournalAnalyzer.Stats analyze(Path path) throws IOException
     {
         // We use your JournalAnalyzer logic here
-        return JournalAnalyzer.analyzeFile(path);
+        return new JournalAnalyzer(path).analyze();
     }
 
     private void printHexDump(Path path) throws IOException
     {
         byte[] data = Files.readAllBytes(path);
-        System.err.println("--- HEX DUMP (First 256 bytes) ---");
+        logger.error("--- HEX DUMP (First 256 bytes) ---");
+        StringBuilder sb = new StringBuilder();
         for (int i = 0; i < Math.min(data.length, 256); i++)
         {
-            System.err.printf("%02X ", data[i]);
-            if ((i + 1) % 16 == 0) System.err.println();
+            sb.append(String.format("%02X ", data[i]));
+            if ((i + 1) % 16 == 0)
+            {
+                logger.error(sb.toString());
+                sb.setLength(0);
+            }
         }
-        System.err.println("\n----------------------------------");
+        if (sb.length() > 0)
+        {
+            logger.error(sb.toString());
+        }
+        logger.error("\n----------------------------------");
     }
 }

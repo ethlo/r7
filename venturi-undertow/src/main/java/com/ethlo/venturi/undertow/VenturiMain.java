@@ -31,7 +31,6 @@ import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
-import io.undertow.server.handlers.accesslog.AccessLogHandler;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
@@ -45,6 +44,8 @@ public final class VenturiMain
 
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
+        printBanner();
+
         final HttpHandler benchMarkHandler = exchange -> {
             exchange.setStatusCode(HttpStatuses.OK);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
@@ -95,22 +96,17 @@ public final class VenturiMain
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
 
-        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(Paths.get(storage.tempDir()), 16, 10_000_000);
+        final Path rootDir = Paths.get(storage.tempDir());
+        Files.createDirectories(rootDir);
+        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(rootDir, 16, 10_000_000);
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)
                 .addPrefixPath("/", new VenturiUndertowHandler(routeRegistry, gatewayExchangeDataWriter, errorHandler));
 
-        final AccessLogHandler accessLogHandler = new AccessLogHandler(
-                rootHandler,
-                new Slf4jAccessLogReceiver(LoggerFactory.getLogger("venturi.access")),
-                "combined", // Provides: IP, Date, Method, Path, Status, Bytes, Referer, User-Agent
-                VenturiMain.class.getClassLoader()
-        );
-
         final Undertow.Builder builder = Undertow.builder();
 
-        builder.setHandler(accessLogHandler);
+        builder.setHandler(rootHandler);
 
         configureServer(builder, serverConfig);
 
@@ -138,6 +134,18 @@ public final class VenturiMain
 
         long uptime = getUptime();
         logger.info("🚀 Started Venturi in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+    }
+
+    private void printBanner()
+    {
+        logger.info("------------------------------------------------------------------");
+        logger.info("  _   _             _               _ ");
+        logger.info(" | | | | ___ _ __  | |_ _   _ _ __ (_)");
+        logger.info(" | | | |/ _ \\ '_ \\ | __| | | | '__|| |");
+        logger.info(" \\ \\_/ /  __/ | | || |_| |_| | |   | |");
+        logger.info("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
+        logger.info("------------------------------------------------------------------");
+
     }
 
     private static long getUptime()
@@ -179,33 +187,15 @@ public final class VenturiMain
 
     public void printRouteTable(List<? extends GatewayRoute> routes)
     {
-        System.out.println("------------------------------------------------------------------");
-        System.out.println("  _   _             _               _ ");
-        System.out.println(" | | | | ___ _ __  | |_ _   _ _ __ (_)");
-        System.out.println(" | | | |/ _ \\ '_ \\ | __| | | | '__|| |");
-        System.out.println(" \\ \\_/ /  __/ | | || |_| |_| | |   | |");
-        System.out.println("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
-        System.out.println("------------------------------------------------------------------");
-
         for (GatewayRoute route : routes)
         {
-            System.out.printf("► Route: [%s]%n", route.id());
-
-            // Print the Balancer URI list
-            System.out.print("  └─ Hosts (Round Robin): ");
+            logger.info("► Route: [{}]", route.id());
             String hosts = String.join(", ", route.uri());
-            System.out.println("[" + hosts + "]");
-
-            System.out.print("  └─ Predicates: ");
-
-            System.out.println();
-            // Print the Filter chain
-            //if (!route.filters().isEmpty()) {
-            System.out.print("  └─ Filters: ");
-            route.filters().forEach(f -> System.out.print("» " + f.getClass().getSimpleName() + " "));
-            System.out.println();
-            //}
-            System.out.println("------------------------------------------------------------------");
+            logger.info("  └─ Hosts (Round Robin): [{}]", hosts);
+            logger.info("  └─ Predicates: ");
+            StringBuilder filters = new StringBuilder();
+            route.filters().forEach(f -> filters.append("» ").append(f.getClass().getSimpleName()).append(" "));
+            logger.info("  └─ Filters: {}", filters);
         }
     }
 
