@@ -8,9 +8,8 @@ import com.ethlo.venturi.core.predicates.VenturiPredicates;
 
 public final class ConditionDefinition
 {
-    public String method;
+    public List<CharSequence> method;
     public String pathStartsWith;
-    public Integer statusCode;
     public HeaderCondition header;
     public List<ConditionDefinition> and;
     public List<ConditionDefinition> or;

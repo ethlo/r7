@@ -27,10 +27,10 @@ import io.undertow.server.HttpServerExchange;
 
 public final class VenturiUndertowHandler implements HttpHandler
 {
-    static final CharSequence GATEWAY_EXCHANGE_KEY = ".GATEWAY_EXCHANGE_KEY";
     static final CharSequence JOURNAL_KEY = ".JOURNAL";
     static final CharSequence AUDIT_CONFIG_KEY = ".AUDIT_CONFIG";
     static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
+    private static final CharSequence ROUTE_ID_KEY = ".ROUTE_ID";
 
     private final ShardedMmapWriter gatewayExchangeDataWriter;
     private final GatewayErrorHandler errorHandler;
@@ -74,12 +74,11 @@ public final class VenturiUndertowHandler implements HttpHandler
         final GatewayAttributes attrs = new FastGatewayAttributes();
         final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
 
-        gatewayExchange.attributes().put(REQUEST_START_NANOS_KEY, startNanos);
-        gatewayExchange.attributes().put(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
+        attrs.put(REQUEST_START_NANOS_KEY, startNanos);
+        attrs.put(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
+        attrs.put(ROUTE_ID_KEY, route.id());
 
         setupBinaryLogging(exchange, gatewayExchange);
-
-        gatewayExchange.attributes().put(GATEWAY_EXCHANGE_KEY, gatewayExchange);
 
         handleRoute(route, gatewayExchange);
     }
@@ -97,7 +96,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
 
         // Pin the journal to this specific request lifecycle
-        final CharSequence requestId = exchange.getRequestId();
+        final CharSequence requestId = gatewayExchange.requestId();
         final Journal requestJournal = gatewayExchangeDataWriter.getJournalForRequest(requestId);
         gatewayExchange.attributes().put(JOURNAL_KEY, requestJournal);
 
@@ -105,16 +104,17 @@ public final class VenturiUndertowHandler implements HttpHandler
         exchange.addExchangeCompleteListener((ex, next) -> {
             try
             {
-                final Journal j = gatewayExchange.attributes().get(JOURNAL_KEY);
-                if (j != null)
+                final Journal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
+                if (journal != null)
                 {
                     final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
-                    synchronized (j)
+                    synchronized (journal)
                     {
-                        j.writeEnd(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
+                        journal.writeEnd(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
                     }
                 }
-            } finally
+            }
+            finally
             {
                 next.proceed();
             }

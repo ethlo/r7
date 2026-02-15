@@ -10,13 +10,13 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-
-import com.ethlo.venturi.core.ServerDirection;
+import java.util.Locale;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.core.ServerDirection;
 
 public final class Journal
 {
@@ -24,6 +24,7 @@ public final class Journal
     private static final ThreadLocal<CharsetEncoder> ENCODER = ThreadLocal.withInitial(StandardCharsets.UTF_8::newEncoder);
     private final MappedByteBuffer buffer;
     private final Path path;
+    private final byte[] keyBuffer = new byte[256]; // Header names are usually short
 
     public Journal(Path path, long size) throws IOException
     {
@@ -53,7 +54,7 @@ public final class Journal
 
             int[] count = {0};
             headers.forEach((k, v) -> {
-                writeString(k);
+                writeLowercasedHeaderName(k);
                 writeString(v);
                 count[0]++;
             });
@@ -70,6 +71,35 @@ public final class Journal
             rollback(startPos);
             throw new RuntimeException("Error writing BEGIN event", e);
         }
+    }
+
+    private void writeLowercasedHeaderName(CharSequence cs)
+    {
+        int len = cs.length();
+        // 1. Ensure we don't overflow our reusable buffer
+        if (len > keyBuffer.length)
+        {
+            // Fallback for ridiculously long (and likely invalid) headers
+            writeString(cs.toString().toLowerCase(Locale.ROOT));
+            return;
+        }
+
+        for (int i = 0; i < len; i++)
+        {
+            char c = cs.charAt(i);
+            // Bitwise OR with 0x20 lowercases 'A'-'Z' while leaving
+            // numbers and allowed symbols (!, #, $, %, etc.) untouched.
+            if (c >= 'A' && c <= 'Z')
+            {
+                keyBuffer[i] = (byte) (c | 0x20);
+            }
+            else
+            {
+                keyBuffer[i] = (byte) c;
+            }
+        }
+
+        writeBuffer(ByteBuffer.wrap(keyBuffer, 0, len));
     }
 
     /**
@@ -128,31 +158,40 @@ public final class Journal
         buffer.position(startPos);
     }
 
-    private void writeString(CharSequence s)
+    private void writeString(final CharSequence s)
     {
         if (s == null)
         {
-            if (buffer.remaining() < 4) throw new JournalOverflowException("No space for null string");
+            if (buffer.remaining() < 4)
+            {
+                throw new JournalOverflowException("No space for null string");
+            }
             buffer.putInt(-1);
             return;
         }
 
-        if (buffer.remaining() < 4) throw new JournalOverflowException("No space for string length");
-        int lengthPos = buffer.position();
+        if (buffer.remaining() < 4)
+        {
+            throw new JournalOverflowException("No space for string length");
+        }
+        final int lengthPos = buffer.position();
         buffer.putInt(0);
 
-        CharsetEncoder encoder = ENCODER.get();
+        final CharsetEncoder encoder = ENCODER.get();
         encoder.reset();
 
         // Standard wrap is fine for now; in a strict zero-alloc world we'd use a
         // ThreadLocal CharBuffer to avoid the wrapper object allocation.
-        CharBuffer charBuffer = CharBuffer.wrap(s);
+        final CharBuffer charBuffer = CharBuffer.wrap(s);
 
-        CoderResult result = encoder.encode(charBuffer, buffer, true);
-        if (result.isOverflow()) throw new JournalOverflowException("Buffer overflow writing string");
+        final CoderResult result = encoder.encode(charBuffer, buffer, true);
+        if (result.isOverflow())
+        {
+            throw new JournalOverflowException("Buffer overflow writing string");
+        }
         encoder.flush(buffer);
 
-        int length = buffer.position() - lengthPos - 4;
+        final int length = buffer.position() - lengthPos - 4;
         buffer.putInt(lengthPos, length);
     }
 

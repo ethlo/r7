@@ -1,11 +1,12 @@
 package com.ethlo.venturi.core.storage.mmap;
 
-import com.ethlo.venturi.core.ServerDirection;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import com.ethlo.venturi.core.ServerDirection;
 
 public final class JournalDecoder
 {
@@ -30,13 +31,11 @@ public final class JournalDecoder
     {
         if (marker == Marker.BEGIN)
         {
-            // Now reading from the correct offset
             int dirIndex = buffer.getInt();
             ServerDirection dir = ServerDirection.values()[dirIndex];
-
-            String reqId = readString(buffer);
+            String requestId = readString(buffer);
             String startLine = readString(buffer);
-            listener.onBegin(dir, reqId, startLine, readHeaders(buffer));
+            listener.onBegin(dir, requestId, startLine, readHeaders(buffer));
         }
         else if (marker == Marker.BODY)
         {
@@ -47,16 +46,19 @@ public final class JournalDecoder
         }
         else if (marker == Marker.END)
         {
-            String reqId = readString(buffer);
-            listener.onEnd(reqId, buffer.getLong(), buffer.getInt(), buffer.getLong(), buffer.getLong(), buffer.getLong());
+            String requestId = readString(buffer);
+            listener.onEnd(requestId, buffer.getLong(), buffer.getInt(), buffer.getLong(), buffer.getLong(), buffer.getLong());
         }
     }
 
     private static Map<String, String> readHeaders(ByteBuffer buffer)
     {
-        int count = buffer.getInt();
-        if (count <= 0) return Collections.emptyMap();
-        Map<String, String> headers = new HashMap<>(count);
+        final int count = buffer.getInt();
+        if (count <= 0)
+        {
+            return Collections.emptyMap();
+        }
+        final Map<String, String> headers = new HashMap<>(count);
         for (int i = 0; i < count; i++)
         {
             headers.put(readString(buffer), readString(buffer));
@@ -66,19 +68,28 @@ public final class JournalDecoder
 
     private static String readString(ByteBuffer buffer)
     {
-        int len = buffer.getInt();
-        if (len < 0) return null;
-        if (len == 0) return "";
-        byte[] bytes = new byte[len];
+        final int len = buffer.getInt();
+        if (len < 0)
+        {
+            return null;
+        }
+        if (len == 0)
+        {
+            return "";
+        }
+        final byte[] bytes = new byte[len];
         buffer.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private static ByteBuffer readBuffer(ByteBuffer buffer)
     {
-        int len = buffer.getInt();
-        if (len < 0) return null;
-        ByteBuffer slice = buffer.slice();
+        final int len = buffer.getInt();
+        if (len < 0)
+        {
+            return null;
+        }
+        final ByteBuffer slice = buffer.slice();
         slice.limit(len);
         buffer.position(buffer.position() + len);
         return slice;

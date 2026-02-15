@@ -71,7 +71,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener
 
         if (logger.isDebugEnabled())
         {
-            logger.debug("Analyzed exchange: {} [Status: {}]", exchange.getReqId(), exchange.getStatus());
+            logger.debug("Analyzed exchange: {} [Status: {}]", exchange.getRequestId(), exchange.getStatus());
         }
     }
 

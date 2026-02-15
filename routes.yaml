@@ -4,8 +4,10 @@ routes:
       - http://localhost:1111
     match:
       and:
-        - pathStartsWith:
-        - method: GET
+        - pathStartsWith: /hello
+        - method:
+          - GET
+          - POST
     audit:
       request: FULL
       response: FULL

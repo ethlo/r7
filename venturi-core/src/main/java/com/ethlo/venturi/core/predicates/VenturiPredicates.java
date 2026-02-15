@@ -46,9 +46,11 @@ public final class VenturiPredicates
         };
     }
 
-    public static GatewayPredicate method(final CharSequence expected)
+    public static GatewayPredicate method(final List<CharSequence> expected)
     {
-        return request -> contentEqualsIgnoreCase(request.method(), expected);
+        return request -> expected
+                .stream()
+                .anyMatch(e -> contentEqualsIgnoreCase(e, request.method()));
     }
 
     public static GatewayPredicate pathStartsWith(final CharSequence prefix)
@@ -74,9 +76,18 @@ public final class VenturiPredicates
 
     private static boolean contentEqualsIgnoreCase(final CharSequence cs1, final CharSequence s2)
     {
-        if (cs1 == null || s2 == null) return false;
+        if (cs1 == null || s2 == null)
+        {
+            return false;
+        }
+
         final int len = cs1.length();
-        if (len != s2.length()) return false;
+
+        if (len != s2.length())
+        {
+            return false;
+        }
+
         for (int i = 0; i < len; i++)
         {
             if (Character.toLowerCase(cs1.charAt(i)) != Character.toLowerCase(s2.charAt(i)))
