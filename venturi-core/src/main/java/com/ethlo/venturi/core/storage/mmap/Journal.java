@@ -11,6 +11,8 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
+import com.ethlo.venturi.core.ServerDirection;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +21,7 @@ import com.ethlo.venturi.api.GatewayHeaders;
 public final class Journal
 {
     private static final Logger logger = LoggerFactory.getLogger(Journal.class);
-    private static final ThreadLocal<CharsetEncoder> ENCODER = ThreadLocal.withInitial(() -> StandardCharsets.UTF_8.newEncoder());
+    private static final ThreadLocal<CharsetEncoder> ENCODER = ThreadLocal.withInitial(StandardCharsets.UTF_8::newEncoder);
     private final MappedByteBuffer buffer;
     private final Path path;
 
@@ -35,22 +37,20 @@ public final class Journal
         }
     }
 
-    public void writeBegin(int dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public void writeBegin(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         int startPos = buffer.position();
         try
         {
             buffer.put(Marker.BEGIN);
-            buffer.putInt(dir);
+            buffer.putInt(dir.ordinal()); // 0 = REQUEST, 1 = RESPONSE (or use constants)
 
             writeString(reqId);
             writeBuffer(startLine);
 
-            // 1. Record the current position and put a dummy 4-byte int
             int countPos = buffer.position();
             buffer.putInt(0);
 
-            // 2. Write headers
             int[] count = {0};
             headers.forEach((k, v) -> {
                 writeString(k);
@@ -58,45 +58,41 @@ public final class Journal
                 count[0]++;
             });
 
-            // 3. Backfill the count at countPos
-            // IMPORTANT: putInt(index, val) does NOT change the current position
             buffer.putInt(countPos, count[0]);
         }
         catch (JournalOverflowException e)
         {
-            // Rewind to start of this event
-            buffer.put(startPos, (byte) 0);
-            buffer.position(startPos);
+            rollback(startPos);
             throw e;
         }
         catch (Exception e)
         {
-            // For other exceptions, we should also try to rollback
-            buffer.put(startPos, (byte) 0);
-            buffer.position(startPos);
+            rollback(startPos);
             throw new RuntimeException("Error writing BEGIN event", e);
         }
     }
 
-    public void writeBody(CharSequence reqId, ByteBuffer data)
+    /**
+     * Now identifies the direction to support full-duplex auditing.
+     */
+    public void writeBody(ServerDirection dir, CharSequence reqId, ByteBuffer data)
     {
         int startPos = buffer.position();
         try
         {
             buffer.put(Marker.BODY);
+            buffer.putInt(dir.ordinal()); // CRITICAL: Identify if this is REQ or RES body
             writeString(reqId);
             writeBuffer(data);
         }
         catch (JournalOverflowException e)
         {
-            buffer.put(startPos, (byte) 0);
-            buffer.position(startPos);
+            rollback(startPos);
             throw e;
         }
         catch (Exception e)
         {
-            buffer.put(startPos, (byte) 0);
-            buffer.position(startPos);
+            rollback(startPos);
             throw new RuntimeException("Error writing BODY event", e);
         }
     }
@@ -116,57 +112,47 @@ public final class Journal
         }
         catch (JournalOverflowException e)
         {
-            buffer.put(startPos, (byte) 0);
-            buffer.position(startPos);
+            rollback(startPos);
             throw e;
         }
         catch (Exception e)
         {
-            buffer.put(startPos, (byte) 0);
-            buffer.position(startPos);
+            rollback(startPos);
             throw new RuntimeException("Error writing END event", e);
         }
+    }
+
+    private void rollback(int startPos)
+    {
+        buffer.put(startPos, (byte) 0);
+        buffer.position(startPos);
     }
 
     private void writeString(CharSequence s)
     {
         if (s == null)
         {
-            if (buffer.remaining() < 4)
-            {
-                throw new JournalOverflowException("Not enough space for null string marker");
-            }
+            if (buffer.remaining() < 4) throw new JournalOverflowException("No space for null string");
             buffer.putInt(-1);
             return;
         }
 
-        // Zero-allocation string writing
-        // 1. Reserve 4 bytes for length
-        if (buffer.remaining() < 4)
-        {
-            throw new JournalOverflowException("Not enough space for string length");
-        }
+        if (buffer.remaining() < 4) throw new JournalOverflowException("No space for string length");
         int lengthPos = buffer.position();
-        buffer.putInt(0); // Placeholder
+        buffer.putInt(0);
 
-        // 2. Encode directly into buffer
         CharsetEncoder encoder = ENCODER.get();
         encoder.reset();
 
-        // We need to wrap CharSequence in a CharBuffer
+        // Standard wrap is fine for now; in a strict zero-alloc world we'd use a
+        // ThreadLocal CharBuffer to avoid the wrapper object allocation.
         CharBuffer charBuffer = CharBuffer.wrap(s);
 
-        // Encode directly to the MappedByteBuffer
         CoderResult result = encoder.encode(charBuffer, buffer, true);
-        if (result.isOverflow())
-        {
-            throw new JournalOverflowException("Buffer overflow while writing string");
-        }
+        if (result.isOverflow()) throw new JournalOverflowException("Buffer overflow writing string");
         encoder.flush(buffer);
 
-        // 3. Calculate length and update placeholder
-        int endPos = buffer.position();
-        int length = endPos - lengthPos - 4; // Subtract the 4 bytes used for length itself
+        int length = buffer.position() - lengthPos - 4;
         buffer.putInt(lengthPos, length);
     }
 
@@ -174,24 +160,16 @@ public final class Journal
     {
         if (src == null)
         {
-            if (buffer.remaining() < 4)
-            {
-                throw new JournalOverflowException("Not enough space for null buffer marker");
-            }
+            if (buffer.remaining() < 4) throw new JournalOverflowException("No space for null buffer");
             buffer.putInt(-1);
             return;
         }
 
         int len = src.remaining();
-        if (buffer.remaining() < 4 + len)
-        {
-            throw new JournalOverflowException("Not enough space for buffer data");
-        }
+        if (buffer.remaining() < 4 + len) throw new JournalOverflowException("No space for buffer data");
 
         buffer.putInt(len);
-
-        // Bulk put is efficient
-        buffer.put(src.duplicate());
+        buffer.put(src.duplicate()); // duplicate() avoids changing caller's position
     }
 
     public boolean hasSpace(int bytesNeeded)
@@ -199,13 +177,13 @@ public final class Journal
         return buffer.remaining() >= bytesNeeded;
     }
 
-    public Path getPath()
-    {
-        return path;
-    }
-
     public void force()
     {
         buffer.force();
+    }
+
+    public Path getPath()
+    {
+        return path;
     }
 }

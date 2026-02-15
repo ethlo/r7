@@ -49,8 +49,8 @@ class JournalBinaryIntegrationTest
         headers.add("X-High-Load", "True");
 
         // 1. Write the full lifecycle
-        journal.writeBegin(ServerDirection.REQUEST.ordinal(), reqId, startLine, headers);
-        journal.writeBody(reqId, ByteBuffer.wrap("Small Body".getBytes()));
+        journal.writeBegin(ServerDirection.REQUEST, reqId, startLine, headers);
+        journal.writeBody(ServerDirection.REQUEST, reqId, ByteBuffer.wrap("Small Body".getBytes()));
         journal.writeEnd(reqId, 204, 122, 211, 120_009_999);
         journal.force(); // Ensure the OS sees the bytes
 
@@ -79,7 +79,7 @@ class JournalBinaryIntegrationTest
         for (int i = 0; i < count; i++)
         {
             String id = "id-" + i;
-            journal.writeBegin(0, id, ByteBuffer.wrap("L".getBytes()), new SimpleGatewayHeaders());
+            journal.writeBegin(ServerDirection.REQUEST, id, ByteBuffer.wrap("L".getBytes()), new SimpleGatewayHeaders());
             journal.writeEnd(id, 204, 122, 211, 120_009_999);
         }
         journal.force();

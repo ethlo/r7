@@ -1,16 +1,18 @@
 package com.ethlo.venturi.core.storage.mmap;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class JournalAnalyzer implements JournalEventListener
+/**
+ * High-performance analyzer for Venturi journals.
+ * Acts as the final sink (ExchangeCompletionListener) to verify reassembly.
+ */
+public class JournalAnalyzer implements ExchangeCompletionListener
 {
     private static final Logger logger = LoggerFactory.getLogger(JournalAnalyzer.class);
     private final Path journalDir;
@@ -44,6 +46,7 @@ public class JournalAnalyzer implements JournalEventListener
         logger.info(String.format("%-45s | %-8s | %-8s | %-8s", "Shard Name", "Begins", "Bodies", "Ends"));
         logger.info("--------------------------------------------------------------------------------");
 
+        // The Tailer now orchestrates the Decoder and Reassembler internally
         VenturiTailer tailer = new VenturiTailer(journalDir, this);
         tailer.runTick();
 
@@ -56,25 +59,26 @@ public class JournalAnalyzer implements JournalEventListener
     }
 
     @Override
-    public void onBegin(int direction, String reqId, String startLine, Map<String, String> headers)
+    public void onComplete(JournalExchange exchange)
     {
+        // Track stats from the fully reconstructed exchange
         stats.begins++;
-    }
 
-    @Override
-    public void onBody(String reqId, ByteBuffer body)
-    {
-        stats.bodies++;
-    }
+        // Count body fragments from both request and response
+        stats.bodies += (exchange.getRequestBodyFragments().size() + exchange.getResponseBodyFragments().size());
 
-    @Override
-    public void onEnd(String reqId, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos)
-    {
         stats.ends++;
+
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Analyzed exchange: {} [Status: {}]", exchange.getReqId(), exchange.getStatus());
+        }
     }
 
     public static class Stats
     {
-        public long begins, bodies, ends;
+        public long begins = 0;
+        public long bodies = 0;
+        public long ends = 0;
     }
 }

@@ -39,6 +39,8 @@ import io.undertow.util.Headers;
 public final class VenturiMain
 {
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
+    public static final int JOURNAL_SHARD_COUNT = 16;
+    public static final int JOURNAL_SHARD_SIZE_BYTES = 1_000_000;
 
     private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
 
@@ -98,34 +100,25 @@ public final class VenturiMain
 
         final Path rootDir = Paths.get(storage.tempDir());
         Files.createDirectories(rootDir);
-        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(rootDir, 16, 10_000_000);
+        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(rootDir, JOURNAL_SHARD_COUNT, JOURNAL_SHARD_SIZE_BYTES);
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)
                 .addPrefixPath("/", new VenturiUndertowHandler(routeRegistry, gatewayExchangeDataWriter, errorHandler));
 
         final Undertow.Builder builder = Undertow.builder();
-
         builder.setHandler(rootHandler);
-
         configureServer(builder, serverConfig);
-
         final Undertow server = builder.build();
 
-        final Undertow.Builder target = Undertow.builder();
-        final HttpHandler targetHandler = Handlers.path()
-                .addPrefixPath("/", benchMarkHandler);
-        target.setHandler(targetHandler);
-        //configureServer(target, serverConfig.port(1111));
-        target.addHttpListener(1111, "0.0.0.0");
-        target.build().start();
+        // Used for having fast internal HTTP endpoint to talk to
+        setupTestBackEndForProxy(benchMarkHandler);
 
         // Explicit Shutdown Hook
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        Runtime.getRuntime().addShutdownHook(new Thread(() ->
+        {
             logger.info("Shutdown signal received.");
-
             gatewayExchangeDataWriter.shutdown();
-
             server.stop();
         }, "shutdown-hook"
         ));
@@ -133,7 +126,17 @@ public final class VenturiMain
         server.start();
 
         long uptime = getUptime();
-        logger.info("🚀 Started Venturi in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+        logger.info("🚀 Started in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+    }
+
+    private static void setupTestBackEndForProxy(HttpHandler benchMarkHandler)
+    {
+        final Undertow.Builder target = Undertow.builder();
+        final HttpHandler targetHandler = Handlers.path()
+                .addPrefixPath("/", benchMarkHandler);
+        target.setHandler(targetHandler);
+        target.addHttpListener(1111, "0.0.0.0");
+        target.build().start();
     }
 
     private void printBanner()

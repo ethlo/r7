@@ -122,13 +122,16 @@ public final class VenturiUndertowHandler implements HttpHandler
         final CharSequence requestId = gatewayExchange.requestId();
         final Journal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
 
-        if (journal == null) return;
+        if (journal == null)
+        {
+            return;
+        }
 
         // Always capture Request Headers for access log
         final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
         synchronized (journal)
         {
-            journal.writeBegin(ServerDirection.REQUEST.ordinal(), requestId, startLine, gatewayExchange.request().headers());
+            journal.writeBegin(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
         }
 
         // Capture Request Body
@@ -137,7 +140,7 @@ public final class VenturiUndertowHandler implements HttpHandler
             gatewayExchange.request().addBodyListener(buffer -> {
                 synchronized (journal)
                 {
-                    journal.writeBody(requestId, buffer);
+                    journal.writeBody(ServerDirection.REQUEST, requestId, buffer);
                 }
             });
         }
@@ -161,12 +164,12 @@ public final class VenturiUndertowHandler implements HttpHandler
                         if (!headersWritten && captureResHeaders)
                         {
                             final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                            journal.writeBegin(ServerDirection.RESPONSE.ordinal(), requestId, startLine, gatewayExchange.response().headers());
+                            journal.writeBegin(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
                             headersWritten = true;
                         }
                         if (captureResBody)
                         {
-                            journal.writeBody(requestId, buffer);
+                            journal.writeBody(ServerDirection.RESPONSE, requestId, buffer);
                         }
                     }
                 }
