@@ -29,6 +29,8 @@ public final class VenturiUndertowHandler implements HttpHandler
 {
     static final CharSequence GATEWAY_EXCHANGE_KEY = ".GATEWAY_EXCHANGE_KEY";
     static final CharSequence JOURNAL_KEY = ".JOURNAL";
+    static final CharSequence AUDIT_CONFIG_KEY = ".AUDIT_CONFIG";
+    static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
 
     private final ShardedMmapWriter gatewayExchangeDataWriter;
     private final GatewayErrorHandler errorHandler;
@@ -52,6 +54,7 @@ public final class VenturiUndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
+        final long startNanos = System.nanoTime();
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange);
         final Optional<ExecutableRoute> routeOpt = routeRegistry.findRoute(req);
         if (routeOpt.isEmpty())
@@ -61,32 +64,51 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
 
         final ExecutableRoute route = routeOpt.get();
-        execute(exchange, req, route);
+        execute(exchange, req, route, startNanos);
     }
 
-    private void execute(HttpServerExchange exchange, UndertowGatewayRequest req, ExecutableRoute route)
+    private void execute(HttpServerExchange exchange, UndertowGatewayRequest req, ExecutableRoute route, final long startNanos)
     {
-        final long startNanos = System.nanoTime();
         final CharSequence requestId = requestIdGenerator.generate();
         final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
         final GatewayAttributes attrs = new FastGatewayAttributes();
         final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
 
+        gatewayExchange.attributes().put(REQUEST_START_NANOS_KEY, startNanos);
+        gatewayExchange.attributes().put(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
+
+        setupBinaryLogging(exchange, gatewayExchange);
+
+        gatewayExchange.attributes().put(GATEWAY_EXCHANGE_KEY, gatewayExchange);
+
+        handleRoute(route, gatewayExchange);
+    }
+
+    private void setupBinaryLogging(HttpServerExchange exchange, GatewayExchange gatewayExchange)
+    {
+        final AuditDefinition audit = gatewayExchange.attributes().get(AUDIT_CONFIG_KEY);
+        if (audit == null)
+        {
+            return;
+        }
+
         // Track request bytes
         final AtomicLong requestBytesRead = new AtomicLong(0);
         exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
 
-        // 1. PIN the journal to this specific request lifecycle
+        // Pin the journal to this specific request lifecycle
+        final CharSequence requestId = exchange.getRequestId();
         final Journal requestJournal = gatewayExchangeDataWriter.getJournalForRequest(requestId);
         gatewayExchange.attributes().put(JOURNAL_KEY, requestJournal);
 
-        // 2. Add Completion Listener using the pinned journal
+        // Add Completion Listener using the pinned journal
         exchange.addExchangeCompleteListener((ex, next) -> {
             try
             {
                 final Journal j = gatewayExchange.attributes().get(JOURNAL_KEY);
                 if (j != null)
                 {
+                    final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
                     synchronized (j)
                     {
                         j.writeEnd(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
@@ -98,28 +120,6 @@ public final class VenturiUndertowHandler implements HttpHandler
             }
         });
 
-        gatewayExchange.attributes().put(GATEWAY_EXCHANGE_KEY, gatewayExchange);
-
-        handleRoute(route, gatewayExchange);
-    }
-
-    private void handleRoute(ExecutableRoute route, GatewayExchange gatewayExchange)
-    {
-        setupAuditing(gatewayExchange, route.routeDefinition().audit());
-
-        try
-        {
-            route.execute(gatewayExchange);
-        }
-        catch (Throwable t)
-        {
-            errorHandler.handleError(gatewayExchange, t);
-        }
-    }
-
-    private void setupAuditing(GatewayExchange gatewayExchange, final AuditDefinition audit)
-    {
-        final CharSequence requestId = gatewayExchange.requestId();
         final Journal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
 
         if (journal == null)
@@ -145,12 +145,9 @@ public final class VenturiUndertowHandler implements HttpHandler
             });
         }
 
-        // Capture Response Headers + Body
-        // Always capture response headers for access log
-        final boolean captureResHeaders = true;
         final boolean captureResBody = shouldCaptureResponseBody(audit);
 
-        if (captureResHeaders || captureResBody)
+        if (shouldCaptureResponseHeaders(audit) || shouldCaptureResponseBody(audit))
         {
             gatewayExchange.response().addBodyListener(new Consumer<>()
             {
@@ -161,7 +158,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                 {
                     synchronized (journal)
                     {
-                        if (!headersWritten && captureResHeaders)
+                        if (!headersWritten)
                         {
                             final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
                             journal.writeBegin(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
@@ -174,6 +171,18 @@ public final class VenturiUndertowHandler implements HttpHandler
                     }
                 }
             });
+        }
+    }
+
+    private void handleRoute(ExecutableRoute route, GatewayExchange gatewayExchange)
+    {
+        try
+        {
+            route.execute(gatewayExchange);
+        }
+        catch (Throwable t)
+        {
+            errorHandler.handleError(gatewayExchange, t);
         }
     }
 

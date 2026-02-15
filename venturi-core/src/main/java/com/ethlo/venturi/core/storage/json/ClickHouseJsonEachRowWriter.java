@@ -21,6 +21,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
 
     public ClickHouseJsonEachRowWriter(OutputStream out)
     {
+        // Jackson 3: Immutable builder
         this.generator = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .build()
@@ -34,23 +35,39 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
     {
         generator.writeStartObject();
 
-        generator.writeStringProperty("id", exchange.getReqId()); // 'Property' suffix
+        // --- Identification & Timing ---
+        generator.writeStringProperty("id", exchange.getReqId());
         generator.writeNumberProperty("ts", exchange.getTimestamp());
+        generator.writeNumberProperty("dur_ns", exchange.getDurationNanos());
+
+        // --- Request Info ---
+        generator.writeStringProperty("req_line", exchange.getRequestStartLine());
         generator.writePOJOProperty("req_h", exchange.getRequestHeaders());
 
+        // --- Response Info ---
+        generator.writeNumberProperty("status", exchange.getStatus());
+        generator.writeStringProperty("res_line", exchange.getResponseStartLine());
+        generator.writePOJOProperty("res_h", exchange.getResponseHeaders());
+
+        // --- Throughput Metrics ---
+        generator.writeNumberProperty("bytes_out", exchange.getBytesSent());
+        generator.writeNumberProperty("bytes_in", exchange.getBytesReceived());
+
+        // --- Payloads (Streamed Zero-Copy) ---
         writeBody("req_b", exchange.getRequestBodyFragments());
         writeBody("res_b", exchange.getResponseBodyFragments());
 
         generator.writeEndObject();
-        generator.flush(); // Crucial: sync Jackson's state before manual channel writes
+        generator.flush();
 
         try
         {
+            // The mandatory JSONEachRow separator
             channel.write(ByteBuffer.wrap(NEWLINE));
         }
         catch (Exception e)
         {
-            throw new RuntimeException("Stream failure", e);
+            throw new RuntimeException("Final newline write failed", e);
         }
     }
 
@@ -62,28 +79,24 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             return;
         }
 
-        // 1. Write the key using the new Jackson 3 method name
         generator.writeName(fieldName);
-
-        // 2. To avoid the state machine error, write a placeholder or use writeRaw
-        // Since we are targeting ClickHouse, we use raw quotes and stream the bytes
-        generator.writeRaw(":"); // Manually add separator
-        generator.writeRaw("\""); // Open quote
-        generator.flush(); // Ensure ":" and "\"" are in the output stream
+        generator.writeRaw(":");
+        generator.writeRaw("\"");
+        generator.flush();
 
         for (ByteBuffer fragment : fragments)
         {
             try
             {
-                // Physical zero-copy write of the body fragment
+                // We use duplicate() to avoid messing with the Tailer's position
                 channel.write(fragment.duplicate());
             }
             catch (Exception e)
             {
-                throw new RuntimeException("Channel error", e);
+                throw new RuntimeException("Zero-copy payload streaming failed", e);
             }
         }
 
-        generator.writeRaw("\""); // Close quote
+        generator.writeRaw("\"");
     }
 }
