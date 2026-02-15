@@ -7,6 +7,8 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.ethlo.venturi.core.helpers.SimpleGatewayHeaders;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,7 +16,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.MockGatewayExchange;
 import com.ethlo.venturi.core.ServerDirection;
 import com.ethlo.venturi.core.storage.mmap.Journal;
 import com.ethlo.venturi.core.storage.mmap.JournalAnalyzer;
@@ -43,7 +44,7 @@ class JournalBinaryIntegrationTest
         String reqId = "req-123";
         ByteBuffer startLine = ByteBuffer.wrap("GET /test HTTP/1.1".getBytes());
 
-        GatewayHeaders headers = new MockGatewayExchange.MockHeaders();
+        GatewayHeaders headers = new SimpleGatewayHeaders();
         headers.add("X-Test", "Value1");
         headers.add("X-High-Load", "True");
 
@@ -78,7 +79,7 @@ class JournalBinaryIntegrationTest
         for (int i = 0; i < count; i++)
         {
             String id = "id-" + i;
-            journal.writeBegin(0, id, ByteBuffer.wrap("L".getBytes()), new MockGatewayExchange.MockHeaders());
+            journal.writeBegin(0, id, ByteBuffer.wrap("L".getBytes()), new SimpleGatewayHeaders());
             journal.writeEnd(id, 204, 122, 211, 120_009_999);
         }
         journal.force();

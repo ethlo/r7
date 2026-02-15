@@ -13,6 +13,7 @@ import java.util.Map;
 
 import com.ethlo.venturi.core.ServerDirection;
 import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
 import tools.jackson.core.json.JsonFactory;
 
 public class JsonFileJournalEventListener implements JournalEventListener
@@ -84,7 +85,7 @@ public class JsonFileJournalEventListener implements JournalEventListener
     private String buildFinalJson(String id, PendingRequest req, long endTs, int status, long bytesSent, long bytesReceived, long durationNanos) throws IOException
     {
         StringWriter sw = new StringWriter();
-        try (JsonGenerator jg = jsonFactory.createGenerator(sw))
+        try (JsonGenerator jg = jsonFactory.createGenerator(ObjectWriteContext.empty(), sw))
         {
             jg.writeStartObject();
             jg.writeStringProperty("id", id);

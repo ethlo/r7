@@ -15,7 +15,6 @@ import com.ethlo.venturi.api.GatewayHeaders;
  */
 public class SimpleGatewayHeaders implements GatewayHeaders
 {
-
     private final Map<String, List<String>> headers;
 
     public SimpleGatewayHeaders()
