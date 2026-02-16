@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.storage.mmap;
+package mmap;
 
 public class JournalOverflowException extends RuntimeException
 {

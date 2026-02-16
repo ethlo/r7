@@ -11,6 +11,8 @@
         <module>venturi-api</module>
         <module>venturi-undertow</module>
         <module>venturi-core</module>
+        <module>venturi-auditing-api</module>
+        <module>venturi-auditing-vlf</module>
     </modules>
     <properties>
         <maven.compiler.release>21</maven.compiler.release>

@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core;
+package com.ethlo.venturi.api;
 
 public enum ServerDirection
 {

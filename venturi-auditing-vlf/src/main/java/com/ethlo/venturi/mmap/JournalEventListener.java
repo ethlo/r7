@@ -1,9 +1,9 @@
-package com.ethlo.venturi.core.storage.mmap;
-
-import com.ethlo.venturi.core.ServerDirection;
+package com.ethlo.venturi.mmap;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
+
+import com.ethlo.venturi.api.ServerDirection;
 
 public interface JournalEventListener
 {

@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.config.AuditDefinition;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.constants.HttpHeaders;
@@ -17,11 +18,10 @@ import com.ethlo.venturi.core.AuditLevel;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.FastGatewayAttributes;
 import com.ethlo.venturi.core.RequestIdGenerator;
-import com.ethlo.venturi.core.ServerDirection;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
-import com.ethlo.venturi.core.storage.mmap.Journal;
-import com.ethlo.venturi.core.storage.mmap.ShardedMmapWriter;
+import com.ethlo.venturi.mmap.Journal;
+import com.ethlo.venturi.mmap.ShardedMmapWriter;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 
@@ -113,8 +113,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                         journal.writeEnd(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
                     }
                 }
-            }
-            finally
+            } finally
             {
                 next.proceed();
             }
@@ -140,7 +139,7 @@ public final class VenturiUndertowHandler implements HttpHandler
             gatewayExchange.request().addBodyListener(buffer -> {
                 synchronized (journal)
                 {
-                    journal.writeBody(ServerDirection.REQUEST, requestId, buffer);
+                    journal.writeBodyPart(ServerDirection.REQUEST, requestId, buffer);
                 }
             });
         }
@@ -166,7 +165,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                         }
                         if (captureResBody)
                         {
-                            journal.writeBody(ServerDirection.RESPONSE, requestId, buffer);
+                            journal.writeBodyPart(ServerDirection.RESPONSE, requestId, buffer);
                         }
                     }
                 }

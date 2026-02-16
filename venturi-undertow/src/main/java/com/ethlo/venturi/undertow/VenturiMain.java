@@ -11,6 +11,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.ethlo.venturi.mmap.ShardedMmapWriter;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -25,7 +27,6 @@ import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
 import com.ethlo.venturi.core.StandardErrorHandler;
-import com.ethlo.venturi.core.storage.mmap.ShardedMmapWriter;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
@@ -38,9 +39,10 @@ import io.undertow.util.Headers;
 
 public final class VenturiMain
 {
-    private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     public static final int JOURNAL_SHARD_COUNT = 16;
     public static final int JOURNAL_SHARD_SIZE_BYTES = 1_000_000;
+    private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
+    private static final long JOURNAL_SHARD_INDEX_SIZE = 100_000;
 
     private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
 
@@ -100,7 +102,7 @@ public final class VenturiMain
 
         final Path rootDir = Paths.get(storage.tempDir());
         Files.createDirectories(rootDir);
-        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(rootDir, JOURNAL_SHARD_COUNT, JOURNAL_SHARD_SIZE_BYTES);
+        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(rootDir, JOURNAL_SHARD_COUNT, JOURNAL_SHARD_SIZE_BYTES, JOURNAL_SHARD_INDEX_SIZE);
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)
@@ -139,18 +141,6 @@ public final class VenturiMain
         target.build().start();
     }
 
-    private void printBanner()
-    {
-        logger.info("------------------------------------------------------------------");
-        logger.info("  _   _             _               _ ");
-        logger.info(" | | | | ___ _ __  | |_ _   _ _ __ (_)");
-        logger.info(" | | | |/ _ \\ '_ \\ | __| | | | '__|| |");
-        logger.info(" \\ \\_/ /  __/ | | || |_| |_| | |   | |");
-        logger.info("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
-        logger.info("------------------------------------------------------------------");
-
-    }
-
     private static long getUptime()
     {
         Instant start = ProcessHandle.current().info().startInstant().orElse(Instant.now());
@@ -186,6 +176,18 @@ public final class VenturiMain
         {
             // StatusPrinter will handle the error message
         }
+    }
+
+    private void printBanner()
+    {
+        logger.info("------------------------------------------------------------------");
+        logger.info("  _   _             _               _ ");
+        logger.info(" | | | | ___ _ __  | |_ _   _ _ __ (_)");
+        logger.info(" | | | |/ _ \\ '_ \\ | __| | | | '__|| |");
+        logger.info(" \\ \\_/ /  __/ | | || |_| |_| | |   | |");
+        logger.info("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
+        logger.info("------------------------------------------------------------------");
+
     }
 
     public void printRouteTable(List<? extends GatewayRoute> routes)

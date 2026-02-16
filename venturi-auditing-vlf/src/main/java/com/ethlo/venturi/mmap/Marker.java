@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.storage.mmap;
+package com.ethlo.venturi.mmap;
 
 public final class Marker
 {

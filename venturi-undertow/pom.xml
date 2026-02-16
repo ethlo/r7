@@ -25,6 +25,12 @@
         </dependency>
         <dependency>
             <groupId>com.ethlo.venturi</groupId>
+            <artifactId>venturi-auditing-vlf</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.ethlo.venturi</groupId>
             <artifactId>venturi-core</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>compile</scope>

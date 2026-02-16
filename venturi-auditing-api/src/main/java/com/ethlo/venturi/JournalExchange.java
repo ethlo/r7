@@ -1,11 +1,11 @@
-package com.ethlo.venturi.core.storage.mmap;
+package com.ethlo.venturi;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.venturi.core.ServerDirection;
+import com.ethlo.venturi.api.ServerDirection;
 
 /**
  * Stateful container for a single request/response lifecycle.

@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.helpers;
+package com.ethlo.venturi;
 
 import java.util.ArrayList;
 import java.util.Collections;
