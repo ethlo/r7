@@ -17,12 +17,13 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.auditing.api.Journal;
 
-public final class Journal implements AutoCloseable
+public final class VlfJournal implements Journal
 {
-    private static final Logger logger = LoggerFactory.getLogger(Journal.class);
+    private static final Logger logger = LoggerFactory.getLogger(VlfJournal.class);
 
-    private final JournalProvider provider;
+    private final VlfJournalProvider provider;
     private final long segmentSize;
     private final long indexSize;
     private final byte[] keyBuffer = new byte[256];
@@ -33,7 +34,7 @@ public final class Journal implements AutoCloseable
     private Path activeIndexPath;
     private int currentFileId = 0;
 
-    public Journal(JournalProvider provider, long segmentSize, long indexSize) throws IOException
+    public VlfJournal(VlfJournalProvider provider, long segmentSize, long indexSize)
     {
         this.provider = provider;
         this.segmentSize = segmentSize;
@@ -62,7 +63,8 @@ public final class Journal implements AutoCloseable
         }
     }
 
-    public synchronized void writeBegin(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    @Override
+    public synchronized void start(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         try
         {
@@ -97,7 +99,8 @@ public final class Journal implements AutoCloseable
         }
     }
 
-    public synchronized void writeBodyPart(ServerDirection dir, CharSequence reqId, ByteBuffer data)
+    @Override
+    public synchronized void body(ServerDirection dir, CharSequence reqId, ByteBuffer data)
     {
         try
         {
@@ -141,7 +144,8 @@ public final class Journal implements AutoCloseable
         }
     }
 
-    public synchronized void writeEnd(CharSequence reqId, int status, long sent, long recv, long duration)
+    @Override
+    public synchronized void end(CharSequence reqId, int status, long sent, long recv, long duration)
     {
         try
         {
@@ -167,49 +171,68 @@ public final class Journal implements AutoCloseable
         }
     }
 
-    private void rotateData(CharSequence triggeringReqId) throws IOException
+    private void rotateData(CharSequence triggeringReqId)
     {
-        if (buffer != null)
+        try
         {
-            buffer.force();
-            Path oldPath = activePath;
-            unmap(buffer);
-            buffer = null;
-
-            String newName = oldPath.getFileName().toString().replace(".active", ".raw");
-            Files.move(oldPath, oldPath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
-
-            // LOG THIS: Now we know exactly which request forced the jump
-            logger.debug("ROTATION: Shard {} moved to .raw. Triggered by ReqID: {}", oldPath.getFileName(), triggeringReqId);
-        }
-
-        this.activePath = provider.getNextPath();
-        this.currentFileId = provider.getRotationCount();
-
-        try (FileChannel fc = FileChannel.open(activePath, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE))
-        {
-            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(activePath.toFile(), "rw"))
+            if (buffer != null)
             {
-                raf.setLength(segmentSize);
+                buffer.force();
+                Path oldPath = activePath;
+                unmap(buffer);
+                buffer = null;
+
+                String newName = oldPath.getFileName().toString().replace(".active", ".raw");
+                Files.move(oldPath, oldPath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
+
+                // LOG THIS: Now we know exactly which request forced the jump
+                logger.debug("ROTATION: Shard {} moved to .raw. Triggered by ReqID: {}", oldPath.getFileName(), triggeringReqId);
             }
-            this.buffer = fc.map(FileChannel.MapMode.READ_WRITE, 0, segmentSize);
-            this.buffer.put(Marker.VERSION);
+
+            this.activePath = provider.getNextPath();
+            this.currentFileId = provider.getRotationCount();
+
+            try (FileChannel fc = FileChannel.open(activePath, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE))
+            {
+                try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(activePath.toFile(), "rw"))
+                {
+                    raf.setLength(segmentSize);
+                }
+                this.buffer = fc.map(FileChannel.MapMode.READ_WRITE, 0, segmentSize);
+                this.buffer.put(Marker.VERSION);
+            }
+        }
+        catch (IOException exc)
+        {
+            throw new UncheckedIOException(exc);
         }
     }
 
-    private void rotateIndex() throws IOException
+    private void rotateIndex()
     {
-        if (index != null)
+        try
         {
-            index.close();
-            Path oldPath = activeIndexPath;
-            String newName = oldPath.getFileName().toString().replace(".active", ".raw");
-            Files.move(oldPath, oldPath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
-        }
+            if (index != null)
+            {
+                index.close();
+                Path oldPath = activeIndexPath;
+                String newName = oldPath.getFileName().toString().replace(".active", ".raw");
+                Files.move(oldPath, oldPath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
+            }
 
-        this.activeIndexPath = activePath.resolveSibling(activePath.getFileName().toString() + ".index");
-        this.index = new IndexSegment(activeIndexPath, indexSize);
-        logger.debug("Index segment rotated to {}", activeIndexPath.getFileName());
+            String dataFileName = activePath.getFileName().toString();
+            String baseName = dataFileName.contains(".")
+                    ? dataFileName.substring(0, dataFileName.lastIndexOf('.'))
+                    : dataFileName;
+
+            this.activeIndexPath = activePath.resolveSibling(baseName + ".index");
+            this.index = new IndexSegment(activeIndexPath, indexSize);
+            logger.debug("Index segment rotated to {}", activeIndexPath.getFileName());
+        }
+        catch (IOException exc)
+        {
+            throw new UncheckedIOException("Unable to rotate index", exc);
+        }
     }
 
     private void ensureCapacity(long needed, CharSequence reqId) throws IOException

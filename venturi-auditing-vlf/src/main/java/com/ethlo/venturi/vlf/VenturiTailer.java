@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.ExchangeCompletionListener;
+import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
 
 public class VenturiTailer
 {
@@ -88,7 +88,8 @@ public class VenturiTailer
 
     private void checkDelete(Path path) throws IOException
     {
-        String key = getStableKey(path);
+        final String filename = path.getFileName().toString();
+        final String key = getStableKey(path);
         if (path.toString().endsWith(".raw") && checkpoints.containsKey(key))
         {
             // Check age if minAge is set
@@ -102,11 +103,20 @@ public class VenturiTailer
                 }
             }
 
+            // 1. Delete the data file
             Files.delete(path);
-            Path indexPath = path.resolveSibling(path.getFileName().toString() + ".index");
-            Files.deleteIfExists(indexPath);
+
+            // 2. Derive the correct index name: shard-0-123.raw -> shard-0-123.index
+            String baseName = filename.substring(0, filename.lastIndexOf(".raw"));
+            Path indexPath = path.resolveSibling(baseName + ".index");
+
+            if (Files.deleteIfExists(indexPath))
+            {
+                logger.debug("Deleted associated index: {}", indexPath.getFileName());
+            }
+
             checkpoints.remove(key);
-            logger.info("Deleted completed segment: {}", path.getFileName());
+            logger.info("Deleted completed segment and index: {}", baseName);
         }
     }
 
@@ -191,7 +201,7 @@ public class VenturiTailer
                 checkpoints.put(key, (long) buffer.position());
             } finally
             {
-                Journal.unmap(buffer);
+                VlfJournal.unmap(buffer);
             }
         }
     }

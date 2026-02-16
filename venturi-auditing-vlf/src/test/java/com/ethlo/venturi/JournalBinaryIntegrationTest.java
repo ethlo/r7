@@ -13,19 +13,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.vlf.Journal;
-import com.ethlo.venturi.vlf.JournalAnalyzer;
-import com.ethlo.venturi.vlf.JournalProvider;
-import com.ethlo.venturi.vlf.ShardedMmapWriter;
-
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.vlf.JournalAnalyzer;
+import com.ethlo.venturi.vlf.VlfJournal;
+import com.ethlo.venturi.vlf.VlfJournalProvider;
 
 class JournalBinaryIntegrationTest
 {
@@ -39,10 +36,16 @@ class JournalBinaryIntegrationTest
     {
         // SETUP: Small segments to force MANY rotations
         int shardCount = 4;
+        int mask = shardCount - 1;
         long segmentSize = 1024 * 64; // 64KB segments
         long indexSize = 1024 * 1024; // 1MB index
 
-        ShardedMmapWriter writer = new ShardedMmapWriter(tempDir, shardCount, segmentSize, indexSize);
+        // Manual shard array to avoid dependency on ShardedJournalWriter in 'core'
+        VlfJournal[] journals = new VlfJournal[shardCount];
+        for (int i = 0; i < shardCount; i++)
+        {
+            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i), segmentSize, indexSize);
+        }
 
         int requestsPerThread = 50;
         int threadCount = 8;
@@ -56,53 +59,54 @@ class JournalBinaryIntegrationTest
                 for (int r = 0; r < requestsPerThread; r++)
                 {
                     String reqId = "req-" + threadId + "-" + r;
-                    Journal j = writer.getJournalForRequest(reqId);
 
-                    // 1. BEGIN
+                    // Equivalent to your sharding logic
+                    int h = reqId.hashCode();
+                    VlfJournal j = journals[(h ^ (h >>> 16)) & mask];
+
+                    // 1. BEGIN (Matches new signature)
                     GatewayHeaders headers = new SimpleGatewayHeaders();
                     headers.add("User-Agent", "JUnit");
-                    j.writeBegin(ServerDirection.REQUEST, reqId,
+                    j.start(ServerDirection.REQUEST, reqId,
                             ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers
                     );
 
                     // 2. INTERLEAVED BODY PARTS
-                    // We write a body that is likely to span segments
-                    byte[] largeBody = new byte[8192]; // 8KB
+                    byte[] largeBody = new byte[8192];
                     java.util.Arrays.fill(largeBody, (byte) 'A');
 
-                    // Simulate streaming chunks
                     for (int chunk = 0; chunk < 4; chunk++)
                     {
-                        j.writeBodyPart(ServerDirection.REQUEST, reqId, ByteBuffer.wrap(largeBody));
-                        // Small sleep to encourage interleaving with other threads
+                        j.body(ServerDirection.REQUEST, reqId, ByteBuffer.wrap(largeBody));
                         Thread.yield();
                     }
 
-                    // 3. END
-                    j.writeEnd(reqId, 200, 32768, 512, 150_000);
+                    // 3. END (Matches new signature: no ServerDirection)
+                    j.end(reqId, 200, 32768, 512, 150_000);
                 }
                 return null;
             });
         }
 
-        // Execute all threads
-        List<Future<Void>> futures = executor.invokeAll(tasks);
-        for (Future<Void> f : futures) f.get(); // Check for exceptions
-
-        // Close everything to flush .active to .raw
-        writer.shutdown();
-        executor.shutdown();
+        try
+        {
+            List<Future<Void>> futures = executor.invokeAll(tasks);
+            for (Future<Void> f : futures) f.get();
+        } finally
+        {
+            // Always close journals to flush .active to .raw
+            for (VlfJournal j : journals) j.close();
+            executor.shutdown();
+        }
 
         // VERIFICATION
-        // 1. Check that files were rotated (we expect more than 'shardCount' files)
-        long fileCount = java.nio.file.Files.list(tempDir)
+        long fileCount = Files.list(tempDir)
                 .filter(p -> p.toString().endsWith(".raw"))
                 .count();
-        logger.info("Total .raw segments created: {}", fileCount);
-        Assertions.assertThat(fileCount).as("Should have rotated multiple times").isGreaterThan(shardCount);
 
-        // 2. Use Analyzer to verify totals
-        // Note: Your analyzer must be updated to look for .raw files and handle fragments
+        logger.info("Total .raw segments created: {}", fileCount);
+        assertThat(fileCount).as("Should have rotated multiple times").isGreaterThan(shardCount);
+
         JournalAnalyzer.Stats stats = new JournalAnalyzer(tempDir).analyze();
 
         int totalRequests = threadCount * requestsPerThread;
@@ -112,47 +116,43 @@ class JournalBinaryIntegrationTest
     @Test
     void testRequestResponseInterleaving() throws IOException
     {
-        JournalProvider provider = new JournalProvider(tempDir, 0);
-        Path lastRawFile;
+        VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0);
 
-        try (Journal j = new Journal(provider, 1024 * 1024, 1024 * 1024))
+        try (VlfJournal j = new VlfJournal(provider, 1024 * 1024, 1024 * 1024))
         {
             String id = "dual-123";
 
-            j.writeBegin(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), new SimpleGatewayHeaders());
-            j.writeBodyPart(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
-            j.writeBegin(ServerDirection.RESPONSE, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new SimpleGatewayHeaders());
-            j.writeBodyPart(ServerDirection.RESPONSE, id, ByteBuffer.wrap("Response chunk".getBytes()));
-            j.writeEnd(id, 200, 100, 100, 500);
-        } // Journal.close() moves .active to .raw
+            j.start(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), new SimpleGatewayHeaders());
+            j.body(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
 
-        // Find the resulting .raw file
-        try (var stream = Files.list(tempDir))
-        {
-            lastRawFile = stream
-                    .filter(p -> p.toString().endsWith(".raw"))
-                    .findFirst()
-                    .orElse(null);
+            // New signature for response BEGIN
+            j.start(ServerDirection.RESPONSE, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new SimpleGatewayHeaders());
+            j.body(ServerDirection.RESPONSE, id, ByteBuffer.wrap("Response chunk".getBytes()));
+
+            // New signature for END
+            j.end(id, 200, 100, 100, 500);
         }
 
         try
         {
-            Assertions.assertThat(lastRawFile).isNotNull();
             JournalAnalyzer.Stats stats = new JournalAnalyzer(tempDir).analyze();
-
             assertThat(stats.completedExchanges).isOne();
         }
         catch (Throwable e)
         {
-            if (lastRawFile != null && Files.exists(lastRawFile))
-            {
-                printHexDump(lastRawFile);
-            }
-            else
-            {
-                logger.error("No .raw file found in {}", tempDir);
-                Files.list(tempDir).forEach(p -> logger.error("File in dir: {}", p));
-            }
+            // Locate the .raw file for debugging if it fails
+            Files.list(tempDir)
+                    .filter(p -> p.toString().endsWith(".raw"))
+                    .findFirst()
+                    .ifPresent(p -> {
+                        try
+                        {
+                            printHexDump(p);
+                        }
+                        catch (IOException ignore)
+                        {
+                        }
+                    });
             throw e;
         }
     }
@@ -177,6 +177,5 @@ class JournalBinaryIntegrationTest
                 ascii.setLength(0);
             }
         }
-        logger.error("------------------------------------------------");
     }
 }

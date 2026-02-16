@@ -1,4 +1,4 @@
-package com.ethlo.venturi;
+package com.ethlo.venturi.auditing.api;
 
 public interface ExchangeCompletionListener
 {

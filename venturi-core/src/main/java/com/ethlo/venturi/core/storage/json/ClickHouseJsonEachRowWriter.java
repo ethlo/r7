@@ -7,8 +7,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.venturi.ExchangeCompletionListener;
-import com.ethlo.venturi.JournalExchange;
+import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
+import com.ethlo.venturi.auditing.api.JournalExchange;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.json.JsonMapper;

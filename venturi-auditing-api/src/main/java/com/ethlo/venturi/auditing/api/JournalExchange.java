@@ -1,4 +1,4 @@
-package com.ethlo.venturi;
+package com.ethlo.venturi.auditing.api;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

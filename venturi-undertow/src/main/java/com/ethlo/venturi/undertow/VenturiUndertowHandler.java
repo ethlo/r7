@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
@@ -20,8 +21,7 @@ import com.ethlo.venturi.core.FastGatewayAttributes;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
-import com.ethlo.venturi.vlf.Journal;
-import com.ethlo.venturi.vlf.ShardedMmapWriter;
+import com.ethlo.venturi.vlf.VlfJournal;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 
@@ -32,12 +32,12 @@ public final class VenturiUndertowHandler implements HttpHandler
     static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
     private static final CharSequence ROUTE_ID_KEY = ".ROUTE_ID";
 
-    private final ShardedMmapWriter gatewayExchangeDataWriter;
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final RouteRegistry routeRegistry;
+    private final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter;
 
-    public VenturiUndertowHandler(final RouteRegistry routeRegistry, final ShardedMmapWriter gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler)
+    public VenturiUndertowHandler(final RouteRegistry routeRegistry, final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler)
     {
         this.routeRegistry = routeRegistry;
         this.gatewayExchangeDataWriter = gatewayExchangeDataWriter;
@@ -97,20 +97,20 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         // Pin the journal to this specific request lifecycle
         final CharSequence requestId = gatewayExchange.requestId();
-        final Journal requestJournal = gatewayExchangeDataWriter.getJournalForRequest(requestId);
+        final VlfJournal requestJournal = gatewayExchangeDataWriter.getJournal(requestId);
         gatewayExchange.attributes().put(JOURNAL_KEY, requestJournal);
 
         // Add Completion Listener using the pinned journal
         exchange.addExchangeCompleteListener((ex, next) -> {
             try
             {
-                final Journal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
+                final VlfJournal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
                 if (journal != null)
                 {
                     final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
                     synchronized (journal)
                     {
-                        journal.writeEnd(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
+                        journal.end(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
                     }
                 }
             } finally
@@ -119,7 +119,7 @@ public final class VenturiUndertowHandler implements HttpHandler
             }
         });
 
-        final Journal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
+        final VlfJournal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
 
         if (journal == null)
         {
@@ -130,7 +130,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
         synchronized (journal)
         {
-            journal.writeBegin(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
+            journal.start(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
         }
 
         // Capture Request Body
@@ -139,7 +139,7 @@ public final class VenturiUndertowHandler implements HttpHandler
             gatewayExchange.request().addBodyListener(buffer -> {
                 synchronized (journal)
                 {
-                    journal.writeBodyPart(ServerDirection.REQUEST, requestId, buffer);
+                    journal.body(ServerDirection.REQUEST, requestId, buffer);
                 }
             });
         }
@@ -160,12 +160,12 @@ public final class VenturiUndertowHandler implements HttpHandler
                         if (!headersWritten)
                         {
                             final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                            journal.writeBegin(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
+                            journal.start(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
                             headersWritten = true;
                         }
                         if (captureResBody)
                         {
-                            journal.writeBodyPart(ServerDirection.RESPONSE, requestId, buffer);
+                            journal.body(ServerDirection.RESPONSE, requestId, buffer);
                         }
                     }
                 }

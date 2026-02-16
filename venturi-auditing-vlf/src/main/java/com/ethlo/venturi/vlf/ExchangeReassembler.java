@@ -7,8 +7,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.ExchangeCompletionListener;
-import com.ethlo.venturi.JournalExchange;
+import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
+import com.ethlo.venturi.auditing.api.JournalExchange;
 import com.ethlo.venturi.api.ServerDirection;
 
 public class ExchangeReassembler implements JournalEventListener

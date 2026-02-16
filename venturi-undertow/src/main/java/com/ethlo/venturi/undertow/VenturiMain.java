@@ -11,8 +11,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.venturi.vlf.ShardedMmapWriter;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -20,6 +18,7 @@ import org.xnio.Options;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
+import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
@@ -28,6 +27,8 @@ import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
+import com.ethlo.venturi.vlf.VlfJournal;
+import com.ethlo.venturi.vlf.VlfJournalProvider;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -39,10 +40,10 @@ import io.undertow.util.Headers;
 
 public final class VenturiMain
 {
-    public static final int JOURNAL_SHARD_COUNT = 16;
-    public static final int JOURNAL_SHARD_SIZE_BYTES = 1_000_000;
+    public static final int JOURNAL_SHARD_COUNT = 4;
+    public static final int JOURNAL_SHARD_SIZE_BYTES = 100_000_000;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
-    private static final long JOURNAL_SHARD_INDEX_SIZE = 100_000;
+    private static final long JOURNAL_SHARD_INDEX_SIZE_BYTES = 10_000_000;
 
     private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
 
@@ -102,7 +103,12 @@ public final class VenturiMain
 
         final Path rootDir = Paths.get(storage.tempDir());
         Files.createDirectories(rootDir);
-        final ShardedMmapWriter gatewayExchangeDataWriter = new ShardedMmapWriter(rootDir, JOURNAL_SHARD_COUNT, JOURNAL_SHARD_SIZE_BYTES, JOURNAL_SHARD_INDEX_SIZE);
+
+        final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(JOURNAL_SHARD_COUNT, shardIdx -> {
+            final VlfJournalProvider provider = new VlfJournalProvider(rootDir, shardIdx);
+            return new VlfJournal(provider, JOURNAL_SHARD_SIZE_BYTES, JOURNAL_SHARD_INDEX_SIZE_BYTES);
+        }
+        );
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)

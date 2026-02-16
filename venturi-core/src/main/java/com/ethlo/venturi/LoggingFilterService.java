@@ -1,13 +1,6 @@
 package com.ethlo.venturi;
 
-import com.ethlo.venturi.config.HeaderPredicate;
-
-import java.util.HashSet;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-
+/*
 public class LoggingFilterService
 {
     private final ConcurrentMap<String, PredicateConfig> cache = new ConcurrentHashMap<>();
@@ -45,3 +38,4 @@ public class LoggingFilterService
         return httpLoggingConfiguration.getFilter();
     }
 }
+*/

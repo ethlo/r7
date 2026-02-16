@@ -3,13 +3,13 @@ package com.ethlo.venturi.vlf;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class JournalProvider
+public class VlfJournalProvider
 {
     private final Path tempDir;
     private final int shardId;
     private final AtomicInteger rotationCount = new AtomicInteger(0);
 
-    public JournalProvider(Path tempDir, int shardId)
+    public VlfJournalProvider(Path tempDir, int shardId)
     {
         this.tempDir = tempDir;
         this.shardId = shardId;
