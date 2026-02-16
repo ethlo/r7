@@ -2,7 +2,7 @@ package com.ethlo.venturi;
 
 import java.util.Optional;
 
-import com.ethlo.venturi.config.spg.HeaderPredicate;
+import com.ethlo.venturi.config.HeaderPredicate;
 
 public class LogFilter
 {

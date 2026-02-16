@@ -1,4 +1,4 @@
-package com.ethlo.venturi.mmap;
+package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;

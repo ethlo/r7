@@ -9,7 +9,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 
 import com.ethlo.venturi.core.storage.json.ClickHouseJsonEachRowWriter;
-import com.ethlo.venturi.mmap.VenturiTailer;
+import com.ethlo.venturi.vlf.VenturiTailer;
 
 public class VenturiTailerApp
 {

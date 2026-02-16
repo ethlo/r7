@@ -1,4 +1,4 @@
-package com.ethlo.venturi.config.spg;
+package com.ethlo.venturi.config;
 
 public enum HeaderProcessing
 {

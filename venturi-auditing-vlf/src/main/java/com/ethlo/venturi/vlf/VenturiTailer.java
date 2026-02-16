@@ -1,4 +1,4 @@
-package com.ethlo.venturi.mmap;
+package com.ethlo.venturi.vlf;
 
 import java.io.IOException;
 import java.io.InputStream;

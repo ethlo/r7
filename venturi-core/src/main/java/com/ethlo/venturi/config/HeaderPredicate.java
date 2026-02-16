@@ -1,8 +1,8 @@
-package com.ethlo.venturi.config.spg;
+package com.ethlo.venturi.config;
 
-import static com.ethlo.venturi.config.spg.HeaderProcessing.DELETE;
-import static com.ethlo.venturi.config.spg.HeaderProcessing.NONE;
-import static com.ethlo.venturi.config.spg.HeaderProcessing.REDACT;
+import static com.ethlo.venturi.config.HeaderProcessing.DELETE;
+import static com.ethlo.venturi.config.HeaderProcessing.NONE;
+import static com.ethlo.venturi.config.HeaderProcessing.REDACT;
 
 import java.util.AbstractMap;
 import java.util.Map;

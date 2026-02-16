@@ -20,8 +20,8 @@ import com.ethlo.venturi.core.FastGatewayAttributes;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
-import com.ethlo.venturi.mmap.Journal;
-import com.ethlo.venturi.mmap.ShardedMmapWriter;
+import com.ethlo.venturi.vlf.Journal;
+import com.ethlo.venturi.vlf.ShardedMmapWriter;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 

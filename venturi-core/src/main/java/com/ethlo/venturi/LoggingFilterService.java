@@ -1,7 +1,6 @@
 package com.ethlo.venturi;
 
-import com.ethlo.venturi.config.spg.HeaderPredicate;
-import com.ethlo.venturi.config.spg.HttpLoggingConfiguration;
+import com.ethlo.venturi.config.HeaderPredicate;
 
 import java.util.HashSet;
 import java.util.Optional;
@@ -11,13 +10,7 @@ import java.util.concurrent.ConcurrentMap;
 
 public class LoggingFilterService
 {
-    private final HttpLoggingConfiguration httpLoggingConfiguration;
     private final ConcurrentMap<String, PredicateConfig> cache = new ConcurrentHashMap<>();
-
-    public LoggingFilterService(HttpLoggingConfiguration httpLoggingConfiguration)
-    {
-        this.httpLoggingConfiguration = httpLoggingConfiguration;
-    }
 
     public static PredicateConfig mergeFilter(HttpLoggingConfiguration httpLoggingConfiguration, PredicateConfig predicateConfig)
     {

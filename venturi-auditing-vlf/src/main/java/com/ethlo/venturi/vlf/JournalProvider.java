@@ -1,4 +1,4 @@
-package com.ethlo.venturi.mmap;
+package com.ethlo.venturi.vlf;
 
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;

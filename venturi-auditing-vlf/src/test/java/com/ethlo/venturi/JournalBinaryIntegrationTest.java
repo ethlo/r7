@@ -14,10 +14,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.mmap.Journal;
-import com.ethlo.venturi.mmap.JournalAnalyzer;
-import com.ethlo.venturi.mmap.JournalProvider;
-import com.ethlo.venturi.mmap.ShardedMmapWriter;
+import com.ethlo.venturi.vlf.Journal;
+import com.ethlo.venturi.vlf.JournalAnalyzer;
+import com.ethlo.venturi.vlf.JournalProvider;
+import com.ethlo.venturi.vlf.ShardedMmapWriter;
 
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
