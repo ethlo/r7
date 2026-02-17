@@ -34,8 +34,7 @@ public class VenturiTailerApp
         while (!Thread.currentThread().isInterrupted())
         {
             tailer.runTick();
-            // A 500ms sleep is a good balance for the i5's interrupt budget
-            Thread.sleep(500);
+            Thread.sleep(1_000);
         }
     }
 }

@@ -1,10 +1,5 @@
 package com.ethlo.venturi.vlf;
 
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -23,6 +18,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Stream;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
 
 public class VenturiTailer
 {
@@ -144,8 +144,7 @@ public class VenturiTailer
                 }
 
                 checkpoints.put(key, (long) buffer.position());
-            }
-            finally
+            } finally
             {
                 VlfJournal.unmap(buffer);
             }
@@ -154,13 +153,19 @@ public class VenturiTailer
 
     private void logStats()
     {
-        if (totalBytesRead > 0)
+        if (totalBytesRead > 0 && estimatedTextSize > 0)
         {
             double ratio = (1.0 - ((double) totalBytesRead / estimatedTextSize)) * 100.0;
-            logger.info("Tailer Stats: Processed {} KB binary (Estimated {} KB text). Saved: {}%",
-                    totalBytesRead / 1024,
-                    estimatedTextSize / 1024,
-                    String.format("%.2f", ratio));
+
+            // Show bytes if it's less than 1KB, otherwise show KB with decimals
+            String binarySize = totalBytesRead < 1024 ? totalBytesRead + " B" : String.format("%.2f KB", totalBytesRead / 1024.0);
+            String textSize = estimatedTextSize < 1024 ? estimatedTextSize + " B" : String.format("%.2f KB", estimatedTextSize / 1024.0);
+
+            logger.info("Tailer Stats: Processed {} binary (Estimated {} text). Saved: {}%",
+                    binarySize,
+                    textSize,
+                    String.format("%.2f", ratio)
+            );
         }
     }
 
