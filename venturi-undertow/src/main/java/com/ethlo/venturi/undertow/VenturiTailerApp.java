@@ -26,7 +26,7 @@ public class VenturiTailerApp
         ClickHouseJsonEachRowWriter jsonWriter = new ClickHouseJsonEachRowWriter(out);
 
         // 3. The Management Layer (File Watcher)
-        VenturiTailer tailer = new VenturiTailer(logDir, Duration.ofMinutes(1), jsonWriter);
+        VenturiTailer tailer = new VenturiTailer(logDir, Duration.ofHours(1), jsonWriter);
 
         System.out.println("🚀 Venturi Tailer Live. Watching SSD journals...");
         System.out.println("📂 Writing JSONEachRow to: " + auditFile);

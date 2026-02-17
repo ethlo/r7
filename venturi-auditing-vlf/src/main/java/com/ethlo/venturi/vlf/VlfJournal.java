@@ -3,6 +3,7 @@ package com.ethlo.venturi.vlf;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Locale;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,14 +21,18 @@ import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.auditing.api.Journal;
 
+/**
+ * High-performance binary journal using Memory Mapped Files (mmap),
+ * Sharding, and Dictionary Compression.
+ */
 public final class VlfJournal implements Journal
 {
     private static final Logger logger = LoggerFactory.getLogger(VlfJournal.class);
 
     private final VlfJournalProvider provider;
+    private final VlfDictionary dictionary;
     private final long segmentSize;
     private final long indexSize;
-    private final byte[] keyBuffer = new byte[256];
 
     private MappedByteBuffer buffer;
     private IndexSegment index;
@@ -34,13 +40,19 @@ public final class VlfJournal implements Journal
     private Path activeIndexPath;
     private int currentFileId = 0;
 
-    public VlfJournal(VlfJournalProvider provider, long segmentSize, long indexSize)
+    public VlfJournal(VlfJournalProvider provider, VlfDictionary dictionary, long segmentSize, long indexSize)
     {
         this.provider = provider;
+        this.dictionary = dictionary;
         this.segmentSize = segmentSize;
         this.indexSize = indexSize;
         this.rotateData(null);
         this.rotateIndex();
+    }
+
+    public VlfJournal(VlfJournalProvider provider, long segmentSize, long indexSize)
+    {
+        this(provider, VlfDictionary.load("default-dict.properties"), segmentSize, indexSize);
     }
 
     public static void unmap(MappedByteBuffer bb)
@@ -49,7 +61,6 @@ public final class VlfJournal implements Journal
 
         try
         {
-            // Modern Java (9+) way to invoke the cleaner
             Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
             java.lang.reflect.Field f = unsafeClass.getDeclaredField("theUnsafe");
             f.setAccessible(true);
@@ -69,26 +80,30 @@ public final class VlfJournal implements Journal
         try
         {
             ensureIndexCapacity();
-            // Defensive: Marker(1) + ID(1+N) + Dir(4) + Line(4+N) + Count(4) + Headers
+            // Estimate capacity: Header(1) + ReqID + Dir(1) + StartLine + HeaderCount(4) + approx header space
             ensureCapacity(512 + reqId.length() + startLine.remaining(), reqId);
 
-            // FIX: Capture file identity AFTER potential rotation
             final int fileIdAtWrite = this.currentFileId;
             final long startOffset = buffer.position();
 
-            writeEntryHeader(Marker.BEGIN, reqId);
-            buffer.putInt(dir.ordinal());
+            writeEntryHeader(VlfConstants.MARKER_START, reqId);
+            buffer.put((byte) dir.ordinal());
             writePrefixedBuffer(startLine);
 
+            // Reserve space for header count, will fill later
             int countPos = buffer.position();
             buffer.putInt(0);
+
             int[] count = {0};
             headers.forEach((k, v) ->
             {
-                writeLowercasedHeaderName(k);
-                writePrefixedString(v);
+                // Dictionary compression on both keys and values
+                writeStringWithDict(k.toString().toLowerCase(Locale.ROOT));
+                writeStringWithDict(v);
                 count[0]++;
             });
+
+            // Backpatch the actual header count
             buffer.putInt(countPos, count[0]);
 
             index.record(reqId, fileIdAtWrite, startOffset);
@@ -108,24 +123,23 @@ public final class VlfJournal implements Journal
             {
                 ensureIndexCapacity();
 
-                int minRequired = 10 + reqId.length(); // Marker(1) + IdLen(1) + Id + Dir(4) + PayloadLen(4)
+                // Minimum overhead for a body chunk
+                int minRequired = 16 + reqId.length();
                 if (buffer.remaining() < minRequired + 1)
                 {
                     rotateData(reqId);
                 }
 
-                // Capture the state AFTER potential rotation to ensure the index
-                // points to the file we are actually writing into.
                 final int fileIdAtWrite = this.currentFileId;
                 final long startOffset = buffer.position();
 
                 int available = buffer.remaining() - minRequired;
                 int toWrite = Math.min(data.remaining(), available);
 
-                buffer.put(Marker.BODY);
+                buffer.put(VlfConstants.MARKER_BODY);
                 buffer.put((byte) reqId.length());
                 writeRawCharSequence(reqId);
-                buffer.putInt(dir.ordinal());
+                buffer.put((byte) dir.ordinal());
                 buffer.putInt(toWrite);
 
                 ByteBuffer slice = data.duplicate();
@@ -133,8 +147,6 @@ public final class VlfJournal implements Journal
                 buffer.put(slice);
 
                 data.position(data.position() + toWrite);
-
-                // Link the index to the captured fileId
                 index.record(reqId, fileIdAtWrite, startOffset);
             }
         }
@@ -152,11 +164,10 @@ public final class VlfJournal implements Journal
             ensureIndexCapacity();
             ensureCapacity(128 + reqId.length(), reqId);
 
-            // FIX: Capture file identity AFTER potential rotation
             final int fileIdAtWrite = this.currentFileId;
             final long startOffset = buffer.position();
 
-            writeEntryHeader(Marker.END, reqId);
+            writeEntryHeader(VlfConstants.MARKER_END, reqId);
             buffer.putLong(System.currentTimeMillis());
             buffer.putInt(status);
             buffer.putLong(sent);
@@ -184,9 +195,7 @@ public final class VlfJournal implements Journal
 
                 String newName = oldPath.getFileName().toString().replace(".active", ".raw");
                 Files.move(oldPath, oldPath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
-
-                // LOG THIS: Now we know exactly which request forced the jump
-                logger.debug("ROTATION: Shard {} moved to .raw. Triggered by ReqID: {}", oldPath.getFileName(), triggeringReqId);
+                logger.debug("ROTATION: Shard {} finalized. Triggered by: {}", newName, triggeringReqId);
             }
 
             this.activePath = provider.getNextPath();
@@ -199,12 +208,79 @@ public final class VlfJournal implements Journal
                     raf.setLength(segmentSize);
                 }
                 this.buffer = fc.map(FileChannel.MapMode.READ_WRITE, 0, segmentSize);
-                this.buffer.put(Marker.VERSION);
+                this.buffer.order(ByteOrder.BIG_ENDIAN);
+                writePreamble();
             }
         }
         catch (IOException exc)
         {
             throw new UncheckedIOException(exc);
+        }
+    }
+
+    private void writePreamble()
+    {
+        // Start at the very beginning
+        buffer.position(0);
+
+        // 1. Magic: 4 bytes (0, 1, 2, 3)
+        buffer.putInt(VlfConstants.MAGIC);
+
+        // 2. Version: 2 bytes (4, 5)
+        buffer.putShort(VlfConstants.VERSION_1);
+
+        // 3. Dictionary Entry Count: 2 bytes (6, 7)
+        Map<String, Byte> entries = dictionary.getEntries();
+        buffer.putShort((short) entries.size());
+
+        // 4. Dictionary Content: (8+)
+        for (Map.Entry<String, Byte> entry : entries.entrySet())
+        {
+            byte[] b = entry.getKey().getBytes(StandardCharsets.UTF_8);
+            buffer.put(entry.getValue()); // ID (1 byte)
+            buffer.put((byte) b.length);  // Length (1 byte)
+            buffer.put(b);                // String bytes
+        }
+
+        // Safety check: Ensure we haven't exceeded our reserved space
+        if (buffer.position() > VlfConstants.PREAMBLE_SIZE)
+        {
+            throw new IllegalStateException("Dictionary too large for 4KB preamble limit!");
+        }
+
+        // 5. Final Alignment: Jump to 4096 so data starts on a clean page boundary
+        buffer.position(VlfConstants.PREAMBLE_SIZE);
+    }
+
+    private void writeStringWithDict(CharSequence s)
+    {
+        if (s == null)
+        {
+            buffer.put(VlfConstants.NULL_VALUE);
+            return;
+        }
+
+        String str = s.toString();
+        Byte id = dictionary.encode(str);
+
+        if (id != null)
+        {
+            buffer.put(VlfConstants.DICT_LOOKUP);
+            buffer.put(id);
+        }
+        else
+        {
+            byte[] b = str.getBytes(StandardCharsets.UTF_8);
+            if (b.length >= 0xFE)
+            {
+                buffer.put(VlfConstants.LONG_STRING);
+                buffer.putInt(b.length);
+            }
+            else
+            {
+                buffer.put((byte) b.length);
+            }
+            buffer.put(b);
         }
     }
 
@@ -237,7 +313,7 @@ public final class VlfJournal implements Journal
 
     private void ensureCapacity(long needed, CharSequence reqId) throws IOException
     {
-        if (needed > segmentSize)
+        if (needed > segmentSize - VlfConstants.PREAMBLE_SIZE)
         {
             throw new IllegalArgumentException("Entry too large for segment size");
         }
@@ -270,30 +346,6 @@ public final class VlfJournal implements Journal
         }
     }
 
-    private void writeLowercasedHeaderName(CharSequence cs)
-    {
-        int len = cs.length();
-        if (len > keyBuffer.length)
-        {
-            writePrefixedString(cs.toString().toLowerCase(Locale.ROOT));
-            return;
-        }
-        for (int i = 0; i < len; i++)
-        {
-            char c = cs.charAt(i);
-            keyBuffer[i] = (byte) ((c >= 'A' && c <= 'Z') ? (c | 0x20) : c);
-        }
-        buffer.putInt(len);
-        buffer.put(keyBuffer, 0, len);
-    }
-
-    private void writePrefixedString(CharSequence s)
-    {
-        byte[] b = s.toString().getBytes(StandardCharsets.UTF_8);
-        buffer.putInt(b.length);
-        buffer.put(b);
-    }
-
     private void writePrefixedBuffer(ByteBuffer src)
     {
         buffer.putInt(src.remaining());
@@ -316,5 +368,10 @@ public final class VlfJournal implements Journal
             String newName = activeIndexPath.getFileName().toString().replace(".active", ".raw");
             Files.move(activeIndexPath, activeIndexPath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
         }
+    }
+
+    public Path getActivePath()
+    {
+        return activePath;
     }
 }

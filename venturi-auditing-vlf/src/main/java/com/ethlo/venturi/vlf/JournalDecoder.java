@@ -5,30 +5,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 
 import com.ethlo.venturi.api.ServerDirection;
 
 public final class JournalDecoder
 {
-    public static void decode(ByteBuffer buffer, JournalEventListener listener)
+    public static long decode(ByteBuffer buffer, VlfDictionary dictionary, JournalEventListener listener)
     {
-        // If we are at the very start of the shard, validate the protocol version
-        if (buffer.position() == 0 && buffer.hasRemaining())
-        {
-            byte version = buffer.get();
-            if (version != Marker.VERSION)
-            {
-                throw new IllegalStateException("Invalid protocol version! Expected " + Marker.VERSION + " but got " + version + " at position 0");
-            }
-        }
-
+        long totalTextWeight = 0;
         while (buffer.hasRemaining())
         {
-            int startPos = buffer.position();
-            byte marker = buffer.get();
+            final int startPos = buffer.position();
+            final byte marker = buffer.get();
 
-            // 0 is the ONLY valid "silent" stop - it means we hit the pre-allocated zeroed space
-            if (marker == 0)
+            // 0 is the padding in mmap files
+            if (marker == VlfConstants.NULL_VALUE)
             {
                 buffer.position(startPos);
                 break;
@@ -36,102 +28,154 @@ public final class JournalDecoder
 
             try
             {
-                parseEvent(marker, buffer, listener);
+                totalTextWeight += parseEvent(marker, buffer, dictionary, listener);
             }
             catch (Exception e)
             {
-                throw new RuntimeException("Failed to parse event at position " + startPos + " with marker " + marker + " in " + buffer, e);
+                throw new RuntimeException("Parse error at position " + startPos + " with marker " + marker, e);
             }
         }
+        return totalTextWeight;
     }
 
-    private static void parseEvent(byte marker, ByteBuffer buffer, JournalEventListener listener)
+    private static long parseEvent(byte marker, ByteBuffer buffer, VlfDictionary dictionary, JournalEventListener listener)
     {
-        if (marker == Marker.BEGIN)
+        long weight = 0;
+        if (marker == VlfConstants.MARKER_START)
         {
-            String requestId = readReqId(buffer);
-            int dirOrdinal = buffer.getInt();
-            validateDirection(dirOrdinal);
-            ServerDirection dir = ServerDirection.values()[dirOrdinal];
-            String startLine = readPrefixedString(buffer);
-            listener.onBegin(dir, requestId, startLine, readHeaders(buffer));
-        }
-        else if (marker == Marker.BODY)
-        {
-            String requestId = readReqId(buffer);
-            int dirOrdinal = buffer.getInt();
-            validateDirection(dirOrdinal);
-            ServerDirection dir = ServerDirection.values()[dirOrdinal];
-            ByteBuffer body = readPrefixedBuffer(buffer);
-            if (body != null)
+            final String requestId = readReqId(buffer);
+            final ServerDirection dir = ServerDirection.values()[buffer.get()];
+            final String startLine = readPrefixedBufferAsString(buffer);
+            final Map<String, String> headers = readHeaders(buffer, dictionary);
+
+            listener.onBegin(dir, requestId, startLine, headers);
+
+            weight += safeLen(requestId) + safeLen(dir.name()) + safeLen(startLine);
+            for (Map.Entry<String, String> entry : headers.entrySet())
             {
-                listener.onBody(dir, requestId, body);
+                // Safety: Use safeLen to avoid NPE on null keys/values
+                weight += safeLen(entry.getKey()) + safeLen(entry.getValue()) + 4;
             }
         }
-        else if (marker == Marker.END)
+        else if (marker == VlfConstants.MARKER_BODY)
         {
-            String requestId = readReqId(buffer);
-            listener.onEnd(requestId, buffer.getLong(), buffer.getInt(),
-                    buffer.getLong(), buffer.getLong(), buffer.getLong()
-            );
+            final String requestId = readReqId(buffer);
+            final ServerDirection dir = ServerDirection.values()[buffer.get()];
+            final ByteBuffer body = readPrefixedBuffer(buffer);
+            final int bodyLen = (body != null) ? body.remaining() : 0;
+
+            listener.onBody(dir, requestId, body);
+            weight += safeLen(requestId) + safeLen(dir.name()) + bodyLen;
         }
-        else
+        else if (marker == VlfConstants.MARKER_END)
         {
-            throw new IllegalArgumentException("Unknown marker: " + marker + " at position " + (buffer.position() - 1));
+            final String requestId = readReqId(buffer);
+            final long ts = buffer.getLong();
+            final int status = buffer.getInt();
+            final long sent = buffer.getLong();
+            final long recv = buffer.getLong();
+            final long duration = buffer.getLong();
+
+            listener.onEnd(requestId, ts, status, sent, recv, duration);
+            weight += safeLen(requestId) + 60; // Estimated numeric text weight
         }
+        return weight;
+    }
+
+    private static int safeLen(String s)
+    {
+        return (s != null) ? s.length() : 0;
+    }
+
+    private static String readString(ByteBuffer buffer, VlfDictionary dictionary)
+    {
+        final byte first = buffer.get();
+        if (first == VlfConstants.DICT_LOOKUP)
+        {
+            return dictionary.decode(buffer.get());
+        }
+        else if (first == VlfConstants.LONG_STRING)
+        {
+            return readRawString(buffer, buffer.getInt());
+        }
+        else if (first == VlfConstants.NULL_VALUE)
+        {
+            return null;
+        }
+        return readRawString(buffer, first & 0xFF);
     }
 
     private static String readReqId(ByteBuffer buffer)
     {
-        if (!buffer.hasRemaining()) throw new IllegalStateException("Missing ReqID length byte");
-        int len = Byte.toUnsignedInt(buffer.get());
-        if (buffer.remaining() < len) throw new IllegalStateException("Incomplete ReqID. Expected " + len + " bytes");
-        byte[] bytes = new byte[len];
+        final int len = Byte.toUnsignedInt(buffer.get());
+        final byte[] bytes = new byte[len];
         buffer.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    private static String readPrefixedString(ByteBuffer buffer)
+    private static String readRawString(ByteBuffer buffer, int len)
     {
-        if (buffer.remaining() < 4) throw new IllegalStateException("Missing String length prefix");
-        int len = buffer.getInt();
-        if (len < 0) return null;
-        if (buffer.remaining() < len) throw new IllegalStateException("Incomplete String. Expected " + len + " bytes");
-        byte[] bytes = new byte[len];
+        final byte[] bytes = new byte[len];
         buffer.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static String readPrefixedBufferAsString(ByteBuffer buffer)
+    {
+        return readRawString(buffer, buffer.getInt());
     }
 
     private static ByteBuffer readPrefixedBuffer(ByteBuffer buffer)
     {
-        if (buffer.remaining() < 4) throw new IllegalStateException("Missing Buffer length prefix");
-        int len = buffer.getInt();
-        if (len < 0) return null;
-        if (buffer.remaining() < len) throw new IllegalStateException("Incomplete Buffer. Expected " + len + " bytes");
-        ByteBuffer slice = buffer.slice();
+        final int len = buffer.getInt();
+        if (len < 0)
+        {
+            return null;
+        }
+        final ByteBuffer slice = buffer.slice();
         slice.limit(len);
         buffer.position(buffer.position() + len);
         return slice;
     }
 
-    private static Map<String, String> readHeaders(ByteBuffer buffer)
+    private static Map<String, String> readHeaders(ByteBuffer buffer, VlfDictionary dictionary)
     {
-        if (buffer.remaining() < 4) throw new IllegalStateException("Missing Header count");
-        int count = buffer.getInt();
-        if (count <= 0) return Collections.emptyMap();
-        Map<String, String> headers = new HashMap<>(count);
+        final int count = buffer.getInt();
+        if (count <= 0)
+        {
+            return Collections.emptyMap();
+        }
+        final Map<String, String> headers = new HashMap<>(count);
         for (int i = 0; i < count; i++)
         {
-            headers.put(readPrefixedString(buffer), readPrefixedString(buffer));
+            final String k = readString(buffer, dictionary);
+            final String v = readString(buffer, dictionary);
+            headers.put(k, v);
         }
         return headers;
     }
 
-    private static void validateDirection(int ordinal)
+    public static VlfDictionary readDictionaryFromPreamble(ByteBuffer buffer)
     {
-        if (ordinal < 0 || ordinal >= ServerDirection.values().length)
+        buffer.position(0);
+        if (buffer.getInt() != VlfConstants.MAGIC)
         {
-            throw new IllegalArgumentException("Invalid ServerDirection ordinal: " + ordinal);
+            throw new IllegalStateException("Invalid Magic");
         }
+        if (buffer.getShort() != VlfConstants.VERSION_1)
+        {
+            throw new IllegalStateException("Invalid Version");
+        }
+        final short entryCount = buffer.getShort();
+        final Properties props = new Properties();
+        for (int i = 0; i < entryCount; i++)
+        {
+            final int id = Byte.toUnsignedInt(buffer.get());
+            final int len = Byte.toUnsignedInt(buffer.get());
+            final byte[] b = new byte[len];
+            buffer.get(b);
+            props.setProperty(String.valueOf(id), new String(b, StandardCharsets.UTF_8));
+        }
+        return new VlfDictionary(props);
     }
 }

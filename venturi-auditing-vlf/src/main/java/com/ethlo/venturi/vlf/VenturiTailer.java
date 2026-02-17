@@ -1,5 +1,10 @@
 package com.ethlo.venturi.vlf;
 
+import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -19,21 +24,21 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Stream;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
-
 public class VenturiTailer
 {
     private static final Logger logger = LoggerFactory.getLogger(VenturiTailer.class);
     private static final String CHECKPOINT_FILE = ".venturi_checkpoints";
 
     private final Map<String, Long> checkpoints = new HashMap<>();
+    private final Map<String, VlfDictionary> dictCache = new HashMap<>();
     private final Path logDir;
     private final Duration minAge;
     private final JournalEventListener reassembler;
     private final Path checkpointPath;
+
+    // Statistics tracking
+    private long totalBytesRead = 0;
+    private long estimatedTextSize = 0;
 
     public VenturiTailer(Path logDir, Duration minAge, ExchangeCompletionListener output)
     {
@@ -55,20 +60,14 @@ public class VenturiTailer
                     .sorted((p1, p2) -> {
                         FileMeta m1 = parseMeta(p1);
                         FileMeta m2 = parseMeta(p2);
-
-                        // 1. Group by Shard (Crucial for Reassembler state)
                         if (m1.shardId != m2.shardId)
                         {
                             return Integer.compare(m1.shardId, m2.shardId);
                         }
-
-                        // 2. Order by Timestamp (Chronological)
                         if (m1.timestamp != m2.timestamp)
                         {
                             return Long.compare(m1.timestamp, m2.timestamp);
                         }
-
-                        // 3. Tie-break with Rotation Count
                         return Integer.compare(m1.rotationCount, m2.rotationCount);
                     })
                     .forEach(path -> {
@@ -83,76 +82,19 @@ public class VenturiTailer
                         }
                     });
         }
+
+        logStats();
+
+        // Reset stats for next block
+        this.totalBytesRead = 0;
+        this.estimatedTextSize = 0;
+
         saveCheckpoints();
-    }
-
-    private void checkDelete(Path path) throws IOException
-    {
-        final String filename = path.getFileName().toString();
-        final String key = getStableKey(path);
-        if (path.toString().endsWith(".raw") && checkpoints.containsKey(key))
-        {
-            // Check age if minAge is set
-            if (minAge != null)
-            {
-                long lastModified = Files.getLastModifiedTime(path).toMillis();
-                long age = System.currentTimeMillis() - lastModified;
-                if (age < minAge.toMillis())
-                {
-                    return; // Too young to die
-                }
-            }
-
-            // 1. Delete the data file
-            Files.delete(path);
-
-            // 2. Derive the correct index name: shard-0-123.raw -> shard-0-123.index
-            String baseName = filename.substring(0, filename.lastIndexOf(".raw"));
-            Path indexPath = path.resolveSibling(baseName + ".index");
-
-            if (Files.deleteIfExists(indexPath))
-            {
-                logger.debug("Deleted associated index: {}", indexPath.getFileName());
-            }
-
-            checkpoints.remove(key);
-            logger.info("Deleted completed segment and index: {}", baseName);
-        }
-    }
-
-    private FileMeta parseMeta(Path path)
-    {
-        String name = path.getFileName().toString();
-        try
-        {
-            // Split by '-' and '.' to get parts
-            String[] parts = name.split("[-.]");
-            return new FileMeta(
-                    Integer.parseInt(parts[1]), // shardId
-                    Long.parseLong(parts[2]),   // timestamp
-                    Integer.parseInt(parts[3])  // rotationCount
-            );
-        }
-        catch (Exception e)
-        {
-            logger.error("Failed to parse metadata from filename: {}", name);
-            return new FileMeta(0, 0, 0);
-        }
-    }
-
-    private String getStableKey(Path path)
-    {
-        String name = path.getFileName().toString();
-        // shard-0-12345-1.active -> shard-0-12345-1
-        // shard-0-12345-1.raw    -> shard-0-12345-1
-        return name.replace(".active", "").replace(".raw", "");
     }
 
     private void processFile(Path path) throws IOException
     {
-        // Always resolve the checkpoint against a path that doesn't care about the extension
         final String key = getStableKey(path);
-
         long offset = checkpoints.getOrDefault(key, 0L);
 
         long fileSize;
@@ -177,33 +119,98 @@ public class VenturiTailer
             try
             {
                 buffer.order(ByteOrder.BIG_ENDIAN);
-                buffer.position((int) offset);
 
-                if (offset == 0 && buffer.remaining() > 0)
+                VlfDictionary dict = dictCache.get(key);
+                if (dict == null)
                 {
-                    byte version = buffer.get();
-                    if (version != Marker.VERSION)
-                    {
-                        logger.error("Version mismatch in {}: expected {}, got {}", path, Marker.VERSION, version);
-                    }
+                    dict = JournalDecoder.readDictionaryFromPreamble(buffer);
+                    dictCache.put(key, dict);
                 }
+
+                int startPos = (offset == 0) ? VlfConstants.PREAMBLE_SIZE : (int) offset;
+                buffer.position(startPos);
+
+                long bytesBefore = buffer.remaining();
 
                 try
                 {
-                    JournalDecoder.decode(buffer, reassembler);
+                    long textLength = JournalDecoder.decode(buffer, dict, reassembler);
+                    this.totalBytesRead += (bytesBefore - buffer.remaining());
+                    this.estimatedTextSize += textLength;
                 }
-                catch (RuntimeException e)
+                catch (Exception e)
                 {
-                    // At 175k req/s, don't crash the whole process; log and update checkpoint to skip poison
-                    logger.error("Critical decode error in {}: {}", path, e.getMessage());
+                    logger.error("Decode error in {}: {}", path, e.getMessage());
                 }
 
                 checkpoints.put(key, (long) buffer.position());
-            } finally
+            }
+            finally
             {
                 VlfJournal.unmap(buffer);
             }
         }
+    }
+
+    private void logStats()
+    {
+        if (totalBytesRead > 0)
+        {
+            double ratio = (1.0 - ((double) totalBytesRead / estimatedTextSize)) * 100.0;
+            logger.info("Tailer Stats: Processed {} KB binary (Estimated {} KB text). Saved: {}%",
+                    totalBytesRead / 1024,
+                    estimatedTextSize / 1024,
+                    String.format("%.2f", ratio));
+        }
+    }
+
+    private void checkDelete(Path path) throws IOException
+    {
+        String key = getStableKey(path);
+        if (path.toString().endsWith(".raw") && checkpoints.containsKey(key))
+        {
+            if (minAge != null)
+            {
+                long lastModified = Files.getLastModifiedTime(path).toMillis();
+                long age = System.currentTimeMillis() - lastModified;
+                if (age < minAge.toMillis())
+                {
+                    return;
+                }
+            }
+
+            Files.delete(path);
+            Path indexPath = path.resolveSibling(path.getFileName().toString() + ".index");
+            Files.deleteIfExists(indexPath);
+            checkpoints.remove(key);
+            dictCache.remove(key);
+            logger.info("Deleted completed segment: {}", path.getFileName());
+        }
+    }
+
+    private FileMeta parseMeta(Path path)
+    {
+        String name = path.getFileName().toString();
+        try
+        {
+            String[] parts = name.split("[-.]");
+            return new FileMeta(
+                    Integer.parseInt(parts[1]),
+                    Long.parseLong(parts[2]),
+                    Integer.parseInt(parts[3])
+            );
+        }
+        catch (Exception e)
+        {
+            logger.error("Failed to parse metadata from filename: {}", name);
+            return new FileMeta(0, 0, 0);
+        }
+    }
+
+    private String getStableKey(Path path)
+    {
+        String name = path.getFileName().toString();
+        return name.replace(".active", "").replace(".raw", "");
     }
 
     private void loadCheckpoints()
@@ -217,7 +224,9 @@ public class VenturiTailer
         {
             Properties props = new Properties();
             props.load(in);
-            props.forEach((k, v) -> checkpoints.put((String) k, Long.parseLong((String) v)));
+            props.forEach((k, v) -> {
+                checkpoints.put((String) k, Long.parseLong((String) v));
+            });
             logger.info("Restored {} stable checkpoints", checkpoints.size());
         }
         catch (IOException e)
@@ -237,8 +246,9 @@ public class VenturiTailer
         try
         {
             Properties props = new Properties();
-            // The key is already a stable string from our put() calls
-            checkpoints.forEach((key, value) -> props.setProperty(key, Long.toString(value)));
+            checkpoints.forEach((key, value) -> {
+                props.setProperty(key, Long.toString(value));
+            });
 
             try (OutputStream out = Files.newOutputStream(tempFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))
             {
