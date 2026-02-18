@@ -40,8 +40,7 @@ public record ServerConfig(
     }
 
     public record StorageConfig(
-            String tempDir,
-            int memoryThreshold
+            String tempDir
     )
     {
     }

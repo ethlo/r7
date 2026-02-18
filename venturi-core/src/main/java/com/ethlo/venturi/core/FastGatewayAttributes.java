@@ -1,9 +1,10 @@
 package com.ethlo.venturi.core;
 
-import com.ethlo.venturi.api.GatewayAttributes;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+
+import com.ethlo.venturi.api.GatewayAttributes;
+import com.ethlo.venturi.core.util.CharSequenceUtil;
 
 /**
  * High-performance, zero-allocation (mostly) implementation of GatewayAttributes.
@@ -21,7 +22,7 @@ public final class FastGatewayAttributes implements GatewayAttributes
     {
         for (int i = 0; i < size; i += 2)
         {
-            if (contentEquals(key, (CharSequence) data[i]))
+            if (CharSequenceUtil.equals(key, (CharSequence) data[i]))
             {
                 return (T) data[i + 1];
             }
@@ -35,7 +36,7 @@ public final class FastGatewayAttributes implements GatewayAttributes
         // Check for existing key to update
         for (int i = 0; i < size; i += 2)
         {
-            if (contentEquals(key, (CharSequence) data[i]))
+            if (CharSequenceUtil.equals(key, (CharSequence) data[i]))
             {
                 data[i + 1] = value;
                 return;
@@ -64,33 +65,5 @@ public final class FastGatewayAttributes implements GatewayAttributes
             names.add((CharSequence) data[i]);
         }
         return names;
-    }
-
-    /**
-     * Efficiently compare CharSequences without toString() allocation.
-     */
-    private boolean contentEquals(CharSequence a, CharSequence b)
-    {
-        if (a == b)
-        {
-            return true;
-        }
-        if (a == null || b == null)
-        {
-            return false;
-        }
-        int len = a.length();
-        if (len != b.length())
-        {
-            return false;
-        }
-        for (int i = 0; i < len; i++)
-        {
-            if (a.charAt(i) != b.charAt(i))
-            {
-                return false;
-            }
-        }
-        return true;
     }
 }

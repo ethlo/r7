@@ -12,8 +12,8 @@ import com.ethlo.venturi.core.filters.RequireAuthorizationHeaderFilter;
 import com.ethlo.venturi.core.filters.RewritePathConfig;
 import com.ethlo.venturi.core.filters.RewritePathFilter;
 import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
-import com.ethlo.venturi.core.filters.StripPrefixConfig;
-import com.ethlo.venturi.core.filters.StripPrefixFilter;
+import com.ethlo.venturi.core.filters.StripPathPrefixConfig;
+import com.ethlo.venturi.core.filters.StripPathPrefixFilter;
 import com.ethlo.venturi.validation.Validatable;
 import com.ethlo.venturi.validation.ValidationResult;
 
@@ -44,7 +44,7 @@ public class FilterBuilder
             case "StripCacheHeaders" -> new StripCacheHeadersFilter();
             case "RequireAuthorizationHeader" -> new RequireAuthorizationHeaderFilter();
             case "RewritePath" -> new RewritePathFilter(loadConfig(def.args(), RewritePathConfig.class));
-            case "StripPrefix" -> new StripPrefixFilter(loadConfig(def.args(), StripPrefixConfig.class));
+            case "StripPrefix" -> new StripPathPrefixFilter(loadConfig(def.args(), StripPathPrefixConfig.class));
             default -> throw new IllegalArgumentException("Unknown filter type: " + def.type());
         };
     }

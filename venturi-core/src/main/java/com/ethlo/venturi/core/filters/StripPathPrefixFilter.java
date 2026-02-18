@@ -2,12 +2,13 @@ package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.core.ShortInfo;
 
-public class StripPrefixFilter implements GatewayFilter
+public class StripPathPrefixFilter implements GatewayFilter, ShortInfo
 {
     private final int parts;
 
-    public StripPrefixFilter(StripPrefixConfig config)
+    public StripPathPrefixFilter(StripPathPrefixConfig config)
     {
         this.parts = config.parts();
     }
@@ -34,5 +35,11 @@ public class StripPrefixFilter implements GatewayFilter
         String newPath = path.substring(pos);
         // Ensure we don't return an empty string if the path ended exactly at the slash
         exchange.request().path(newPath.isEmpty() ? "/" : newPath);
+    }
+
+    @Override
+    public String summary()
+    {
+        return String.format("StripPathPrefix: %s", parts == 1 ? parts + " part" : parts + " parts");
     }
 }

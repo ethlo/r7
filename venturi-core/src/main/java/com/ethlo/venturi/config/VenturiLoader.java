@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.BiFunction;
 
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.validation.ValidationResult;

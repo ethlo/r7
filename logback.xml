@@ -16,5 +16,15 @@
         <appender-ref ref="ASYNC_STDOUT"/>
     </root>
 
+    <logger name="venturi" level="INFO" additivity="false">
+        <appender-ref ref="STDOUT-RAW"/>
+    </logger>
+
+    <appender name="STDOUT-RAW" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
     <logger name="venturi.access" level="WARN"/>
 </configuration>

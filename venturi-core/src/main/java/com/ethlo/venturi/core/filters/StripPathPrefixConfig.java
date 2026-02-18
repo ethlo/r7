@@ -3,7 +3,7 @@ package com.ethlo.venturi.core.filters;
 import com.ethlo.venturi.validation.Validatable;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public record StripPrefixConfig(Integer parts) implements Validatable
+public record StripPathPrefixConfig(Integer parts) implements Validatable
 {
     @Override
     public void validate(ValidationResult result)

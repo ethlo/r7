@@ -18,13 +18,13 @@ routes:
       - type: AddResponseHeader
         args:
           name: Second-Header
-          value: Here
+          value: Here-is-a-longer-value
   - id: external-test
     uri:
       - https://www.nrk.no
     match:
-      or:
-        - pathStartsWith: /v1
+      - not:
+        - pathStartsWith: /hello
     filters:
       - type: StripPrefix
         args:

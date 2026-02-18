@@ -1,32 +1,11 @@
 package com.ethlo.venturi.undertow;
 
-import java.io.IOException;
-import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.xnio.OptionMap;
-import org.xnio.Options;
-import org.xnio.Xnio;
-import org.xnio.ssl.XnioSsl;
-
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.config.RouteRegistry;
-import com.ethlo.venturi.config.RouteTablePrinter;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
@@ -44,6 +23,26 @@ import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.Headers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.xnio.OptionMap;
+import org.xnio.Options;
+import org.xnio.Xnio;
+import org.xnio.ssl.XnioSsl;
+
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+
 public final class VenturiMain
 {
     public static final int JOURNAL_SHARD_COUNT = 4;
@@ -55,8 +54,6 @@ public final class VenturiMain
 
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
-        printBanner();
-
         this.xnioSsl = getXnioSsl();
 
         final HttpHandler benchMarkHandler = exchange -> {
@@ -69,7 +66,7 @@ public final class VenturiMain
         final VenturiLoader loader = new VenturiLoader();
 
         final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
-        logger.info("Loaded server config: {}", serverConfig);
+        logger.debug("Loaded server config: {}", serverConfig);
 
         final boolean logProxyError = true;
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
@@ -114,7 +111,7 @@ public final class VenturiMain
                 }
         );
 
-        new RouteTablePrinter().printRouteTable(routeRegistry.getRoutes());
+        new VenturiConsolePrinter().printFullReport(serverConfig, routeRegistry.getRoutes());
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
 
