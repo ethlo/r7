@@ -26,24 +26,12 @@ public final class VenturiPredicates
 
     public static GatewayPredicate and(final List<GatewayPredicate> predicates)
     {
-        return request -> {
-            for (final GatewayPredicate p : predicates)
-            {
-                if (!p.test(request)) return false;
-            }
-            return true;
-        };
+        return new AndPredicate(predicates);
     }
 
     public static GatewayPredicate or(final List<GatewayPredicate> predicates)
     {
-        return request -> {
-            for (final GatewayPredicate p : predicates)
-            {
-                if (p.test(request)) return true;
-            }
-            return false;
-        };
+        return new OrPredicate(predicates);
     }
 
     public static GatewayPredicate method(final List<CharSequence> expected)

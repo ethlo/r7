@@ -1,6 +1,9 @@
 package com.ethlo.venturi.undertow;
 
 
+import static com.ethlo.venturi.undertow.VenturiUndertowHandler.GATEWAY_EXCHANGE_KEY;
+
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -13,6 +16,7 @@ import com.ethlo.venturi.core.proxy.NoAvailableTargetException;
 import com.ethlo.venturi.core.proxy.ProxyConnectionException;
 import com.ethlo.venturi.core.proxy.ProxyPoolExhaustedException;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
 import io.undertow.server.handlers.proxy.ProxyCallback;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyConnection;
@@ -24,6 +28,22 @@ public class DiagnosticProxyClient implements ProxyClient
 
     // Key to track if we've already logged an error for this exchange
     private static final AttachmentKey<Boolean> ERROR_HANDLED = AttachmentKey.create(Boolean.class);
+
+    private static final AttachmentKey<List<LoadBalancingProxyClient.Host>> ATTEMPTED_HOSTS_KEY;
+
+    static
+    {
+        try
+        {
+            Field field = LoadBalancingProxyClient.class.getDeclaredField("ATTEMPTED_HOSTS");
+            field.setAccessible(true);
+            ATTEMPTED_HOSTS_KEY = (AttachmentKey<List<LoadBalancingProxyClient.Host>>) field.get(null);
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException("Failed to extract Undertow's internal attachment key", e);
+        }
+    }
 
     private final ProxyClient delegate;
     private final GatewayErrorHandler gatewayErrorHandler;
@@ -39,7 +59,6 @@ public class DiagnosticProxyClient implements ProxyClient
                               ProxyCallback<ProxyConnection> callback,
                               long timeout, TimeUnit timeUnit)
     {
-
         delegate.getConnection(target, exchange, new ProxyCallback<>()
                 {
                     @Override
@@ -51,8 +70,16 @@ public class DiagnosticProxyClient implements ProxyClient
                     @Override
                     public void failed(HttpServerExchange exchange)
                     {
-                        // Handshake/Refused -> 502 Bad Gateway candidate
-                        reportError(exchange, new ProxyConnectionException("TCP Connection failed to: " + getTarget(exchange)));
+                        // Undertow stores attempted hosts in an attachment list
+                        final List<LoadBalancingProxyClient.Host> attempted = exchange.getAttachmentList(ATTEMPTED_HOSTS_KEY);
+                        String actualUri = "Unknown";
+                        if (attempted != null && !attempted.isEmpty())
+                        {
+                            // Get the last host attempted
+                            actualUri = attempted.getLast().getUri().toString();
+                        }
+
+                        reportError(exchange, new ProxyConnectionException("TCP Connection failed to: " + actualUri));
                         callback.failed(exchange);
                     }
 
@@ -77,7 +104,7 @@ public class DiagnosticProxyClient implements ProxyClient
 
     private CharSequence getTarget(HttpServerExchange exchange)
     {
-        return getExchange(exchange).route().toString();
+        return exchange.getRequestURI();
     }
 
     @Override
@@ -111,6 +138,6 @@ public class DiagnosticProxyClient implements ProxyClient
 
     private GatewayExchange getExchange(HttpServerExchange exchange)
     {
-        return null; //exchange.getAttachment(GATEWAY_EXCHANGE_KEY);
+        return exchange.getAttachment(GATEWAY_EXCHANGE_KEY);
     }
 }

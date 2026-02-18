@@ -3,16 +3,29 @@ routes:
     uri:
       - http://localhost:1111
     match:
-      and:
-        - pathStartsWith: /hello
-        - method:
+      - pathStartsWith: /hello
+      - method:
           - GET
           - POST
     audit:
-      request: FULL
+      request: HEADERS
       response: FULL
     filters:
       - type: AddResponseHeader
         args:
           name: X-Gateway
           value: Venturi
+      - type: AddResponseHeader
+        args:
+          name: Second-Header
+          value: Here
+  - id: external-test
+    uri:
+      - https://www.nrk.no
+    match:
+      or:
+        - pathStartsWith: /v1
+    filters:
+      - type: StripPrefix
+        args:
+          parts: 1

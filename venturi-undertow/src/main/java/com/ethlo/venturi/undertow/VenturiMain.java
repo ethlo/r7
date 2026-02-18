@@ -5,23 +5,28 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xnio.OptionMap;
 import org.xnio.Options;
+import org.xnio.Xnio;
+import org.xnio.ssl.XnioSsl;
 
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
-import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
+import com.ethlo.venturi.config.RouteTablePrinter;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
@@ -32,6 +37,7 @@ import com.ethlo.venturi.vlf.VlfJournalProvider;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
+import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
 import io.undertow.server.handlers.proxy.ProxyClient;
@@ -44,12 +50,14 @@ public final class VenturiMain
     public static final int JOURNAL_SHARD_SIZE_BYTES = 100_000_000;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     private static final long JOURNAL_SHARD_INDEX_SIZE_BYTES = 10_000_000;
-
+    private final XnioSsl xnioSsl;
     private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
 
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
         printBanner();
+
+        this.xnioSsl = getXnioSsl();
 
         final HttpHandler benchMarkHandler = exchange -> {
             exchange.setStatusCode(HttpStatuses.OK);
@@ -79,25 +87,34 @@ public final class VenturiMain
                                 dataRoute.uri().stream()
                                         .map(CharSequence::toString)
                                         .map(URI::create)
-                                        .forEach(rawClient::addHost);
+                                        .forEach(u -> {
+                                            if ("https".equalsIgnoreCase(u.getScheme()))
+                                            {
+                                                rawClient.addHost(u, xnioSsl);
+                                            }
+                                            else
+                                            {
+                                                rawClient.addHost(u);
+                                            }
+                                        });
 
                                 final ProxyClient client = logProxyError ? new DiagnosticProxyClient(rawClient, errorHandler) : rawClient;
 
                                 return ProxyHandler.builder()
                                         .setProxyClient(client)
                                         .setMaxRequestTime(pConfig.maxRequestTime())
-                                        .setReuseXForwarded(true)
+                                        .setReuseXForwarded(false)
+                                        .setRewriteHostHeader(true)
                                         .build();
                             }
                     );
-
 
                     // Return the Executable version that bridges Core <--> Undertow
                     return new VenturiExecutableRoute(def, dataRoute, proxyHandler);
                 }
         );
 
-        printRouteTable(routeRegistry.getRoutes());
+        new RouteTablePrinter().printRouteTable(routeRegistry.getRoutes());
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
 
@@ -135,6 +152,18 @@ public final class VenturiMain
 
         long uptime = getUptime();
         logger.info("🚀 Started in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+    }
+
+    private static UndertowXnioSsl getXnioSsl()
+    {
+        try
+        {
+            return new UndertowXnioSsl(Xnio.getInstance(), OptionMap.EMPTY);
+        }
+        catch (NoSuchProviderException | NoSuchAlgorithmException | KeyManagementException e)
+        {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static void setupTestBackEndForProxy(HttpHandler benchMarkHandler)
@@ -194,20 +223,6 @@ public final class VenturiMain
         logger.info("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
         logger.info("------------------------------------------------------------------");
 
-    }
-
-    public void printRouteTable(List<? extends GatewayRoute> routes)
-    {
-        for (GatewayRoute route : routes)
-        {
-            logger.info("► Route: [{}]", route.id());
-            String hosts = String.join(", ", route.uri());
-            logger.info("  └─ Hosts (Round Robin): [{}]", hosts);
-            logger.info("  └─ Predicates: ");
-            StringBuilder filters = new StringBuilder();
-            route.filters().forEach(f -> filters.append("» ").append(f.getClass().getSimpleName()).append(" "));
-            logger.info("  └─ Filters: {}", filters);
-        }
     }
 
     private void configureServer(Undertow.Builder builder, ServerConfig config)

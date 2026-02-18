@@ -1,10 +1,10 @@
 package com.ethlo.venturi.auditing.api;
 
-import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
+
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.ServerDirection;
 
 public interface Journal extends AutoCloseable
 {
@@ -21,7 +21,7 @@ public interface Journal extends AutoCloseable
     /**
      * Records metrics and marks the exchange as finished.
      */
-    void end(CharSequence reqId, int status, long sent, long recv, long duration);
+    void end(CharSequence reqId, int status, long sent, long recv, long duration) throws IOException;
 
     @Override
     void close() throws IOException;

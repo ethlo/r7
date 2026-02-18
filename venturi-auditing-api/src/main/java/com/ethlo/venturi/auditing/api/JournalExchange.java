@@ -68,7 +68,6 @@ public final class JournalExchange
         this.durationNanos = dur;
     }
 
-    // Getters for Jackson serialization...
     public String getRequestId()
     {
         return requestId;

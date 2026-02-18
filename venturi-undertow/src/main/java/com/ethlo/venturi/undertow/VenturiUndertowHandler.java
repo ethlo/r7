@@ -24,6 +24,7 @@ import com.ethlo.venturi.core.helpers.StartLineBuilder;
 import com.ethlo.venturi.vlf.VlfJournal;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.util.AttachmentKey;
 
 public final class VenturiUndertowHandler implements HttpHandler
 {
@@ -31,6 +32,7 @@ public final class VenturiUndertowHandler implements HttpHandler
     static final CharSequence AUDIT_CONFIG_KEY = ".AUDIT_CONFIG";
     static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
     private static final CharSequence ROUTE_ID_KEY = ".ROUTE_ID";
+    public static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
 
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -74,6 +76,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         final GatewayAttributes attrs = new FastGatewayAttributes();
         final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
 
+        exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
         attrs.put(REQUEST_START_NANOS_KEY, startNanos);
         attrs.put(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
         attrs.put(ROUTE_ID_KEY, route.id());

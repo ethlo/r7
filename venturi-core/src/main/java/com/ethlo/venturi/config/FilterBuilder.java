@@ -2,16 +2,23 @@ package com.ethlo.venturi.config;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
-import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.core.filters.AddRequestHeaderFilter;
+import com.ethlo.venturi.core.filters.AddResponseHeaderFilter;
 import com.ethlo.venturi.core.filters.CorrelationIdFilter;
 import com.ethlo.venturi.core.filters.RequireAuthorizationHeaderFilter;
+import com.ethlo.venturi.core.filters.RewritePathConfig;
+import com.ethlo.venturi.core.filters.RewritePathFilter;
 import com.ethlo.venturi.core.filters.StripCacheHeadersFilter;
+import com.ethlo.venturi.core.filters.StripPrefixConfig;
+import com.ethlo.venturi.core.filters.StripPrefixFilter;
+import com.ethlo.venturi.validation.Validatable;
+import com.ethlo.venturi.validation.ValidationResult;
 
 public class FilterBuilder
 {
-
     public List<GatewayFilter> resolve(RouteDefinition routeDef)
     {
         final List<GatewayFilter> filters = new ArrayList<>();
@@ -29,46 +36,28 @@ public class FilterBuilder
 
     public GatewayFilter resolveFilter(FilterDefinition def)
     {
-        if ("AddRequestHeader".equalsIgnoreCase(def.type()))
+        return switch (def.type())
         {
-            String name = def.args().get("name");
-            String value = def.args().get("value");
-            return new GatewayFilter()
-            {
-                @Override
-                public void beforeUpstream(GatewayExchange exchange)
-                {
-                    exchange.request().headers().set(name, value);
-                }
-            };
-        }
-        else if ("AddResponseHeader".equalsIgnoreCase(def.type()))
-        {
-            String name = def.args().get("name");
-            String value = def.args().get("value");
-            return new GatewayFilter()
-            {
-                @Override
-                public void beforeUpstream(GatewayExchange exchange)
-                {
-                    exchange.response().headers().set(name, value);
-                }
-            };
-        }
-        else if ("CorrelationIdHeader".equalsIgnoreCase(def.type()))
-        {
-            return new CorrelationIdFilter();
-        }
-        else if ("StripCacheHeaders".equalsIgnoreCase(def.type()))
-        {
-            return new StripCacheHeadersFilter();
-        }
-        else if ("RequireAuthorizationHeader".equalsIgnoreCase(def.type()))
-        {
-            return new RequireAuthorizationHeaderFilter();
-        }
+            case "AddRequestHeader" -> new AddRequestHeaderFilter(def.args());
+            case "AddResponseHeader" -> new AddResponseHeaderFilter(def.args());
+            case "CorrelationIdHeader" -> new CorrelationIdFilter();
+            case "StripCacheHeaders" -> new StripCacheHeadersFilter();
+            case "RequireAuthorizationHeader" -> new RequireAuthorizationHeaderFilter();
+            case "RewritePath" -> new RewritePathFilter(loadConfig(def.args(), RewritePathConfig.class));
+            case "StripPrefix" -> new StripPrefixFilter(loadConfig(def.args(), StripPrefixConfig.class));
+            default -> throw new IllegalArgumentException("Unknown filter type: " + def.type());
+        };
+    }
 
-        // Add more filter types here (e.g., RewritePath, RateLimit)
-        throw new IllegalArgumentException("Unknown filter type: " + def.type());
+    private <T> T loadConfig(Map<String, String> args, Class<T> configType)
+    {
+        final T config = VenturiLoader.convertValue(args, configType);
+        if (config instanceof Validatable validatable)
+        {
+            final ValidationResult result = new ValidationResult();
+            validatable.validate(result);
+            result.throwIfInvalid();
+        }
+        return config;
     }
 }

@@ -43,5 +43,10 @@
             <version>1.5.28</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.ethlo.time</groupId>
+            <artifactId>chronograph</artifactId>
+            <version>5.1.0</version>
+        </dependency>
     </dependencies>
 </project>

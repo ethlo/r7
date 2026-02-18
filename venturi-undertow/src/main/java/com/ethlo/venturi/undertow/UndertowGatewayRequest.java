@@ -54,6 +54,21 @@ public final class UndertowGatewayRequest implements GatewayRequest
         exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), listener));
     }
 
+    @Override
+    public void path(final CharSequence path)
+    {
+        final String newPath = path.toString();
+        this.exchange.setRequestPath(newPath);     // The general path
+        this.exchange.setRelativePath(newPath);    // Used by ProxyHandler to build upstream URL
+        this.exchange.setRequestURI(newPath);      // The full URI used for logging/matching
+    }
+
+    @Override
+    public void uri(final CharSequence uri)
+    {
+        this.exchange.setRequestURI(uri.toString());
+    }
+
     public HttpServerExchange getExchange()
     {
         return exchange;

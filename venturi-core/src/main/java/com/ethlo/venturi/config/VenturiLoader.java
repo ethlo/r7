@@ -3,11 +3,13 @@ package com.ethlo.venturi.config;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiFunction;
 
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
+import com.ethlo.venturi.validation.ValidationResult;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
@@ -15,17 +17,22 @@ import tools.jackson.dataformat.yaml.YAMLMapper;
 
 public final class VenturiLoader
 {
-    private final ObjectMapper mapper;
-    private final FilterBuilder filterBuilder;
+    private static final ObjectMapper mapper;
+    private static final FilterBuilder filterBuilder;
 
-    public VenturiLoader()
+    static
     {
-        this.mapper = YAMLMapper.builder()
+        mapper = YAMLMapper.builder()
                 .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
                 .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .build();
         filterBuilder = new FilterBuilder();
+    }
+
+    public static <T> T convertValue(Map<String, String> args, Class<T> configType)
+    {
+        return mapper.convertValue(args, configType);
     }
 
     /**
@@ -34,7 +41,10 @@ public final class VenturiLoader
     public void load(Path yamlFile, RouteRegistry registry,
                      BiFunction<RouteDefinition, GatewayRoute, ExecutableRoute> configurator) throws IOException
     {
-        final VenturiConfig config = load(yamlFile, VenturiConfig.class);
+
+        final RoutesConfig config = load(yamlFile, RoutesConfig.class);
+        final ValidationResult validationResult = validate(config);
+        validationResult.throwIfInvalid();
         final List<ExecutableRoute> routes = config.routes.stream()
                 .map(def -> {
 
@@ -45,6 +55,16 @@ public final class VenturiLoader
                 .toList();
 
         registry.updateRoutes(routes);
+    }
+
+    private ValidationResult validate(RoutesConfig config)
+    {
+        final ValidationResult validationResult = new ValidationResult();
+        for (RouteDefinition route : config.routes)
+        {
+            route.validate(validationResult);
+        }
+        return validationResult;
     }
 
     public <T> T load(Path yamlFile, Class<T> type)
