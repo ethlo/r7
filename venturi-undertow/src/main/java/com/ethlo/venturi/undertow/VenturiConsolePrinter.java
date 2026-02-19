@@ -102,16 +102,16 @@ public class VenturiConsolePrinter
             // 1. Route ID (Cyan)
             logLine(" ❯ Route: \u001B[1;36m" + route.id() + "\u001B[0m");
 
-            // 2. Match Logic (Now Recursive again!)
-            logLine("   ├─ Match Logic:");
+            // 2. Match Logic
+            logLine("   ├─ Predicates:");
             printPredicate(route.predicate(), "   │  ", true);
 
             // 3. Proxy Targets (Green)
             final String targets = String.join(" | ", route.uri());
-            logLine("   ├─ Proxy To: \u001B[32m" + targets + "\u001B[0m");
+            logLine("   ├─ Destination: \u001B[32m" + targets + "\u001B[0m");
 
             // 4. Pipeline (Magenta/Vertical)
-            logLine("   └─ Pipeline:");
+            logLine("   └─ Filters:");
             final List<GatewayFilter> filters = iterableToList(route.filters());
             if (filters.isEmpty())
             {

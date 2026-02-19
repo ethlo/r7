@@ -23,7 +23,7 @@ public class PredicateRegistry
     {
         register("method", val -> {
                     @SuppressWarnings("unchecked")
-                    List<String> methods = (List<String>) val;
+                    String[] methods = ((List<String>) val).stream().map(String::toUpperCase).toList().toArray(new String[0]);
                     return new MethodPredicate(methods);
                 }
         );

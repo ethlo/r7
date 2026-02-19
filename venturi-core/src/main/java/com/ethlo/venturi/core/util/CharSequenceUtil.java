@@ -19,6 +19,11 @@ public class CharSequenceUtil
      */
     public static boolean regionEquals(CharSequence a, int aStart, int aLength, CharSequence b, int bStart, int bLength, boolean ignoreCase)
     {
+        if (a == b)
+        {
+            return true;
+        }
+
         if (aLength != bLength)
         {
             return false;
@@ -67,5 +72,16 @@ public class CharSequenceUtil
     public static boolean equalsIgnoreCase(CharSequence a, CharSequence b)
     {
         return regionEquals(a, 0, a.length(), b, 0, b.length(), true);
+    }
+
+    public static int hash(CharSequence cs)
+    {
+        int h = 0;
+        int len = cs.length();
+        for (int i = 0; i < len; i++)
+        {
+            h = 31 * h + cs.charAt(i);
+        }
+        return h;
     }
 }

@@ -1,8 +1,7 @@
 package com.ethlo.venturi.undertow;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
+import java.util.Iterator;
 import java.util.function.BiConsumer;
 
 import com.ethlo.venturi.api.GatewayHeaders;
@@ -42,12 +41,22 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     @Override
     public Iterable<CharSequence> names()
     {
-        final List<CharSequence> names = new ArrayList<>(headerMap.size());
-        for (final HttpString hs : headerMap.getHeaderNames())
+        return () -> new Iterator<>()
         {
-            names.add(hs.toString());
-        }
-        return names;
+            private final Iterator<HttpString> delegate = headerMap.getHeaderNames().iterator();
+
+            @Override
+            public boolean hasNext()
+            {
+                return delegate.hasNext();
+            }
+
+            @Override
+            public CharSequence next()
+            {
+                return new HttpStringCharSequence(delegate.next());
+            }
+        };
     }
 
     @Override
@@ -82,13 +91,12 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     @Override
     public void forEach(BiConsumer<? super CharSequence, ? super CharSequence> action)
     {
-        // High-performance direct iteration over Undertow's HeaderMap
         for (HeaderValues values : headerMap)
         {
-            final HttpString name = values.getHeaderName();
-            for (int i = 0; i < values.size(); i++)
+            final HttpStringCharSequence nameWrapper = new HttpStringCharSequence(values.getHeaderName());
+            for (String value : values)
             {
-                action.accept(name.toString(), values.get(i));
+                action.accept(nameWrapper, value);
             }
         }
     }

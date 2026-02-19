@@ -15,16 +15,12 @@ routes:
         args:
           name: X-Gateway
           value: Venturi
-      - type: AddResponseHeader
-        args:
-          name: Second-Header
-          value: Here-is-a-longer-value
+      - type: CorrelationIdHeader
   - id: external-test
     uri:
       - https://www.nrk.no
     match:
-      - not:
-        - pathStartsWith: /hello
+        - pathStartsWith: /nrk
     filters:
       - type: StripPrefix
         args:
