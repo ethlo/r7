@@ -269,8 +269,7 @@ public final class VlfJournal implements Journal
             return;
         }
 
-        String str = s.toString();
-        byte id = dictionary.encode(str);
+        byte id = dictionary.encode(s);
 
         if (id != -1)
         {
@@ -279,7 +278,8 @@ public final class VlfJournal implements Journal
         }
         else
         {
-            byte[] b = str.getBytes(StandardCharsets.UTF_8);
+            final String str = s.toString();
+            final byte[] b = str.getBytes(StandardCharsets.UTF_8);
             if (b.length >= 0xFE)
             {
                 buffer.put(VlfConstants.LONG_STRING);

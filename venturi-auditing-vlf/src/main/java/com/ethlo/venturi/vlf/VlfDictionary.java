@@ -30,7 +30,7 @@ public final class VlfDictionary
             int id = Integer.parseInt(key);
             String val = props.getProperty(key);
 
-            int hash = hash(val);
+            int hash = limitedRangeHash(val);
             while (keys[hash] != null)
             {
                 hash = (hash + 1) & MASK;
@@ -63,12 +63,15 @@ public final class VlfDictionary
         return new VlfDictionary(props);
     }
 
-    public byte encode(String value)
+    public byte encode(CharSequence value)
     {
-        if (value == null) return -1;
+        if (value == null)
+        {
+            return -1;
+        }
 
         int len = value.length();
-        int hash = hash(value);
+        int hash = limitedRangeHash(value);
 
         while (keys[hash] != null)
         {
@@ -81,7 +84,7 @@ public final class VlfDictionary
         return -1;
     }
 
-    private int hash(String s)
+    private int limitedRangeHash(CharSequence s)
     {
         int h = s.hashCode();
         return (h ^ (h >>> 16)) & MASK;
