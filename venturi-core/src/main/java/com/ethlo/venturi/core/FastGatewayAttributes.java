@@ -1,69 +1,52 @@
 package com.ethlo.venturi.core;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import com.ethlo.venturi.api.GatewayAttributes;
-import com.ethlo.venturi.core.util.CharSequenceUtil;
+import com.ethlo.venturi.util.ArrayBackedPairStorage;
+import com.ethlo.venturi.util.CharSequenceUtil;
 
 /**
- * High-performance, zero-allocation (mostly) implementation of GatewayAttributes.
- * Uses a flat array for linear scanning to maximize L1/L2 cache locality.
+ * High-performance, low-allocation implementation of GatewayAttributes.
+ * Perfectly suited for request context and filter state.
  */
-public final class FastGatewayAttributes implements GatewayAttributes
+public final class FastGatewayAttributes extends ArrayBackedPairStorage<CharSequence, Object> implements GatewayAttributes
 {
-    private static final int INITIAL_CAPACITY = 8; // 4 key-value pairs
-    private Object[] data = new Object[INITIAL_CAPACITY];
-    private int size = 0;
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T> T get(CharSequence key)
+    public FastGatewayAttributes()
     {
-        for (int i = 0; i < size; i += 2)
-        {
-            if (CharSequenceUtil.equals(key, (CharSequence) data[i]))
-            {
-                return (T) data[i + 1];
-            }
-        }
-        return null;
+        // Initial capacity of 8 pairs (16 slots)
+        super(8);
     }
 
     @Override
-    public void put(CharSequence key, Object value)
+    protected boolean keysEqual(CharSequence requestedKey, CharSequence storedKey)
     {
-        // Check for existing key to update
-        for (int i = 0; i < size; i += 2)
-        {
-            if (CharSequenceUtil.equals(key, (CharSequence) data[i]))
-            {
-                data[i + 1] = value;
-                return;
-            }
-        }
-
-        // Expand if full
-        if (size + 2 > data.length)
-        {
-            final Object[] newData = new Object[data.length * 2];
-            System.arraycopy(data, 0, newData, 0, data.length);
-            data = newData;
-        }
-
-        // Append new pair
-        data[size++] = key;
-        data[size++] = value;
+        return CharSequenceUtil.equals(requestedKey, storedKey);
     }
 
     @Override
     public Iterable<CharSequence> attributeNames()
     {
-        final List<CharSequence> names = new ArrayList<>(size / 2);
-        for (int i = 0; i < size; i += 2)
-        {
-            names.add((CharSequence) data[i]);
-        }
-        return names;
+        return getKeysInternal();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T get(CharSequence key)
+    {
+        return (T) getFirstInternal(key);
+    }
+
+    @Override
+    public void put(CharSequence key, Object value)
+    {
+        // Attributes behave like a Map: update if exists, otherwise add
+        setInternal(key, value);
+    }
+
+    /**
+     * Optional: check if an attribute exists without potentially casting
+     */
+    public boolean contains(CharSequence key)
+    {
+        return getFirstInternal(key) != null;
     }
 }

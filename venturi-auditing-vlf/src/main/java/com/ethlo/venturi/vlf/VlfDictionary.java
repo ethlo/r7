@@ -10,29 +10,35 @@ import java.util.Properties;
 
 public final class VlfDictionary
 {
-    private final Map<String, Byte> encodeMap;
+    private static final int CAPACITY = 512; // Power of 2 for fast masking
+    private static final int MASK = CAPACITY - 1;
+
+    private final String[] keys;
+    private final byte[] values;
+    private final int[] lengths; // Extra guard to fail fast
     private final String[] decodeArray;
 
-    /**
-     * Constructor used by both the loader and the Decoder
-     */
     public VlfDictionary(Properties props)
     {
-        this.encodeMap = new HashMap<>(props.size());
+        this.keys = new String[CAPACITY];
+        this.values = new byte[CAPACITY];
+        this.lengths = new int[CAPACITY];
         this.decodeArray = new String[256];
 
         for (String key : props.stringPropertyNames())
         {
             int id = Integer.parseInt(key);
-            String value = props.getProperty(key);
+            String val = props.getProperty(key);
 
-            if (id < 0 || id > 255)
+            int hash = hash(val);
+            while (keys[hash] != null)
             {
-                throw new IllegalArgumentException("Dictionary ID must be between 0 and 255");
+                hash = (hash + 1) & MASK;
             }
-
-            this.encodeMap.put(value, (byte) id);
-            this.decodeArray[id] = value;
+            keys[hash] = val;
+            values[hash] = (byte) id;
+            lengths[hash] = val.length(); // Cache the length
+            decodeArray[id] = val;
         }
     }
 
@@ -57,9 +63,28 @@ public final class VlfDictionary
         return new VlfDictionary(props);
     }
 
-    public Byte encode(String value)
+    public byte encode(String value)
     {
-        return encodeMap.get(value);
+        if (value == null) return -1;
+
+        int len = value.length();
+        int hash = hash(value);
+
+        while (keys[hash] != null)
+        {
+            if (lengths[hash] == len && keys[hash].equals(value))
+            {
+                return values[hash];
+            }
+            hash = (hash + 1) & MASK;
+        }
+        return -1;
+    }
+
+    private int hash(String s)
+    {
+        int h = s.hashCode();
+        return (h ^ (h >>> 16)) & MASK;
     }
 
     public String decode(byte id)
@@ -72,6 +97,14 @@ public final class VlfDictionary
      */
     public Map<String, Byte> getEntries()
     {
-        return Collections.unmodifiableMap(encodeMap);
+        Map<String, Byte> snapshot = new HashMap<>(256);
+        for (int i = 0; i < CAPACITY; i++)
+        {
+            if (keys[i] != null)
+            {
+                snapshot.put(keys[i], values[i]);
+            }
+        }
+        return Collections.unmodifiableMap(snapshot);
     }
 }

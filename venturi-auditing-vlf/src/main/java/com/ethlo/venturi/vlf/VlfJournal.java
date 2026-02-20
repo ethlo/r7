@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.Locale;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -39,6 +38,9 @@ public final class VlfJournal implements Journal
     private Path activePath;
     private Path activeIndexPath;
     private int currentFileId = 0;
+
+    // TODO: Make configurable
+    private boolean isWriteIndex = false;
 
     public VlfJournal(VlfJournalProvider provider, VlfDictionary dictionary, long segmentSize, long indexSize)
     {
@@ -94,19 +96,19 @@ public final class VlfJournal implements Journal
             int countPos = buffer.position();
             buffer.putInt(0);
 
-            int[] count = {0};
-            headers.forEach((k, v) ->
+            final int count = headers.forEach((name, header) ->
             {
-                // Dictionary compression on both keys and values
-                writeStringWithDict(k.toString().toLowerCase(Locale.ROOT));
-                writeStringWithDict(v);
-                count[0]++;
+                writeStringWithDict(name);
+                writeStringWithDict(header);
             });
 
             // Backpatch the actual header count
-            buffer.putInt(countPos, count[0]);
+            buffer.putInt(countPos, count);
 
-            index.record(reqId, fileIdAtWrite, startOffset);
+            if (isWriteIndex)
+            {
+                index.record(reqId, fileIdAtWrite, startOffset);
+            }
         }
         catch (IOException e)
         {
@@ -147,7 +149,11 @@ public final class VlfJournal implements Journal
                 buffer.put(slice);
 
                 data.position(data.position() + toWrite);
-                index.record(reqId, fileIdAtWrite, startOffset);
+
+                if (isWriteIndex)
+                {
+                    index.record(reqId, fileIdAtWrite, startOffset);
+                }
             }
         }
         catch (IOException e)
@@ -174,7 +180,10 @@ public final class VlfJournal implements Journal
             buffer.putLong(recv);
             buffer.putLong(duration);
 
-            index.record(reqId, fileIdAtWrite, startOffset);
+            if (isWriteIndex)
+            {
+                index.record(reqId, fileIdAtWrite, startOffset);
+            }
         }
         catch (IOException e)
         {
@@ -261,9 +270,9 @@ public final class VlfJournal implements Journal
         }
 
         String str = s.toString();
-        Byte id = dictionary.encode(str);
+        byte id = dictionary.encode(str);
 
-        if (id != null)
+        if (id != -1)
         {
             buffer.put(VlfConstants.DICT_LOOKUP);
             buffer.put(id);
@@ -302,8 +311,12 @@ public final class VlfJournal implements Journal
                     : dataFileName;
 
             this.activeIndexPath = activePath.resolveSibling(baseName + ".index");
-            this.index = new IndexSegment(activeIndexPath, indexSize);
-            logger.debug("Index segment rotated to {}", activeIndexPath.getFileName());
+
+            if (this.isWriteIndex)
+            {
+                this.index = new IndexSegment(activeIndexPath, indexSize);
+                logger.debug("Index segment rotated to {}", activeIndexPath.getFileName());
+            }
         }
         catch (IOException exc)
         {
@@ -325,9 +338,12 @@ public final class VlfJournal implements Journal
 
     private void ensureIndexCapacity() throws IOException
     {
-        if (!index.hasSpace())
+        if (index != null)
         {
-            rotateIndex();
+            if (!index.hasSpace())
+            {
+                rotateIndex();
+            }
         }
     }
 
@@ -373,5 +389,10 @@ public final class VlfJournal implements Journal
     public Path getActivePath()
     {
         return activePath;
+    }
+
+    public long getOffset()
+    {
+        return buffer.position();
     }
 }

@@ -1,10 +1,7 @@
 package com.ethlo.venturi.api;
 
-import java.util.function.BiConsumer;
-
 public interface GatewayHeaders
 {
-
     /**
      * Returns the first header value or null.
      */
@@ -26,44 +23,23 @@ public interface GatewayHeaders
     /**
      * Replaces any existing values with these multiple values.
      */
-    void set(CharSequence name, Iterable<? extends CharSequence> values);
+    void set(CharSequence name, Iterable<CharSequence> values);
 
     /**
      * Adds a value to any existing values for this header.
      */
     void add(CharSequence name, CharSequence value);
 
-    /**
-     * Iterates over every single Name-Value pair.
-     * Useful for simple logging or header-by-header transformations.
-     */
-    default void forEach(BiConsumer<? super CharSequence, ? super CharSequence> action)
-    {
-        for (CharSequence name : names())
-        {
-            for (CharSequence value : getAll(name))
-            {
-                action.accept(name, value);
-            }
-        }
-    }
-
-    /**
-     * Iterates over Names and their associated List of values.
-     * Efficient for proxying where you want to copy all values at once.
-     */
-    default void forEachGroup(BiConsumer<? super CharSequence, ? super Iterable<CharSequence>> action)
-    {
-        for (CharSequence name : names())
-        {
-            action.accept(name, getAll(name));
-        }
-    }
-
-    Iterable<CharSequence> names();
-
     default boolean contains(CharSequence name)
     {
         return getFirst(name) != null;
+    }
+
+    int forEach(EntryConsumer consumer);
+
+    @FunctionalInterface
+    interface EntryConsumer
+    {
+        void accept(CharSequence name, CharSequence value);
     }
 }

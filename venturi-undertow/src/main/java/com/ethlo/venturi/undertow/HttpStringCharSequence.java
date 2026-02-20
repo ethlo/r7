@@ -39,4 +39,9 @@ public final class HttpStringCharSequence implements CharSequence
     {
         return httpString.toString();
     }
+
+    public HttpString getHttpString()
+    {
+        return httpString;
+    }
 }

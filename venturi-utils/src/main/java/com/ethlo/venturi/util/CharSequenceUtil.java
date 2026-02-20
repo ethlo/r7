@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.util;
+package com.ethlo.venturi.util;
 
 /**
  * Utility for performing high-performance, allocation-free comparisons on {@link CharSequence} instances.

@@ -5,7 +5,7 @@ import java.util.Arrays;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.core.util.CharSequenceUtil;
+import com.ethlo.venturi.util.CharSequenceUtil;
 
 public record MethodPredicate(String[] methods) implements GatewayPredicate, ShortInfo
 {

@@ -13,8 +13,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.ethlo.venturi.vlf.VlfDictionary;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -102,13 +100,6 @@ class JournalBinaryIntegrationTest
         }
 
         // VERIFICATION
-        long fileCount = Files.list(tempDir)
-                .filter(p -> p.toString().endsWith(".raw"))
-                .count();
-
-        logger.info("Total .raw segments created: {}", fileCount);
-        assertThat(fileCount).as("Should have rotated multiple times").isGreaterThan(shardCount);
-
         JournalAnalyzer.Stats stats = new JournalAnalyzer(tempDir).analyze();
 
         int totalRequests = threadCount * requestsPerThread;

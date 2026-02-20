@@ -1,8 +1,6 @@
 package com.ethlo.venturi.undertow;
 
 import java.util.Collections;
-import java.util.Iterator;
-import java.util.function.BiConsumer;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import io.undertow.util.HeaderMap;
@@ -21,66 +19,40 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     @Override
     public CharSequence getFirst(final CharSequence name)
     {
-        // Undertow optimized path
-        return headerMap.getFirst(name.toString());
+        // Undertow's getFirst(HttpString) is the fastest path
+        return headerMap.getFirst(toHttpString(name));
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public Iterable<CharSequence> getAll(final CharSequence name)
     {
-        final HeaderValues values = headerMap.get(name.toString());
-        if (values == null)
-        {
-            return Collections.emptyList();
-        }
-        // Zero-copy cast: HeaderValues implements Iterable<String>, String is CharSequence
-        return (Iterable<CharSequence>) (Object) values;
-    }
-
-    @Override
-    public Iterable<CharSequence> names()
-    {
-        return () -> new Iterator<>()
-        {
-            private final Iterator<HttpString> delegate = headerMap.getHeaderNames().iterator();
-
-            @Override
-            public boolean hasNext()
-            {
-                return delegate.hasNext();
-            }
-
-            @Override
-            public CharSequence next()
-            {
-                return new HttpStringCharSequence(delegate.next());
-            }
-        };
+        final HeaderValues values = headerMap.get(toHttpString(name));
+        return values != null ? (Iterable<CharSequence>) (Object) values : Collections.emptyList();
     }
 
     @Override
     public void add(final CharSequence name, final CharSequence value)
     {
-        headerMap.add(HttpString.tryFromString(name.toString()), value.toString());
+        headerMap.add(toHttpString(name), value.toString());
     }
 
     @Override
     public void set(final CharSequence name, final CharSequence value)
     {
-        headerMap.put(HttpString.tryFromString(name.toString()), value.toString());
+        headerMap.put(toHttpString(name), value.toString());
     }
 
     @Override
     public void remove(final CharSequence name)
     {
-        headerMap.remove(HttpString.tryFromString(name.toString()));
+        headerMap.remove(toHttpString(name));
     }
 
     @Override
-    public void set(final CharSequence name, final Iterable<? extends CharSequence> values)
+    public void set(final CharSequence name, final Iterable<CharSequence> values)
     {
-        final HttpString hs = HttpString.tryFromString(name.toString());
+        final HttpString hs = toHttpString(name);
         headerMap.remove(hs);
         for (CharSequence v : values)
         {
@@ -89,25 +61,34 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public void forEach(BiConsumer<? super CharSequence, ? super CharSequence> action)
+    public int forEach(EntryConsumer consumer)
     {
+        int totalCount = 0;
         for (HeaderValues values : headerMap)
         {
-            final HttpStringCharSequence nameWrapper = new HttpStringCharSequence(values.getHeaderName());
+            // Wrap once per key group, not per value
+            final HttpString hs = values.getHeaderName();
+            final HttpStringCharSequence wrappedName = new HttpStringCharSequence(hs);
+
             for (String value : values)
             {
-                action.accept(nameWrapper, value);
+                consumer.accept(wrappedName, value);
+                totalCount++;
             }
         }
+        return totalCount;
     }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public void forEachGroup(BiConsumer<? super CharSequence, ? super Iterable<CharSequence>> action)
+    /**
+     * Minimizes HttpString allocations by checking if we already have one.
+     */
+    private HttpString toHttpString(CharSequence name)
     {
-        for (HeaderValues values : headerMap)
+        if (name instanceof HttpStringCharSequence wrapper)
         {
-            action.accept(values.getHeaderName().toString(), (Iterable<CharSequence>) (Object) values);
+            return wrapper.getHttpString();
         }
+        // Undertow's tryFromString is optimized for well-known headers
+        return HttpString.tryFromString(name.toString());
     }
 }

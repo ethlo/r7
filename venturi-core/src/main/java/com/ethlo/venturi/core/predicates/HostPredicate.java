@@ -4,7 +4,7 @@ import java.util.List;
 
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRequest;
-import com.ethlo.venturi.core.util.CharSequenceUtil;
+import com.ethlo.venturi.util.CharSequenceUtil;
 
 public record HostPredicate(List<String> hosts) implements GatewayPredicate
 {
