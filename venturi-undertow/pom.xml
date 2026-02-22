@@ -25,7 +25,7 @@
         </dependency>
         <dependency>
             <groupId>com.ethlo.venturi</groupId>
-            <artifactId>venturi-auditing-vlf</artifactId>
+            <artifactId>venturi-journal-vlf</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>compile</scope>
         </dependency>

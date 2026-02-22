@@ -46,6 +46,10 @@ public final class VlfPerformanceBenchmarkTest
             headers.set("user-agent", "Mozilla/5.0 (Venturi Bench)");
             headers.set("content-type", "application/json");
             headers.set("connection", "keep-alive");
+            for (int i = 0; i < 0; i++)
+            {
+                headers.set("header" + i, "header-value" + i);
+            }
 
             final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
             final ByteBuffer body = wrap("{\"status\":\"ok\"}".getBytes());

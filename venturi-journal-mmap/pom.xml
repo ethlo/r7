@@ -7,7 +7,7 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>venturi-auditing-vlf</artifactId>
+    <artifactId>venturi-journal-vlf</artifactId>
     <packaging>jar</packaging>
 
     <name>venturi-logger-mmap</name>

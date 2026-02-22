@@ -11,8 +11,8 @@
         <module>venturi-api</module>
         <module>venturi-undertow</module>
         <module>venturi-core</module>
-        <module>venturi-auditing-api</module>
-        <module>venturi-auditing-vlf</module>
+        <module>venturi-journal-api</module>
+        <module>venturi-journal-mmap</module>
         <module>venturi-utils</module>
     </modules>
     <properties>

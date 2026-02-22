@@ -7,7 +7,7 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>venturi-auditing-api</artifactId>
+    <artifactId>venturi-journal-api</artifactId>
     <packaging>jar</packaging>
 
     <name>venturi-logger-api</name>

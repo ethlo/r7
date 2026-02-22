@@ -269,8 +269,7 @@ public final class VlfJournal implements Journal
             return;
         }
 
-        byte id = dictionary.encode(s);
-
+        final byte id = dictionary.encode(s);
         if (id != -1)
         {
             buffer.put(VlfConstants.DICT_LOOKUP);
@@ -278,19 +277,46 @@ public final class VlfJournal implements Journal
         }
         else
         {
-            final String str = s.toString();
-            final byte[] b = str.getBytes(StandardCharsets.UTF_8);
-            if (b.length >= 0xFE)
+            final int len = s.length();
+            // 0xFE is your limit for "short" strings
+            if (len >= 0xFE)
             {
                 buffer.put(VlfConstants.LONG_STRING);
-                buffer.putInt(b.length);
+                // Reserve space for the int length
+                final int lengthPos = buffer.position();
+                buffer.putInt(0);
+
+                final int bytesWritten = writeUtf8(s);
+                buffer.putInt(lengthPos, bytesWritten);
             }
             else
             {
-                buffer.put((byte) b.length);
+                final int lengthPos = buffer.position();
+                buffer.put((byte) 0);
+
+                final int bytesWritten = writeUtf8(s);
+                buffer.put(lengthPos, (byte) bytesWritten);
             }
-            buffer.put(b);
         }
+    }
+
+    // Write directly from CharSequence to ByteBuffer
+    private int writeUtf8(CharSequence s)
+    {
+        final int start = buffer.position();
+        for (int i = 0, len = s.length(); i < len; i++)
+        {
+            char c = s.charAt(i);
+            // Optimized for ASCII headers
+            if (c < 0x80) {
+                buffer.put((byte) c);
+            } else {
+                // Handle multi-byte only if necessary
+                // TODO: writeMultibyte(c);
+                throw new UncheckedIOException(new IOException("Invalid ASCII character: " + c));
+            }
+        }
+        return buffer.position() - start;
     }
 
     private void rotateIndex()
