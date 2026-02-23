@@ -5,9 +5,9 @@ import java.nio.ByteBuffer;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayResponse;
-import com.ethlo.venturi.constants.HttpHeaders;
-import com.ethlo.venturi.constants.HttpStatuses;
-import com.ethlo.venturi.constants.MediaTypes;
+import com.ethlo.venturi.util.constants.HttpHeaders;
+import com.ethlo.venturi.util.constants.HttpStatuses;
+import com.ethlo.venturi.util.constants.MediaTypes;
 
 public final class RequireAuthorizationHeaderFilter implements GatewayFilter
 {

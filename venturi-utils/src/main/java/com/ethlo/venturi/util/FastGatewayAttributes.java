@@ -1,8 +1,6 @@
-package com.ethlo.venturi.core;
+package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.api.GatewayAttributes;
-import com.ethlo.venturi.util.ArrayBackedPairStorage;
-import com.ethlo.venturi.util.CharSequenceUtil;
 
 /**
  * High-performance, low-allocation implementation of GatewayAttributes.

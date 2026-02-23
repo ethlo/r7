@@ -112,4 +112,11 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
         return count;
     }
 
+    @Override
+    public int weight()
+    {
+        // TODO: Implment me
+        return -1;
+    }
+
 }

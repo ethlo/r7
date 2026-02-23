@@ -2,7 +2,7 @@ package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.constants.HttpHeaders;
+import com.ethlo.venturi.util.constants.HttpHeaders;
 
 public class StripCacheHeadersFilter implements GatewayFilter
 {

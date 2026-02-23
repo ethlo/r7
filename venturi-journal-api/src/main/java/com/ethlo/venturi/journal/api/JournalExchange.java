@@ -3,8 +3,8 @@ package com.ethlo.venturi.journal.api;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 
 /**
@@ -18,10 +18,10 @@ public final class JournalExchange
     private final List<ByteBuffer> responseBodyFragments = new ArrayList<>();
     // Request data
     private String requestStartLine;
-    private Map<CharSequence, CharSequence> requestHeaders;
+    private GatewayHeaders requestHeaders;
     // Response data
     private String responseStartLine;
-    private Map<CharSequence, CharSequence> responseHeaders;
+    private GatewayHeaders responseHeaders;
     // Metrics
     private long timestamp;
     private int status;
@@ -34,13 +34,13 @@ public final class JournalExchange
         this.requestId = requestId;
     }
 
-    public void setRequest(String startLine, Map<CharSequence, CharSequence> headers)
+    public void setRequest(String startLine, GatewayHeaders headers)
     {
         this.requestStartLine = startLine;
         this.requestHeaders = headers;
     }
 
-    public void setResponse(String startLine, Map<CharSequence, CharSequence> headers)
+    public void setResponse(String startLine, GatewayHeaders headers)
     {
         this.responseStartLine = startLine;
         this.responseHeaders = headers;
@@ -78,7 +78,7 @@ public final class JournalExchange
         return requestStartLine;
     }
 
-    public Map<CharSequence, CharSequence> getRequestHeaders()
+    public GatewayHeaders getRequestHeaders()
     {
         return requestHeaders;
     }
@@ -93,7 +93,7 @@ public final class JournalExchange
         return responseStartLine;
     }
 
-    public Map<CharSequence, CharSequence> getResponseHeaders()
+    public GatewayHeaders getResponseHeaders()
     {
         return responseHeaders;
     }

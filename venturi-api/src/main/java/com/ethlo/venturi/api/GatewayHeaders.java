@@ -53,4 +53,6 @@ public interface GatewayHeaders
     {
         void accept(S state, CharSequence name, CharSequence value);
     }
+
+    int weight();
 }

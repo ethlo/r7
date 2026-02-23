@@ -15,6 +15,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.util.FastGatewayHeaders;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -22,7 +24,6 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.vlf.AsyncSegmentProvider;
 import com.ethlo.venturi.vlf.JournalAnalyzer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
@@ -46,7 +47,7 @@ class JournalBinaryIntegrationTest
         VlfJournal[] journals = new VlfJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new VlfJournal(new AsyncSegmentProvider(segmentSize, new VlfJournalProvider(tempDir, i), 1));
+            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i), segmentSize);
         }
 
         int requestsPerThread = 50;
@@ -67,7 +68,7 @@ class JournalBinaryIntegrationTest
                     VlfJournal journal = journals[(h ^ (h >>> 16)) & mask];
 
                     // 1. BEGIN
-                    GatewayHeaders headers = new SimpleGatewayHeaders();
+                    GatewayHeaders headers = new FastGatewayHeaders();
                     headers.add("User-Agent", "JUnit");
                     journal.start(ServerDirection.REQUEST, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
 
@@ -137,15 +138,15 @@ class JournalBinaryIntegrationTest
         VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0);
 
         final int segmentSize = 1024 * 1024;
-        try (VlfJournal j = new VlfJournal(new AsyncSegmentProvider(segmentSize, provider, 1)))
+        try (VlfJournal j = new VlfJournal(provider, segmentSize))
         {
             String id = "dual-123";
 
-            j.start(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), new SimpleGatewayHeaders());
+            j.start(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), new FastGatewayHeaders());
             j.body(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
 
             // New signature for response BEGIN
-            j.start(ServerDirection.RESPONSE, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new SimpleGatewayHeaders());
+            j.start(ServerDirection.RESPONSE, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
             j.body(ServerDirection.RESPONSE, id, ByteBuffer.wrap("Response chunk".getBytes()));
 
             // New signature for END

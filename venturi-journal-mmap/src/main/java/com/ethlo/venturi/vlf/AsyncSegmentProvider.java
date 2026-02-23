@@ -133,7 +133,7 @@ public class AsyncSegmentProvider implements AutoCloseable
     {
         if (oldSegment == null) return;
 
-        ioExecutor.execute(() -> {
+        //ioExecutor.execute(() -> {
             try
             {
                 oldSegment.segment().force(); // Heavy blocking I/O
@@ -151,7 +151,7 @@ public class AsyncSegmentProvider implements AutoCloseable
             {
                 // Log failure to close or rename
             }
-        });
+        //});
     }
 
     @Override

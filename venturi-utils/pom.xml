@@ -7,4 +7,11 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
     <artifactId>venturi-utils</artifactId>
+    <dependencies>
+        <dependency>
+            <groupId>com.ethlo.venturi</groupId>
+            <artifactId>venturi-api</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
 </project>

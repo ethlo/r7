@@ -2,12 +2,12 @@ package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.util.FastGatewayHeaders;
 import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
 import com.ethlo.venturi.vlf.dictionary.VlfDictionaryByteUltra;
 
@@ -48,16 +48,12 @@ public final class JournalDecoder
             final String requestId = readReqId(buffer);
             final ServerDirection dir = ServerDirection.values()[buffer.get()];
             final String startLine = readPrefixedBufferAsString(buffer);
-            final Map<CharSequence, CharSequence> headers = readHeaders(buffer, dictionary);
+            final GatewayHeaders headers = readHeaders(buffer, dictionary);
 
             listener.onBegin(dir, requestId, startLine, headers);
 
             weight += safeLen(requestId) + safeLen(dir.name()) + safeLen(startLine);
-            for (Map.Entry<CharSequence, CharSequence> entry : headers.entrySet())
-            {
-                // Safety: Use safeLen to avoid NPE on null keys/values
-                weight += safeLen(entry.getKey()) + safeLen(entry.getValue()) + 4;
-            }
+            weight += headers.weight();
         }
         else if (marker == VlfConstants.MARKER_BODY)
         {
@@ -140,19 +136,15 @@ public final class JournalDecoder
         return slice;
     }
 
-    private static Map<CharSequence, CharSequence> readHeaders(ByteBuffer buffer, VlfDictionary dictionary)
+    private static GatewayHeaders readHeaders(ByteBuffer buffer, VlfDictionary dictionary)
     {
         final int count = buffer.getInt();
-        if (count <= 0)
-        {
-            return Collections.emptyMap();
-        }
-        final Map<CharSequence, CharSequence> headers = new HashMap<>(count);
+        final GatewayHeaders headers = new FastGatewayHeaders();
         for (int i = 0; i < count; i++)
         {
             final CharSequence k = readString(buffer, dictionary);
             final CharSequence v = readString(buffer, dictionary);
-            headers.put(k, v);
+            headers.add(k, v);
         }
         return headers;
     }

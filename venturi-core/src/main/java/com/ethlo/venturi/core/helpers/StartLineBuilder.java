@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.constants.HttpStatuses;
+import com.ethlo.venturi.util.constants.HttpStatuses;
 
 public final class StartLineBuilder
 {

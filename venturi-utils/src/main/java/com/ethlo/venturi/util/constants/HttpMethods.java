@@ -1,4 +1,4 @@
-package com.ethlo.venturi.constants;
+package com.ethlo.venturi.util.constants;
 
 public final class HttpMethods
 {

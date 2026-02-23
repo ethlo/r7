@@ -11,6 +11,8 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.util.FastGatewayHeaders;
+
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +21,6 @@ import com.ethlo.chronograph.Chronograph;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
-import com.ethlo.venturi.journal.api.JournalExchange;
-import com.ethlo.venturi.vlf.AsyncSegmentProvider;
 import com.ethlo.venturi.vlf.VenturiTailer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
@@ -42,7 +42,7 @@ public final class VlfPerformanceBenchmarkTest
             final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0);
             final Chronograph chronograph = Chronograph.create();
 
-            final GatewayHeaders headers = new SimpleGatewayHeaders();
+            final GatewayHeaders headers = new FastGatewayHeaders();
             headers.set("user-agent", "Mozilla/5.0 (Venturi Bench)");
             headers.set("content-type", "application/json");
             headers.set("connection", "keep-alive");
@@ -61,7 +61,7 @@ public final class VlfPerformanceBenchmarkTest
             chronograph.time("Encode " + iterations, () ->
                     {
                         // Ensure the journal is closed IMMEDIATELY after the loop
-                        try (final VlfJournal journal = new VlfJournal(new AsyncSegmentProvider(Integer.MAX_VALUE, provider, 1), dictionary))
+                        try (final VlfJournal journal = new VlfJournal(provider, Integer.MAX_VALUE))
                         {
                             journalRef.set(journal);
                             for (int i = 0; i < iterations; i++)
@@ -82,21 +82,17 @@ public final class VlfPerformanceBenchmarkTest
             final Path finalPath = journalRef.get().getActivePath();
 
             // 3. Measure Decoding Speed using the high-water mark
-            final ExchangeCompletionListener noopListener = new ExchangeCompletionListener()
-            {
-                @Override
-                public void onComplete(final JournalExchange exchange)
-                {
+            final ExchangeCompletionListener noopListener = exchange -> {
 
-                }
             };
 
             final VenturiTailer tailer = new VenturiTailer(finalPath.getParent(), Duration.ZERO, noopListener);
 
-            chronograph.time("Decode " + iterations, () -> {
+            chronograph.time("Decode " + iterations, () ->
+                    {
                         try
                         {
-                            //tailer.runTick();
+                            tailer.runTick();
                         }
                         catch (Exception e)
                         {

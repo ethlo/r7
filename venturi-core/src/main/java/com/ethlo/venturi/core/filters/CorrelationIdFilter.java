@@ -2,10 +2,9 @@ package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.constants.HttpHeaders;
 import com.ethlo.venturi.core.ShortInfo;
 
-import static com.ethlo.venturi.constants.HttpHeaders.X_CORRELATION_ID;
+import static com.ethlo.venturi.util.constants.HttpHeaders.X_CORRELATION_ID;
 
 public final class CorrelationIdFilter implements GatewayFilter, ShortInfo
 {

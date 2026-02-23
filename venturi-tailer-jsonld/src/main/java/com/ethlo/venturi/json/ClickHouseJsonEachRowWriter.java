@@ -5,11 +5,13 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
+import com.ethlo.venturi.util.constants.HttpHeaders;
+import com.ethlo.venturi.util.constants.HttpStatuses;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -52,16 +54,16 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             generator.writePOJOProperty("request_headers", exchange.getRequestHeaders());
 
             // Helper for specific schema columns
-            generator.writeStringProperty("request_content_type", getHeader(exchange.getRequestHeaders(), "Content-Type"));
-            generator.writeStringProperty("user_agent", getHeader(exchange.getRequestHeaders(), "User-Agent"));
-            generator.writeStringProperty("host", getHeader(exchange.getRequestHeaders(), "Host"));
+            generator.writeStringProperty("request_content_type", getHeader(exchange.getRequestHeaders(), HttpHeaders.CONTENT_TYPE));
+            generator.writeStringProperty("user_agent", getHeader(exchange.getRequestHeaders(), HttpHeaders.USER_AGENT));
+            generator.writeStringProperty("host", getHeader(exchange.getRequestHeaders(), HttpHeaders.HOST));
 
             // --- Response Info ---
             int status = exchange.getStatus();
             generator.writeNumberProperty("status", status);
-            generator.writeNumberProperty("is_error", status >= 400 ? 1 : 0);
+            generator.writeNumberProperty("is_error", status >= HttpStatuses.BAD_REQUEST ? 1 : 0);
             generator.writePOJOProperty("response_headers", exchange.getResponseHeaders());
-            generator.writeStringProperty("response_content_type", getHeader(exchange.getResponseHeaders(), "Content-Type"));
+            generator.writeStringProperty("response_content_type", getHeader(exchange.getResponseHeaders(), HttpHeaders.CONTENT_TYPE));
 
             // --- Size Metrics ---
             generator.writeNumberProperty("request_body_size", exchange.getBytesReceived());
@@ -100,12 +102,12 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
     }
 
-    private String getHeader(Map<CharSequence, CharSequence> headers, String key)
+    private String getHeader(GatewayHeaders headers, String key)
     {
         if (headers == null)
         {
             return null;
         }
-        return Optional.ofNullable(headers.get(key)).map(CharSequence::toString).orElse(null);
+        return Optional.ofNullable(headers.getFirst(key)).map(CharSequence::toString).orElse(null);
     }
 }

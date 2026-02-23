@@ -4,6 +4,8 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.ethlo.venturi.api.GatewayHeaders;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +25,7 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onBegin(ServerDirection dir, String id, String line, Map<CharSequence, CharSequence> headers)
+    public void onBegin(ServerDirection dir, String id, String line, GatewayHeaders headers)
     {
         JournalExchange exchange = inFlight.computeIfAbsent(id, JournalExchange::new);
         if (dir == ServerDirection.REQUEST)
