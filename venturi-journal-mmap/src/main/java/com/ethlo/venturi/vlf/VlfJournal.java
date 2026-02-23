@@ -32,32 +32,26 @@ import com.ethlo.venturi.vlf.dictionary.VlfDictionaryByteUltra;
 
 public final class VlfJournal implements Journal
 {
+    // Standard OS page size is almost universally 4KB
+    private static final long OS_PAGE_SIZE = 4096L;
     private static final ValueLayout.OfInt INT_BE =
             JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-
     private static final ValueLayout.OfShort SHORT_BE =
             JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-
     private static final ValueLayout.OfLong LONG_BE =
             JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-
     private static final int MAX_SCRATCH = 8192;
-
     public final int maxHeaderBytes = 4096;
-
     private final VlfJournalProvider provider;
     private final VlfDictionary dictionary;
     private final long segmentSize;
     private final long indexSize;
     private final boolean isWriteIndex = false;
-
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
     private final MemorySegment asciiScratchSegment = MemorySegment.ofArray(asciiScratch);
-
     private Arena arena;
     private MemorySegment segment;
     private long position;
-
     private IndexSegment index;
     private Path activePath;
     private Path activeIndexPath;
@@ -107,6 +101,28 @@ public final class VlfJournal implements Journal
             throw new UncheckedIOException(e);
         }
         return new VlfDictionaryByteUltra(props);
+    }
+
+    /**
+     * Forces the OS to physically allocate disk blocks for the entire mapped segment.
+     * Prevents sparse file creation and runtime SIGBUS/InternalError crashes.
+     */
+    private void preFaultSegment(MemorySegment segment) throws InternalError
+    {
+        final long capacity = segment.byteSize();
+
+        // Stride through the segment, touching one byte per 4KB page
+        for (long offset = 0; offset < capacity; offset += OS_PAGE_SIZE)
+        {
+            segment.set(ValueLayout.JAVA_BYTE, offset, (byte) 0);
+        }
+
+        // Guarantee the absolute last byte is also physically backed
+        // in case the segment size is not a perfect multiple of 4096
+        if (capacity > 0)
+        {
+            segment.set(ValueLayout.JAVA_BYTE, capacity - 1, (byte) 0);
+        }
     }
 
 
@@ -452,11 +468,11 @@ public final class VlfJournal implements Journal
 
                 try
                 {
-                    segment.set(JAVA_BYTE, segmentSize - 1, (byte) 0);
+                    preFaultSegment(segment);
                 }
                 catch (InternalError e)
                 {
-                    throw new UncheckedIOException(new IOException("Unable to allocate journal segment " + activePath + ". Is there enough disk space?", e));
+                    throw new UncheckedIOException(new IOException("Unable to allocate journal segment " + activePath + " of size " + segmentSize + " bytes. Is there enough disk space?", e));
                 }
 
                 position = 0;

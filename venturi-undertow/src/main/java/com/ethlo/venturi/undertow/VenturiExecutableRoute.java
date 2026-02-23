@@ -1,9 +1,13 @@
 package com.ethlo.venturi.undertow;
 
 import static com.ethlo.venturi.undertow.VenturiUndertowHandler.JOURNAL_KEY;
+import static com.ethlo.venturi.undertow.VenturiUndertowHandler.REQUEST_BYTES_READ_KEY;
 import static com.ethlo.venturi.undertow.VenturiUndertowHandler.REQUEST_START_NANOS_KEY;
+import static com.ethlo.venturi.undertow.VenturiUndertowHandler.RESPONSE_BYTES_SENT_KEY;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.function.LongSupplier;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
@@ -112,16 +116,13 @@ public final class VenturiExecutableRoute implements ExecutableRoute
 
     private void handleRequestEnded(final GatewayExchange gatewayExchange)
     {
-        final VlfJournal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
-        if (journal != null)
+        final VlfJournal journal = Objects.requireNonNull(gatewayExchange.attributes().get(JOURNAL_KEY), "Journal is required");
+        final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
+        final LongSupplier requestBytesRead = Objects.requireNonNull(gatewayExchange.attributes().get(REQUEST_BYTES_READ_KEY));
+        final LongSupplier responseBytesSent = Objects.requireNonNull(gatewayExchange.attributes().get(RESPONSE_BYTES_SENT_KEY));
+        synchronized (journal)
         {
-            final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
-            final long requestBytesRead = 0;
-            final long responseBytesSent = 0;
-            synchronized (journal)
-            {
-                journal.end(gatewayExchange.requestId(), gatewayExchange.response().status(), responseBytesSent, requestBytesRead, System.nanoTime() - startNanos);
-            }
+            journal.end(gatewayExchange.requestId(), gatewayExchange.response().status(), responseBytesSent.getAsLong(), requestBytesRead.getAsLong(), System.nanoTime() - startNanos);
         }
     }
 }

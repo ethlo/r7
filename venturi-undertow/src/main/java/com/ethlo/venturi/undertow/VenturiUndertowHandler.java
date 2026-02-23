@@ -3,7 +3,9 @@ package com.ethlo.venturi.undertow;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayAttributes;
@@ -31,6 +33,8 @@ public final class VenturiUndertowHandler implements HttpHandler
     static final CharSequence JOURNAL_KEY = ".JOURNAL";
     static final CharSequence AUDIT_CONFIG_KEY = ".AUDIT_CONFIG";
     static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
+    static final CharSequence REQUEST_BYTES_READ_KEY = ".REQUEST_BYTES_READ";
+    static final CharSequence RESPONSE_BYTES_SENT_KEY = ".RESPONSE_BYTES_READ";
     private static final CharSequence ROUTE_ID_KEY = ".ROUTE_ID";
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -94,10 +98,19 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         final CharSequence requestId = gatewayExchange.requestId();
         final VlfJournal journal = gatewayExchangeDataWriter.getJournal(requestId);
+        gatewayExchange.attributes().put(JOURNAL_KEY, journal);
 
         // Always capture Request Headers for access log
         final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
         journal.start(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
+
+        // Track request bytes
+        final AtomicLong requestBytesRead = new AtomicLong(0);
+        exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
+        gatewayExchange.attributes().put(REQUEST_BYTES_READ_KEY, (LongSupplier) requestBytesRead::get);
+
+        // Track response bytes
+        gatewayExchange.attributes().put(RESPONSE_BYTES_SENT_KEY, (LongSupplier) exchange::getResponseBytesSent);
 
         // Capture Request Body
         if (shouldCaptureRequestBody(audit))

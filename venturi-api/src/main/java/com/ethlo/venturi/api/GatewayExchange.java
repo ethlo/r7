@@ -13,5 +13,4 @@ public record GatewayExchange(
         GatewayRoute route
 )
 {
-
 }
