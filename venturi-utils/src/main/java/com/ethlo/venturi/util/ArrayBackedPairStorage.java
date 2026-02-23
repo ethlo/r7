@@ -3,6 +3,7 @@ package com.ethlo.venturi.util;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 public abstract class ArrayBackedPairStorage<K, V>
 {
@@ -113,6 +114,33 @@ public abstract class ArrayBackedPairStorage<K, V>
 
     // --- Reusable Views (Zero Allocation) ---
 
+    protected <S> int forEachInternal(S state, StateConsumer<S, ? super K, ? super V> consumer)
+    {
+        final int currentSize = this.size;
+        final Object[] d = this.data;
+        for (int i = 0; i < currentSize; i += 2)
+        {
+            consumer.accept(state, (K) d[i], (V) d[i + 1]);
+        }
+        return currentSize >> 1;
+    }
+
+    protected int internalWeight(Function<K, Integer> keyWeightFunction, Function<V, Integer> valueWeightFunction)
+    {
+        int weight = 0;
+        for (int i = 0; i < size; i += 2)
+        {
+            weight += keyWeightFunction.apply((K) data[i]) + valueWeightFunction.apply((V) data[i + 1]);
+        }
+        return weight;
+    }
+
+    @FunctionalInterface
+    public interface StateConsumer<S, K, V>
+    {
+        void accept(S state, K key, V value);
+    }
+
     private class ReusableKeysView implements Iterable<K>, Iterator<K>
     {
         private int cursor = 0;
@@ -177,22 +205,5 @@ public abstract class ArrayBackedPairStorage<K, V>
             cursor += 2;
             return val;
         }
-    }
-
-    @FunctionalInterface
-    public interface StateConsumer<S, K, V>
-    {
-        void accept(S state, K key, V value);
-    }
-
-    protected <S> int forEachInternal(S state, StateConsumer<S, ? super K, ? super V> consumer)
-    {
-        final int currentSize = this.size;
-        final Object[] d = this.data;
-        for (int i = 0; i < currentSize; i += 2)
-        {
-            consumer.accept(state, (K) d[i], (V) d[i + 1]);
-        }
-        return currentSize >> 1;
     }
 }

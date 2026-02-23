@@ -2,8 +2,6 @@ package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 public final class FastGatewayHeaders extends ArrayBackedPairStorage<CharSequence, CharSequence> implements GatewayHeaders
 {
 
@@ -57,9 +55,7 @@ public final class FastGatewayHeaders extends ArrayBackedPairStorage<CharSequenc
     @Override
     public int weight()
     {
-        final AtomicInteger weight = new AtomicInteger(0);
-        forEach(weight, (w, name, value) -> w.addAndGet((name.length() + value.length())));
-        return weight.get();
+        return internalWeight(CharSequence::length, CharSequence::length);
     }
 
     @Override
