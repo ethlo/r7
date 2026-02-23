@@ -1,5 +1,10 @@
 package com.ethlo.venturi.undertow;
 
+import java.lang.management.BufferPoolMXBean;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -64,31 +69,63 @@ public class VenturiConsolePrinter
         // Worker Section
         logLine("");
         logLine("   \u001B[1mWorker & Threads\u001B[0m");
-        logLine("   ├─ IO Threads:      " + config.worker().ioThreads());
-        logLine("   ├─ Task Core/Max:   " + config.worker().taskCoreThreads() + " / " + config.worker().taskMaxThreads());
-        logLine("   ├─ Stack Size:      " + (config.worker().stackSize() / 1024) + " KB");
-        logLine("   └─ Watermark (H/L): " + config.worker().connectionHighWater() + " / " + config.worker().connectionLowWater());
+        logLine("   ├─ IO Threads:        " + config.worker().ioThreads());
+        logLine("   ├─ Task Core/Max:     " + config.worker().taskCoreThreads() + " / " + config.worker().taskMaxThreads());
+        logLine("   ├─ Stack Size:        " + (config.worker().stackSize() / 1024) + " KB");
+        logLine("   └─ Watermark (H/L):   " + config.worker().connectionHighWater() + " / " + config.worker().connectionLowWater());
 
         // Options & Socket
         logLine("");
         logLine("   \u001B[1mNetworking\u001B[0m");
-        logLine("   ├─ TCP No-Delay:    " + config.socket().tcpNodelay());
-        logLine("   ├─ Backlog:         " + config.socket().backlog());
-        logLine("   ├─ HTTP/2:          " + (config.options().enableHttp2() ? "Enabled" : "Disabled"));
-        logLine("   └─ Buffer:          " + (config.options().bufferSize() / 1024) + " KB (" + (config.options().directBuffers() ? "Direct" : "Heap") + ")");
+        logLine("   ├─ TCP No-Delay:      " + config.socket().tcpNodelay());
+        logLine("   ├─ Backlog:           " + config.socket().backlog());
+        logLine("   ├─ Read-timeout:      " + config.socket().readTimeout());
+        logLine("   ├─ Reuse address:     " + config.socket().reuseAddresses());
+        logLine("   ├─ Max header count:  " + config.options().maxHeaderCount());
+        logLine("   ├─ Max header length: " + config.options().maxHeaderSize());
+        logLine("   ├─ Request timeout:   " + config.options().requestParseTimeout());
+        logLine("   ├─ HTTP/2:            " + (config.options().enableHttp2() ? "Enabled" : "Disabled"));
+        logLine("   └─ Buffer:            " + (config.options().bufferSize() / 1024) + " KB (" + (config.options().directBuffers() ? "Direct" : "Heap") + ")");
 
         // Proxy Section
         logLine("");
         logLine("   \u001B[1mProxy & Timing\u001B[0m");
-        logLine("   ├─ Conn/Thread:     " + config.proxy().connectionsPerThread());
-        logLine("   ├─ Max Queue:       " + config.proxy().maxQueueSize());
-        logLine("   ├─ Max Req Time:    " + config.proxy().maxRequestTime() + " ms");
-        logLine("   └─ TTL:             " + (config.proxy().ttl() == -1 ? "Infinite" : config.proxy().ttl() + " ms"));
+        logLine("   ├─ Conn/Thread:       " + config.proxy().connectionsPerThread());
+        logLine("   ├─ Max Queue:         " + config.proxy().maxQueueSize());
+        logLine("   ├─ Max Req Time:      " + config.proxy().maxRequestTime() + " ms");
+        logLine("   └─ TTL:               " + (config.proxy().ttl() == -1 ? "Infinite" : config.proxy().ttl() + " ms"));
 
         // Storage
         logLine("");
         logLine("   \u001B[1mStorage & Buffering\u001B[0m");
-        logLine("   └─ Directory:  " + config.storage().tempDir());
+        logLine("   └─ Directory:         " + config.storage().tempDir());
+
+        MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
+        MemoryUsage heap = memBean.getHeapMemoryUsage();
+        var gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+        var bufferPools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
+
+        // Identify Active GC
+        String gcName = gcBeans.stream()
+                .map(GarbageCollectorMXBean::getName)
+                .findFirst()
+                .orElse("Unknown");
+
+        // Calculate Direct Memory (Off-Heap)
+        long directBufUsed = bufferPools.stream()
+                .filter(p -> p.getName().equals("direct"))
+                .mapToLong(BufferPoolMXBean::getMemoryUsed)
+                .findFirst()
+                .orElse(0L);
+
+        // JVM & Memory Section
+        logLine("");
+        logLine("   \u001B[1mJVM & Memory\u001B[0m");
+        logLine("   ├─ Java Version:      " + Runtime.version());
+        logLine("   ├─ GC Implementation: " + gcName);
+        logLine("   ├─ Heap Used/Max:     " + (heap.getUsed() / 1024 / 1024) + " MB / " + (heap.getMax() / 1024 / 1024) + " MB");
+        logLine("   ├─ Direct Buffer:     " + (directBufUsed / 1024) + " KB");
+        logLine("   └─ Total Threads:     " + ManagementFactory.getThreadMXBean().getThreadCount());
     }
 
     private void printRouteTableInternal(List<? extends GatewayRoute> routes)

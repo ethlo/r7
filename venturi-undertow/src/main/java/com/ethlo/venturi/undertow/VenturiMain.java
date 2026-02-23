@@ -237,6 +237,7 @@ public final class VenturiMain
                 .setSocketOption(Options.TCP_NODELAY, socket.tcpNodelay())
                 .setSocketOption(Options.REUSE_ADDRESSES, socket.reuseAddresses())
                 .setSocketOption(Options.BACKLOG, socket.backlog())
+                .setSocketOption(Options.READ_TIMEOUT, socket.readTimeout())
 
                 // Worker Layer
                 .setWorkerOption(Options.WORKER_IO_THREADS, worker.ioThreads())
@@ -247,6 +248,10 @@ public final class VenturiMain
                 .setWorkerOption(Options.CONNECTION_LOW_WATER, worker.connectionLowWater())
 
                 // Protocol & Memory
+                .setServerOption(UndertowOptions.MAX_HEADER_SIZE, opts.maxHeaderSize())
+                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, opts.requestParseTimeout())
+                .setServerOption(UndertowOptions.MAX_HEADERS, opts.maxHeaderCount())
+
                 .setServerOption(UndertowOptions.ENABLE_HTTP2, opts.enableHttp2())
                 .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, opts.alwaysSetKeepAlive())
                 .setBufferSize(opts.bufferSize())

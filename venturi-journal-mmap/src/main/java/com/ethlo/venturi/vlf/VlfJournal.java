@@ -49,8 +49,7 @@ public final class VlfJournal implements Journal
     private Path activePath;
     private int currentFileId = 0;
 
-    public VlfJournal(AsyncSegmentProvider provider,
-                      VlfDictionary dictionary)
+    public VlfJournal(AsyncSegmentProvider provider, VlfDictionary dictionary)
     {
         this.provider = provider;
         this.dictionary = dictionary;

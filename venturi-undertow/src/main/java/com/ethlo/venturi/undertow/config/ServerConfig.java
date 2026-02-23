@@ -34,7 +34,8 @@ public record ServerConfig(
     public record SocketConfig(
             boolean tcpNodelay,
             boolean reuseAddresses,
-            int backlog
+            int backlog,
+            int readTimeout
     )
     {
     }
@@ -49,7 +50,10 @@ public record ServerConfig(
             boolean enableHttp2,
             boolean alwaysSetKeepAlive,
             int bufferSize,
-            boolean directBuffers
+            boolean directBuffers,
+            int maxHeaderSize,
+            int maxHeaderCount,
+            int requestParseTimeout
     )
     {
     }

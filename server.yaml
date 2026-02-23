@@ -20,6 +20,9 @@ options:
   tcp_nodelay: true
   enable_http2: true
   always_set_keep_alive: true
+  max_header_size: 8192
+  max_header_count: 50
+  request_parse_timeout: 2000
 
 proxy:
   ttl: 30000
@@ -34,6 +37,7 @@ socket:
   tcp_nodelay: true
   reuse_addresses: true
   backlog: 1000
+  read_timeout: 30000
 
 # Disk/memory settings for audit and logging
 storage:
