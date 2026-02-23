@@ -40,16 +40,13 @@ public final class VlfJournal implements Journal
     public final int maxHeaderBytes = 4096;
     private final AsyncSegmentProvider provider;
     private final VlfDictionary dictionary;
-    private final boolean isWriteIndex = false;
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
     private final MemorySegment asciiScratchSegment = MemorySegment.ofArray(asciiScratch);
     private AsyncSegmentProvider.PreparedSegment currentPreparedSegment;
     private Arena arena;
     private MemorySegment segment;
     private long position;
-    private IndexSegment index;
     private Path activePath;
-    private Path activeIndexPath;
     private int currentFileId = 0;
 
     public VlfJournal(AsyncSegmentProvider provider,
@@ -59,7 +56,6 @@ public final class VlfJournal implements Journal
         this.dictionary = dictionary;
 
         rotateData();
-        rotateIndex();
     }
 
     public VlfJournal(AsyncSegmentProvider provider)
@@ -208,7 +204,6 @@ public final class VlfJournal implements Journal
     {
         try
         {
-            ensureIndexCapacity();
             ensureCapacity(maxHeaderBytes + reqId.length() + startLine.remaining());
 
             final int fileIdAtWrite = currentFileId;
@@ -230,9 +225,6 @@ public final class VlfJournal implements Journal
             );
 
             segment.set(INT_BE, countPos, count);
-
-            if (isWriteIndex)
-                index.record(reqId, fileIdAtWrite, startOffset);
         }
         catch (IOException e)
         {
@@ -245,39 +237,27 @@ public final class VlfJournal implements Journal
                                   CharSequence reqId,
                                   ByteBuffer data)
     {
-        try
+        while (data.hasRemaining())
         {
-            while (data.hasRemaining())
+            int minRequired = 16 + reqId.length();
+            if (remaining() < minRequired + 1)
             {
-                ensureIndexCapacity();
-
-                int minRequired = 16 + reqId.length();
-                if (remaining() < minRequired + 1)
-                {
-                    rotateData();
-                }
-
-                final int fileIdAtWrite = currentFileId;
-                final long startOffset = position;
-
-                int available = (int) (remaining() - minRequired);
-                int toWrite = Math.min(data.remaining(), available);
-
-                putByte(VlfConstants.MARKER_BODY);
-                putByte((byte) reqId.length());
-                writeAsciiFast(reqId);
-                putByte((byte) dir.ordinal());
-                putInt(toWrite);
-
-                writeBufferSlice(data, toWrite);
-
-                if (isWriteIndex)
-                    index.record(reqId, fileIdAtWrite, startOffset);
+                rotateData();
             }
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
+
+            final int fileIdAtWrite = currentFileId;
+            final long startOffset = position;
+
+            int available = (int) (remaining() - minRequired);
+            int toWrite = Math.min(data.remaining(), available);
+
+            putByte(VlfConstants.MARKER_BODY);
+            putByte((byte) reqId.length());
+            writeAsciiFast(reqId);
+            putByte((byte) dir.ordinal());
+            putInt(toWrite);
+
+            writeBufferSlice(data, toWrite);
         }
     }
 
@@ -290,11 +270,7 @@ public final class VlfJournal implements Journal
     {
         try
         {
-            ensureIndexCapacity();
             ensureCapacity(128 + reqId.length());
-
-            final int fileIdAtWrite = currentFileId;
-            final long startOffset = position;
 
             writeEntryHeader(VlfConstants.MARKER_END, reqId);
             putLong(System.currentTimeMillis());
@@ -302,9 +278,6 @@ public final class VlfJournal implements Journal
             putLong(sent);
             putLong(recv);
             putLong(duration);
-
-            if (isWriteIndex)
-                index.record(reqId, fileIdAtWrite, startOffset);
         }
         catch (IOException e)
         {
@@ -410,46 +383,6 @@ public final class VlfJournal implements Journal
         }
     }
 
-    /* =======================
-       Rotation
-       ======================= */
-
-    private void rotateIndex()
-    {
-        try
-        {
-            if (index != null)
-            {
-                index.close();
-                String newName = activeIndexPath.getFileName()
-                        .toString()
-                        .replace(".active", ".raw");
-
-                Files.move(activeIndexPath,
-                        activeIndexPath.resolveSibling(newName),
-                        StandardCopyOption.ATOMIC_MOVE
-                );
-            }
-
-            String dataFileName = activePath.getFileName().toString();
-            String baseName = dataFileName.contains(".")
-                    ? dataFileName.substring(0, dataFileName.lastIndexOf('.'))
-                    : dataFileName;
-
-            activeIndexPath = activePath.resolveSibling(baseName + ".index");
-
-            if (isWriteIndex)
-            {
-                // TODO:
-                //index = new IndexSegment(activeIndexPath, indexSize);
-            }
-        }
-        catch (IOException exc)
-        {
-            throw new UncheckedIOException("Unable to rotate index", exc);
-        }
-    }
-
     private void writePreamble()
     {
         position = 0;
@@ -494,12 +427,6 @@ public final class VlfJournal implements Journal
         }
     }
 
-    private void ensureIndexCapacity() throws IOException
-    {
-        if (index != null && !index.hasSpace())
-            rotateIndex();
-    }
-
     @Override
     public synchronized void close() throws IOException
     {
@@ -514,20 +441,6 @@ public final class VlfJournal implements Journal
 
             Files.move(activePath,
                     activePath.resolveSibling(newName),
-                    StandardCopyOption.ATOMIC_MOVE
-            );
-        }
-
-        if (index != null)
-        {
-            index.close();
-
-            String newName = activeIndexPath.getFileName()
-                    .toString()
-                    .replace(".active", ".raw");
-
-            Files.move(activeIndexPath,
-                    activeIndexPath.resolveSibling(newName),
                     StandardCopyOption.ATOMIC_MOVE
             );
         }

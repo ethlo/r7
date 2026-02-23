@@ -19,12 +19,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
 
 public class VenturiTailer
 {
@@ -187,8 +186,6 @@ public class VenturiTailer
             }
 
             Files.delete(path);
-            Path indexPath = path.resolveSibling(path.getFileName().toString() + ".index");
-            Files.deleteIfExists(indexPath);
             checkpoints.remove(key);
             dictCache.remove(key);
             logger.info("Deleted completed segment: {}", path.getFileName());

@@ -41,7 +41,6 @@ class JournalBinaryIntegrationTest
         int shardCount = 4;
         int mask = shardCount - 1;
         int segmentSize = 1024 * 64; // 64KB segments
-        long indexSize = 1024 * 1024; // 1MB index
 
         // Manual shard array to avoid dependency on ShardedJournalWriter in 'core'
         VlfJournal[] journals = new VlfJournal[shardCount];
