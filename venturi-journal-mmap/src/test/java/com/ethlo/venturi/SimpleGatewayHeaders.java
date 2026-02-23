@@ -49,6 +49,12 @@ public final class SimpleGatewayHeaders extends ArrayBackedPairStorage<CharSeque
     }
 
     @Override
+    public <S> int forEach(final S state, final StatefulEntryConsumer<S> consumer)
+    {
+        return forEachInternal(state, consumer::accept);
+    }
+
+    @Override
     public Iterable<CharSequence> getAll(CharSequence name)
     {
         return getAllInternal(name);

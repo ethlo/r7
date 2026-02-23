@@ -3,7 +3,6 @@ package com.ethlo.venturi.undertow;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import com.ethlo.venturi.ShardedJournalWriter;
@@ -28,12 +27,11 @@ import io.undertow.util.AttachmentKey;
 
 public final class VenturiUndertowHandler implements HttpHandler
 {
+    public static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
     static final CharSequence JOURNAL_KEY = ".JOURNAL";
     static final CharSequence AUDIT_CONFIG_KEY = ".AUDIT_CONFIG";
     static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
     private static final CharSequence ROUTE_ID_KEY = ".ROUTE_ID";
-    public static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
-
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final RouteRegistry routeRegistry;
@@ -94,57 +92,18 @@ public final class VenturiUndertowHandler implements HttpHandler
             return;
         }
 
-        // Track request bytes
-        final AtomicLong requestBytesRead = new AtomicLong(0);
-        exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
-
-        // Pin the journal to this specific request lifecycle
         final CharSequence requestId = gatewayExchange.requestId();
-        final VlfJournal requestJournal = gatewayExchangeDataWriter.getJournal(requestId);
-        gatewayExchange.attributes().put(JOURNAL_KEY, requestJournal);
-
-        // Add Completion Listener using the pinned journal
-        exchange.addExchangeCompleteListener((ex, next) -> {
-            try
-            {
-                final VlfJournal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
-                if (journal != null)
-                {
-                    final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
-                    synchronized (journal)
-                    {
-                        journal.end(requestId, ex.getStatusCode(), ex.getResponseBytesSent(), requestBytesRead.get(), System.nanoTime() - startNanos);
-                    }
-                }
-            } finally
-            {
-                next.proceed();
-            }
-        });
-
-        final VlfJournal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
-
-        if (journal == null)
-        {
-            return;
-        }
+        final VlfJournal journal = gatewayExchangeDataWriter.getJournal(requestId);
 
         // Always capture Request Headers for access log
         final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-        synchronized (journal)
-        {
-            journal.start(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
-        }
+        journal.start(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
 
         // Capture Request Body
         if (shouldCaptureRequestBody(audit))
         {
-            gatewayExchange.request().addBodyListener(buffer -> {
-                synchronized (journal)
-                {
-                    journal.body(ServerDirection.REQUEST, requestId, buffer);
-                }
-            });
+            gatewayExchange.request().addBodyListener(buffer
+                    -> journal.body(ServerDirection.REQUEST, requestId, buffer));
         }
 
         final boolean captureResBody = shouldCaptureResponseBody(audit);
@@ -158,18 +117,15 @@ public final class VenturiUndertowHandler implements HttpHandler
                 @Override
                 public void accept(final ByteBuffer buffer)
                 {
-                    synchronized (journal)
+                    if (!headersWritten)
                     {
-                        if (!headersWritten)
-                        {
-                            final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                            journal.start(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
-                            headersWritten = true;
-                        }
-                        if (captureResBody)
-                        {
-                            journal.body(ServerDirection.RESPONSE, requestId, buffer);
-                        }
+                        final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
+                        journal.start(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
+                        headersWritten = true;
+                    }
+                    if (captureResBody)
+                    {
+                        journal.body(ServerDirection.RESPONSE, requestId, buffer);
                     }
                 }
             });

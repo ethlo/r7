@@ -1,5 +1,8 @@
 package com.ethlo.venturi.undertow;
 
+import static com.ethlo.venturi.undertow.VenturiUndertowHandler.JOURNAL_KEY;
+import static com.ethlo.venturi.undertow.VenturiUndertowHandler.REQUEST_START_NANOS_KEY;
+
 import java.util.List;
 
 import com.ethlo.venturi.api.GatewayExchange;
@@ -8,6 +11,7 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.core.ExecutableRoute;
+import com.ethlo.venturi.vlf.VlfJournal;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 
@@ -61,21 +65,6 @@ public final class VenturiExecutableRoute implements ExecutableRoute
         final HttpServerExchange undertowExchange = ((UndertowGatewayRequest) exchange.request()).getExchange();
         final Iterable<GatewayFilter> filters = filters();
 
-        // 2. Hook 'finished' callback
-        undertowExchange.addExchangeCompleteListener((ex, next) -> {
-            try
-            {
-                for (GatewayFilter filter : filters())
-                {
-                    filter.finished(exchange);
-                }
-            }
-            finally
-            {
-                next.proceed();
-            }
-        });
-
         // 1. Initial Logic (Sync)
         for (GatewayFilter filter : filters)
         {
@@ -90,8 +79,9 @@ public final class VenturiExecutableRoute implements ExecutableRoute
                 {
                     filter.finished(exchange);
                 }
-            }
-            finally
+
+                handleRequestEnded(exchange);
+            } finally
             {
                 next.proceed(); // Essential for Undertow to clean up
             }
@@ -118,5 +108,20 @@ public final class VenturiExecutableRoute implements ExecutableRoute
 
         // 5. Final Hop
         proxyHandler.handleRequest(undertowExchange);
+    }
+
+    private void handleRequestEnded(final GatewayExchange gatewayExchange)
+    {
+        final VlfJournal journal = gatewayExchange.attributes().get(JOURNAL_KEY);
+        if (journal != null)
+        {
+            final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
+            final long requestBytesRead = 0;
+            final long responseBytesSent = 0;
+            synchronized (journal)
+            {
+                journal.end(gatewayExchange.requestId(), gatewayExchange.response().status(), responseBytesSent, requestBytesRead, System.nanoTime() - startNanos);
+            }
+        }
     }
 }

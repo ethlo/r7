@@ -8,7 +8,7 @@ routes:
           - GET
           - POST
     audit:
-      request: HEADERS
+      request: FULL
       response: FULL
     filters:
       - type: AddResponseHeader

@@ -34,8 +34,16 @@ public class SortableRequestIdGenerator implements RequestIdGenerator
         return new FastCharSequence(buffer);
     }
 
-    private record FastCharSequence(char[] data) implements CharSequence
+    private static class FastCharSequence implements CharSequence
     {
+        private final char[] data;
+        private String intern = null;
+
+        private FastCharSequence(final char[] data)
+        {
+            this.data = data;
+        }
+
         @Override
         public int length()
         {
@@ -57,7 +65,11 @@ public class SortableRequestIdGenerator implements RequestIdGenerator
         @Override
         public String toString()
         {
-            return new String(data);
+            if (intern == null)
+            {
+                intern = new String(data);
+            }
+            return intern;
         }
     }
 }

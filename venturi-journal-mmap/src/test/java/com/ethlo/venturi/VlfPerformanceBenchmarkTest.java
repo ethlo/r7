@@ -11,18 +11,18 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
+
 import org.junit.jupiter.api.RepeatedTest;
-import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.chronograph.Chronograph;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
-import com.ethlo.venturi.auditing.api.JournalExchange;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.journal.api.JournalExchange;
 import com.ethlo.venturi.vlf.VenturiTailer;
-import com.ethlo.venturi.vlf.VlfDictionary;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
 
@@ -30,7 +30,7 @@ public final class VlfPerformanceBenchmarkTest
 {
     private static final Logger logger = LoggerFactory.getLogger(VlfPerformanceBenchmarkTest.class);
 
-    @RepeatedTest(10)
+    @RepeatedTest(5)
     void testPerformance() throws IOException
     {
         final int iterations = 10_000_000;
@@ -54,7 +54,7 @@ public final class VlfPerformanceBenchmarkTest
             final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
             final ByteBuffer body = wrap("{\"status\":\"ok\"}".getBytes());
 
-            final VlfDictionary dictionary = VlfDictionary.load("/default-dict.properties");
+            final VlfDictionary dictionary = VlfJournal.load("/default-dict.properties");
 
             final AtomicReference<VlfJournal> journalRef = new AtomicReference<>();
             // 1. Measure Encoding Speed (Write)

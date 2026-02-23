@@ -40,6 +40,8 @@ public final class VlfConstants
      */
     public static final byte DICT_LOOKUP = (byte) 0xFF;
 
+    static final int LONG_STRING_LENGTH_BOUNDARY = 0xFE;
+
     /**
      * 0xFE: Indicates a long string (next 4 bytes are length)
      */

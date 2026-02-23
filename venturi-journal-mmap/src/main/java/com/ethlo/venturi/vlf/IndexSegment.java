@@ -52,7 +52,7 @@ public final class IndexSegment implements AutoCloseable
         if (buffer != null)
         {
             buffer.force();
-            VlfJournal.unmap(buffer);
+            //VlfJournal.unmap(buffer);
         }
     }
 }

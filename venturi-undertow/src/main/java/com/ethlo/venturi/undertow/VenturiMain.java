@@ -1,5 +1,27 @@
 package com.ethlo.venturi.undertow;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.xnio.OptionMap;
+import org.xnio.Options;
+import org.xnio.Xnio;
+import org.xnio.ssl.XnioSsl;
+
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
@@ -23,32 +45,13 @@ import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.Headers;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.xnio.OptionMap;
-import org.xnio.Options;
-import org.xnio.Xnio;
-import org.xnio.ssl.XnioSsl;
-
-import java.io.IOException;
-import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-
 public final class VenturiMain
 {
     public static final int JOURNAL_SHARD_COUNT = 4;
     public static final int JOURNAL_SHARD_SIZE_BYTES = 100_000_000;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     private static final long JOURNAL_SHARD_INDEX_SIZE_BYTES = 10_000_000;
+    private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final XnioSsl xnioSsl;
     private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
 
@@ -59,7 +62,7 @@ public final class VenturiMain
         final HttpHandler benchMarkHandler = exchange -> {
             exchange.setStatusCode(HttpStatuses.OK);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send("OK");
+            exchange.getResponseSender().send(OK.duplicate());
         };
 
         final RouteRegistry routeRegistry = new RouteRegistry();

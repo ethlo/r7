@@ -5,7 +5,10 @@ import java.util.function.Consumer;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayRequest;
+import com.ethlo.venturi.undertow.util.HttpStringUtil;
+import com.ethlo.venturi.util.HttpStringCharSequence;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.util.HttpString;
 
 public final class UndertowGatewayRequest implements GatewayRequest
 {
@@ -21,7 +24,8 @@ public final class UndertowGatewayRequest implements GatewayRequest
     @Override
     public CharSequence method()
     {
-        return new HttpStringCharSequence(exchange.getRequestMethod());
+        final HttpString hs = exchange.getRequestMethod();
+        return new HttpStringCharSequence(hs, hs.hashCode(), HttpStringUtil.getBytes(hs));
     }
 
     @Override

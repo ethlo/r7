@@ -1,4 +1,4 @@
-package com.ethlo.venturi.auditing.api;
+package com.ethlo.venturi.journal.api;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -18,10 +18,10 @@ public final class JournalExchange
     private final List<ByteBuffer> responseBodyFragments = new ArrayList<>();
     // Request data
     private String requestStartLine;
-    private Map<String, String> requestHeaders;
+    private Map<CharSequence, CharSequence> requestHeaders;
     // Response data
     private String responseStartLine;
-    private Map<String, String> responseHeaders;
+    private Map<CharSequence, CharSequence> responseHeaders;
     // Metrics
     private long timestamp;
     private int status;
@@ -34,13 +34,13 @@ public final class JournalExchange
         this.requestId = requestId;
     }
 
-    public void setRequest(String startLine, Map<String, String> headers)
+    public void setRequest(String startLine, Map<CharSequence, CharSequence> headers)
     {
         this.requestStartLine = startLine;
         this.requestHeaders = headers;
     }
 
-    public void setResponse(String startLine, Map<String, String> headers)
+    public void setResponse(String startLine, Map<CharSequence, CharSequence> headers)
     {
         this.responseStartLine = startLine;
         this.responseHeaders = headers;
@@ -78,7 +78,7 @@ public final class JournalExchange
         return requestStartLine;
     }
 
-    public Map<String, String> getRequestHeaders()
+    public Map<CharSequence, CharSequence> getRequestHeaders()
     {
         return requestHeaders;
     }
@@ -93,7 +93,7 @@ public final class JournalExchange
         return responseStartLine;
     }
 
-    public Map<String, String> getResponseHeaders()
+    public Map<CharSequence, CharSequence> getResponseHeaders()
     {
         return responseHeaders;
     }

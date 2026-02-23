@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Properties;
 
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
+import com.ethlo.venturi.vlf.dictionary.VlfDictionaryByteUltra;
 
 public final class JournalDecoder
 {
@@ -46,12 +48,12 @@ public final class JournalDecoder
             final String requestId = readReqId(buffer);
             final ServerDirection dir = ServerDirection.values()[buffer.get()];
             final String startLine = readPrefixedBufferAsString(buffer);
-            final Map<String, String> headers = readHeaders(buffer, dictionary);
+            final Map<CharSequence, CharSequence> headers = readHeaders(buffer, dictionary);
 
             listener.onBegin(dir, requestId, startLine, headers);
 
             weight += safeLen(requestId) + safeLen(dir.name()) + safeLen(startLine);
-            for (Map.Entry<String, String> entry : headers.entrySet())
+            for (Map.Entry<CharSequence, CharSequence> entry : headers.entrySet())
             {
                 // Safety: Use safeLen to avoid NPE on null keys/values
                 weight += safeLen(entry.getKey()) + safeLen(entry.getValue()) + 4;
@@ -82,12 +84,12 @@ public final class JournalDecoder
         return weight;
     }
 
-    private static int safeLen(String s)
+    private static int safeLen(CharSequence s)
     {
         return (s != null) ? s.length() : 0;
     }
 
-    private static String readString(ByteBuffer buffer, VlfDictionary dictionary)
+    private static CharSequence readString(ByteBuffer buffer, VlfDictionary dictionary)
     {
         final byte first = buffer.get();
         if (first == VlfConstants.DICT_LOOKUP)
@@ -138,18 +140,18 @@ public final class JournalDecoder
         return slice;
     }
 
-    private static Map<String, String> readHeaders(ByteBuffer buffer, VlfDictionary dictionary)
+    private static Map<CharSequence, CharSequence> readHeaders(ByteBuffer buffer, VlfDictionary dictionary)
     {
         final int count = buffer.getInt();
         if (count <= 0)
         {
             return Collections.emptyMap();
         }
-        final Map<String, String> headers = new HashMap<>(count);
+        final Map<CharSequence, CharSequence> headers = new HashMap<>(count);
         for (int i = 0; i < count; i++)
         {
-            final String k = readString(buffer, dictionary);
-            final String v = readString(buffer, dictionary);
+            final CharSequence k = readString(buffer, dictionary);
+            final CharSequence v = readString(buffer, dictionary);
             headers.put(k, v);
         }
         return headers;
@@ -176,6 +178,6 @@ public final class JournalDecoder
             buffer.get(b);
             props.setProperty(String.valueOf(id), new String(b, StandardCharsets.UTF_8));
         }
-        return new VlfDictionary(props);
+        return new VlfDictionaryByteUltra(props);
     }
 }

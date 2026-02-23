@@ -13,11 +13,13 @@
         <module>venturi-core</module>
         <module>venturi-journal-api</module>
         <module>venturi-journal-mmap</module>
+        <module>venturi-tailer-api</module>
         <module>venturi-utils</module>
+        <module>venturi-tailer-jsonld</module>
     </modules>
     <properties>
-        <maven.compiler.release>21</maven.compiler.release>
-        <source.encoding>utf-8</source.encoding>
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <profiles>
         <profile>

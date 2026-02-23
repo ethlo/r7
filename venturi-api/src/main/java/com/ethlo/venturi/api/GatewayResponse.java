@@ -12,7 +12,7 @@ public interface GatewayResponse
 
     /**
      * Receives the raw ByteBuffers as they flow through the engine.
-     * The engine guarantees the buffer is in 'read mode', i.e. ready for a writ operation.
+     * The engine guarantees the buffer is in 'read mode', i.e. ready for a write operation.
      */
     void addBodyListener(Consumer<ByteBuffer> listener);
 

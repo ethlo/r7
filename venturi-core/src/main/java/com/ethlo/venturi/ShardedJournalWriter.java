@@ -5,9 +5,9 @@ import java.util.function.IntFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.auditing.api.Journal;
+import com.ethlo.venturi.journal.api.Journal;
 
-public final class ShardedJournalWriter<T extends com.ethlo.venturi.auditing.api.Journal>
+public final class ShardedJournalWriter<T extends Journal>
 {
     private static final Logger logger = LoggerFactory.getLogger(ShardedJournalWriter.class);
 

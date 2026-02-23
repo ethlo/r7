@@ -7,8 +7,8 @@ import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
-import com.ethlo.venturi.auditing.api.JournalExchange;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.journal.api.JournalExchange;
 
 /**
  * High-performance analyzer for Venturi journals.
@@ -28,7 +28,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener
     public Stats analyze() throws IOException
     {
         final long started = System.currentTimeMillis();
-        VenturiTailer tailer = new VenturiTailer(journalDir, Duration.ZERO, this);
+        VenturiTailer tailer = new VenturiTailer(journalDir, Duration.ofMinutes(1), this);
         tailer.runTick();
 
         logger.info("Analyzed {} full exchanges in {}ms",

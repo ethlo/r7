@@ -19,10 +19,12 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 
 public class VenturiTailer
 {
@@ -146,7 +148,7 @@ public class VenturiTailer
                 checkpoints.put(key, (long) buffer.position());
             } finally
             {
-                VlfJournal.unmap(buffer);
+                //VlfJournal.unmap(buffer);
             }
         }
     }

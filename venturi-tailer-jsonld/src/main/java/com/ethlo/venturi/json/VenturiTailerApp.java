@@ -1,4 +1,4 @@
-package com.ethlo.venturi.undertow;
+package com.ethlo.venturi.json;
 
 import java.io.BufferedOutputStream;
 import java.io.OutputStream;
@@ -8,7 +8,6 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 
-import com.ethlo.venturi.core.storage.json.ClickHouseJsonEachRowWriter;
 import com.ethlo.venturi.vlf.VenturiTailer;
 
 public class VenturiTailerApp

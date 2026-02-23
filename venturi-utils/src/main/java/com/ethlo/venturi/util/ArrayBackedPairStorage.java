@@ -178,4 +178,21 @@ public abstract class ArrayBackedPairStorage<K, V>
             return val;
         }
     }
+
+    @FunctionalInterface
+    public interface StateConsumer<S, K, V>
+    {
+        void accept(S state, K key, V value);
+    }
+
+    protected <S> int forEachInternal(S state, StateConsumer<S, ? super K, ? super V> consumer)
+    {
+        final int currentSize = this.size;
+        final Object[] d = this.data;
+        for (int i = 0; i < currentSize; i += 2)
+        {
+            consumer.accept(state, (K) d[i], (V) d[i + 1]);
+        }
+        return currentSize >> 1;
+    }
 }

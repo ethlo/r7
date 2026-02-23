@@ -7,8 +7,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
-import com.ethlo.venturi.auditing.api.JournalExchange;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.journal.api.JournalExchange;
 import com.ethlo.venturi.api.ServerDirection;
 
 public class ExchangeReassembler implements JournalEventListener
@@ -23,7 +23,7 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onBegin(ServerDirection dir, String id, String line, Map<String, String> headers)
+    public void onBegin(ServerDirection dir, String id, String line, Map<CharSequence, CharSequence> headers)
     {
         JournalExchange exchange = inFlight.computeIfAbsent(id, JournalExchange::new);
         if (dir == ServerDirection.REQUEST)

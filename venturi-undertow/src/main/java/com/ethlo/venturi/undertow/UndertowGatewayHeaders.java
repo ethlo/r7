@@ -3,6 +3,8 @@ package com.ethlo.venturi.undertow;
 import java.util.Collections;
 
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.undertow.util.HttpStringUtil;
+import com.ethlo.venturi.util.HttpStringCharSequence;
 import io.undertow.util.HeaderMap;
 import io.undertow.util.HeaderValues;
 import io.undertow.util.HttpString;
@@ -68,7 +70,7 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
         {
             // Wrap once per key group, not per value
             final HttpString hs = values.getHeaderName();
-            final HttpStringCharSequence wrappedName = new HttpStringCharSequence(hs);
+            final HttpStringCharSequence wrappedName = new HttpStringCharSequence(hs, hs.hashCode(), HttpStringUtil.getBytes(hs));
 
             for (String value : values)
             {
@@ -86,9 +88,28 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
     {
         if (name instanceof HttpStringCharSequence wrapper)
         {
-            return wrapper.getHttpString();
+            return (HttpString) wrapper.getSource();
         }
         // Undertow's tryFromString is optimized for well-known headers
         return HttpString.tryFromString(name.toString());
     }
+
+    @Override
+    public <S> int forEach(S state, StatefulEntryConsumer<S> consumer)
+    {
+        int count = 0;
+        for (HeaderValues headerValues : headerMap)
+        {
+            final HttpString hm = headerValues.getHeaderName();
+            final CharSequence name = HeaderNameCache.wrap(hm);
+            for (String value : headerValues)
+            {
+                // Pass the state explicitly
+                consumer.accept(state, name, value);
+                count++;
+            }
+        }
+        return count;
+    }
+
 }

@@ -37,9 +37,20 @@ public interface GatewayHeaders
 
     int forEach(EntryConsumer consumer);
 
+    /**
+     * Stateful forEach to avoid lambda allocation.
+     */
+    <S> int forEach(S state, StatefulEntryConsumer<S> consumer);
+
     @FunctionalInterface
     interface EntryConsumer
     {
         void accept(CharSequence name, CharSequence value);
+    }
+
+    @FunctionalInterface
+    interface StatefulEntryConsumer<S>
+    {
+        void accept(S state, CharSequence name, CharSequence value);
     }
 }

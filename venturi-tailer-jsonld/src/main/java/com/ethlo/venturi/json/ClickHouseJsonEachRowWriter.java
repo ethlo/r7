@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.storage.json;
+package com.ethlo.venturi.json;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -6,9 +6,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
-import com.ethlo.venturi.auditing.api.ExchangeCompletionListener;
-import com.ethlo.venturi.auditing.api.JournalExchange;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.journal.api.JournalExchange;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -99,9 +100,12 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
     }
 
-    private String getHeader(Map<String, String> headers, String key)
+    private String getHeader(Map<CharSequence, CharSequence> headers, String key)
     {
-        if (headers == null) return null;
-        return headers.get(key);
+        if (headers == null)
+        {
+            return null;
+        }
+        return Optional.ofNullable(headers.get(key)).map(CharSequence::toString).orElse(null);
     }
 }

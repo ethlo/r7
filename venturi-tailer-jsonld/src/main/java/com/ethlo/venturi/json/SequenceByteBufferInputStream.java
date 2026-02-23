@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.storage.json;
+package com.ethlo.venturi.json;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;

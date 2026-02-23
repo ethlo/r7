@@ -7,7 +7,7 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>venturi-journal-vlf</artifactId>
+    <artifactId>venturi-journal-mmap</artifactId>
     <packaging>jar</packaging>
 
     <name>venturi-logger-mmap</name>
@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>com.ethlo.venturi</groupId>
-            <artifactId>venturi-auditing-api</artifactId>
+            <artifactId>venturi-journal-api</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
         <dependency>
