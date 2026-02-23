@@ -14,12 +14,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Properties;
 
@@ -32,8 +30,6 @@ import com.ethlo.venturi.vlf.dictionary.VlfDictionaryByteUltra;
 
 public final class VlfJournal implements Journal
 {
-    // Standard OS page size is almost universally 4KB
-    private static final long OS_PAGE_SIZE = 4096L;
     private static final ValueLayout.OfInt INT_BE =
             JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE =
@@ -42,13 +38,12 @@ public final class VlfJournal implements Journal
             JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final int MAX_SCRATCH = 8192;
     public final int maxHeaderBytes = 4096;
-    private final VlfJournalProvider provider;
+    private final AsyncSegmentProvider provider;
     private final VlfDictionary dictionary;
-    private final long segmentSize;
-    private final long indexSize;
     private final boolean isWriteIndex = false;
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
     private final MemorySegment asciiScratchSegment = MemorySegment.ofArray(asciiScratch);
+    private AsyncSegmentProvider.PreparedSegment currentPreparedSegment;
     private Arena arena;
     private MemorySegment segment;
     private long position;
@@ -57,29 +52,19 @@ public final class VlfJournal implements Journal
     private Path activeIndexPath;
     private int currentFileId = 0;
 
-    public VlfJournal(VlfJournalProvider provider,
-                      VlfDictionary dictionary,
-                      long segmentSize,
-                      long indexSize)
+    public VlfJournal(AsyncSegmentProvider provider,
+                      VlfDictionary dictionary)
     {
         this.provider = provider;
         this.dictionary = dictionary;
-        this.segmentSize = segmentSize;
-        this.indexSize = indexSize;
 
-        rotateData(null);
+        rotateData();
         rotateIndex();
     }
 
-    public VlfJournal(VlfJournalProvider provider,
-                      long segmentSize,
-                      long indexSize)
+    public VlfJournal(AsyncSegmentProvider provider)
     {
-        this(provider,
-                load("default-dict.properties"),
-                segmentSize,
-                indexSize
-        );
+        this(provider, load("default-dict.properties"));
     }
 
     /**
@@ -103,26 +88,26 @@ public final class VlfJournal implements Journal
         return new VlfDictionaryByteUltra(props);
     }
 
-    /**
-     * Forces the OS to physically allocate disk blocks for the entire mapped segment.
-     * Prevents sparse file creation and runtime SIGBUS/InternalError crashes.
-     */
-    private void preFaultSegment(MemorySegment segment) throws InternalError
+    private void rotateData()
     {
-        final long capacity = segment.byteSize();
-
-        // Stride through the segment, touching one byte per 4KB page
-        for (long offset = 0; offset < capacity; offset += OS_PAGE_SIZE)
+        // 1. Send the old segment to the background thread for force/close/rename
+        if (currentPreparedSegment != null)
         {
-            segment.set(ValueLayout.JAVA_BYTE, offset, (byte) 0);
+            provider.retireSegment(currentPreparedSegment);
         }
 
-        // Guarantee the absolute last byte is also physically backed
-        // in case the segment size is not a perfect multiple of 4096
-        if (capacity > 0)
-        {
-            segment.set(ValueLayout.JAVA_BYTE, capacity - 1, (byte) 0);
-        }
+        // 2. Instantly grab the next fully pre-allocated and pre-faulted segment
+        currentPreparedSegment = provider.getNextSegment();
+
+        // 3. Update local state
+        this.segment = currentPreparedSegment.segment();
+        this.arena = currentPreparedSegment.arena();
+        this.activePath = currentPreparedSegment.activePath();
+        this.currentFileId = currentPreparedSegment.fileId();
+        this.position = 0;
+
+        // 4. Write the preamble immediately on the fast path
+        writePreamble();
     }
 
 
@@ -224,7 +209,7 @@ public final class VlfJournal implements Journal
         try
         {
             ensureIndexCapacity();
-            ensureCapacity(maxHeaderBytes + reqId.length() + startLine.remaining(), reqId);
+            ensureCapacity(maxHeaderBytes + reqId.length() + startLine.remaining());
 
             final int fileIdAtWrite = currentFileId;
             final long startOffset = position;
@@ -268,7 +253,9 @@ public final class VlfJournal implements Journal
 
                 int minRequired = 16 + reqId.length();
                 if (remaining() < minRequired + 1)
-                    rotateData(reqId);
+                {
+                    rotateData();
+                }
 
                 final int fileIdAtWrite = currentFileId;
                 final long startOffset = position;
@@ -304,7 +291,7 @@ public final class VlfJournal implements Journal
         try
         {
             ensureIndexCapacity();
-            ensureCapacity(128 + reqId.length(), reqId);
+            ensureCapacity(128 + reqId.length());
 
             final int fileIdAtWrite = currentFileId;
             final long startOffset = position;
@@ -427,64 +414,6 @@ public final class VlfJournal implements Journal
        Rotation
        ======================= */
 
-    private void rotateData(CharSequence triggeringReqId)
-    {
-        try
-        {
-            if (segment != null)
-            {
-                segment.force();
-                arena.close();
-
-                String newName = activePath.getFileName()
-                        .toString()
-                        .replace(".active", ".raw");
-
-                Files.move(activePath,
-                        activePath.resolveSibling(newName),
-                        StandardCopyOption.ATOMIC_MOVE
-                );
-            }
-
-            activePath = provider.getNextPath();
-            currentFileId = provider.getRotationCount();
-
-            try (FileChannel fc = FileChannel.open(
-                    activePath,
-                    StandardOpenOption.READ,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.CREATE
-            ))
-            {
-                fc.truncate(segmentSize);
-
-                arena = Arena.ofShared();
-                segment = fc.map(
-                        FileChannel.MapMode.READ_WRITE,
-                        0,
-                        segmentSize,
-                        arena
-                );
-
-                try
-                {
-                    preFaultSegment(segment);
-                }
-                catch (InternalError e)
-                {
-                    throw new UncheckedIOException(new IOException("Unable to allocate journal segment " + activePath + " of size " + segmentSize + " bytes. Is there enough disk space?", e));
-                }
-
-                position = 0;
-                writePreamble();
-            }
-        }
-        catch (IOException exc)
-        {
-            throw new UncheckedIOException(exc);
-        }
-    }
-
     private void rotateIndex()
     {
         try
@@ -510,7 +439,10 @@ public final class VlfJournal implements Journal
             activeIndexPath = activePath.resolveSibling(baseName + ".index");
 
             if (isWriteIndex)
-                index = new IndexSegment(activeIndexPath, indexSize);
+            {
+                // TODO:
+                //index = new IndexSegment(activeIndexPath, indexSize);
+            }
         }
         catch (IOException exc)
         {
@@ -549,14 +481,17 @@ public final class VlfJournal implements Journal
         position = VlfConstants.PREAMBLE_SIZE;
     }
 
-    private void ensureCapacity(long needed,
-                                CharSequence reqId) throws IOException
+    private void ensureCapacity(long needed) throws IOException
     {
-        if (needed > segmentSize - VlfConstants.PREAMBLE_SIZE)
+        if (needed > segment.byteSize() - VlfConstants.PREAMBLE_SIZE)
+        {
             throw new IllegalArgumentException("Entry too large");
+        }
 
         if (remaining() < needed)
-            rotateData(reqId);
+        {
+            rotateData();
+        }
     }
 
     private void ensureIndexCapacity() throws IOException

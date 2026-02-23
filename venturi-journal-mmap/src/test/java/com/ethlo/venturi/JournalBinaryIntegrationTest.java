@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.vlf.AsyncSegmentProvider;
 import com.ethlo.venturi.vlf.JournalAnalyzer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
@@ -39,14 +40,14 @@ class JournalBinaryIntegrationTest
         // SETUP: Small segments to force MANY rotations
         int shardCount = 4;
         int mask = shardCount - 1;
-        long segmentSize = 1024 * 64; // 64KB segments
+        int segmentSize = 1024 * 64; // 64KB segments
         long indexSize = 1024 * 1024; // 1MB index
 
         // Manual shard array to avoid dependency on ShardedJournalWriter in 'core'
         VlfJournal[] journals = new VlfJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i), segmentSize, indexSize);
+            journals[i] = new VlfJournal(new AsyncSegmentProvider(segmentSize, new VlfJournalProvider(tempDir, i), 1));
         }
 
         int requestsPerThread = 50;
@@ -136,7 +137,8 @@ class JournalBinaryIntegrationTest
     {
         VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0);
 
-        try (VlfJournal j = new VlfJournal(provider, 1024 * 1024, 1024 * 1024))
+        final int segmentSize = 1024 * 1024;
+        try (VlfJournal j = new VlfJournal(new AsyncSegmentProvider(segmentSize, provider, 1)))
         {
             String id = "dual-123";
 

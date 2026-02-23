@@ -38,4 +38,3 @@ socket:
 # Disk/memory settings for audit and logging
 storage:
   temp_dir: /tmp/venturi
-  memory_threshold: 65536 # 64KB (bytes)

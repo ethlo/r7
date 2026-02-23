@@ -33,6 +33,7 @@ import com.ethlo.venturi.constants.HttpStatuses;
 import com.ethlo.venturi.constants.MediaTypes;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
+import com.ethlo.venturi.vlf.AsyncSegmentProvider;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
 import io.undertow.Handlers;
@@ -123,7 +124,7 @@ public final class VenturiMain
 
         final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(JOURNAL_SHARD_COUNT, shardIdx -> {
             final VlfJournalProvider provider = new VlfJournalProvider(rootDir, shardIdx);
-            return new VlfJournal(provider, JOURNAL_SHARD_SIZE_BYTES, JOURNAL_SHARD_INDEX_SIZE_BYTES);
+            return new VlfJournal(new AsyncSegmentProvider(JOURNAL_SHARD_SIZE_BYTES, provider, 1));
         }
         );
 

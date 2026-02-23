@@ -11,8 +11,6 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
-
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,9 +20,11 @@ import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
+import com.ethlo.venturi.vlf.AsyncSegmentProvider;
 import com.ethlo.venturi.vlf.VenturiTailer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
+import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
 
 public final class VlfPerformanceBenchmarkTest
 {
@@ -61,7 +61,7 @@ public final class VlfPerformanceBenchmarkTest
             chronograph.time("Encode " + iterations, () ->
                     {
                         // Ensure the journal is closed IMMEDIATELY after the loop
-                        try (final VlfJournal journal = new VlfJournal(provider, dictionary, Integer.MAX_VALUE, 1024 * 1024 * 500))
+                        try (final VlfJournal journal = new VlfJournal(new AsyncSegmentProvider(Integer.MAX_VALUE, provider, 1), dictionary))
                         {
                             journalRef.set(journal);
                             for (int i = 0; i < iterations; i++)
