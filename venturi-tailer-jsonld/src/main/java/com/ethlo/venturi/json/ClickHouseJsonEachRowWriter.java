@@ -41,11 +41,11 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             // --- Timing & IDs ---
             // ClickHouse DateTime64(3) accepts Unix Millis
             generator.writeNumberProperty("timestamp", exchange.getTimestamp());
-            generator.writeStringProperty("gateway_request_id", exchange.getRequestId());
+            generator.writeStringProperty("gateway_request_id", exchange.getRequestId().toString());
             generator.writeNumberProperty("response_time", exchange.getDurationNanos() / 1_000_000); // ns to ms
 
             // --- Request Info ---
-            final String[] parts = exchange.getRequestStartLine().split("\\s+");
+            final String[] parts = exchange.getRequestStartLine().toString().split("\\s+");
             if (parts.length >= 2)
             {
                 generator.writeStringProperty("method", parts[0]); // GET, POST, etc.

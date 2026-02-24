@@ -2,27 +2,40 @@ package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.Properties;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.util.FastGatewayHeaders;
-import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
-import com.ethlo.venturi.vlf.dictionary.VlfDictionaryByteUltra;
+import com.ethlo.venturi.vlf.fbs.BodyEvent;
+import com.ethlo.venturi.vlf.fbs.EndEvent;
+import com.ethlo.venturi.vlf.fbs.Header;
+import com.ethlo.venturi.vlf.fbs.StartEvent;
+import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
 
 public final class JournalDecoder
 {
-    public static long decode(ByteBuffer buffer, VlfDictionary dictionary, JournalEventListener listener)
+    private static final ServerDirection[] SERVER_DIRECTIONS = ServerDirection.values();
+
+    /**
+     * Decodes the hybrid FlatBuffer + raw stream.
+     */
+    public static long decode(ByteBuffer buffer, JournalEventListener listener)
     {
         long totalTextWeight = 0;
+
+        // Skip preamble
+        if (buffer.position() == 0)
+        {
+            buffer.position(VlfConstants.PREAMBLE_SIZE);
+        }
+
         while (buffer.hasRemaining())
         {
             final int startPos = buffer.position();
             final byte marker = buffer.get();
 
-            // 0 is the padding in mmap files
-            if (marker == VlfConstants.NULL_VALUE)
+            if (marker == 0)
             {
                 buffer.position(startPos);
                 break;
@@ -30,53 +43,91 @@ public final class JournalDecoder
 
             try
             {
-                totalTextWeight += parseEvent(marker, buffer, dictionary, listener);
+                totalTextWeight += parseEvent(marker, buffer, listener);
             }
             catch (Exception e)
             {
                 throw new RuntimeException("Parse error at position " + startPos + " with marker " + marker, e);
             }
         }
+
         return totalTextWeight;
     }
 
-    private static long parseEvent(byte marker, ByteBuffer buffer, VlfDictionary dictionary, JournalEventListener listener)
+    private static long parseEvent(byte marker, ByteBuffer buffer, JournalEventListener listener)
     {
+        if (buffer.remaining() < Integer.BYTES)
+            throw new IllegalStateException("Incomplete FlatBuffer length at marker " + marker);
+
+        final int fbSize = buffer.getInt();
+
+        if (buffer.remaining() < fbSize)
+            throw new IllegalStateException("FlatBuffer length exceeds remaining buffer: " + fbSize);
+
+        final int oldLimit = buffer.limit();
+        buffer.limit(buffer.position() + fbSize);
+        final ByteBuffer fbSlice = buffer.slice();
+        buffer.limit(oldLimit);
+        buffer.position(buffer.position() + fbSize);
+
         long weight = 0;
-        if (marker == VlfConstants.MARKER_START)
+
+        switch (marker)
         {
-            final String requestId = readReqId(buffer);
-            final ServerDirection dir = ServerDirection.values()[buffer.get()];
-            final String startLine = readPrefixedBufferAsString(buffer);
-            final GatewayHeaders headers = readHeaders(buffer, dictionary);
+            case VlfConstants.MARKER_START:
+            {
+                StartEvent start = StartEvent.getRootAsStartEvent(fbSlice);
+                CharSequence reqId = asAscii(start.reqIdAsByteBuffer());
+                ServerDirection dir = ServerDirection.REQUEST; // if you add direction, decode here
+                CharSequence startLine = asAscii(start.startLineAsByteBuffer());
+                GatewayHeaders headers = new FbsGatewayHeaders(start);
 
-            listener.onBegin(dir, requestId, startLine, headers);
+                listener.onBegin(dir, reqId, startLine, headers);
 
-            weight += safeLen(requestId) + safeLen(dir.name()) + safeLen(startLine);
-            weight += headers.weight();
+                weight += safeLen(reqId) + dir.name().length() + safeLen(startLine) + headers.weight();
+                break;
+            }
+
+            case VlfConstants.MARKER_BODY:
+            {
+                BodyEvent body = BodyEvent.getRootAsBodyEvent(fbSlice);
+                CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
+                ServerDirection dir = SERVER_DIRECTIONS[body.direction()];
+                int bodyLen = (int) body.length();
+
+                if (buffer.remaining() < bodyLen)
+                    throw new IllegalStateException("Body length exceeds remaining buffer: " + bodyLen);
+
+                ByteBuffer bodyChunk = buffer.slice();
+                bodyChunk.limit(bodyLen);
+                buffer.position(buffer.position() + bodyLen);
+
+                listener.onBody(dir, reqId, bodyChunk);
+
+                weight += safeLen(reqId) + dir.name().length() + bodyLen;
+                break;
+            }
+
+            case VlfConstants.MARKER_END:
+            {
+                EndEvent end = EndEvent.getRootAsEndEvent(fbSlice);
+                CharSequence reqId = asAscii(end.reqIdAsByteBuffer());
+                long ts = end.timestamp();
+                int status = end.status();
+                long sent = end.bytesSent();
+                long recv = end.bytesReceived();
+                long duration = end.duration();
+
+                listener.onEnd(reqId, ts, status, sent, recv, duration);
+
+                weight += safeLen(reqId) + 60; // estimate numeric text weight
+                break;
+            }
+
+            default:
+                throw new IllegalStateException("Unknown marker: " + marker);
         }
-        else if (marker == VlfConstants.MARKER_BODY)
-        {
-            final String requestId = readReqId(buffer);
-            final ServerDirection dir = ServerDirection.values()[buffer.get()];
-            final ByteBuffer body = readPrefixedBuffer(buffer);
-            final int bodyLen = (body != null) ? body.remaining() : 0;
 
-            listener.onBody(dir, requestId, body);
-            weight += safeLen(requestId) + safeLen(dir.name()) + bodyLen;
-        }
-        else if (marker == VlfConstants.MARKER_END)
-        {
-            final String requestId = readReqId(buffer);
-            final long ts = buffer.getLong();
-            final int status = buffer.getInt();
-            final long sent = buffer.getLong();
-            final long recv = buffer.getLong();
-            final long duration = buffer.getLong();
-
-            listener.onEnd(requestId, ts, status, sent, recv, duration);
-            weight += safeLen(requestId) + 60; // Estimated numeric text weight
-        }
         return weight;
     }
 
@@ -85,91 +136,140 @@ public final class JournalDecoder
         return (s != null) ? s.length() : 0;
     }
 
-    private static CharSequence readString(ByteBuffer buffer, VlfDictionary dictionary)
+    private static CharSequence asAscii(ByteBuffer buf)
     {
-        final byte first = buffer.get();
-        if (first == VlfConstants.DICT_LOOKUP)
+        if (buf == null) return null;
+        return new ByteBufferAsciiFlyweight(buf, buf.position(), buf.remaining());
+    }
+
+    /**
+     * Zero-allocation projection of StartEvent headers
+     */
+    private static class FbsGatewayHeaders implements GatewayHeaders
+    {
+        private final StartEvent event;
+        private final int count;
+        private final Header reusableHeader = new Header();
+
+        FbsGatewayHeaders(StartEvent event)
         {
-            return dictionary.decode(buffer.get());
+            this.event = event;
+            this.count = event.headersLength();
         }
-        else if (first == VlfConstants.LONG_STRING)
+
+        @Override
+        public CharSequence getFirst(CharSequence name)
         {
-            return readRawString(buffer, buffer.getInt());
-        }
-        else if (first == VlfConstants.NULL_VALUE)
-        {
+            for (int i = 0; i < count; i++)
+            {
+                event.headers(reusableHeader, i);
+                if (charsEqual(name, asAscii(reusableHeader.nameAsByteBuffer())))
+                {
+                    return decodeUtf8(reusableHeader.valueAsByteBuffer());
+                }
+            }
             return null;
         }
-        return readRawString(buffer, first & 0xFF);
-    }
 
-    private static String readReqId(ByteBuffer buffer)
-    {
-        final int len = Byte.toUnsignedInt(buffer.get());
-        final byte[] bytes = new byte[len];
-        buffer.get(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    private static String readRawString(ByteBuffer buffer, int len)
-    {
-        final byte[] bytes = new byte[len];
-        buffer.get(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
-    }
-
-    private static String readPrefixedBufferAsString(ByteBuffer buffer)
-    {
-        return readRawString(buffer, buffer.getInt());
-    }
-
-    private static ByteBuffer readPrefixedBuffer(ByteBuffer buffer)
-    {
-        final int len = buffer.getInt();
-        if (len < 0)
+        @Override
+        public Iterable<CharSequence> getAll(CharSequence name)
         {
-            return null;
-        }
-        final ByteBuffer slice = buffer.slice();
-        slice.limit(len);
-        buffer.position(buffer.position() + len);
-        return slice;
-    }
+            return () -> new Iterator<>()
+            {
+                private int idx = 0;
+                private CharSequence nextVal = null;
 
-    private static GatewayHeaders readHeaders(ByteBuffer buffer, VlfDictionary dictionary)
-    {
-        final int count = buffer.getInt();
-        final GatewayHeaders headers = new FastGatewayHeaders();
-        for (int i = 0; i < count; i++)
-        {
-            final CharSequence k = readString(buffer, dictionary);
-            final CharSequence v = readString(buffer, dictionary);
-            headers.add(k, v);
-        }
-        return headers;
-    }
+                @Override
+                public boolean hasNext()
+                {
+                    if (nextVal != null) return true;
+                    while (idx < count)
+                    {
+                        event.headers(reusableHeader, idx++);
+                        if (charsEqual(name, asAscii(reusableHeader.nameAsByteBuffer())))
+                        {
+                            nextVal = decodeUtf8(reusableHeader.valueAsByteBuffer());
+                            return true;
+                        }
+                    }
+                    return false;
+                }
 
-    public static VlfDictionary readDictionaryFromPreamble(ByteBuffer buffer)
-    {
-        buffer.position(0);
-        if (buffer.getInt() != VlfConstants.MAGIC)
-        {
-            throw new IllegalStateException("Invalid Magic");
+                @Override
+                public CharSequence next()
+                {
+                    if (!hasNext()) throw new NoSuchElementException();
+                    CharSequence v = nextVal;
+                    nextVal = null;
+                    return v;
+                }
+            };
         }
-        if (buffer.getShort() != VlfConstants.VERSION_1)
+
+        @Override
+        public int forEach(EntryConsumer consumer)
         {
-            throw new IllegalStateException("Invalid Version");
+            for (int i = 0; i < count; i++)
+            {
+                event.headers(reusableHeader, i);
+                consumer.accept(
+                        asAscii(reusableHeader.nameAsByteBuffer()),
+                        decodeUtf8(reusableHeader.valueAsByteBuffer())
+                );
+            }
+            return count;
         }
-        final short entryCount = buffer.getShort();
-        final Properties props = new Properties();
-        for (int i = 0; i < entryCount; i++)
+
+        @Override
+        public <S> int forEach(S state, StatefulEntryConsumer<S> consumer)
         {
-            final int id = Byte.toUnsignedInt(buffer.get());
-            final int len = Byte.toUnsignedInt(buffer.get());
-            final byte[] b = new byte[len];
-            buffer.get(b);
-            props.setProperty(String.valueOf(id), new String(b, StandardCharsets.UTF_8));
+            for (int i = 0; i < count; i++)
+            {
+                event.headers(reusableHeader, i);
+                consumer.accept(
+                        state,
+                        asAscii(reusableHeader.nameAsByteBuffer()),
+                        decodeUtf8(reusableHeader.valueAsByteBuffer())
+                );
+            }
+            return count;
         }
-        return new VlfDictionaryByteUltra(props);
+
+        @Override
+        public int weight()
+        {
+            int w = 0;
+            for (int i = 0; i < count; i++)
+            {
+                event.headers(reusableHeader, i);
+                w += reusableHeader.nameLength() + reusableHeader.valueLength();
+            }
+            return w;
+        }
+
+        private boolean charsEqual(CharSequence a, CharSequence b)
+        {
+            if (a == b) return true;
+            if (a == null || b == null) return false;
+            int len = a.length();
+            if (len != b.length()) return false;
+            for (int i = 0; i < len; i++)
+            {
+                if (a.charAt(i) != b.charAt(i)) return false;
+            }
+            return true;
+        }
+
+        private String decodeUtf8(ByteBuffer buf)
+        {
+            if (buf == null) return null;
+            ByteBuffer tmp = buf.duplicate();
+            return StandardCharsets.UTF_8.decode(tmp).toString();
+        }
+
+        @Override public void set(CharSequence name, CharSequence value) { throw new UnsupportedOperationException(); }
+        @Override public void remove(CharSequence name) { throw new UnsupportedOperationException(); }
+        @Override public void set(CharSequence name, Iterable<CharSequence> values) { throw new UnsupportedOperationException(); }
+        @Override public void add(CharSequence name, CharSequence value) { throw new UnsupportedOperationException(); }
     }
 }

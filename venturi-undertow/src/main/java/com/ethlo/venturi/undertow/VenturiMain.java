@@ -48,9 +48,8 @@ import io.undertow.util.Headers;
 public final class VenturiMain
 {
     public static final int JOURNAL_SHARD_COUNT = 4;
-    public static final int JOURNAL_SHARD_SIZE_BYTES = 100_000_000;
+    public static final int JOURNAL_SHARD_SIZE_BYTES = Integer.MAX_VALUE;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
-    private static final long JOURNAL_SHARD_INDEX_SIZE_BYTES = 10_000_000;
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final XnioSsl xnioSsl;
     private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();

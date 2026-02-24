@@ -13,14 +13,14 @@ import com.ethlo.venturi.api.ServerDirection;
  */
 public final class JournalExchange
 {
-    private final String requestId;
-    private final List<ByteBuffer> requestBodyFragments = new ArrayList<>();
-    private final List<ByteBuffer> responseBodyFragments = new ArrayList<>();
+    private final CharSequence requestId;
+    private final List<ByteBuffer> requestBodyFragments = new ArrayList<>(0);
+    private final List<ByteBuffer> responseBodyFragments = new ArrayList<>(0);
     // Request data
-    private String requestStartLine;
+    private CharSequence requestStartLine;
     private GatewayHeaders requestHeaders;
     // Response data
-    private String responseStartLine;
+    private CharSequence responseStartLine;
     private GatewayHeaders responseHeaders;
     // Metrics
     private long timestamp;
@@ -29,18 +29,18 @@ public final class JournalExchange
     private long bytesReceived;
     private long durationNanos;
 
-    public JournalExchange(String requestId)
+    public JournalExchange(CharSequence requestId)
     {
         this.requestId = requestId;
     }
 
-    public void setRequest(String startLine, GatewayHeaders headers)
+    public void setRequest(CharSequence startLine, GatewayHeaders headers)
     {
         this.requestStartLine = startLine;
         this.requestHeaders = headers;
     }
 
-    public void setResponse(String startLine, GatewayHeaders headers)
+    public void setResponse(CharSequence startLine, GatewayHeaders headers)
     {
         this.responseStartLine = startLine;
         this.responseHeaders = headers;
@@ -68,12 +68,12 @@ public final class JournalExchange
         this.durationNanos = dur;
     }
 
-    public String getRequestId()
+    public CharSequence getRequestId()
     {
         return requestId;
     }
 
-    public String getRequestStartLine()
+    public CharSequence getRequestStartLine()
     {
         return requestStartLine;
     }
@@ -88,7 +88,7 @@ public final class JournalExchange
         return requestBodyFragments;
     }
 
-    public String getResponseStartLine()
+    public CharSequence getResponseStartLine()
     {
         return responseStartLine;
     }

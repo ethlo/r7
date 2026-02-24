@@ -1,22 +1,20 @@
 package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
-
-import com.ethlo.venturi.api.GatewayHeaders;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
-import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.vlf.util.CharSequenceExchangeMap;
 
 public class ExchangeReassembler implements JournalEventListener
 {
     private static final Logger logger = LoggerFactory.getLogger(ExchangeReassembler.class);
-    private final Map<String, JournalExchange> inFlight = new HashMap<>();
+    private final CharSequenceExchangeMap inFlight = new CharSequenceExchangeMap(10_000);
     private final ExchangeCompletionListener output;
 
     public ExchangeReassembler(ExchangeCompletionListener output)
@@ -25,7 +23,7 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onBegin(ServerDirection dir, String id, String line, GatewayHeaders headers)
+    public void onBegin(ServerDirection dir, CharSequence id, CharSequence line, GatewayHeaders headers)
     {
         JournalExchange exchange = inFlight.computeIfAbsent(id, JournalExchange::new);
         if (dir == ServerDirection.REQUEST)
@@ -35,12 +33,6 @@ public class ExchangeReassembler implements JournalEventListener
         else
         {
             exchange.setResponse(line, headers);
-        }
-
-        if (isExchangeComplete(exchange))
-        {
-            inFlight.remove(id);
-            output.onComplete(exchange);
         }
     }
 
@@ -56,7 +48,7 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onBody(ServerDirection dir, String id, ByteBuffer body)
+    public void onBody(ServerDirection dir, CharSequence id, ByteBuffer body)
     {
         JournalExchange exchange = inFlight.get(id);
         if (exchange == null)
@@ -68,9 +60,9 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onEnd(String requestId, long ts, int status, long sent, long recv, long dur)
+    public void onEnd(CharSequence requestId, long ts, int status, long sent, long recv, long dur)
     {
-        JournalExchange exchange = inFlight.get(requestId);
+        JournalExchange exchange = inFlight.remove(requestId);
 
         if (exchange == null)
         {
@@ -92,7 +84,7 @@ public class ExchangeReassembler implements JournalEventListener
         // when it eventually finds the other half of the data.
         if (isExchangeComplete(exchange))
         {
-            inFlight.remove(requestId);
+            //inFlight.remove(requestId);
             output.onComplete(exchange);
         }
     }

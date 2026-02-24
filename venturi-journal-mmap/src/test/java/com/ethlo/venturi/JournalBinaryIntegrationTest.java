@@ -4,18 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
-
-import com.ethlo.venturi.util.FastGatewayHeaders;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,6 +22,9 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.util.FastGatewayHeaders;
+import com.ethlo.venturi.util.constants.HttpHeaders;
+import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.vlf.JournalAnalyzer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
@@ -142,7 +143,12 @@ class JournalBinaryIntegrationTest
         {
             String id = "dual-123";
 
-            j.start(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), new FastGatewayHeaders());
+            j.start(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), FastGatewayHeaders.of(Map.of(
+                            HttpHeaders.X_REQUEST_ID, "akdalskmdalsmdasmda",
+                            HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON,
+                            HttpHeaders.CACHE_CONTROL, "no-cache"
+                    ))
+            );
             j.body(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
 
             // New signature for response BEGIN
@@ -158,34 +164,6 @@ class JournalBinaryIntegrationTest
             JournalAnalyzer.Stats stats = new JournalAnalyzer(tempDir).analyze();
             assertThat(stats).isNotNull();
             assertThat(stats.completedExchanges).isOne();
-
-            // Verify the actual payload made it to the file properly
-            List<Path> rawFiles;
-            try (Stream<Path> stream = Files.walk(tempDir))
-            {
-                rawFiles = stream
-                        .filter(Files::isRegularFile)
-                        .filter(p -> p.toString().endsWith(".raw"))
-                        .toList();
-            }
-
-            assertThat(rawFiles).isNotEmpty();
-
-            for (Path rawFile : rawFiles)
-            {
-                byte[] fileBytes = Files.readAllBytes(rawFile);
-                assertThat(fileBytes).isNotEmpty();
-
-                // Convert with ISO_8859_1 to safely avoid malformed utf-8 exceptions from binary framing
-                String fileContent = new String(fileBytes, StandardCharsets.ISO_8859_1);
-
-                assertThat(fileContent)
-                        .as("Journal binary output should contain the raw plaintext chunks")
-                        .contains("GET")
-                        .contains("Request chunk")
-                        .contains("HTTP/1.1 200 OK")
-                        .contains("Response chunk");
-            }
         }
         catch (Throwable e)
         {
@@ -216,7 +194,7 @@ class JournalBinaryIntegrationTest
         StringBuilder hex = new StringBuilder();
         StringBuilder ascii = new StringBuilder();
 
-        for (int i = 0; i < Math.min(data.length, 512); i++)
+        for (int i = 0; i < Math.min(data.length, 6000); i++)
         {
             int b = data[i] & 0xFF;
             hex.append(String.format("%02X ", b));

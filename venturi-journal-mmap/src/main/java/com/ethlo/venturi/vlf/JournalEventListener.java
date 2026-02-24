@@ -7,9 +7,9 @@ import com.ethlo.venturi.api.ServerDirection;
 
 public interface JournalEventListener
 {
-    void onBegin(ServerDirection direction, String reqId, String startLine, GatewayHeaders headers);
+    void onBegin(ServerDirection direction, CharSequence reqId, CharSequence startLine, GatewayHeaders headers);
 
-    void onBody(ServerDirection direction, String reqId, ByteBuffer body);
+    void onBody(ServerDirection direction, CharSequence reqId, ByteBuffer body);
 
-    void onEnd(String reqId, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos);
+    void onEnd(CharSequence reqId, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos);
 }

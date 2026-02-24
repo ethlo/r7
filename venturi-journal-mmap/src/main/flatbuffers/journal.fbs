@@ -1,0 +1,30 @@
+namespace com.ethlo.venturi.vlf.fbs;
+
+// Replaces your manual ordinal() casting
+enum ServerDirection : byte { REQUEST = 0, RESPONSE = 1 }
+
+table Header {
+  name: [ubyte];
+  value: [ubyte];
+}
+
+table StartEvent {
+  req_id: [ubyte];
+  start_line: [ubyte];
+  headers: [Header];   
+}
+
+table BodyEvent {
+  req_id: [ubyte];
+  direction: ServerDirection;
+  length: uint32;
+}
+
+table EndEvent {
+  req_id: [ubyte];
+  timestamp: long;
+  status: int;
+  bytes_sent: long;
+  bytes_received: long;
+  duration: long;
+}

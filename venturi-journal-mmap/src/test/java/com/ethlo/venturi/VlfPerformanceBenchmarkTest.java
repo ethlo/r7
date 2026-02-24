@@ -11,8 +11,6 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.util.FastGatewayHeaders;
-
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,10 +19,10 @@ import com.ethlo.chronograph.Chronograph;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.util.FastGatewayHeaders;
 import com.ethlo.venturi.vlf.VenturiTailer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
-import com.ethlo.venturi.vlf.dictionary.VlfDictionary;
 
 public final class VlfPerformanceBenchmarkTest
 {
@@ -53,8 +51,6 @@ public final class VlfPerformanceBenchmarkTest
 
             final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
             final ByteBuffer body = wrap("{\"status\":\"ok\"}".getBytes());
-
-            final VlfDictionary dictionary = VlfJournal.load("/default-dict.properties");
 
             final AtomicReference<VlfJournal> journalRef = new AtomicReference<>();
             // 1. Measure Encoding Speed (Write)

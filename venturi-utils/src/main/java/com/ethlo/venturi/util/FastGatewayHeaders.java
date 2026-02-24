@@ -2,6 +2,8 @@ package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 
+import java.util.Map;
+
 public final class FastGatewayHeaders extends ArrayBackedPairStorage<CharSequence, CharSequence> implements GatewayHeaders
 {
 
@@ -72,5 +74,12 @@ public final class FastGatewayHeaders extends ArrayBackedPairStorage<CharSequenc
         {
             addInternal(name, v);
         }
+    }
+
+    public static FastGatewayHeaders of(Map<CharSequence, CharSequence> headers)
+    {
+        final FastGatewayHeaders h = new FastGatewayHeaders();
+        headers.forEach(h::add);
+        return h;
     }
 }

@@ -82,6 +82,8 @@ public class CharSequenceUtil
         {
             h = 31 * h + cs.charAt(i);
         }
-        return h;
+        // Bit-mix to prevent clustering in the arrays
+        h ^= (h >>> 20) ^ (h >>> 12);
+        return h ^ (h >>> 7) ^ (h >>> 4);
     }
 }
