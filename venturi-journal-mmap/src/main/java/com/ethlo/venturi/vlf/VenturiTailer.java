@@ -24,6 +24,8 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 
+import static com.ethlo.venturi.vlf.VlfConstants.VLF_EXTENSION;
+
 public final class VenturiTailer
 {
     private static final Logger logger = LoggerFactory.getLogger(VenturiTailer.class);
@@ -53,7 +55,7 @@ public final class VenturiTailer
         {
             s.filter(p -> {
                         String name = p.getFileName().toString();
-                        return name.endsWith(".raw") || name.endsWith(".active");
+                        return name.endsWith(VLF_EXTENSION) || name.endsWith(".active");
                     })
                     .sorted((p1, p2) -> {
                         FileMeta m1 = parseMeta(p1);
@@ -145,7 +147,7 @@ public final class VenturiTailer
     private void checkDelete(Path path) throws IOException
     {
         String key = getStableKey(path);
-        if (path.toString().endsWith(".raw") && checkpoints.containsKey(key))
+        if (path.toString().endsWith(VLF_EXTENSION) && checkpoints.containsKey(key))
         {
             if (minAge != null)
             {
@@ -180,7 +182,7 @@ public final class VenturiTailer
 
     private String getStableKey(Path path)
     {
-        return path.getFileName().toString().replace(".active", "").replace(".raw", "");
+        return path.getFileName().toString().replace(".active", "").replace(VLF_EXTENSION, "");
     }
 
     private void loadCheckpoints()

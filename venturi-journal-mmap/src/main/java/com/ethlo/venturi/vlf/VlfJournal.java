@@ -2,6 +2,7 @@ package com.ethlo.venturi.vlf;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
+import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import java.io.IOException;
@@ -16,47 +17,59 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.vlf.fbs.BodyEvent;
 import com.ethlo.venturi.vlf.fbs.EndEvent;
+import com.ethlo.venturi.vlf.fbs.EventPayload;
 import com.ethlo.venturi.vlf.fbs.Header;
+import com.ethlo.venturi.vlf.fbs.JournalEvent;
 import com.ethlo.venturi.vlf.fbs.StartEvent;
 import com.google.flatbuffers.FlatBufferBuilder;
 
-public final class VlfJournal implements Journal {
-
+public final class VlfJournal implements Journal
+{
     private static final long OS_PAGE_SIZE = 4096L;
     private static final ValueLayout.OfInt INT_BE = JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-
     private static final int MAX_SCRATCH = 8192;
-
+    private static final int MAGIC = 0x564C4631; // "VLF1"
     private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
 
     private final VlfJournalProvider provider;
     private final long segmentSize;
-
+    private FileChannel channel;
     private Arena arena;
     private MemorySegment segment;
     private long position;
     private Path activePath;
 
-    public VlfJournal(VlfJournalProvider provider, long segmentSize) {
-        this.provider = provider;
-        this.segmentSize = segmentSize;
-        rotateData(null);
-    }
-
     /* =======================
        PUBLIC API
        ======================= */
 
+    public VlfJournal(VlfJournalProvider provider, long segmentSize)
+    {
+        this.provider = provider;
+        this.segmentSize = segmentSize;
+        rotateData();
+    }
+
+    private static void updateInt(CRC32C crc, int value)
+    {
+        crc.update((value >>> 24) & 0xFF);
+        crc.update((value >>> 16) & 0xFF);
+        crc.update((value >>> 8) & 0xFF);
+        crc.update(value & 0xFF);
+    }
+
     @Override
-    public synchronized void start(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers) {
+    public synchronized void start(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    {
         fbb.clear();
 
         int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -76,7 +89,8 @@ public final class VlfJournal implements Journal {
 
         int headerCount = index[0];
         StartEvent.startHeadersVector(fbb, headerCount);
-        for (int i = headerCount - 1; i >= 0; i--) {
+        for (int i = headerCount - 1; i >= 0; i--)
+        {
             fbb.addOffset(headerOffsetsScratch[i]);
         }
         int headersVectorOffset = fbb.endVector();
@@ -87,14 +101,20 @@ public final class VlfJournal implements Journal {
         StartEvent.addHeaders(fbb, headersVectorOffset);
         int startEventOffset = StartEvent.endStartEvent(fbb);
 
-        fbb.finish(startEventOffset);
+        JournalEvent.startJournalEvent(fbb);
+        JournalEvent.addEventType(fbb, EventPayload.StartEvent);
+        JournalEvent.addEvent(fbb, startEventOffset);
+        int rootOffset = JournalEvent.endJournalEvent(fbb);
 
-        writeFramedFlatBufferSafe(VlfConstants.MARKER_START, fbb, null);
+        fbb.finish(rootOffset);
+        writeEntry(fbb, null);
     }
 
     @Override
-    public synchronized void body(ServerDirection dir, CharSequence reqId, ByteBuffer data) {
-        while (data.hasRemaining()) {
+    public synchronized void body(ServerDirection dir, CharSequence reqId, ByteBuffer data)
+    {
+        while (data.hasRemaining())
+        {
             fbb.clear();
             int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
 
@@ -102,21 +122,29 @@ public final class VlfJournal implements Journal {
             BodyEvent.addReqId(fbb, reqIdOffset);
             BodyEvent.addDirection(fbb, dir == ServerDirection.REQUEST ?
                     com.ethlo.venturi.vlf.fbs.ServerDirection.REQUEST :
-                    com.ethlo.venturi.vlf.fbs.ServerDirection.RESPONSE);
+                    com.ethlo.venturi.vlf.fbs.ServerDirection.RESPONSE
+            );
             BodyEvent.addLength(fbb, data.remaining());
             int bodyEventOffset = BodyEvent.endBodyEvent(fbb);
+            JournalEvent.startJournalEvent(fbb);
+            JournalEvent.addEventType(fbb, EventPayload.BodyEvent);
+            JournalEvent.addEvent(fbb, bodyEventOffset);
+            int rootOffset = JournalEvent.endJournalEvent(fbb);
 
-            fbb.finish(bodyEventOffset);
-
-            // Write FlatBuffer + raw body bytes
-            writeFramedFlatBufferSafe(VlfConstants.MARKER_BODY, fbb, data);
+            fbb.finish(rootOffset);
+            writeEntry(fbb, data);
         }
     }
 
+    /* =======================
+       ZERO-COPY WRITE
+       ======================= */
+
     @Override
-    public synchronized void end(CharSequence reqId, int status, long sent, long recv, long duration) {
+    public synchronized void end(CharSequence reqId, int status, long sent, long recv, long duration)
+    {
         fbb.clear();
-        int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        final int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
 
         EndEvent.startEndEvent(fbb);
         EndEvent.addReqId(fbb, reqIdOffset);
@@ -125,134 +153,244 @@ public final class VlfJournal implements Journal {
         EndEvent.addBytesSent(fbb, sent);
         EndEvent.addBytesReceived(fbb, recv);
         EndEvent.addDuration(fbb, duration);
-        int endEventOffset = EndEvent.endEndEvent(fbb);
+        final int endEventOffset = EndEvent.endEndEvent(fbb);
 
-        fbb.finish(endEventOffset);
+        JournalEvent.startJournalEvent(fbb);
+        JournalEvent.addEventType(fbb, EventPayload.EndEvent);
+        JournalEvent.addEvent(fbb, endEventOffset);
+        int rootOffset = JournalEvent.endJournalEvent(fbb);
 
-        writeFramedFlatBufferSafe(VlfConstants.MARKER_END, fbb, null);
+        fbb.finish(rootOffset);
+        writeEntry(fbb, null);
     }
 
     @Override
-    public synchronized void close() throws IOException {
-        if (segment != null) {
+    public synchronized void close() throws IOException
+    {
+        if (segment != null)
+        {
             segment.force();
             arena.close();
-            String newName = activePath.getFileName().toString().replace(".active", ".raw");
+            String newName = activePath.getFileName().toString().replace(".active", VlfConstants.VLF_EXTENSION);
             Files.move(activePath, activePath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
         }
     }
 
-    /* =======================
-       ZERO-COPY WRITE
-       ======================= */
-
-    private void writeFramedFlatBufferSafe(byte marker, FlatBufferBuilder fbBuilder, ByteBuffer rawData) {
-        ByteBuffer fbData = fbBuilder.dataBuffer().slice(); // ensure position=0, limit=actual FB
-        int fbLen = fbData.remaining();
-        int rawLen = (rawData != null) ? rawData.remaining() : 0;
-
-        long totalNeeded = 1L + Integer.BYTES + fbLen + rawLen;
-        if (totalNeeded > remaining()) {
-            rotateData(null);
-            if (totalNeeded > remaining()) {
-                throw new UncheckedIOException(new IOException("Entry too large for journal segment even after rotation"));
-            }
+    private void ensureCapacity(long needed)
+    {
+        if (segment == null)
+        {
+            rotateData();
         }
 
-        // 1. Marker
-        segment.set(JAVA_BYTE, position, marker);
-        position += 1;
+        if (position + needed > segment.byteSize())
+        {
+            rotateData();
+        }
 
-        // 2. FB length
-        segment.set(INT_BE, position, fbLen);
-        position += Integer.BYTES;
+        if (position + needed > segment.byteSize())
+        {
+            throw new IllegalStateException(
+                    "Entry too large for segment. needed=" + needed +
+                            " remaining=" + remaining());
+        }
+    }
 
-        // 3. FB bytes
-        MemorySegment fbSeg = MemorySegment.ofArray(fbData.array());
-        MemorySegment.copy(fbSeg, fbData.arrayOffset() + fbData.position(), segment, position, fbLen);
+    private void writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
+    {
+        if (segment.byteSize() == 0)
+        {
+            throw new IllegalStateException("Segment not initialized");
+        }
+
+        final ByteBuffer fb = fbBuilder.dataBuffer().slice();
+        final int fbLen = fb.remaining();
+        final int rawLen = rawData != null ? rawData.remaining() : 0;
+
+        final int payloadLen =
+                Integer.BYTES + // fbLen
+                        Integer.BYTES + // rawLen
+                        fbLen +
+                        rawLen;
+
+        final int totalLen =
+                Integer.BYTES + // magic
+                        Integer.BYTES + // payloadLen
+                        payloadLen +
+                        Integer.BYTES;  // crc
+
+        ensureCapacity(totalLen);
+
+        final long entryStart = position;
+
+        // ---- header ----
+        putInt(MAGIC);
+        putInt(payloadLen);
+        putInt(fbLen);
+        putInt(rawLen);
+
+        // ---- CRC ----
+        final CRC32C crc = new CRC32C();
+        updateInt(crc, payloadLen);
+        updateInt(crc, fbLen);
+        updateInt(crc, rawLen);
+
+        // ---- FlatBuffer ----
+        final ByteBuffer fbSlice = fb.slice();
+        crc.update(fbSlice.duplicate());
+
+        MemorySegment.copy(
+                MemorySegment.ofBuffer(fbSlice),
+                0,
+                segment,
+                position,
+                fbLen
+        );
         position += fbLen;
 
-        // 4. Raw payload
-        if (rawLen > 0) {
-            MemorySegment rawSeg = MemorySegment.ofBuffer(rawData);
-            MemorySegment.copy(rawSeg, rawData.position(), segment, position, rawLen);
-            rawData.position(rawData.position() + rawLen);
+        // ---- Raw ----
+        if (rawLen > 0)
+        {
+            final ByteBuffer rawSlice = rawData.slice();
+            crc.update(rawSlice.duplicate());
+
+            MemorySegment.copy(
+                    MemorySegment.ofBuffer(rawSlice),
+                    0,
+                    segment,
+                    position,
+                    rawLen
+            );
             position += rawLen;
+            rawData.position(rawData.position() + rawLen);
         }
+
+        // ---- CRC footer ----
+        putInt((int) crc.getValue());
     }
 
     /* =======================
        HELPERS
        ======================= */
 
-    private int copyToScratch(CharSequence s) {
+    private int copyToScratch(CharSequence s)
+    {
         int len = s.length();
         if (len > MAX_SCRATCH) throw new IllegalArgumentException("String exceeds max scratch size: " + len);
         for (int i = 0; i < len; i++) asciiScratch[i] = (byte) s.charAt(i);
         return len;
     }
 
-    private void preFaultSegment(MemorySegment segment) {
+    private void preFaultSegment(MemorySegment segment)
+    {
         final long capacity = segment.byteSize();
-        for (long offset = 0; offset < capacity; offset += OS_PAGE_SIZE) segment.set(JAVA_BYTE, offset, (byte) 0);
-        if (capacity > 0) segment.set(JAVA_BYTE, capacity - 1, (byte) 0);
+        for (long offset = 0; offset < capacity; offset += OS_PAGE_SIZE)
+        {
+            segment.set(JAVA_BYTE, offset, (byte) 0);
+        }
+
+        if (capacity > 0)
+        {
+            segment.set(JAVA_BYTE, capacity - 1, (byte) 0);
+        }
     }
 
-    private long remaining() {
+    private long remaining()
+    {
         return segment.byteSize() - position;
     }
 
-    private void rotateData(CharSequence triggeringReqId) {
-        try {
-            if (segment != null) {
+    private void rotateData()
+    {
+        try
+        {
+            if (segment != null)
+            {
                 segment.force();
                 arena.close();
-                String newName = activePath.getFileName().toString().replace(".active", ".raw");
-                Files.move(activePath, activePath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
+                channel.close();
+
+                String newName = activePath.getFileName()
+                        .toString().replace(".active", VlfConstants.VLF_EXTENSION);
+
+                Files.move(activePath,
+                        activePath.resolveSibling(newName),
+                        StandardCopyOption.ATOMIC_MOVE
+                );
             }
 
             activePath = provider.getNextPath();
 
-            try (FileChannel fc = FileChannel.open(activePath, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
-                fc.truncate(segmentSize);
-                arena = Arena.ofShared();
-                segment = fc.map(FileChannel.MapMode.READ_WRITE, 0, segmentSize, arena);
-                preFaultSegment(segment);
-                position = 0;
-                writePreamble();
-            }
-        } catch (IOException e) {
+            channel = FileChannel.open(
+                    activePath,
+                    StandardOpenOption.READ,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.CREATE
+            );
+
+            channel.truncate(segmentSize);
+
+            arena = Arena.ofShared();
+            segment = channel.map(
+                    FileChannel.MapMode.READ_WRITE,
+                    0,
+                    segmentSize,
+                    arena
+            );
+
+            preFaultSegment(segment);
+            position = 0;
+            writePreamble();
+        }
+        catch (IOException e)
+        {
             throw new UncheckedIOException(e);
         }
     }
 
-    private void writePreamble() {
+    private void putLong(long v)
+    {
+        segment.set(JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN), position, v);
+        position += Long.BYTES;
+    }
+
+    private void writePreamble()
+    {
         position = 0;
+
         putInt(VlfConstants.MAGIC);
         putShort(VlfConstants.VERSION_1);
+        // For now, using System.currentTimeMillis() as a simple chronological fallback
+        putLong(System.currentTimeMillis());
+
         position = VlfConstants.PREAMBLE_SIZE;
     }
 
-    private void putByte(byte v) {
+    private void putByte(byte v)
+    {
         segment.set(JAVA_BYTE, position, v);
         position += 1;
     }
 
-    private void putInt(int v) {
+    private void putInt(int v)
+    {
         segment.set(INT_BE, position, v);
         position += Integer.BYTES;
     }
 
-    private void putShort(short v) {
+    private void putShort(short v)
+    {
         segment.set(SHORT_BE, position, v);
         position += Short.BYTES;
     }
 
-    public Path getActivePath() {
+    public Path getActivePath()
+    {
         return activePath;
     }
 
-    public long getOffset() {
+    public long getOffset()
+    {
         return position;
     }
 }

@@ -140,7 +140,7 @@ public class AsyncSegmentProvider implements AutoCloseable
                 oldSegment.arena().close();
 
                 String newName = oldSegment.activePath().getFileName()
-                        .toString().replace(".active", ".raw");
+                        .toString().replace(".active", VlfConstants.VLF_EXTENSION);
 
                 Files.move(oldSegment.activePath(),
                         oldSegment.activePath().resolveSibling(newName),

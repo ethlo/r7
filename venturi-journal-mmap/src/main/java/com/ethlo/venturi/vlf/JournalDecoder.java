@@ -1,15 +1,21 @@
 package com.ethlo.venturi.vlf;
 
+import static com.ethlo.venturi.vlf.VlfConstants.MAGIC;
+
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.vlf.fbs.BodyEvent;
 import com.ethlo.venturi.vlf.fbs.EndEvent;
+import com.ethlo.venturi.vlf.fbs.EventPayload;
 import com.ethlo.venturi.vlf.fbs.Header;
+import com.ethlo.venturi.vlf.fbs.JournalEvent;
 import com.ethlo.venturi.vlf.fbs.StartEvent;
 import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
 
@@ -27,23 +33,25 @@ public final class JournalDecoder
         // Skip preamble
         if (buffer.position() == 0)
         {
-            buffer.position(VlfConstants.PREAMBLE_SIZE);
+            buffer.position(VlfConstants.PREAMBLE_SIZE); // 1024
         }
 
         while (buffer.hasRemaining())
         {
             final int startPos = buffer.position();
-            final byte marker = buffer.get();
 
+            // Peek at the byte WITHOUT advancing the position
+            final byte marker = buffer.get(startPos);
+
+            // If we hit a 0, we've reached the unwritten zero-padded tail of the segment
             if (marker == 0)
             {
-                buffer.position(startPos);
                 break;
             }
 
             try
             {
-                totalTextWeight += parseEvent(marker, buffer, listener);
+                parseEntry(buffer, listener);
             }
             catch (Exception e)
             {
@@ -54,29 +62,83 @@ public final class JournalDecoder
         return totalTextWeight;
     }
 
-    private static long parseEvent(byte marker, ByteBuffer buffer, JournalEventListener listener)
+    private static void parseEntry(ByteBuffer buffer, JournalEventListener listener)
     {
-        if (buffer.remaining() < Integer.BYTES)
-            throw new IllegalStateException("Incomplete FlatBuffer length at marker " + marker);
+        buffer.order(ByteOrder.BIG_ENDIAN);
 
-        final int fbSize = buffer.getInt();
+        if (buffer.remaining() < 4 * Integer.BYTES)
+            throw new IllegalStateException("Incomplete header");
 
-        if (buffer.remaining() < fbSize)
-            throw new IllegalStateException("FlatBuffer length exceeds remaining buffer: " + fbSize);
+        int magic = buffer.getInt();
+        if (magic != MAGIC)
+            throw new IllegalStateException("Bad magic");
 
-        final int oldLimit = buffer.limit();
-        buffer.limit(buffer.position() + fbSize);
-        final ByteBuffer fbSlice = buffer.slice();
-        buffer.limit(oldLimit);
-        buffer.position(buffer.position() + fbSize);
+        int payloadLen = buffer.getInt();
+        int fbLen = buffer.getInt();
+        int rawLen = buffer.getInt();
 
-        long weight = 0;
+        if (payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
+            throw new IllegalStateException("Corrupt payload length");
 
-        switch (marker)
+        if (buffer.remaining() < payloadLen + Integer.BYTES)
+            throw new IllegalStateException("Truncated entry");
+
+        int payloadStart = buffer.position();
+
+        CRC32C crc = new CRC32C();
+        updateInt(crc, payloadLen);
+        updateInt(crc, fbLen);
+        updateInt(crc, rawLen);
+
+        // ---- FlatBuffer slice (zero copy) ----
+
+        ByteBuffer fbSlice = buffer.slice();
+        fbSlice.limit(fbLen);
+        fbSlice.order(ByteOrder.LITTLE_ENDIAN);
+
+        crc.update(fbSlice.duplicate());
+
+        buffer.position(buffer.position() + fbLen);
+
+        // ---- Raw slice ----
+
+        ByteBuffer rawSlice = null;
+
+        if (rawLen > 0)
         {
-            case VlfConstants.MARKER_START:
+            rawSlice = buffer.slice();
+            rawSlice.limit(rawLen);
+            crc.update(rawSlice.duplicate());
+            buffer.position(buffer.position() + rawLen);
+        }
+
+        int storedCrc = buffer.getInt();
+        if ((int) crc.getValue() != storedCrc)
+        {
+            throw new IllegalStateException("CRC mismatch");
+        }
+
+        final JournalEvent je = JournalEvent.getRootAsJournalEvent(fbSlice);
+        dispatch(je, rawSlice, listener);
+    }
+
+    private static void updateInt(CRC32C crc, int value)
+    {
+        crc.update((value >>> 24) & 0xFF);
+        crc.update((value >>> 16) & 0xFF);
+        crc.update((value >>> 8) & 0xFF);
+        crc.update(value & 0xFF);
+    }
+
+
+    private static long dispatch(final JournalEvent journalEvent, ByteBuffer buffer, JournalEventListener listener)
+    {
+        long weight = 0;
+        switch (journalEvent.eventType())
+        {
+            case EventPayload.StartEvent ->
             {
-                StartEvent start = StartEvent.getRootAsStartEvent(fbSlice);
+                StartEvent start = (StartEvent) journalEvent.event(new StartEvent());
                 CharSequence reqId = asAscii(start.reqIdAsByteBuffer());
                 ServerDirection dir = ServerDirection.REQUEST; // if you add direction, decode here
                 CharSequence startLine = asAscii(start.startLineAsByteBuffer());
@@ -85,12 +147,11 @@ public final class JournalDecoder
                 listener.onBegin(dir, reqId, startLine, headers);
 
                 weight += safeLen(reqId) + dir.name().length() + safeLen(startLine) + headers.weight();
-                break;
             }
 
-            case VlfConstants.MARKER_BODY:
+            case EventPayload.BodyEvent ->
             {
-                BodyEvent body = BodyEvent.getRootAsBodyEvent(fbSlice);
+                BodyEvent body = (BodyEvent) journalEvent.event(new BodyEvent());
                 CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
                 ServerDirection dir = SERVER_DIRECTIONS[body.direction()];
                 int bodyLen = (int) body.length();
@@ -105,12 +166,11 @@ public final class JournalDecoder
                 listener.onBody(dir, reqId, bodyChunk);
 
                 weight += safeLen(reqId) + dir.name().length() + bodyLen;
-                break;
             }
 
-            case VlfConstants.MARKER_END:
+            case EventPayload.EndEvent ->
             {
-                EndEvent end = EndEvent.getRootAsEndEvent(fbSlice);
+                EndEvent end = (EndEvent) journalEvent.event(new EndEvent());
                 CharSequence reqId = asAscii(end.reqIdAsByteBuffer());
                 long ts = end.timestamp();
                 int status = end.status();
@@ -121,13 +181,9 @@ public final class JournalDecoder
                 listener.onEnd(reqId, ts, status, sent, recv, duration);
 
                 weight += safeLen(reqId) + 60; // estimate numeric text weight
-                break;
             }
-
-            default:
-                throw new IllegalStateException("Unknown marker: " + marker);
+            default -> throw new IllegalStateException("Unknown event type: " + journalEvent.eventType());
         }
-
         return weight;
     }
 
@@ -138,7 +194,10 @@ public final class JournalDecoder
 
     private static CharSequence asAscii(ByteBuffer buf)
     {
-        if (buf == null) return null;
+        if (buf == null)
+        {
+            return null;
+        }
         return new ByteBufferAsciiFlyweight(buf, buf.position(), buf.remaining());
     }
 
@@ -267,9 +326,28 @@ public final class JournalDecoder
             return StandardCharsets.UTF_8.decode(tmp).toString();
         }
 
-        @Override public void set(CharSequence name, CharSequence value) { throw new UnsupportedOperationException(); }
-        @Override public void remove(CharSequence name) { throw new UnsupportedOperationException(); }
-        @Override public void set(CharSequence name, Iterable<CharSequence> values) { throw new UnsupportedOperationException(); }
-        @Override public void add(CharSequence name, CharSequence value) { throw new UnsupportedOperationException(); }
+        @Override
+        public void set(CharSequence name, CharSequence value)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void remove(CharSequence name)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void set(CharSequence name, Iterable<CharSequence> values)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void add(CharSequence name, CharSequence value)
+        {
+            throw new UnsupportedOperationException();
+        }
     }
 }

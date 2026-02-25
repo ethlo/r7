@@ -18,21 +18,7 @@ public final class VlfConstants
      */
     public static final short VERSION_1 = 1;
 
-    // --- Control Markers ---
-    /**
-     * Indicates the start of an exchange (BEGIN)
-     */
-    public static final byte MARKER_START = (byte) 0x01;
-
-    /**
-     * Indicates a body chunk
-     */
-    public static final byte MARKER_BODY = (byte) 0x02;
-
-    /**
-     * Indicates the completion of an exchange (END)
-     */
-    public static final byte MARKER_END = (byte) 0x03;
+    public static final String VLF_EXTENSION = ".vlf";
 
     private VlfConstants()
     {

@@ -1,6 +1,5 @@
 namespace com.ethlo.venturi.vlf.fbs;
 
-// Replaces your manual ordinal() casting
 enum ServerDirection : byte { REQUEST = 0, RESPONSE = 1 }
 
 table Header {
@@ -11,7 +10,7 @@ table Header {
 table StartEvent {
   req_id: [ubyte];
   start_line: [ubyte];
-  headers: [Header];   
+  headers: [Header];
 }
 
 table BodyEvent {
@@ -27,4 +26,18 @@ table EndEvent {
   bytes_sent: long;
   bytes_received: long;
   duration: long;
+  request_crc32c: uint32;
+  response_crc32c: uint32;
 }
+
+union EventPayload {
+  StartEvent,
+  BodyEvent,
+  EndEvent
+}
+
+table JournalEvent {
+  event: EventPayload;
+}
+
+root_type JournalEvent;

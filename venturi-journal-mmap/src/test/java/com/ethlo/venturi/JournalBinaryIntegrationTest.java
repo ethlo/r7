@@ -15,6 +15,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.vlf.VlfConstants;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -96,8 +98,11 @@ class JournalBinaryIntegrationTest
             for (Future<Void> f : futures) f.get();
         } finally
         {
-            // Always close journals to flush .active to .raw
-            for (VlfJournal j : journals) j.close();
+            // Always close journals to flush .active to .vlf
+            for (VlfJournal j : journals)
+            {
+                j.close();
+            }
             executor.shutdown();
         }
 
@@ -167,11 +172,11 @@ class JournalBinaryIntegrationTest
         }
         catch (Throwable e)
         {
-            // Locate the .raw file for debugging if it fails
+            // Locate the .vlf file for debugging if it fails
             try (Stream<Path> stream = Files.walk(tempDir))
             {
                 stream.filter(Files::isRegularFile)
-                        .filter(p -> p.toString().endsWith(".raw"))
+                        .filter(p -> p.toString().endsWith(VlfConstants.VLF_EXTENSION))
                         .findFirst()
                         .ifPresent(p -> {
                             try
