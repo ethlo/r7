@@ -15,8 +15,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.ethlo.venturi.vlf.VlfRecoveryManager;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.OptionMap;
@@ -35,8 +33,10 @@ import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
+import com.ethlo.venturi.vlf.DiskSpaceUtils;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
+import com.ethlo.venturi.vlf.VlfRecoveryManager;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -121,6 +121,8 @@ public final class VenturiMain
 
         final Path rootDir = Paths.get(storage.tempDir());
         Files.createDirectories(rootDir);
+
+        logger.info("Available disk space in {}: {}", rootDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(rootDir)));
 
         VlfRecoveryManager.recoverActiveSegments(rootDir);
 

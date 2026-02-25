@@ -32,9 +32,6 @@ public final class VlfRecoveryManager
             return;
         }
 
-        logger.info("--- VLF RECOVERY DIAGNOSTICS ---");
-        logger.info("Resolved absolute path: {}", journalDirectory.toAbsolutePath());
-
         try (Stream<Path> stream = Files.list(journalDirectory))
         {
             List<Path> activeFiles = stream
@@ -45,7 +42,6 @@ public final class VlfRecoveryManager
             if (activeFiles.isEmpty())
             {
                 logger.info("Found 0 matching .active files. No recovery needed.");
-                logger.info("--------------------------------");
                 return;
             }
 
@@ -66,7 +62,7 @@ public final class VlfRecoveryManager
                 }
                 catch (Exception e)
                 {
-                    logger.error("CRASH during recovery of {}", activeFile.getFileName(), e);
+                    logger.error("Fatal error during recovery of {}", activeFile.getFileName(), e);
                 }
             }
 
