@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.ethlo.venturi.vlf.VlfRecoveryManager;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.OptionMap;
@@ -29,10 +31,10 @@ import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
-import com.ethlo.venturi.util.constants.HttpStatuses;
-import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
+import com.ethlo.venturi.util.constants.HttpStatuses;
+import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
 import io.undertow.Handlers;
@@ -48,7 +50,7 @@ import io.undertow.util.Headers;
 public final class VenturiMain
 {
     public static final int JOURNAL_SHARD_COUNT = 4;
-    public static final int JOURNAL_SHARD_SIZE_BYTES = Integer.MAX_VALUE;
+    public static final int JOURNAL_SHARD_SIZE_BYTES = 1024 * 1024 * 100;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final XnioSsl xnioSsl;
@@ -119,6 +121,8 @@ public final class VenturiMain
 
         final Path rootDir = Paths.get(storage.tempDir());
         Files.createDirectories(rootDir);
+
+        VlfRecoveryManager.recoverActiveSegments(rootDir);
 
         final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(JOURNAL_SHARD_COUNT, shardIdx -> {
             final VlfJournalProvider provider = new VlfJournalProvider(rootDir, shardIdx);

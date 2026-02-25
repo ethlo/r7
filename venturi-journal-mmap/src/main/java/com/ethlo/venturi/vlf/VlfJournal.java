@@ -38,19 +38,17 @@ public final class VlfJournal implements Journal
     private static final int MAX_SCRATCH = 8192;
     private static final int MAGIC = 0x564C4631; // "VLF1"
     private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
+    // Keep these at the class level to prevent allocation!
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
-
+    private final int[] headerOffsetsScratch = new int[1024];
     private final VlfJournalProvider provider;
     private final long segmentSize;
+    private int currentHeaderCount = 0;
     private FileChannel channel;
     private Arena arena;
     private MemorySegment segment;
     private long position;
     private Path activePath;
-
-    /* =======================
-       PUBLIC API
-       ======================= */
 
     public VlfJournal(VlfJournalProvider provider, long segmentSize)
     {
@@ -67,27 +65,65 @@ public final class VlfJournal implements Journal
         crc.update(value & 0xFF);
     }
 
+    /* =======================
+       PUBLIC API
+       ======================= */
+
+    // The restored and slightly JIT-optimized scratch copier
+    private int copyToScratch(CharSequence s)
+    {
+        final int len = s.length();
+        if (len > MAX_SCRATCH)
+        {
+            throw new IllegalArgumentException("String exceeds max scratch size: " + len);
+        }
+
+        final byte[] dest = this.asciiScratch;
+
+        // JIT optimization: Devirtualizes the charAt call if it's a standard String
+        if (s instanceof String str)
+        {
+            for (int i = 0; i < len; i++)
+            {
+                dest[i] = (byte) str.charAt(i);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < len; i++)
+            {
+                dest[i] = (byte) s.charAt(i);
+            }
+        }
+        return len;
+    }
+
     @Override
     public synchronized void start(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
 
+        // Use the fast array-copy method
         int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+
+        // startLine is ALREADY a ByteBuffer, FlatBuffers does this natively via System.arraycopy
         int startLineOffset = fbb.createByteVector(startLine);
 
-        final int[] headerOffsetsScratch = new int[100];
-        int[] index = {0};
-        headers.forEach((name, value) -> {
-            int nameOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(name));
-            int valueOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(value));
+        this.currentHeaderCount = 0;
 
-            Header.startHeader(fbb);
-            Header.addName(fbb, nameOffset);
-            Header.addValue(fbb, valueOffset);
-            headerOffsetsScratch[index[0]++] = Header.endHeader(fbb);
-        });
+        // Pass 'this' as state to avoid capturing lambda allocation
+        headers.forEach(this, (self, name, value) -> {
+                    int nameOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
+                    int valueOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
 
-        int headerCount = index[0];
+                    Header.startHeader(self.fbb);
+                    Header.addName(self.fbb, nameOffset);
+                    Header.addValue(self.fbb, valueOffset);
+                    self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
+                }
+        );
+
+        int headerCount = this.currentHeaderCount;
         StartEvent.startHeadersVector(fbb, headerCount);
         for (int i = headerCount - 1; i >= 0; i--)
         {
@@ -167,12 +203,65 @@ public final class VlfJournal implements Journal
     @Override
     public synchronized void close() throws IOException
     {
+        finalizeActiveSegment();
+    }
+
+    private void rotateData()
+    {
+        try
+        {
+            finalizeActiveSegment();
+
+            activePath = provider.getNextPath();
+
+            channel = FileChannel.open(
+                    activePath,
+                    StandardOpenOption.READ,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.CREATE
+            );
+
+            channel.truncate(segmentSize);
+
+            arena = Arena.ofShared();
+            segment = channel.map(
+                    FileChannel.MapMode.READ_WRITE,
+                    0,
+                    segmentSize,
+                    arena
+            );
+
+            preFaultSegment(segment);
+            position = 0;
+            writePreamble();
+        }
+        catch (IOException e)
+        {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void finalizeActiveSegment() throws IOException
+    {
         if (segment != null)
         {
             segment.force();
-            arena.close();
+            arena.close(); // Unmap BEFORE truncating
+
+            if (channel != null && channel.isOpen())
+            {
+                // Shrink the file to remove the trailing pre-faulted zeros
+                channel.truncate(position);
+                channel.close();
+            }
+
             String newName = activePath.getFileName().toString().replace(".active", VlfConstants.VLF_EXTENSION);
             Files.move(activePath, activePath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
+
+            // Clear references to prevent accidental use of closed resources
+            segment = null;
+            arena = null;
+            channel = null;
         }
     }
 
@@ -269,24 +358,6 @@ public final class VlfJournal implements Journal
         putInt((int) crc.getValue());
     }
 
-    /* =======================
-       HELPERS
-       ======================= */
-
-    private int copyToScratch(CharSequence s)
-    {
-        final int len = s.length();
-        if (len > MAX_SCRATCH)
-        {
-            throw new IllegalArgumentException("String exceeds max scratch size: " + len);
-        }
-        for (int i = 0; i < len; i++)
-        {
-            asciiScratch[i] = (byte) s.charAt(i);
-        }
-        return len;
-    }
-
     private void preFaultSegment(MemorySegment segment)
     {
         final long capacity = segment.byteSize();
@@ -304,54 +375,6 @@ public final class VlfJournal implements Journal
     private long remaining()
     {
         return segment.byteSize() - position;
-    }
-
-    private void rotateData()
-    {
-        try
-        {
-            if (segment != null)
-            {
-                segment.force();
-                arena.close();
-                channel.close();
-
-                String newName = activePath.getFileName()
-                        .toString().replace(".active", VlfConstants.VLF_EXTENSION);
-
-                Files.move(activePath,
-                        activePath.resolveSibling(newName),
-                        StandardCopyOption.ATOMIC_MOVE
-                );
-            }
-
-            activePath = provider.getNextPath();
-
-            channel = FileChannel.open(
-                    activePath,
-                    StandardOpenOption.READ,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.CREATE
-            );
-
-            channel.truncate(segmentSize);
-
-            arena = Arena.ofShared();
-            segment = channel.map(
-                    FileChannel.MapMode.READ_WRITE,
-                    0,
-                    segmentSize,
-                    arena
-            );
-
-            preFaultSegment(segment);
-            position = 0;
-            writePreamble();
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
-        }
     }
 
     private void putLong(long v)
