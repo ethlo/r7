@@ -1,9 +1,10 @@
 package com.ethlo.venturi.vlf;
 
-import java.nio.ByteBuffer;
-
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+
+import java.nio.ByteBuffer;
 
 public interface JournalEventListener
 {
@@ -11,5 +12,5 @@ public interface JournalEventListener
 
     void onBody(ServerDirection direction, CharSequence reqId, ByteBuffer body);
 
-    void onEnd(CharSequence reqId, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos);
+    void onEnd(CharSequence reqId, GatewayAttributes attributes, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos);
 }

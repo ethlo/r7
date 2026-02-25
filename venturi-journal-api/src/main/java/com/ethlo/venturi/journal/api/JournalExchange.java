@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 
@@ -28,6 +29,7 @@ public final class JournalExchange
     private long bytesSent;
     private long bytesReceived;
     private long durationNanos;
+    private GatewayAttributes attributes;
 
     public JournalExchange(CharSequence requestId)
     {
@@ -126,5 +128,15 @@ public final class JournalExchange
     public long getDurationNanos()
     {
         return durationNanos;
+    }
+
+    public GatewayAttributes getAttributes()
+    {
+        return attributes;
+    }
+
+    public void setAttributes(GatewayAttributes attributes)
+    {
+        this.attributes = attributes;
     }
 }

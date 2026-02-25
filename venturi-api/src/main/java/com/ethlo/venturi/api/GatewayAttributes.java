@@ -1,10 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface GatewayAttributes
+public interface GatewayAttributes extends MultiAttributes
 {
-    Iterable<CharSequence> attributeNames();
-
-    <T> T get(CharSequence key);
-
-    void put(CharSequence key, Object value);
+    
 }

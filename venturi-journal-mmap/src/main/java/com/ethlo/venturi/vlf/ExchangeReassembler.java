@@ -2,6 +2,8 @@ package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
 
+import com.ethlo.venturi.api.GatewayAttributes;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,7 +62,7 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onEnd(CharSequence requestId, long ts, int status, long sent, long recv, long dur)
+    public void onEnd(CharSequence requestId, GatewayAttributes attributes, long ts, int status, long sent, long recv, long dur)
     {
         JournalExchange exchange = inFlight.remove(requestId);
 
@@ -78,6 +80,7 @@ public class ExchangeReassembler implements JournalEventListener
         // Set metrics. We don't care if RequestStartLine is null here;
         // it might be in a different shard we haven't read yet this tick.
         exchange.setMetrics(ts, status, sent, recv, dur);
+        exchange.setAttributes(attributes);
 
         // Logic for completion: If we have what we need, move it to output.
         // If not, we leave it in inFlight. The BEGIN handler will pick it up

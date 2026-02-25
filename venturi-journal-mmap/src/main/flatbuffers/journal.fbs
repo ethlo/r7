@@ -24,6 +24,7 @@ table EndEvent {
   req_id: [ubyte];
   timestamp: long;
   status: int;
+  attributes: [Header];
   bytes_sent: long;
   bytes_received: long;
   duration: long;

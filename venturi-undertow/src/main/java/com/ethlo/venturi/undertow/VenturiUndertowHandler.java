@@ -12,16 +12,17 @@ import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.api.StateKey;
 import com.ethlo.venturi.config.AuditDefinition;
 import com.ethlo.venturi.config.RouteRegistry;
-import com.ethlo.venturi.util.constants.HttpHeaders;
-import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.core.AuditLevel;
 import com.ethlo.venturi.core.ExecutableRoute;
-import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
+import com.ethlo.venturi.util.FastGatewayAttributes;
+import com.ethlo.venturi.util.constants.HttpHeaders;
+import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.vlf.VlfJournal;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
@@ -30,12 +31,12 @@ import io.undertow.util.AttachmentKey;
 public final class VenturiUndertowHandler implements HttpHandler
 {
     public static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
-    static final CharSequence JOURNAL_KEY = ".JOURNAL";
-    static final CharSequence AUDIT_CONFIG_KEY = ".AUDIT_CONFIG";
-    static final CharSequence REQUEST_START_NANOS_KEY = ".REQUEST_START_NANOS";
-    static final CharSequence REQUEST_BYTES_READ_KEY = ".REQUEST_BYTES_READ";
-    static final CharSequence RESPONSE_BYTES_SENT_KEY = ".RESPONSE_BYTES_READ";
-    private static final CharSequence ROUTE_ID_KEY = ".ROUTE_ID";
+    static final StateKey<VlfJournal> JOURNAL_KEY = new StateKey<>(".JOURNAL");
+    static final StateKey<AuditDefinition> AUDIT_CONFIG_KEY = new StateKey<>(".AUDIT_CONFIG");
+    static final StateKey<Long> REQUEST_START_NANOS_KEY = new StateKey<>(".REQUEST_START_NANOS");
+    static final StateKey<LongSupplier> REQUEST_BYTES_READ_KEY = new StateKey<>(".REQUEST_BYTES_READ");
+    static final StateKey<LongSupplier> RESPONSE_BYTES_SENT_KEY = new StateKey<>(".RESPONSE_BYTES_READ");
+    private static final CharSequence ROUTE_ID_KEY = "route_id";
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final RouteRegistry routeRegistry;
@@ -76,12 +77,12 @@ public final class VenturiUndertowHandler implements HttpHandler
         final CharSequence requestId = requestIdGenerator.generate();
         final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
         final GatewayAttributes attrs = new FastGatewayAttributes();
-        final GatewayExchange gatewayExchange = new GatewayExchange(requestId, req, res, attrs, route);
+        final GatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, req, res, attrs, route);
 
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
-        attrs.put(REQUEST_START_NANOS_KEY, startNanos);
-        attrs.put(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
-        attrs.put(ROUTE_ID_KEY, route.id());
+        gatewayExchange.putInternalState(REQUEST_START_NANOS_KEY, startNanos);
+        gatewayExchange.putInternalState(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
+        gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         setupBinaryLogging(exchange, gatewayExchange);
 
@@ -90,7 +91,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void setupBinaryLogging(HttpServerExchange exchange, GatewayExchange gatewayExchange)
     {
-        final AuditDefinition audit = gatewayExchange.attributes().get(AUDIT_CONFIG_KEY);
+        final AuditDefinition audit = gatewayExchange.getInternalState(AUDIT_CONFIG_KEY);
         if (audit == null)
         {
             return;
@@ -98,7 +99,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         final CharSequence requestId = gatewayExchange.requestId();
         final VlfJournal journal = gatewayExchangeDataWriter.getJournal(requestId);
-        gatewayExchange.attributes().put(JOURNAL_KEY, journal);
+        gatewayExchange.putInternalState(JOURNAL_KEY, journal);
 
         // Always capture Request Headers for access log
         final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
@@ -107,10 +108,10 @@ public final class VenturiUndertowHandler implements HttpHandler
         // Track request bytes
         final AtomicLong requestBytesRead = new AtomicLong(0);
         exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
-        gatewayExchange.attributes().put(REQUEST_BYTES_READ_KEY, (LongSupplier) requestBytesRead::get);
+        gatewayExchange.putInternalState(REQUEST_BYTES_READ_KEY, (LongSupplier) requestBytesRead::get);
 
         // Track response bytes
-        gatewayExchange.attributes().put(RESPONSE_BYTES_SENT_KEY, (LongSupplier) exchange::getResponseBytesSent);
+        gatewayExchange.putInternalState(RESPONSE_BYTES_SENT_KEY, (LongSupplier) exchange::getResponseBytesSent);
 
         // Capture Request Body
         if (shouldCaptureRequestBody(audit))

@@ -19,6 +19,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.zip.CRC32C;
 
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.Journal;
@@ -41,8 +42,10 @@ public final class VlfJournal implements Journal
     // Keep these at the class level to prevent allocation!
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
     private final int[] headerOffsetsScratch = new int[1024];
+    private final int[] attributeOffsetsScratch = new int[100];
     private final VlfJournalProvider provider;
     private final long segmentSize;
+    private int currentAttributeCount = 0;
     private int currentHeaderCount = 0;
     private FileChannel channel;
     private Arena arena;
@@ -112,13 +115,9 @@ public final class VlfJournal implements Journal
         this.currentHeaderCount = 0;
 
         // Pass 'this' as state to avoid capturing lambda allocation
-        headers.forEach(this, (self, name, value) -> {
-                    int nameOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
-                    int valueOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
-
-                    Header.startHeader(self.fbb);
-                    Header.addName(self.fbb, nameOffset);
-                    Header.addValue(self.fbb, valueOffset);
+        headers.forEach(this, (self, name, value) ->
+                {
+                    writeFlatBufferHeader(self, name, value);
                     self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
                 }
         );
@@ -178,10 +177,30 @@ public final class VlfJournal implements Journal
        ======================= */
 
     @Override
-    public synchronized void end(CharSequence reqId, int status, long sent, long recv, long duration)
+    public synchronized void end(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration)
     {
         fbb.clear();
         final int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+
+        // 1. Process Attributes using zero-allocation iteration
+        this.currentAttributeCount = 0;
+        if (attributes != null)
+        {
+            attributes.forEach(this, (self, name, value) ->
+                    {
+                        writeFlatBufferHeader(self, name, value);
+                        self.attributeOffsetsScratch[self.currentAttributeCount++] = Header.endHeader(self.fbb);
+                    }
+            );
+        }
+
+        int attributeCount = this.currentAttributeCount;
+        EndEvent.startAttributesVector(fbb, attributeCount);
+        for (int i = attributeCount - 1; i >= 0; i--)
+        {
+            fbb.addOffset(attributeOffsetsScratch[i]);
+        }
+        int attributesVectorOffset = fbb.endVector();
 
         EndEvent.startEndEvent(fbb);
         EndEvent.addReqId(fbb, reqIdOffset);
@@ -190,6 +209,7 @@ public final class VlfJournal implements Journal
         EndEvent.addBytesSent(fbb, sent);
         EndEvent.addBytesReceived(fbb, recv);
         EndEvent.addDuration(fbb, duration);
+        EndEvent.addAttributes(fbb, attributesVectorOffset);
         final int endEventOffset = EndEvent.endEndEvent(fbb);
 
         JournalEvent.startJournalEvent(fbb);
@@ -199,6 +219,16 @@ public final class VlfJournal implements Journal
 
         fbb.finish(rootOffset);
         writeEntry(fbb, null);
+    }
+
+    private void writeFlatBufferHeader(final VlfJournal self, final CharSequence name, final CharSequence value)
+    {
+        int nameOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
+        int valueOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
+
+        Header.startHeader(self.fbb);
+        Header.addName(self.fbb, nameOffset);
+        Header.addValue(self.fbb, valueOffset);
     }
 
     @Override

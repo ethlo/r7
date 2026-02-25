@@ -116,13 +116,13 @@ public final class VenturiExecutableRoute implements ExecutableRoute
 
     private void handleRequestEnded(final GatewayExchange gatewayExchange)
     {
-        final VlfJournal journal = Objects.requireNonNull(gatewayExchange.attributes().get(JOURNAL_KEY), "Journal is required");
-        final long startNanos = gatewayExchange.attributes().get(REQUEST_START_NANOS_KEY);
-        final LongSupplier requestBytesRead = Objects.requireNonNull(gatewayExchange.attributes().get(REQUEST_BYTES_READ_KEY));
-        final LongSupplier responseBytesSent = Objects.requireNonNull(gatewayExchange.attributes().get(RESPONSE_BYTES_SENT_KEY));
+        final VlfJournal journal = Objects.requireNonNull(gatewayExchange.getInternalState(JOURNAL_KEY), "Journal is required");
+        final long startNanos = gatewayExchange.getInternalState(REQUEST_START_NANOS_KEY);
+        final LongSupplier requestBytesRead = Objects.requireNonNull(gatewayExchange.getInternalState(REQUEST_BYTES_READ_KEY));
+        final LongSupplier responseBytesSent = Objects.requireNonNull(gatewayExchange.getInternalState(RESPONSE_BYTES_SENT_KEY));
         synchronized (journal)
         {
-            journal.end(gatewayExchange.requestId(), gatewayExchange.response().status(), responseBytesSent.getAsLong(), requestBytesRead.getAsLong(), System.nanoTime() - startNanos);
+            journal.end(gatewayExchange.requestId(), gatewayExchange.attributes(), gatewayExchange.response().status(), responseBytesSent.getAsLong(), requestBytesRead.getAsLong(), System.nanoTime() - startNanos);
         }
     }
 }

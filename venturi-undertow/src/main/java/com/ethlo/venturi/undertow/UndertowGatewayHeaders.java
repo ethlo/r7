@@ -2,7 +2,9 @@ package com.ethlo.venturi.undertow;
 
 import java.util.Collections;
 
+import com.ethlo.venturi.api.EntryConsumer;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.undertow.util.HttpStringUtil;
 import com.ethlo.venturi.util.HttpStringCharSequence;
 import io.undertow.util.HeaderMap;
@@ -111,12 +113,4 @@ public final class UndertowGatewayHeaders implements GatewayHeaders
         }
         return count;
     }
-
-    @Override
-    public int weight()
-    {
-        // TODO: Implment me
-        return -1;
-    }
-
 }

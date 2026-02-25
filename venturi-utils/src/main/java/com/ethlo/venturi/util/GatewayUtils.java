@@ -5,14 +5,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.MultiAttributes;
 
 public class GatewayUtils
 {
-    public static Map<String, List<String>> toMap(GatewayHeaders headers)
+    public static Map<String, List<String>> toMap(MultiAttributes attributes)
     {
+        if (attributes == null)
+        {
+            return Map.of();
+        }
+
         final Map<String, List<String>> map = new HashMap<>();
-        headers.forEach((name, value) ->
+        attributes.forEach((name, value) ->
                 {
                     map.compute(name.toString(), (k, values) -> {
                                 if (values == null)

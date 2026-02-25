@@ -4,17 +4,14 @@ import static com.ethlo.venturi.vlf.VlfConstants.MAGIC;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
 import java.util.zip.CRC32C;
 
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.vlf.fbs.BodyEvent;
 import com.ethlo.venturi.vlf.fbs.EndEvent;
 import com.ethlo.venturi.vlf.fbs.EventPayload;
-import com.ethlo.venturi.vlf.fbs.Header;
 import com.ethlo.venturi.vlf.fbs.JournalEvent;
 import com.ethlo.venturi.vlf.fbs.StartEvent;
 import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
@@ -137,9 +134,8 @@ public final class JournalDecoder
     }
 
 
-    private static long dispatch(final JournalEvent journalEvent, ByteBuffer buffer, JournalEventListener listener)
+    private static void dispatch(final JournalEvent journalEvent, ByteBuffer buffer, JournalEventListener listener)
     {
-        long weight = 0;
         switch (journalEvent.eventType())
         {
             case EventPayload.StartEvent ->
@@ -151,8 +147,6 @@ public final class JournalDecoder
                 GatewayHeaders headers = new FbsGatewayHeaders(start);
 
                 listener.onBegin(dir, reqId, startLine, headers);
-
-                weight += safeLen(reqId) + dir.name().length() + safeLen(startLine) + headers.weight();
             }
 
             case EventPayload.BodyEvent ->
@@ -170,8 +164,6 @@ public final class JournalDecoder
                 buffer.position(buffer.position() + bodyLen);
 
                 listener.onBody(dir, reqId, bodyChunk);
-
-                weight += safeLen(reqId) + dir.name().length() + bodyLen;
             }
 
             case EventPayload.EndEvent ->
@@ -183,177 +175,20 @@ public final class JournalDecoder
                 long sent = end.bytesSent();
                 long recv = end.bytesReceived();
                 long duration = end.duration();
+                final GatewayAttributes attributes = new FbsGatewayAttributes(end);
 
-                listener.onEnd(reqId, ts, status, sent, recv, duration);
-
-                weight += safeLen(reqId) + 60; // estimate numeric text weight
+                listener.onEnd(reqId, attributes, ts, status, sent, recv, duration);
             }
             default -> throw new IllegalStateException("Unknown event type: " + journalEvent.eventType());
         }
-        return weight;
     }
 
-    private static int safeLen(CharSequence s)
-    {
-        return (s != null) ? s.length() : 0;
-    }
-
-    private static CharSequence asAscii(ByteBuffer buf)
+    public static CharSequence asAscii(ByteBuffer buf)
     {
         if (buf == null)
         {
             return null;
         }
         return new ByteBufferAsciiFlyweight(buf, buf.position(), buf.remaining());
-    }
-
-    /**
-     * Zero-allocation projection of StartEvent headers
-     */
-    private static class FbsGatewayHeaders implements GatewayHeaders
-    {
-        private final StartEvent event;
-        private final int count;
-        private final Header reusableHeader = new Header();
-
-        FbsGatewayHeaders(StartEvent event)
-        {
-            this.event = event;
-            this.count = event.headersLength();
-        }
-
-        @Override
-        public CharSequence getFirst(CharSequence name)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                event.headers(reusableHeader, i);
-                if (charsEqual(name, asAscii(reusableHeader.nameAsByteBuffer())))
-                {
-                    return decodeUtf8(reusableHeader.valueAsByteBuffer());
-                }
-            }
-            return null;
-        }
-
-        @Override
-        public Iterable<CharSequence> getAll(CharSequence name)
-        {
-            return () -> new Iterator<>()
-            {
-                private int idx = 0;
-                private CharSequence nextVal = null;
-
-                @Override
-                public boolean hasNext()
-                {
-                    if (nextVal != null) return true;
-                    while (idx < count)
-                    {
-                        event.headers(reusableHeader, idx++);
-                        if (charsEqual(name, asAscii(reusableHeader.nameAsByteBuffer())))
-                        {
-                            nextVal = decodeUtf8(reusableHeader.valueAsByteBuffer());
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-
-                @Override
-                public CharSequence next()
-                {
-                    if (!hasNext()) throw new NoSuchElementException();
-                    CharSequence v = nextVal;
-                    nextVal = null;
-                    return v;
-                }
-            };
-        }
-
-        @Override
-        public int forEach(EntryConsumer consumer)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                event.headers(reusableHeader, i);
-                consumer.accept(
-                        asAscii(reusableHeader.nameAsByteBuffer()),
-                        decodeUtf8(reusableHeader.valueAsByteBuffer())
-                );
-            }
-            return count;
-        }
-
-        @Override
-        public <S> int forEach(S state, StatefulEntryConsumer<S> consumer)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                event.headers(reusableHeader, i);
-                consumer.accept(
-                        state,
-                        asAscii(reusableHeader.nameAsByteBuffer()),
-                        decodeUtf8(reusableHeader.valueAsByteBuffer())
-                );
-            }
-            return count;
-        }
-
-        @Override
-        public int weight()
-        {
-            int w = 0;
-            for (int i = 0; i < count; i++)
-            {
-                event.headers(reusableHeader, i);
-                w += reusableHeader.nameLength() + reusableHeader.valueLength();
-            }
-            return w;
-        }
-
-        private boolean charsEqual(CharSequence a, CharSequence b)
-        {
-            if (a == b) return true;
-            if (a == null || b == null) return false;
-            int len = a.length();
-            if (len != b.length()) return false;
-            for (int i = 0; i < len; i++)
-            {
-                if (a.charAt(i) != b.charAt(i)) return false;
-            }
-            return true;
-        }
-
-        private String decodeUtf8(ByteBuffer buf)
-        {
-            if (buf == null) return null;
-            ByteBuffer tmp = buf.duplicate();
-            return StandardCharsets.UTF_8.decode(tmp).toString();
-        }
-
-        @Override
-        public void set(CharSequence name, CharSequence value)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void remove(CharSequence name)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void set(CharSequence name, Iterable<CharSequence> values)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void add(CharSequence name, CharSequence value)
-        {
-            throw new UnsupportedOperationException();
-        }
     }
 }

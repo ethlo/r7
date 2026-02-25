@@ -1,17 +1,6 @@
 package com.ethlo.venturi;
 
-import com.ethlo.chronograph.Chronograph;
-import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
-import com.ethlo.venturi.util.FastGatewayHeaders;
-import com.ethlo.venturi.vlf.VenturiTailer;
-import com.ethlo.venturi.vlf.VlfJournal;
-import com.ethlo.venturi.vlf.VlfJournalProvider;
-
-import org.junit.jupiter.api.RepeatedTest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static java.nio.ByteBuffer.wrap;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -22,7 +11,19 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import static java.nio.ByteBuffer.wrap;
+import org.junit.jupiter.api.RepeatedTest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ethlo.chronograph.Chronograph;
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.util.FastGatewayAttributes;
+import com.ethlo.venturi.util.FastGatewayHeaders;
+import com.ethlo.venturi.vlf.VenturiTailer;
+import com.ethlo.venturi.vlf.VlfJournal;
+import com.ethlo.venturi.vlf.VlfJournalProvider;
 
 public final class VlfPerformanceBenchmarkTest
 {
@@ -65,7 +66,7 @@ public final class VlfPerformanceBenchmarkTest
                                 final String id = "req" + i;
                                 journal.start(ServerDirection.REQUEST, id, startLine, headers);
                                 journal.body(ServerDirection.REQUEST, id, body);
-                                journal.end(id, 200, 150, 200, 15);
+                                journal.end(id, new FastGatewayAttributes(), 200, 150, 200, 15);
                             }
                         }
                         catch (Exception e)

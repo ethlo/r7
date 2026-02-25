@@ -74,9 +74,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             writeBody("request_body", exchange.getRequestBodyFragments());
             writeBody("response_body", exchange.getResponseBodyFragments());
 
-            // --- Missing Route Info (Placeholders if not in JournalExchange) ---
-            // generator.writeStringProperty("route_id", ...);
-            // generator.writeStringProperty("route_uri", ...);
+            generator.writePOJOProperty("attributes", GatewayUtils.toMap(exchange.getAttributes()));
 
             generator.writeEndObject();
             generator.flush();

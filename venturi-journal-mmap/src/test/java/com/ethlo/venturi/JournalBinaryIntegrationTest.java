@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -15,8 +16,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.vlf.VlfConstants;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -24,10 +23,12 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.FastGatewayHeaders;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.vlf.JournalAnalyzer;
+import com.ethlo.venturi.vlf.VlfConstants;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
 
@@ -77,7 +78,7 @@ class JournalBinaryIntegrationTest
 
                     // 2. INTERLEAVED BODY PARTS
                     byte[] largeBody = new byte[8192];
-                    java.util.Arrays.fill(largeBody, (byte) 'A');
+                    Arrays.fill(largeBody, (byte) 'A');
 
                     for (int chunk = 0; chunk < 4; chunk++)
                     {
@@ -86,7 +87,7 @@ class JournalBinaryIntegrationTest
                     }
 
                     // 3. END
-                    journal.end(reqId, 200, 32768, 512, 150_000);
+                    journal.end(reqId, new FastGatewayAttributes(), 200, 32768, 512, 150_000);
                 }
                 return null;
             });
@@ -161,7 +162,7 @@ class JournalBinaryIntegrationTest
             j.body(ServerDirection.RESPONSE, id, ByteBuffer.wrap("Response chunk".getBytes()));
 
             // New signature for END
-            j.end(id, 200, 100, 100, 500);
+            j.end(id, new FastGatewayAttributes(), 200, 100, 100, 500);
         }
 
         try
