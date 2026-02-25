@@ -9,6 +9,7 @@ table Header {
 
 table StartEvent {
   req_id: [ubyte];
+  direction: ServerDirection;
   start_line: [ubyte];
   headers: [Header];
 }

@@ -55,7 +55,7 @@ public final class JournalDecoder
             }
             catch (Exception e)
             {
-                throw new RuntimeException("Parse error at position " + startPos + " with marker " + marker, e);
+                throw new RuntimeException("Parse error at position " + startPos + " with marker " + marker + ": " + e.getMessage(), e);
             }
         }
 
@@ -64,26 +64,35 @@ public final class JournalDecoder
 
     private static void parseEntry(ByteBuffer buffer, JournalEventListener listener)
     {
+        final int startPos = buffer.position();
+
         buffer.order(ByteOrder.BIG_ENDIAN);
 
         if (buffer.remaining() < 4 * Integer.BYTES)
+        {
             throw new IllegalStateException("Incomplete header");
+        }
 
         int magic = buffer.getInt();
         if (magic != MAGIC)
+        {
             throw new IllegalStateException("Bad magic");
+        }
 
         int payloadLen = buffer.getInt();
         int fbLen = buffer.getInt();
         int rawLen = buffer.getInt();
 
         if (payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
+        {
             throw new IllegalStateException("Corrupt payload length");
+        }
 
-        if (buffer.remaining() < payloadLen + Integer.BYTES)
+        if (buffer.remaining() < fbLen + rawLen + Integer.BYTES)
+        {
+            System.out.println("marker=" + buffer.get(startPos) + " remaining=" + buffer.remaining());
             throw new IllegalStateException("Truncated entry");
-
-        int payloadStart = buffer.position();
+        }
 
         CRC32C crc = new CRC32C();
         updateInt(crc, payloadLen);
@@ -91,7 +100,6 @@ public final class JournalDecoder
         updateInt(crc, rawLen);
 
         // ---- FlatBuffer slice (zero copy) ----
-
         ByteBuffer fbSlice = buffer.slice();
         fbSlice.limit(fbLen);
         fbSlice.order(ByteOrder.LITTLE_ENDIAN);
@@ -101,9 +109,7 @@ public final class JournalDecoder
         buffer.position(buffer.position() + fbLen);
 
         // ---- Raw slice ----
-
         ByteBuffer rawSlice = null;
-
         if (rawLen > 0)
         {
             rawSlice = buffer.slice();
@@ -140,7 +146,7 @@ public final class JournalDecoder
             {
                 StartEvent start = (StartEvent) journalEvent.event(new StartEvent());
                 CharSequence reqId = asAscii(start.reqIdAsByteBuffer());
-                ServerDirection dir = ServerDirection.REQUEST; // if you add direction, decode here
+                ServerDirection dir = SERVER_DIRECTIONS[start.direction()];
                 CharSequence startLine = asAscii(start.startLineAsByteBuffer());
                 GatewayHeaders headers = new FbsGatewayHeaders(start);
 

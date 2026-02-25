@@ -133,6 +133,7 @@ public final class VlfJournal implements Journal
 
         StartEvent.startStartEvent(fbb);
         StartEvent.addReqId(fbb, reqIdOffset);
+        StartEvent.addDirection(fbb, (byte) dir.ordinal());
         StartEvent.addStartLine(fbb, startLineOffset);
         StartEvent.addHeaders(fbb, headersVectorOffset);
         int startEventOffset = StartEvent.endStartEvent(fbb);
@@ -292,6 +293,8 @@ public final class VlfJournal implements Journal
             throw new IllegalStateException("Segment not initialized");
         }
 
+        final long entryStart = position;
+
         final ByteBuffer fb = fbBuilder.dataBuffer().slice();
         final int fbLen = fb.remaining();
         final int rawLen = rawData != null ? rawData.remaining() : 0;
@@ -309,8 +312,6 @@ public final class VlfJournal implements Journal
                         Integer.BYTES;  // crc
 
         ensureCapacity(totalLen);
-
-        final long entryStart = position;
 
         // ---- header ----
         putInt(MAGIC);

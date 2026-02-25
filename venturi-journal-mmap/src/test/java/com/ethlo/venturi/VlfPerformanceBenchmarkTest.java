@@ -1,6 +1,17 @@
 package com.ethlo.venturi;
 
-import static java.nio.ByteBuffer.wrap;
+import com.ethlo.chronograph.Chronograph;
+import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.util.FastGatewayHeaders;
+import com.ethlo.venturi.vlf.VenturiTailer;
+import com.ethlo.venturi.vlf.VlfJournal;
+import com.ethlo.venturi.vlf.VlfJournalProvider;
+
+import org.junit.jupiter.api.RepeatedTest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -11,18 +22,7 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import org.junit.jupiter.api.RepeatedTest;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.ethlo.chronograph.Chronograph;
-import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
-import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
-import com.ethlo.venturi.util.FastGatewayHeaders;
-import com.ethlo.venturi.vlf.VenturiTailer;
-import com.ethlo.venturi.vlf.VlfJournal;
-import com.ethlo.venturi.vlf.VlfJournalProvider;
+import static java.nio.ByteBuffer.wrap;
 
 public final class VlfPerformanceBenchmarkTest
 {
@@ -99,7 +99,6 @@ public final class VlfPerformanceBenchmarkTest
 
             System.out.println(chronograph);
             final long actualDataSize = journalRef.get().getOffset();
-            System.out.println("\n--- Results ---");
             final double timeSeconds = chronograph.getTask("Decode " + iterations).getTime().toNanos() / 1_000_000_000.0;
             final double mbPerSec = (actualDataSize / 1024.0 / 1024.0) / timeSeconds;
 
