@@ -18,7 +18,8 @@ public final class VlfConstants
      */
     public static final short VERSION_1 = 1;
 
-    public static final String VLF_EXTENSION = ".vlf";
+    public static final String VLF_FILE_EXTENSION = ".vlf";
+    public static final String ACTIVE_FILE_EXTENSION = ".flux";
 
     private VlfConstants()
     {

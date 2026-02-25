@@ -176,7 +176,7 @@ class JournalBinaryIntegrationTest
             try (Stream<Path> stream = Files.walk(tempDir))
             {
                 stream.filter(Files::isRegularFile)
-                        .filter(p -> p.toString().endsWith(VlfConstants.VLF_EXTENSION))
+                        .filter(p -> p.toString().endsWith(VlfConstants.VLF_FILE_EXTENSION))
                         .findFirst()
                         .ifPresent(p -> {
                             try

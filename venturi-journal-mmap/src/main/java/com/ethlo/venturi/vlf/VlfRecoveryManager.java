@@ -36,16 +36,16 @@ public final class VlfRecoveryManager
         {
             List<Path> activeFiles = stream
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".active"))
+                    .filter(p -> p.getFileName().toString().endsWith(VlfConstants.ACTIVE_FILE_EXTENSION))
                     .toList();
 
             if (activeFiles.isEmpty())
             {
-                logger.info("Found 0 matching .active files. No recovery needed.");
+                logger.info("Found 0 matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. No recovery needed.");
                 return;
             }
 
-            logger.info("Found {} matching .active files. Starting recovery...", activeFiles.size());
+            logger.info("Found {} matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. Starting recovery...", activeFiles.size());
 
             long totalRecordsRecovered = 0;
             int successfulFiles = 0;
@@ -152,7 +152,7 @@ public final class VlfRecoveryManager
         }
 
         // Rename the truncated file to the finalized extension
-        final String newName = file.getFileName().toString().replace(".active", VlfConstants.VLF_EXTENSION);
+        final String newName = file.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
         final Path recoveredFile = file.resolveSibling(newName);
         Files.move(file, recoveredFile, StandardCopyOption.ATOMIC_MOVE);
 

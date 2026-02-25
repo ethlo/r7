@@ -1,5 +1,8 @@
 package com.ethlo.venturi.vlf;
 
+import static com.ethlo.venturi.vlf.VlfConstants.ACTIVE_FILE_EXTENSION;
+import static com.ethlo.venturi.vlf.VlfConstants.VLF_FILE_EXTENSION;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -23,8 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
-
-import static com.ethlo.venturi.vlf.VlfConstants.VLF_EXTENSION;
 
 public final class VenturiTailer
 {
@@ -55,7 +56,7 @@ public final class VenturiTailer
         {
             s.filter(p -> {
                         String name = p.getFileName().toString();
-                        return name.endsWith(VLF_EXTENSION) || name.endsWith(".active");
+                        return name.endsWith(VLF_FILE_EXTENSION) || name.endsWith(ACTIVE_FILE_EXTENSION);
                     })
                     .sorted((p1, p2) -> {
                         FileMeta m1 = parseMeta(p1);
@@ -147,7 +148,7 @@ public final class VenturiTailer
     private void checkDelete(Path path) throws IOException
     {
         String key = getStableKey(path);
-        if (path.toString().endsWith(VLF_EXTENSION) && checkpoints.containsKey(key))
+        if (path.toString().endsWith(VLF_FILE_EXTENSION) && checkpoints.containsKey(key))
         {
             if (minAge != null)
             {
@@ -182,7 +183,7 @@ public final class VenturiTailer
 
     private String getStableKey(Path path)
     {
-        return path.getFileName().toString().replace(".active", "").replace(VLF_EXTENSION, "");
+        return path.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, "").replace(VLF_FILE_EXTENSION, "");
     }
 
     private void loadCheckpoints()

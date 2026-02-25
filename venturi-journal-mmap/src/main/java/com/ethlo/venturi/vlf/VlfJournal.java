@@ -264,7 +264,7 @@ public final class VlfJournal implements Journal
                 channel.close();
             }
 
-            String newName = activePath.getFileName().toString().replace(".active", VlfConstants.VLF_EXTENSION);
+            String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
             Files.move(activePath, activePath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
 
             // Clear references to prevent accidental use of closed resources
