@@ -10,6 +10,7 @@ import java.util.Optional;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
+import com.ethlo.venturi.util.GatewayUtils;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import tools.jackson.core.JsonGenerator;
@@ -51,7 +52,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
                 generator.writeStringProperty("method", parts[0]); // GET, POST, etc.
                 generator.writeStringProperty("path", parts[1]);   // /api/v1/resource
             }
-            generator.writePOJOProperty("request_headers", exchange.getRequestHeaders());
+            generator.writePOJOProperty("request_headers", GatewayUtils.toMap(exchange.getRequestHeaders()));
 
             // Helper for specific schema columns
             generator.writeStringProperty("request_content_type", getHeader(exchange.getRequestHeaders(), HttpHeaders.CONTENT_TYPE));
@@ -62,7 +63,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             int status = exchange.getStatus();
             generator.writeNumberProperty("status", status);
             generator.writeNumberProperty("is_error", status >= HttpStatuses.BAD_REQUEST ? 1 : 0);
-            generator.writePOJOProperty("response_headers", exchange.getResponseHeaders());
+            generator.writePOJOProperty("response_headers", GatewayUtils.toMap(exchange.getResponseHeaders()));
             generator.writeStringProperty("response_content_type", getHeader(exchange.getResponseHeaders(), HttpHeaders.CONTENT_TYPE));
 
             // --- Size Metrics ---
