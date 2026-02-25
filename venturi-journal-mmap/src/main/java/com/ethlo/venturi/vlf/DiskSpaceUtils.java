@@ -62,12 +62,9 @@ public class DiskSpaceUtils
         {
             return "Unknown";
         }
-        if (bytes < 1024)
-        {
-            return bytes + " B";
-        }
 
-        String[] units = {"KB", "MB", "GB", "TB", "PB", "EB"};
+        // Fixed: Added "B" to the start of the array
+        String[] units = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
         int unitIndex = 0;
         double size = bytes;
 
@@ -79,8 +76,12 @@ public class DiskSpaceUtils
             unitIndex++;
         }
 
-        // Format to 1 decimal place. You can use "%.2f %s" for 2 decimal places.
-        // .formatted() is a convenient alternative to String.format() available in modern Java.
+        // Optional polish: Return whole numbers for raw bytes, 1 decimal place for larger units
+        if (unitIndex == 0)
+        {
+            return "%d %s".formatted((long) size, units[unitIndex]);
+        }
+
         return "%.1f %s".formatted(size, units[unitIndex]);
     }
 }
