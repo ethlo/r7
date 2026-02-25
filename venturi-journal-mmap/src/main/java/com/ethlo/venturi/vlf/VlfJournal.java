@@ -232,7 +232,15 @@ public final class VlfJournal implements Journal
                     arena
             );
 
-            preFaultSegment(segment);
+            try
+            {
+                preFaultSegment(segment);
+            }
+            catch (InternalError e)
+            {
+                throw new UncheckedIOException(new IOException("Unable to allocate journal file of " + segmentSize + " bytes at "
+                        + activePath.toAbsolutePath() + ". is there enough disk space?"));
+            }
             position = 0;
             writePreamble();
         }
