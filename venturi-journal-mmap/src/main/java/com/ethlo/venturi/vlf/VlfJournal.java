@@ -275,9 +275,15 @@ public final class VlfJournal implements Journal
 
     private int copyToScratch(CharSequence s)
     {
-        int len = s.length();
-        if (len > MAX_SCRATCH) throw new IllegalArgumentException("String exceeds max scratch size: " + len);
-        for (int i = 0; i < len; i++) asciiScratch[i] = (byte) s.charAt(i);
+        final int len = s.length();
+        if (len > MAX_SCRATCH)
+        {
+            throw new IllegalArgumentException("String exceeds max scratch size: " + len);
+        }
+        for (int i = 0; i < len; i++)
+        {
+            asciiScratch[i] = (byte) s.charAt(i);
+        }
         return len;
     }
 
