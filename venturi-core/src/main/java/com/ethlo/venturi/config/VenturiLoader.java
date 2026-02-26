@@ -11,7 +11,7 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.predicates.PredicateRegistry;
-import com.ethlo.venturi.plugin.FilterRegistry;
+import com.ethlo.venturi.util.FilterRegistry;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;

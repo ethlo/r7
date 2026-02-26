@@ -39,6 +39,6 @@ socket:
   backlog: 1000
   read_timeout: 30000
 
-# Disk/memory settings for audit and logging
+# Disk settings for journaling
 storage:
-  temp_dir: /tmp/venturi
+  work_dir: /tmp/venturi

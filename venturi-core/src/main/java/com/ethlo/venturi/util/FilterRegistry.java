@@ -1,4 +1,4 @@
-package com.ethlo.venturi.plugin;
+package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 

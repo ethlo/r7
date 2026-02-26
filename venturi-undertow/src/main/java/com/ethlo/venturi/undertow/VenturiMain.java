@@ -12,6 +12,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,11 +31,13 @@ import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
+import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
+import com.ethlo.venturi.validation.ValidationResult;
 import com.ethlo.venturi.vlf.DiskSpaceUtils;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
@@ -72,11 +75,15 @@ public final class VenturiMain
         final VenturiLoader loader = new VenturiLoader();
 
         final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
+        final ValidationResult result = new ValidationResult();
+        serverConfig.validate(result);
+        result.throwIfInvalid();
         logger.debug("Loaded server config: {}", serverConfig);
 
         final boolean logProxyError = true;
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
+        final List<ExecutableRoute> executableRoutes = new ArrayList<>();
         loader.load(configFile, routeRegistry, (def, dataRoute) -> {
                     final ServerConfig.ProxyConfig pConfig = serverConfig.proxy();
 
@@ -113,26 +120,31 @@ public final class VenturiMain
                     );
 
                     // Return the Executable version that bridges Core <--> Undertow
-                    return new VenturiExecutableRoute(def, dataRoute, proxyHandler);
+                    final VenturiExecutableRoute executableRoute = new VenturiExecutableRoute(def, dataRoute, proxyHandler);
+                    executableRoutes.add(executableRoute);
+                    return executableRoute;
                 }
         );
 
-        new VenturiConsolePrinter().printFullReport(serverConfig, routeRegistry.getRoutes());
+        final VenturiConsolePrinter consolePrinter = executableRoutes.size() <= 5 || System.getenv().containsKey("VENTURI_VERBOSE")
+                ? new VerboseVenturiConsolePrinter()
+                : new CompactVenturiConsolePrinter();
+        consolePrinter.printFullReport(serverConfig, executableRoutes);
+
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
+        final Path workDir = Paths.get(storage.workDir());
+        Files.createDirectories(workDir);
 
-        final Path rootDir = Paths.get(storage.tempDir());
-        Files.createDirectories(rootDir);
-
-        logger.info("Available disk space in {}: {}", rootDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(rootDir)));
+        logger.info("Available disk space in {}: {}", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
 
         final VlfCompressionEngine compressionEngine = new VlfCompressionEngine(9, 2);
-        final List<Path> paths = VlfRecoveryManager.cleanAndRecover(rootDir);
+        final List<Path> paths = VlfRecoveryManager.cleanAndRecover(workDir);
         paths.forEach(compressionEngine::submitForCompression);
 
         final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(JOURNAL_SHARD_COUNT, shardIdx ->
         {
-            final VlfJournalProvider provider = new VlfJournalProvider(rootDir, shardIdx, JOURNAL_SHARD_SIZE_BYTES);
+            final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, JOURNAL_SHARD_SIZE_BYTES);
             return new VlfJournal(provider, compressionEngine::submitForCompression);
         }
         );

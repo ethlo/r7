@@ -4,7 +4,7 @@ import com.ethlo.venturi.RedactUtil;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.plugin.ValidatorUtils;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;

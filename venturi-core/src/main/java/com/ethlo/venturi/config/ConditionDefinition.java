@@ -78,7 +78,15 @@ public final class ConditionDefinition
             final List<GatewayPredicate> andChildren = and.stream()
                     .map(c -> c.build(registry))
                     .toList();
-            list.add(new AndPredicate(andChildren));
+
+            if (andChildren.size() == 1)
+            {
+                list.add(andChildren.getFirst());
+            }
+            else
+            {
+                list.add(new AndPredicate(andChildren));
+            }
         }
 
         if (or != null && !or.isEmpty())

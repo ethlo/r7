@@ -64,7 +64,7 @@ public class VlfJournalProvider implements AutoCloseable
 
                     // 4. Queue it up. The channel closes here, but the Arena keeps the Segment alive!
                     pool.put(new WarmedSegment(nextPath, segment, arena));
-                    log.info("Warmed up and queue segment: {}", nextPath.getFileName());
+                    log.debug("Warmed up and queue segment: {}", nextPath.getFileName());
                 }
             }
             catch (InterruptedException e)
@@ -91,7 +91,7 @@ public class VlfJournalProvider implements AutoCloseable
         try
         {
             final WarmedSegment warmedSegment = pool.take();
-            log.info("Fetched segment {}", warmedSegment.path().getFileName());
+            log.debug("Fetched segment {}", warmedSegment.path().getFileName());
             return warmedSegment;
         }
         catch (InterruptedException e)

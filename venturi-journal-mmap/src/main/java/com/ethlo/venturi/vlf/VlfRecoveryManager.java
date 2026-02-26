@@ -41,11 +41,11 @@ public final class VlfRecoveryManager
 
             if (activeFiles.isEmpty())
             {
-                logger.info("Found 0 matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. No recovery needed.");
+                logger.debug("Found 0 matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. No recovery needed.");
                 return;
             }
 
-            logger.info("Found {} matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. Starting recovery...", activeFiles.size());
+            logger.debug("Found {} matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. Starting recovery...", activeFiles.size());
 
             long totalRecordsRecovered = 0;
             int successfulFiles = 0;
@@ -69,11 +69,11 @@ public final class VlfRecoveryManager
                 }
             }
 
-            logger.info("Recovery Complete: Successfully recovered {}/{} files containing {} total records.",
-                    successfulFiles, activeFiles.size(), totalRecordsRecovered
-            );
+            if (totalRecordsRecovered > 0)
+            {
+                logger.info("Recovery Complete: Successfully recovered {}/{} files containing {} total records.", successfulFiles, activeFiles.size(), totalRecordsRecovered);
+            }
         }
-        logger.info("--------------------------------");
     }
 
     private static long recoverFile(Path file) throws IOException
@@ -145,7 +145,7 @@ public final class VlfRecoveryManager
 
         if (lastValidPosition == VlfConstants.PREAMBLE_SIZE && recordCount == 0)
         {
-            logger.info("Removing empty file {}", file);
+            logger.debug("Removing empty file {}", file);
             Files.delete(file);
         }
         else
