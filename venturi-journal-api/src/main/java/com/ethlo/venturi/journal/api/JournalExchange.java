@@ -30,22 +30,26 @@ public final class JournalExchange
     private long bytesReceived;
     private long durationNanos;
     private GatewayAttributes attributes;
+    private JournalLevel requestJournalLevel;
+    private JournalLevel responseJournalLevel;
 
     public JournalExchange(CharSequence requestId)
     {
         this.requestId = requestId;
     }
 
-    public void setRequest(CharSequence startLine, GatewayHeaders headers)
+    public void setRequest(CharSequence startLine, final JournalLevel journalLevel, GatewayHeaders headers)
     {
         this.requestStartLine = startLine;
         this.requestHeaders = headers;
+        this.requestJournalLevel = journalLevel;
     }
 
-    public void setResponse(CharSequence startLine, GatewayHeaders headers)
+    public void setResponse(CharSequence startLine, final JournalLevel journalLevel, GatewayHeaders headers)
     {
         this.responseStartLine = startLine;
         this.responseHeaders = headers;
+        this.responseJournalLevel = journalLevel;
     }
 
     public void appendBody(ServerDirection dir, ByteBuffer fragment)
@@ -138,5 +142,27 @@ public final class JournalExchange
     public void setAttributes(GatewayAttributes attributes)
     {
         this.attributes = attributes;
+    }
+
+    public JournalLevel getRequestJournalLevel()
+    {
+        return requestJournalLevel;
+    }
+
+    public JournalExchange setRequestJournalLevel(final JournalLevel requestJournalLevel)
+    {
+        this.requestJournalLevel = requestJournalLevel;
+        return this;
+    }
+
+    public JournalLevel getResponseJournalLevel()
+    {
+        return responseJournalLevel;
+    }
+
+    public JournalExchange setResponseJournalLevel(final JournalLevel responseJournalLevel)
+    {
+        this.responseJournalLevel = responseJournalLevel;
+        return this;
     }
 }

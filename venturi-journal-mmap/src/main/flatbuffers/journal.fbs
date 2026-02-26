@@ -1,6 +1,7 @@
 namespace com.ethlo.venturi.vlf.fbs;
 
 enum ServerDirection : byte { REQUEST = 0, RESPONSE = 1 }
+enum JournalLevel : byte { NONE = 0, METADATA = 1, HEADERS = 2, FULL = 3 }
 
 table Header {
   name: [ubyte];
@@ -8,6 +9,7 @@ table Header {
 }
 
 table StartEvent {
+  journal_level: JournalLevel;
   req_id: [ubyte];
   direction: ServerDirection;
   start_line: [ubyte];

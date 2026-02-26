@@ -9,6 +9,7 @@ import java.util.zip.CRC32C;
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.vlf.fbs.BodyEvent;
 import com.ethlo.venturi.vlf.fbs.EndEvent;
 import com.ethlo.venturi.vlf.fbs.EventPayload;
@@ -19,6 +20,7 @@ import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
 public final class JournalDecoder
 {
     private static final ServerDirection[] SERVER_DIRECTIONS = ServerDirection.values();
+    public static final JournalLevel[] JOURNAL_LEVELS = JournalLevel.values();
 
     /**
      * Decodes the hybrid FlatBuffer + raw stream.
@@ -142,11 +144,12 @@ public final class JournalDecoder
             {
                 StartEvent start = (StartEvent) journalEvent.event(new StartEvent());
                 CharSequence reqId = asAscii(start.reqIdAsByteBuffer());
+                final JournalLevel journalLevel = JOURNAL_LEVELS[start.journalLevel()];
                 ServerDirection dir = SERVER_DIRECTIONS[start.direction()];
                 CharSequence startLine = asAscii(start.startLineAsByteBuffer());
                 GatewayHeaders headers = new FbsGatewayHeaders(start);
 
-                listener.onBegin(dir, reqId, startLine, headers);
+                listener.onBegin(dir, journalLevel, reqId, startLine, headers);
             }
 
             case EventPayload.BodyEvent ->

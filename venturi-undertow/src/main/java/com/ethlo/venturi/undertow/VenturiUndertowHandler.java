@@ -13,9 +13,9 @@ import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.api.StateKey;
-import com.ethlo.venturi.config.AuditDefinition;
+import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.config.RouteRegistry;
-import com.ethlo.venturi.core.AuditLevel;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
@@ -32,7 +32,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 {
     public static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
     static final StateKey<VlfJournal> JOURNAL_KEY = new StateKey<>(".JOURNAL");
-    static final StateKey<AuditDefinition> AUDIT_CONFIG_KEY = new StateKey<>(".AUDIT_CONFIG");
+    static final StateKey<RouteJournalConfig> ROUTE_JOURNAL_CONFIG_KEY = new StateKey<>(".AUDIT_CONFIG");
     static final StateKey<Long> REQUEST_START_NANOS_KEY = new StateKey<>(".REQUEST_START_NANOS");
     static final StateKey<LongSupplier> REQUEST_BYTES_READ_KEY = new StateKey<>(".REQUEST_BYTES_READ");
     static final StateKey<LongSupplier> RESPONSE_BYTES_SENT_KEY = new StateKey<>(".RESPONSE_BYTES_READ");
@@ -81,7 +81,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
         gatewayExchange.putInternalState(REQUEST_START_NANOS_KEY, startNanos);
-        gatewayExchange.putInternalState(AUDIT_CONFIG_KEY, route.routeDefinition().audit());
+        gatewayExchange.putInternalState(ROUTE_JOURNAL_CONFIG_KEY, route.routeDefinition().journal());
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         setupBinaryLogging(exchange, gatewayExchange);
@@ -91,8 +91,8 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void setupBinaryLogging(HttpServerExchange exchange, GatewayExchange gatewayExchange)
     {
-        final AuditDefinition audit = gatewayExchange.getInternalState(AUDIT_CONFIG_KEY);
-        if (audit == null)
+        final RouteJournalConfig routeJournalConfig = gatewayExchange.getInternalState(ROUTE_JOURNAL_CONFIG_KEY);
+        if (routeJournalConfig == null)
         {
             return;
         }
@@ -103,7 +103,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         // Always capture Request Headers for access log
         final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-        journal.start(ServerDirection.REQUEST, requestId, startLine, gatewayExchange.request().headers());
+        journal.start(ServerDirection.REQUEST, routeJournalConfig.request, requestId, startLine, gatewayExchange.request().headers());
 
         // Track request bytes
         final AtomicLong requestBytesRead = new AtomicLong(0);
@@ -114,15 +114,15 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.putInternalState(RESPONSE_BYTES_SENT_KEY, (LongSupplier) exchange::getResponseBytesSent);
 
         // Capture Request Body
-        if (shouldCaptureRequestBody(audit))
+        if (shouldCaptureRequestBody(routeJournalConfig))
         {
             gatewayExchange.request().addBodyListener(buffer
                     -> journal.body(ServerDirection.REQUEST, requestId, buffer));
         }
 
-        final boolean captureResBody = shouldCaptureResponseBody(audit);
+        final boolean captureResBody = shouldCaptureResponseBody(routeJournalConfig);
 
-        if (shouldCaptureResponseHeaders(audit) || shouldCaptureResponseBody(audit))
+        if (shouldCaptureResponseHeaders(routeJournalConfig) || shouldCaptureResponseBody(routeJournalConfig))
         {
             gatewayExchange.response().addBodyListener(new Consumer<>()
             {
@@ -134,7 +134,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                     if (!headersWritten)
                     {
                         final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                        journal.start(ServerDirection.RESPONSE, requestId, startLine, gatewayExchange.response().headers());
+                        journal.start(ServerDirection.RESPONSE, routeJournalConfig.response, requestId, startLine, gatewayExchange.response().headers());
                         headersWritten = true;
                     }
                     if (captureResBody)
@@ -158,23 +158,23 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
     }
 
-    private boolean shouldCaptureRequestBody(AuditDefinition auditDefinition)
+    private boolean shouldCaptureRequestBody(RouteJournalConfig auditDefinition)
     {
-        return AuditLevel.FULL == auditDefinition.request;
+        return JournalLevel.FULL == auditDefinition.request;
     }
 
-    private boolean shouldCaptureResponseBody(AuditDefinition auditDefinition)
+    private boolean shouldCaptureResponseBody(RouteJournalConfig auditDefinition)
     {
-        return AuditLevel.FULL == auditDefinition.response;
+        return JournalLevel.FULL == auditDefinition.response;
     }
 
-    private boolean shouldCaptureRequestHeaders(AuditDefinition auditDefinition)
+    private boolean shouldCaptureRequestHeaders(RouteJournalConfig auditDefinition)
     {
-        return AuditLevel.FULL == auditDefinition.request || AuditLevel.HEADERS == auditDefinition.request;
+        return JournalLevel.FULL == auditDefinition.request || JournalLevel.HEADERS == auditDefinition.request;
     }
 
-    private boolean shouldCaptureResponseHeaders(AuditDefinition auditDefinition)
+    private boolean shouldCaptureResponseHeaders(RouteJournalConfig auditDefinition)
     {
-        return AuditLevel.FULL == auditDefinition.response || AuditLevel.HEADERS == auditDefinition.response;
+        return JournalLevel.FULL == auditDefinition.response || JournalLevel.HEADERS == auditDefinition.response;
     }
 }

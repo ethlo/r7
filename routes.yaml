@@ -7,8 +7,8 @@ routes:
       - method:
           - GET
           - POST
-    audit:
-      request: FULL
+    journal:
+      request: METADATA
       response: FULL
     filters:
       - type: AddResponseHeader
@@ -22,6 +22,6 @@ routes:
     match:
         - pathStartsWith: /nrk
     filters:
-      - type: StripPrefix
+      - type: StripPathPrefix
         args:
           parts: 1

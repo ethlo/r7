@@ -4,6 +4,8 @@ import java.nio.ByteBuffer;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 
+import com.ethlo.venturi.journal.api.JournalLevel;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,16 +27,16 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onBegin(ServerDirection dir, CharSequence id, CharSequence line, GatewayHeaders headers)
+    public void onBegin(ServerDirection dir, final JournalLevel journalLevel, CharSequence id, CharSequence line, GatewayHeaders headers)
     {
         JournalExchange exchange = inFlight.computeIfAbsent(id, JournalExchange::new);
         if (dir == ServerDirection.REQUEST)
         {
-            exchange.setRequest(line, headers);
+            exchange.setRequest(line, journalLevel, headers);
         }
         else
         {
-            exchange.setResponse(line, headers);
+            exchange.setResponse(line, journalLevel, headers);
         }
     }
 

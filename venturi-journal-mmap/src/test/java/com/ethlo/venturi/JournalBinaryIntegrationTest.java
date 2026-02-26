@@ -16,6 +16,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.journal.api.JournalLevel;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -74,7 +76,7 @@ class JournalBinaryIntegrationTest
                     // 1. BEGIN
                     GatewayHeaders headers = new FastGatewayHeaders();
                     headers.add("User-Agent", "JUnit");
-                    journal.start(ServerDirection.REQUEST, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
+                    journal.start(ServerDirection.REQUEST, JournalLevel.HEADERS, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
 
                     // 2. INTERLEAVED BODY PARTS
                     byte[] largeBody = new byte[8192];
@@ -149,7 +151,7 @@ class JournalBinaryIntegrationTest
         {
             String id = "dual-123";
 
-            j.start(ServerDirection.REQUEST, id, ByteBuffer.wrap("GET".getBytes()), FastGatewayHeaders.of(Map.of(
+            j.start(ServerDirection.REQUEST, JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), FastGatewayHeaders.of(Map.of(
                             HttpHeaders.X_REQUEST_ID, "akdalskmdalsmdasmda",
                             HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON,
                             HttpHeaders.CACHE_CONTROL, "no-cache"
@@ -157,11 +159,9 @@ class JournalBinaryIntegrationTest
             );
             j.body(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
 
-            // New signature for response BEGIN
-            j.start(ServerDirection.RESPONSE, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
+            j.start(ServerDirection.RESPONSE, JournalLevel.FULL, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
             j.body(ServerDirection.RESPONSE, id, ByteBuffer.wrap("Response chunk".getBytes()));
 
-            // New signature for END
             j.end(id, new FastGatewayAttributes(), 200, 100, 100, 500);
         }
 

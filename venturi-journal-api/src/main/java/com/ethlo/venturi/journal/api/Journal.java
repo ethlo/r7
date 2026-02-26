@@ -12,7 +12,7 @@ public interface Journal extends AutoCloseable
     /**
      * Records the metadata for a request or response.
      */
-    void start(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers) throws IOException;
+    void start(ServerDirection dir, JournalLevel journalLevel, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers) throws IOException;
 
     /**
      * Records a chunk of payload data.

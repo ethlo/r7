@@ -11,6 +11,8 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
+import com.ethlo.venturi.journal.api.JournalLevel;
+
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,7 +66,7 @@ public final class VlfPerformanceBenchmarkTest
                             for (int i = 0; i < iterations; i++)
                             {
                                 final String id = "req" + i;
-                                journal.start(ServerDirection.REQUEST, id, startLine, headers);
+                                journal.start(ServerDirection.REQUEST, JournalLevel.FULL, id, startLine, headers);
                                 journal.body(ServerDirection.REQUEST, id, body);
                                 journal.end(id, new FastGatewayAttributes(), 200, 150, 200, 15);
                             }

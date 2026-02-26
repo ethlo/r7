@@ -23,6 +23,7 @@ import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.Journal;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.vlf.fbs.BodyEvent;
 import com.ethlo.venturi.vlf.fbs.EndEvent;
 import com.ethlo.venturi.vlf.fbs.EventPayload;
@@ -45,6 +46,12 @@ public final class VlfJournal implements Journal
     private final int[] attributeOffsetsScratch = new int[100];
     private final VlfJournalProvider provider;
     private final long segmentSize;
+    byte[] journalLevels = new byte[]{
+            com.ethlo.venturi.vlf.fbs.JournalLevel.NONE,
+            com.ethlo.venturi.vlf.fbs.JournalLevel.METADATA,
+            com.ethlo.venturi.vlf.fbs.JournalLevel.HEADERS,
+            com.ethlo.venturi.vlf.fbs.JournalLevel.FULL,
+    };
     private int currentAttributeCount = 0;
     private int currentHeaderCount = 0;
     private FileChannel channel;
@@ -52,6 +59,7 @@ public final class VlfJournal implements Journal
     private MemorySegment segment;
     private long position;
     private Path activePath;
+
 
     public VlfJournal(VlfJournalProvider provider, long segmentSize)
     {
@@ -102,7 +110,7 @@ public final class VlfJournal implements Journal
     }
 
     @Override
-    public synchronized void start(ServerDirection dir, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized void start(ServerDirection dir, JournalLevel journalLevel, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
 
@@ -131,6 +139,7 @@ public final class VlfJournal implements Journal
         int headersVectorOffset = fbb.endVector();
 
         StartEvent.startStartEvent(fbb);
+        StartEvent.addJournalLevel(fbb, journalLevels[journalLevel.ordinal()]);
         StartEvent.addReqId(fbb, reqIdOffset);
         StartEvent.addDirection(fbb, (byte) dir.ordinal());
         StartEvent.addStartLine(fbb, startLineOffset);
