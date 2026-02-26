@@ -6,7 +6,6 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -16,9 +15,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
@@ -35,6 +36,7 @@ import com.google.flatbuffers.FlatBufferBuilder;
 
 public final class VlfJournal implements Journal
 {
+    private static final Logger logger = LoggerFactory.getLogger(VlfJournal.class);
     private static final long OS_PAGE_SIZE = 4096L;
     private static final ValueLayout.OfInt INT_BE = JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
@@ -46,7 +48,6 @@ public final class VlfJournal implements Journal
     private final int[] headerOffsetsScratch = new int[1024];
     private final int[] attributeOffsetsScratch = new int[100];
     private final VlfJournalProvider provider;
-    private final long segmentSize;
     private final Consumer<Path> finishedJournalFileSupplier;
     byte[] journalLevels = new byte[]{
             com.ethlo.venturi.vlf.fbs.JournalLevel.NONE,
@@ -62,17 +63,16 @@ public final class VlfJournal implements Journal
     private long position;
     private Path activePath;
 
-    public VlfJournal(VlfJournalProvider provider, long segmentSize, final Consumer<Path> finishedJournalFileSupplier)
+    public VlfJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
         this.provider = provider;
-        this.segmentSize = segmentSize;
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
-        rotateData();
+        rotateSegment();
     }
 
     public VlfJournal(VlfJournalProvider provider, int segmentSize)
     {
-        this(provider, segmentSize, null);
+        this(provider, null);
     }
 
     private static void updateInt(CRC32C crc, int value)
@@ -256,56 +256,37 @@ public final class VlfJournal implements Journal
         }
     }
 
-    private void rotateData()
+    private void rotateSegment()
     {
-        try
+        // 1. Finalize the old segment if it exists
+        if (segment != null)
         {
-            if (segment != null)
-            {
-                final Path oldPath = finalizeActiveSegment();
-
-                // Notify that we have finished a journal file
-                if (finishedJournalFileSupplier != null)
-                {
-                    finishedJournalFileSupplier.accept(oldPath);
-                }
-            }
-
-            activePath = provider.getNextPath();
-
-            channel = FileChannel.open(
-                    activePath,
-                    StandardOpenOption.READ,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.CREATE
-            );
-
-            channel.truncate(segmentSize);
-
-            arena = Arena.ofShared();
-            segment = channel.map(
-                    FileChannel.MapMode.READ_WRITE,
-                    0,
-                    segmentSize,
-                    arena
-            );
-
+            // (Your logic here to write the EOF marker or truncate pre-faulted zeros)
+            Path finalizedPath = null;
             try
             {
-                preFaultSegment(segment);
+                finalizedPath = finalizeActiveSegment();
             }
-            catch (InternalError e)
+            catch (IOException e)
             {
-                throw new UncheckedIOException(new IOException("Unable to allocate journal file of " + segmentSize + " bytes at "
-                        + activePath.toAbsolutePath() + ". is there enough disk space?"));
+                logger.error("Unable to rotate segment", e);
             }
-            position = 0;
-            writePreamble();
+
+            if (finalizedPath != null)
+            {
+                // Trigger the delayed compression queue
+                finishedJournalFileSupplier.accept(finalizedPath);
+            }
         }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
-        }
+
+        // Instant O(1) swap to the pre-faulted segment
+        final VlfJournalProvider.WarmedSegment next = provider.getNextSegment();
+        this.segment = next.segment();
+        this.activePath = next.path();
+        this.arena = next.arena();
+
+        // Write the VLF Preamble directly
+        writePreamble();
     }
 
     private Path finalizeActiveSegment() throws IOException
@@ -320,28 +301,35 @@ public final class VlfJournal implements Journal
             channel.close();
         }
 
-        String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
-        final Path target = activePath.resolveSibling(newName);
-        Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
-
         // Clear references to prevent accidental use of closed resources
         segment = null;
         arena = null;
         channel = null;
 
-        return target;
+        if (position <= VlfConstants.PREAMBLE_SIZE)
+        {
+            Files.delete(activePath);
+            return null;
+        }
+        else
+        {
+            String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+            final Path target = activePath.resolveSibling(newName);
+            Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
+            return target;
+        }
     }
 
     private void ensureCapacity(long needed)
     {
         if (segment == null)
         {
-            rotateData();
+            rotateSegment();
         }
 
         if (position + needed > segment.byteSize())
         {
-            rotateData();
+            rotateSegment();
         }
 
         if (position + needed > segment.byteSize())

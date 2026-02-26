@@ -1,30 +1,115 @@
 package com.ethlo.venturi.vlf;
 
+import java.io.IOException;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class VlfJournalProvider
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class VlfJournalProvider implements AutoCloseable
 {
+    private static final Logger log = LoggerFactory.getLogger(VlfJournalProvider.class);
+
     private final Path tempDir;
     private final int shardId;
+    private final long segmentSizeBytes;
     private final AtomicInteger rotationCount = new AtomicInteger(0);
 
-    public VlfJournalProvider(Path tempDir, int shardId)
+    // Queue 1 extra mapped file ready
+    private final BlockingQueue<WarmedSegment> pool = new ArrayBlockingQueue<>(1);
+    private final Thread warmerThread;
+    private volatile boolean running = true;
+
+    public VlfJournalProvider(Path tempDir, int shardId, long segmentSizeBytes)
     {
         this.tempDir = tempDir;
         this.shardId = shardId;
+        this.segmentSizeBytes = segmentSizeBytes;
+
+        this.warmerThread = new Thread(this::warmupLoop, "venturi-warmer-shard-" + shardId);
+        this.warmerThread.setDaemon(true);
+        this.warmerThread.setPriority(Thread.MIN_PRIORITY);
+        this.warmerThread.start();
     }
 
-    public Path getNextPath()
+    private void warmupLoop()
     {
-        String name = String.format("shard-%d-%d-%d" + VlfConstants.ACTIVE_FILE_EXTENSION,
-                shardId, System.currentTimeMillis(), rotationCount.incrementAndGet()
-        );
-        return tempDir.resolve(name);
+        while (running)
+        {
+            try
+            {
+                String name = String.format("shard-%d-%d-%d" + VlfConstants.ACTIVE_FILE_EXTENSION,
+                        shardId, System.currentTimeMillis(), rotationCount.incrementAndGet()
+                );
+                Path nextPath = tempDir.resolve(name);
+
+                try (FileChannel channel = FileChannel.open(nextPath, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE))
+                {
+                    // 1. Create a Shared Arena. It is created by the warmer thread,
+                    // but will be written to and eventually closed by the Undertow/Gateway threads.
+                    Arena arena = Arena.ofShared();
+
+                    // 2. Map the file directly to a MemorySegment
+                    MemorySegment segment = channel.map(FileChannel.MapMode.READ_WRITE, 0, segmentSizeBytes, arena);
+
+                    // Pre-fault
+                    segment.fill((byte) 0);
+
+                    // 4. Queue it up. The channel closes here, but the Arena keeps the Segment alive!
+                    pool.put(new WarmedSegment(nextPath, segment, arena));
+                    log.info("Warmed up and queue segment: {}", nextPath.getFileName());
+                }
+            }
+            catch (InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            catch (IOException e)
+            {
+                log.error("Failed to warm up next segment", e);
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (InterruptedException ignored)
+                {
+                }
+            }
+        }
     }
 
-    public int getRotationCount()
+    public WarmedSegment getNextSegment()
     {
-        return rotationCount.get();
+        try
+        {
+            final WarmedSegment warmedSegment = pool.take();
+            log.info("Fetched segment {}", warmedSegment.path().getFileName());
+            return warmedSegment;
+        }
+        catch (InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for warmed segment", e);
+        }
+    }
+
+    @Override
+    public void close()
+    {
+        running = false;
+        warmerThread.interrupt();
+    }
+
+    // We must pass the Arena along with the Segment so the hot path can close it on rollover
+    public record WarmedSegment(Path path, MemorySegment segment, Arena arena)
+    {
     }
 }

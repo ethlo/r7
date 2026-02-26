@@ -24,7 +24,7 @@ public final class VlfRecoveryManager
      * Scans the given directory for .active files, truncates them at the last
      * valid entry, and renames them to the finalized VLF extension.
      */
-    public static void recoverActiveSegments(Path journalDirectory) throws IOException
+    private static void recoverActiveSegments(Path journalDirectory) throws IOException
     {
         if (!Files.exists(journalDirectory))
         {
@@ -34,7 +34,7 @@ public final class VlfRecoveryManager
 
         try (Stream<Path> stream = Files.list(journalDirectory))
         {
-            List<Path> activeFiles = stream
+            final List<Path> activeFiles = stream
                     .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(VlfConstants.ACTIVE_FILE_EXTENSION))
                     .toList();
@@ -55,10 +55,13 @@ public final class VlfRecoveryManager
                 logger.debug("Attempting to recover: {}", activeFile.getFileName());
                 try
                 {
-                    long recordsFound = recoverFile(activeFile);
+                    final long recordsFound = recoverFile(activeFile);
                     totalRecordsRecovered += recordsFound;
                     successfulFiles++;
-                    logger.info("Successfully recovered: {} ({} valid records)", activeFile.getFileName(), recordsFound);
+                    if (recordsFound > 0)
+                    {
+                        logger.info("Successfully recovered: {} ({} valid records)", activeFile.getFileName(), recordsFound);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -77,84 +80,81 @@ public final class VlfRecoveryManager
     {
         long lastValidPosition = VlfConstants.PREAMBLE_SIZE; // 1024
         long recordCount = 0;
-
+        boolean isEmpty = false;
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE))
         {
             final long size = channel.size();
-            if (size <= VlfConstants.PREAMBLE_SIZE)
-            {
-                // File is empty or only has the preamble. Truncate to preamble size.
-                channel.truncate(lastValidPosition);
-            }
-            else
-            {
-                // Map the file read-only to scan the bounds and CRCs quickly
-                final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, size);
-                buffer.order(ByteOrder.BIG_ENDIAN);
-                buffer.position(VlfConstants.PREAMBLE_SIZE);
+            // Map the file read-only to scan the bounds and CRCs quickly
+            final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, size);
+            buffer.order(ByteOrder.BIG_ENDIAN);
+            buffer.position(VlfConstants.PREAMBLE_SIZE);
 
-                while (buffer.remaining() >= 16) // Minimum bytes needed for a header
+            while (buffer.remaining() >= 16) // Minimum bytes needed for a header
+            {
+                final int startPos = buffer.position();
+                final byte marker = buffer.get(startPos);
+
+                // If we hit the pre-faulted zeros, we have reached the end of written data
+                if (marker == 0)
                 {
-                    final int startPos = buffer.position();
-                    final byte marker = buffer.get(startPos);
-
-                    // If we hit the pre-faulted zeros, we have reached the end of written data
-                    if (marker == 0)
-                    {
-                        break;
-                    }
-
-                    final int magic = buffer.getInt();
-                    if (magic != VlfConstants.MAGIC)
-                    {
-                        logger.warn("Corrupt header magic found at position {}, truncating file.", startPos);
-                        break;
-                    }
-
-                    final int payloadLen = buffer.getInt();
-                    final int fbLen = buffer.getInt();
-                    final int rawLen = buffer.getInt();
-
-                    // Bounds check to ensure a partial write didn't truncate the entry
-                    final int dataLen = fbLen + rawLen;
-                    if (payloadLen != (Integer.BYTES * 2 + dataLen) || buffer.remaining() < dataLen + Integer.BYTES)
-                    {
-                        logger.warn("Incomplete entry written before crash at position {}, truncating file.", startPos);
-                        break;
-                    }
-
-                    // Compute CRC to verify the payload is actually intact
-                    final CRC32C crc = new CRC32C();
-                    updateInt(crc, payloadLen);
-                    updateInt(crc, fbLen);
-                    updateInt(crc, rawLen);
-
-                    final ByteBuffer dataSlice = buffer.slice();
-                    dataSlice.limit(dataLen);
-                    crc.update(dataSlice);
-                    buffer.position(buffer.position() + dataLen); // Advance past payload
-
-                    final int storedCrc = buffer.getInt();
-                    if ((int) crc.getValue() != storedCrc)
-                    {
-                        logger.warn("Checksum mismatch at position {}! The crash happened while writing this exact payload. Truncating file.", startPos);
-                        break;
-                    }
-
-                    // Entry is fully valid. Mark this position as safe and increment count.
-                    lastValidPosition = buffer.position();
-                    recordCount++;
+                    break;
                 }
 
-                // Truncate the file, instantly dropping all pre-faulted zeros and partial writes
-                channel.truncate(lastValidPosition);
+                final int magic = buffer.getInt();
+                if (magic != VlfConstants.MAGIC)
+                {
+                    logger.warn("Corrupt header magic found at position {}, truncating file.", startPos);
+                    break;
+                }
+
+                final int payloadLen = buffer.getInt();
+                final int fbLen = buffer.getInt();
+                final int rawLen = buffer.getInt();
+
+                // Bounds check to ensure a partial write didn't truncate the entry
+                final int dataLen = fbLen + rawLen;
+                if (payloadLen != (Integer.BYTES * 2 + dataLen) || buffer.remaining() < dataLen + Integer.BYTES)
+                {
+                    logger.warn("Incomplete entry written before crash at position {}, truncating file.", startPos);
+                    break;
+                }
+
+                // Compute CRC to verify the payload is actually intact
+                final CRC32C crc = new CRC32C();
+                updateInt(crc, payloadLen);
+                updateInt(crc, fbLen);
+                updateInt(crc, rawLen);
+
+                final ByteBuffer dataSlice = buffer.slice();
+                dataSlice.limit(dataLen);
+                crc.update(dataSlice);
+                buffer.position(buffer.position() + dataLen); // Advance past payload
+
+                final int storedCrc = buffer.getInt();
+                if ((int) crc.getValue() != storedCrc)
+                {
+                    logger.warn("Checksum mismatch at position {}! The crash happened while writing this exact payload. Truncating file.", startPos);
+                    break;
+                }
+
+                // Entry is fully valid. Mark this position as safe and increment count.
+                lastValidPosition = buffer.position();
+                recordCount++;
             }
         }
 
-        // Rename the truncated file to the finalized extension
-        final String newName = file.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
-        final Path recoveredFile = file.resolveSibling(newName);
-        Files.move(file, recoveredFile, StandardCopyOption.ATOMIC_MOVE);
+        if (lastValidPosition == VlfConstants.PREAMBLE_SIZE && recordCount == 0)
+        {
+            logger.info("Removing empty file {}", file);
+            Files.delete(file);
+        }
+        else
+        {
+            // Rename the truncated file to the finalized extension
+            final String newName = file.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+            final Path recoveredFile = file.resolveSibling(newName);
+            Files.move(file, recoveredFile, StandardCopyOption.ATOMIC_MOVE);
+        }
 
         return recordCount;
     }
@@ -165,5 +165,43 @@ public final class VlfRecoveryManager
         crc.update((value >>> 16) & 0xFF);
         crc.update((value >>> 8) & 0xFF);
         crc.update(value & 0xFF);
+    }
+
+    public static List<Path> cleanAndRecover(Path journalDirectory) throws IOException
+    {
+        if (!Files.exists(journalDirectory))
+        {
+            return List.of();
+        }
+
+        // 1. Delete orphaned partial compressions
+        try (Stream<Path> stream = Files.list(journalDirectory))
+        {
+            stream.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".zst.tmp"))
+                    .forEach(p -> {
+                        try
+                        {
+                            Files.deleteIfExists(p);
+                            logger.info("Deleted orphaned temp file: {}", p.getFileName());
+                        }
+                        catch (Exception ignored)
+                        {
+                        }
+                    });
+        }
+
+        // 2. Recover the active files
+        recoverActiveSegments(journalDirectory);
+
+
+        // 3. Collect ALL .vlf files for the compression queue
+        try (Stream<Path> stream = Files.list(journalDirectory))
+        {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(VlfConstants.VLF_FILE_EXTENSION))
+                    .toList();
+        }
     }
 }

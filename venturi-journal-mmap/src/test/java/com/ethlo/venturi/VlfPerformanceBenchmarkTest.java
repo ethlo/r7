@@ -40,7 +40,7 @@ public final class VlfPerformanceBenchmarkTest
         try
         {
             logger.info("Setting up benchmark in {}", tempDir);
-            final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0);
+            final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE);
             final Chronograph chronograph = Chronograph.create();
 
             final GatewayHeaders headers = new FastGatewayHeaders();

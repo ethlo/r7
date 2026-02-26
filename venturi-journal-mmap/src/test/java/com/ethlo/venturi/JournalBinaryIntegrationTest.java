@@ -16,8 +16,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.journal.api.JournalLevel;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
@@ -25,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.FastGatewayHeaders;
 import com.ethlo.venturi.util.constants.HttpHeaders;
@@ -53,7 +52,7 @@ class JournalBinaryIntegrationTest
         VlfJournal[] journals = new VlfJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i), segmentSize);
+            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i, segmentSize), segmentSize);
         }
 
         int requestsPerThread = 50;
@@ -144,9 +143,9 @@ class JournalBinaryIntegrationTest
     @Test
     void testRequestResponseInterleaving() throws IOException
     {
-        VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0);
-
         final int segmentSize = 1024 * 1024;
+        VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, segmentSize);
+
         try (VlfJournal j = new VlfJournal(provider, segmentSize))
         {
             String id = "dual-123";
