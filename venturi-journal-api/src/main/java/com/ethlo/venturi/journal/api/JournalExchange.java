@@ -149,20 +149,8 @@ public final class JournalExchange
         return requestJournalLevel;
     }
 
-    public JournalExchange setRequestJournalLevel(final JournalLevel requestJournalLevel)
-    {
-        this.requestJournalLevel = requestJournalLevel;
-        return this;
-    }
-
     public JournalLevel getResponseJournalLevel()
     {
         return responseJournalLevel;
-    }
-
-    public JournalExchange setResponseJournalLevel(final JournalLevel responseJournalLevel)
-    {
-        this.responseJournalLevel = responseJournalLevel;
-        return this;
     }
 }

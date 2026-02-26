@@ -17,7 +17,7 @@ public class VlfJournalProvider
 
     public Path getNextPath()
     {
-        String name = String.format("shard-%d-%d-%d." + VlfConstants.ACTIVE_FILE_EXTENSION,
+        String name = String.format("shard-%d-%d-%d" + VlfConstants.ACTIVE_FILE_EXTENSION,
                 shardId, System.currentTimeMillis(), rotationCount.incrementAndGet()
         );
         return tempDir.resolve(name);

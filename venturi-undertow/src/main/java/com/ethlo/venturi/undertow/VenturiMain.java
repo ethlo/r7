@@ -37,6 +37,7 @@ import com.ethlo.venturi.vlf.DiskSpaceUtils;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
 import com.ethlo.venturi.vlf.VlfRecoveryManager;
+import com.ethlo.venturi.vlf.util.VlfCompressionEngine;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -126,9 +127,11 @@ public final class VenturiMain
 
         VlfRecoveryManager.recoverActiveSegments(rootDir);
 
+        final VlfCompressionEngine compressionEngine = new VlfCompressionEngine(true, 9);
+
         final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(JOURNAL_SHARD_COUNT, shardIdx -> {
             final VlfJournalProvider provider = new VlfJournalProvider(rootDir, shardIdx);
-            return new VlfJournal(provider, JOURNAL_SHARD_SIZE_BYTES);
+            return new VlfJournal(provider, JOURNAL_SHARD_SIZE_BYTES, compressionEngine::submitForCompression);
         }
         );
 

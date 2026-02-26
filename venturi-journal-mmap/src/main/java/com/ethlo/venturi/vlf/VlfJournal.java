@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.api.GatewayAttributes;
@@ -46,6 +47,7 @@ public final class VlfJournal implements Journal
     private final int[] attributeOffsetsScratch = new int[100];
     private final VlfJournalProvider provider;
     private final long segmentSize;
+    private final Consumer<Path> finishedJournalFileSupplier;
     byte[] journalLevels = new byte[]{
             com.ethlo.venturi.vlf.fbs.JournalLevel.NONE,
             com.ethlo.venturi.vlf.fbs.JournalLevel.METADATA,
@@ -60,12 +62,17 @@ public final class VlfJournal implements Journal
     private long position;
     private Path activePath;
 
-
-    public VlfJournal(VlfJournalProvider provider, long segmentSize)
+    public VlfJournal(VlfJournalProvider provider, long segmentSize, final Consumer<Path> finishedJournalFileSupplier)
     {
         this.provider = provider;
         this.segmentSize = segmentSize;
+        this.finishedJournalFileSupplier = finishedJournalFileSupplier;
         rotateData();
+    }
+
+    public VlfJournal(VlfJournalProvider provider, int segmentSize)
+    {
+        this(provider, segmentSize, null);
     }
 
     private static void updateInt(CRC32C crc, int value)
@@ -243,14 +250,26 @@ public final class VlfJournal implements Journal
     @Override
     public synchronized void close() throws IOException
     {
-        finalizeActiveSegment();
+        if (segment != null)
+        {
+            finalizeActiveSegment();
+        }
     }
 
     private void rotateData()
     {
         try
         {
-            finalizeActiveSegment();
+            if (segment != null)
+            {
+                final Path oldPath = finalizeActiveSegment();
+
+                // Notify that we have finished a journal file
+                if (finishedJournalFileSupplier != null)
+                {
+                    finishedJournalFileSupplier.accept(oldPath);
+                }
+            }
 
             activePath = provider.getNextPath();
 
@@ -289,28 +308,28 @@ public final class VlfJournal implements Journal
         }
     }
 
-    private void finalizeActiveSegment() throws IOException
+    private Path finalizeActiveSegment() throws IOException
     {
-        if (segment != null)
+        segment.force();
+        arena.close(); // Unmap BEFORE truncating
+
+        if (channel != null && channel.isOpen())
         {
-            segment.force();
-            arena.close(); // Unmap BEFORE truncating
-
-            if (channel != null && channel.isOpen())
-            {
-                // Shrink the file to remove the trailing pre-faulted zeros
-                channel.truncate(position);
-                channel.close();
-            }
-
-            String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
-            Files.move(activePath, activePath.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
-
-            // Clear references to prevent accidental use of closed resources
-            segment = null;
-            arena = null;
-            channel = null;
+            // Shrink the file to remove the trailing pre-faulted zeros
+            channel.truncate(position);
+            channel.close();
         }
+
+        String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+        final Path target = activePath.resolveSibling(newName);
+        Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
+
+        // Clear references to prevent accidental use of closed resources
+        segment = null;
+        arena = null;
+        channel = null;
+
+        return target;
     }
 
     private void ensureCapacity(long needed)

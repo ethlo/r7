@@ -1,5 +1,5 @@
 routes:
-  - id: performance test to nginx
+  - id: undertow-internal-backend
     uri:
       - http://localhost:1111
     match:
@@ -10,8 +10,8 @@ routes:
           - GET
           - POST
     journal:
-      request: METADATA
-      response: FULL
+      request: FULL
+      response: METADATA
     filters:
       - AddResponseHeader:
           name: X-Gateway
