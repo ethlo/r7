@@ -2,6 +2,8 @@ package com.ethlo.venturi.plugin;
 
 import com.ethlo.venturi.validation.ValidationResult;
 
+import java.util.List;
+
 public class ValidatorUtils
 {
     private final ValidationResult result;
@@ -11,11 +13,11 @@ public class ValidatorUtils
         this.result = result;
     }
 
-    public ValidatorUtils required(String context, String name, Object value)
+    public ValidatorUtils required(String context, String property, Object value)
     {
         if (value == null || value instanceof String s && s.isBlank())
         {
-            result.addError(name, "'" + name + "' is required");
+            result.addError(context, "'" + property + "' is required");
         }
         return this;
     }
@@ -23,5 +25,13 @@ public class ValidatorUtils
     public ValidationResult results()
     {
         return result;
+    }
+
+    public void notEmpty(String context, String property, List<?> value)
+    {
+        if (value == null ||value.isEmpty())
+        {
+            result.addError(context, "'" + property + "' cannot be an empty list");
+        }
     }
 }

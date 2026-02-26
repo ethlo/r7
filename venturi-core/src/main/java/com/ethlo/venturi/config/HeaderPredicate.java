@@ -72,7 +72,7 @@ public class HeaderPredicate implements Function<String, HeaderProcessing>
     @Override
     public String toString()
     {
-        return (includes.isEmpty() ? "" : "includes=" + includes) +
+        return (includes.isEmpty() ? "" : "include=" + includes) +
                 (excludes.isEmpty() ? "" : ((includes.isEmpty() ? "" : ", ") + "excludes=" + excludes));
     }
 

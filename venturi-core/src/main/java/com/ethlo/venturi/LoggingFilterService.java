@@ -17,11 +17,11 @@ public class LoggingFilterService
         final Set<String> globalIncludes = new HashSet<>(global.getIncludes());
         final Set<String> globalExcludes = new HashSet<>(global.getExcludes());
 
-        // Local includes overwrite global excludes
+        // Local include overwrite global excludes
         globalExcludes.removeAll(local.getIncludes());
         globalExcludes.addAll(local.getExcludes());
 
-        // Local excludes overwrite global includes
+        // Local excludes overwrite global include
         globalIncludes.removeAll(local.getExcludes());
         globalIncludes.addAll(local.getIncludes());
 

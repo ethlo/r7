@@ -4,12 +4,13 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiFunction;
 
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
+import com.ethlo.venturi.core.predicates.PredicateRegistry;
 import com.ethlo.venturi.plugin.FilterRegistry;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.validation.ValidatableConfig;
@@ -33,20 +34,12 @@ public final class VenturiLoader
     }
 
     private final FilterRegistry filterRegistry;
+    private final PredicateRegistry predicateRegistry;
 
     public VenturiLoader()
     {
         this.filterRegistry = new FilterRegistry();
-    }
-
-    public static ObjectMapper getMapper()
-    {
-        return mapper;
-    }
-
-    public static <T> T convertValue(Map<String, String> args, Class<T> configType)
-    {
-        return mapper.convertValue(args, configType);
+        this.predicateRegistry = new PredicateRegistry(mapper);
     }
 
     /**
@@ -62,15 +55,34 @@ public final class VenturiLoader
         final List<ExecutableRoute> routes = config.routes.stream()
                 .map(def -> {
                     final List<GatewayFilter> instantiatedFilters = new ArrayList<>();
-                    for (final FilterDefinition filterDefinition : def.filters())
+                    for (final FilterDefinition filterDef : def.filters())
                     {
-                        final GatewayFilterFactory factory = filterRegistry.get(filterDefinition.type());
-                        final Map<String, String> configData = filterDefinition.args();
-                        final ValidatableConfig filterConfig = (ValidatableConfig) mapper.convertValue(configData, factory.configClass());
-                        instantiatedFilters.add(factory.create(filterConfig));
+                        // 1. Ask the registry for the factory by name (e.g., "AddResponseHeader")
+                        final GatewayFilterFactory<?> factory = filterRegistry.get(filterDef.name());
+                        if (factory == null)
+                        {
+                            validationResult.addError("filters", "Unknown filter type: " + filterDef.name());
+                            continue;
+                        }
+
+                        // 2. Jackson perfectly maps the raw 'args' Object to the specific Record
+                        final ValidatableConfig c = mapper.convertValue(filterDef.args(), factory.configClass());
+
+                        // 3. Validate and Build
+                        c.validate(validationResult);
+
+                        @SuppressWarnings("unchecked") final GatewayFilterFactory<ValidatableConfig> typedFactory =
+                                (GatewayFilterFactory<ValidatableConfig>) factory;
+
+                        instantiatedFilters.add(typedFactory.create(c));
                     }
 
-                    final GatewayRoute dataRoute = new DefaultGatewayRoute(def.id(), def.uri(), def.match().build(), instantiatedFilters);
+                    // Validate the structure and the plugin names
+                    def.match().validateTree(validationResult, predicateRegistry);
+
+                    final GatewayPredicate predicate = def.match().build(predicateRegistry);
+
+                    final GatewayRoute dataRoute = new DefaultGatewayRoute(def.id(), def.uri(), predicate, instantiatedFilters);
                     return configurator.apply(def, dataRoute);
                 })
                 .toList();

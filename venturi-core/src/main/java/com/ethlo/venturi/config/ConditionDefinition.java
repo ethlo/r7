@@ -7,12 +7,14 @@ import java.util.List;
 import java.util.Map;
 
 import com.ethlo.venturi.api.GatewayPredicate;
-import com.ethlo.venturi.core.predicates.VenturiPredicates;
-import com.ethlo.venturi.validation.ValidatableConfig;
+import com.ethlo.venturi.core.predicates.AndPredicate;
+import com.ethlo.venturi.core.predicates.NotPredicate;
+import com.ethlo.venturi.core.predicates.OrPredicate;
+import com.ethlo.venturi.core.predicates.PredicateRegistry;
 import com.ethlo.venturi.validation.ValidationResult;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
-public final class ConditionDefinition implements ValidatableConfig
+public final class ConditionDefinition
 {
     private final Map<String, Object> predicates = new HashMap<>();
     public List<ConditionDefinition> and;
@@ -30,15 +32,12 @@ public final class ConditionDefinition implements ValidatableConfig
 
         if (raw instanceof List<?> list)
         {
-            // Case: match: [ {path: /a}, {method: GET} ]
-            // Treat as an implicit AND
-            def.and = list.stream()
-                    .map(ConditionDefinition::create)
-                    .toList();
+            // Case: match: [ {PathStartsWith: /hello}, {Method: GET} ]
+            def.and = list.stream().map(ConditionDefinition::create).toList();
         }
         else if (raw instanceof Map<?, ?> map)
         {
-            // Case: match: { pathStartsWith: /hello }
+            // Case: match: { PathStartsWith: /hello, or: [...] }
             map.forEach((k, v) -> {
                 String key = String.valueOf(k);
                 switch (key)
@@ -46,6 +45,8 @@ public final class ConditionDefinition implements ValidatableConfig
                     case "and" -> def.and = createList(v);
                     case "or" -> def.or = createList(v);
                     case "not" -> def.not = create(v);
+
+                    // Jackson natively handles whether 'v' is a String or an Object
                     default -> def.predicates.put(key, v);
                 }
             });
@@ -62,68 +63,83 @@ public final class ConditionDefinition implements ValidatableConfig
         return Collections.emptyList();
     }
 
-    public GatewayPredicate build()
+    public GatewayPredicate build(com.ethlo.venturi.core.predicates.PredicateRegistry registry)
     {
         final List<GatewayPredicate> list = new ArrayList<>();
 
-        // Process Flat Predicates (Implicit AND)
+        // 1. Process Flat Predicates (Implicit AND)
+        // e.g., pathStartsWith: /hello
         predicates.forEach((name, value) ->
-                list.add(PredicateRegistry.create(name, value)));
+                list.add(registry.create(name, value)));
 
-        // Process Logical Groups
-        if (and != null)
+        // 2. Process Logical Groups
+        if (and != null && !and.isEmpty())
         {
-            and.forEach(c -> list.add(c.build()));
+            final List<GatewayPredicate> andChildren = and.stream()
+                    .map(c -> c.build(registry))
+                    .toList();
+            list.add(new AndPredicate(andChildren));
+        }
+
+        if (or != null && !or.isEmpty())
+        {
+            final List<GatewayPredicate> orChildren = or.stream()
+                    .map(c -> c.build(registry))
+                    .toList();
+            list.add(new OrPredicate(orChildren));
         }
 
         if (not != null)
         {
-            // TODO: Support not
-            //list.add(VenturiPredicates.not(not.build()));
+            // Fully supported NotPredicate wrapper
+            list.add(new NotPredicate(not.build(registry)));
         }
 
-        // Handle 'or' specifically since it's a disjunction
-        if (or != null && !or.isEmpty())
+        // 3. Optimize the evaluation tree
+        if (list.isEmpty())
         {
-            final List<GatewayPredicate> children = or.stream()
-                    .map(ConditionDefinition::build)
-                    .toList();
-            list.add(VenturiPredicates.or(children));
+            // If the match block is completely empty, it matches everything
+            return request -> true;
         }
-
-        // Return optimized single or composite AND
         if (list.size() == 1)
         {
+            // Strip the unnecessary AND wrapper if there's only one root condition
             return list.getFirst();
         }
 
-        return VenturiPredicates.and(list);
+        // At the root level of a YAML block, siblings are evaluated as an AND.
+        // e.g., match: { method: GET, pathStartsWith: /api } 
+        return new AndPredicate(list);
     }
 
-    @Override
-    public void validate(final ValidationResult result)
+    /**
+     * Recursively validates that all requested predicates actually exist in the registry.
+     */
+    public void validateTree(final ValidationResult result, final PredicateRegistry registry)
     {
+        // 1. Check flat leaf nodes
         predicates.keySet().forEach(name ->
         {
-            if (!PredicateRegistry.exists(name))
+            if (!registry.exists(name))
             {
-                result.addError("match." + name, "Unknown matcher type: " + name);
+                result.addError("match", "Unknown matcher type: '" + name + "'");
             }
         });
 
+        // 2. Recurse down the logical branches
         if (and != null)
         {
-            and.forEach(c -> c.validate(result));
+            and.forEach(c -> c.validateTree(result, registry));
         }
 
         if (or != null)
         {
-            or.forEach(c -> c.validate(result));
+            or.forEach(c -> c.validateTree(result, registry));
         }
 
         if (not != null)
         {
-            not.validate(result);
+            not.validateTree(result, registry);
         }
     }
 }

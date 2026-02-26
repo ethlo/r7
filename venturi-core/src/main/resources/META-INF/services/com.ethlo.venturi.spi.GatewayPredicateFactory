@@ -1,0 +1,4 @@
+com.ethlo.venturi.core.predicates.HostFactory
+com.ethlo.venturi.core.predicates.MethodFactory
+com.ethlo.venturi.core.predicates.PathStartsWithFactory
+com.ethlo.venturi.core.predicates.RegexPathFactory

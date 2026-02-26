@@ -3,25 +3,27 @@ routes:
     uri:
       - http://localhost:1111
     match:
-      - pathStartsWith: /hello
-      - method:
+      - PathStartsWith:
+          prefix: /hello
+      - Method:
+          include:
           - GET
           - POST
     journal:
       request: METADATA
       response: FULL
     filters:
-      - type: AddResponseHeader
-        args:
+      - AddResponseHeader:
           name: X-Gateway
           value: Venturi
-      - type: CorrelationIdHeader
+      - CorrelationIdHeader
+      - RequireAuthorizationHeader
   - id: external-test
     uri:
       - https://www.nrk.no
     match:
-        - pathStartsWith: /nrk
+      - PathStartsWith:
+          prefix: /nrk
     filters:
-      - type: StripPathPrefix
-        args:
+      - StripPathPrefix:
           parts: 1

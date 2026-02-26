@@ -5,7 +5,8 @@ import java.util.List;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public record RouteDefinition(CharSequence id, List<CharSequence> uri, ConditionDefinition match, RouteJournalConfig journal,
+public record RouteDefinition(CharSequence id, List<CharSequence> uri, ConditionDefinition match,
+                              RouteJournalConfig journal,
                               List<FilterDefinition> filters) implements ValidatableConfig
 {
     @Override
@@ -33,21 +34,9 @@ public record RouteDefinition(CharSequence id, List<CharSequence> uri, Condition
             });
         }
 
-        if (match != null)
-        {
-            match.validate(result);
-        }
-
         if (journal != null)
         {
             journal.validate(result);
-        }
-
-
-        // 4. Validate Filters
-        if (filters != null)
-        {
-            filters.forEach(f -> f.validate(result));
         }
     }
 }
