@@ -1,0 +1,90 @@
+package com.ethlo.venturi.core.filters;
+
+import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.core.ShortInfo;
+import com.ethlo.venturi.plugin.ValidatorUtils;
+import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.validation.ValidatableConfig;
+import com.ethlo.venturi.validation.ValidationResult;
+
+public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPrefixFactory.Config>
+{
+    private static final String FILTER_NAME = "StripPathPrefix";
+
+    @Override
+    public String name()
+    {
+        return FILTER_NAME;
+    }
+
+    @Override
+    public Class<Config> configClass()
+    {
+        return Config.class;
+    }
+
+    @Override
+    public GatewayFilter create(Config config)
+    {
+        return new GF(config);
+    }
+
+    public record Config(Integer parts) implements ValidatableConfig
+    {
+        @Override
+        public void validate(ValidationResult result)
+        {
+            new ValidatorUtils(result)
+                    .required(FILTER_NAME, "parts", parts);
+
+            if (parts != null && parts <= 0)
+            {
+                // Assuming ValidationResult has a way to add custom error messages,
+                // otherwise you can throw an IllegalArgumentException directly here.
+                throw new IllegalArgumentException(FILTER_NAME + ": 'parts' must be greater than 0");
+            }
+        }
+    }
+
+    private static class GF implements GatewayFilter, ShortInfo
+    {
+        private final int parts;
+
+        public GF(Config config)
+        {
+            this.parts = config.parts();
+        }
+
+        @Override
+        public void beforeUpstream(final GatewayExchange exchange)
+        {
+            final String path = exchange.request().path().toString();
+
+            // The config validation guarantees parts > 0, so we can skip that check here
+            int pos = 0;
+            for (int i = 0; i < parts; i++)
+            {
+                // Micro-optimization: Search for the char '/' instead of the String "/"
+                pos = path.indexOf('/', pos + 1);
+                if (pos == -1)
+                {
+                    // We've run out of slashes.
+                    // If we're at "/v1" and stripping 1, we should result in "/"
+                    exchange.request().path("/");
+                    return;
+                }
+            }
+
+            final String newPath = path.substring(pos);
+            // Ensure we don't return an empty string if the path ended exactly at the slash
+            exchange.request().path(newPath.isEmpty() ? "/" : newPath);
+        }
+
+        @Override
+        public String summary()
+        {
+            return FILTER_NAME + ": " + (parts == 1 ? "1 part" : parts + " parts");
+        }
+    }
+}

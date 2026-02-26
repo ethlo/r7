@@ -8,11 +8,11 @@ import java.util.Map;
 
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.core.predicates.VenturiPredicates;
-import com.ethlo.venturi.validation.Validatable;
+import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
-public final class ConditionDefinition implements Validatable
+public final class ConditionDefinition implements ValidatableConfig
 {
     private final Map<String, Object> predicates = new HashMap<>();
     public List<ConditionDefinition> and;

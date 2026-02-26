@@ -1,0 +1,7 @@
+com.ethlo.venturi.core.filters.AddResponseHeaderFactory
+com.ethlo.venturi.core.filters.CorrelationIdHeaderFilterFactory
+com.ethlo.venturi.core.filters.AddRequestHeaderFactory
+com.ethlo.venturi.core.filters.RequireAuthorizationHeaderFactory
+com.ethlo.venturi.core.filters.RewritePathFactory
+com.ethlo.venturi.core.filters.StripCacheHeadersFactory
+com.ethlo.venturi.core.filters.StripPathPrefixFactory

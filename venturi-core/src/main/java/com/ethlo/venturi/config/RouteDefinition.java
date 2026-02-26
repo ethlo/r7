@@ -2,11 +2,11 @@ package com.ethlo.venturi.config;
 
 import java.util.List;
 
-import com.ethlo.venturi.validation.Validatable;
+import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
 public record RouteDefinition(CharSequence id, List<CharSequence> uri, ConditionDefinition match, AuditDefinition audit,
-                              List<FilterDefinition> filters) implements Validatable
+                              List<FilterDefinition> filters) implements ValidatableConfig
 {
     @Override
     public void validate(final ValidationResult result)

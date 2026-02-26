@@ -2,10 +2,10 @@ package com.ethlo.venturi.config;
 
 import java.util.Map;
 
-import com.ethlo.venturi.validation.Validatable;
+import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public record FilterDefinition(String type, Map<String, String> args) implements Validatable
+public record FilterDefinition(String type, Map<String, String> args) implements ValidatableConfig
 {
     @Override
     public void validate(final ValidationResult result)

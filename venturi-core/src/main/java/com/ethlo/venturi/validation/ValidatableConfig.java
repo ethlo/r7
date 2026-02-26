@@ -1,6 +1,6 @@
 package com.ethlo.venturi.validation;
 
-public interface Validatable
+public interface ValidatableConfig
 {
     void validate(ValidationResult result);
 }
