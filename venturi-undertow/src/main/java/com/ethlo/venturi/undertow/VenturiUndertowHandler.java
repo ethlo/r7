@@ -2,12 +2,9 @@ package com.ethlo.venturi.undertow;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
 import com.ethlo.venturi.ShardedJournalWriter;
@@ -97,16 +94,15 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         final VlfJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
-
-        // TODO: Consider making safe headers configurable
-        final Journal smartJournal = new PolicyJournal(rawJournal, journalConfig, JournalSecurity.DEFAULT_SAFE_HEADERS);
+        final Journal smartJournal = new PolicyJournal(rawJournal, journalConfig, JournalSecurity.DEFAULT_SAFE_HEADERS, gatewayExchange);
 
         setupJournaling(smartJournal, exchange, gatewayExchange, journalConfig, requestId);
 
+        // For local short-circuits (like Auth errors returning early bodies)
         gatewayExchange.putInternalState(PRE_ROUTING_COMMIT_LISTENER_KEY, (e, body) ->
                 {
                     final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(e);
-                    smartJournal.start(ServerDirection.RESPONSE, journalConfig.response(), requestId, resStartLine, e.response().headers());
+                    smartJournal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, e.response().headers());
                     smartJournal.body(ServerDirection.RESPONSE, requestId, body);
                 }
         );
@@ -116,46 +112,55 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final GatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId)
     {
-        if (journalConfig == null || (journalConfig.request() == JournalLevel.NONE && journalConfig.response() == JournalLevel.NONE))
+        if (journalConfig == null) return;
+
+        final boolean hasRequestLogging = journalConfig.request().level() != JournalLevel.NONE || journalConfig.request().statusOverrides() != null;
+        final boolean hasResponseLogging = journalConfig.response().level() != JournalLevel.NONE || journalConfig.response().statusOverrides() != null;
+
+        if (!hasRequestLogging && !hasResponseLogging)
         {
-            return;
+            return; // Only bail if there are NO base levels AND NO overrides
         }
 
         gatewayExchange.putInternalState(JOURNAL_KEY, journal);
-
-        final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-        journal.start(ServerDirection.REQUEST, journalConfig.request(), requestId, reqStartLine, gatewayExchange.request().headers());
 
         final AtomicLong requestBytesRead = new AtomicLong(0);
         exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
         gatewayExchange.putInternalState(REQUEST_BYTES_READ_KEY, requestBytesRead::get);
         gatewayExchange.putInternalState(RESPONSE_BYTES_SENT_KEY, exchange::getResponseBytesSent);
 
-        if (journalConfig.request() == JournalLevel.FULL)
+        // Immediately buffer the request metadata. PolicyJournal will flush it later if needed.
+        final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange);
+        journal.start(ServerDirection.REQUEST, JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.request().headers());
+
+        // Attach body listeners unconditionally. PolicyJournal will drop the bytes if level != FULL.
+        if (journalConfig.request().level() == JournalLevel.FULL)
         {
             gatewayExchange.request().addBodyListener(buffer -> journal.body(ServerDirection.REQUEST, requestId, buffer));
         }
 
-        if (journalConfig.response() == JournalLevel.FULL || journalConfig.response() == JournalLevel.HEADERS)
+        if (journalConfig.response().level() == JournalLevel.FULL)
         {
-            gatewayExchange.response().addBodyListener(new Consumer<>()
-            {
-                private boolean headersWritten = false;
-
-                @Override
-                public void accept(final ByteBuffer buffer)
-                {
-                    if (!headersWritten)
-                    {
-                        final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                        journal.start(ServerDirection.RESPONSE, journalConfig.response(), requestId, resStartLine, gatewayExchange.response().headers());
-                        headersWritten = true;
-                    }
-
-                    journal.body(ServerDirection.RESPONSE, requestId, buffer);
-                }
-            });
+            gatewayExchange.response().addBodyListener(buffer -> journal.body(ServerDirection.RESPONSE, requestId, buffer));
         }
+
+        // Close the transaction when the exchange naturally completes
+        exchange.addExchangeCompleteListener((ex, nextListener) ->
+        {
+            try
+            {
+                // Push response metadata (PolicyJournal deduplicates if PRE_ROUTING already called this)
+                final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(gatewayExchange);
+                journal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, gatewayExchange.response().headers());
+
+                // Seal the file block with the final stats!
+                final long duration = System.nanoTime() - gatewayExchange.getInternalState(REQUEST_START_NANOS_KEY);
+                journal.end(requestId, gatewayExchange.attributes(), ex.getStatusCode(), exchange.getResponseBytesSent(), requestBytesRead.get(), duration);
+            } finally
+            {
+                nextListener.proceed();
+            }
+        });
     }
 
     private void handleRoute(final ExecutableRoute route, final GatewayExchange gatewayExchange)

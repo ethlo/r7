@@ -42,10 +42,10 @@ public class ExchangeReassembler implements JournalEventListener
 
     private boolean isExchangeComplete(JournalExchange exchange)
     {
-        // 1. Did we see the REQUEST Begin? (Required for URL/Method)
+        // Did we see the REQUEST Begin? (Required for URL/Method)
         boolean hasRequest = exchange.getRequestStartLine() != null;
 
-        // 2. Did we see the END marker? (Required for Status/Latency)
+        // Did we see the END marker? (Required for Status/Latency)
         boolean hasMetrics = exchange.getStatus() > 0;
 
         return hasRequest && hasMetrics;

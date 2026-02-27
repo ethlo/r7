@@ -7,11 +7,15 @@ routes:
           prefix: /hello
       - Method:
           include:
-          - GET
-          - POST
+            - GET
+            - POST
     journal:
-      request: FULL
-      response: METADATA
+      request:
+        level: METADATA
+        status_overrides:
+          401,403: HEADERS
+      response:
+        level: NONE
     filters:
       - AddResponseHeader:
           name: X-Gateway

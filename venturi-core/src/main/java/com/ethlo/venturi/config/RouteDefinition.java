@@ -44,6 +44,6 @@ public record RouteDefinition(CharSequence id, List<CharSequence> uri, Condition
 
     public RouteJournalConfig journal()
     {
-        return Optional.ofNullable(journal).orElse(new RouteJournalConfig(JournalLevel.NONE, JournalLevel.NONE));
+        return Optional.ofNullable(journal).orElse(new RouteJournalConfig(new JournalDirectionConfig(JournalLevel.NONE, null), new JournalDirectionConfig(JournalLevel.NONE, null)));
     }
 }

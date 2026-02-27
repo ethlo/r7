@@ -6,7 +6,9 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayPredicate;
+import com.ethlo.venturi.config.JournalDirectionConfig;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.core.predicates.CompositePredicate;
@@ -148,10 +151,13 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
             logLine("   ├─ Predicates:");
             printPredicate(route.predicate(), "   │  ", true);
 
-            // 3. Journaling config
-            final JournalLevel reqJournal = route.routeDefinition().journal().request();
-            final JournalLevel resJournal = route.routeDefinition().journal().response();
-            logLine("   ├─ Journaling: " + reqJournal + " / " + resJournal);
+            // 3. Journaling config (with nested directions and overrides)
+            final JournalDirectionConfig reqConfig = route.routeDefinition().journal().request();
+            final JournalDirectionConfig resConfig = route.routeDefinition().journal().response();
+
+            logLine("   ├─ Journaling:");
+            logLine("   │  ├─ Request:  " + colorLevel(reqConfig.level()) + formatOverrides(reqConfig.statusOverrides()));
+            logLine("   │  └─ Response: " + colorLevel(resConfig.level()) + formatOverrides(resConfig.statusOverrides()));
 
             // 4. Proxy Targets (Green)
             final String targets = String.join(" | ", route.uri());
@@ -182,6 +188,68 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
         }
     }
 
+    private String colorLevel(JournalLevel level)
+    {
+        return switch (level) {
+            case NONE -> "\u001B[90mNONE\u001B[0m";         // Dark Gray
+            case METADATA -> "\u001B[33mMETADATA\u001B[0m"; // Yellow
+            case HEADERS -> "\u001B[36mHEADERS\u001B[0m";   // Cyan
+            case FULL -> "\u001B[31mFULL\u001B[0m";         // Red
+        };
+    }
+
+    private String formatOverrides(JournalLevel[] overrides)
+    {
+        if (overrides == null) return "";
+
+        final Map<JournalLevel, List<String>> grouped = new EnumMap<>(JournalLevel.class);
+
+        for (int i = 100; i < 600; )
+        {
+            JournalLevel level = overrides[i];
+            if (level != null)
+            {
+                // Detect if the entire hundred block (e.g. 400-499) shares this override
+                boolean isHundredBlock = true;
+                if (i % 100 == 0) {
+                    for (int j = 1; j < 100; j++) {
+                        if (overrides[i + j] != level) {
+                            isHundredBlock = false;
+                            break;
+                        }
+                    }
+                } else {
+                    isHundredBlock = false;
+                }
+
+                if (isHundredBlock) {
+                    grouped.computeIfAbsent(level, k -> new ArrayList<>()).add((i / 100) + "xx");
+                    i += 100; // Skip the rest of the block
+                    continue;
+                } else {
+                    grouped.computeIfAbsent(level, k -> new ArrayList<>()).add(String.valueOf(i));
+                }
+            }
+            i++;
+        }
+
+        if (grouped.isEmpty()) return "";
+
+        final StringBuilder sb = new StringBuilder(" \u001B[90m[Overrides: ");
+        boolean first = true;
+        for (var entry : grouped.entrySet())
+        {
+            if (!first) sb.append(", ");
+            sb.append(String.join(",", entry.getValue()))
+                    .append(" ➔ ")
+                    .append(colorLevel(entry.getKey()))
+                    .append("\u001B[90m");
+            first = false;
+        }
+        sb.append("]\u001B[0m");
+        return sb.toString();
+    }
+
     private void printPredicate(GatewayPredicate predicate, String prefix, boolean isLast)
     {
         if (predicate == null)
@@ -202,8 +270,6 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
             List<GatewayPredicate> children = composite.children();
             for (int i = 0; i < children.size(); i++)
             {
-                // If the current node is the last one, we don't draw a vertical
-                // line for its children's prefix.
                 String newPrefix = prefix + (isLast ? "    " : "│   ");
                 printPredicate(children.get(i), newPrefix, i == children.size() - 1);
             }

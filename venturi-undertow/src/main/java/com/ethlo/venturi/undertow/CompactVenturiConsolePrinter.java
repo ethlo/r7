@@ -7,9 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayPredicate;
+import com.ethlo.venturi.config.JournalDirectionConfig;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 
 public class CompactVenturiConsolePrinter implements VenturiConsolePrinter
@@ -73,9 +73,9 @@ public class CompactVenturiConsolePrinter implements VenturiConsolePrinter
             String dest = truncate(String.join(",", route.uri()), 18);
 
             // Shorten FULL/METADATA to F/M to save horizontal space
-            JournalLevel req = route.routeDefinition().journal().request();
-            JournalLevel res = route.routeDefinition().journal().response();
-            String journal = req.name().charAt(0) + "/" + res.name().charAt(0);
+            JournalDirectionConfig req = route.routeDefinition().journal().request();
+            JournalDirectionConfig res = route.routeDefinition().journal().response();
+            String journal = req.level().name().charAt(0) + "/" + res.level().name().charAt(0);
 
             // Format with colors
             String row = String.format(" \u001B[36m%-20s\u001B[0m │ %-28s │ \u001B[32m%-18s\u001B[0m │ %-9s",

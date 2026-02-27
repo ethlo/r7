@@ -121,12 +121,8 @@ public final class VlfJournal implements Journal
     {
         fbb.clear();
 
-        // Use the fast array-copy method
         int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
-
-        // startLine is ALREADY a ByteBuffer, FlatBuffers does this natively via System.arraycopy
         int startLineOffset = fbb.createByteVector(startLine);
-
         this.currentHeaderCount = 0;
 
         // Pass 'this' as state to avoid capturing lambda allocation
