@@ -12,17 +12,17 @@ public interface Journal extends AutoCloseable
     /**
      * Records the metadata for a request or response.
      */
-    void start(ServerDirection dir, JournalLevel journalLevel, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers) throws IOException;
+    void start(ServerDirection dir, JournalLevel journalLevel, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
 
     /**
      * Records a chunk of payload data.
      */
-    void body(ServerDirection dir, CharSequence reqId, ByteBuffer data) throws IOException;
+    void body(ServerDirection dir, CharSequence reqId, ByteBuffer data);
 
     /**
      * Records metrics and marks the exchange as finished.
      */
-    void end(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration) throws IOException;
+    void end(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration);
 
     @Override
     void close() throws IOException;

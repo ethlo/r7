@@ -15,7 +15,7 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.core.ExecutableRoute;
-import com.ethlo.venturi.vlf.VlfJournal;
+import com.ethlo.venturi.journal.api.Journal;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 
@@ -83,17 +83,17 @@ public final class VenturiExecutableRoute implements ExecutableRoute
                 {
                     filter.finished(exchange);
                 }
-
-                handleRequestEnded(exchange);
             } finally
             {
+                handleRequestEnded(exchange);
                 next.proceed(); // Essential for Undertow to clean up
             }
         });
 
         // 3. Wire the "Response Headers" hook
         // This triggers just before headers are flushed to the client
-        undertowExchange.addResponseCommitListener(ex -> {
+        undertowExchange.addResponseCommitListener(ex ->
+        {
             for (GatewayFilter filter : filters)
             {
                 filter.onResponseHeaders(exchange);
@@ -116,7 +116,7 @@ public final class VenturiExecutableRoute implements ExecutableRoute
 
     private void handleRequestEnded(final GatewayExchange gatewayExchange)
     {
-        final VlfJournal journal = Objects.requireNonNull(gatewayExchange.getInternalState(JOURNAL_KEY), "Journal is required");
+        final Journal journal = Objects.requireNonNull(gatewayExchange.getInternalState(JOURNAL_KEY), "Journal is required");
         final long startNanos = gatewayExchange.getInternalState(REQUEST_START_NANOS_KEY);
         final LongSupplier requestBytesRead = Objects.requireNonNull(gatewayExchange.getInternalState(REQUEST_BYTES_READ_KEY));
         final LongSupplier responseBytesSent = Objects.requireNonNull(gatewayExchange.getInternalState(RESPONSE_BYTES_SENT_KEY));

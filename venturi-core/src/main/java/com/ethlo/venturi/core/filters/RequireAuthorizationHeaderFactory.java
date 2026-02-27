@@ -7,6 +7,7 @@ import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.util.CharSequenceUtil;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
@@ -51,21 +52,14 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
         @Override
         public void beforeUpstream(final GatewayExchange exchange)
         {
-            final String sig = (String) exchange.request().headers().getFirst(HttpHeaders.AUTHORIZATION);
+            final CharSequence sig = exchange.request().headers().getFirst(HttpHeaders.AUTHORIZATION);
 
-            // Corrected logic: Reject if missing, OR if it matches NEITHER scheme
-            if (sig == null || !(sig.startsWith("Bearer ") || sig.startsWith("Basic ")))
+            if (sig == null || !(CharSequenceUtil.startsWith(sig, "Bearer ") || CharSequenceUtil.startsWith(sig, "Basic ")))
             {
                 final GatewayResponse response = exchange.response();
                 response.status(HttpStatuses.UNAUTHORIZED);
                 response.headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-
-                // Note: ByteBuffer.slice() is used to ensure the static buffer's position 
-                // isn't mutated by concurrent requests on the hot path.
                 response.commitResponse(UNAUTHORIZED_BODY.slice());
-
-                // If your FilterPipeline requires an explicit signal to halt execution,
-                // you might need to throw an exception or return a boolean here!
             }
         }
 

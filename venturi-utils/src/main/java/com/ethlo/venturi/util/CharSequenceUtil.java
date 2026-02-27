@@ -86,4 +86,32 @@ public class CharSequenceUtil
         h ^= (h >>> 20) ^ (h >>> 12);
         return h ^ (h >>> 7) ^ (h >>> 4);
     }
+
+    public static boolean startsWith(CharSequence candidate, CharSequence prefix)
+    {
+        int prefixLen = prefix.length();
+        int candidateLen = candidate.length();
+
+        if (prefixLen > candidateLen)
+        {
+            return false;
+        }
+
+        // Optimization: If both are Strings, use the intrinsic String.startsWith
+        if (candidate instanceof String s && prefix instanceof String p)
+        {
+            return s.startsWith(p);
+        }
+
+        // Manual devirtualization for common types
+        for (int i = 0; i < prefixLen; i++)
+        {
+            if (candidate.charAt(i) != prefix.charAt(i))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

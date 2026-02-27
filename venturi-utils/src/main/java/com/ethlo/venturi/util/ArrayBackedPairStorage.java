@@ -7,10 +7,10 @@ import java.util.function.Function;
 
 public abstract class ArrayBackedPairStorage<K, V>
 {
-    private final ReusableKeysView keysView = new ReusableKeysView();
-    private final ReusableValuesView valuesView = new ReusableValuesView();
     protected Object[] data;
     protected int size = 0;
+    private ReusableKeysView keysView;
+    private ReusableValuesView valuesView;
 
     protected ArrayBackedPairStorage(int initialCapacity)
     {
@@ -39,6 +39,11 @@ public abstract class ArrayBackedPairStorage<K, V>
 
     protected Iterable<V> getAllInternal(K key)
     {
+        if (valuesView == null)
+        {
+            valuesView = new ReusableValuesView();
+        }
+
         return valuesView.prepare(key);
     }
 
@@ -74,6 +79,10 @@ public abstract class ArrayBackedPairStorage<K, V>
 
     protected Iterable<K> getKeysInternal()
     {
+        if (keysView == null)
+        {
+            keysView = new ReusableKeysView();
+        }
         return keysView;
     }
 
