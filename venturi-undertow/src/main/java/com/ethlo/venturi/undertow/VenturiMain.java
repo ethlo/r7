@@ -126,11 +126,8 @@ public final class VenturiMain
                 }
         );
 
-        final VenturiConsolePrinter consolePrinter = executableRoutes.size() <= 5 || System.getenv().containsKey("VENTURI_VERBOSE")
-                ? new VerboseVenturiConsolePrinter()
-                : new CompactVenturiConsolePrinter();
+        final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
         consolePrinter.printFullReport(serverConfig, executableRoutes);
-
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());

@@ -23,22 +23,40 @@ import com.ethlo.venturi.core.predicates.CompositePredicate;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 
+/**
+ * A themed console printer using "CSS-style" color mapping and rounded layout constants.
+ * All original configuration properties restored.
+ */
 public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
 {
     private static final Logger logger = LoggerFactory.getLogger("venturi");
     private static final int WIDTH = 80;
     private static final Pattern ANSI_PATTERN = Pattern.compile("\\e\\[[\\d;]*[^\\d;\\s]");
-    private static final String HORIZONTAL = "─".repeat(WIDTH + 2);
 
-    /**
-     * Prints the full Venturi startup report
-     */
+    // --- "CSS" THEME CONSTANTS ---
+    private static final String RESET = "\u001B[0m";
+    private static final String CSS_PRIMARY = "\u001B[1;36m";   // Bold Cyan
+    private static final String CSS_SECONDARY = "\u001B[95m"; // Bright Magenta
+    private static final String CSS_SUCCESS = "\u001B[92m";   // Acid Green
+    private static final String CSS_ALERT = "\u001B[93m";     // Neon Yellow
+    private static final String CSS_CRITICAL = "\u001B[91m";  // Bright Red
+    private static final String CSS_MUTED = "\u001B[90m";     // Dark Grey
+    private static final String CSS_HEADER = "\u001B[1;97m";  // Bold White
+
+    // --- LAYOUT CONSTANTS ---
+    private static final String BORDER_TOP = "╭" + "─".repeat(WIDTH + 2) + "╮";
+    private static final String BORDER_MID = "├" + "─".repeat(WIDTH + 2) + "┤";
+    private static final String BORDER_BOT = "╰" + "─".repeat(WIDTH + 2) + "╯";
+    private static final String TREE_BRANCH = CSS_MUTED + "├── " + RESET;
+    private static final String TREE_LAST = CSS_MUTED + "└── " + RESET;
+    private static final String TREE_PIPE = CSS_MUTED + "│   " + RESET;
+
     @Override
-    public void printFullReport(ServerConfig config, List<? extends ExecutableRoute> routes)
+    public void printFullReport(final ServerConfig config, final List<? extends ExecutableRoute> routes)
     {
         printHeader();
         printServerConfigInternal(config);
-        logBorder("├" + HORIZONTAL + "┤");
+        logBorder(BORDER_MID);
         printRouteTableInternal(routes);
         printFooter();
     }
@@ -46,81 +64,79 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
     @Override
     public void printHeader()
     {
-        logBorder("┌" + HORIZONTAL + "┐");
+        logBorder(BORDER_TOP);
         logLine("");
-        logLine("  \u001B[1mV E N T U R I\u001B[0m  GATEWAY");
-        logLine("  " + "»".repeat(WIDTH - 4));
+        logLine("  " + CSS_HEADER + "V E N T U R I" + RESET + "  "  + RESET + " GATEWAY");
+        logLine("  " + CSS_MUTED + "»".repeat(WIDTH - 4) + RESET);
         logLine("");
     }
 
     @Override
-    public void printServerConfig(ServerConfig config)
+    public void printServerConfig(final ServerConfig config)
     {
-        logBorder("┌" + HORIZONTAL + "┐");
+        logBorder(BORDER_TOP);
         printServerConfigInternal(config);
-        logBorder("└" + HORIZONTAL + "┘");
+        logBorder(BORDER_BOT);
     }
 
     @Override
-    public void printRouteTable(List<? extends ExecutableRoute> routes)
+    public void printRouteTable(final List<? extends ExecutableRoute> routes)
     {
-        logBorder("┌" + HORIZONTAL + "┐");
+        logBorder(BORDER_TOP);
         printRouteTableInternal(routes);
-        logBorder("└" + HORIZONTAL + "┘");
+        logBorder(BORDER_BOT);
     }
 
-    private void printServerConfigInternal(ServerConfig config)
+    private void printServerConfigInternal(final ServerConfig config)
     {
-        logLine(" \u001B[1mSYSTEM CONFIGURATION\u001B[0m");
-        logLine(" ❯ Server:    \u001B[32m" + config.host() + ":" + config.port() + "\u001B[0m");
+        logLine(" " + CSS_PRIMARY + "◆ SYSTEM CONFIGURATION" + RESET);
+        logLine("   " + CSS_SECONDARY + "Server:       " + CSS_SUCCESS + config.host() + ":" + config.port() + RESET);
 
         // Worker Section
         logLine("");
-        logLine("   \u001B[1mWorker & Threads\u001B[0m");
-        logLine("   ├─ IO Threads:        " + config.worker().ioThreads());
-        logLine("   ├─ Task Core/Max:     " + config.worker().taskCoreThreads() + " / " + config.worker().taskMaxThreads());
-        logLine("   ├─ Stack Size:        " + (config.worker().stackSize() / 1024) + " KB");
-        logLine("   └─ Watermark (H/L):   " + config.worker().connectionHighWater() + " / " + config.worker().connectionLowWater());
+        logLine("   " + CSS_HEADER + "Worker & Threads" + RESET);
+        logLine("   " + TREE_BRANCH + "IO Threads:        " + config.worker().ioThreads());
+        logLine("   " + TREE_BRANCH + "Task Core/Max:     " + config.worker().taskCoreThreads() + " / " + config.worker().taskMaxThreads());
+        logLine("   " + TREE_BRANCH + "Stack Size:        " + (config.worker().stackSize() / 1024) + " KB");
+        logLine("   " + TREE_LAST + "Watermark (H/L):   " + config.worker().connectionHighWater() + " / " + config.worker().connectionLowWater());
 
         // Options & Socket
         logLine("");
-        logLine("   \u001B[1mNetworking\u001B[0m");
-        logLine("   ├─ TCP No-Delay:      " + config.socket().tcpNodelay());
-        logLine("   ├─ Backlog:           " + config.socket().backlog());
-        logLine("   ├─ Read-timeout:      " + config.socket().readTimeout());
-        logLine("   ├─ Reuse address:     " + config.socket().reuseAddresses());
-        logLine("   ├─ Max header count:  " + config.options().maxHeaderCount());
-        logLine("   ├─ Max header length: " + config.options().maxHeaderSize());
-        logLine("   ├─ Request timeout:   " + config.options().requestParseTimeout());
-        logLine("   ├─ HTTP/2:            " + (config.options().enableHttp2() ? "Enabled" : "Disabled"));
-        logLine("   └─ Buffer:            " + (config.options().bufferSize() / 1024) + " KB (" + (config.options().directBuffers() ? "Direct" : "Heap") + ")");
+        logLine("   " + CSS_HEADER + "Networking" + RESET);
+        logLine("   " + TREE_BRANCH + "TCP No-Delay:      " + config.socket().tcpNodelay());
+        logLine("   " + TREE_BRANCH + "Backlog:           " + config.socket().backlog());
+        logLine("   " + TREE_BRANCH + "Read-timeout:      " + config.socket().readTimeout());
+        logLine("   " + TREE_BRANCH + "Reuse address:     " + config.socket().reuseAddresses());
+        logLine("   " + TREE_BRANCH + "Max header count:  " + config.options().maxHeaderCount());
+        logLine("   " + TREE_BRANCH + "Max header length: " + config.options().maxHeaderSize());
+        logLine("   " + TREE_BRANCH + "Request timeout:   " + config.options().requestParseTimeout());
+        logLine("   " + TREE_BRANCH + "HTTP/2:            " + (config.options().enableHttp2() ? CSS_SUCCESS + "Enabled" : CSS_MUTED + "Disabled") + RESET);
+        logLine("   " + TREE_LAST + "Buffer:            " + (config.options().bufferSize() / 1024) + " KB (" + (config.options().directBuffers() ? "Direct" : "Heap") + ")");
 
         // Proxy Section
         logLine("");
-        logLine("   \u001B[1mProxy & Timing\u001B[0m");
-        logLine("   ├─ Conn/Thread:       " + config.proxy().connectionsPerThread());
-        logLine("   ├─ Max Queue:         " + config.proxy().maxQueueSize());
-        logLine("   ├─ Max Req Time:      " + config.proxy().maxRequestTime() + " ms");
-        logLine("   └─ TTL:               " + (config.proxy().ttl() == -1 ? "Infinite" : config.proxy().ttl() + " ms"));
+        logLine("   " + CSS_HEADER + "Proxy & Timing" + RESET);
+        logLine("   " + TREE_BRANCH + "Conn/Thread:       " + config.proxy().connectionsPerThread());
+        logLine("   " + TREE_BRANCH + "Max Queue:         " + config.proxy().maxQueueSize());
+        logLine("   " + TREE_BRANCH + "Max Req Time:      " + config.proxy().maxRequestTime() + " ms");
+        logLine("   " + TREE_LAST + "TTL:               " + (config.proxy().ttl() == -1 ? "Infinite" : config.proxy().ttl() + " ms"));
 
         // Storage
         logLine("");
-        logLine("   \u001B[1mStorage & Buffering\u001B[0m");
-        logLine("   └─ Directory:         " + config.storage().workDir());
+        logLine("   " + CSS_HEADER + "Storage & Buffering" + RESET);
+        logLine("   " + TREE_LAST + "Directory:         " + config.storage().workDir());
 
-        MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
-        MemoryUsage heap = memBean.getHeapMemoryUsage();
-        var gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
-        var bufferPools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
+        final MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
+        final MemoryUsage heap = memBean.getHeapMemoryUsage();
+        final List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+        final List<BufferPoolMXBean> bufferPools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
 
-        // Identify Active GC
-        String gcName = gcBeans.stream()
+        final String gcName = gcBeans.stream()
                 .map(GarbageCollectorMXBean::getName)
                 .findFirst()
                 .orElse("Unknown");
 
-        // Calculate Direct Memory (Off-Heap)
-        long directBufUsed = bufferPools.stream()
+        final long directBufUsed = bufferPools.stream()
                 .filter(p -> p.getName().equals("direct"))
                 .mapToLong(BufferPoolMXBean::getMemoryUsed)
                 .findFirst()
@@ -128,59 +144,51 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
 
         // JVM & Memory Section
         logLine("");
-        logLine("   \u001B[1mJVM & Memory\u001B[0m");
-        logLine("   ├─ Java Version:      " + Runtime.version());
-        logLine("   ├─ GC Implementation: " + gcName);
-        logLine("   ├─ Heap Used/Max:     " + (heap.getUsed() / 1024 / 1024) + " MB / " + (heap.getMax() / 1024 / 1024) + " MB");
-        logLine("   ├─ Direct Buffer:     " + (directBufUsed / 1024) + " KB");
-        logLine("   └─ Total Threads:     " + ManagementFactory.getThreadMXBean().getThreadCount());
+        logLine("   " + CSS_HEADER + "JVM & Memory" + RESET);
+        logLine("   " + TREE_BRANCH + "Java Version:      " + Runtime.version());
+        logLine("   " + TREE_BRANCH + "GC Implementation: " + gcName);
+        logLine("   " + TREE_BRANCH + "Heap Used/Max:     " + (heap.getUsed() / 1024 / 1024) + " MB / " + (heap.getMax() / 1024 / 1024) + " MB");
+        logLine("   " + TREE_BRANCH + "Direct Buffer:     " + (directBufUsed / 1024) + " KB");
+        logLine("   " + TREE_LAST + "Total Threads:     " + ManagementFactory.getThreadMXBean().getThreadCount());
     }
 
-    private void printRouteTableInternal(List<? extends ExecutableRoute> routes)
+    private void printRouteTableInternal(final List<? extends ExecutableRoute> routes)
     {
-        logLine(" \u001B[1mACTIVE ROUTES\u001B[0m (" + routes.size() + ")");
+        logLine(" " + CSS_PRIMARY + "◆ ACTIVE ROUTE MANIFEST" + RESET + " (" + routes.size() + ")");
 
         for (int i = 0; i < routes.size(); i++)
         {
             final ExecutableRoute route = routes.get(i);
+            logLine(" " + CSS_PRIMARY + "◉" + RESET + " Route: " + CSS_HEADER + route.id() + RESET);
 
-            // 1. Route ID (Cyan)
-            logLine(" ❯ Route: \u001B[1;36m" + route.id() + "\u001B[0m");
+            logLine("   " + CSS_MUTED + "│" + RESET + " Match Logic:");
+            printPredicate(route.predicate(), "   " + CSS_MUTED + "│" + RESET + "  ", true);
 
-            // 2. Match Logic
-            logLine("   ├─ Predicates:");
-            printPredicate(route.predicate(), "   │  ", true);
-
-            // 3. Journaling config (with nested directions and overrides)
             final JournalDirectionConfig reqConfig = route.routeDefinition().journal().request();
             final JournalDirectionConfig resConfig = route.routeDefinition().journal().response();
 
-            logLine("   ├─ Journaling:");
-            logLine("   │  ├─ Request:  " + colorLevel(reqConfig.level()) + formatOverrides(reqConfig.statusOverrides()));
-            logLine("   │  └─ Response: " + colorLevel(resConfig.level()) + formatOverrides(resConfig.statusOverrides()));
+            logLine("   " + CSS_MUTED + "│" + RESET + " Journaling:");
+            logLine("   " + CSS_MUTED + "│" + RESET + "  " + TREE_BRANCH + "Request:  " + colorLevel(reqConfig.level()) + formatOverrides(reqConfig.statusOverrides()));
+            logLine("   " + CSS_MUTED + "│" + RESET + "  " + TREE_LAST + "Response: " + colorLevel(resConfig.level()) + formatOverrides(resConfig.statusOverrides()));
 
-            // 4. Proxy Targets (Green)
-            final String targets = String.join(" | ", route.uri());
-            logLine("   ├─ Destination: \u001B[32m" + targets + "\u001B[0m");
+            logLine("   " + CSS_MUTED + "│" + RESET + " Destination: " + CSS_SUCCESS + String.join(" | ", route.uri()) + RESET);
 
-            // 5. Pipeline (Magenta/Vertical)
-            logLine("   └─ Filters:");
+            logLine("   " + TREE_LAST + "Pipeline:");
             final List<GatewayFilter> filters = iterableToList(route.filters());
             if (filters.isEmpty())
             {
-                logLine("      └── \u001B[33mDIRECT\u001B[0m");
+                logLine("      " + TREE_LAST + CSS_ALERT + "DIRECT" + RESET);
             }
             else
             {
                 for (int f = 0; f < filters.size(); f++)
                 {
-                    boolean isLastFilter = (f == filters.size() - 1);
-                    String connector = isLastFilter ? "└── " : "├── ";
-                    logLine("      " + connector + "\u001B[35m" + getInfo(filters.get(f)) + "\u001B[0m");
+                    final boolean isLastFilter = (f == filters.size() - 1);
+                    final String connector = isLastFilter ? TREE_LAST : TREE_BRANCH;
+                    logLine("      " + connector + CSS_SECONDARY + getInfo(filters.get(f)) + RESET);
                 }
             }
 
-            // Space between routes with borders preserved
             if (i < routes.size() - 1)
             {
                 logLine("");
@@ -188,124 +196,137 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
         }
     }
 
-    private String colorLevel(JournalLevel level)
+    private String colorLevel(final JournalLevel level)
     {
-        return switch (level) {
-            case NONE -> "\u001B[90mNONE\u001B[0m";         // Dark Gray
-            case METADATA -> "\u001B[33mMETADATA\u001B[0m"; // Yellow
-            case HEADERS -> "\u001B[36mHEADERS\u001B[0m";   // Cyan
-            case FULL -> "\u001B[31mFULL\u001B[0m";         // Red
+        return switch (level)
+        {
+            case NONE -> CSS_MUTED + "NONE" + RESET;
+            case METADATA -> CSS_ALERT + "METADATA" + RESET;
+            case HEADERS -> CSS_PRIMARY + "HEADERS" + RESET;
+            case FULL -> CSS_CRITICAL + "\u001B[7m FULL " + RESET;
         };
     }
 
-    private String formatOverrides(JournalLevel[] overrides)
+    private String formatOverrides(final JournalLevel[] overrides)
     {
-        if (overrides == null) return "";
+        if (overrides == null)
+        {
+            return "";
+        }
 
         final Map<JournalLevel, List<String>> grouped = new EnumMap<>(JournalLevel.class);
-
         for (int i = 100; i < 600; )
         {
-            JournalLevel level = overrides[i];
+            final JournalLevel level = overrides[i];
             if (level != null)
             {
-                // Detect if the entire hundred block (e.g. 400-499) shares this override
                 boolean isHundredBlock = true;
-                if (i % 100 == 0) {
-                    for (int j = 1; j < 100; j++) {
-                        if (overrides[i + j] != level) {
+                if (i % 100 == 0)
+                {
+                    for (int j = 1; j < 100; j++)
+                    {
+                        if (overrides[i + j] != level)
+                        {
                             isHundredBlock = false;
                             break;
                         }
                     }
-                } else {
+                }
+                else
+                {
                     isHundredBlock = false;
                 }
 
-                if (isHundredBlock) {
+                if (isHundredBlock)
+                {
                     grouped.computeIfAbsent(level, k -> new ArrayList<>()).add((i / 100) + "xx");
-                    i += 100; // Skip the rest of the block
+                    i += 100;
                     continue;
-                } else {
+                }
+                else
+                {
                     grouped.computeIfAbsent(level, k -> new ArrayList<>()).add(String.valueOf(i));
                 }
             }
             i++;
         }
 
-        if (grouped.isEmpty()) return "";
-
-        final StringBuilder sb = new StringBuilder(" \u001B[90m[Overrides: ");
-        boolean first = true;
-        for (var entry : grouped.entrySet())
+        if (grouped.isEmpty())
         {
-            if (!first) sb.append(", ");
+            return "";
+        }
+
+        final StringBuilder sb = new StringBuilder(" " + CSS_ALERT + "[Overrides: ");
+        boolean first = true;
+        for (final Map.Entry<JournalLevel, List<String>> entry : grouped.entrySet())
+        {
+            if (!first)
+            {
+                sb.append(", ");
+            }
             sb.append(String.join(",", entry.getValue()))
                     .append(" ➔ ")
                     .append(colorLevel(entry.getKey()))
-                    .append("\u001B[90m");
+                    .append(CSS_ALERT);
             first = false;
         }
-        sb.append("]\u001B[0m");
+        sb.append("]" + RESET);
         return sb.toString();
     }
 
-    private void printPredicate(GatewayPredicate predicate, String prefix, boolean isLast)
+    private void printPredicate(final GatewayPredicate predicate, final String prefix, final boolean isLast)
     {
         if (predicate == null)
         {
-            logLine(prefix + "└── ALWAYS");
+            logLine(prefix + TREE_LAST + "ALWAYS");
             return;
         }
 
-        // Get the name/summary of the current predicate
-        String name = getInfo(predicate);
+        final String name = getInfo(predicate);
+        logLine(prefix + (isLast ? TREE_LAST : TREE_BRANCH) + name);
 
-        // Draw the current node
-        logLine(prefix + (isLast ? "└── " : "├── ") + name);
-
-        // If it's a composite (And, Or, Not), recurse into children
         if (predicate instanceof CompositePredicate composite)
         {
-            List<GatewayPredicate> children = composite.children();
+            final List<GatewayPredicate> children = composite.children();
             for (int i = 0; i < children.size(); i++)
             {
-                String newPrefix = prefix + (isLast ? "    " : "│   ");
+                final String newPrefix = prefix + (isLast ? "    " : TREE_PIPE);
                 printPredicate(children.get(i), newPrefix, i == children.size() - 1);
             }
         }
     }
 
-    private <T> List<T> iterableToList(Iterable<T> iterable)
+    private <T> List<T> iterableToList(final Iterable<T> iterable)
     {
         final List<T> list = new ArrayList<>();
         iterable.forEach(list::add);
         return list;
     }
 
-    private String getInfo(GatewayFilter filter)
+    private String getInfo(final GatewayFilter filter)
     {
         return (filter instanceof ShortInfo si) ? si.summary() : filter.getClass().getSimpleName();
     }
 
-    private String getInfo(GatewayPredicate predicate)
+    private String getInfo(final GatewayPredicate predicate)
     {
         return (predicate instanceof ShortInfo si) ? si.summary() : predicate.getClass().getSimpleName();
     }
 
+    @Override
     public void printFooter()
     {
-        logBorder("└" + HORIZONTAL + "┘");
+        logBorder(BORDER_BOT);
     }
 
-    private void logLine(String content)
+    private void logLine(final String content)
     {
-        int visibleLength = ANSI_PATTERN.matcher(content).replaceAll("").length();
-        int padding = Math.max(0, WIDTH - visibleLength);
+        final int visibleLength = ANSI_PATTERN.matcher(content).replaceAll("").length();
+        final int padding = Math.max(0, WIDTH - visibleLength);
         logger.info("│ {}{} │", content, " ".repeat(padding));
     }
 
-    private void logBorder(String border)
+    private void logBorder(final String border)
     {
         logger.info(border);
     }

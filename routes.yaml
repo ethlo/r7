@@ -11,11 +11,8 @@ routes:
             - POST
     journal:
       request:
-        level: METADATA
         status_overrides:
           401,403: HEADERS
-      response:
-        level: NONE
     filters:
       - AddResponseHeader:
           name: X-Gateway
@@ -28,6 +25,13 @@ routes:
     match:
       - PathStartsWith:
           prefix: /nrk
+    journal:
+      request:
+        level: METADATA
+        status_overrides:
+          5xx: HEADERS
+      response:
+        level: HEADERS
     filters:
       - StripPathPrefix:
           parts: 1

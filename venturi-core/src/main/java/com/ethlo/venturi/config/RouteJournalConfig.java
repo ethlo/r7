@@ -1,7 +1,8 @@
 package com.ethlo.venturi.config;
 
+import java.util.Optional;
+
 import com.ethlo.venturi.journal.api.JournalLevel;
-import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
@@ -13,10 +14,6 @@ public record RouteJournalConfig(
     @Override
     public void validate(final ValidationResult result)
     {
-        new ValidatorUtils(result)
-                .required("journal", "request", request)
-                .required("journal", "response", response);
-
         if (request != null)
         {
             validateDirection("request", request, result);
@@ -55,5 +52,15 @@ public record RouteJournalConfig(
                 }
             }
         }
+    }
+
+    public JournalDirectionConfig request()
+    {
+        return Optional.ofNullable(request).orElse(new JournalDirectionConfig(JournalLevel.NONE, null));
+    }
+
+    public JournalDirectionConfig response()
+    {
+        return Optional.ofNullable(response).orElse(new JournalDirectionConfig(JournalLevel.NONE, null));
     }
 }

@@ -14,4 +14,6 @@ public interface VenturiConsolePrinter
     void printServerConfig(ServerConfig config);
 
     void printRouteTable(List<? extends ExecutableRoute> routes);
+
+    void printFooter();
 }
