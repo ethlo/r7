@@ -40,8 +40,8 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             generator.writeStartObject();
 
             // Meta
-            generator.writeStringProperty("request_journal_level", exchange.getRequestJournalLevel().name());
-            generator.writeStringProperty("response_journal_level", exchange.getResponseJournalLevel().name());
+            generator.writeStringProperty("request_journal_level", exchange.getRequestJournalLevel() != null ? exchange.getRequestJournalLevel().name() : null);
+            generator.writeStringProperty("response_journal_level", exchange.getResponseJournalLevel() != null ? exchange.getResponseJournalLevel().name() : null);
 
             // --- Timing & IDs ---
             // ClickHouse DateTime64(3) accepts Unix Millis

@@ -23,31 +23,32 @@ public class CompactVenturiConsolePrinter implements VenturiConsolePrinter
     public void printFullReport(ServerConfig config, List<? extends ExecutableRoute> routes)
     {
         logBorder("┌" + HORIZONTAL + "┐");
-        
+
         // Single line server summary
-        String serverSummary = String.format("  \u001B[1mVENTURI GATEWAY\u001B[0m » %s:%d » %d Routes Loaded", 
-                config.host(), config.port(), routes.size());
+        String serverSummary = String.format("  \u001B[1mVENTURI GATEWAY\u001B[0m » %s:%d » %d Routes Loaded",
+                config.host(), config.port(), routes.size()
+        );
         logLine(serverSummary);
-        
+
         logBorder("├" + HORIZONTAL + "┤");
         printRouteTableInternal(routes);
         logBorder("└" + HORIZONTAL + "┘");
     }
 
     @Override
-    public void printHeader() 
+    public void printHeader()
     {
         // No-op for compact view unless called individually
     }
 
     @Override
-    public void printServerConfig(ServerConfig config) 
+    public void printServerConfig(ServerConfig config)
     {
         // Omitted in compact view
     }
 
     @Override
-    public void printRouteTable(List<? extends ExecutableRoute> routes) 
+    public void printRouteTable(List<? extends ExecutableRoute> routes)
     {
         logBorder("┌" + HORIZONTAL + "┐");
         printRouteTableInternal(routes);
@@ -57,10 +58,11 @@ public class CompactVenturiConsolePrinter implements VenturiConsolePrinter
     private void printRouteTableInternal(List<? extends ExecutableRoute> routes)
     {
         // Fixed-width column headers
-        String header = String.format(" %-20s │ %-28s │ %-18s │ %-9s", 
-                "ROUTE ID", "PREDICATE", "DESTINATION", "JOURNAL");
+        String header = String.format(" %-20s │ %-28s │ %-18s │ %-9s",
+                "ROUTE ID", "PREDICATE", "DESTINATION", "JOURNAL"
+        );
         logLine("\u001B[1m" + header + "\u001B[0m");
-        
+
         // Column separators
         logLine(" " + "─".repeat(21) + "┼" + "─".repeat(30) + "┼" + "─".repeat(20) + "┼" + "─".repeat(10));
 
@@ -69,16 +71,17 @@ public class CompactVenturiConsolePrinter implements VenturiConsolePrinter
             String id = truncate(route.id().toString(), 20);
             String pred = truncate(getPredicateSummary(route.predicate()), 28);
             String dest = truncate(String.join(",", route.uri()), 18);
-            
+
             // Shorten FULL/METADATA to F/M to save horizontal space
-            JournalLevel req = route.routeDefinition().journal().request;
-            JournalLevel res = route.routeDefinition().journal().response;
-            String journal = req.name().charAt(0) + "/" + res.name().charAt(0); 
+            JournalLevel req = route.routeDefinition().journal().request();
+            JournalLevel res = route.routeDefinition().journal().response();
+            String journal = req.name().charAt(0) + "/" + res.name().charAt(0);
 
             // Format with colors
-            String row = String.format(" \u001B[36m%-20s\u001B[0m │ %-28s │ \u001B[32m%-18s\u001B[0m │ %-9s", 
-                    id, pred, dest, journal);
-            
+            String row = String.format(" \u001B[36m%-20s\u001B[0m │ %-28s │ \u001B[32m%-18s\u001B[0m │ %-9s",
+                    id, pred, dest, journal
+            );
+
             logLine(row);
         }
     }
@@ -94,7 +97,7 @@ public class CompactVenturiConsolePrinter implements VenturiConsolePrinter
         if (val == null) return "";
         if (val.length() <= max) return val;
         // Keep it cleanly inside the box
-        return val.substring(0, max - 3) + "..."; 
+        return val.substring(0, max - 3) + "...";
     }
 
     private void logLine(String content)

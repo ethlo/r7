@@ -149,8 +149,8 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
             printPredicate(route.predicate(), "   │  ", true);
 
             // 3. Journaling config
-            final JournalLevel reqJournal = route.routeDefinition().journal().request;
-            final JournalLevel resJournal = route.routeDefinition().journal().response;
+            final JournalLevel reqJournal = route.routeDefinition().journal().request();
+            final JournalLevel resJournal = route.routeDefinition().journal().response();
             logLine("   ├─ Journaling: " + reqJournal + " / " + resJournal);
 
             // 4. Proxy Targets (Green)

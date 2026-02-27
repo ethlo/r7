@@ -19,8 +19,8 @@ import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
 
 public final class JournalDecoder
 {
-    private static final ServerDirection[] SERVER_DIRECTIONS = ServerDirection.values();
     public static final JournalLevel[] JOURNAL_LEVELS = JournalLevel.values();
+    private static final ServerDirection[] SERVER_DIRECTIONS = ServerDirection.values();
 
     /**
      * Decodes the hybrid FlatBuffer + raw stream.
@@ -48,83 +48,83 @@ public final class JournalDecoder
                 break;
             }
 
-            try
-            {
-                parseEntry(buffer, listener);
-            }
-            catch (Exception e)
-            {
-                throw new RuntimeException("Parse error at position " + startPos + " with marker " + marker + ": " + e.getMessage(), e);
-            }
+            parseEntryAndDispatch(buffer, listener);
         }
 
         return totalTextWeight;
     }
 
-    private static void parseEntry(ByteBuffer buffer, JournalEventListener listener)
+    private static void parseEntryAndDispatch(ByteBuffer buffer, JournalEventListener listener)
     {
         final int startPos = buffer.position();
-
-        buffer.order(ByteOrder.BIG_ENDIAN);
-
-        if (buffer.remaining() < 4 * Integer.BYTES)
-        {
-            throw new IllegalStateException("Incomplete header");
-        }
-
-        int magic = buffer.getInt();
-        if (magic != MAGIC)
-        {
-            throw new IllegalStateException("Bad magic");
-        }
-
-        int payloadLen = buffer.getInt();
-        int fbLen = buffer.getInt();
-        int rawLen = buffer.getInt();
-
-        if (payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
-        {
-            throw new IllegalStateException("Corrupt payload length");
-        }
-
-        if (buffer.remaining() < fbLen + rawLen + Integer.BYTES)
-        {
-            System.out.println("marker=" + buffer.get(startPos) + " remaining=" + buffer.remaining());
-            throw new IllegalStateException("Truncated entry");
-        }
-
-        CRC32C crc = new CRC32C();
-        updateInt(crc, payloadLen);
-        updateInt(crc, fbLen);
-        updateInt(crc, rawLen);
-
-        // ---- FlatBuffer slice (zero copy) ----
-        ByteBuffer fbSlice = buffer.slice();
-        fbSlice.limit(fbLen);
-        fbSlice.order(ByteOrder.LITTLE_ENDIAN);
-
-        crc.update(fbSlice.duplicate());
-
-        buffer.position(buffer.position() + fbLen);
-
-        // ---- Raw slice ----
+        ByteBuffer fbSlice;
         ByteBuffer rawSlice = null;
-        if (rawLen > 0)
+        try
         {
-            rawSlice = buffer.slice();
-            rawSlice.limit(rawLen);
-            crc.update(rawSlice.duplicate());
-            buffer.position(buffer.position() + rawLen);
+            buffer.order(ByteOrder.BIG_ENDIAN);
+
+            if (buffer.remaining() < 4 * Integer.BYTES)
+            {
+                throw new IllegalStateException("Incomplete header");
+            }
+
+            int magic = buffer.getInt();
+            if (magic != MAGIC)
+            {
+                throw new IllegalStateException("Bad magic");
+            }
+
+            int payloadLen = buffer.getInt();
+            int fbLen = buffer.getInt();
+            int rawLen = buffer.getInt();
+
+            if (payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
+            {
+                throw new IllegalStateException("Corrupt payload length");
+            }
+
+            if (buffer.remaining() < fbLen + rawLen + Integer.BYTES)
+            {
+                throw new IllegalStateException("Truncated entry");
+            }
+
+            CRC32C crc = new CRC32C();
+            updateInt(crc, payloadLen);
+            updateInt(crc, fbLen);
+            updateInt(crc, rawLen);
+
+            // ---- FlatBuffer slice (zero copy) ----
+            fbSlice = buffer.slice();
+            fbSlice.limit(fbLen);
+            fbSlice.order(ByteOrder.LITTLE_ENDIAN);
+
+            crc.update(fbSlice.duplicate());
+
+            buffer.position(buffer.position() + fbLen);
+
+            // ---- Raw slice ----
+            if (rawLen > 0)
+            {
+                rawSlice = buffer.slice();
+                rawSlice.limit(rawLen);
+                crc.update(rawSlice.duplicate());
+                buffer.position(buffer.position() + rawLen);
+            }
+
+            int storedCrc = buffer.getInt();
+            if ((int) crc.getValue() != storedCrc)
+            {
+                throw new IllegalStateException("CRC mismatch");
+            }
+        }
+        catch (IllegalArgumentException exc)
+        {
+            throw new IllegalStateException("Corrupt journal entry found at position " + startPos, exc);
         }
 
-        int storedCrc = buffer.getInt();
-        if ((int) crc.getValue() != storedCrc)
-        {
-            throw new IllegalStateException("CRC mismatch");
-        }
+        final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(fbSlice);
 
-        final JournalEvent je = JournalEvent.getRootAsJournalEvent(fbSlice);
-        dispatch(je, rawSlice, listener);
+        dispatch(journalEvent, rawSlice, listener);
     }
 
     private static void updateInt(CRC32C crc, int value)

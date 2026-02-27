@@ -1,5 +1,7 @@
 package com.ethlo.venturi.undertow;
 
+import static com.ethlo.venturi.journal.api.JournalLevel.NONE;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
@@ -15,11 +17,11 @@ import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.api.StateKey;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.config.RouteRegistry;
-import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.HttpStatuses;
@@ -84,15 +86,15 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.putInternalState(ROUTE_JOURNAL_CONFIG_KEY, route.routeDefinition().journal());
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
-        setupBinaryLogging(exchange, gatewayExchange);
+        setupJournaling(exchange, gatewayExchange);
 
         handleRoute(route, gatewayExchange);
     }
 
-    private void setupBinaryLogging(HttpServerExchange exchange, GatewayExchange gatewayExchange)
+    private void setupJournaling(HttpServerExchange exchange, GatewayExchange gatewayExchange)
     {
-        final RouteJournalConfig routeJournalConfig = gatewayExchange.getInternalState(ROUTE_JOURNAL_CONFIG_KEY);
-        if (routeJournalConfig == null)
+        final RouteJournalConfig journalConfig = gatewayExchange.getInternalState(ROUTE_JOURNAL_CONFIG_KEY);
+        if (journalConfig == null || (journalConfig.request() == NONE && journalConfig.response() == NONE))
         {
             return;
         }
@@ -101,9 +103,11 @@ public final class VenturiUndertowHandler implements HttpHandler
         final VlfJournal journal = gatewayExchangeDataWriter.getJournal(requestId);
         gatewayExchange.putInternalState(JOURNAL_KEY, journal);
 
-        // Always capture Request Headers for access log
-        final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-        journal.start(ServerDirection.REQUEST, routeJournalConfig.request, requestId, startLine, gatewayExchange.request().headers());
+        if (shouldCaptureRequestHeaders(journalConfig))
+        {
+            final ByteBuffer startLine = StartLineBuilder.buildRequestLine(gatewayExchange);
+            journal.start(ServerDirection.REQUEST, journalConfig.request(), requestId, startLine, gatewayExchange.request().headers());
+        }
 
         // Track request bytes
         final AtomicLong requestBytesRead = new AtomicLong(0);
@@ -114,15 +118,15 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.putInternalState(RESPONSE_BYTES_SENT_KEY, (LongSupplier) exchange::getResponseBytesSent);
 
         // Capture Request Body
-        if (shouldCaptureRequestBody(routeJournalConfig))
+        if (shouldCaptureRequestBody(journalConfig))
         {
             gatewayExchange.request().addBodyListener(buffer
                     -> journal.body(ServerDirection.REQUEST, requestId, buffer));
         }
 
-        final boolean captureResBody = shouldCaptureResponseBody(routeJournalConfig);
+        final boolean captureResBody = shouldCaptureResponseBody(journalConfig);
 
-        if (shouldCaptureResponseHeaders(routeJournalConfig) || shouldCaptureResponseBody(routeJournalConfig))
+        if (shouldCaptureResponseHeaders(journalConfig) || shouldCaptureResponseBody(journalConfig))
         {
             gatewayExchange.response().addBodyListener(new Consumer<>()
             {
@@ -134,7 +138,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                     if (!headersWritten)
                     {
                         final ByteBuffer startLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                        journal.start(ServerDirection.RESPONSE, routeJournalConfig.response, requestId, startLine, gatewayExchange.response().headers());
+                        journal.start(ServerDirection.RESPONSE, journalConfig.response(), requestId, startLine, gatewayExchange.response().headers());
                         headersWritten = true;
                     }
                     if (captureResBody)
@@ -160,21 +164,21 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private boolean shouldCaptureRequestBody(RouteJournalConfig auditDefinition)
     {
-        return JournalLevel.FULL == auditDefinition.request;
+        return JournalLevel.FULL == auditDefinition.request();
     }
 
     private boolean shouldCaptureResponseBody(RouteJournalConfig auditDefinition)
     {
-        return JournalLevel.FULL == auditDefinition.response;
+        return JournalLevel.FULL == auditDefinition.response();
     }
 
     private boolean shouldCaptureRequestHeaders(RouteJournalConfig auditDefinition)
     {
-        return JournalLevel.FULL == auditDefinition.request || JournalLevel.HEADERS == auditDefinition.request;
+        return JournalLevel.FULL == auditDefinition.request() || JournalLevel.HEADERS == auditDefinition.request();
     }
 
     private boolean shouldCaptureResponseHeaders(RouteJournalConfig auditDefinition)
     {
-        return JournalLevel.FULL == auditDefinition.response || JournalLevel.HEADERS == auditDefinition.response;
+        return JournalLevel.FULL == auditDefinition.response() || JournalLevel.HEADERS == auditDefinition.response();
     }
 }

@@ -3,6 +3,7 @@ package com.ethlo.venturi.config;
 import java.util.List;
 import java.util.Optional;
 
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
@@ -43,6 +44,6 @@ public record RouteDefinition(CharSequence id, List<CharSequence> uri, Condition
 
     public RouteJournalConfig journal()
     {
-        return Optional.ofNullable(journal).orElse(new RouteJournalConfig());
+        return Optional.ofNullable(journal).orElse(new RouteJournalConfig(JournalLevel.NONE, JournalLevel.NONE));
     }
 }

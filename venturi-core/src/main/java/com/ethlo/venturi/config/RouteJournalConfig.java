@@ -1,17 +1,17 @@
 package com.ethlo.venturi.config;
 
 import com.ethlo.venturi.journal.api.JournalLevel;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class RouteJournalConfig implements ValidatableConfig
+public record RouteJournalConfig(JournalLevel request, JournalLevel response) implements ValidatableConfig
 {
-    public JournalLevel request = JournalLevel.NONE;
-    public JournalLevel response = JournalLevel.NONE;
-
     @Override
     public void validate(ValidationResult result)
     {
-        // TODO: Implement me
+        new ValidatorUtils(result)
+                .required("journal", "request", request)
+                .required("journal", "response", response);
     }
 }
