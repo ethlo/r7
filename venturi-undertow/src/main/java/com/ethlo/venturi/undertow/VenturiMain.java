@@ -136,7 +136,7 @@ public final class VenturiMain
         final Path workDir = Paths.get(storage.workDir());
         Files.createDirectories(workDir);
 
-        logger.info("Available disk space in {}: {}", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
+        logger.info("Work directory is {} with {} free disk space", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
 
         final VlfCompressionEngine compressionEngine = new VlfCompressionEngine(9, 2);
         final List<Path> paths = VlfRecoveryManager.cleanAndRecover(workDir);

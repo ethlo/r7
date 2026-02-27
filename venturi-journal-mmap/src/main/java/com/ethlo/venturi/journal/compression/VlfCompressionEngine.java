@@ -10,6 +10,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import com.ethlo.venturi.vlf.VlfConstants;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +51,7 @@ public class VlfCompressionEngine
 
     private void compressAndDelete(Path source)
     {
-        final Path target = source.resolveSibling(source.getFileName() + ".zst");
+        final Path target = source.resolveSibling(source.getFileName() + VlfConstants.COMPRESSED_FILE_EXTENSION);
         final Path tempTarget = source.resolveSibling(source.getFileName() + ".zst.tmp");
 
         final long start = System.nanoTime();
@@ -66,7 +68,7 @@ public class VlfCompressionEngine
             Files.deleteIfExists(source);
 
             final long ms = (System.nanoTime() - start) / 1_000_000;
-            log.info("🗜️ Compressed {} to {} in {}ms", source.getFileName(), target.getFileName(), ms);
+            log.debug("Compressed {} to {} in {}ms", source.getFileName(), target.getFileName(), ms);
         }
         catch (Exception e)
         {

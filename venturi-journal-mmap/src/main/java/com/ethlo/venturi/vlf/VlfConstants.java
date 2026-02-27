@@ -20,6 +20,7 @@ public final class VlfConstants
 
     public static final String VLF_FILE_EXTENSION = ".vlf";
     public static final String ACTIVE_FILE_EXTENSION = ".flux";
+    public static final String COMPRESSED_FILE_EXTENSION = ".zst";
 
     private VlfConstants()
     {
