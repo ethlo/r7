@@ -41,7 +41,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener
     public void onComplete(JournalExchange exchange)
     {
         // One call = one fully reconstructed Request/Response pair
-        exchange.getRequestHeaders().forEach((name, value) -> {
+        exchange.getClientRequestHeaders().forEach((name, value) -> {
             //System.out.println(name + " - " + value);
         });
         stats.completedExchanges++;

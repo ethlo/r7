@@ -11,19 +11,16 @@ import com.ethlo.venturi.api.EntryConsumer;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.util.CharSequenceUtil;
+import com.ethlo.venturi.vlf.fbs.ClientRequest;
 import com.ethlo.venturi.vlf.fbs.Header;
-import com.ethlo.venturi.vlf.fbs.StartEvent;
 
-/**
- * Zero-allocation projection of StartEvent headers
- */
 public class FbsGatewayHeaders implements GatewayHeaders
 {
-    private final StartEvent event;
+    private final ClientRequest event;
     private final int count;
     private final Header reusableHeader = new Header();
 
-    FbsGatewayHeaders(StartEvent event)
+    FbsGatewayHeaders(ClientRequest event)
     {
         this.event = event;
         this.count = event.headersLength();

@@ -10,11 +10,15 @@ import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.JournalLevel;
-import com.ethlo.venturi.vlf.fbs.BodyEvent;
-import com.ethlo.venturi.vlf.fbs.EndEvent;
+import com.ethlo.venturi.vlf.fbs.ClientRequest;
+import com.ethlo.venturi.vlf.fbs.ClientResponse;
+import com.ethlo.venturi.vlf.fbs.EndExchange;
 import com.ethlo.venturi.vlf.fbs.EventPayload;
 import com.ethlo.venturi.vlf.fbs.JournalEvent;
-import com.ethlo.venturi.vlf.fbs.StartEvent;
+import com.ethlo.venturi.vlf.fbs.RequestBody;
+import com.ethlo.venturi.vlf.fbs.ResponseBody;
+import com.ethlo.venturi.vlf.fbs.UpstreamRequest;
+import com.ethlo.venturi.vlf.fbs.UpstreamResponse;
 import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
 
 public final class JournalDecoder
@@ -140,50 +144,92 @@ public final class JournalDecoder
     {
         switch (journalEvent.eventType())
         {
-            case EventPayload.StartEvent ->
+            case EventPayload.ClientRequest ->
             {
-                StartEvent start = (StartEvent) journalEvent.event(new StartEvent());
-                CharSequence reqId = asAscii(start.reqIdAsByteBuffer());
-                final JournalLevel journalLevel = JOURNAL_LEVELS[start.journalLevel()];
-                ServerDirection dir = SERVER_DIRECTIONS[start.direction()];
-                CharSequence startLine = asAscii(start.startLineAsByteBuffer());
-                GatewayHeaders headers = new FbsGatewayHeaders(start);
-
-                listener.onBegin(dir, journalLevel, reqId, startLine, headers);
+                final ClientRequest ev = (ClientRequest) journalEvent.event(new ClientRequest());
+                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
+                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final GatewayHeaders headers = new FbsGatewayHeaders(ev);
+                listener.onClientRequest(reqId, level, startLine, headers);
             }
 
-            case EventPayload.BodyEvent ->
+            case EventPayload.UpstreamRequest ->
             {
-                BodyEvent body = (BodyEvent) journalEvent.event(new BodyEvent());
-                CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
-                ServerDirection dir = SERVER_DIRECTIONS[body.direction()];
-                int bodyLen = (int) body.length();
-
-                if (buffer.remaining() < bodyLen)
-                    throw new IllegalStateException("Body length exceeds remaining buffer: " + bodyLen);
-
-                ByteBuffer bodyChunk = buffer.slice();
-                bodyChunk.limit(bodyLen);
-                buffer.position(buffer.position() + bodyLen);
-
-                listener.onBody(dir, reqId, bodyChunk);
+                final UpstreamRequest ev = (UpstreamRequest) journalEvent.event(new UpstreamRequest());
+                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
+                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final GatewayHeaders headers = new FbsUpstreamRequestHeaders(ev);
+                listener.onUpstreamRequest(reqId, level, startLine, headers);
             }
 
-            case EventPayload.EndEvent ->
+            case EventPayload.RequestBody ->
             {
-                EndEvent end = (EndEvent) journalEvent.event(new EndEvent());
-                CharSequence reqId = asAscii(end.reqIdAsByteBuffer());
-                long ts = end.timestamp();
-                int status = end.status();
-                long sent = end.bytesSent();
-                long recv = end.bytesReceived();
-                long duration = end.duration();
+                final RequestBody body = (RequestBody) journalEvent.event(new RequestBody());
+                final CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
+                final int bodyLen = (int) body.length();
+                final ByteBuffer bodyChunk = prepareBodyChunk(buffer, bodyLen);
+                listener.onRequestBody(reqId, bodyChunk);
+            }
+
+            case EventPayload.UpstreamResponse ->
+            {
+                final UpstreamResponse ev = (UpstreamResponse) journalEvent.event(new UpstreamResponse());
+                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
+                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final GatewayHeaders headers = new FbsUpstreamResponseHeaders(ev);
+                listener.onUpstreamResponse(reqId, level, startLine, headers);
+            }
+
+            case EventPayload.ClientResponse ->
+            {
+                final ClientResponse ev = (ClientResponse) journalEvent.event(new ClientResponse());
+                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
+                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final GatewayHeaders headers = new FbsClientResponseHeaders(ev);
+                listener.onClientResponse(reqId, level, startLine, headers);
+            }
+
+            case EventPayload.ResponseBody ->
+            {
+                final ResponseBody body = (ResponseBody) journalEvent.event(new ResponseBody());
+                final CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
+                final int bodyLen = (int) body.length();
+                final ByteBuffer bodyChunk = prepareBodyChunk(buffer, bodyLen);
+                listener.onResponseBody(reqId, bodyChunk);
+            }
+
+            case EventPayload.EndExchange ->
+            {
+                final EndExchange end = (EndExchange) journalEvent.event(new EndExchange());
+                final CharSequence reqId = asAscii(end.reqIdAsByteBuffer());
+                final long timestamp = end.timestamp();
+                final int httpStatus = end.status();
+                final long bytesSent = end.bytesSent();
+                final long bytesRecieved = end.bytesReceived();
+                final long duratioNanos = end.duration();
                 final GatewayAttributes attributes = new FbsGatewayAttributes(end);
 
-                listener.onEnd(reqId, attributes, ts, status, sent, recv, duration);
+                listener.onEnd(reqId, attributes, timestamp, httpStatus, bytesSent, bytesRecieved, duratioNanos, end.requestCrc32c(), end.responseCrc32c());
             }
+
             default -> throw new IllegalStateException("Unknown event type: " + journalEvent.eventType());
         }
+    }
+
+    private static ByteBuffer prepareBodyChunk(ByteBuffer buffer, int bodyLen)
+    {
+        if (buffer.remaining() < bodyLen)
+        {
+            throw new IllegalStateException("Body length exceeds remaining buffer: " + bodyLen);
+        }
+        final ByteBuffer bodyChunk = buffer.slice();
+        bodyChunk.limit(bodyLen);
+        buffer.position(buffer.position() + bodyLen);
+        return bodyChunk;
     }
 
     public static CharSequence asAscii(ByteBuffer buf)

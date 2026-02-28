@@ -1,17 +1,24 @@
 package com.ethlo.venturi.vlf;
 
+import java.nio.ByteBuffer;
+
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.JournalLevel;
-
-import java.nio.ByteBuffer;
 
 public interface JournalEventListener
 {
-    void onBegin(ServerDirection direction, final JournalLevel journalLevel, CharSequence reqId, CharSequence startLine, GatewayHeaders headers);
+    void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
 
-    void onBody(ServerDirection direction, CharSequence reqId, ByteBuffer body);
+    void onUpstreamRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
 
-    void onEnd(CharSequence reqId, GatewayAttributes attributes, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos);
+    void onRequestBody(CharSequence reqId, ByteBuffer bodyChunk);
+
+    void onResponseBody(CharSequence reqId, ByteBuffer bodyChunk);
+
+    void onUpstreamResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
+
+    void onClientResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
+
+    void onEnd(CharSequence reqId, GatewayAttributes attributes, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos, final long requestCrc32, final long responseCrc32c);
 }

@@ -52,7 +52,7 @@ class JournalBinaryIntegrationTest
         VlfJournal[] journals = new VlfJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i, segmentSize), segmentSize);
+            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i, segmentSize));
         }
 
         int requestsPerThread = 50;
@@ -75,7 +75,7 @@ class JournalBinaryIntegrationTest
                     // 1. BEGIN
                     MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
                     headers.add("User-Agent", "JUnit");
-                    journal.start(ServerDirection.REQUEST, JournalLevel.HEADERS, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
+                    journal.clientRequest(JournalLevel.HEADERS, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
 
                     // 2. INTERLEAVED BODY PARTS
                     byte[] largeBody = new byte[8192];
@@ -83,12 +83,12 @@ class JournalBinaryIntegrationTest
 
                     for (int chunk = 0; chunk < 4; chunk++)
                     {
-                        journal.body(ServerDirection.REQUEST, reqId, ByteBuffer.wrap(largeBody));
+                        journal.requestBody(reqId, ByteBuffer.wrap(largeBody));
                         Thread.yield();
                     }
 
                     // 3. END
-                    journal.end(reqId, new FastGatewayAttributes(), 200, 32768, 512, 150_000);
+                    journal.endExchange(reqId, new FastGatewayAttributes(), 200, 32768, 512, 150_000, 0, 0);
                 }
                 return null;
             });
@@ -146,7 +146,7 @@ class JournalBinaryIntegrationTest
         final int segmentSize = 1024 * 1024;
         VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, segmentSize);
 
-        try (VlfJournal j = new VlfJournal(provider, segmentSize))
+        try (VlfJournal journal = new VlfJournal(provider))
         {
             String id = "dual-123";
 
@@ -154,13 +154,13 @@ class JournalBinaryIntegrationTest
             headers.set(HttpHeaders.X_REQUEST_ID, "akdalskmdalsmdasmda");
             headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
             headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
-            j.start(ServerDirection.REQUEST, JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers);
-            j.body(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
+            journal.clientRequest(JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers);
+            journal.requestBody(id, ByteBuffer.wrap("Request chunk".getBytes()));
 
-            j.start(ServerDirection.RESPONSE, JournalLevel.FULL, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
-            j.body(ServerDirection.RESPONSE, id, ByteBuffer.wrap("Response chunk".getBytes()));
+            journal.clientResponse(JournalLevel.FULL, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
+            journal.responseBody(id, ByteBuffer.wrap("Response chunk".getBytes()));
 
-            j.end(id, new FastGatewayAttributes(), 200, 100, 100, 500);
+            journal.endExchange(id, new FastGatewayAttributes(), 200, 100, 100, 500, 0, 0);
         }
 
         try

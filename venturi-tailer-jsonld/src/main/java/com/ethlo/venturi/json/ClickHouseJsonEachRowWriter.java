@@ -39,51 +39,46 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         {
             generator.writeStartObject();
 
-            // Meta
-            generator.writeStringProperty("request_journal_level", exchange.getRequestJournalLevel() != null ? exchange.getRequestJournalLevel().name() : null);
-            generator.writeStringProperty("response_journal_level", exchange.getResponseJournalLevel() != null ? exchange.getResponseJournalLevel().name() : null);
-
-            // --- Timing & IDs ---
-            // ClickHouse DateTime64(3) accepts Unix Millis
-            generator.writeNumberProperty("timestamp", exchange.getTimestamp());
+            // --- Meta & Levels ---
             generator.writeStringProperty("gateway_request_id", exchange.getRequestId().toString());
-            generator.writeNumberProperty("response_time", exchange.getDurationNanos() / 1_000_000); // ns to ms
+            generator.writeNumberProperty("timestamp", exchange.getTimestamp());
+            generator.writeNumberProperty("duration_ms", exchange.getDurationNanos() / 1_000_000);
 
-            // --- Request Info ---
-            final String[] parts = exchange.getRequestStartLine().toString().split("\\s+");
-            if (parts.length >= 2)
-            {
-                generator.writeStringProperty("method", parts[0]); // GET, POST, etc.
-                generator.writeStringProperty("path", parts[1]);   // /api/v1/resource
-            }
-            generator.writePOJOProperty("request_headers", GatewayUtils.toMap(exchange.getRequestHeaders()));
+            writeJournalLevels(exchange);
 
-            // Helper for specific schema columns
-            generator.writeStringProperty("request_content_type", getHeader(exchange.getRequestHeaders(), HttpHeaders.CONTENT_TYPE));
-            generator.writeStringProperty("user_agent", getHeader(exchange.getRequestHeaders(), HttpHeaders.USER_AGENT));
-            generator.writeStringProperty("host", getHeader(exchange.getRequestHeaders(), HttpHeaders.HOST));
+            // --- Slice 1: Client Request (Pristine) ---
+            writeRequestSlice(exchange.getClientRequestStartLine(), exchange.getClientRequestHeaders(), "client");
 
-            // --- Response Info ---
+            // --- Slice 2: Upstream Request (Mutated) ---
+            writeRequestSlice(exchange.getUpstreamRequestStartLine(), exchange.getUpstreamRequestHeaders(), "upstream");
+
+            // --- Slice 3: Upstream Response (Raw Backend) ---
+            writeResponseSlice(exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(), "upstream");
+
+            // --- Slice 4: Client Response (Final Egress) ---
+            writeResponseSlice(exchange.getClientResponseStartLine(), exchange.getClientResponseHeaders(), "client");
+
+            // --- Metrics & Status ---
             int status = exchange.getStatus();
             generator.writeNumberProperty("status", status);
             generator.writeNumberProperty("is_error", status >= HttpStatuses.BAD_REQUEST ? 1 : 0);
-            generator.writePOJOProperty("response_headers", GatewayUtils.toMap(exchange.getResponseHeaders()));
-            generator.writeStringProperty("response_content_type", getHeader(exchange.getResponseHeaders(), HttpHeaders.CONTENT_TYPE));
+            generator.writeNumberProperty("bytes_sent", exchange.getBytesSent());
+            generator.writeNumberProperty("bytes_received", exchange.getBytesReceived());
 
-            // --- Size Metrics ---
-            generator.writeNumberProperty("request_body_size", exchange.getBytesReceived());
-            generator.writeNumberProperty("response_body_size", exchange.getBytesSent());
+            // --- Forensic Checksums ---
+            generator.writeNumberProperty("request_crc32", exchange.getRequestCrc32());
+            generator.writeNumberProperty("response_crc32", exchange.getResponseCrc32());
 
-            // --- Payloads (Streaming Binary) ---
+            // --- Payloads ---
             writeBody("request_body", exchange.getRequestBodyFragments());
             writeBody("response_body", exchange.getResponseBodyFragments());
 
+            // --- Attributes (Internal Context) ---
             generator.writePOJOProperty("attributes", GatewayUtils.toMap(exchange.getAttributes()));
 
             generator.writeEndObject();
             generator.flush();
 
-            // JSONEachRow requires a newline after every object
             out.write(NEWLINE);
             out.flush();
         }
@@ -91,6 +86,35 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         {
             throw new RuntimeException("Failed to write JSON row", e);
         }
+    }
+
+    private void writeJournalLevels(JournalExchange exchange) throws IOException
+    {
+        generator.writeStringProperty("client_request_level", exchange.getClientRequestLevel() != null ? exchange.getClientRequestLevel().name() : null);
+        generator.writeStringProperty("upstream_request_level", exchange.getUpstreamRequestLevel() != null ? exchange.getUpstreamRequestLevel().name() : null);
+        generator.writeStringProperty("upstream_response_level", exchange.getUpstreamResponseLevel() != null ? exchange.getUpstreamResponseLevel().name() : null);
+        generator.writeStringProperty("client_response_level", exchange.getClientResponseLevel() != null ? exchange.getClientResponseLevel().name() : null);
+    }
+
+    private void writeRequestSlice(CharSequence startLine, GatewayHeaders headers, String prefix) throws IOException
+    {
+        if (startLine != null)
+        {
+            final String[] parts = startLine.toString().split("\\s+");
+            generator.writeStringProperty(prefix + "_method", parts.length > 0 ? parts[0] : null);
+            generator.writeStringProperty(prefix + "_path", parts.length > 1 ? parts[1] : null);
+        }
+        generator.writePOJOProperty(prefix + "_request_headers", GatewayUtils.toMap(headers));
+
+        // Flattened common search columns
+        generator.writeStringProperty(prefix + "_host", getHeader(headers, HttpHeaders.HOST));
+        generator.writeStringProperty(prefix + "_user_agent", getHeader(headers, HttpHeaders.USER_AGENT));
+    }
+
+    private void writeResponseSlice(CharSequence startLine, GatewayHeaders headers, String prefix) throws IOException
+    {
+        generator.writePOJOProperty(prefix + "_response_headers", GatewayUtils.toMap(headers));
+        generator.writeStringProperty(prefix + "_content_type", getHeader(headers, HttpHeaders.CONTENT_TYPE));
     }
 
     private void writeBody(String fieldName, List<ByteBuffer> fragments) throws IOException
@@ -101,16 +125,12 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             return;
         }
         generator.writeName(fieldName);
-        // Safely encode binary data as Base64 for the String/Nullable(String) columns
         generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
     }
 
     private String getHeader(GatewayHeaders headers, String key)
     {
-        if (headers == null)
-        {
-            return null;
-        }
+        if (headers == null) return null;
         return Optional.ofNullable(headers.getFirst(key)).map(CharSequence::toString).orElse(null);
     }
 }

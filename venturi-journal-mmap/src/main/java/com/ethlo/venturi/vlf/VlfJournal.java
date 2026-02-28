@@ -1,9 +1,7 @@
 package com.ethlo.venturi.vlf;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
-import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -23,45 +21,50 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
-import com.ethlo.venturi.vlf.fbs.BodyEvent;
-import com.ethlo.venturi.vlf.fbs.EndEvent;
+import com.ethlo.venturi.vlf.fbs.ClientRequest;
+import com.ethlo.venturi.vlf.fbs.ClientResponse;
+import com.ethlo.venturi.vlf.fbs.EndExchange;
 import com.ethlo.venturi.vlf.fbs.EventPayload;
 import com.ethlo.venturi.vlf.fbs.Header;
 import com.ethlo.venturi.vlf.fbs.JournalEvent;
-import com.ethlo.venturi.vlf.fbs.StartEvent;
+import com.ethlo.venturi.vlf.fbs.RequestBody;
+import com.ethlo.venturi.vlf.fbs.ResponseBody;
+import com.ethlo.venturi.vlf.fbs.UpstreamRequest;
+import com.ethlo.venturi.vlf.fbs.UpstreamResponse;
 import com.google.flatbuffers.FlatBufferBuilder;
 
 public final class VlfJournal implements Journal
 {
     private static final Logger logger = LoggerFactory.getLogger(VlfJournal.class);
-    private static final long OS_PAGE_SIZE = 4096L;
-    private static final ValueLayout.OfInt INT_BE = JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-    private static final ValueLayout.OfShort SHORT_BE = JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+    private static final ValueLayout.OfInt INT_BE = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+    private static final ValueLayout.OfShort SHORT_BE = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final int MAX_SCRATCH = 8192;
-    private static final int MAGIC = 0x564C4631; // "VLF1"
+    private static final int MAGIC = 0x564C4631;
+
     private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
-    // Keep these at the class level to prevent allocation!
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
     private final int[] headerOffsetsScratch = new int[1024];
     private final int[] attributeOffsetsScratch = new int[100];
+
     private final VlfJournalProvider provider;
     private final Consumer<Path> finishedJournalFileSupplier;
-    byte[] journalLevels = new byte[]{
+
+    private final byte[] fbsJournalLevels = new byte[]{
             com.ethlo.venturi.vlf.fbs.JournalLevel.NONE,
             com.ethlo.venturi.vlf.fbs.JournalLevel.METADATA,
             com.ethlo.venturi.vlf.fbs.JournalLevel.HEADERS,
             com.ethlo.venturi.vlf.fbs.JournalLevel.FULL,
     };
-    private int currentAttributeCount = 0;
-    private int currentHeaderCount = 0;
-    private FileChannel channel;
-    private Arena arena;
+
     private MemorySegment segment;
-    private long position;
+    private Arena arena;
     private Path activePath;
+    private long position;
+    private FileChannel channel;
+    private int currentHeaderCount;
+    private int currentAttributeCount;
 
     public VlfJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
@@ -70,177 +73,198 @@ public final class VlfJournal implements Journal
         rotateSegment();
     }
 
-    public VlfJournal(VlfJournalProvider provider, int segmentSize)
+    public VlfJournal(VlfJournalProvider provider)
     {
-        this(provider, null);
+        this(provider, _ -> {
+                }
+        );
     }
 
-    private static void updateInt(CRC32C crc, int value)
+    /* ============================================================
+       THE FOUR METADATA SLICES
+       ============================================================ */
+
+    @Override
+    public synchronized void clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
-        crc.update((value >>> 24) & 0xFF);
-        crc.update((value >>> 16) & 0xFF);
-        crc.update((value >>> 8) & 0xFF);
-        crc.update(value & 0xFF);
-    }
+        fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int lineOff = fbb.createByteVector(startLine);
+        int headOff = buildHeadersVector(headers);
 
-    /* =======================
-       PUBLIC API
-       ======================= */
-
-    // The restored and slightly JIT-optimized scratch copier
-    private int copyToScratch(CharSequence s)
-    {
-        final int len = s.length();
-        if (len > MAX_SCRATCH)
-        {
-            throw new IllegalArgumentException("String exceeds max scratch size: " + len);
-        }
-
-        final byte[] dest = this.asciiScratch;
-
-        // JIT optimization: Devirtualizes the charAt call if it's a standard String
-        if (s instanceof String str)
-        {
-            for (int i = 0; i < len; i++)
-            {
-                dest[i] = (byte) str.charAt(i);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < len; i++)
-            {
-                dest[i] = (byte) s.charAt(i);
-            }
-        }
-        return len;
+        ClientRequest.startClientRequest(fbb);
+        ClientRequest.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        ClientRequest.addReqId(fbb, reqIdOff);
+        ClientRequest.addStartLine(fbb, lineOff);
+        ClientRequest.addHeaders(fbb, headOff);
+        finishAndWrite(EventPayload.ClientRequest, ClientRequest.endClientRequest(fbb));
     }
 
     @Override
-    public synchronized void start(ServerDirection dir, JournalLevel journalLevel, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized void upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int lineOff = fbb.createByteVector(startLine);
+        int headOff = buildHeadersVector(headers);
 
-        int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
-        int startLineOffset = fbb.createByteVector(startLine);
+        UpstreamRequest.startUpstreamRequest(fbb);
+        UpstreamRequest.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        UpstreamRequest.addReqId(fbb, reqIdOff);
+        UpstreamRequest.addStartLine(fbb, lineOff);
+        UpstreamRequest.addHeaders(fbb, headOff);
+        finishAndWrite(EventPayload.UpstreamRequest, UpstreamRequest.endUpstreamRequest(fbb));
+    }
+
+    @Override
+    public synchronized void upstreamResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    {
+        fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int lineOff = fbb.createByteVector(startLine);
+        int headOff = buildHeadersVector(headers);
+
+        UpstreamResponse.startUpstreamResponse(fbb);
+        UpstreamResponse.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        UpstreamResponse.addReqId(fbb, reqIdOff);
+        UpstreamResponse.addStartLine(fbb, lineOff);
+        UpstreamResponse.addHeaders(fbb, headOff);
+        finishAndWrite(EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
+    }
+
+    @Override
+    public synchronized void clientResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    {
+        fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int lineOff = fbb.createByteVector(startLine);
+        int headOff = buildHeadersVector(headers);
+
+        ClientResponse.startClientResponse(fbb);
+        ClientResponse.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        ClientResponse.addReqId(fbb, reqIdOff);
+        ClientResponse.addStartLine(fbb, lineOff);
+        ClientResponse.addHeaders(fbb, headOff);
+        finishAndWrite(EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));
+    }
+
+    /* ============================================================
+       BODY DATA CHANNELS
+       ============================================================ */
+
+    @Override
+    public synchronized void requestBody(CharSequence reqId, ByteBuffer data)
+    {
+        fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        RequestBody.startRequestBody(fbb);
+        RequestBody.addReqId(fbb, reqIdOff);
+        RequestBody.addLength(fbb, data.remaining());
+        finishAndWrite(EventPayload.RequestBody, RequestBody.endRequestBody(fbb), data);
+    }
+
+    @Override
+    public synchronized void responseBody(CharSequence reqId, ByteBuffer data)
+    {
+        fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        ResponseBody.startResponseBody(fbb);
+        ResponseBody.addReqId(fbb, reqIdOff);
+        ResponseBody.addLength(fbb, data.remaining());
+        finishAndWrite(EventPayload.ResponseBody, ResponseBody.endResponseBody(fbb), data);
+    }
+
+    @Override
+    public synchronized void endExchange(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration, long reqCrc, long resCrc)
+    {
+        fbb.clear();
+        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int attrVecOff = buildAttributesVector(attributes);
+
+        EndExchange.startEndExchange(fbb);
+        EndExchange.addReqId(fbb, reqIdOff);
+        EndExchange.addTimestamp(fbb, System.currentTimeMillis());
+        EndExchange.addStatus(fbb, status);
+        EndExchange.addBytesSent(fbb, sent);
+        EndExchange.addBytesReceived(fbb, recv);
+        EndExchange.addDuration(fbb, duration);
+        EndExchange.addAttributes(fbb, attrVecOff);
+        EndExchange.addRequestCrc32c(fbb, (int) reqCrc);
+        EndExchange.addResponseCrc32c(fbb, (int) resCrc);
+        finishAndWrite(EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
+    }
+
+    /* ============================================================
+       PRIVATE LOGIC & UTILITIES
+       ============================================================ */
+
+    private void finishAndWrite(byte type, int offset)
+    {
+        finishAndWrite(type, offset, null);
+    }
+
+    private void finishAndWrite(byte type, int offset, ByteBuffer rawData)
+    {
+        JournalEvent.startJournalEvent(fbb);
+        JournalEvent.addEventType(fbb, type);
+        JournalEvent.addEvent(fbb, offset);
+        fbb.finish(JournalEvent.endJournalEvent(fbb));
+        writeEntry(fbb, rawData);
+    }
+
+    private int buildHeadersVector(GatewayHeaders headers)
+    {
         this.currentHeaderCount = 0;
-
-        // Pass 'this' as state to avoid capturing lambda allocation
-        headers.forEach(this, (self, name, value) ->
-                {
-                    writeFlatBufferHeader(self, name, value);
+        headers.forEach(this, (self, name, value) -> {
+                    int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
+                    int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
+                    Header.startHeader(self.fbb);
+                    Header.addName(self.fbb, nOff);
+                    Header.addValue(self.fbb, vOff);
                     self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
                 }
         );
-
-        int headerCount = this.currentHeaderCount;
-        StartEvent.startHeadersVector(fbb, headerCount);
-        for (int i = headerCount - 1; i >= 0; i--)
-        {
-            fbb.addOffset(headerOffsetsScratch[i]);
-        }
-        int headersVectorOffset = fbb.endVector();
-
-        StartEvent.startStartEvent(fbb);
-        StartEvent.addJournalLevel(fbb, journalLevels[journalLevel.ordinal()]);
-        StartEvent.addReqId(fbb, reqIdOffset);
-        StartEvent.addDirection(fbb, (byte) dir.ordinal());
-        StartEvent.addStartLine(fbb, startLineOffset);
-        StartEvent.addHeaders(fbb, headersVectorOffset);
-        int startEventOffset = StartEvent.endStartEvent(fbb);
-
-        JournalEvent.startJournalEvent(fbb);
-        JournalEvent.addEventType(fbb, EventPayload.StartEvent);
-        JournalEvent.addEvent(fbb, startEventOffset);
-        int rootOffset = JournalEvent.endJournalEvent(fbb);
-
-        fbb.finish(rootOffset);
-        writeEntry(fbb, null);
+        return currentHeaderCount == 0 ? 0 : createOffsetVector(headerOffsetsScratch, currentHeaderCount);
     }
 
-    @Override
-    public synchronized void body(ServerDirection dir, CharSequence reqId, ByteBuffer data)
+    private int buildAttributesVector(GatewayAttributes attributes)
     {
-        while (data.hasRemaining())
-        {
-            fbb.clear();
-            int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
-
-            BodyEvent.startBodyEvent(fbb);
-            BodyEvent.addReqId(fbb, reqIdOffset);
-            BodyEvent.addDirection(fbb, dir == ServerDirection.REQUEST ?
-                    com.ethlo.venturi.vlf.fbs.ServerDirection.REQUEST :
-                    com.ethlo.venturi.vlf.fbs.ServerDirection.RESPONSE
-            );
-            BodyEvent.addLength(fbb, data.remaining());
-            int bodyEventOffset = BodyEvent.endBodyEvent(fbb);
-            JournalEvent.startJournalEvent(fbb);
-            JournalEvent.addEventType(fbb, EventPayload.BodyEvent);
-            JournalEvent.addEvent(fbb, bodyEventOffset);
-            int rootOffset = JournalEvent.endJournalEvent(fbb);
-
-            fbb.finish(rootOffset);
-            writeEntry(fbb, data);
-        }
-    }
-
-    /* =======================
-       ZERO-COPY WRITE
-       ======================= */
-
-    @Override
-    public synchronized void end(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration)
-    {
-        fbb.clear();
-        final int reqIdOffset = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
-
-        // 1. Process Attributes using zero-allocation iteration
         this.currentAttributeCount = 0;
         if (attributes != null)
         {
-            attributes.forEach(this, (self, name, value) ->
-                    {
-                        writeFlatBufferHeader(self, name, value);
+            attributes.forEach(this, (self, name, value) -> {
+                        int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
+                        int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
+                        Header.startHeader(self.fbb);
+                        Header.addName(self.fbb, nOff);
+                        Header.addValue(self.fbb, vOff);
                         self.attributeOffsetsScratch[self.currentAttributeCount++] = Header.endHeader(self.fbb);
                     }
             );
         }
-
-        int attributeCount = this.currentAttributeCount;
-        EndEvent.startAttributesVector(fbb, attributeCount);
-        for (int i = attributeCount - 1; i >= 0; i--)
-        {
-            fbb.addOffset(attributeOffsetsScratch[i]);
-        }
-        int attributesVectorOffset = fbb.endVector();
-
-        EndEvent.startEndEvent(fbb);
-        EndEvent.addReqId(fbb, reqIdOffset);
-        EndEvent.addTimestamp(fbb, System.currentTimeMillis());
-        EndEvent.addStatus(fbb, status);
-        EndEvent.addBytesSent(fbb, sent);
-        EndEvent.addBytesReceived(fbb, recv);
-        EndEvent.addDuration(fbb, duration);
-        EndEvent.addAttributes(fbb, attributesVectorOffset);
-        final int endEventOffset = EndEvent.endEndEvent(fbb);
-
-        JournalEvent.startJournalEvent(fbb);
-        JournalEvent.addEventType(fbb, EventPayload.EndEvent);
-        JournalEvent.addEvent(fbb, endEventOffset);
-        int rootOffset = JournalEvent.endJournalEvent(fbb);
-
-        fbb.finish(rootOffset);
-        writeEntry(fbb, null);
+        return currentAttributeCount == 0 ? 0 : createOffsetVector(attributeOffsetsScratch, currentAttributeCount);
     }
 
-    private void writeFlatBufferHeader(final VlfJournal self, final CharSequence name, final CharSequence value)
+    private int createOffsetVector(int[] offsets, int count)
     {
-        int nameOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
-        int valueOffset = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
+        fbb.startVector(4, count, 4);
+        for (int i = count - 1; i >= 0; i--) fbb.addOffset(offsets[i]);
+        return fbb.endVector();
+    }
 
-        Header.startHeader(self.fbb);
-        Header.addName(self.fbb, nameOffset);
-        Header.addValue(self.fbb, valueOffset);
+    private int copyToScratch(CharSequence s)
+    {
+        final int len = s.length();
+        for (int i = 0; i < len; i++) asciiScratch[i] = (byte) s.charAt(i);
+        return len;
+    }
+
+    private void updateInt(CRC32C crc, int v)
+    {
+        crc.update((v >>> 24) & 0xFF);
+        crc.update((v >>> 16) & 0xFF);
+        crc.update((v >>> 8) & 0xFF);
+        crc.update(v & 0xFF);
     }
 
     @Override
@@ -411,16 +435,7 @@ public final class VlfJournal implements Journal
 
     private void preFaultSegment(MemorySegment segment)
     {
-        final long capacity = segment.byteSize();
-        for (long offset = 0; offset < capacity; offset += OS_PAGE_SIZE)
-        {
-            segment.set(JAVA_BYTE, offset, (byte) 0);
-        }
-
-        if (capacity > 0)
-        {
-            segment.set(JAVA_BYTE, capacity - 1, (byte) 0);
-        }
+        segment.fill((byte) 0);
     }
 
     private long remaining()
@@ -440,9 +455,7 @@ public final class VlfJournal implements Journal
 
         putInt(VlfConstants.MAGIC);
         putShort(VlfConstants.VERSION_1);
-        // For now, using System.currentTimeMillis() as a simple chronological fallback
         putLong(System.currentTimeMillis());
-
         position = VlfConstants.PREAMBLE_SIZE;
     }
 

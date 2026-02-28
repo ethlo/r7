@@ -12,7 +12,6 @@ import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.journal.api.Journal;
@@ -38,31 +37,35 @@ public final class PolicyJournal implements Journal
 
     private final Journal delegate;
     private final RouteJournalConfig config;
-    private final Set<CharSequence> safeHeaders;
+    private final Set<CharSequence> safeHeaders = new HashSet<>();
     private final GatewayExchange exchange;
-    private final StatefulEntryConsumer<MutableGatewayHeaders> redactingConsumer = new StatefulEntryConsumer<>()
+
+    private final StatefulEntryConsumer<MutableGatewayHeaders> redactingConsumer = (state, name, value) ->
     {
-        @Override
-        public void accept(final MutableGatewayHeaders state, final CharSequence name, final CharSequence value)
+        if (safeHeaders.contains(name))
         {
-            if (safeHeaders.contains(name))
-            {
-                state.add(name, value);
-            }
-            else
-            {
-                state.add(name, fingerprint(value.toString()));
-            }
+            state.add(name, value);
+        }
+        else
+        {
+            state.add(name, fingerprint(value.toString()));
         }
     };
-    // --- Request-Scoped State ---
+
+    // --- State Management for Status-Based Decision ---
     private CharSequence requestId;
-    private boolean reqStartHandled = false;
-    private ByteBuffer reqStartLine;
-    private GatewayHeaders reqHeaders;
-    private boolean resStartHandled = false;
-    private ByteBuffer resStartLine;
-    private GatewayHeaders resHeaders;
+    private boolean reqFlushed = false;
+    private boolean resFlushed = false;
+
+    // We keep clones of the metadata until we know the final status code
+    private ByteBuffer clientReqLine;
+    private GatewayHeaders clientReqHeaders;
+    private ByteBuffer upstreamReqLine;
+    private GatewayHeaders upstreamReqHeaders;
+    private ByteBuffer upstreamResLine;
+    private GatewayHeaders upstreamResHeaders;
+    private ByteBuffer clientResLine;
+    private GatewayHeaders clientResHeaders;
 
     public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final Collection<String> safeHeaders, final GatewayExchange exchange)
     {
@@ -70,7 +73,6 @@ public final class PolicyJournal implements Journal
         this.config = config;
         this.exchange = exchange;
 
-        this.safeHeaders = new HashSet<>(safeHeaders.size());
         for (final String header : safeHeaders)
         {
             this.safeHeaders.add(header.toLowerCase());
@@ -78,133 +80,136 @@ public final class PolicyJournal implements Journal
     }
 
     @Override
-    public void start(final ServerDirection direction, final JournalLevel ignoredLevel, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers)
+    public void clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         this.requestId = reqId;
+        this.clientReqLine = cloneBuffer(startLine);
+        this.clientReqHeaders = headers;
 
-        if (direction == ServerDirection.REQUEST)
+        // If the route is configured for mandatory FULL logging, we can flush early
+        if (config.request().level() == JournalLevel.FULL)
         {
-            this.reqStartLine = cloneBuffer(startLine);
-            this.reqHeaders = headers;
+            checkAndFlushRequest();
+        }
+    }
 
-            if (config.request().level() == JournalLevel.FULL)
+    @Override
+    public void upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    {
+        this.upstreamReqLine = cloneBuffer(startLine);
+        this.upstreamReqHeaders = headers;
+    }
+
+    @Override
+    public void upstreamResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    {
+        this.upstreamResLine = cloneBuffer(startLine);
+        this.upstreamResHeaders = headers;
+
+        // Now that we have a response status, we might be able to decide the logging level
+        checkAndFlushRequest();
+        checkAndFlushResponse();
+    }
+
+    @Override
+    public void clientResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    {
+        this.clientResLine = cloneBuffer(startLine);
+        this.clientResHeaders = headers;
+    }
+
+    @Override
+    public void requestBody(CharSequence reqId, ByteBuffer data)
+    {
+        if (config.request().level() == JournalLevel.FULL)
+        {
+            delegate.requestBody(reqId, data);
+        }
+    }
+
+    @Override
+    public void responseBody(CharSequence reqId, ByteBuffer data)
+    {
+        // Response body logging is almost always status-dependent
+        if (config.response().resolve(exchange.response().status()) == JournalLevel.FULL)
+        {
+            delegate.responseBody(reqId, data);
+        }
+    }
+
+    @Override
+    public void endExchange(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration, long reqCrc, long resCrc)
+    {
+        // Final safety flush in case of early errors or short-circuits
+        checkAndFlushRequest();
+        checkAndFlushResponse();
+
+        delegate.endExchange(reqId, attributes, status, sent, recv, duration, reqCrc, resCrc);
+    }
+
+    @Override
+    public void close() throws java.io.IOException
+    {
+        delegate.close();
+    }
+
+    private void checkAndFlushRequest()
+    {
+        if (reqFlushed || clientReqLine == null) return;
+
+        final int status = exchange.response().status();
+        final JournalLevel reqLevel = config.request().resolve(status);
+        final JournalLevel resLevel = config.response().resolve(status);
+
+        // Bilateral Context Promotion: If response is logged, we need request metadata
+        JournalLevel effectiveLevel = reqLevel;
+        if (effectiveLevel == JournalLevel.NONE && resLevel != JournalLevel.NONE)
+        {
+            effectiveLevel = JournalLevel.METADATA;
+        }
+
+        if (effectiveLevel != JournalLevel.NONE)
+        {
+            delegate.clientRequest(effectiveLevel, requestId, clientReqLine,
+                    effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(clientReqHeaders)
+            );
+
+            if (upstreamReqLine != null)
             {
-                // If request is FULL, we don't care what the response is yet.
-                flushRequestStart(JournalLevel.FULL, JournalLevel.NONE);
+                delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine,
+                        effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(upstreamReqHeaders)
+                );
             }
+            this.reqFlushed = true;
         }
-        else
+    }
+
+    private void checkAndFlushResponse()
+    {
+        if (resFlushed || upstreamResLine == null) return;
+
+        final int status = exchange.response().status();
+        final JournalLevel resLevel = config.response().resolve(status);
+
+        if (resLevel != JournalLevel.NONE)
         {
-            this.resStartLine = cloneBuffer(startLine);
-            this.resHeaders = headers;
+            delegate.upstreamResponse(resLevel, requestId, upstreamResLine,
+                    resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(upstreamResHeaders)
+            );
 
-            final int status = exchange.response().status();
-            final JournalLevel finalReqLevel = config.request().resolve(status);
-            final JournalLevel finalResLevel = config.response().resolve(status);
-
-            if (!reqStartHandled)
+            if (clientResLine != null)
             {
-                flushRequestStart(finalReqLevel, finalResLevel);
+                delegate.clientResponse(resLevel, requestId, clientResLine,
+                        resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(clientResHeaders)
+                );
             }
-
-            flushResponseStart(finalResLevel);
-        }
-    }
-
-    @Override
-    public void end(final CharSequence reqId, final GatewayAttributes attributes, final int status, final long sent, final long recv, final long duration)
-    {
-        final JournalLevel finalReqLevel = config.request().resolve(status);
-        final JournalLevel finalResLevel = config.response().resolve(status);
-
-        if (!reqStartHandled && reqStartLine != null)
-        {
-            flushRequestStart(finalReqLevel, finalResLevel);
-        }
-
-        if (!resStartHandled && resStartLine != null)
-        {
-            flushResponseStart(finalResLevel);
-        }
-
-        delegate.end(reqId, attributes, status, sent, recv, duration);
-    }
-
-    @Override
-    public void body(final ServerDirection direction, final CharSequence reqId, final ByteBuffer buffer)
-    {
-        final JournalLevel level;
-
-        if (direction == ServerDirection.REQUEST)
-        {
-            // Overrides cannot elevate to FULL, so the base level is mathematically safe here.
-            level = config.request().level();
-        }
-        else
-        {
-            level = config.response().resolve(exchange.response().status());
-        }
-
-        if (level == JournalLevel.FULL)
-        {
-            delegate.body(direction, reqId, buffer);
-        }
-    }
-
-    @Override
-    public void close()
-    {
-        // Nothing to close
-    }
-
-    private void flushRequestStart(final JournalLevel reqLevel, final JournalLevel resLevel)
-    {
-        this.reqStartHandled = true;
-
-        JournalLevel effectiveReqLevel = reqLevel;
-
-        // If the response is being logged, we MUST have at least the request metadata
-        // so the tailer knows the Method and URI.
-        if (effectiveReqLevel == JournalLevel.NONE && resLevel != JournalLevel.NONE)
-        {
-            effectiveReqLevel = JournalLevel.METADATA;
-        }
-
-        if (effectiveReqLevel == JournalLevel.NONE)
-        {
-            return;
-        }
-
-        if (effectiveReqLevel == JournalLevel.METADATA)
-        {
-            delegate.start(ServerDirection.REQUEST, effectiveReqLevel, requestId, reqStartLine, FastGatewayHeaders.empty());
-        }
-        else
-        {
-            delegate.start(ServerDirection.REQUEST, effectiveReqLevel, requestId, reqStartLine, redact(reqHeaders));
-        }
-    }
-
-    private void flushResponseStart(final JournalLevel resolvedLevel)
-    {
-        this.resStartHandled = true;
-        if (resolvedLevel == JournalLevel.NONE)
-        {
-            return;
-        }
-
-        if (resolvedLevel == JournalLevel.METADATA)
-        {
-            delegate.start(ServerDirection.RESPONSE, resolvedLevel, requestId, resStartLine, FastGatewayHeaders.empty());
-        }
-        else
-        {
-            delegate.start(ServerDirection.RESPONSE, resolvedLevel, requestId, resStartLine, redact(resHeaders));
+            this.resFlushed = true;
         }
     }
 
     private GatewayHeaders redact(final GatewayHeaders original)
     {
+        if (original == null) return FastGatewayHeaders.empty();
         final MutableGatewayHeaders redacted = new MutableFastGatewayHeaders();
         original.forEach(redacted, this.redactingConsumer);
         return redacted;
@@ -215,35 +220,25 @@ public final class PolicyJournal implements Journal
         final MessageDigest digest = SHA_256.get();
         digest.reset();
         final byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-
-        // "id:sha256:" is 10 chars + 6 hex chars = 16 chars total
         final char[] out = new char[16];
         "id:sha256:".getChars(0, 10, out, 0);
-
         for (int j = 0; j < 3; j++)
         {
             final int v = hash[j] & 0xFF;
             out[10 + j * 2] = (char) HEX_ARRAY[v >>> 4];
             out[11 + j * 2] = (char) HEX_ARRAY[v & 0x0F];
         }
-
         return new String(out);
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)
     {
         if (original == null) return null;
-
-        // Allocate a new buffer on the heap safely sized to the remaining bytes
         final ByteBuffer copy = ByteBuffer.allocate(original.remaining());
-
-        // Mark the original position so we don't mutate the source buffer's state
         final int pos = original.position();
-
         copy.put(original);
-        original.position(pos); // Restore original
-
-        copy.flip(); // Prepare our clone for reading by the delegate
+        original.position(pos);
+        copy.flip();
         return copy;
     }
 }

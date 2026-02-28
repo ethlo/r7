@@ -17,7 +17,6 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.chronograph.Chronograph;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayAttributes;
@@ -59,15 +58,15 @@ public final class VlfPerformanceBenchmarkTest
             chronograph.time("Encode " + iterations, () ->
                     {
                         // Ensure the journal is closed IMMEDIATELY after the loop
-                        try (final VlfJournal journal = new VlfJournal(provider, Integer.MAX_VALUE))
+                        try (final VlfJournal journal = new VlfJournal(provider))
                         {
                             journalRef.set(journal);
                             for (int i = 0; i < iterations; i++)
                             {
                                 final String id = "req" + i;
-                                journal.start(ServerDirection.REQUEST, JournalLevel.FULL, id, startLine, headers);
-                                journal.body(ServerDirection.REQUEST, id, body);
-                                journal.end(id, new FastGatewayAttributes(), 200, 150, 200, 15);
+                                journal.clientRequest(JournalLevel.FULL, id, startLine, headers);
+                                journal.requestBody(id, body);
+                                journal.endExchange(id, new FastGatewayAttributes(), 200, 150, 200, 15, 0, 0);
                             }
                         }
                         catch (Exception e)

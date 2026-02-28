@@ -5,24 +5,22 @@ import java.nio.ByteBuffer;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 
 public interface Journal extends AutoCloseable
 {
-    /**
-     * Records the metadata for a request or response.
-     */
-    void start(ServerDirection dir, JournalLevel journalLevel, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
+    void clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
 
-    /**
-     * Records a chunk of payload data.
-     */
-    void body(ServerDirection dir, CharSequence reqId, ByteBuffer data);
+    void upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
 
-    /**
-     * Records metrics and marks the exchange as finished.
-     */
-    void end(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration);
+    void upstreamResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
+
+    void clientResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
+
+    void requestBody(CharSequence reqId, ByteBuffer data);
+
+    void responseBody(CharSequence reqId, ByteBuffer data);
+
+    void endExchange(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration, long reqCrc, long resCrc);
 
     @Override
     void close() throws IOException;

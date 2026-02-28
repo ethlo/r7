@@ -14,7 +14,6 @@ import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayResponse;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.api.StateKey;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.config.RouteRegistry;
@@ -108,8 +107,8 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.putInternalState(PRE_ROUTING_COMMIT_LISTENER_KEY, (e, body) ->
                 {
                     final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(e);
-                    smartJournal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, e.upstreamResponse().headers());
-                    smartJournal.body(ServerDirection.RESPONSE, requestId, body);
+                    smartJournal.clientResponse(JournalLevel.NONE, requestId, resStartLine, e.upstreamResponse().headers());
+                    smartJournal.responseBody(requestId, body);
                 }
         );
 
@@ -137,18 +136,18 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         // Immediately buffer the request metadata. PolicyJournal will flush it later if needed.
         final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange);
-        journal.start(ServerDirection.REQUEST, JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.request().headers());
+        journal.clientRequest(JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.request().headers());
 
         // Attach body listeners unconditionally. PolicyJournal will drop the bytes if level != FULL.
         if (journalConfig.request().level() == JournalLevel.FULL)
         {
-            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer -> journal.body(ServerDirection.REQUEST, requestId, buffer)));
+            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer -> journal.requestBody(requestId, buffer)));
         }
 
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
             exchange.addResponseWrapper((factory, ex) ->
-                    new TeeingStreamSinkConduit(factory.create(), buffer -> journal.body(ServerDirection.RESPONSE, requestId, buffer)));
+                    new TeeingStreamSinkConduit(factory.create(), buffer -> journal.responseBody(requestId, buffer)));
         }
 
         // Close the transaction when the exchange naturally completes
@@ -158,11 +157,16 @@ public final class VenturiUndertowHandler implements HttpHandler
             {
                 // Push response metadata (PolicyJournal deduplicates if PRE_ROUTING already called this)
                 final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                journal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, gatewayExchange.upstreamResponse().headers());
+                journal.clientResponse(JournalLevel.NONE, requestId, resStartLine, gatewayExchange.upstreamResponse().headers());
 
                 // Seal the file block with the final stats!
                 final long duration = System.nanoTime() - gatewayExchange.getInternalState(REQUEST_START_NANOS_KEY);
-                journal.end(requestId, gatewayExchange.attributes(), ex.getStatusCode(), exchange.getResponseBytesSent(), requestBytesRead.get(), duration);
+
+                // TODO: Implement CRC!
+                final int reqCrc = 0;
+                final int resCrc = 0;
+
+                journal.endExchange(requestId, gatewayExchange.attributes(), ex.getStatusCode(), exchange.getResponseBytesSent(), requestBytesRead.get(), duration, reqCrc, resCrc);
             } finally
             {
                 nextListener.proceed();

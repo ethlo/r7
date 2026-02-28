@@ -2,22 +2,22 @@ package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
 
-import com.ethlo.venturi.api.GatewayAttributes;
-
-import com.ethlo.venturi.journal.api.JournalLevel;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.vlf.util.CharSequenceExchangeMap;
 
 public class ExchangeReassembler implements JournalEventListener
 {
     private static final Logger logger = LoggerFactory.getLogger(ExchangeReassembler.class);
+
+    // Using your optimized map for high-concurrency reassembly
     private final CharSequenceExchangeMap inFlight = new CharSequenceExchangeMap(10_000);
     private final ExchangeCompletionListener output;
 
@@ -27,70 +27,93 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onBegin(ServerDirection dir, final JournalLevel journalLevel, CharSequence id, CharSequence line, GatewayHeaders headers)
+    public void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
     {
-        JournalExchange exchange = inFlight.computeIfAbsent(id, JournalExchange::new);
-        if (dir == ServerDirection.REQUEST)
+        // Slice 1: The pristine ingress state
+        getOrCreate(reqId).setClientRequest(startLine, level, headers);
+    }
+
+    @Override
+    public void onUpstreamRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
+    {
+        // Slice 2: The mutated upstream intent
+        getOrCreate(reqId).setUpstreamRequest(startLine, level, headers);
+    }
+
+    @Override
+    public void onUpstreamResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
+    {
+        // Slice 3: The raw backend return
+        getOrCreate(reqId).setUpstreamResponse(startLine, level, headers);
+    }
+
+    @Override
+    public void onClientResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
+    {
+        // Slice 4: The final egress state
+        getOrCreate(reqId).setClientResponse(startLine, level, headers);
+    }
+
+    @Override
+    public void onRequestBody(CharSequence reqId, ByteBuffer bodyChunk)
+    {
+        final JournalExchange exchange = inFlight.get(reqId);
+        validateExchangeExists(exchange, reqId, "REQUEST_BODY");
+        exchange.appendBody(ServerDirection.REQUEST, bodyChunk);
+    }
+
+    @Override
+    public void onResponseBody(CharSequence reqId, ByteBuffer bodyChunk)
+    {
+        final JournalExchange exchange = inFlight.get(reqId);
+        validateExchangeExists(exchange, reqId, "RESPONSE_BODY");
+        exchange.appendBody(ServerDirection.RESPONSE, bodyChunk);
+    }
+
+    @Override
+    public void onEnd(CharSequence reqId, GatewayAttributes attributes, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos, long requestCrc32, long responseCrc32c)
+    {
+        final JournalExchange exchange = inFlight.remove(reqId);
+
+        if (exchange == null)
         {
-            exchange.setRequest(line, journalLevel, headers);
+            // Expected during shard boundaries or tailer startup
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("Received END for {} but no metadata exists. Skipping orphan.", reqId);
+            }
+            return;
         }
-        else
+
+        // Apply final metrics and forensic checksums
+        exchange.setMetrics(timestamp, status, bytesSent, bytesReceived, durationNanos);
+        exchange.setAttributes(attributes);
+        exchange.setChecksums(requestCrc32, responseCrc32c);
+
+        if (isExchangeComplete(exchange))
         {
-            exchange.setResponse(line, journalLevel, headers);
+            output.onComplete(exchange);
+        }
+    }
+
+    private JournalExchange getOrCreate(CharSequence id)
+    {
+        return inFlight.computeIfAbsent(id, JournalExchange::new);
+    }
+
+    private void validateExchangeExists(JournalExchange exchange, CharSequence id, String type)
+    {
+        if (exchange == null)
+        {
+            // If we have body data but no metadata slice, we have a protocol/ordering violation
+            throw new IllegalStateException("Protocol Violation: Received " + type + " for ID " + id + " but no Start event was recorded.");
         }
     }
 
     private boolean isExchangeComplete(JournalExchange exchange)
     {
-        // Did we see the REQUEST Begin? (Required for URL/Method)
-        boolean hasRequest = exchange.getRequestStartLine() != null;
-
-        // Did we see the END marker? (Required for Status/Latency)
-        boolean hasMetrics = exchange.getStatus() > 0;
-
-        return hasRequest && hasMetrics;
-    }
-
-    @Override
-    public void onBody(ServerDirection dir, CharSequence id, ByteBuffer body)
-    {
-        JournalExchange exchange = inFlight.get(id);
-        if (exchange == null)
-        {
-            // CRITICAL: If we have a body but no begin, we are out of sync
-            throw new IllegalStateException("Protocol Violation: Received BODY for ID " + id + " but no BEGIN event was recorded for this exchange.");
-        }
-        exchange.appendBody(dir, body);
-    }
-
-    @Override
-    public void onEnd(CharSequence requestId, GatewayAttributes attributes, long ts, int status, long sent, long recv, long dur)
-    {
-        JournalExchange exchange = inFlight.remove(requestId);
-
-        if (exchange == null)
-        {
-            // Missing BEGIN is expected at startup or shard boundaries.
-            // We log it and RETURN so the Tailer can keep moving.
-            if (logger.isDebugEnabled())
-            {
-                logger.debug("Received END for {} but no BEGIN exists. Skipping orphan.", requestId);
-            }
-            return;
-        }
-
-        // Set metrics. We don't care if RequestStartLine is null here;
-        // it might be in a different shard we haven't read yet this tick.
-        exchange.setMetrics(ts, status, sent, recv, dur);
-        exchange.setAttributes(attributes);
-
-        // Logic for completion: If we have what we need, move it to output.
-        // If not, we leave it in inFlight. The BEGIN handler will pick it up
-        // when it eventually finds the other half of the data.
-        if (isExchangeComplete(exchange))
-        {
-            //inFlight.remove(requestId);
-            output.onComplete(exchange);
-        }
+        // At minimum, we must have the original ClientRequest to know the Method/URI
+        // and a status > 0 from the EndExchange event.
+        return exchange.getClientRequestStartLine() != null && exchange.getStatus() > 0;
     }
 }

@@ -6,35 +6,35 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.function.BiConsumer;
 
 import com.ethlo.venturi.api.EntryConsumer;
-import com.ethlo.venturi.api.GatewayAttributes;
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.util.CharSequenceUtil;
-import com.ethlo.venturi.vlf.fbs.EndExchange;
 import com.ethlo.venturi.vlf.fbs.Header;
 
-/**
- * Zero-allocation projection of StartEvent headers
- */
-public class FbsGatewayAttributes implements GatewayAttributes
+public abstract class AbstractFbsGatewayHeaders implements GatewayHeaders
 {
-    private final EndExchange event;
     private final int count;
     private final Header reusableHeader = new Header();
 
-    FbsGatewayAttributes(EndExchange event)
+    protected AbstractFbsGatewayHeaders(int count)
     {
-        this.event = event;
-        this.count = event.attributesLength();
+        this.count = count;
     }
+
+    /**
+     * Implementation-specific way to fetch a header at a given index into the reusable object.
+     */
+    protected abstract void getHeader(Header target, int index);
 
     @Override
     public CharSequence getFirst(CharSequence name)
     {
         for (int i = 0; i < count; i++)
         {
-            event.attributes(reusableHeader, i);
+            getHeader(reusableHeader, i);
             if (CharSequenceUtil.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
             {
                 return decodeUtf8(reusableHeader.valueAsByteBuffer());
@@ -54,14 +54,11 @@ public class FbsGatewayAttributes implements GatewayAttributes
             @Override
             public boolean hasNext()
             {
-                if (nextVal != null)
-                {
-                    return true;
-                }
+                if (nextVal != null) return true;
 
                 while (idx < count)
                 {
-                    event.attributes(reusableHeader, idx++);
+                    getHeader(reusableHeader, idx++);
                     if (CharSequenceUtil.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
                     {
                         nextVal = decodeUtf8(reusableHeader.valueAsByteBuffer());
@@ -87,7 +84,7 @@ public class FbsGatewayAttributes implements GatewayAttributes
     {
         for (int i = 0; i < count; i++)
         {
-            event.attributes(reusableHeader, i);
+            getHeader(reusableHeader, i);
             consumer.accept(
                     asAscii(reusableHeader.nameAsByteBuffer()),
                     decodeUtf8(reusableHeader.valueAsByteBuffer())
@@ -101,7 +98,7 @@ public class FbsGatewayAttributes implements GatewayAttributes
     {
         for (int i = 0; i < count; i++)
         {
-            event.attributes(reusableHeader, i);
+            getHeader(reusableHeader, i);
             consumer.accept(
                     state,
                     asAscii(reusableHeader.nameAsByteBuffer()),
@@ -113,11 +110,7 @@ public class FbsGatewayAttributes implements GatewayAttributes
 
     private String decodeUtf8(ByteBuffer buf)
     {
-        if (buf == null)
-        {
-            return null;
-        }
-        ByteBuffer tmp = buf.duplicate();
-        return StandardCharsets.UTF_8.decode(tmp).toString();
+        if (buf == null) return null;
+        return StandardCharsets.UTF_8.decode(buf.duplicate()).toString();
     }
 }
