@@ -66,7 +66,7 @@ public final class VenturiExecutableRoute implements ExecutableRoute
     @Override
     public void execute(GatewayExchange exchange) throws Exception
     {
-        final HttpServerExchange undertowExchange = ((UndertowGatewayRequest) exchange.request()).getExchange();
+        final HttpServerExchange undertowExchange = ((UndertowGatewayRequest) exchange.upstreamRequest()).getExchange();
         final Iterable<GatewayFilter> filters = filters();
 
         // 1. Initial Logic (Sync)

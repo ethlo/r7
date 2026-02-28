@@ -8,9 +8,12 @@ import java.util.function.BiConsumer;
 import java.util.function.LongSupplier;
 
 import com.ethlo.venturi.ShardedJournalWriter;
-import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.GatewayRequest;
+import com.ethlo.venturi.api.GatewayResponse;
+import com.ethlo.venturi.api.MutableGatewayAttributes;
+import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.api.StateKey;
 import com.ethlo.venturi.config.RouteJournalConfig;
@@ -24,6 +27,7 @@ import com.ethlo.venturi.journal.PolicyJournal;
 import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayAttributes;
+import com.ethlo.venturi.util.GatewayCopier;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.vlf.VlfJournal;
@@ -79,12 +83,14 @@ public final class VenturiUndertowHandler implements HttpHandler
         execute(exchange, req, route, startNanos);
     }
 
-    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest req, final ExecutableRoute route, final long startNanos)
+    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final ExecutableRoute route, final long startNanos)
     {
         final CharSequence requestId = requestIdGenerator.generate();
-        final UndertowGatewayResponse res = new UndertowGatewayResponse(exchange);
-        final GatewayAttributes attrs = new FastGatewayAttributes();
-        final GatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, req, res, attrs, route);
+        final GatewayRequest requestCopy = GatewayCopier.clone(incomingRequest);
+        final MutableGatewayResponse upstreamResponse = new UndertowGatewayResponse(exchange);
+        final GatewayResponse responseCopy = GatewayCopier.clone(upstreamResponse);
+        final MutableGatewayAttributes attrs = new FastGatewayAttributes();
+        final GatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, upstreamResponse, responseCopy, attrs, route);
 
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
         gatewayExchange.putInternalState(REQUEST_START_NANOS_KEY, startNanos);
@@ -102,7 +108,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.putInternalState(PRE_ROUTING_COMMIT_LISTENER_KEY, (e, body) ->
                 {
                     final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(e);
-                    smartJournal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, e.response().headers());
+                    smartJournal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, e.upstreamResponse().headers());
                     smartJournal.body(ServerDirection.RESPONSE, requestId, body);
                 }
         );
@@ -152,7 +158,7 @@ public final class VenturiUndertowHandler implements HttpHandler
             {
                 // Push response metadata (PolicyJournal deduplicates if PRE_ROUTING already called this)
                 final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                journal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, gatewayExchange.response().headers());
+                journal.start(ServerDirection.RESPONSE, JournalLevel.NONE, requestId, resStartLine, gatewayExchange.upstreamResponse().headers());
 
                 // Seal the file block with the final stats!
                 final long duration = System.nanoTime() - gatewayExchange.getInternalState(REQUEST_START_NANOS_KEY);

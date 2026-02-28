@@ -11,12 +11,14 @@ import java.util.Set;
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayHeaders;
+import com.ethlo.venturi.util.MutableFastGatewayHeaders;
 
 public final class PolicyJournal implements Journal
 {
@@ -36,15 +38,14 @@ public final class PolicyJournal implements Journal
 
     private final Journal delegate;
     private final RouteJournalConfig config;
-    private final Set<String> safeHeaders;
+    private final Set<CharSequence> safeHeaders;
     private final GatewayExchange exchange;
-    private final StatefulEntryConsumer<GatewayHeaders> redactingConsumer = new StatefulEntryConsumer<>()
+    private final StatefulEntryConsumer<MutableGatewayHeaders> redactingConsumer = new StatefulEntryConsumer<>()
     {
         @Override
-        public void accept(final GatewayHeaders state, final CharSequence name, final CharSequence value)
+        public void accept(final MutableGatewayHeaders state, final CharSequence name, final CharSequence value)
         {
-            final String lowerName = name.toString().toLowerCase();
-            if (safeHeaders.contains(lowerName))
+            if (safeHeaders.contains(name))
             {
                 state.add(name, value);
             }
@@ -169,7 +170,10 @@ public final class PolicyJournal implements Journal
             effectiveReqLevel = JournalLevel.METADATA;
         }
 
-        if (effectiveReqLevel == JournalLevel.NONE) return;
+        if (effectiveReqLevel == JournalLevel.NONE)
+        {
+            return;
+        }
 
         if (effectiveReqLevel == JournalLevel.METADATA)
         {
@@ -184,7 +188,10 @@ public final class PolicyJournal implements Journal
     private void flushResponseStart(final JournalLevel resolvedLevel)
     {
         this.resStartHandled = true;
-        if (resolvedLevel == JournalLevel.NONE) return;
+        if (resolvedLevel == JournalLevel.NONE)
+        {
+            return;
+        }
 
         if (resolvedLevel == JournalLevel.METADATA)
         {
@@ -198,7 +205,7 @@ public final class PolicyJournal implements Journal
 
     private GatewayHeaders redact(final GatewayHeaders original)
     {
-        final GatewayHeaders redacted = new FastGatewayHeaders();
+        final MutableGatewayHeaders redacted = new MutableFastGatewayHeaders();
         original.forEach(redacted, this.redactingConsumer);
         return redacted;
     }
@@ -207,18 +214,20 @@ public final class PolicyJournal implements Journal
     {
         final MessageDigest digest = SHA_256.get();
         digest.reset();
-
         final byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
 
-        final byte[] hexChars = new byte[6];
+        // "id:sha256:" is 10 chars + 6 hex chars = 16 chars total
+        final char[] out = new char[16];
+        "id:sha256:".getChars(0, 10, out, 0);
+
         for (int j = 0; j < 3; j++)
         {
             final int v = hash[j] & 0xFF;
-            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
-            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
+            out[10 + j * 2] = (char) HEX_ARRAY[v >>> 4];
+            out[11 + j * 2] = (char) HEX_ARRAY[v & 0x0F];
         }
 
-        return "[REDACTED - SHA256:" + new String(hexChars, StandardCharsets.US_ASCII) + "]";
+        return new String(out);
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)

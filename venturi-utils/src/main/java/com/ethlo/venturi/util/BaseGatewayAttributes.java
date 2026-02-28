@@ -1,7 +1,5 @@
 package com.ethlo.venturi.util;
 
-import java.util.Map;
-
 import com.ethlo.venturi.api.EntryConsumer;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
@@ -18,13 +16,6 @@ class BaseGatewayAttributes extends ArrayBackedPairStorage<CharSequence, CharSeq
         super(initialCapacity);
     }
 
-    public static BaseGatewayAttributes of(Map<CharSequence, CharSequence> headers)
-    {
-        final BaseGatewayAttributes h = new BaseGatewayAttributes();
-        headers.forEach(h::add);
-        return h;
-    }
-
     @Override
     protected boolean keysEqual(CharSequence a, CharSequence b)
     {
@@ -35,24 +26,6 @@ class BaseGatewayAttributes extends ArrayBackedPairStorage<CharSequence, CharSeq
     public CharSequence getFirst(CharSequence name)
     {
         return getFirstInternal(name);
-    }
-
-    @Override
-    public void add(CharSequence name, CharSequence value)
-    {
-        addInternal(name, value);
-    }
-
-    @Override
-    public void set(CharSequence name, CharSequence value)
-    {
-        setInternal(name, value);
-    }
-
-    @Override
-    public void remove(CharSequence name)
-    {
-        removeInternal(name);
     }
 
     @Override
@@ -71,15 +44,5 @@ class BaseGatewayAttributes extends ArrayBackedPairStorage<CharSequence, CharSeq
     public Iterable<CharSequence> getAll(CharSequence name)
     {
         return getAllInternal(name);
-    }
-
-    @Override
-    public void set(CharSequence name, Iterable<CharSequence> values)
-    {
-        removeInternal(name);
-        for (CharSequence v : values)
-        {
-            addInternal(name, v);
-        }
     }
 }

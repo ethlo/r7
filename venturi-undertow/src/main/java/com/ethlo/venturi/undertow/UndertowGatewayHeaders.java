@@ -3,7 +3,7 @@ package com.ethlo.venturi.undertow;
 import java.util.Collections;
 
 import com.ethlo.venturi.api.EntryConsumer;
-import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.undertow.util.HttpStringUtil;
 import com.ethlo.venturi.util.HttpStringCharSequence;
@@ -11,7 +11,7 @@ import io.undertow.util.HeaderMap;
 import io.undertow.util.HeaderValues;
 import io.undertow.util.HttpString;
 
-public final class UndertowGatewayHeaders implements GatewayHeaders
+public final class UndertowGatewayHeaders implements MutableGatewayHeaders
 {
     private final HeaderMap headerMap;
 

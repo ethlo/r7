@@ -3,11 +3,13 @@ package com.ethlo.venturi.undertow;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.api.MutableGatewayAttributes;
+import com.ethlo.venturi.api.MutableGatewayRequest;
+import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.StateKey;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.AttachmentKey;
@@ -21,22 +23,28 @@ public class UndertowGatewayExchange implements GatewayExchange
     private final HttpServerExchange exchange;
     private final CharSequence requestId;
     private final GatewayRequest request;
-    private final GatewayResponse response;
-    private final GatewayAttributes attributes;
+    private final MutableGatewayRequest upstreamRequest;
+    private final MutableGatewayResponse response;
+    private final GatewayResponse upstreamResponse;
+    private final MutableGatewayAttributes attributes;
     private final GatewayRoute route;
 
     public UndertowGatewayExchange(
             HttpServerExchange exchange,
             CharSequence requestId,
             GatewayRequest request,
-            GatewayResponse response,
-            GatewayAttributes attributes,
+            MutableGatewayRequest upstreamRequest,
+            MutableGatewayResponse response,
+            GatewayResponse upstreamResponse,
+            MutableGatewayAttributes attributes,
             final GatewayRoute route)
     {
         this.exchange = exchange;
         this.requestId = requestId;
         this.request = request;
+        this.upstreamRequest = upstreamRequest;
         this.response = response;
+        this.upstreamResponse = upstreamResponse;
         this.attributes = attributes;
         this.route = route;
     }
@@ -54,13 +62,25 @@ public class UndertowGatewayExchange implements GatewayExchange
     }
 
     @Override
-    public GatewayResponse response()
+    public MutableGatewayRequest upstreamRequest()
+    {
+        return upstreamRequest;
+    }
+
+    @Override
+    public GatewayResponse upstreamResponse()
+    {
+        return upstreamResponse;
+    }
+
+    @Override
+    public MutableGatewayResponse response()
     {
         return response;
     }
 
     @Override
-    public GatewayAttributes attributes()
+    public MutableGatewayAttributes attributes()
     {
         return attributes;
     }

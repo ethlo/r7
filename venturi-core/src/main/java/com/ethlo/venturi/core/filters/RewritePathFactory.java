@@ -78,7 +78,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
             if (matcher.find())
             {
                 final String newPath = matcher.replaceAll(replacement);
-                exchange.request().path(newPath);
+                exchange.upstreamRequest().path(newPath);
             }
         }
 

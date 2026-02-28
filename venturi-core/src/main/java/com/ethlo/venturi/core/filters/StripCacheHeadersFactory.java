@@ -2,6 +2,7 @@ package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.constants.HttpHeaders;
@@ -44,11 +45,11 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
         @Override
         public void beforeUpstream(final GatewayExchange exchange)
         {
-            exchange.request().headers().remove(HttpHeaders.IF_MODIFIED_SINCE);
-            exchange.request().headers().remove(HttpHeaders.IF_NONE_MATCH);
-
-            exchange.request().headers().set(HttpHeaders.CACHE_CONTROL, "no-cache");
-            exchange.request().headers().set(HttpHeaders.PRAGMA, "no-cache");
+            final MutableGatewayHeaders headers = exchange.upstreamRequest().headers();
+            headers.remove(HttpHeaders.IF_MODIFIED_SINCE);
+            headers.remove(HttpHeaders.IF_NONE_MATCH);
+            headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
+            headers.set(HttpHeaders.PRAGMA, "no-cache");
         }
 
         @Override

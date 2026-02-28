@@ -29,7 +29,7 @@ public final class GhostProxyFilter implements GatewayFilter
 
         // 2. Return a local response AFTER the "wait"
         exchange.response().status(HttpStatuses.OK);
-        exchange.request().headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
+        exchange.upstreamRequest().headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
         exchange.response().commitResponse(mockPayload);
     }
 }

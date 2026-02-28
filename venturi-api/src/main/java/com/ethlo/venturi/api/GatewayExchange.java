@@ -6,9 +6,13 @@ public interface GatewayExchange
 
     GatewayRequest request();
 
-    GatewayResponse response();
+    MutableGatewayRequest upstreamRequest();
 
-    GatewayAttributes attributes();
+    GatewayResponse upstreamResponse();
+
+    MutableGatewayResponse response();
+
+    MutableGatewayAttributes attributes();
 
     GatewayRoute route();
 

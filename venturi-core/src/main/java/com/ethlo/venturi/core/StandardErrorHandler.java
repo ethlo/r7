@@ -7,13 +7,13 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayResponse;
-import com.ethlo.venturi.util.constants.HttpHeaders;
-import com.ethlo.venturi.util.constants.HttpStatuses;
-import com.ethlo.venturi.util.constants.MediaTypes;
+import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.core.proxy.NoAvailableTargetException;
 import com.ethlo.venturi.core.proxy.ProxyConnectionException;
 import com.ethlo.venturi.core.proxy.ProxyPoolExhaustedException;
+import com.ethlo.venturi.util.constants.HttpHeaders;
+import com.ethlo.venturi.util.constants.HttpStatuses;
+import com.ethlo.venturi.util.constants.MediaTypes;
 
 public final class StandardErrorHandler implements GatewayErrorHandler
 {
@@ -50,7 +50,7 @@ public final class StandardErrorHandler implements GatewayErrorHandler
 
         // 2. Commit the JSON response
         final String jsonError = String.format("{\"id\":\"%s\",\"error\":\"%s\"}", exchange.requestId(), userMessage);
-        final GatewayResponse response = exchange.response();
+        final MutableGatewayResponse response = exchange.response();
 
         if (!response.isCommitted())
         {

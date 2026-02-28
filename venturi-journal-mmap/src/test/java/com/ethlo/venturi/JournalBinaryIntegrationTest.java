@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,11 +20,12 @@ import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.FastGatewayHeaders;
+import com.ethlo.venturi.util.MutableFastGatewayHeaders;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.vlf.JournalAnalyzer;
@@ -73,7 +73,7 @@ class JournalBinaryIntegrationTest
                     VlfJournal journal = journals[(h ^ (h >>> 16)) & mask];
 
                     // 1. BEGIN
-                    GatewayHeaders headers = new FastGatewayHeaders();
+                    MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
                     headers.add("User-Agent", "JUnit");
                     journal.start(ServerDirection.REQUEST, JournalLevel.HEADERS, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
 
@@ -150,12 +150,11 @@ class JournalBinaryIntegrationTest
         {
             String id = "dual-123";
 
-            j.start(ServerDirection.REQUEST, JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), FastGatewayHeaders.of(Map.of(
-                            HttpHeaders.X_REQUEST_ID, "akdalskmdalsmdasmda",
-                            HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON,
-                            HttpHeaders.CACHE_CONTROL, "no-cache"
-                    ))
-            );
+            final MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
+            headers.set(HttpHeaders.X_REQUEST_ID, "akdalskmdalsmdasmda");
+            headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
+            headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
+            j.start(ServerDirection.REQUEST, JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers);
             j.body(ServerDirection.REQUEST, id, ByteBuffer.wrap("Request chunk".getBytes()));
 
             j.start(ServerDirection.RESPONSE, JournalLevel.FULL, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());

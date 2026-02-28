@@ -1,8 +1,8 @@
 package com.ethlo.venturi.util;
 
-import com.ethlo.venturi.api.GatewayAttributes;
+import com.ethlo.venturi.api.MutableGatewayAttributes;
 
-public class FastGatewayAttributes extends BaseGatewayAttributes implements GatewayAttributes
+public class FastGatewayAttributes extends MutableBaseGatewayAttributes implements MutableGatewayAttributes
 {
 
 }

@@ -120,28 +120,4 @@ public class FbsGatewayAttributes implements GatewayAttributes
         ByteBuffer tmp = buf.duplicate();
         return StandardCharsets.UTF_8.decode(tmp).toString();
     }
-
-    @Override
-    public void set(CharSequence name, CharSequence value)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void remove(CharSequence name)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void set(CharSequence name, Iterable<CharSequence> values)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void add(CharSequence name, CharSequence value)
-    {
-        throw new UnsupportedOperationException();
-    }
 }

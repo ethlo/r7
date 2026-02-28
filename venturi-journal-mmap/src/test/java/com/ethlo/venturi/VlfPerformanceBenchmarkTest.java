@@ -11,18 +11,17 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import com.ethlo.venturi.journal.api.JournalLevel;
-
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.chronograph.Chronograph;
-import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
+import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayAttributes;
-import com.ethlo.venturi.util.FastGatewayHeaders;
+import com.ethlo.venturi.util.MutableFastGatewayHeaders;
 import com.ethlo.venturi.vlf.VenturiTailer;
 import com.ethlo.venturi.vlf.VlfJournal;
 import com.ethlo.venturi.vlf.VlfJournalProvider;
@@ -43,7 +42,7 @@ public final class VlfPerformanceBenchmarkTest
             final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE);
             final Chronograph chronograph = Chronograph.create();
 
-            final GatewayHeaders headers = new FastGatewayHeaders();
+            final MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
             headers.set("user-agent", "Mozilla/5.0 (Venturi Bench)");
             headers.set("content-type", "application/json");
             headers.set("connection", "keep-alive");

@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.api.GatewayResponse;
+import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.CharSequenceUtil;
@@ -36,7 +36,6 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
         return new GF();
     }
 
-    // Empty record as this filter requires no configuration
     public record Config() implements ValidatableConfig
     {
         @Override
@@ -56,7 +55,7 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
 
             if (sig == null || !(CharSequenceUtil.startsWith(sig, "Bearer ") || CharSequenceUtil.startsWith(sig, "Basic ")))
             {
-                final GatewayResponse response = exchange.response();
+                final MutableGatewayResponse response = exchange.response();
                 response.status(HttpStatuses.UNAUTHORIZED);
                 response.headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
                 response.commitResponse(UNAUTHORIZED_BODY.slice());

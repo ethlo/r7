@@ -5,12 +5,14 @@ import java.nio.ByteBuffer;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayResponse;
+import com.ethlo.venturi.api.MutableGatewayHeaders;
+import com.ethlo.venturi.api.MutableGatewayResponse;
 import io.undertow.server.HttpServerExchange;
 
-public final class UndertowGatewayResponse implements GatewayResponse
+public final class UndertowGatewayResponse implements MutableGatewayResponse
 {
     private final HttpServerExchange exchange;
-    private final GatewayHeaders headers;
+    private final MutableGatewayHeaders headers;
     private boolean isCommitted;
 
     public UndertowGatewayResponse(final HttpServerExchange exchange)
@@ -20,7 +22,7 @@ public final class UndertowGatewayResponse implements GatewayResponse
     }
 
     @Override
-    public GatewayHeaders headers()
+    public MutableGatewayHeaders headers()
     {
         return headers;
     }

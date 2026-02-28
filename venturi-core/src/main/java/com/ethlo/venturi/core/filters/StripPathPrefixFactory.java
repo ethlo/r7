@@ -3,8 +3,8 @@ package com.ethlo.venturi.core.filters;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
@@ -71,14 +71,14 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
                 {
                     // We've run out of slashes.
                     // If we're at "/v1" and stripping 1, we should result in "/"
-                    exchange.request().path("/");
+                    exchange.upstreamRequest().path("/");
                     return;
                 }
             }
 
             final String newPath = path.substring(pos);
             // Ensure we don't return an empty string if the path ended exactly at the slash
-            exchange.request().path(newPath.isEmpty() ? "/" : newPath);
+            exchange.upstreamRequest().path(newPath.isEmpty() ? "/" : newPath);
         }
 
         @Override
