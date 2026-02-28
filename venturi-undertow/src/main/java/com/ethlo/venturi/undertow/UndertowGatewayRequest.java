@@ -1,8 +1,5 @@
 package com.ethlo.venturi.undertow;
 
-import java.nio.ByteBuffer;
-import java.util.function.Consumer;
-
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.undertow.util.HttpStringUtil;
@@ -50,12 +47,6 @@ public final class UndertowGatewayRequest implements GatewayRequest
     public GatewayHeaders headers()
     {
         return headers;
-    }
-
-    @Override
-    public void addBodyListener(final Consumer<ByteBuffer> listener)
-    {
-        exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), listener));
     }
 
     @Override

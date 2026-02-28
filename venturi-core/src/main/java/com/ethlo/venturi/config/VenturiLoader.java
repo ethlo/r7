@@ -11,8 +11,8 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.predicates.PredicateRegistry;
-import com.ethlo.venturi.util.FilterRegistry;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.util.FilterRegistry;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 import tools.jackson.databind.DeserializationFeature;
@@ -82,7 +82,7 @@ public final class VenturiLoader
 
                     final GatewayPredicate predicate = def.match().build(predicateRegistry);
 
-                    final GatewayRoute dataRoute = new DefaultGatewayRoute(def.id(), def.uri(), predicate, instantiatedFilters);
+                    final GatewayRoute dataRoute = new DefaultGatewayRoute(def.id(), def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList(), predicate, instantiatedFilters);
                     return configurator.apply(def, dataRoute);
                 })
                 .toList();

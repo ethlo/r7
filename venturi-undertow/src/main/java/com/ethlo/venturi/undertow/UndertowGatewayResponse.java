@@ -1,7 +1,6 @@
 package com.ethlo.venturi.undertow;
 
 import java.nio.ByteBuffer;
-import java.util.function.Consumer;
 
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayHeaders;
@@ -30,13 +29,6 @@ public final class UndertowGatewayResponse implements GatewayResponse
     public void status(final int status)
     {
         exchange.setStatusCode(status);
-    }
-
-    @Override
-    public void addBodyListener(final Consumer<ByteBuffer> listener)
-    {
-        exchange.addResponseWrapper((factory, ex) ->
-                new TeeingStreamSinkConduit(factory.create(), listener));
     }
 
     @Override

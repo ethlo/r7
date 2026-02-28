@@ -31,7 +31,6 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Co
         return new GF();
     }
 
-    // Empty record because this filter requires no YAML arguments
     public record Config() implements ValidatableConfig
     {
         @Override

@@ -5,16 +5,9 @@ import java.util.function.Consumer;
 
 public interface GatewayResponse
 {
-
     GatewayHeaders headers();
 
     void status(int status);
-
-    /**
-     * Receives the raw ByteBuffers as they flow through the engine.
-     * The engine guarantees the buffer is in 'read mode', i.e. ready for a write operation.
-     */
-    void addBodyListener(Consumer<ByteBuffer> listener);
 
     /**
      * Terminate the request here and return a fixed body.

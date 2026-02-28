@@ -1,7 +1,8 @@
 routes:
   - id: undertow-internal-backend
-    uri:
-      - http://localhost:1111
+    upstream:
+      targets:
+        - url: http://localhost:1111
     match:
       - PathStartsWith:
           prefix: /hello
@@ -20,8 +21,9 @@ routes:
       - CorrelationIdHeader
       - RequireAuthorizationHeader
   - id: external-test
-    uri:
-      - https://www.nrk.no
+    upstream:
+      targets:
+        - url: https://www.nrk.no
     match:
       - PathStartsWith:
           prefix: /nrk

@@ -4,36 +4,23 @@ import java.util.List;
 import java.util.Optional;
 
 import com.ethlo.venturi.journal.api.JournalLevel;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public record RouteDefinition(CharSequence id, List<CharSequence> uri, ConditionDefinition match,
+public record RouteDefinition(CharSequence id, UpstreamConfig upstream, ConditionDefinition match,
                               RouteJournalConfig journal,
                               List<FilterDefinition> filters) implements ValidatableConfig
 {
     @Override
     public void validate(final ValidationResult result)
     {
-        // 1. Validate ID
-        if (id == null || id.toString().isBlank())
-        {
-            result.addError("id", "Route ID must not be empty");
-        }
+        final ValidatorUtils validator = new ValidatorUtils(result);
+        validator.required("route", "id", "Route ID must not be empty");
 
-        // 2. Validate URIs
-        if (uri == null || uri.isEmpty())
+        if (upstream != null)
         {
-            result.addError("uri", "At least one target URI is required");
-        }
-        else
-        {
-            uri.forEach(u ->
-            {
-                if (u == null || !u.toString().contains("://"))
-                {
-                    result.addError("uri", "Invalid URI format: " + u);
-                }
-            });
+            upstream.validate(result);
         }
 
         if (journal != null)

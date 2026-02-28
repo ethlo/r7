@@ -136,12 +136,13 @@ public final class VenturiUndertowHandler implements HttpHandler
         // Attach body listeners unconditionally. PolicyJournal will drop the bytes if level != FULL.
         if (journalConfig.request().level() == JournalLevel.FULL)
         {
-            gatewayExchange.request().addBodyListener(buffer -> journal.body(ServerDirection.REQUEST, requestId, buffer));
+            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer -> journal.body(ServerDirection.REQUEST, requestId, buffer)));
         }
 
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
-            gatewayExchange.response().addBodyListener(buffer -> journal.body(ServerDirection.RESPONSE, requestId, buffer));
+            exchange.addResponseWrapper((factory, ex) ->
+                    new TeeingStreamSinkConduit(factory.create(), buffer -> journal.body(ServerDirection.RESPONSE, requestId, buffer)));
         }
 
         // Close the transaction when the exchange naturally completes
