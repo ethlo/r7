@@ -3,7 +3,8 @@ package com.ethlo.venturi.core.helpers;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
-import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.GatewayRequest;
+import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 
 public final class StartLineBuilder
@@ -17,17 +18,17 @@ public final class StartLineBuilder
     /**
      * Reconstructs the Request Start-Line: {METHOD} {URI}{QUERY} HTTP/1.1
      */
-    public static ByteBuffer buildRequestLine(GatewayExchange exchange)
+    public static ByteBuffer buildRequestLine(GatewayRequest request)
     {
         final ByteBuffer buffer = BUFFER.get();
         buffer.clear();
 
         // 1. Method
-        putAscii(buffer, exchange.request().method());
+        putAscii(buffer, request.method());
         buffer.put(SPACE);
 
         // 2. URI
-        putAscii(buffer, exchange.request().uri());
+        putAscii(buffer, request.uri());
 
         // 3. Protocol
         buffer.put(HTTP_1_1);
@@ -39,7 +40,7 @@ public final class StartLineBuilder
     /**
      * Reconstructs the Response Status-Line: HTTP/1.1 {CODE} {REASON}
      */
-    public static ByteBuffer buildResponseLine(GatewayExchange exchange)
+    public static ByteBuffer buildResponseLine(GatewayResponse response)
     {
         final ByteBuffer buffer = BUFFER.get();
         buffer.clear();
@@ -48,11 +49,11 @@ public final class StartLineBuilder
         putAscii(buffer, "HTTP/1.1 ");
 
         // 2. Status Code
-        putAscii(buffer, Integer.toString(exchange.response().status()));
+        putAscii(buffer, Integer.toString(response.status()));
         buffer.put(SPACE);
 
         // 3. Reason Phrase
-        putAscii(buffer, HttpStatuses.getReason(exchange.response().status()));
+        putAscii(buffer, HttpStatuses.getReason(response.status()));
 
         buffer.flip();
         return buffer;

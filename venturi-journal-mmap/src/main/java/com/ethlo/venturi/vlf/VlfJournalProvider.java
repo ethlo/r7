@@ -1,13 +1,14 @@
 package com.ethlo.venturi.vlf;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -23,7 +24,7 @@ public class VlfJournalProvider implements AutoCloseable
     private final AtomicInteger rotationCount = new AtomicInteger(0);
 
     // Queue 1 extra mapped file ready
-    private final BlockingQueue<WarmedSegment> pool = new ArrayBlockingQueue<>(1);
+    private final BlockingQueue<WarmedSegment> pool = new SynchronousQueue<>();
     private final Thread warmerThread;
     private volatile boolean running = true;
 
@@ -60,7 +61,14 @@ public class VlfJournalProvider implements AutoCloseable
                     MemorySegment segment = channel.map(FileChannel.MapMode.READ_WRITE, 0, segmentSizeBytes, arena);
 
                     // Pre-fault
-                    segment.fill((byte) 0);
+                    try
+                    {
+                        segment.fill((byte) 0);
+                    }
+                    catch (InternalError e)
+                    {
+                        throw new UncheckedIOException(new IOException("Unable to pre-fault segment. is there enough disk space?"));
+                    }
 
                     // 4. Queue it up. The channel closes here, but the Arena keeps the Segment alive!
                     pool.put(new WarmedSegment(nextPath, segment, arena));

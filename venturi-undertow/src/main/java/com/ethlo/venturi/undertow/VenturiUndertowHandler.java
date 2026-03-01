@@ -10,6 +10,7 @@ import java.util.function.LongSupplier;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
@@ -37,6 +38,7 @@ import io.undertow.util.AttachmentKey;
 public final class VenturiUndertowHandler implements HttpHandler
 {
     public static final AttachmentKey<GatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(GatewayExchange.class);
+    public static final AttachmentKey<GatewayHeaders> PROXY_RESPONSE_HEADERS = AttachmentKey.create(GatewayHeaders.class);
 
     static final StateKey<Journal> JOURNAL_KEY = new StateKey<>(".JOURNAL");
     static final StateKey<RouteJournalConfig> ROUTE_JOURNAL_CONFIG_KEY = new StateKey<>(".AUDIT_CONFIG");
@@ -87,7 +89,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         final CharSequence requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = GatewayCopier.clone(incomingRequest);
         final MutableGatewayResponse upstreamResponse = new UndertowGatewayResponse(exchange);
-        final GatewayResponse responseCopy = GatewayCopier.clone(upstreamResponse);
+        final GatewayResponse responseCopy = null;
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final GatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, upstreamResponse, responseCopy, attrs, route);
 
@@ -106,7 +108,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         // For local short-circuits (like Auth errors returning early bodies)
         gatewayExchange.putInternalState(PRE_ROUTING_COMMIT_LISTENER_KEY, (e, body) ->
                 {
-                    final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(e);
+                    final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(e.response());
                     smartJournal.clientResponse(JournalLevel.NONE, requestId, resStartLine, e.upstreamResponse().headers());
                     smartJournal.responseBody(requestId, body);
                 }
@@ -134,16 +136,15 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.putInternalState(REQUEST_BYTES_READ_KEY, requestBytesRead::get);
         gatewayExchange.putInternalState(RESPONSE_BYTES_SENT_KEY, exchange::getResponseBytesSent);
 
-        // Immediately buffer the request metadata. PolicyJournal will flush it later if needed.
-        final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange);
+        // Immediately copy the raw request metadata and headers
+        final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange.request());
         journal.clientRequest(JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.request().headers());
 
-        // Attach body listeners unconditionally. PolicyJournal will drop the bytes if level != FULL.
+        // Attach body listeners if required
         if (journalConfig.request().level() == JournalLevel.FULL)
         {
             exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer -> journal.requestBody(requestId, buffer)));
         }
-
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
             exchange.addResponseWrapper((factory, ex) ->
@@ -155,9 +156,11 @@ public final class VenturiUndertowHandler implements HttpHandler
         {
             try
             {
-                // Push response metadata (PolicyJournal deduplicates if PRE_ROUTING already called this)
-                final ByteBuffer resStartLine = StartLineBuilder.buildResponseLine(gatewayExchange);
-                journal.clientResponse(JournalLevel.NONE, requestId, resStartLine, gatewayExchange.upstreamResponse().headers());
+                journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
+
+                journal.upstreamResponse(journalConfig.response().level(), requestId, StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
+
+                journal.clientResponse(journalConfig.response().level(), requestId, StartLineBuilder.buildResponseLine(gatewayExchange.response()), gatewayExchange.response().headers());
 
                 // Seal the file block with the final stats!
                 final long duration = System.nanoTime() - gatewayExchange.getInternalState(REQUEST_START_NANOS_KEY);

@@ -18,28 +18,30 @@ public class CharSequenceExchangeMap
     private int mask;
     private int size;
 
-    public CharSequenceExchangeMap(int initialCapacity)
+    public CharSequenceExchangeMap(final int initialCapacity)
     {
-        // Ensure capacity is a power of 2 for fast bitwise masking
-        int c = Integer.highestOneBit(initialCapacity - 1) << 1;
-        this.keys = new CharSequence[c];
-        this.values = new JournalExchange[c];
-        this.mask = c - 1;
+        final int capacity = Math.max(2, Integer.highestOneBit(Math.max(0, initialCapacity - 1)) << 1);
+        this.keys = new CharSequence[capacity];
+        this.values = new JournalExchange[capacity];
+        this.mask = capacity - 1;
     }
 
-    public void put(CharSequence key, JournalExchange value)
+    public void put(final CharSequence key, final JournalExchange value)
     {
-        if (size * 2 > keys.length) resize();
+        if (size * 2 > keys.length)
+        {
+            resize();
+        }
 
         int idx = hash(key) & mask;
         while (keys[idx] != null)
         {
             if (CharSequenceUtil.equals(keys[idx], key))
             {
-                values[idx] = value; // Update existing
+                values[idx] = value;
                 return;
             }
-            idx = (idx + 1) & mask; // Linear probe
+            idx = (idx + 1) & mask;
         }
 
         keys[idx] = key;
@@ -47,7 +49,7 @@ public class CharSequenceExchangeMap
         size++;
     }
 
-    public JournalExchange get(CharSequence key)
+    public JournalExchange get(final CharSequence key)
     {
         int idx = hash(key) & mask;
         while (keys[idx] != null)
@@ -61,18 +63,18 @@ public class CharSequenceExchangeMap
         return null;
     }
 
-    public JournalExchange remove(CharSequence key)
+    public JournalExchange remove(final CharSequence key)
     {
         int idx = hash(key) & mask;
         while (keys[idx] != null)
         {
             if (CharSequenceUtil.equals(keys[idx], key))
             {
-                JournalExchange removed = values[idx];
+                final JournalExchange removed = values[idx];
                 keys[idx] = null;
                 values[idx] = null;
                 size--;
-                shift(idx); // Close the gap to maintain probe sequences
+                shift(idx);
                 return removed;
             }
             idx = (idx + 1) & mask;
@@ -80,21 +82,19 @@ public class CharSequenceExchangeMap
         return null;
     }
 
-    /**
-     * Shifts subsequent elements backward to fill the gap left by a removal.
-     * This avoids the need for allocating 'Tombstone' objects.
-     */
-    private void shift(int pos)
+    private void shift(final int pos)
     {
         int last = pos;
         int idx = (pos + 1) & mask;
 
         while (keys[idx] != null)
         {
-            int slot = hash(keys[idx]) & mask;
+            final int slot = hash(keys[idx]) & mask;
+            final boolean isBetween = (idx >= last)
+                    ? (last < slot && slot <= idx)
+                    : (last < slot || slot <= idx);
 
-            // If the element at idx belongs at or before 'last' (accounting for wrap-around)
-            if (last <= idx ? (last >= slot || slot > idx) : (last >= slot && slot > idx))
+            if (!isBetween)
             {
                 keys[last] = keys[idx];
                 values[last] = values[idx];
@@ -108,14 +108,14 @@ public class CharSequenceExchangeMap
 
     private void resize()
     {
-        CharSequence[] oldKeys = keys;
-        JournalExchange[] oldValues = values;
+        final CharSequence[] oldKeys = keys;
+        final JournalExchange[] oldValues = values;
 
-        int newCap = oldKeys.length * 2;
-        keys = new CharSequence[newCap];
-        values = new JournalExchange[newCap];
-        mask = newCap - 1;
-        size = 0;
+        final int newCap = oldKeys.length * 2;
+        this.keys = new CharSequence[newCap];
+        this.values = new JournalExchange[newCap];
+        this.mask = newCap - 1;
+        this.size = 0;
 
         for (int i = 0; i < oldKeys.length; i++)
         {
@@ -126,36 +126,24 @@ public class CharSequenceExchangeMap
         }
     }
 
-    /**
-     * If the specified key is not already associated with a value, attempts to compute its value
-     * using the given mapping function and enters it into this map.
-     */
-    public JournalExchange computeIfAbsent(CharSequence key, Function<? super CharSequence, ? extends JournalExchange> mappingFunction)
+    public JournalExchange computeIfAbsent(final CharSequence key, final Function<? super CharSequence, ? extends JournalExchange> mappingFunction)
     {
-        // 1. Check capacity BEFORE probing. Resizing invalidates any indices we find.
         if (size * 2 > keys.length)
         {
             resize();
         }
 
         int idx = hash(key) & mask;
-
-        // 2. Probe for an existing key
         while (keys[idx] != null)
         {
             if (CharSequenceUtil.equals(keys[idx], key))
             {
-                // Cache hit: Return the existing exchange
                 return values[idx];
             }
-            idx = (idx + 1) & mask; // Linear probe
+            idx = (idx + 1) & mask;
         }
 
-        // 3. Cache miss: We are now sitting on the correct empty slot (keys[idx] == null).
-        // Execute the mapping function to create the new exchange.
-        JournalExchange newValue = mappingFunction.apply(key);
-
-        // 4. Insert directly into the arrays
+        final JournalExchange newValue = mappingFunction.apply(key);
         keys[idx] = key;
         values[idx] = newValue;
         size++;

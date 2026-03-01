@@ -25,9 +25,9 @@ public class UndertowGatewayExchange implements GatewayExchange
     private final GatewayRequest request;
     private final MutableGatewayRequest upstreamRequest;
     private final MutableGatewayResponse response;
-    private final GatewayResponse upstreamResponse;
     private final MutableGatewayAttributes attributes;
     private final GatewayRoute route;
+    private GatewayResponse upstreamResponse;
 
     public UndertowGatewayExchange(
             HttpServerExchange exchange,
@@ -120,5 +120,10 @@ public class UndertowGatewayExchange implements GatewayExchange
     public HttpServerExchange getRawExchange()
     {
         return exchange;
+    }
+
+    public void setUpstreamResponse(GatewayResponse clone)
+    {
+        this.upstreamResponse = clone;
     }
 }

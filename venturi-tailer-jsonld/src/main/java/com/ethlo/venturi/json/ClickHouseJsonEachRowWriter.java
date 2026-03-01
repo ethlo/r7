@@ -47,7 +47,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             // --- Meta & Levels ---
             writeString("gateway_request_id", exchange.getRequestId().toString());
             generator.writeNumberProperty("timestamp", exchange.getTimestamp());
-            generator.writeNumberProperty("duration_ms", exchange.getDurationNanos() / 1_000_000_000D);
+            generator.writeNumberProperty("duration", exchange.getDurationNanos() / 1_000_000_000D);
 
             writeJournalLevels(exchange);
 

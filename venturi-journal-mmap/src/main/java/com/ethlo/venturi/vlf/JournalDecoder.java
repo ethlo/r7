@@ -34,7 +34,7 @@ public final class JournalDecoder
         // Skip preamble
         if (buffer.position() == 0)
         {
-            buffer.position(VlfConstants.PREAMBLE_SIZE); // 1024
+            buffer.position(VlfConstants.PREAMBLE_SIZE);
         }
 
         while (buffer.hasRemaining())

@@ -16,6 +16,8 @@ import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.journal.api.Journal;
+import com.ethlo.venturi.util.FastMutableGatewayResponse;
+import com.ethlo.venturi.util.GatewayCopier;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 
@@ -85,7 +87,6 @@ public final class VenturiExecutableRoute implements ExecutableRoute
                 }
             } finally
             {
-                handleRequestEnded(exchange);
                 next.proceed(); // Essential for Undertow to clean up
             }
         });
@@ -94,9 +95,12 @@ public final class VenturiExecutableRoute implements ExecutableRoute
         // This triggers just before headers are flushed to the client
         undertowExchange.addResponseCommitListener(ex ->
         {
+            // TODO: Set a copy here before downstream response filters can taint the headers
+            ((UndertowGatewayExchange) exchange).setUpstreamResponse(new FastMutableGatewayResponse(GatewayCopier.clone(new UndertowGatewayHeaders(undertowExchange.getResponseHeaders()))));
+
             for (GatewayFilter filter : filters)
             {
-                filter.onResponseHeaders(exchange);
+                filter.beforeCommit(exchange);
             }
         });
 
@@ -114,6 +118,7 @@ public final class VenturiExecutableRoute implements ExecutableRoute
         proxyHandler.handleRequest(undertowExchange);
     }
 
+    // TODO: Consider what to do with this
     private void handleRequestEnded(final GatewayExchange gatewayExchange)
     {
         final Journal journal = Objects.requireNonNull(gatewayExchange.getInternalState(JOURNAL_KEY), "Journal is required");

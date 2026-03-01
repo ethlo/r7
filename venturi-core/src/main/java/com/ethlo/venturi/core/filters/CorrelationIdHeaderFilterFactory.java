@@ -45,9 +45,13 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Co
         @Override
         public void beforeUpstream(final GatewayExchange exchange)
         {
-            final CharSequence requestId = exchange.requestId();
-            exchange.upstreamRequest().headers().add(X_CORRELATION_ID, requestId);
-            exchange.response().headers().add(X_CORRELATION_ID, requestId);
+            exchange.upstreamRequest().headers().add(X_CORRELATION_ID, exchange.requestId());
+        }
+
+        @Override
+        public void beforeCommit(final GatewayExchange exchange)
+        {
+            exchange.response().headers().add(X_CORRELATION_ID, exchange.requestId());
         }
 
         @Override

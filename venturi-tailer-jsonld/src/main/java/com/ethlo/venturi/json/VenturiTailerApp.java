@@ -22,7 +22,8 @@ public class VenturiTailerApp
         OutputStream out = new BufferedOutputStream(Files.newOutputStream(auditFile,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND
         ));
-        ClickHouseJsonEachRowWriter jsonWriter = new ClickHouseJsonEachRowWriter(out);
+        //ClickHouseJsonEachRowWriter jsonWriter = new ClickHouseJsonEachRowWriter(out);
+        final DebugJsonWriter jsonWriter = new DebugJsonWriter(out, false);
 
         // 3. The Management Layer (File Watcher)
         VenturiTailer tailer = new VenturiTailer(logDir, Duration.ofHours(1), jsonWriter);

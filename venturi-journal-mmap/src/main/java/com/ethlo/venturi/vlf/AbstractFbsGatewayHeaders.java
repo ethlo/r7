@@ -110,7 +110,30 @@ public abstract class AbstractFbsGatewayHeaders implements GatewayHeaders
 
     private String decodeUtf8(ByteBuffer buf)
     {
-        if (buf == null) return null;
+        if (buf == null)
+        {
+            return null;
+        }
         return StandardCharsets.UTF_8.decode(buf.duplicate()).toString();
+    }
+
+    @Override
+    public String toString()
+    {
+        final StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; i < count; i++)
+        {
+            getHeader(reusableHeader, i);
+            final CharSequence name = asAscii(reusableHeader.nameAsByteBuffer());
+            final CharSequence value = decodeUtf8(reusableHeader.valueAsByteBuffer());
+
+            sb.append(name).append("=").append(value);
+
+            if (i < count - 1)
+            {
+                sb.append(", ");
+            }
+        }
+        return sb.append("}").toString();
     }
 }

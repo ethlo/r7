@@ -223,16 +223,22 @@ public final class VlfJournal implements Journal
     private int buildHeadersVector(GatewayHeaders headers)
     {
         this.currentHeaderCount = 0;
-        headers.forEach(this, (self, name, value) -> {
-                    int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
-                    int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
-                    Header.startHeader(self.fbb);
-                    Header.addName(self.fbb, nOff);
-                    Header.addValue(self.fbb, vOff);
+        headers.forEach(this, (self, name, value) ->
+                {
+                    headerWrite(self, name, value);
                     self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
                 }
         );
         return currentHeaderCount == 0 ? 0 : createOffsetVector(headerOffsetsScratch, currentHeaderCount);
+    }
+
+    private void headerWrite(final VlfJournal self, final CharSequence name, final CharSequence value)
+    {
+        int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
+        int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
+        Header.startHeader(self.fbb);
+        Header.addName(self.fbb, nOff);
+        Header.addValue(self.fbb, vOff);
     }
 
     private int buildAttributesVector(GatewayAttributes attributes)
@@ -241,11 +247,7 @@ public final class VlfJournal implements Journal
         if (attributes != null)
         {
             attributes.forEach(this, (self, name, value) -> {
-                        int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
-                        int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
-                        Header.startHeader(self.fbb);
-                        Header.addName(self.fbb, nOff);
-                        Header.addValue(self.fbb, vOff);
+                        headerWrite(self, name, value);
                         self.attributeOffsetsScratch[self.currentAttributeCount++] = Header.endHeader(self.fbb);
                     }
             );
@@ -263,7 +265,18 @@ public final class VlfJournal implements Journal
     private int copyToScratch(CharSequence s)
     {
         final int len = s.length();
-        for (int i = 0; i < len; i++) asciiScratch[i] = (byte) s.charAt(i);
+        if (s instanceof String str)
+        {
+            // Use the JVM's optimized, SIMD-enabled intrinsic
+            str.getBytes(0, len, asciiScratch, 0);
+            return len;
+        }
+
+        // Fallback for other CharSequence types
+        for (int i = 0; i < len; i++)
+        {
+            asciiScratch[i] = (byte) s.charAt(i);
+        }
         return len;
     }
 

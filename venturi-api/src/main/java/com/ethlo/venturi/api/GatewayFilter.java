@@ -17,7 +17,7 @@ public interface GatewayFilter
     /**
      * Upstream has responded with headers.
      */
-    default void onResponseHeaders(GatewayExchange exchange)
+    default void beforeCommit(GatewayExchange exchange)
     {
     }
 

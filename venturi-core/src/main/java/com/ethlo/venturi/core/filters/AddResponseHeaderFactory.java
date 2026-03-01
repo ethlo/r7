@@ -4,8 +4,8 @@ import com.ethlo.venturi.RedactUtil;
 import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
@@ -56,7 +56,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
         }
 
         @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeCommit(final GatewayExchange exchange)
         {
             if (override)
             {
