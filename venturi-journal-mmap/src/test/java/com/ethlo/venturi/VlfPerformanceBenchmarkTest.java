@@ -32,7 +32,7 @@ public final class VlfPerformanceBenchmarkTest
     @RepeatedTest(5)
     void testPerformance() throws IOException
     {
-        final int iterations = 10_000_000;
+        final int iterations = 2_000_000;
         final Path tempDir = Files.createTempDirectory("vlf-bench");
 
         try
@@ -63,7 +63,10 @@ public final class VlfPerformanceBenchmarkTest
                             {
                                 final String id = "req" + i;
                                 journal.clientRequest(JournalLevel.FULL, id, startLine, headers);
+                                journal.upstreamRequest(JournalLevel.FULL, id, startLine, headers);
                                 journal.requestBody(id, body.clear());
+                                journal.upstreamResponse(JournalLevel.FULL, id, startLine, headers);
+                                journal.clientResponse(JournalLevel.FULL, id, startLine, headers);
                                 journal.endExchange(id, new FastGatewayAttributes(), 200, 150, 200, 15, 0, 0);
                             }
                         }

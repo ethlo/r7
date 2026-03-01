@@ -375,8 +375,6 @@ public final class VlfJournal implements Journal
             throw new IllegalStateException("Segment not initialized");
         }
 
-        final long entryStart = position;
-
         final ByteBuffer fb = fbBuilder.dataBuffer().slice();
         final int fbLen = fb.remaining();
         final int rawLen = rawData != null ? rawData.remaining() : 0;
