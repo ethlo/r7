@@ -1,7 +1,6 @@
 namespace com.ethlo.venturi.vlf.fbs;
 
-enum ServerDirection : byte { REQUEST = 0, RESPONSE = 1 }
-enum JournalLevel : byte { NONE = 0, METADATA = 1, HEADERS = 2, FULL = 3 }
+enum FbsJournalLevel : byte { NONE = 0, METADATA = 1, HEADERS = 2, FULL = 3 }
 
 table Header {
   name: [ubyte];
@@ -9,46 +8,40 @@ table Header {
 }
 
 table ClientRequest {
-  journal_level: JournalLevel;
+  journal_level: FbsJournalLevel;
   req_id: [ubyte];
-  direction: ServerDirection;
   start_line: [ubyte];
   headers: [Header];
 }
 
 table UpstreamRequest {
-  journal_level: JournalLevel;
+  journal_level: FbsJournalLevel;
   req_id: [ubyte];
-  direction: ServerDirection;
   start_line: [ubyte];
   headers: [Header];
 }
 
 table UpstreamResponse {
-  journal_level: JournalLevel;
+  journal_level: FbsJournalLevel;
   req_id: [ubyte];
-  direction: ServerDirection;
   start_line: [ubyte];
   headers: [Header];
 }
 
 table ClientResponse {
-  journal_level: JournalLevel;
+  journal_level: FbsJournalLevel;
   req_id: [ubyte];
-  direction: ServerDirection;
   start_line: [ubyte];
   headers: [Header];
 }
 
 table RequestBody {
   req_id: [ubyte];
-  direction: ServerDirection;
   length: uint32;
 }
 
 table ResponseBody {
   req_id: [ubyte];
-  direction: ServerDirection;
   length: uint32;
 }
 

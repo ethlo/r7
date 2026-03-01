@@ -8,7 +8,6 @@ import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.vlf.fbs.ClientRequest;
 import com.ethlo.venturi.vlf.fbs.ClientResponse;
@@ -24,7 +23,6 @@ import com.ethlo.venturi.vlf.model.ByteBufferAsciiFlyweight;
 public final class JournalDecoder
 {
     public static final JournalLevel[] JOURNAL_LEVELS = JournalLevel.values();
-    private static final ServerDirection[] SERVER_DIRECTIONS = ServerDirection.values();
 
     /**
      * Decodes the hybrid FlatBuffer + raw stream.
@@ -169,8 +167,13 @@ public final class JournalDecoder
                 final RequestBody body = (RequestBody) journalEvent.event(new RequestBody());
                 final CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
                 final int bodyLen = (int) body.length();
-                final ByteBuffer bodyChunk = prepareBodyChunk(buffer, bodyLen);
-                listener.onRequestBody(reqId, bodyChunk);
+
+                // Defensive check: only proceed if we have a valid buffer for the claimed length
+                if (bodyLen > 0 && buffer != null)
+                {
+                    final ByteBuffer bodyChunk = prepareBodyChunk(bodyLen, buffer);
+                    listener.onRequestBody(reqId, bodyChunk);
+                }
             }
 
             case EventPayload.UpstreamResponse ->
@@ -198,8 +201,12 @@ public final class JournalDecoder
                 final ResponseBody body = (ResponseBody) journalEvent.event(new ResponseBody());
                 final CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
                 final int bodyLen = (int) body.length();
-                final ByteBuffer bodyChunk = prepareBodyChunk(buffer, bodyLen);
-                listener.onResponseBody(reqId, bodyChunk);
+                // Defensive check: only proceed if we have a valid buffer for the claimed length
+                if (bodyLen > 0 && buffer != null)
+                {
+                    final ByteBuffer bodyChunk = prepareBodyChunk(bodyLen, buffer);
+                    listener.onResponseBody(reqId, bodyChunk);
+                }
             }
 
             case EventPayload.EndExchange ->
@@ -220,7 +227,7 @@ public final class JournalDecoder
         }
     }
 
-    private static ByteBuffer prepareBodyChunk(ByteBuffer buffer, int bodyLen)
+    private static ByteBuffer prepareBodyChunk(int bodyLen, ByteBuffer buffer)
     {
         if (buffer.remaining() < bodyLen)
         {

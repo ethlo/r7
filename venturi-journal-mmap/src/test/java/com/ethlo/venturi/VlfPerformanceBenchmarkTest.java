@@ -54,27 +54,25 @@ public final class VlfPerformanceBenchmarkTest
             final ByteBuffer body = wrap("{\"status\":\"ok\"}".getBytes());
 
             final AtomicReference<VlfJournal> journalRef = new AtomicReference<>();
-            // 1. Measure Encoding Speed (Write)
-            chronograph.time("Encode " + iterations, () ->
-                    {
-                        // Ensure the journal is closed IMMEDIATELY after the loop
-                        try (final VlfJournal journal = new VlfJournal(provider))
+            try (final VlfJournal journal = new VlfJournal(provider))
+            {
+                journalRef.set(journal);
+                chronograph.time("Encode " + iterations, () ->
                         {
-                            journalRef.set(journal);
                             for (int i = 0; i < iterations; i++)
                             {
                                 final String id = "req" + i;
                                 journal.clientRequest(JournalLevel.FULL, id, startLine, headers);
-                                journal.requestBody(id, body);
+                                journal.requestBody(id, body.clear());
                                 journal.endExchange(id, new FastGatewayAttributes(), 200, 150, 200, 15, 0, 0);
                             }
                         }
-                        catch (Exception e)
-                        {
-                            throw new RuntimeException(e);
-                        }
-                    }
-            );
+                );
+            }
+            catch (Exception e)
+            {
+                throw new RuntimeException(e);
+            }
 
             final Path finalPath = journalRef.get().getActivePath();
 

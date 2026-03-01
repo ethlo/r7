@@ -27,6 +27,7 @@ import com.ethlo.venturi.vlf.fbs.ClientRequest;
 import com.ethlo.venturi.vlf.fbs.ClientResponse;
 import com.ethlo.venturi.vlf.fbs.EndExchange;
 import com.ethlo.venturi.vlf.fbs.EventPayload;
+import com.ethlo.venturi.vlf.fbs.FbsJournalLevel;
 import com.ethlo.venturi.vlf.fbs.Header;
 import com.ethlo.venturi.vlf.fbs.JournalEvent;
 import com.ethlo.venturi.vlf.fbs.RequestBody;
@@ -41,7 +42,6 @@ public final class VlfJournal implements Journal
     private static final ValueLayout.OfInt INT_BE = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final int MAX_SCRATCH = 8192;
-    private static final int MAGIC = 0x564C4631;
 
     private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
     private final byte[] asciiScratch = new byte[MAX_SCRATCH];
@@ -52,10 +52,10 @@ public final class VlfJournal implements Journal
     private final Consumer<Path> finishedJournalFileSupplier;
 
     private final byte[] fbsJournalLevels = new byte[]{
-            com.ethlo.venturi.vlf.fbs.JournalLevel.NONE,
-            com.ethlo.venturi.vlf.fbs.JournalLevel.METADATA,
-            com.ethlo.venturi.vlf.fbs.JournalLevel.HEADERS,
-            com.ethlo.venturi.vlf.fbs.JournalLevel.FULL,
+            FbsJournalLevel.NONE,
+            FbsJournalLevel.METADATA,
+            FbsJournalLevel.HEADERS,
+            FbsJournalLevel.FULL,
     };
 
     private MemorySegment segment;
@@ -155,6 +155,10 @@ public final class VlfJournal implements Journal
     @Override
     public synchronized void requestBody(CharSequence reqId, ByteBuffer data)
     {
+        if (!data.hasRemaining())
+        {
+            throw new IllegalStateException("No data available for request body");
+        }
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
         RequestBody.startRequestBody(fbb);
@@ -166,6 +170,10 @@ public final class VlfJournal implements Journal
     @Override
     public synchronized void responseBody(CharSequence reqId, ByteBuffer data)
     {
+        if (!data.hasRemaining())
+        {
+            throw new IllegalStateException("No data available for response body");
+        }
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
         ResponseBody.startResponseBody(fbb);
@@ -388,7 +396,7 @@ public final class VlfJournal implements Journal
         ensureCapacity(totalLen);
 
         // ---- header ----
-        putInt(MAGIC);
+        putInt(VlfConstants.MAGIC);
         putInt(payloadLen);
         putInt(fbLen);
         putInt(rawLen);

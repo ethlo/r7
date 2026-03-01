@@ -12,8 +12,9 @@ routes:
             - POST
     journal:
       request:
+        level: HEADERS
         status_overrides:
-          401,403: HEADERS
+          2xx: METADATA
     filters:
       - AddResponseHeader:
           name: X-Gateway
