@@ -62,9 +62,9 @@ public final class VenturiTailer
         {
             s.filter(p -> {
                         final String name = p.getFileName().toString();
-                        return name.endsWith(VLF_FILE_EXTENSION) ||
+                        return //name.endsWith(VLF_FILE_EXTENSION) || // IMPORTANT: Avoid race-condition with compressed file!
                                 name.endsWith(ACTIVE_FILE_EXTENSION) ||
-                                name.endsWith(COMPRESSED_EXTENSION);
+                                        name.endsWith(COMPRESSED_EXTENSION);
                     })
                     .sorted((p1, p2) -> {
                         final FileMeta m1 = parseMeta(p1);
@@ -124,7 +124,7 @@ public final class VenturiTailer
              final FileChannel channel = raf.getChannel())
         {
             final MappedByteBuffer mappedBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
-            mappedBuffer.order(ByteOrder.BIG_ENDIAN);
+            mappedBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
             final ByteBuffer processingBuffer;
 
@@ -162,15 +162,10 @@ public final class VenturiTailer
 
     private void logStats()
     {
-        if (totalBytesRead > 0 && estimatedTextSize > 0)
+        if (totalBytesRead > 0)
         {
-            final double ratio = (1.0 - ((double) totalBytesRead / estimatedTextSize)) * 100.0;
             final String binarySize = totalBytesRead < 1024 ? totalBytesRead + " B" : String.format("%.2f KB", totalBytesRead / 1024.0);
-            final String textSize = estimatedTextSize < 1024 ? estimatedTextSize + " B" : String.format("%.2f KB", estimatedTextSize / 1024.0);
-
-            logger.info("Tailer Stats: Processed {} binary (Estimated {} text). Saved: {}%",
-                    binarySize, textSize, String.format("%.2f", ratio)
-            );
+            logger.info("Tailer Stats: Processed {} binary", binarySize);
         }
     }
 

@@ -35,6 +35,7 @@ public final class JournalSecurity
                             "accept-charset",
                             "content-type",
                             "content-length",
+                            "dnt",
                             "origin",
                             "sec-ch-ua",
                             "sec-ch-ua-mobile",

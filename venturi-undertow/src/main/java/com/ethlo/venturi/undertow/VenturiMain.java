@@ -163,6 +163,7 @@ public final class VenturiMain
         {
             logger.info("Shutdown signal received.");
             gatewayExchangeDataWriter.shutdown();
+            compressionEngine.close();
             server.stop();
         }, "shutdown-hook"
         ));

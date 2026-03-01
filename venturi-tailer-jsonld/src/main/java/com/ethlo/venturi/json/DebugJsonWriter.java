@@ -4,9 +4,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
+import com.ethlo.time.ITU;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
@@ -17,6 +21,7 @@ import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.StreamWriteFeature;
+import tools.jackson.core.json.JsonWriteFeature;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,9 +36,9 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         this.out = out;
         final JsonMapper mapper = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
-                // In debug mode, we want to see everything
-                .changeDefaultPropertyInclusion(inclusion ->
-                        inclusion.withValueInclusion(JsonInclude.Include.ALWAYS))
+                .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, false) // Ensure numbers stay as numbers
+                .configure(SerializationFeature.WRITE_SINGLE_ELEM_ARRAYS_UNWRAPPED, true)
+                .changeDefaultPropertyInclusion(inclusion -> inclusion.withValueInclusion(JsonInclude.Include.ALWAYS))
                 .configure(SerializationFeature.INDENT_OUTPUT, prettyPrint)
                 .build();
 
@@ -42,6 +47,12 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         {
             //this.generator = generator.getPrettyPrinter();
         }
+    }
+
+    public void writePlainDouble(final JsonGenerator gen, final String fieldName, final double value) throws IOException
+    {
+        gen.writeName(fieldName);
+        gen.writeRawValue(String.format("%.6f", value));
     }
 
     @Override
@@ -53,8 +64,8 @@ public class DebugJsonWriter implements ExchangeCompletionListener
 
             // --- Metadata ---
             generator.writeStringProperty("gateway_request_id", exchange.getRequestId().toString());
-            generator.writeNumberProperty("timestamp", exchange.getTimestamp());
-            generator.writeNumberProperty("duration_sec", exchange.getDurationNanos() / 1_000_000_000D);
+            generator.writeStringProperty("timestamp", ITU.formatUtcMilli(OffsetDateTime.ofInstant(Instant.ofEpochMilli(exchange.getTimestamp()), ZoneOffset.UTC)));
+            writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
 
             // --- Metrics ---
             final int status = exchange.getStatus();
@@ -96,7 +107,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             generator.flush();
 
             out.write(NEWLINE);
-            out.flush();
+            //out.flush();
         }
         catch (IOException e)
         {
@@ -114,9 +125,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         generator.writeStringProperty("request_journal_level", reqLevel != null ? reqLevel.name() : "NONE");
         if (reqLine != null)
         {
-            final String[] parts = reqLine.toString().split("\\s+");
-            generator.writeStringProperty("method", parts.length > 0 ? parts[0] : null);
-            generator.writeStringProperty("path", parts.length > 1 ? parts[1] : null);
+            writeRequestLine(generator, reqLine);
         }
         else
         {
@@ -131,6 +140,47 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         generator.writeStringProperty("content_type", getHeader(resHeaders, HttpHeaders.CONTENT_TYPE));
 
         generator.writeEndObject();
+    }
+
+    private void writeRequestLine(final JsonGenerator generator, final CharSequence reqLine) throws IOException
+    {
+        if (reqLine == null)
+        {
+            return;
+        }
+
+        final int len = reqLine.length();
+        int start = 0;
+        int partIndex = 0;
+
+        for (int i = 0; i < len; i++)
+        {
+            if (reqLine.charAt(i) == ' ')
+            {
+                writePart(generator, partIndex, reqLine, start, i);
+                start = i + 1;
+                partIndex++;
+                if (partIndex > 1)
+                {
+                    // We have method and path, we can stop if we don't care about protocol
+                    return;
+                }
+            }
+        }
+
+        // Handle the last part if no trailing space
+        if (start < len)
+        {
+            writePart(generator, partIndex, reqLine, start, len);
+        }
+    }
+
+    private void writePart(final JsonGenerator generator, final int index, final CharSequence seq, final int start, final int end) throws IOException
+    {
+        final String fieldName = (index == 0) ? "method" : "path";
+
+        // For TRUE zero-allocation, use generator.writeRawValue or a custom Serializer.
+        generator.writeStringProperty(fieldName, seq.subSequence(start, end).toString());
     }
 
     private void writeBody(String fieldName, List<ByteBuffer> fragments) throws IOException
