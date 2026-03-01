@@ -1,66 +1,17 @@
 package com.ethlo.venturi.journal;
 
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-public class JournalSecurity
+public final class JournalSecurity
 {
-    public static final Set<String> DEFAULT_SAFE_HEADERS = new HashSet<>(Set.of(
-            // --- Routing & Network Identity ---
-            "host",
-            "x-forwarded-for",
-            "x-forwarded-proto",
-            "x-forwarded-host",
-            "x-forwarded-port",
-            "x-real-ip",
-            "forwarded",
-            "via",
-
-            // --- Content & Negotiation ---
-            "accept",
-            "accept-encoding",
-            "accept-language",
-            "accept-charset",
-            "content-type",
-            "content-length",
-            "content-encoding",
-            "content-language",
-
-            // --- Client Details ---
-            "user-agent",
-            "sec-ch-ua",
-            "sec-ch-ua-mobile",
-            "sec-ch-ua-platform",
+    private static final Set<String> COMMON_SAFE = Set.of(
             "connection",
             "keep-alive",
             "upgrade",
             "te",
-
-            // --- Caching & Conditional Requests ---
-            "cache-control",
-            "pragma",
-            "etag",
-            "if-match",
-            "if-none-match",
-            "if-modified-since",
-            "if-unmodified-since",
-            "vary",
-            "expires",
-            "age",
-
-            // --- CORS (Cross-Origin Resource Sharing) ---
-            "origin",
-            "access-control-request-method",
-            "access-control-request-headers",
-            "access-control-allow-origin",
-            "access-control-allow-methods",
-            "access-control-allow-headers",
-            "access-control-expose-headers",
-            "access-control-max-age",
-            // Note: access-control-allow-credentials is safe because it just contains "true", not the credential itself.
-            "access-control-allow-credentials",
-
-            // --- Tracing & Correlation (Crucial for Gateways) ---
             "x-request-id",
             "x-correlation-id",
             "x-b3-traceid",
@@ -71,11 +22,64 @@ public class JournalSecurity
             "b3",
             "traceparent",
             "tracestate",
+            "date"
+    );
 
-            // --- Standard Response Metadata ---
-            "date",
-            "server",
-            "x-powered-by",
-            "retry-after"
-    ));
+    public static final Set<String> SAFE_REQUEST_HEADERS = Collections.unmodifiableSet(
+            Stream.concat(COMMON_SAFE.stream(), Stream.of(
+                            "host",
+                            "user-agent",
+                            "accept",
+                            "accept-encoding",
+                            "accept-language",
+                            "accept-charset",
+                            "content-type",
+                            "content-length",
+                            "origin",
+                            "sec-ch-ua",
+                            "sec-ch-ua-mobile",
+                            "sec-ch-ua-platform",
+                            "cache-control",
+                            "pragma",
+                            "if-match",
+                            "if-none-match",
+                            "if-modified-since",
+                            "if-unmodified-since",
+                            "x-forwarded-for",
+                            "x-forwarded-proto",
+                            "x-forwarded-host",
+                            "x-forwarded-port",
+                            "x-real-ip",
+                            "forwarded",
+                            "via"
+                    )
+            ).collect(Collectors.toSet())
+    );
+
+    public static final Set<String> SAFE_RESPONSE_HEADERS = Collections.unmodifiableSet(
+            Stream.concat(COMMON_SAFE.stream(), Stream.of(
+                            "server",
+                            "x-powered-by",
+                            "content-type",
+                            "content-length",
+                            "content-encoding",
+                            "content-language",
+                            "content-disposition",
+                            "etag",
+                            "vary",
+                            "expires",
+                            "age",
+                            "retry-after",
+                            "access-control-allow-origin",
+                            "access-control-allow-methods",
+                            "access-control-allow-headers",
+                            "access-control-expose-headers",
+                            "access-control-max-age",
+                            "access-control-allow-credentials",
+                            "x-content-type-options",
+                            "x-frame-options",
+                            "strict-transport-security"
+                    )
+            ).collect(Collectors.toSet())
+    );
 }

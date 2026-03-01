@@ -101,7 +101,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         final VlfJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
-        final Journal smartJournal = new PolicyJournal(rawJournal, journalConfig, JournalSecurity.DEFAULT_SAFE_HEADERS, gatewayExchange);
+        final Journal smartJournal = new PolicyJournal(rawJournal, journalConfig, gatewayExchange);
 
         setupJournaling(smartJournal, exchange, gatewayExchange, journalConfig, requestId);
 

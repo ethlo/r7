@@ -35,7 +35,6 @@ public final class PolicyJournal implements Journal
 
     private final Journal delegate;
     private final RouteJournalConfig config;
-    private final Set<String> safeHeaders;
     private final GatewayExchange exchange;
 
     // --- Granular State Management ---
@@ -55,12 +54,11 @@ public final class PolicyJournal implements Journal
     private ByteBuffer clientResLine;
     private GatewayHeaders clientResHeaders;
 
-    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final Set<String> safeHeaders, final GatewayExchange exchange)
+    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final GatewayExchange exchange)
     {
         this.delegate = delegate;
         this.config = config;
         this.exchange = exchange;
-        this.safeHeaders = safeHeaders;
     }
 
     @Override
@@ -175,7 +173,7 @@ public final class PolicyJournal implements Journal
     {
         if (!upstreamReqFlushed && upstreamReqLine != null)
         {
-            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(upstreamReqHeaders);
+            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
             delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine, headers);
             this.upstreamReqFlushed = true;
             this.upstreamReqLine = null;
@@ -186,7 +184,7 @@ public final class PolicyJournal implements Journal
     {
         if (!clientReqFlushed && clientReqLine != null)
         {
-            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(clientReqHeaders);
+            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
             delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers);
             this.clientReqFlushed = true;
             this.clientReqLine = null;
@@ -212,7 +210,7 @@ public final class PolicyJournal implements Journal
     {
         if (!clientResFlushed && clientResLine != null)
         {
-            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(clientResHeaders);
+            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
             delegate.clientResponse(resLevel, requestId, clientResLine, headers);
             this.clientResFlushed = true;
             this.clientResLine = null;
@@ -223,14 +221,14 @@ public final class PolicyJournal implements Journal
     {
         if (!upstreamResFlushed && upstreamResLine != null)
         {
-            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redact(upstreamResHeaders);
+            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
             delegate.upstreamResponse(resLevel, requestId, upstreamResLine, headers);
             this.upstreamResFlushed = true;
             this.upstreamResLine = null;
         }
     }
 
-    private GatewayHeaders redact(final GatewayHeaders original)
+    private GatewayHeaders redactHeaders(final GatewayHeaders original, Set<String> safeHeaders)
     {
         if (original == null)
         {
