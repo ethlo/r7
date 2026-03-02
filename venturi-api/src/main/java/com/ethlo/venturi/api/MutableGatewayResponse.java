@@ -4,5 +4,5 @@ public interface MutableGatewayResponse extends GatewayResponse
 {
     MutableGatewayHeaders headers();
 
-    void clientResponseComitted();
+    void status(int status);
 }

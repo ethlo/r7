@@ -8,7 +8,6 @@ public final class UndertowGatewayResponse implements MutableGatewayResponse
 {
     private final HttpServerExchange exchange;
     private final MutableGatewayHeaders headers;
-    private boolean isCommitted;
 
     public UndertowGatewayResponse(final HttpServerExchange exchange)
     {
@@ -23,15 +22,9 @@ public final class UndertowGatewayResponse implements MutableGatewayResponse
     }
 
     @Override
-    public void clientResponseComitted()
+    public void status(final int status)
     {
-        this.isCommitted = true;
-    }
-
-    @Override
-    public boolean isCommitted()
-    {
-        return isCommitted;
+        this.exchange.setStatusCode(status);
     }
 
     @Override

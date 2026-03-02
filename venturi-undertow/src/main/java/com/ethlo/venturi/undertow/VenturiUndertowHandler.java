@@ -29,6 +29,7 @@ import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.InitGatewayFilter;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayResponse;
+import com.ethlo.venturi.api.TerminationGatewayResponse;
 import com.ethlo.venturi.config.DefaultGatewayRoute;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.config.RouteRegistry;
@@ -159,17 +160,6 @@ public final class VenturiUndertowHandler implements HttpHandler
         for (BeforeUpstreamGatewayFilter filter : beforeUpstreamGatewayFilters)
         {
             filter.beforeUpstream(gatewayExchange);
-            if (gatewayExchange.clientResponse().isCommitted())
-            {
-                // Early exit
-                return;
-            }
-        }
-
-        if (gatewayExchange.clientResponse().isCommitted())
-        {
-            // Filter has determined that it should terminate early
-            return;
         }
 
         // 3. Wire the "Response Headers" hook
@@ -189,7 +179,18 @@ public final class VenturiUndertowHandler implements HttpHandler
             });
         }
 
-        proxyCall(route, exchange, gatewayExchange);
+        if (gatewayExchange.getTerminated() != null)
+        {
+            final TerminationGatewayResponse terminationResponse = gatewayExchange.getTerminated();
+            gatewayExchange.clientResponse().status(terminationResponse.status());
+            terminationResponse.headers().forEach(((name, value)
+                    -> gatewayExchange.clientResponse().headers().set(name, value)));
+            exchange.getResponseSender().send(terminationResponse.body());
+        }
+        else
+        {
+            proxyCall(route, exchange, gatewayExchange);
+        }
     }
 
     private void proxyCall(GatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)

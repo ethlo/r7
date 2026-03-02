@@ -1,13 +1,8 @@
 package com.ethlo.venturi.api;
 
-import java.nio.ByteBuffer;
-import java.util.function.Consumer;
-
 public interface GatewayResponse
 {
     GatewayHeaders headers();
-
-    boolean isCommitted();
 
     int status();
 }

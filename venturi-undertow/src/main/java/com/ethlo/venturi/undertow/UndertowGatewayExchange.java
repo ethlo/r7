@@ -18,7 +18,6 @@ import com.ethlo.venturi.api.StateKey;
 import com.ethlo.venturi.api.TerminationGatewayResponse;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.AttachmentKey;
-import io.undertow.util.HttpString;
 
 public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstreamGatewayExchange, BeforeCommitGatewayExchange, FinishedGatewayExchange
 {
@@ -26,7 +25,6 @@ public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstr
     // This is populated statically as filters register keys, so lookups during traffic are fast.
     private static final ConcurrentMap<StateKey<?>, AttachmentKey<?>> KEY_REGISTRY = new ConcurrentHashMap<>();
 
-    private final HttpServerExchange undertowExchange;
     private final CharSequence requestId;
     private final GatewayRequest request;
     private final MutableGatewayRequest upstreamRequest;
@@ -34,6 +32,7 @@ public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstr
     private final MutableGatewayAttributes attributes;
     private final GatewayRoute route;
     private GatewayResponse upstreamResponse;
+    private TerminationGatewayResponse terminated;
 
     public UndertowGatewayExchange(
             HttpServerExchange undertowExchange,
@@ -45,7 +44,6 @@ public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstr
             MutableGatewayAttributes attributes,
             final GatewayRoute route)
     {
-        this.undertowExchange = undertowExchange;
         this.requestId = requestId;
         this.request = request;
         this.upstreamRequest = upstreamRequest;
@@ -76,11 +74,7 @@ public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstr
     @Override
     public void terminate(final TerminationGatewayResponse terminationResponse)
     {
-        undertowExchange.setStatusCode(terminationResponse.status());
-        terminationResponse.headers().forEach(((name, value)
-                -> undertowExchange.getRequestHeaders().put(HttpString.tryFromString(name.toString()), value.toString())));
-        undertowExchange.getResponseSender().send(terminationResponse.body());
-        clientResponse().clientResponseComitted();
+        terminated = terminationResponse;
     }
 
     @Override
@@ -117,5 +111,10 @@ public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstr
     public void setUpstreamResponse(GatewayResponse clone)
     {
         this.upstreamResponse = clone;
+    }
+
+    public TerminationGatewayResponse getTerminated()
+    {
+        return terminated;
     }
 }

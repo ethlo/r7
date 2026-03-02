@@ -40,12 +40,6 @@ public class FastTerminationGatewayResponse implements TerminationGatewayRespons
     }
 
     @Override
-    public boolean isCommitted()
-    {
-        return true;
-    }
-
-    @Override
     public int status()
     {
         return status;
