@@ -2,9 +2,7 @@ package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.GatewayRequest;
-import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.MutableGatewayRequest;
-import com.ethlo.venturi.api.MutableGatewayResponse;
 
 public final class GatewayCopier
 {
@@ -42,13 +40,6 @@ public final class GatewayCopier
         r.uri(originalRequest.uri());
         r.queryParams(originalRequest.queryParams());
         r.method(originalRequest.method());
-        return r;
-    }
-
-    public static GatewayResponse clone(GatewayResponse originalResponse)
-    {
-        final MutableGatewayResponse r = new FastMutableGatewayResponse(clone(originalResponse.headers()));
-        r.status(originalResponse.status());
         return r;
     }
 }

@@ -1,6 +1,5 @@
 package com.ethlo.venturi.spi;
 
-import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.validation.ValidatableConfig;
 

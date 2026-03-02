@@ -1,15 +1,12 @@
 package com.ethlo.venturi.config;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BiFunction;
 
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
-import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.predicates.PredicateRegistry;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.FilterRegistry;
@@ -42,23 +39,18 @@ public final class VenturiLoader
         this.predicateRegistry = new PredicateRegistry(mapper);
     }
 
-    /**
-     * @param configurator Takes the raw RouteDefinition and returns a server-specific ExecutableRoute
-     */
-    public void load(Path yamlFile, RouteRegistry routeRegistry,
-                     BiFunction<RouteDefinition, GatewayRoute, ExecutableRoute> configurator) throws IOException
+    public void load(Path yamlFile, RouteRegistry routeRegistry)
     {
-
         final RoutesConfig config = load(yamlFile, RoutesConfig.class);
         final ValidationResult validationResult = validate(config);
         validationResult.throwIfInvalid();
-        final List<ExecutableRoute> routes = config.routes.stream()
+        final List<GatewayRoute> routes = config.routes.stream()
                 .map(def -> {
                     final List<GatewayFilter> instantiatedFilters = new ArrayList<>();
                     for (final FilterDefinition filterDef : def.filters())
                     {
                         // 1. Ask the registry for the factory by name (e.g., "AddResponseHeader")
-                        final GatewayFilterFactory<?> factory = filterRegistry.get(filterDef.name());
+                        final GatewayFilterFactory<?, ?> factory = filterRegistry.get(filterDef.name());
                         if (factory == null)
                         {
                             validationResult.addError("filters", "Unknown filter type: " + filterDef.name());
@@ -66,13 +58,13 @@ public final class VenturiLoader
                         }
 
                         // 2. Jackson perfectly maps the raw 'args' Object to the specific Record
-                        final ValidatableConfig c = mapper.convertValue(filterDef.args(), factory.configClass());
+                        final ValidatableConfig c = factory.configClass() != null ? mapper.convertValue(filterDef.args(), factory.configClass()) : new GatewayFilterFactory.EmptyConfig();
 
                         // 3. Validate and Build
                         c.validate(validationResult);
 
-                        @SuppressWarnings("unchecked") final GatewayFilterFactory<ValidatableConfig> typedFactory =
-                                (GatewayFilterFactory<ValidatableConfig>) factory;
+                        @SuppressWarnings("unchecked") final GatewayFilterFactory<?, ValidatableConfig> typedFactory =
+                                (GatewayFilterFactory<?, ValidatableConfig>) factory;
 
                         instantiatedFilters.add(typedFactory.create(c));
                     }
@@ -82,8 +74,8 @@ public final class VenturiLoader
 
                     final GatewayPredicate predicate = def.match().build(predicateRegistry);
 
-                    final GatewayRoute dataRoute = new DefaultGatewayRoute(def.id(), def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList(), predicate, instantiatedFilters);
-                    return configurator.apply(def, dataRoute);
+                    final List<CharSequence> urls = def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
+                    return (GatewayRoute) new DefaultGatewayRoute(def.id(), urls, predicate, instantiatedFilters, def);
                 })
                 .toList();
 

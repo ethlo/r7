@@ -7,12 +7,12 @@ import com.ethlo.venturi.validation.ValidationResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
-public class RouteFactory 
+public class RouteFactory
 {
     private final FilterRegistry registry;
     private final YAMLMapper mapper;
 
-    public RouteFactory(FilterRegistry registry) 
+    public RouteFactory(FilterRegistry registry)
     {
         this.registry = registry;
 
@@ -22,7 +22,7 @@ public class RouteFactory
 
     public GatewayFilter buildFilter(String filterName, JsonNode yamlConfig)
     {
-        GatewayFilterFactory<?> factory = registry.get(filterName);
+        GatewayFilterFactory<?, ?> factory = registry.get(filterName);
 
         // Jackson 3 maps the YAML tree directly to your config record
         ValidatableConfig config = mapper.treeToValue(yamlConfig, (Class<ValidatableConfig>) factory.configClass());
@@ -38,8 +38,8 @@ public class RouteFactory
         }
 
         @SuppressWarnings("unchecked")
-        GatewayFilterFactory<ValidatableConfig> typedFactory = (GatewayFilterFactory<ValidatableConfig>) factory;
-        
+        GatewayFilterFactory<?, ValidatableConfig> typedFactory = (GatewayFilterFactory<?, ValidatableConfig>) factory;
+
         return typedFactory.create(config);
     }
 }

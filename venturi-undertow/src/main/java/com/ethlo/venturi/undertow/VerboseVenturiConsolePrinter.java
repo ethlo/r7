@@ -16,8 +16,9 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayPredicate;
+import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.config.DefaultGatewayRoute;
 import com.ethlo.venturi.config.JournalDirectionConfig;
-import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.core.predicates.CompositePredicate;
 import com.ethlo.venturi.journal.api.JournalLevel;
@@ -52,7 +53,7 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
     private static final String TREE_PIPE = CSS_MUTED + "│   " + RESET;
 
     @Override
-    public void printFullReport(final ServerConfig config, final List<? extends ExecutableRoute> routes)
+    public void printFullReport(final ServerConfig config, final List<GatewayRoute> routes)
     {
         printHeader();
         printServerConfigInternal(config);
@@ -66,7 +67,7 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
     {
         logBorder(BORDER_TOP);
         logLine("");
-        logLine("  " + CSS_HEADER + "V E N T U R I" + RESET + "  "  + RESET + " GATEWAY");
+        logLine("  " + CSS_HEADER + "V E N T U R I" + RESET + "  " + RESET + " GATEWAY");
         logLine("  " + CSS_MUTED + "»".repeat(WIDTH - 4) + RESET);
         logLine("");
     }
@@ -80,7 +81,7 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
     }
 
     @Override
-    public void printRouteTable(final List<? extends ExecutableRoute> routes)
+    public void printRouteTable(final List<GatewayRoute> routes)
     {
         logBorder(BORDER_TOP);
         printRouteTableInternal(routes);
@@ -152,20 +153,20 @@ public class VerboseVenturiConsolePrinter implements VenturiConsolePrinter
         logLine("   " + TREE_LAST + "Total Threads:     " + ManagementFactory.getThreadMXBean().getThreadCount());
     }
 
-    private void printRouteTableInternal(final List<? extends ExecutableRoute> routes)
+    private void printRouteTableInternal(final List<GatewayRoute> routes)
     {
         logLine(" " + CSS_PRIMARY + "◆ ACTIVE ROUTE MANIFEST" + RESET + " (" + routes.size() + ")");
 
         for (int i = 0; i < routes.size(); i++)
         {
-            final ExecutableRoute route = routes.get(i);
+            final GatewayRoute route = routes.get(i);
             logLine(" " + CSS_PRIMARY + "◉" + RESET + " Route: " + CSS_HEADER + route.id() + RESET);
 
             logLine("   " + CSS_MUTED + "│" + RESET + " Match Logic:");
             printPredicate(route.predicate(), "   " + CSS_MUTED + "│" + RESET + "  ", true);
 
-            final JournalDirectionConfig reqConfig = route.routeDefinition().journal().request();
-            final JournalDirectionConfig resConfig = route.routeDefinition().journal().response();
+            final JournalDirectionConfig reqConfig = ((DefaultGatewayRoute) route).routeDefinition().journal().request();
+            final JournalDirectionConfig resConfig = ((DefaultGatewayRoute) route).routeDefinition().journal().response();
 
             logLine("   " + CSS_MUTED + "│" + RESET + " Journaling:");
             logLine("   " + CSS_MUTED + "│" + RESET + "  " + TREE_BRANCH + "Request:  " + colorLevel(reqConfig.level()) + formatOverrides(reqConfig.statusOverrides()));

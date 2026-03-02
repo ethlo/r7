@@ -2,14 +2,15 @@ package com.ethlo.venturi.core.filters;
 
 import static com.ethlo.venturi.util.constants.HttpHeaders.X_CORRELATION_ID;
 
-import com.ethlo.venturi.api.GatewayExchange;
+import com.ethlo.venturi.api.BeforeCommitGatewayExchange;
+import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
-import com.ethlo.venturi.validation.ValidatableConfig;
-import com.ethlo.venturi.validation.ValidationResult;
 
-public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<CorrelationIdHeaderFilterFactory.Config>
+public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<GatewayFilter, GatewayFilterFactory.EmptyConfig>
 {
     private static final String FILTER_NAME = "CorrelationIdHeader";
 
@@ -20,38 +21,23 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Co
     }
 
     @Override
-    public Class<Config> configClass()
-    {
-        return Config.class;
-    }
-
-    @Override
-    public GatewayFilter create(Config config)
+    public GatewayFilter create(EmptyConfig config)
     {
         return new GF();
     }
 
-    public record Config() implements ValidatableConfig
+    private static class GF implements BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, ShortInfo
     {
         @Override
-        public void validate(ValidationResult result)
-        {
-            // Nothing to validate!
-        }
-    }
-
-    private static class GF implements GatewayFilter, ShortInfo
-    {
-        @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
         {
             exchange.upstreamRequest().headers().add(X_CORRELATION_ID, exchange.requestId());
         }
 
         @Override
-        public void beforeCommit(final GatewayExchange exchange)
+        public void beforeCommit(final BeforeCommitGatewayExchange exchange)
         {
-            exchange.response().headers().add(X_CORRELATION_ID, exchange.requestId());
+            exchange.clientResponse().headers().add(X_CORRELATION_ID, exchange.requestId());
         }
 
         @Override

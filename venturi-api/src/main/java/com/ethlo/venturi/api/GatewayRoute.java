@@ -22,8 +22,6 @@ public interface GatewayRoute
      */
     GatewayPredicate predicate();
 
-    /**
-     * The ordered list of filters to execute for this route
-     */
+
     Iterable<GatewayFilter> filters();
 }

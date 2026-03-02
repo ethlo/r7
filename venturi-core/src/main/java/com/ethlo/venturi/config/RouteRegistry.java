@@ -7,16 +7,15 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayRoute;
-import com.ethlo.venturi.core.ExecutableRoute;
 
 public class RouteRegistry
 {
-    private final AtomicReference<List<ExecutableRoute>> routes = new AtomicReference<>(Collections.emptyList());
+    private final AtomicReference<List<GatewayRoute>> routes = new AtomicReference<>(Collections.emptyList());
 
     /**
      * Swaps the current routing table for a new one. (Live Reload)
      */
-    public void updateRoutes(List<ExecutableRoute> newRoutes)
+    public void updateRoutes(List<GatewayRoute> newRoutes)
     {
         this.routes.set(List.copyOf(newRoutes));
     }
@@ -24,10 +23,10 @@ public class RouteRegistry
     /**
      * Finds the first matching route. High-performance O(N) linear scan.
      */
-    public Optional<ExecutableRoute> findRoute(GatewayRequest exchange)
+    public Optional<GatewayRoute> findRoute(GatewayRequest exchange)
     {
-        final List<ExecutableRoute> current = routes.get();
-        for (ExecutableRoute route : current)
+        final List<GatewayRoute> current = routes.get();
+        for (GatewayRoute route : current)
         {
             // This calls our zero-allocation predicates compiled from YAML
             if (route.predicate().test(exchange))
@@ -38,8 +37,13 @@ public class RouteRegistry
         return Optional.empty();
     }
 
-    public List<? extends GatewayRoute> getRoutes()
+    public List<GatewayRoute> getRoutes()
     {
         return this.routes.get();
+    }
+
+    public RouteRegistry()
+    {
+        super();
     }
 }

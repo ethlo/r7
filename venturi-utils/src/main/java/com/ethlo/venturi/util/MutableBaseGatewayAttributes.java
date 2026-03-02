@@ -1,10 +1,7 @@
 package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.api.EntryConsumer;
-import com.ethlo.venturi.api.GatewayAttributes;
-import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
-import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 
 import java.util.Map;

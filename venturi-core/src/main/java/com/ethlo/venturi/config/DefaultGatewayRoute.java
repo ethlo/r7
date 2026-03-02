@@ -7,7 +7,7 @@ import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
 
 public record DefaultGatewayRoute(CharSequence id, List<CharSequence> uri, GatewayPredicate predicate,
-                                  List<GatewayFilter> filters) implements GatewayRoute
+                                  List<GatewayFilter> filters, RouteDefinition routeDefinition) implements GatewayRoute
 {
 
 }

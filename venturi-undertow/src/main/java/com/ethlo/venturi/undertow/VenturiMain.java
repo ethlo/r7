@@ -1,7 +1,6 @@
 package com.ethlo.venturi.undertow;
 
 import java.io.IOException;
-import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,9 +28,9 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
+import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
-import com.ethlo.venturi.core.ExecutableRoute;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
 import com.ethlo.venturi.undertow.config.ServerConfig;
@@ -47,9 +46,6 @@ import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
-import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
-import io.undertow.server.handlers.proxy.ProxyClient;
-import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.Headers;
 
 public final class VenturiMain
@@ -58,13 +54,10 @@ public final class VenturiMain
     public static final int JOURNAL_SHARD_SIZE_BYTES = 1024 * 1024 * 100;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
-    private final XnioSsl xnioSsl;
-    private final Map<CharSequence, HttpHandler> routeProxyCache = new HashMap<>();
+
 
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
-        this.xnioSsl = getXnioSsl();
-
         final HttpHandler benchMarkHandler = exchange -> {
             exchange.setStatusCode(HttpStatuses.OK);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
@@ -80,54 +73,12 @@ public final class VenturiMain
         result.throwIfInvalid();
         logger.debug("Loaded server config: {}", serverConfig);
 
-        final boolean logProxyError = true;
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
-        final List<ExecutableRoute> executableRoutes = new ArrayList<>();
-        loader.load(configFile, routeRegistry, (def, dataRoute) -> {
-                    final ServerConfig.ProxyConfig pConfig = serverConfig.proxy();
-
-                    final HttpHandler proxyHandler = routeProxyCache.computeIfAbsent(dataRoute.id(), uri ->
-                            {
-                                final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
-                                        .setConnectionsPerThread(pConfig.connectionsPerThread())
-                                        .setMaxQueueSize(serverConfig.proxy().maxQueueSize())
-                                        .setTtl(pConfig.ttl());
-
-                                dataRoute.uri().stream()
-                                        .map(CharSequence::toString)
-                                        .map(URI::create)
-                                        .forEach(u -> {
-                                            if ("https".equalsIgnoreCase(u.getScheme()))
-                                            {
-                                                rawClient.addHost(u, xnioSsl);
-                                            }
-                                            else
-                                            {
-                                                rawClient.addHost(u);
-                                            }
-                                        });
-
-                                final ProxyClient client = logProxyError ? new DiagnosticProxyClient(rawClient, errorHandler) : rawClient;
-
-                                return ProxyHandler.builder()
-                                        .setProxyClient(client)
-                                        .setMaxRequestTime(pConfig.maxRequestTime())
-                                        .setReuseXForwarded(false)
-                                        .setRewriteHostHeader(true)
-                                        .build();
-                            }
-                    );
-
-                    // Return the Executable version that bridges Core <--> Undertow
-                    final VenturiExecutableRoute executableRoute = new VenturiExecutableRoute(def, dataRoute, proxyHandler);
-                    executableRoutes.add(executableRoute);
-                    return executableRoute;
-                }
-        );
+        loader.load(configFile, routeRegistry);
 
         final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
-        consolePrinter.printFullReport(serverConfig, executableRoutes);
+        consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());
@@ -148,7 +99,7 @@ public final class VenturiMain
 
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/benchmark", benchMarkHandler)
-                .addPrefixPath("/", new VenturiUndertowHandler(routeRegistry, gatewayExchangeDataWriter, errorHandler));
+                .addPrefixPath("/", new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler));
 
         final Undertow.Builder builder = Undertow.builder();
         builder.setHandler(rootHandler);
@@ -172,18 +123,6 @@ public final class VenturiMain
 
         long uptime = getUptime();
         logger.info("🚀 Started in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
-    }
-
-    private static UndertowXnioSsl getXnioSsl()
-    {
-        try
-        {
-            return new UndertowXnioSsl(Xnio.getInstance(), OptionMap.EMPTY);
-        }
-        catch (NoSuchProviderException | NoSuchAlgorithmException | KeyManagementException e)
-        {
-            throw new IllegalStateException(e);
-        }
     }
 
     private static void setupTestBackEndForProxy(HttpHandler benchMarkHandler)

@@ -1,14 +1,14 @@
 package com.ethlo.venturi.core.filters;
 
-import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPrefixFactory.Config>
+public class StripPathPrefixFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, StripPathPrefixFactory.Config>
 {
     private static final String FILTER_NAME = "StripPathPrefix";
 
@@ -25,7 +25,7 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
     }
 
     @Override
-    public GatewayFilter create(Config config)
+    public BeforeUpstreamGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -35,19 +35,17 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         @Override
         public void validate(ValidationResult result)
         {
-            new ValidatorUtils(result)
+            final ValidatorUtils validatorUtils = new ValidatorUtils(result)
                     .required(FILTER_NAME, "parts", parts);
 
             if (parts != null && parts <= 0)
             {
-                // Assuming ValidationResult has a way to add custom error messages,
-                // otherwise you can throw an IllegalArgumentException directly here.
-                throw new IllegalArgumentException(FILTER_NAME + ": 'parts' must be greater than 0");
+                validatorUtils.invalid(FILTER_NAME, "parts", parts.toString(), "'parts' must be greater than 0");
             }
         }
     }
 
-    private static class GF implements GatewayFilter, ShortInfo
+    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
     {
         private final int parts;
 
@@ -57,9 +55,9 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         }
 
         @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
         {
-            final String path = exchange.request().path().toString();
+            final String path = exchange.clientRequest().path().toString();
 
             // The config validation guarantees parts > 0, so we can skip that check here
             int pos = 0;

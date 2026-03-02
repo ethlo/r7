@@ -1,15 +1,15 @@
 package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestHeaderFactory.Config>
+public class AddRequestHeaderFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, AddRequestHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "AddRequestHeader";
 
@@ -26,7 +26,7 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestH
     }
 
     @Override
-    public GatewayFilter create(Config config)
+    public BeforeUpstreamGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -42,7 +42,7 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestH
         }
     }
 
-    private static class GF implements GatewayFilter, ShortInfo
+    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
     {
         private final boolean override;
         private final String name;
@@ -56,7 +56,7 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestH
         }
 
         @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
         {
             if (override)
             {
@@ -71,7 +71,7 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestH
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + name + ": " + RedactUtil.redact(value, 1);
+            return FILTER_NAME + ": " + name + ": " + RedactUtil.fingerprint(value);
         }
     }
 }

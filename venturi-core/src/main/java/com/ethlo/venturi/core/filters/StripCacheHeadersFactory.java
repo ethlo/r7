@@ -1,7 +1,7 @@
 package com.ethlo.venturi.core.filters;
 
-import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -9,7 +9,7 @@ import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCacheHeadersFactory.Config>
+public class StripCacheHeadersFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, StripCacheHeadersFactory.Config>
 {
     private static final String FILTER_NAME = "StripCacheHeaders";
 
@@ -26,7 +26,7 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
     }
 
     @Override
-    public GatewayFilter create(Config config)
+    public BeforeUpstreamGatewayFilter create(Config config)
     {
         return new GF();
     }
@@ -40,10 +40,10 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
         }
     }
 
-    private static class GF implements GatewayFilter, ShortInfo
+    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
     {
         @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
         {
             final MutableGatewayHeaders headers = exchange.upstreamRequest().headers();
             headers.remove(HttpHeaders.IF_MODIFIED_SINCE);

@@ -1,17 +1,7 @@
 package com.ethlo.venturi.undertow;
 
 
-import static com.ethlo.venturi.undertow.VenturiUndertowHandler.GATEWAY_EXCHANGE_KEY;
-
-import java.lang.reflect.Field;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.ethlo.venturi.api.GatewayErrorHandler;
-import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.core.proxy.NoAvailableTargetException;
 import com.ethlo.venturi.core.proxy.ProxyConnectionException;
 import com.ethlo.venturi.core.proxy.ProxyPoolExhaustedException;
@@ -21,6 +11,15 @@ import io.undertow.server.handlers.proxy.ProxyCallback;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyConnection;
 import io.undertow.util.AttachmentKey;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static com.ethlo.venturi.undertow.VenturiUndertowHandler.GATEWAY_EXCHANGE_KEY;
 
 public class DiagnosticProxyClient implements ProxyClient
 {
@@ -136,7 +135,7 @@ public class DiagnosticProxyClient implements ProxyClient
         }
     }
 
-    private GatewayExchange getExchange(HttpServerExchange exchange)
+    private UndertowGatewayExchange getExchange(HttpServerExchange exchange)
     {
         return exchange.getAttachment(GATEWAY_EXCHANGE_KEY);
     }

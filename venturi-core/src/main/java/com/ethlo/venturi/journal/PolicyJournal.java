@@ -1,13 +1,11 @@
 package com.ethlo.venturi.journal;
 
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Set;
 
+import com.ethlo.venturi.RedactUtil;
+import com.ethlo.venturi.api.FinishedGatewayExchange;
 import com.ethlo.venturi.api.GatewayAttributes;
-import com.ethlo.venturi.api.GatewayExchange;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
@@ -19,23 +17,9 @@ import com.ethlo.venturi.util.MutableFastGatewayHeaders;
 
 public final class PolicyJournal implements Journal
 {
-    private static final byte[] HEX_ARRAY = "0123456789abcdef".getBytes(StandardCharsets.US_ASCII);
-
-    private static final ThreadLocal<MessageDigest> SHA_256 = ThreadLocal.withInitial(() ->
-    {
-        try
-        {
-            return MessageDigest.getInstance("SHA-256");
-        }
-        catch (final NoSuchAlgorithmException e)
-        {
-            throw new IllegalStateException("SHA-256 not available on this JVM", e);
-        }
-    });
-
     private final Journal delegate;
     private final RouteJournalConfig config;
-    private final GatewayExchange exchange;
+    private final FinishedGatewayExchange exchange;
 
     // --- Granular State Management ---
     private CharSequence requestId;
@@ -54,7 +38,7 @@ public final class PolicyJournal implements Journal
     private ByteBuffer clientResLine;
     private GatewayHeaders clientResHeaders;
 
-    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final GatewayExchange exchange)
+    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final FinishedGatewayExchange exchange)
     {
         this.delegate = delegate;
         this.config = config;
@@ -119,7 +103,7 @@ public final class PolicyJournal implements Journal
     @Override
     public void responseBody(CharSequence reqId, ByteBuffer data)
     {
-        if (config.response().resolve(exchange.response().status()) == JournalLevel.FULL)
+        if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
             delegate.responseBody(reqId, data);
         }
@@ -148,7 +132,7 @@ public final class PolicyJournal implements Journal
             return;
         }
 
-        final int status = exchange.response().status();
+        final int status = exchange.clientResponse().status();
         final JournalLevel reqLevel = config.request().resolve(status);
         final JournalLevel resLevel = config.response().resolve(status);
 
@@ -194,7 +178,7 @@ public final class PolicyJournal implements Journal
     private void checkAndFlushResponse()
     {
         // Check final response logging level based on status code config
-        final int status = exchange.response().status();
+        final int status = exchange.clientResponse().status();
         final JournalLevel resLevel = config.response().resolve(status);
         if (resLevel == JournalLevel.NONE)
         {
@@ -244,27 +228,11 @@ public final class PolicyJournal implements Journal
             }
             else
             {
-                state.add(name, fingerprint(value.toString()));
+                state.add(name, RedactUtil.fingerprint(value.toString()));
             }
         };
         original.forEach(redacted, redactingConsumer);
         return redacted;
-    }
-
-    private String fingerprint(final String value)
-    {
-        final MessageDigest digest = SHA_256.get();
-        digest.reset();
-        final byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-        final char[] out = new char[16];
-        "id:sha256:".getChars(0, 10, out, 0);
-        for (int j = 0; j < 3; j++)
-        {
-            final int v = hash[j] & 0xFF;
-            out[10 + j * 2] = (char) HEX_ARRAY[v >>> 4];
-            out[11 + j * 2] = (char) HEX_ARRAY[v & 0x0F];
-        }
-        return new String(out);
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)

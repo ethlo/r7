@@ -2,19 +2,19 @@ package com.ethlo.venturi.core.filters;
 
 import java.nio.ByteBuffer;
 
-import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.api.MutableGatewayResponse;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.CharSequenceUtil;
+import com.ethlo.venturi.util.FastTerminationGatewayResponse;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<RequireAuthorizationHeaderFactory.Config>
+public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, RequireAuthorizationHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "RequireAuthorizationHeader";
 
@@ -31,7 +31,7 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
     }
 
     @Override
-    public GatewayFilter create(Config config)
+    public BeforeUpstreamGatewayFilter create(Config config)
     {
         return new GF();
     }
@@ -44,21 +44,18 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
         }
     }
 
-    private static class GF implements GatewayFilter, ShortInfo
+    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
     {
         private static final ByteBuffer UNAUTHORIZED_BODY = ByteBuffer.wrap("Unauthorized".getBytes());
 
         @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
         {
-            final CharSequence sig = exchange.request().headers().getFirst(HttpHeaders.AUTHORIZATION);
+            final CharSequence sig = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
 
             if (sig == null || !(CharSequenceUtil.startsWith(sig, "Bearer ") || CharSequenceUtil.startsWith(sig, "Basic ")))
             {
-                final MutableGatewayResponse response = exchange.response();
-                response.status(HttpStatuses.UNAUTHORIZED);
-                response.headers().set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-                response.commitResponse(UNAUTHORIZED_BODY.slice());
+                exchange.terminate(new FastTerminationGatewayResponse(HttpStatuses.UNAUTHORIZED, MediaTypes.TEXT_PLAIN, UNAUTHORIZED_BODY.slice()));
             }
         }
 

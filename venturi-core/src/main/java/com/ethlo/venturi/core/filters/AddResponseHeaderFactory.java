@@ -1,15 +1,15 @@
 package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.BeforeCommitGatewayExchange;
+import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class AddResponseHeaderFactory implements GatewayFilterFactory<AddResponseHeaderFactory.Config>
+public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeCommitGatewayFilter, AddResponseHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "AddResponseHeader";
 
@@ -26,7 +26,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
     }
 
     @Override
-    public GatewayFilter create(Config config)
+    public BeforeCommitGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -42,7 +42,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
         }
     }
 
-    private static class GF implements GatewayFilter, ShortInfo
+    private static class GF implements BeforeCommitGatewayFilter, ShortInfo
     {
         private final boolean override;
         private final String name;
@@ -56,22 +56,22 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
         }
 
         @Override
-        public void beforeCommit(final GatewayExchange exchange)
+        public void beforeCommit(final BeforeCommitGatewayExchange exchange)
         {
             if (override)
             {
-                exchange.response().headers().set(name, value);
+                exchange.clientResponse().headers().set(name, value);
             }
             else
             {
-                exchange.response().headers().add(name, value);
+                exchange.clientResponse().headers().add(name, value);
             }
         }
 
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + name + ": " + RedactUtil.redact(value, 1);
+            return FILTER_NAME + ": " + name + ": " + RedactUtil.fingerprint(value);
         }
     }
 }

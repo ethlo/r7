@@ -4,15 +4,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.ethlo.venturi.api.GatewayExchange;
-import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class RewritePathFactory implements GatewayFilterFactory<RewritePathFactory.Config>
+public class RewritePathFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, RewritePathFactory.Config>
 {
     private static final String FILTER_NAME = "RewritePath";
 
@@ -29,7 +29,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
     }
 
     @Override
-    public GatewayFilter create(Config config)
+    public BeforeUpstreamGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -39,7 +39,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
         @Override
         public void validate(ValidationResult result)
         {
-            new ValidatorUtils(result)
+            final ValidatorUtils validatorUtils = new ValidatorUtils(result)
                     .required(FILTER_NAME, "regexp", regexp)
                     .required(FILTER_NAME, "replacement", replacement);
 
@@ -51,14 +51,13 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
                 }
                 catch (PatternSyntaxException e)
                 {
-                    // Assuming your ValidationResult can take custom error messages
-                    throw new IllegalArgumentException(FILTER_NAME + ": Invalid regex pattern - " + e.getMessage());
+                    validatorUtils.invalid(FILTER_NAME, "regexp", regexp, "Invalid regex pattern: " + e.getPattern());
                 }
             }
         }
     }
 
-    private static class GF implements GatewayFilter, ShortInfo
+    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
     {
         private final Pattern regexp;
         private final String replacement;
@@ -70,10 +69,9 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
         }
 
         @Override
-        public void beforeUpstream(final GatewayExchange exchange)
+        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
         {
-            final CharSequence path = exchange.request().path();
-            final Matcher matcher = regexp.matcher(path);
+            final Matcher matcher = regexp.matcher(exchange.clientRequest().path());
 
             if (matcher.find())
             {

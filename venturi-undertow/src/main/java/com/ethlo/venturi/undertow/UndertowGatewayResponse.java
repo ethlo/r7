@@ -1,7 +1,5 @@
 package com.ethlo.venturi.undertow;
 
-import java.nio.ByteBuffer;
-
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayResponse;
 import io.undertow.server.HttpServerExchange;
@@ -25,16 +23,9 @@ public final class UndertowGatewayResponse implements MutableGatewayResponse
     }
 
     @Override
-    public void status(final int status)
+    public void clientResponseComitted()
     {
-        exchange.setStatusCode(status);
-    }
-
-    @Override
-    public void commitResponse(final ByteBuffer body)
-    {
-        exchange.getResponseSender().send(body);
-        isCommitted = true;
+        this.isCommitted = true;
     }
 
     @Override

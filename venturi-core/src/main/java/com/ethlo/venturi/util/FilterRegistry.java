@@ -1,14 +1,14 @@
 package com.ethlo.venturi.util;
 
-import com.ethlo.venturi.spi.GatewayFilterFactory;
-
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 
+import com.ethlo.venturi.spi.GatewayFilterFactory;
+
 public final class FilterRegistry
 {
-    private final Map<String, GatewayFilterFactory<?>> factories;
+    private final Map<String, GatewayFilterFactory<?, ?>> factories;
 
     public FilterRegistry()
     {
