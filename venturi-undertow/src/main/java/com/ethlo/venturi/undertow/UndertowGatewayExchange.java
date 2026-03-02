@@ -114,37 +114,6 @@ public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstr
         };
     }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T> void setAttachment(StateKey<T> key, T value)
-    {
-        AttachmentKey<T> undertowKey = (AttachmentKey<T>) KEY_REGISTRY.computeIfAbsent(
-                key, k -> AttachmentKey.create(Object.class)
-        );
-        undertowExchange.putAttachment(undertowKey, value);
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T> T getAttachment(StateKey<T> key)
-    {
-        AttachmentKey<?> undertowKey = KEY_REGISTRY.get(key);
-        if (undertowKey == null)
-        {
-            return null;
-        }
-        return (T) undertowExchange.getAttachment(undertowKey);
-    }
-
-    /**
-     * Exposes the raw Undertow exchange for the deepest internal I/O handlers.
-     * This should not be used by standard API filters.
-     */
-    public HttpServerExchange getRawExchange()
-    {
-        return undertowExchange;
-    }
-
     public void setUpstreamResponse(GatewayResponse clone)
     {
         this.upstreamResponse = clone;

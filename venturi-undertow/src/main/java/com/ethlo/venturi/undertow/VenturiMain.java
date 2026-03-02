@@ -210,6 +210,8 @@ public final class VenturiMain
                 .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, opts.requestParseTimeout())
                 .setServerOption(UndertowOptions.MAX_HEADERS, opts.maxHeaderCount())
 
+                .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, true)
+
                 .setServerOption(UndertowOptions.ENABLE_HTTP2, opts.enableHttp2())
                 .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, opts.alwaysSetKeepAlive())
                 .setBufferSize(opts.bufferSize())
