@@ -36,7 +36,9 @@ public final class PolicyJournal implements Journal
     private ByteBuffer upstreamResLine;
     private GatewayHeaders upstreamResHeaders;
     private ByteBuffer clientResLine;
+    private int clientStatusCode;
     private GatewayHeaders clientResHeaders;
+    private int upstreamStatusCode;
 
     public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final FinishedGatewayExchange exchange)
     {
@@ -72,10 +74,11 @@ public final class PolicyJournal implements Journal
     }
 
     @Override
-    public void upstreamResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public void upstreamResponse(JournalLevel level, CharSequence reqId, int upstreamStatusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         this.upstreamResLine = cloneBuffer(startLine);
         this.upstreamResHeaders = headers;
+        this.upstreamStatusCode = upstreamStatusCode;
 
         // Response status is now known; resolve bilateral policy
         checkAndFlushRequest();
@@ -83,8 +86,9 @@ public final class PolicyJournal implements Journal
     }
 
     @Override
-    public void clientResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public void clientResponse(JournalLevel level, CharSequence reqId, int clientStatusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
+        this.clientStatusCode = clientStatusCode;
         this.clientResLine = cloneBuffer(startLine);
         this.clientResHeaders = headers;
 
@@ -169,7 +173,7 @@ public final class PolicyJournal implements Journal
         if (!clientReqFlushed && clientReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
-            delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers);
+            delegate.clientRequest(effectiveLevel,  requestId, clientReqLine, headers);
             this.clientReqFlushed = true;
             this.clientReqLine = null;
         }
@@ -195,7 +199,7 @@ public final class PolicyJournal implements Journal
         if (!clientResFlushed && clientResLine != null)
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
-            delegate.clientResponse(resLevel, requestId, clientResLine, headers);
+            delegate.clientResponse(resLevel, requestId, clientStatusCode, clientResLine, headers);
             this.clientResFlushed = true;
             this.clientResLine = null;
         }
@@ -206,7 +210,7 @@ public final class PolicyJournal implements Journal
         if (!upstreamResFlushed && upstreamResLine != null)
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
-            delegate.upstreamResponse(resLevel, requestId, upstreamResLine, headers);
+            delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers);
             this.upstreamResFlushed = true;
             this.upstreamResLine = null;
         }

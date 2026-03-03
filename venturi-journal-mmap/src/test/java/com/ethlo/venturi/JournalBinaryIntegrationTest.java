@@ -156,7 +156,7 @@ class JournalBinaryIntegrationTest
             journal.clientRequest(JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers);
             journal.requestBody(id, ByteBuffer.wrap("Request chunk".getBytes()));
 
-            journal.clientResponse(JournalLevel.FULL, id, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
+            journal.clientResponse(JournalLevel.FULL, id,200, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
             journal.responseBody(id, ByteBuffer.wrap("Response chunk".getBytes()));
 
             journal.endExchange(id, new FastGatewayAttributes(), 200, 100, 100, 500, 0, 0);

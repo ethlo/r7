@@ -279,10 +279,10 @@ public final class VenturiUndertowHandler implements HttpHandler
                 if (gatewayExchange.upstreamResponse() != null)
                 {
                     journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
-                    journal.upstreamResponse(journalConfig.response().level(), requestId, StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
+                    journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
                 }
 
-                journal.clientResponse(journalConfig.response().level(), requestId, StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
+                journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
 
                 final long duration = System.nanoTime() - exchange.getRequestStartTime();
 

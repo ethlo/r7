@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -67,8 +68,8 @@ public final class VlfPerformanceBenchmarkTest
                                 journal.upstreamRequest(JournalLevel.FULL, id, startLine, headers);
                                 journal.requestBody(id, requestBody.clear());
                                 journal.responseBody(id, responseBody.clear());
-                                journal.upstreamResponse(JournalLevel.FULL, id, startLine, headers);
-                                journal.clientResponse(JournalLevel.FULL, id, startLine, headers);
+                                journal.upstreamResponse(JournalLevel.FULL, id, 200, startLine, headers);
+                                journal.clientResponse(JournalLevel.FULL, id, 200, startLine, headers);
                                 journal.endExchange(id, new FastGatewayAttributes(), 200, 150, 200, 15, 0, 0);
                             }
                         }
@@ -82,12 +83,9 @@ public final class VlfPerformanceBenchmarkTest
             final Path finalPath = journalRef.get().getActivePath();
 
             // 3. Measure Decoding Speed using the high-water mark
-            final ExchangeCompletionListener noopListener = exchange -> {
-
-            };
-
+            final AtomicLong totalReceived = new AtomicLong();
+            final ExchangeCompletionListener noopListener = exchange -> totalReceived.addAndGet(exchange.getBytesReceived());
             final VenturiTailer tailer = new VenturiTailer(finalPath.getParent(), Duration.ZERO, noopListener);
-
             final long totalBytesRead = chronograph.time("Decode " + iterations, () ->
                     {
                         try
@@ -102,6 +100,7 @@ public final class VlfPerformanceBenchmarkTest
             );
 
             System.out.println(chronograph);
+            System.out.println("Total received (fake values): " + totalReceived.get());
             final double timeSeconds = chronograph.getTask("Decode " + iterations).getTime().toNanos() / 1_000_000_000.0;
             final double mbPerSec = (totalBytesRead / 1024.0 / 1024.0) / timeSeconds;
 

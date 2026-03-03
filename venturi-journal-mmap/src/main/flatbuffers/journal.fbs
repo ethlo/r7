@@ -26,6 +26,7 @@ table UpstreamResponse {
   req_id: [ubyte];
   start_line: [ubyte];
   headers: [Header];
+  status: uint16;
 }
 
 table ClientResponse {
@@ -33,6 +34,7 @@ table ClientResponse {
   req_id: [ubyte];
   start_line: [ubyte];
   headers: [Header];
+  status: uint16;
 }
 
 table RequestBody {
@@ -48,7 +50,7 @@ table ResponseBody {
 table EndExchange {
   req_id: [ubyte];
   timestamp: long;
-  status: int;
+  status: uint16;
   attributes: [Header];
   bytes_sent: long;
   bytes_received: long;

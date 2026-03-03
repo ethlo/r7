@@ -118,7 +118,7 @@ public final class VlfJournal implements Journal
     }
 
     @Override
-    public synchronized void upstreamResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized void upstreamResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -128,13 +128,14 @@ public final class VlfJournal implements Journal
         UpstreamResponse.startUpstreamResponse(fbb);
         UpstreamResponse.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
         UpstreamResponse.addReqId(fbb, reqIdOff);
+        UpstreamResponse.addStatus(fbb, statusCode);
         UpstreamResponse.addStartLine(fbb, lineOff);
         UpstreamResponse.addHeaders(fbb, headOff);
         finishAndWrite(EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
     }
 
     @Override
-    public synchronized void clientResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized void clientResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -144,6 +145,7 @@ public final class VlfJournal implements Journal
         ClientResponse.startClientResponse(fbb);
         ClientResponse.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
         ClientResponse.addReqId(fbb, reqIdOff);
+        ClientResponse.addStatus(fbb, statusCode);
         ClientResponse.addStartLine(fbb, lineOff);
         ClientResponse.addHeaders(fbb, headOff);
         finishAndWrite(EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));

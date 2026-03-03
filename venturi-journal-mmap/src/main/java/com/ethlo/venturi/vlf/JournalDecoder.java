@@ -27,10 +27,8 @@ public final class JournalDecoder
     /**
      * Decodes the hybrid FlatBuffer + raw stream.
      */
-    public static long decode(ByteBuffer buffer, JournalEventListener listener)
+    public static void decode(ByteBuffer buffer, JournalEventListener listener)
     {
-        long totalTextWeight = 0;
-
         // Skip preamble
         if (buffer.position() == 0)
         {
@@ -52,8 +50,6 @@ public final class JournalDecoder
 
             parseEntryAndDispatch(buffer, listener);
         }
-
-        return totalTextWeight;
     }
 
     private static void parseEntryAndDispatch(ByteBuffer buffer, JournalEventListener listener)

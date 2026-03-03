@@ -12,9 +12,9 @@ public interface Journal extends AutoCloseable
 
     void upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
 
-    void upstreamResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
+    void upstreamResponse(JournalLevel level, CharSequence reqId, int status, ByteBuffer startLine, GatewayHeaders headers);
 
-    void clientResponse(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
+    void clientResponse(JournalLevel level, CharSequence reqId, int status, ByteBuffer startLine, GatewayHeaders headers);
 
     void requestBody(CharSequence reqId, ByteBuffer data);
 
