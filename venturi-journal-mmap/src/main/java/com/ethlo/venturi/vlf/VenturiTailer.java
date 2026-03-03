@@ -43,7 +43,6 @@ public final class VenturiTailer
     private final Path checkpointPath;
 
     private long totalBytesRead = 0;
-    private long estimatedTextSize = 0;
 
     public VenturiTailer(final Path logDir, final Duration minAge, final ExchangeCompletionListener output)
     {
@@ -54,17 +53,18 @@ public final class VenturiTailer
         loadCheckpoints();
     }
 
-    public void runTick() throws IOException
+    public long runTick() throws IOException
     {
+        totalBytesRead = 0;
         final Set<String> fullyProcessedKeys = new HashSet<>();
 
         try (final Stream<Path> s = Files.list(logDir))
         {
             s.filter(p -> {
                         final String name = p.getFileName().toString();
-                        return //name.endsWith(VLF_FILE_EXTENSION) || // IMPORTANT: Avoid race-condition with compressed file!
+                        return name.endsWith(VLF_FILE_EXTENSION) || // TODO: IMPORTANT: Avoid race-condition with compressed file!
                                 name.endsWith(ACTIVE_FILE_EXTENSION) ||
-                                        name.endsWith(COMPRESSED_EXTENSION);
+                                name.endsWith(COMPRESSED_EXTENSION);
                     })
                     .sorted((p1, p2) -> {
                         final FileMeta m1 = parseMeta(p1);
@@ -97,10 +97,8 @@ public final class VenturiTailer
         }
 
         logStats();
-        totalBytesRead = 0;
-        estimatedTextSize = 0;
-
         saveCheckpoints();
+        return totalBytesRead;
     }
 
     private boolean processFile(final Path path) throws IOException
@@ -152,9 +150,8 @@ public final class VenturiTailer
             }
 
             final long before = processingBuffer.remaining();
-            final long textLen = JournalDecoder.decode(processingBuffer, reassembler);
+            JournalDecoder.decode(processingBuffer, reassembler);
             totalBytesRead += before - processingBuffer.remaining();
-            estimatedTextSize += textLen;
             checkpoints.put(key, (long) processingBuffer.position());
             return processingBuffer.remaining() == 0 && !isActive;
         }
@@ -164,8 +161,7 @@ public final class VenturiTailer
     {
         if (totalBytesRead > 0)
         {
-            final String binarySize = totalBytesRead < 1024 ? totalBytesRead + " B" : String.format("%.2f KB", totalBytesRead / 1024.0);
-            logger.info("Tailer Stats: Processed {} binary", binarySize);
+            logger.info("Tailer Stats: Processed {}", DiskSpaceUtils.formatBytes(totalBytesRead));
         }
     }
 

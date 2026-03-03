@@ -45,13 +45,14 @@ public final class VlfPerformanceBenchmarkTest
             headers.set("user-agent", "Mozilla/5.0 (Venturi Bench)");
             headers.set("content-type", "application/json");
             headers.set("connection", "keep-alive");
-            for (int i = 0; i < 0; i++)
+            for (int i = 0; i < 2; i++)
             {
                 headers.set("header" + i, "header-value" + i);
             }
 
             final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
-            final ByteBuffer body = wrap("{\"status\":\"ok\"}".getBytes());
+            final ByteBuffer requestBody = wrap("{\"ping\":\"2022-05-17T00:12:19:22.965Z\"}".getBytes());
+            final ByteBuffer responseBody = wrap("{\"status\":\"ok\"}".getBytes());
 
             final AtomicReference<VlfJournal> journalRef = new AtomicReference<>();
             try (final VlfJournal journal = new VlfJournal(provider))
@@ -64,7 +65,8 @@ public final class VlfPerformanceBenchmarkTest
                                 final String id = "req" + i;
                                 journal.clientRequest(JournalLevel.FULL, id, startLine, headers);
                                 journal.upstreamRequest(JournalLevel.FULL, id, startLine, headers);
-                                journal.requestBody(id, body.clear());
+                                journal.requestBody(id, requestBody.clear());
+                                journal.responseBody(id, responseBody.clear());
                                 journal.upstreamResponse(JournalLevel.FULL, id, startLine, headers);
                                 journal.clientResponse(JournalLevel.FULL, id, startLine, headers);
                                 journal.endExchange(id, new FastGatewayAttributes(), 200, 150, 200, 15, 0, 0);
@@ -86,11 +88,11 @@ public final class VlfPerformanceBenchmarkTest
 
             final VenturiTailer tailer = new VenturiTailer(finalPath.getParent(), Duration.ZERO, noopListener);
 
-            chronograph.time("Decode " + iterations, () ->
+            final long totalBytesRead = chronograph.time("Decode " + iterations, () ->
                     {
                         try
                         {
-                            tailer.runTick();
+                            return tailer.runTick();
                         }
                         catch (Exception e)
                         {
@@ -100,14 +102,13 @@ public final class VlfPerformanceBenchmarkTest
             );
 
             System.out.println(chronograph);
-            final long actualDataSize = journalRef.get().getOffset();
             final double timeSeconds = chronograph.getTask("Decode " + iterations).getTime().toNanos() / 1_000_000_000.0;
-            final double mbPerSec = (actualDataSize / 1024.0 / 1024.0) / timeSeconds;
+            final double mbPerSec = (totalBytesRead / 1024.0 / 1024.0) / timeSeconds;
 
             final double writeTimeSeconds = chronograph.getTask("Encode " + iterations).getTime().toNanos() / 1_000_000_000.0;
-            final double writeMbPerSec = (actualDataSize / 1024.0 / 1024.0) / writeTimeSeconds;
+            final double writeMbPerSec = (totalBytesRead / 1024.0 / 1024.0) / writeTimeSeconds;
 
-            System.out.println("Actual Data Size: " + String.format("%.2f", actualDataSize / 1024.0 / 1024.0) + " MB");
+            System.out.println("Actual Data Size: " + String.format("%.2f", totalBytesRead / 1024.0 / 1024.0) + " MB");
             System.out.println("Write rate:        " + String.format("%.2f", writeMbPerSec) + " MB/s");
             System.out.println("Read rate:        " + String.format("%.2f", mbPerSec) + " MB/s");
 

@@ -65,6 +65,7 @@ public final class VlfJournal implements Journal
     private FileChannel channel;
     private int currentHeaderCount;
     private int currentAttributeCount;
+    private final CRC32C crc = new CRC32C();
 
     public VlfJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
@@ -383,78 +384,65 @@ public final class VlfJournal implements Journal
 
     private void writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
     {
-        if (segment.byteSize() == 0)
+        if (segment == null || segment.byteSize() == 0)
         {
             throw new IllegalStateException("Segment not initialized");
         }
 
-        final ByteBuffer fb = fbBuilder.dataBuffer().slice();
-        final int fbLen = fb.remaining();
-        final int rawLen = rawData != null ? rawData.remaining() : 0;
+        // 1. Prepare FlatBuffer source
+        final ByteBuffer fbBuf = fbBuilder.dataBuffer();
+        final int fbLen = fbBuf.remaining();
+        // In Java, ofBuffer creates a segment starting at the buffer's current position
+        final MemorySegment fbSource = MemorySegment.ofBuffer(fbBuf);
 
-        final int payloadLen =
-                Integer.BYTES + // fbLen
-                        Integer.BYTES + // rawLen
-                        fbLen +
-                        rawLen;
+        // 2. Prepare Raw source
+        final int rawLen = (rawData != null) ? rawData.remaining() : 0;
 
-        final int totalLen =
-                Integer.BYTES + // magic
-                        Integer.BYTES + // payloadLen
-                        payloadLen +
-                        Integer.BYTES;  // crc
+        // 3. Calculate lengths
+        final int payloadLen = Integer.BYTES + Integer.BYTES + fbLen + rawLen;
+        final int totalLen = Integer.BYTES + Integer.BYTES + payloadLen + Integer.BYTES;
 
         ensureCapacity(totalLen);
 
-        // ---- header ----
+        // 4. Header block
         putInt(VlfConstants.MAGIC);
         putInt(payloadLen);
         putInt(fbLen);
         putInt(rawLen);
 
-        // ---- CRC ----
-        final CRC32C crc = new CRC32C();
+        // 5. CRC Calculation
+        crc.reset();
         updateInt(crc, payloadLen);
         updateInt(crc, fbLen);
         updateInt(crc, rawLen);
 
-        // ---- FlatBuffer ----
-        final ByteBuffer fbSlice = fb.slice();
-        crc.update(fbSlice.duplicate());
+        // FlatBufferBuilder.dataBuffer() returns a buffer positioned at the start of data
+        crc.update(fbBuf.duplicate());
 
-        MemorySegment.copy(
-                MemorySegment.ofBuffer(fbSlice),
-                0,
-                segment,
-                position,
-                fbLen
-        );
+        // 6. Copy FlatBuffer data to segment
+        // Since fbSource starts AT the buffer's position, the source offset is 0
+        MemorySegment.copy(fbSource, 0, segment, position, fbLen);
         position += fbLen;
 
-        // ---- Raw ----
+        // 7. Handle optional Raw data (Body chunks)
         if (rawLen > 0)
         {
-            final ByteBuffer rawSlice = rawData.slice();
-            crc.update(rawSlice.duplicate());
+            // rawSource also starts AT the rawData's current position
+            final MemorySegment rawSource = MemorySegment.ofBuffer(rawData);
 
-            MemorySegment.copy(
-                    MemorySegment.ofBuffer(rawSlice),
-                    0,
-                    segment,
-                    position,
-                    rawLen
-            );
+            crc.update(rawData.duplicate());
+
+            // Source offset is 0 because the segment is a slice of the remaining bytes
+            MemorySegment.copy(rawSource, 0, segment, position, rawLen);
+
             position += rawLen;
+
+            // Advance the original ByteBuffer position
             rawData.position(rawData.position() + rawLen);
         }
 
-        // ---- CRC footer ----
+        // 8. Write CRC footer
         putInt((int) crc.getValue());
-    }
-
-    private void preFaultSegment(MemorySegment segment)
-    {
-        segment.fill((byte) 0);
     }
 
     private long remaining()

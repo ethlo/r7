@@ -99,7 +99,7 @@ public class VlfJournalProvider implements AutoCloseable
         try
         {
             final WarmedSegment warmedSegment = pool.take();
-            log.debug("Fetched segment {}", warmedSegment.path().getFileName());
+            log.debug("Fetched segment {} of size {}", warmedSegment.path().getFileName(), DiskSpaceUtils.formatBytes(warmedSegment.segment.byteSize()));
             return warmedSegment;
         }
         catch (InterruptedException e)
