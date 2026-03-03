@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
 import com.ethlo.venturi.journal.api.JournalLevel;
@@ -59,7 +58,7 @@ public class ExchangeReassembler implements JournalEventListener
     {
         final JournalExchange exchange = inFlight.get(reqId);
         validateExchangeExists(exchange, reqId, "REQUEST_BODY");
-        exchange.appendBody(ServerDirection.REQUEST, bodyChunk);
+        exchange.appendRequestBody(bodyChunk);
     }
 
     @Override
@@ -67,7 +66,7 @@ public class ExchangeReassembler implements JournalEventListener
     {
         final JournalExchange exchange = inFlight.get(reqId);
         validateExchangeExists(exchange, reqId, "RESPONSE_BODY");
-        exchange.appendBody(ServerDirection.RESPONSE, bodyChunk);
+        exchange.appendResponseBody(bodyChunk);
     }
 
     @Override

@@ -10,15 +10,15 @@ import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 import tools.jackson.databind.ObjectMapper;
 
-public class PredicateRegistry 
+public class PredicateRegistry
 {
     private final Map<String, GatewayPredicateFactory<?>> factories;
     private final ObjectMapper mapper; // Ensure this is configured for Jackson 3!
 
-    public PredicateRegistry(ObjectMapper mapper) 
+    public PredicateRegistry(ObjectMapper mapper)
     {
         this.mapper = mapper;
-        
+
         // Load plugins exactly once
         this.factories = ServiceLoader.load(GatewayPredicateFactory.class)
                 .stream()
@@ -29,16 +29,16 @@ public class PredicateRegistry
                 ));
     }
 
-    public boolean exists(String name) 
+    public boolean exists(String name)
     {
         return factories.containsKey(name);
     }
 
 
-    public GatewayPredicate create(String name, Object yamlValue) 
+    public GatewayPredicate create(String name, Object yamlValue)
     {
         GatewayPredicateFactory<?> factory = factories.get(name);
-        if (factory == null) 
+        if (factory == null)
         {
             throw new IllegalArgumentException("Unknown predicate: " + name);
         }
@@ -53,9 +53,9 @@ public class PredicateRegistry
 
         // 3. Instantiate the hot-path leaf node
         @SuppressWarnings("unchecked")
-        GatewayPredicateFactory<ValidatableConfig> typedFactory = 
+        GatewayPredicateFactory<ValidatableConfig> typedFactory =
                 (GatewayPredicateFactory<ValidatableConfig>) factory;
-                
+
         return typedFactory.create(config);
     }
 }

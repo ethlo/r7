@@ -6,7 +6,6 @@ import java.util.List;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.ServerDirection;
 
 /**
  * Stateful container for a single request/response lifecycle.
@@ -89,16 +88,14 @@ public final class JournalExchange
        BODY & METRICS
        ============================================================ */
 
-    public void appendBody(ServerDirection dir, ByteBuffer fragment)
+    public void appendRequestBody(ByteBuffer fragment)
     {
-        if (dir == ServerDirection.REQUEST)
-        {
-            requestBodyFragments.add(fragment);
-        }
-        else
-        {
-            responseBodyFragments.add(fragment);
-        }
+        requestBodyFragments.add(fragment);
+    }
+
+    public void appendResponseBody(ByteBuffer fragment)
+    {
+        responseBodyFragments.add(fragment);
     }
 
     public void setMetrics(long ts, int status, long sent, long recv, long dur)

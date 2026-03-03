@@ -6,8 +6,8 @@ import java.util.regex.PatternSyntaxException;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.spi.GatewayPredicateFactory;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
