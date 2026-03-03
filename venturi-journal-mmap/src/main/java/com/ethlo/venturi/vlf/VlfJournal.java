@@ -57,7 +57,7 @@ public final class VlfJournal implements Journal
             FbsJournalLevel.HEADERS,
             FbsJournalLevel.FULL,
     };
-
+    private final CRC32C crc = new CRC32C();
     private MemorySegment segment;
     private Arena arena;
     private Path activePath;
@@ -65,7 +65,6 @@ public final class VlfJournal implements Journal
     private FileChannel channel;
     private int currentHeaderCount;
     private int currentAttributeCount;
-    private final CRC32C crc = new CRC32C();
 
     public VlfJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
@@ -186,7 +185,7 @@ public final class VlfJournal implements Journal
     }
 
     @Override
-    public synchronized void endExchange(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration, long reqCrc, long resCrc)
+    public synchronized void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long sentBytes, long receivedBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -194,14 +193,17 @@ public final class VlfJournal implements Journal
 
         EndExchange.startEndExchange(fbb);
         EndExchange.addReqId(fbb, reqIdOff);
-        EndExchange.addTimestamp(fbb, System.currentTimeMillis());
-        EndExchange.addStatus(fbb, status);
-        EndExchange.addBytesSent(fbb, sent);
-        EndExchange.addBytesReceived(fbb, recv);
-        EndExchange.addDuration(fbb, duration);
+        EndExchange.addClientStart(fbb, requestStartTs);
+        EndExchange.addStatus(fbb, statusCode);
+        EndExchange.addBytesSent(fbb, sentBytes);
+        EndExchange.addBytesReceived(fbb, receivedBytes);
+        EndExchange.addClientEnd(fbb, requestEndTs);
+        EndExchange.addProxyStart(fbb, proxyStartTs);
+        EndExchange.addProxyFirstByteReceived(fbb, proxyFirstByteReceivedTs);
+        EndExchange.addProxyEnd(fbb, proxyEndTs);
         EndExchange.addAttributes(fbb, attrVecOff);
-        EndExchange.addRequestCrc32c(fbb, (int) reqCrc);
-        EndExchange.addResponseCrc32c(fbb, (int) resCrc);
+        EndExchange.addRequestCrc32c(fbb, requestCheckSumValue);
+        EndExchange.addResponseCrc32c(fbb, responseChecksumValue);
         finishAndWrite(EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
     }
 
@@ -265,6 +267,7 @@ public final class VlfJournal implements Journal
         return fbb.endVector();
     }
 
+    @SuppressWarnings("deprecation")
     private int copyToScratch(CharSequence s)
     {
         final int len = s.length();

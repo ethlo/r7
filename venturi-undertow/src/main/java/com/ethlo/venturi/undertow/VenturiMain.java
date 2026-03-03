@@ -59,6 +59,7 @@ public final class VenturiMain
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
         final HttpHandler benchMarkHandler = exchange -> {
+            Thread.sleep(1000);
             exchange.setStatusCode(HttpStatuses.OK);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send(OK.duplicate());
@@ -125,11 +126,11 @@ public final class VenturiMain
         logger.info("🚀 Started in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
-    private static void setupTestBackEndForProxy(HttpHandler benchMarkHandler)
+    private static void setupTestBackEndForProxy(HttpHandler httpHandler)
     {
         final Undertow.Builder target = Undertow.builder();
         final HttpHandler targetHandler = Handlers.path()
-                .addPrefixPath("/", benchMarkHandler);
+                .addPrefixPath("/", httpHandler);
         target.setHandler(targetHandler);
         target.addHttpListener(1111, "0.0.0.0");
         target.build().start();

@@ -1,6 +1,7 @@
 package com.ethlo.venturi.vlf;
 
 import java.nio.ByteBuffer;
+import java.util.zip.CRC32C;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,10 @@ public class ExchangeReassembler implements JournalEventListener
 
     // Using your optimized map for high-concurrency reassembly
     private final CharSequenceExchangeMap inFlight = new CharSequenceExchangeMap(10_000);
+
     private final ExchangeCompletionListener output;
+    private final CRC32C requestCrc32 = new CRC32C();
+    private final CRC32C responseCrc32 = new CRC32C();
 
     public ExchangeReassembler(ExchangeCompletionListener output)
     {
@@ -58,6 +62,7 @@ public class ExchangeReassembler implements JournalEventListener
     {
         final JournalExchange exchange = inFlight.get(reqId);
         validateExchangeExists(exchange, reqId, "REQUEST_BODY");
+        responseCrc32.update(bodyChunk.duplicate());
         exchange.appendRequestBody(bodyChunk);
     }
 
@@ -70,7 +75,11 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onEnd(CharSequence reqId, GatewayAttributes attributes, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos, long requestCrc32, long responseCrc32c)
+    public void onEnd(CharSequence reqId, GatewayAttributes attributes,
+                      long clientStartTs, long clientEndTs,
+                      int status, long bytesSent, long bytesReceived,
+                      long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
+                      final int requestCrc32, final int responseCrc32c)
     {
         final JournalExchange exchange = inFlight.remove(reqId);
 
@@ -85,9 +94,10 @@ public class ExchangeReassembler implements JournalEventListener
         }
 
         // Apply final metrics and forensic checksums
-        exchange.setMetrics(timestamp, status, bytesSent, bytesReceived, durationNanos);
+        exchange.setMetrics(clientStartTs, clientEndTs, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, bytesReceived, bytesSent);
         exchange.setAttributes(attributes);
-        exchange.setChecksums(requestCrc32, responseCrc32c);
+        exchange.setStatus(status);
+        exchange.setJournalChecksums(requestCrc32, responseCrc32c);
 
         if (isExchangeComplete(exchange))
         {

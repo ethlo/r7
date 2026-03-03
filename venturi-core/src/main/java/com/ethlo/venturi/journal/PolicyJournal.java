@@ -2,6 +2,7 @@ package com.ethlo.venturi.journal;
 
 import java.nio.ByteBuffer;
 import java.util.Set;
+import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.RedactUtil;
 import com.ethlo.venturi.api.FinishedGatewayExchange;
@@ -20,14 +21,14 @@ public final class PolicyJournal implements Journal
     private final Journal delegate;
     private final RouteJournalConfig config;
     private final FinishedGatewayExchange exchange;
-
+    private final CRC32C requestChecksum = new CRC32C();
+    private final CRC32C responseChecksum = new CRC32C();
     // --- Granular State Management ---
     private CharSequence requestId;
     private boolean clientReqFlushed = false;
     private boolean upstreamReqFlushed = false;
     private boolean upstreamResFlushed = false;
     private boolean clientResFlushed = false;
-
     // Metadata clones
     private ByteBuffer clientReqLine;
     private GatewayHeaders clientReqHeaders;
@@ -100,6 +101,7 @@ public final class PolicyJournal implements Journal
     {
         if (config.request().level() == JournalLevel.FULL)
         {
+            requestChecksum.update(data.duplicate());
             delegate.requestBody(reqId, data);
         }
     }
@@ -109,18 +111,18 @@ public final class PolicyJournal implements Journal
     {
         if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
+            responseChecksum.update(data.duplicate());
             delegate.responseBody(reqId, data);
         }
     }
 
     @Override
-    public void endExchange(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration, long reqCrc, long resCrc)
+    public void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long sentBytes, long receivedBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
     {
         // Final flush handles short-circuits or missed events
         checkAndFlushRequest();
         checkAndFlushResponse();
-
-        delegate.endExchange(reqId, attributes, status, sent, recv, duration, reqCrc, resCrc);
+        delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, sentBytes, receivedBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int)requestChecksum.getValue(), (int)responseChecksum.getValue());
     }
 
     @Override
@@ -173,7 +175,7 @@ public final class PolicyJournal implements Journal
         if (!clientReqFlushed && clientReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
-            delegate.clientRequest(effectiveLevel,  requestId, clientReqLine, headers);
+            delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers);
             this.clientReqFlushed = true;
             this.clientReqLine = null;
         }

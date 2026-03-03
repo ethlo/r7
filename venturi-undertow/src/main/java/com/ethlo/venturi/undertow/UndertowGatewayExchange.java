@@ -10,7 +10,6 @@ import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.GatewayRouteInfo;
-import com.ethlo.venturi.api.InitGatewayExchange;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.api.MutableGatewayResponse;
@@ -19,7 +18,7 @@ import com.ethlo.venturi.api.TerminationGatewayResponse;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.AttachmentKey;
 
-public class UndertowGatewayExchange implements InitGatewayExchange, BeforeUpstreamGatewayExchange, BeforeCommitGatewayExchange, FinishedGatewayExchange
+public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, BeforeCommitGatewayExchange, FinishedGatewayExchange
 {
     // Global registry to map Venturi's StateKeys to Undertow's AttachmentKeys.
     // This is populated statically as filters register keys, so lookups during traffic are fast.

@@ -4,9 +4,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +12,7 @@ import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.journal.api.ExchangeCompletionListener;
 import com.ethlo.venturi.journal.api.JournalExchange;
 import com.ethlo.venturi.journal.api.JournalLevel;
+import com.ethlo.venturi.time.ClockSource;
 import com.ethlo.venturi.util.GatewayUtils;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.util.constants.HttpStatuses;
@@ -64,8 +62,19 @@ public class DebugJsonWriter implements ExchangeCompletionListener
 
             // --- Metadata ---
             generator.writeStringProperty("gateway_request_id", exchange.getRequestId().toString());
-            generator.writeStringProperty("timestamp", ITU.formatUtcMilli(OffsetDateTime.ofInstant(Instant.ofEpochMilli(exchange.getTimestamp()), ZoneOffset.UTC)));
+            generator.writeStringProperty("start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientStartTs())));
             writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
+            generator.writeStringProperty("end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientEndTs())));
+
+            generator.writeBooleanProperty("was_proxied", exchange.wasProxied());
+
+            if (exchange.wasProxied())
+            {
+                generator.writeStringProperty("proxy_start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyStartTs())));
+                //generator.writeStringProperty("proxy_first_bytes_received", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyFirstByteReceivedTs())));
+                generator.writeStringProperty("proxy_end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyEndTs())));
+                writePlainDouble(generator, "proxy_duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
+            }
 
             // --- Metrics ---
             final int status = exchange.getStatus();

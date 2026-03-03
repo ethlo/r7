@@ -38,14 +38,17 @@ public final class JournalExchange
     private JournalLevel clientResponseLevel;
 
     // Metrics & Forensic Metadata
-    private long timestamp;
     private int status;
     private long bytesSent;
     private long bytesReceived;
-    private long durationNanos;
     private GatewayAttributes attributes;
-    private long requestCrc32;
-    private long responseCrc32;
+    private long journaledRequestCrc32;
+    private long journaledResponseCrc32;
+    private long clientStartTs;
+    private long clientEndTs;
+    private long proxyStartTs;
+    private long proxyFirstByteReceivedTs;
+    private long proxyEndTs;
 
     public JournalExchange(CharSequence requestId)
     {
@@ -98,19 +101,133 @@ public final class JournalExchange
         responseBodyFragments.add(fragment);
     }
 
-    public void setMetrics(long ts, int status, long sent, long recv, long dur)
+    public void setMetrics(final long clientStartTs, final long clientEndTs, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long bytesReceived, final long bytesSent)
     {
-        this.timestamp = ts;
-        this.status = status;
-        this.bytesSent = sent;
-        this.bytesReceived = recv;
-        this.durationNanos = dur;
+        this.clientStartTs = clientStartTs;
+        this.clientEndTs = clientEndTs;
+        this.proxyStartTs = proxyStartTs;
+        this.proxyFirstByteReceivedTs = proxyFirstByteReceivedTs;
+        this.proxyEndTs = proxyEndTs;
+        this.bytesSent = bytesSent;
+        this.bytesReceived = bytesReceived;
     }
 
-    public void setChecksums(long requestCrc32, long responseCrc32)
+    public void setJournalChecksums(long requestCrc32, long responseCrc32)
     {
-        this.requestCrc32 = requestCrc32;
-        this.responseCrc32 = responseCrc32;
+        this.journaledRequestCrc32 = requestCrc32;
+        this.journaledResponseCrc32 = responseCrc32;
+    }
+
+    public CharSequence getRequestId()
+    {
+        return requestId;
+    }
+
+    /* ============================================================
+       GETTERS
+       ============================================================ */
+
+    // Request Slices
+    public CharSequence getClientRequestStartLine()
+    {
+        return clientRequestStartLine;
+    }
+
+    public GatewayHeaders getClientRequestHeaders()
+    {
+        return clientRequestHeaders;
+    }
+
+    public JournalLevel getClientRequestLevel()
+    {
+        return clientRequestLevel;
+    }
+
+    public CharSequence getUpstreamRequestStartLine()
+    {
+        return upstreamRequestStartLine;
+    }
+
+    public GatewayHeaders getUpstreamRequestHeaders()
+    {
+        return upstreamRequestHeaders;
+    }
+
+    public JournalLevel getUpstreamRequestLevel()
+    {
+        return upstreamRequestLevel;
+    }
+
+    // Response Slices
+    public CharSequence getUpstreamResponseStartLine()
+    {
+        return upstreamResponseStartLine;
+    }
+
+    public GatewayHeaders getUpstreamResponseHeaders()
+    {
+        return upstreamResponseHeaders;
+    }
+
+    public JournalLevel getUpstreamResponseLevel()
+    {
+        return upstreamResponseLevel;
+    }
+
+    public CharSequence getClientResponseStartLine()
+    {
+        return clientResponseStartLine;
+    }
+
+    public GatewayHeaders getClientResponseHeaders()
+    {
+        return clientResponseHeaders;
+    }
+
+    public JournalLevel getClientResponseLevel()
+    {
+        return clientResponseLevel;
+    }
+
+    // Body fragments
+    public List<ByteBuffer> getRequestBodyFragments()
+    {
+        return requestBodyFragments;
+    }
+
+    public List<ByteBuffer> getResponseBodyFragments()
+    {
+        return responseBodyFragments;
+    }
+
+    public int getStatus()
+    {
+        return status;
+    }
+
+    public void setStatus(int status)
+    {
+        this.status = status;
+    }
+
+    public long getBytesSent()
+    {
+        return bytesSent;
+    }
+
+    public long getBytesReceived()
+    {
+        return bytesReceived;
+    }
+
+    public long getDurationNanos()
+    {
+        return clientEndTs - clientStartTs;
+    }
+
+    public GatewayAttributes getAttributes()
+    {
+        return attributes;
     }
 
     public void setAttributes(GatewayAttributes attributes)
@@ -118,41 +235,48 @@ public final class JournalExchange
         this.attributes = attributes;
     }
 
-    /* ============================================================
-       GETTERS
-       ============================================================ */
+    public long getJournaledRequestCrc32()
+    {
+        return journaledRequestCrc32;
+    }
 
-    public CharSequence getRequestId() { return requestId; }
+    public long getJournaledResponseCrc32()
+    {
+        return journaledResponseCrc32;
+    }
 
-    // Request Slices
-    public CharSequence getClientRequestStartLine() { return clientRequestStartLine; }
-    public GatewayHeaders getClientRequestHeaders() { return clientRequestHeaders; }
-    public JournalLevel getClientRequestLevel() { return clientRequestLevel; }
+    public long getClientStartTs()
+    {
+        return clientStartTs;
+    }
 
-    public CharSequence getUpstreamRequestStartLine() { return upstreamRequestStartLine; }
-    public GatewayHeaders getUpstreamRequestHeaders() { return upstreamRequestHeaders; }
-    public JournalLevel getUpstreamRequestLevel() { return upstreamRequestLevel; }
+    public long getClientEndTs()
+    {
+        return clientEndTs;
+    }
 
-    // Response Slices
-    public CharSequence getUpstreamResponseStartLine() { return upstreamResponseStartLine; }
-    public GatewayHeaders getUpstreamResponseHeaders() { return upstreamResponseHeaders; }
-    public JournalLevel getUpstreamResponseLevel() { return upstreamResponseLevel; }
+    public long getProxyStartTs()
+    {
+        return proxyStartTs;
+    }
 
-    public CharSequence getClientResponseStartLine() { return clientResponseStartLine; }
-    public GatewayHeaders getClientResponseHeaders() { return clientResponseHeaders; }
-    public JournalLevel getClientResponseLevel() { return clientResponseLevel; }
+    public long getProxyFirstByteReceivedTs()
+    {
+        return proxyFirstByteReceivedTs;
+    }
 
-    // Body fragments
-    public List<ByteBuffer> getRequestBodyFragments() { return requestBodyFragments; }
-    public List<ByteBuffer> getResponseBodyFragments() { return responseBodyFragments; }
+    public long getProxyEndTs()
+    {
+        return proxyEndTs;
+    }
 
-    // Metrics & Checks
-    public long getTimestamp() { return timestamp; }
-    public int getStatus() { return status; }
-    public long getBytesSent() { return bytesSent; }
-    public long getBytesReceived() { return bytesReceived; }
-    public long getDurationNanos() { return durationNanos; }
-    public GatewayAttributes getAttributes() { return attributes; }
-    public long getRequestCrc32() { return requestCrc32; }
-    public long getResponseCrc32() { return responseCrc32; }
+    public long getProxyDurationNanos()
+    {
+        return proxyEndTs - proxyStartTs;
+    }
+
+    public boolean wasProxied()
+    {
+        return getProxyStartTs() != -1;
+    }
 }

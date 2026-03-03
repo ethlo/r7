@@ -20,5 +20,9 @@ public interface JournalEventListener
 
     void onClientResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
 
-    void onEnd(CharSequence reqId, GatewayAttributes attributes, long timestamp, int status, long bytesSent, long bytesReceived, long durationNanos, final long requestCrc32, final long responseCrc32c);
+    void onEnd(CharSequence reqId, GatewayAttributes attributes,
+               long clientStartTs, long clientEndTs,
+               int status, long bytesSent, long bytesReceived,
+               long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
+               final int requestCrc32, final int responseCrc32c);
 }

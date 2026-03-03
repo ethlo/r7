@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -87,7 +88,13 @@ class JournalBinaryIntegrationTest
                     }
 
                     // 3. END
-                    journal.endExchange(reqId, new FastGatewayAttributes(), 200, 32768, 512, 150_000, 0, 0);
+                    final long requestStartTs = Instant.now().toEpochMilli() * 1000L;
+                    final int statusCode = 201;
+                    final long proxyStartTs = requestStartTs + 120_000;
+                    final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
+                    final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
+                    final long requestEndTs = proxyEndTs + 60_000L;
+                    journal.endExchange(reqId, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
                 }
                 return null;
             });
@@ -156,10 +163,16 @@ class JournalBinaryIntegrationTest
             journal.clientRequest(JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers);
             journal.requestBody(id, ByteBuffer.wrap("Request chunk".getBytes()));
 
-            journal.clientResponse(JournalLevel.FULL, id,200, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
+            journal.clientResponse(JournalLevel.FULL, id, 200, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
             journal.responseBody(id, ByteBuffer.wrap("Response chunk".getBytes()));
 
-            journal.endExchange(id, new FastGatewayAttributes(), 200, 100, 100, 500, 0, 0);
+            final long requestStartTs = Instant.now().toEpochMilli() * 1000L;
+            final int statusCode = 201;
+            final long proxyStartTs = requestStartTs + 120_000;
+            final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
+            final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
+            final long requestEndTs = proxyEndTs + 60_000L;
+            journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
         }
 
         try

@@ -49,14 +49,17 @@ table ResponseBody {
 
 table EndExchange {
   req_id: [ubyte];
-  timestamp: long;
+  client_start: long;
+  client_end: long;
   status: uint16;
-  attributes: [Header];
-  bytes_sent: long;
-  bytes_received: long;
-  duration: long;
   request_crc32c: uint32;
   response_crc32c: uint32;
+  proxy_start: int64;
+  proxy_first_byte_received: int64;
+  proxy_end: int64;
+  bytes_sent: long;
+  bytes_received: long;
+  attributes: [Header];
 }
 
 union EventPayload {

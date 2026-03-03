@@ -20,7 +20,7 @@ public interface Journal extends AutoCloseable
 
     void responseBody(CharSequence reqId, ByteBuffer data);
 
-    void endExchange(CharSequence reqId, GatewayAttributes attributes, int status, long sent, long recv, long duration, long reqCrc, long resCrc);
+    void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long sentBytes, long receivedBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestChecksumValue, final int responseChecksumValue);
 
     @Override
     void close() throws IOException;

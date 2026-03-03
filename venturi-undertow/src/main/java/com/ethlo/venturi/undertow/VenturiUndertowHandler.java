@@ -26,7 +26,6 @@ import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.GatewayRoute;
-import com.ethlo.venturi.api.InitGatewayFilter;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.TerminationGatewayResponse;
@@ -39,6 +38,7 @@ import com.ethlo.venturi.core.helpers.StartLineBuilder;
 import com.ethlo.venturi.journal.PolicyJournal;
 import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
+import com.ethlo.venturi.time.ClockSource;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.ImmutableGatewayRequest;
@@ -59,6 +59,9 @@ import io.undertow.util.HttpString;
 public final class VenturiUndertowHandler implements HttpHandler
 {
     public static final AttachmentKey<UndertowGatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(UndertowGatewayExchange.class);
+    public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
+    //public static final AttachmentKey<Long> PROXY_FIRST_BYTES_RECEIVED_TS_KEY = AttachmentKey.create(Long.class);
+    public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
     private static final CharSequence ROUTE_ID_KEY = "route_id";
     private final Map<CharSequence, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
@@ -90,10 +93,16 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
     }
 
+    private static long getLongValueOrMinusOne(HttpServerExchange exchange, final AttachmentKey<Long> key)
+    {
+        final Long result = exchange.getAttachment(key);
+        return result != null ? result : -1;
+    }
+
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
-        final long startNanos = System.nanoTime();
+        final long startNanosTs = ClockSource.now();
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange);
         final Optional<GatewayRoute> routeOpt = routeRegistry.findRoute(req);
 
@@ -107,10 +116,10 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
 
         final GatewayRoute route = routeOpt.get();
-        execute(exchange, req, route, startNanos);
+        execute(exchange, req, route, startNanosTs);
     }
 
-    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final GatewayRoute route, final long startNanos)
+    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final GatewayRoute route, final long startNanosTs)
     {
         final CharSequence requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(new ImmutableHeaderSnapshot(exchange.getRequestHeaders()), exchange.getRequestPath(), exchange.getRequestURI(), exchange.getRequestMethod().toString(), exchange.getDecodedQueryString());
@@ -133,16 +142,10 @@ public final class VenturiUndertowHandler implements HttpHandler
         final List<GatewayFilter> filters = new ArrayList<>();
         route.filters().forEach(filters::add);
 
-        // 1. Init filters
-        final List<InitGatewayFilter> initFilters = filters.stream().filter(f -> f instanceof InitGatewayFilter).map(InitGatewayFilter.class::cast).toList();
-        for (InitGatewayFilter filter : initFilters)
-        {
-            filter.init(gatewayExchange);
-        }
-
-        // 2. Wire the "Finished" lifecycle hook immediately
+        // Wire the "Finished" lifecycle hook immediately
         final List<FinishedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof FinishedGatewayFilter).map(FinishedGatewayFilter.class::cast).toList();
-        exchange.addExchangeCompleteListener((ex, next) -> {
+        exchange.addExchangeCompleteListener((ex, next) ->
+        {
             try
             {
                 for (FinishedGatewayFilter filter : finishedGatewayFilters)
@@ -169,6 +172,8 @@ public final class VenturiUndertowHandler implements HttpHandler
         {
             exchange.addResponseCommitListener(ex ->
             {
+                //exchange.putAttachment(PROXY_FIRST_BYTES_RECEIVED_TS_KEY, ClockSource.now());
+
                 // Set a copy here before downstream response filters can taint the headers
                 gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
 
@@ -189,6 +194,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
         else
         {
+            exchange.putAttachment(PROXY_START_TS_KEY, ClockSource.now());
             proxyCall(route, exchange, gatewayExchange);
         }
     }
@@ -230,6 +236,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                             .build();
                 }
         );
+
         try
         {
             proxyHandler.handleRequest(exchange);
@@ -268,12 +275,20 @@ public final class VenturiUndertowHandler implements HttpHandler
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
             exchange.addResponseWrapper((factory, ex) ->
-                    new TeeingStreamSinkConduit(factory.create(), buffer -> journal.responseBody(requestId, buffer)));
+                    new TeeingStreamSinkConduit(factory.create(), buffer ->
+                    {
+                        //exchange.putAttachment(PROXY_FIRST_BYTES_RECEIVED_TS_KEY, ClockSource.now());
+                        journal.responseBody(requestId, buffer);
+                    }
+                    ));
         }
 
         // Close the transaction when the exchange naturally completes
         exchange.addExchangeCompleteListener((ex, nextListener) ->
         {
+            final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
+            final long proxyEndTs = tmpProxyEndTs != null ? tmpProxyEndTs : ClockSource.now();
+
             try
             {
                 if (gatewayExchange.upstreamResponse() != null)
@@ -284,13 +299,16 @@ public final class VenturiUndertowHandler implements HttpHandler
 
                 journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
 
-                final long duration = System.nanoTime() - exchange.getRequestStartTime();
+                final long requestStartTs = ClockSource.now() - (System.nanoTime() - exchange.getRequestStartTime());
+                final long requestEndTs = ClockSource.now();
+                final long proxyStartTs = getLongValueOrMinusOne(exchange, PROXY_START_TS_KEY);
 
-                // TODO: Implement CRC!
-                final int reqCrc = 0;
-                final int resCrc = 0;
+                final long proxyFirstBytesTs = -1; //getLongValueOrMinusOne(exchange, PROXY_FIRST_BYTES_RECEIVED_TS_KEY);
 
-                journal.endExchange(requestId, gatewayExchange.attributes(), ex.getStatusCode(), exchange.getResponseBytesSent(), requestBytesRead.get(), duration, reqCrc, resCrc);
+                // IMPORTANT: These are overwritten/handled in the PolicyJournal which is stateful
+                final int requestBodyCrc32 = 0;
+                final int responseBodyCrc32 = 0;
+                journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), exchange.getResponseBytesSent(), requestBytesRead.get(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
             } finally
             {
                 nextListener.proceed();

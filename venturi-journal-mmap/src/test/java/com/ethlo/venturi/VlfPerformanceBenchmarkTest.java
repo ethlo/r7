@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -70,7 +71,14 @@ public final class VlfPerformanceBenchmarkTest
                                 journal.responseBody(id, responseBody.clear());
                                 journal.upstreamResponse(JournalLevel.FULL, id, 200, startLine, headers);
                                 journal.clientResponse(JournalLevel.FULL, id, 200, startLine, headers);
-                                journal.endExchange(id, new FastGatewayAttributes(), 200, 150, 200, 15, 0, 0);
+
+                                final long requestStartTs = Instant.now().toEpochMilli() * 1000L;
+                                final int statusCode = 201;
+                                final long proxyStartTs = requestStartTs + 120_000;
+                                final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
+                                final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
+                                final long requestEndTs = proxyEndTs + 60_000L;
+                                journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
                             }
                         }
                 );
