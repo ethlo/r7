@@ -1,4 +1,15 @@
 routes:
+  - id: reject-benchmark
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    match:
+      - PathStartsWith:
+          prefix: /benchmark
+    filters:
+      - SimpleMetrics
+      - RequireAuthorizationHeader
+
   - id: undertow-internal-backend
     upstream:
       targets:
@@ -12,15 +23,19 @@ routes:
             - POST
     journal:
       request:
-        level: HEADERS
-        status_overrides:
-          2xx: METADATA
+        level: FULL
+        #status_overrides:
+        #  2xx: METADATA
+      response:
+        level: FULL
     filters:
+      - SimpleMetrics
       - AddResponseHeader:
           name: X-Gateway
           value: Venturi
       - CorrelationIdHeader
       - RequireAuthorizationHeader
+
   - id: external-test
     upstream:
       targets:
@@ -36,5 +51,6 @@ routes:
       response:
         level: HEADERS
     filters:
+      - SimpleMetrics
       - StripPathPrefix:
           parts: 1
