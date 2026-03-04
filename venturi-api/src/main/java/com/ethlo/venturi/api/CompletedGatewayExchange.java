@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface FinishedGatewayExchange extends BaseGatewayExchange
+public interface CompletedGatewayExchange extends BaseGatewayExchange
 {
     CharSequence requestId();
 

@@ -62,6 +62,7 @@ public final class VenturiUndertowHandler implements HttpHandler
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     //public static final AttachmentKey<Long> PROXY_FIRST_BYTES_RECEIVED_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
+    public static final AttachmentKey<Long> REQUEST_BYTES_READ = AttachmentKey.create(Long.class);
     private static final CharSequence ROUTE_ID_KEY = "route_id";
     private final Map<CharSequence, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
@@ -110,8 +111,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         {
             exchange.setStatusCode(HttpStatuses.NOT_FOUND);
             exchange.getRequestHeaders().put(HttpString.tryFromString(HttpHeaders.CONTENT_TYPE), MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(ByteBuffer.wrap("Venturi Server - No route found for request".getBytes(StandardCharsets.UTF_8)));
-
+            exchange.getResponseSender().send(ByteBuffer.wrap("No route found for request".getBytes(StandardCharsets.UTF_8)));
             return;
         }
 
@@ -142,15 +142,20 @@ public final class VenturiUndertowHandler implements HttpHandler
         final List<GatewayFilter> filters = new ArrayList<>();
         route.filters().forEach(filters::add);
 
+        // Count bytes received
+        final AtomicLong requestBytesRead = new AtomicLong(0);
+        exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
+
         // Wire the "Finished" lifecycle hook immediately
         final List<FinishedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof FinishedGatewayFilter).map(FinishedGatewayFilter.class::cast).toList();
         exchange.addExchangeCompleteListener((ex, next) ->
         {
+            exchange.putAttachment(REQUEST_BYTES_READ, requestBytesRead.get());
             try
             {
                 for (FinishedGatewayFilter filter : finishedGatewayFilters)
                 {
-                    filter.finished(gatewayExchange);
+                    filter.completed(gatewayExchange);
                 }
             } finally
             {
@@ -259,10 +264,6 @@ public final class VenturiUndertowHandler implements HttpHandler
             return; // Only bail if there are NO base levels AND NO overrides
         }
 
-        // Count bytes read from request
-        final AtomicLong requestBytesRead = new AtomicLong(0);
-        exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
-
         // Immediately copy the raw request metadata and headers
         final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange.clientRequest());
         journal.clientRequest(JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.clientRequest().headers());
@@ -299,16 +300,16 @@ public final class VenturiUndertowHandler implements HttpHandler
 
                 journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
 
-                final long requestStartTs = ClockSource.now() - (System.nanoTime() - exchange.getRequestStartTime());
                 final long requestEndTs = ClockSource.now();
+                final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
                 final long proxyStartTs = getLongValueOrMinusOne(exchange, PROXY_START_TS_KEY);
 
                 final long proxyFirstBytesTs = -1; //getLongValueOrMinusOne(exchange, PROXY_FIRST_BYTES_RECEIVED_TS_KEY);
 
                 // IMPORTANT: These are overwritten/handled in the PolicyJournal which is stateful
-                final int requestBodyCrc32 = 0;
-                final int responseBodyCrc32 = 0;
-                journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), exchange.getResponseBytesSent(), requestBytesRead.get(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
+                final int requestBodyCrc32 = -1;
+                final int responseBodyCrc32 = -1;
+                journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), gatewayExchange.getBytesOut(), gatewayExchange.getBytesIn(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
             } finally
             {
                 nextListener.proceed();

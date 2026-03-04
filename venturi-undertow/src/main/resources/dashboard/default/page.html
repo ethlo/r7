@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ETHLO R7 // STATUS</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container" id="main-container">
+    <header>
+        <div>
+            <h1>ETHLO // R7 GATEWAY</h1>
+            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | TOTAL RPS: --</div>
+        </div>
+        <div class="sys-info" id="last-update">CONNECTING...</div>
+    </header>
+    <table id="route-table">
+        <thead>
+        <tr>
+            <th>ROUTE ID</th>
+            <th>TRAFFIC (IN/OUT)</th>
+            <th>JOURNAL</th>
+            <th>ACTIVE</th>
+            <th>AVG LATENCY</th>
+        </tr>
+        </thead>
+        <tbody id="view"></tbody>
+    </table>
+</div>
+
+<div id="details-panel">
+    <span class="close-btn" onclick="closeDetails()">[ CLOSE ]</span>
+    <h2 id="route-title">ROUTE_ID</h2>
+    <div id="route-stats-summary"></div>
+
+    <div class="config-section">
+        <div class="config-label">Upstream Configuration</div>
+        <pre id="config-upstream">Fetching...</pre>
+    </div>
+
+    <div class="config-section">
+        <div class="config-label">Filter Chain</div>
+        <pre id="config-filters">Fetching...</pre>
+    </div>
+
+    <div class="config-section">
+        <div class="config-label">Forensic Journal Policy</div>
+        <pre id="config-journal">Fetching...</pre>
+    </div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

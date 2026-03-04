@@ -1,0 +1,129 @@
+:root {
+    --bg: #0d0d0d;
+    --fg: #c0c0c0;
+    --accent: #00ff41;
+    --dim: #444;
+    --warn: #ffca28;
+    --panel: #161616;
+}
+
+body {
+    font-family: 'Courier New', Courier, monospace;
+    background: var(--bg);
+    color: var(--fg);
+    margin: 0;
+    padding: 2rem;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    transition: margin-right 0.3s ease;
+}
+
+header {
+    border-bottom: 1px solid var(--dim);
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}
+
+h1 {
+    margin: 0;
+    font-size: 1.4rem;
+    color: var(--accent);
+    letter-spacing: 3px;
+}
+
+.sys-vitals {
+    color: var(--dim);
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    cursor: pointer;
+}
+
+th {
+    text-align: left;
+    font-size: 0.7rem;
+    color: var(--dim);
+    padding: 1rem;
+    border-bottom: 1px solid var(--dim);
+}
+
+td {
+    padding: 1rem;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+tr:hover {
+    background: #111;
+}
+
+.val {
+    color: #fff;
+    font-weight: bold;
+}
+
+.latency {
+    color: var(--warn);
+}
+
+.unit {
+    color: var(--dim);
+    font-size: 0.8rem;
+    margin-left: 4px;
+}
+
+#details-panel {
+    position: fixed;
+    right: -500px;
+    top: 0;
+    width: 450px;
+    height: 100%;
+    background: var(--panel);
+    border-left: 1px solid var(--accent);
+    padding: 2rem;
+    transition: right 0.3s ease;
+    overflow-y: auto;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+}
+
+#details-panel.open {
+    right: 0;
+}
+
+.close-btn {
+    color: var(--accent);
+    cursor: pointer;
+    float: right;
+    font-size: 0.8rem;
+}
+
+.config-section {
+    margin-top: 2rem;
+    border-top: 1px solid var(--dim);
+    padding-top: 1rem;
+}
+
+.config-label {
+    color: var(--dim);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+pre {
+    background: #000;
+    padding: 1rem;
+    color: var(--accent);
+    font-size: 0.8rem;
+    overflow-x: auto;
+    border: 1px solid #111;
+}

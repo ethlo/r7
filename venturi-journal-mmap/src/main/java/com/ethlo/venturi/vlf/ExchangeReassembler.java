@@ -32,28 +32,24 @@ public class ExchangeReassembler implements JournalEventListener
     @Override
     public void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
     {
-        // Slice 1: The pristine ingress state
         getOrCreate(reqId).setClientRequest(startLine, level, headers);
     }
 
     @Override
     public void onUpstreamRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
     {
-        // Slice 2: The mutated upstream intent
         getOrCreate(reqId).setUpstreamRequest(startLine, level, headers);
     }
 
     @Override
     public void onUpstreamResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
     {
-        // Slice 3: The raw backend return
         getOrCreate(reqId).setUpstreamResponse(startLine, level, headers);
     }
 
     @Override
     public void onClientResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
     {
-        // Slice 4: The final egress state
         getOrCreate(reqId).setClientResponse(startLine, level, headers);
     }
 
@@ -61,17 +57,22 @@ public class ExchangeReassembler implements JournalEventListener
     public void onRequestBody(CharSequence reqId, ByteBuffer bodyChunk)
     {
         final JournalExchange exchange = inFlight.get(reqId);
-        validateExchangeExists(exchange, reqId, "REQUEST_BODY");
-        responseCrc32.update(bodyChunk.duplicate());
-        exchange.appendRequestBody(bodyChunk);
+        if (validateExchangeExists(exchange, reqId, "REQUEST_BODY"))
+        {
+            requestCrc32.update(bodyChunk.duplicate());
+            exchange.appendRequestBody(bodyChunk);
+        }
     }
 
     @Override
     public void onResponseBody(CharSequence reqId, ByteBuffer bodyChunk)
     {
         final JournalExchange exchange = inFlight.get(reqId);
-        validateExchangeExists(exchange, reqId, "RESPONSE_BODY");
-        exchange.appendResponseBody(bodyChunk);
+        if (validateExchangeExists(exchange, reqId, "RESPONSE_BODY"))
+        {
+            responseCrc32.update(bodyChunk.duplicate());
+            exchange.appendResponseBody(bodyChunk);
+        }
     }
 
     @Override
@@ -110,13 +111,15 @@ public class ExchangeReassembler implements JournalEventListener
         return inFlight.computeIfAbsent(id, JournalExchange::new);
     }
 
-    private void validateExchangeExists(JournalExchange exchange, CharSequence id, String type)
+    private boolean validateExchangeExists(JournalExchange exchange, CharSequence id, String type)
     {
         if (exchange == null)
         {
             // If we have body data but no metadata slice, we have a protocol/ordering violation
-            throw new IllegalStateException("Protocol Violation: Received " + type + " for ID " + id + " but no Start event was recorded.");
+            logger.warn("Protocol Violation: Received {} for ID {} but no Start event was recorded.", type, id);
+            return false;
         }
+        return true;
     }
 
     private boolean isExchangeComplete(JournalExchange exchange)

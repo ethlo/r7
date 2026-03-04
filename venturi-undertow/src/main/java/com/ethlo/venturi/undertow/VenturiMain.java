@@ -6,29 +6,27 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+
+import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.GatewayRoute;
+
+import com.ethlo.venturi.metrics.filters.MetricsRegistry;
+import com.ethlo.venturi.metrics.filters.SimpleMetricsFactory;
+
+import com.ethlo.venturi.metrics.filters.StatusHandler;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xnio.OptionMap;
 import org.xnio.Options;
-import org.xnio.Xnio;
-import org.xnio.ssl.XnioSsl;
 
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
-import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.core.StandardErrorHandler;
@@ -44,7 +42,6 @@ import com.ethlo.venturi.vlf.VlfRecoveryManager;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
-import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
 import io.undertow.util.Headers;
 
@@ -59,7 +56,6 @@ public final class VenturiMain
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
         final HttpHandler benchMarkHandler = exchange -> {
-            Thread.sleep(1000);
             exchange.setStatusCode(HttpStatuses.OK);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send(OK.duplicate());
@@ -98,9 +94,25 @@ public final class VenturiMain
         }
         );
 
+        final MetricsRegistry metricsRegistry = new MetricsRegistry();
+        for (GatewayRoute route : routeRegistry.getRoutes())
+        {
+            for (GatewayFilter filter : route.filters())
+            {
+                if (filter instanceof SimpleMetricsFactory.GF metricsFilter)
+                {
+                    metricsRegistry.register(route.id().toString(), metricsFilter);
+                }
+            }
+        }
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry);
+
         final HttpHandler rootHandler = Handlers.path()
+                .addExactPath("/status", statusHandler)
                 .addExactPath("/benchmark", benchMarkHandler)
                 .addPrefixPath("/", new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler));
+
+
 
         final Undertow.Builder builder = Undertow.builder();
         builder.setHandler(rootHandler);

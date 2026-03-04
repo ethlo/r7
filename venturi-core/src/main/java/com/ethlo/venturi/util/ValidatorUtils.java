@@ -37,6 +37,6 @@ public class ValidatorUtils
 
     public void invalid(String context, String property, String value, String message)
     {
-        result.addError(context, "Invalid value " + value + "for property " + property + ": " + message);
+        result.addError(context, "Invalid value " + value + " for property " + property + ": " + message);
     }
 }

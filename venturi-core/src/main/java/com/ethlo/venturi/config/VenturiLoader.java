@@ -10,6 +10,7 @@ import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.core.predicates.PredicateRegistry;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.FilterRegistry;
+import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 import tools.jackson.databind.DeserializationFeature;
@@ -49,22 +50,9 @@ public final class VenturiLoader
                     final List<GatewayFilter> instantiatedFilters = new ArrayList<>();
                     for (final FilterDefinition filterDef : def.filters())
                     {
-                        // 1. Ask the registry for the factory by name (e.g., "AddResponseHeader")
-                        final GatewayFilterFactory<?, ?> factory = filterRegistry.get(filterDef.name());
-                        if (factory == null)
-                        {
-                            validationResult.addError("filters", "Unknown filter type: " + filterDef.name());
-                            continue;
-                        }
-
-                        // 2. Jackson perfectly maps the raw 'args' Object to the specific Record
-                        final ValidatableConfig c = factory.configClass() != null ? mapper.convertValue(filterDef.args(), factory.configClass()) : new GatewayFilterFactory.EmptyConfig();
-
-                        // 3. Validate and Build
+                        final GatewayFilterFactory<?, ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
+                        final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
                         c.validate(validationResult);
-
-                        @SuppressWarnings("unchecked") final GatewayFilterFactory<?, ValidatableConfig> typedFactory =
-                                (GatewayFilterFactory<?, ValidatableConfig>) factory;
 
                         instantiatedFilters.add(typedFactory.create(c));
                     }
@@ -74,6 +62,11 @@ public final class VenturiLoader
 
                     final GatewayPredicate predicate = def.match().build(predicateRegistry);
 
+                    if (def.upstream().targets() == null)
+                    {
+                        new ValidatorUtils(validationResult).invalid(def.id().toString(), "upstream.targets", null, "upstream targets required");
+                        validationResult.throwIfInvalid();
+                    }
                     final List<CharSequence> urls = def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
                     return (GatewayRoute) new DefaultGatewayRoute(def.id(), urls, predicate, instantiatedFilters, def);
                 })

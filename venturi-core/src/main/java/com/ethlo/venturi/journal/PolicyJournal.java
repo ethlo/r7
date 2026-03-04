@@ -5,7 +5,7 @@ import java.util.Set;
 import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.FinishedGatewayExchange;
+import com.ethlo.venturi.api.CompletedGatewayExchange;
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
@@ -20,7 +20,7 @@ public final class PolicyJournal implements Journal
 {
     private final Journal delegate;
     private final RouteJournalConfig config;
-    private final FinishedGatewayExchange exchange;
+    private final CompletedGatewayExchange exchange;
     private final CRC32C requestChecksum = new CRC32C();
     private final CRC32C responseChecksum = new CRC32C();
     // --- Granular State Management ---
@@ -41,7 +41,7 @@ public final class PolicyJournal implements Journal
     private GatewayHeaders clientResHeaders;
     private int upstreamStatusCode;
 
-    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final FinishedGatewayExchange exchange)
+    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange)
     {
         this.delegate = delegate;
         this.config = config;
