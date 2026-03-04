@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
@@ -40,6 +39,7 @@ import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.time.ClockSource;
 import com.ethlo.venturi.undertow.config.ServerConfig;
+import com.ethlo.venturi.undertow.experimental.TrafficMetricsHandler;
 import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.ImmutableGatewayRequest;
 import com.ethlo.venturi.util.ImmutableGatewayResponse;
@@ -62,7 +62,6 @@ public final class VenturiUndertowHandler implements HttpHandler
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     //public static final AttachmentKey<Long> PROXY_FIRST_BYTES_RECEIVED_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
-    public static final AttachmentKey<Long> REQUEST_BYTES_READ = AttachmentKey.create(Long.class);
     private static final CharSequence ROUTE_ID_KEY = "route_id";
     private final Map<CharSequence, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
@@ -78,7 +77,6 @@ public final class VenturiUndertowHandler implements HttpHandler
         this.routeRegistry = routeRegistry;
         this.gatewayExchangeDataWriter = gatewayExchangeDataWriter;
         this.errorHandler = errorHandler;
-
         this.xnioSsl = getXnioSsl();
     }
 
@@ -142,15 +140,10 @@ public final class VenturiUndertowHandler implements HttpHandler
         final List<GatewayFilter> filters = new ArrayList<>();
         route.filters().forEach(filters::add);
 
-        // Count bytes received
-        final AtomicLong requestBytesRead = new AtomicLong(0);
-        exchange.addRequestWrapper((factory, ex) -> new ByteCountingStreamSourceConduit(factory.create(), requestBytesRead));
-
         // Wire the "Finished" lifecycle hook immediately
         final List<FinishedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof FinishedGatewayFilter).map(FinishedGatewayFilter.class::cast).toList();
         exchange.addExchangeCompleteListener((ex, next) ->
         {
-            exchange.putAttachment(REQUEST_BYTES_READ, requestBytesRead.get());
             try
             {
                 for (FinishedGatewayFilter filter : finishedGatewayFilters)
@@ -309,7 +302,8 @@ public final class VenturiUndertowHandler implements HttpHandler
                 // IMPORTANT: These are overwritten/handled in the PolicyJournal which is stateful
                 final int requestBodyCrc32 = -1;
                 final int responseBodyCrc32 = -1;
-                journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), gatewayExchange.getBytesOut(), gatewayExchange.getBytesIn(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
+                final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
+                journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
             } finally
             {
                 nextListener.proceed();

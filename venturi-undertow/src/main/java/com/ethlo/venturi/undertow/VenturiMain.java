@@ -10,14 +10,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
-import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.api.GatewayRoute;
-
-import com.ethlo.venturi.metrics.filters.MetricsRegistry;
-import com.ethlo.venturi.metrics.filters.SimpleMetricsFactory;
-
-import com.ethlo.venturi.metrics.filters.StatusHandler;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -27,11 +19,17 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
+import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
+import com.ethlo.venturi.metrics.filters.MetricsRegistry;
+import com.ethlo.venturi.metrics.filters.SimpleMetricsFactory;
+import com.ethlo.venturi.metrics.filters.StatusHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
+import com.ethlo.venturi.undertow.experimental.TrafficMetricsHandler;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.validation.ValidationResult;
@@ -107,12 +105,13 @@ public final class VenturiMain
         }
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry);
 
+        final VenturiUndertowHandler venturiUndertowHandler = new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler);
+        final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(venturiUndertowHandler);
+
         final HttpHandler rootHandler = Handlers.path()
                 .addExactPath("/status", statusHandler)
                 .addExactPath("/benchmark", benchMarkHandler)
-                .addPrefixPath("/", new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler));
-
-
+                .addPrefixPath("/", trafficMetricsHandler);
 
         final Undertow.Builder builder = Undertow.builder();
         builder.setHandler(rootHandler);

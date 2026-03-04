@@ -94,7 +94,7 @@ class JournalBinaryIntegrationTest
                     final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
                     final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
                     final long requestEndTs = proxyEndTs + 60_000L;
-                    journal.endExchange(reqId, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
+                    journal.endExchange(reqId, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, 223, 17, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
                 }
                 return null;
             });
@@ -172,7 +172,7 @@ class JournalBinaryIntegrationTest
             final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
             final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
             final long requestEndTs = proxyEndTs + 60_000L;
-            journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
+            journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, 321, 2, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
         }
 
         try

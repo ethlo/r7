@@ -12,6 +12,7 @@ import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.TerminationGatewayResponse;
 import com.ethlo.venturi.time.ClockSource;
+import com.ethlo.venturi.undertow.experimental.TrafficMetricsHandler;
 import io.undertow.server.HttpServerExchange;
 
 public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, BeforeCommitGatewayExchange, CompletedGatewayExchange
@@ -121,13 +122,8 @@ public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, B
         return undertowExchange.getRequestStartTime();
     }
 
-    public long getBytesIn()
+    public TrafficMetricsHandler.TrafficMetrics getTrafficMetrics()
     {
-        return undertowExchange.getAttachment(VenturiUndertowHandler.REQUEST_BYTES_READ);
-    }
-
-    public long getBytesOut()
-    {
-        return undertowExchange.getResponseBytesSent();
+        return undertowExchange.getAttachment(TrafficMetricsHandler.SIZE_METRICS_KEY);
     }
 }

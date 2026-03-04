@@ -117,12 +117,12 @@ public final class PolicyJournal implements Journal
     }
 
     @Override
-    public void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long sentBytes, long receivedBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
+    public void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
     {
         // Final flush handles short-circuits or missed events
         checkAndFlushRequest();
         checkAndFlushResponse();
-        delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, sentBytes, receivedBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int)requestChecksum.getValue(), (int)responseChecksum.getValue());
+        delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int) requestChecksum.getValue(), (int) responseChecksum.getValue());
     }
 
     @Override

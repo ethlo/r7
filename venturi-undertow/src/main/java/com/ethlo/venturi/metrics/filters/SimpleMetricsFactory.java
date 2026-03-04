@@ -60,8 +60,8 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
             final long start = undertowExchange.getRequestStartNanos();
             this.totalDurationNanos.add(System.nanoTime() - start);
-            this.totalBytesIn.add(undertowExchange.getBytesIn());
-            this.totalBytesOut.add(undertowExchange.getBytesOut());
+            this.totalBytesIn.add(undertowExchange.getTrafficMetrics().totalRequestBytes());
+            this.totalBytesOut.add(undertowExchange.getTrafficMetrics().totalResponseBytes());
         }
 
         @Override

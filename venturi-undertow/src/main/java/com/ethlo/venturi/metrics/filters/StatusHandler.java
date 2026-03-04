@@ -73,7 +73,7 @@ public final class StatusHandler implements HttpHandler
                     "{\"id\":\"%s\",\"total\":%d,\"active\":%d,\"upstream\":%d,\"avg_latency_ns\":%d," +
                             "\"bytes_in\":%d,\"bytes_out\":%d,\"journal_bytes\":%d},",
                     id, gf.getTotalRequests(), gf.getActiveRequests(), gf.getUpstreamRequests(), gf.getAvgLatencyNanos(),
-                    gf.getTotalBytesIn(), gf.getTotalBytesOut(), -1
+                    gf.getTotalBytesIn(), gf.getTotalBytesOut(), 0
             )); //gf.getBytesIn(), gf.getBytesOut(), gf.getJournalBytes()
 
         });

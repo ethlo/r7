@@ -39,8 +39,6 @@ public final class JournalExchange
 
     // Metrics & Forensic Metadata
     private int status;
-    private long bytesSent;
-    private long bytesReceived;
     private GatewayAttributes attributes;
     private long journaledRequestCrc32;
     private long journaledResponseCrc32;
@@ -49,6 +47,10 @@ public final class JournalExchange
     private long proxyStartTs;
     private long proxyFirstByteReceivedTs;
     private long proxyEndTs;
+    private long requestHeaderBytes;
+    private long requestBodyBytes;
+    private long responseHeaderBytes;
+    private long responseBodyBytes;
 
     public JournalExchange(CharSequence requestId)
     {
@@ -101,15 +103,13 @@ public final class JournalExchange
         responseBodyFragments.add(fragment);
     }
 
-    public void setMetrics(final long clientStartTs, final long clientEndTs, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long bytesReceived, final long bytesSent)
+    public void setTiming(final long clientStartTs, final long clientEndTs, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs)
     {
         this.clientStartTs = clientStartTs;
         this.clientEndTs = clientEndTs;
         this.proxyStartTs = proxyStartTs;
         this.proxyFirstByteReceivedTs = proxyFirstByteReceivedTs;
         this.proxyEndTs = proxyEndTs;
-        this.bytesSent = bytesSent;
-        this.bytesReceived = bytesReceived;
     }
 
     public void setJournalChecksums(long requestCrc32, long responseCrc32)
@@ -210,16 +210,6 @@ public final class JournalExchange
         this.status = status;
     }
 
-    public long getBytesSent()
-    {
-        return bytesSent;
-    }
-
-    public long getBytesReceived()
-    {
-        return bytesReceived;
-    }
-
     public long getDurationNanos()
     {
         return clientEndTs - clientStartTs;
@@ -278,5 +268,43 @@ public final class JournalExchange
     public boolean wasProxied()
     {
         return getProxyStartTs() != -1;
+    }
+
+    public void setTraffic(long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes)
+    {
+        this.requestHeaderBytes = requestHeaderBytes;
+        this.requestBodyBytes = requestBodyBytes;
+        this.responseHeaderBytes = responseHeaderBytes;
+        this.responseBodyBytes = responseBodyBytes;
+    }
+
+    public long getRequestHeaderBytes()
+    {
+        return requestHeaderBytes;
+    }
+
+    public long getRequestBodyBytes()
+    {
+        return requestBodyBytes;
+    }
+
+    public long getResponseHeaderBytes()
+    {
+        return responseHeaderBytes;
+    }
+
+    public long getResponseBodyBytes()
+    {
+        return responseBodyBytes;
+    }
+
+    public long getRequestTotalBytes()
+    {
+        return requestHeaderBytes + requestBodyBytes;
+    }
+
+    public long getResponseTotalBytes()
+    {
+        return responseHeaderBytes + responseBodyBytes;
     }
 }

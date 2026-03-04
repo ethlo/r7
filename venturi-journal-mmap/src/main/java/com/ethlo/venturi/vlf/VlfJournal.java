@@ -185,7 +185,7 @@ public final class VlfJournal implements Journal
     }
 
     @Override
-    public synchronized void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long sentBytes, long receivedBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
+    public synchronized void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -195,8 +195,10 @@ public final class VlfJournal implements Journal
         EndExchange.addReqId(fbb, reqIdOff);
         EndExchange.addClientStart(fbb, requestStartTs);
         EndExchange.addStatus(fbb, statusCode);
-        EndExchange.addBytesSent(fbb, sentBytes);
-        EndExchange.addBytesReceived(fbb, receivedBytes);
+        EndExchange.addRequestHeaderBytes(fbb, requestHeaderBytes);
+        EndExchange.addRequestBodyBytes(fbb, requestBodyBytes);
+        EndExchange.addResponseHeaderBytes(fbb, responseHeaderBytes);
+        EndExchange.addResponseBodyBytes(fbb, responseBodyBytes);
         EndExchange.addClientEnd(fbb, requestEndTs);
         EndExchange.addProxyStart(fbb, proxyStartTs);
         EndExchange.addProxyFirstByteReceived(fbb, proxyFirstByteReceivedTs);

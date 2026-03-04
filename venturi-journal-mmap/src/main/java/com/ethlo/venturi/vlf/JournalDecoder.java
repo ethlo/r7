@@ -215,11 +215,13 @@ public final class JournalDecoder
                 final long proxyFirstByteReceivedTs = end.proxyFirstByteReceived();
                 final long proxyEnd = end.proxyEnd();
                 final int httpStatus = end.status();
-                final long bytesSent = end.bytesSent();
-                final long bytesReceived = end.bytesReceived();
+                final long requestHeaderBytes = end.requestHeaderBytes();
+                final long requestBodyBytes = end.requestBodyBytes();
+                final long responseHeaderBytes = end.responseHeaderBytes();
+                final long responseBodyBytes = end.responseBodyBytes();
                 final GatewayAttributes attributes = new FbsGatewayAttributes(end);
 
-                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, bytesSent, bytesReceived, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd, (int) end.requestCrc32c(), (int) end.responseCrc32c());
+                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd, (int) end.requestCrc32c(), (int) end.responseCrc32c());
             }
 
             default -> throw new IllegalStateException("Unknown event type: " + journalEvent.eventType());

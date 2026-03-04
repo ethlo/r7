@@ -78,7 +78,8 @@ public class ExchangeReassembler implements JournalEventListener
     @Override
     public void onEnd(CharSequence reqId, GatewayAttributes attributes,
                       long clientStartTs, long clientEndTs,
-                      int status, long bytesSent, long bytesReceived,
+                      int status,
+                      long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                       long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
                       final int requestCrc32, final int responseCrc32c)
     {
@@ -95,7 +96,8 @@ public class ExchangeReassembler implements JournalEventListener
         }
 
         // Apply final metrics and forensic checksums
-        exchange.setMetrics(clientStartTs, clientEndTs, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, bytesReceived, bytesSent);
+        exchange.setTiming(clientStartTs, clientEndTs, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs);
+        exchange.setTraffic(requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes);
         exchange.setAttributes(attributes);
         exchange.setStatus(status);
         exchange.setJournalChecksums(requestCrc32, responseCrc32c);

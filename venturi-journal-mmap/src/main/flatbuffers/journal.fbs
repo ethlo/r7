@@ -57,8 +57,10 @@ table EndExchange {
   proxy_start: int64;
   proxy_first_byte_received: int64;
   proxy_end: int64;
-  bytes_sent: long;
-  bytes_received: long;
+  request_header_bytes: long;
+  request_body_bytes: long;
+  response_header_bytes: long;
+  response_body_bytes: long;
   attributes: [Header];
 }
 

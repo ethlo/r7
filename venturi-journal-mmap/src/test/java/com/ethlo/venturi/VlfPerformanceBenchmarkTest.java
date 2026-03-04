@@ -78,7 +78,7 @@ public final class VlfPerformanceBenchmarkTest
                                 final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
                                 final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
                                 final long requestEndTs = proxyEndTs + 60_000L;
-                                journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
+                                journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, 22, 44, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, 0, 0);
                             }
                         }
                 );
@@ -92,7 +92,7 @@ public final class VlfPerformanceBenchmarkTest
 
             // 3. Measure Decoding Speed using the high-water mark
             final AtomicLong totalReceived = new AtomicLong();
-            final ExchangeCompletionListener noopListener = exchange -> totalReceived.addAndGet(exchange.getBytesReceived());
+            final ExchangeCompletionListener noopListener = exchange -> totalReceived.addAndGet(exchange.getRequestTotalBytes());
             final VenturiTailer tailer = new VenturiTailer(finalPath.getParent(), Duration.ZERO, noopListener);
             final long totalBytesRead = chronograph.time("Decode " + iterations, () ->
                     {

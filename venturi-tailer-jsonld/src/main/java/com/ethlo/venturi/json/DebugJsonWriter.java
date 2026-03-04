@@ -80,8 +80,12 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             final int status = exchange.getStatus();
             generator.writeNumberProperty("status", status);
             generator.writeBooleanProperty("is_error", status >= HttpStatuses.BAD_REQUEST);
-            generator.writeNumberProperty("bytes_sent", exchange.getBytesSent());
-            generator.writeNumberProperty("bytes_received", exchange.getBytesReceived());
+            writeNumber("request_header_bytes", exchange.getRequestHeaderBytes());
+            writeNumber("request_body_bytes", exchange.getRequestBodyBytes());
+            writeNumber("request_total_bytes", exchange.getRequestTotalBytes());
+            writeNumber("response_header_bytes", exchange.getResponseHeaderBytes());
+            writeNumber("response_body_bytes", exchange.getResponseBodyBytes());
+            writeNumber("response_total_bytes", exchange.getResponseTotalBytes());
 
             // --- Client Object ---
             generator.writeName("client");
@@ -181,6 +185,14 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         if (start < len)
         {
             writePart(generator, partIndex, reqLine, start, len);
+        }
+    }
+
+    private void writeNumber(String name, long value) throws IOException
+    {
+        if (value != 0)
+        {
+            generator.writeNumberProperty(name, value);
         }
     }
 

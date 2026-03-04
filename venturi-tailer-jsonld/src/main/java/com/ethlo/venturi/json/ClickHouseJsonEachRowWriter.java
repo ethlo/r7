@@ -62,8 +62,11 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             generator.writeNumberProperty("status", status);
             generator.writeNumberProperty("is_error", status >= HttpStatuses.BAD_REQUEST ? 1 : 0);
 
-            writeNumber("bytes_sent", exchange.getBytesSent());
-            writeNumber("bytes_received", exchange.getBytesReceived());
+            writeNumber("request_header_bytes", exchange.getRequestHeaderBytes());
+            writeNumber("request_body_bytes", exchange.getRequestBodyBytes());
+            writeNumber("response_header_bytes", exchange.getRequestHeaderBytes());
+            writeNumber("response_body_bytes", exchange.getRequestBodyBytes());
+
             writeNumber("request_crc32", exchange.getJournaledRequestCrc32());
             writeNumber("response_crc32", exchange.getJournaledResponseCrc32());
 
