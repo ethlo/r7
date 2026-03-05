@@ -39,7 +39,7 @@ import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.time.ClockSource;
 import com.ethlo.venturi.undertow.config.ServerConfig;
-import com.ethlo.venturi.undertow.experimental.TrafficMetricsHandler;
+import com.ethlo.venturi.status.TrafficMetricsHandler;
 import com.ethlo.venturi.util.FastGatewayAttributes;
 import com.ethlo.venturi.util.ImmutableGatewayRequest;
 import com.ethlo.venturi.util.ImmutableGatewayResponse;

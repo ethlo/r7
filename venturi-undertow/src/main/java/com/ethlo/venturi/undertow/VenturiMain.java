@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -25,11 +26,11 @@ import com.ethlo.venturi.config.RoutesConfig;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
-import com.ethlo.venturi.metrics.filters.MetricsRegistry;
-import com.ethlo.venturi.metrics.filters.SimpleMetricsFactory;
-import com.ethlo.venturi.metrics.filters.StatusHandler;
+import com.ethlo.venturi.status.MetricsRegistry;
+import com.ethlo.venturi.status.SimpleMetricsFactory;
+import com.ethlo.venturi.status.StatusHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
-import com.ethlo.venturi.undertow.experimental.TrafficMetricsHandler;
+import com.ethlo.venturi.status.TrafficMetricsHandler;
 import com.ethlo.venturi.util.CharSequenceUtil;
 import com.ethlo.venturi.util.SystemUtil;
 import com.ethlo.venturi.util.constants.HttpStatuses;
@@ -110,7 +111,7 @@ public final class VenturiMain
                 }
             }
         }
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry);
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig);
 
         final VenturiUndertowHandler venturiUndertowHandler = new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(venturiUndertowHandler);
@@ -140,8 +141,8 @@ public final class VenturiMain
 
         server.start();
 
-        long uptime = SystemUtil.getUptime();
-        logger.info("🚀 Started in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+        final Duration uptime = SystemUtil.getUptime();
+        logger.info("🚀 Started in {}ms, listening at {}", uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
     private static void setupTestBackEndForProxy(HttpHandler httpHandler)

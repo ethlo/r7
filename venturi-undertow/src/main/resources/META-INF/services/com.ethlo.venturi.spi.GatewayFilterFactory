@@ -1,1 +1,1 @@
- com.ethlo.venturi.metrics.filters.SimpleMetricsFactory
+ com.ethlo.venturi.status.SimpleMetricsFactory

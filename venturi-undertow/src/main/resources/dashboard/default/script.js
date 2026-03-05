@@ -2,99 +2,194 @@ const view = document.getElementById('view');
 const vitals = document.getElementById('sys-vitals');
 const timeEl = document.getElementById('last-update');
 const panel = document.getElementById('details-panel');
+const mainContainer = document.getElementById('main-container');
 
-let routeConfigs = {}; // Store static configs from the last fetch
+const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
-function formatUptime(ms) {
-    const s = Math.floor(ms / 1000);
-    const m = Math.floor(s / 60);
-    const h = Math.floor(m / 60);
-    const d = Math.floor(h / 24);
-    return `${d}d ${h % 24}h ${m % 60}m ${s % 60}s`;
+/**
+ * Determines the highest necessary unit index (0-4) for a given byte value.
+ */
+function getUnitIndex(b) {
+    if (b === 0 || b == null) return 0;
+    return Math.min(Math.floor(Math.log(b) / Math.log(1024)), UNITS.length - 1);
 }
 
-function showDetails(routeId) {
-    const config = routeConfigs[routeId] || { upstream: 'N/A', filters: 'N/A', journal: 'N/A' };
-    document.getElementById('route-title').innerHTML = `${routeId} <span>CONFIGURATION</span>`;
-    document.getElementById('config-upstream').innerText = config.upstream;
-    document.getElementById('config-filters').innerText = config.filters;
-    document.getElementById('config-journal').innerText = config.journal;
-
-    panel.classList.add('open');
-    document.getElementById('main-container').style.marginRight = '500px';
+/**
+ * Formats bytes. If forceUnitIndex is provided, it locks the output to that specific unit.
+ */
+function formatBytes(b, forceUnitIndex = -1) {
+    const i = forceUnitIndex >= 0 ? forceUnitIndex : getUnitIndex(b);
+    if (b === 0 || b == null) {
+        return forceUnitIndex >= 0 ? '0.00 ' + UNITS[i] : '0 B';
+    }
+    return (b / Math.pow(1024, i)).toFixed(2) + ' ' + UNITS[i];
 }
 
-function formatBytes(b) {
-    if (b === 0) return '0 B';
-    const i = Math.floor(Math.log(b) / Math.log(1024));
-    return (b / Math.pow(1024, i)).toFixed(2) + ' ' + ['B', 'KB', 'MB', 'GB'][i];
+function formatUptime(iso) {
+    if (!iso) return "--";
+    const match = iso.match(/P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?/);
+    if (!match) return iso;
+
+    const d = match[1] ? `${match[1]}d ` : '';
+    const h = (match[2] || '0').padStart(2, '0');
+    const m = (match[3] || '0').padStart(2, '0');
+    const s = (match[4] || '0').padStart(2, '0');
+
+    return `${d}${h}:${m}:${s}`;
 }
+
+document.addEventListener('click', (e) => {
+    if (panel.classList.contains('open') &&
+        !panel.contains(e.target) &&
+        !e.target.closest('tr.clickable-row')) {
+        closeDetails();
+    }
+});
 
 function closeDetails() {
     panel.classList.remove('open');
-    document.getElementById('main-container').style.marginRight = 'auto';
+    mainContainer.style.marginRight = 'auto';
 }
 
 async function update() {
     try {
-        const res = await fetch(window.location.href, { headers: {'Accept': 'application/json'} });
+        const res = await fetch(window.location.href, {headers: {'Accept': 'application/json'}});
         const data = await res.json();
-        routeConfigs = data.configs;
 
-        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime_ms)}`;
+        const version = data.system.version || 'Unknown';
+        // Free space dynamically calculates its own unit since forceUnitIndex is not passed
+        const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
+        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | VERSION: ${version} | DISK: ${disk} FREE`;
 
-        const totals = data.routes.reduce((acc, r) => ({
-            total: acc.total + r.total,
-            active: acc.active + r.active,
-            h_in: acc.h_in + r.h_in,
-            b_in: acc.b_in + r.b_in,
-            h_out: acc.h_out + r.h_out,
-            b_out: acc.b_out + r.b_out,
-            journal: acc.journal + r.journal_bytes,
-            latency: acc.latency + (r.avg_latency_ns * r.total)
-        }), { total: 0, active: 0, h_in: 0, b_in: 0, h_out: 0, b_out: 0, journal: 0, latency: 0 });
+        timeEl.innerHTML = `<span class="status-indicator" style="color: #00ff88;">●</span>ONLINE`;
 
-        const globalAvgLat = totals.total === 0 ? 0 : (totals.latency / totals.total / 1000000).toFixed(3);
+        const routeConfigs = {};
+        if (data.route_configs) {
+            data.route_configs.forEach(c => routeConfigs[c.id] = c);
+        }
+        window.currentConfigs = routeConfigs;
 
-        // --- THE SUMMARY BLADE (Top Row) ---
-        let html = `
-            <tr class="total-row">
-                <td><div class="val">SYSTEM TOTALS</div><div class="unit">REQS: ${totals.total.toLocaleString()}</div></td>
-                <td>
-                    <div class="val">${formatBytes(totals.h_in + totals.b_in)} <span class="unit">IN</span></div>
-                    <div class="val">${formatBytes(totals.h_out + totals.b_out)} <span class="unit">OUT</span></div>
-                </td>
-                <td class="latency">${formatBytes(totals.journal)}<span class="unit">WRITTEN</span></td>
-                <td><span class="val">${totals.active}</span></td>
-                <td class="val">${globalAvgLat}ms</td>
-            </tr>`;
-
-        // --- INDIVIDUAL ROUTE BLADES ---
-        data.routes.forEach(r => {
-            html += `
-            <tr onclick="showDetails('${r.id}')">
-                <td>
-                    <div class="val">${r.id}</div>
-                    <div class="unit">REQS: ${r.total.toLocaleString()}</div>
-                </td>
-                <td>
-                    <div>
-                        <span class="val">${formatBytes(r.h_in + r.b_in)}</span> <span class="unit">IN</span>
-                        <span class="dim-small">(${formatBytes(r.h_in)}H / ${formatBytes(r.b_in)}B)</span>
-                    </div>
-                    <div style="margin-top:2px;">
-                        <span class="val">${formatBytes(r.h_out + r.b_out)}</span> <span class="unit">OUT</span>
-                        <span class="dim-small">(${formatBytes(r.h_out)}H / ${formatBytes(r.b_out)}B)</span>
-                    </div>
-                </td>
-                <td class="latency">${formatBytes(r.journal_bytes)}<span class="unit">WRITTEN</span></td>
-                <td><span style="color: ${r.active > 0 ? 'var(--accent)' : 'inherit'}">${r.active}</span></td>
-                <td class="val">${(r.avg_latency_ns / 1000000).toFixed(3)}ms</td>
-            </tr>`;
-        });
-        view.innerHTML = html;
-    } catch (e) { timeEl.innerText = 'OFFLINE'; }
+        renderTable(data);
+    } catch (e) {
+        timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;
+    }
 }
 
-setInterval(update, 500);
+function renderTable(data) {
+    if (!data.route_metrics) return;
+
+    const totals = data.route_metrics.reduce((acc, r) => ({
+        total: acc.total + (r.request_statistics.total || 0),
+        st_2xx: acc.st_2xx + (r.request_statistics.status_2xx || 0),
+        st_3xx: acc.st_3xx + (r.request_statistics.status_3xx || 0),
+        err_4xx: acc.err_4xx + (r.request_statistics.status_4xx || 0),
+        err_5xx: acc.err_5xx + (r.request_statistics.status_5xx || 0),
+        active: acc.active + (r.request_statistics.active || 0),
+        in_h: acc.in_h + r.traffic_flow.ingress.header_bytes,
+        in_b: acc.in_b + r.traffic_flow.ingress.body_bytes,
+        in_t: acc.in_t + r.traffic_flow.ingress.total_bytes,
+        out_h: acc.out_h + r.traffic_flow.egress.header_bytes,
+        out_b: acc.out_b + r.traffic_flow.egress.body_bytes,
+        out_t: acc.out_t + r.traffic_flow.egress.total_bytes,
+        journal: acc.journal + r.traffic_flow.journal_storage_bytes,
+        latency: acc.latency + (r.performance_telemetry.average_latency_nanoseconds * (r.request_statistics.total || 0))
+    }), {
+        total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0,
+        in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0, latency: 0
+    });
+
+    const globalAvgLat = totals.total === 0 ? 0 : (totals.latency / totals.total / 1000000).toFixed(3);
+
+    // Lock unit for the totals row based on the largest metric
+    const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
+
+    let html = `
+        <tr class="total-row">
+            <td>
+                <div>SYSTEM TOTALS</div>
+            </td>
+            <td>
+                <div>SUM: ${totals.total.toLocaleString()}</div>
+                <div class="sub">2XX: ${totals.st_2xx.toLocaleString()} / 3XX: ${totals.st_3xx.toLocaleString()}</div>
+                <div class="sub">4XX: ${totals.err_4xx.toLocaleString()} / 5XX: ${totals.err_5xx.toLocaleString()}</div>
+            </td>
+            <td>
+                <div>SUM: ${formatBytes(totals.in_t, uTotal)} / ${formatBytes(totals.out_t, uTotal)}</div>
+                <div class="sub">HDR: ${formatBytes(totals.in_h, uTotal)} / ${formatBytes(totals.out_h, uTotal)}</div>
+                <div class="sub">BDY: ${formatBytes(totals.in_b, uTotal)} / ${formatBytes(totals.out_b, uTotal)}</div>
+            </td>
+            <td>
+                <div>${formatBytes(totals.journal, uTotal)}</div>
+            </td>
+            <td><div>${totals.active}</div></td>
+            <td><div>${globalAvgLat}ms</div></td>
+        </tr>`;
+
+    data.route_metrics.forEach(r => {
+        const t = r.traffic_flow;
+        const s = r.request_statistics;
+        const p = r.performance_telemetry;
+
+        const st2xx = s.status_2xx || 0;
+        const st3xx = s.status_3xx || 0;
+        const err4xx = s.status_4xx || 0;
+        const err5xx = s.status_5xx || 0;
+
+        // Lock unit for the individual route row based on its largest metric
+        const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
+
+        html += `
+        <tr class="clickable-row" onclick="showDetails('${r.id}')">
+            <td>
+                <div>${r.id}</div>
+            </td>
+            <td>
+                <div>SUM: ${s.total.toLocaleString()}</div>
+                <div class="sub">2XX: ${st2xx.toLocaleString()} / 3XX: ${st3xx.toLocaleString()}</div>
+                <div class="sub">4XX: ${err4xx.toLocaleString()} / 5XX: ${err5xx.toLocaleString()}</div>
+            </td>
+            <td>
+                <div>SUM: ${formatBytes(t.ingress.total_bytes, uRoute)} / ${formatBytes(t.egress.total_bytes, uRoute)}</div>
+                <div class="sub">HDR: ${formatBytes(t.ingress.header_bytes, uRoute)} / ${formatBytes(t.egress.header_bytes, uRoute)}</div>
+                <div class="sub">BDY: ${formatBytes(t.ingress.body_bytes, uRoute)} / ${formatBytes(t.egress.body_bytes, uRoute)}</div>
+            </td>
+            <td>
+                <div>${formatBytes(t.journal_storage_bytes, uRoute)}</div>
+            </td>
+            <td><div>${s.active}</div></td>
+            <td><div>${(p.average_latency_nanoseconds / 1000000).toFixed(3)}ms</div></td>
+        </tr>`;
+    });
+
+    view.innerHTML = html;
+}
+
+function showDetails(routeId) {
+    const config = window.currentConfigs[routeId];
+    if (!config) return;
+
+    document.getElementById('route-title').innerText = `${routeId} [INSPECT]`;
+    document.getElementById('config-upstream').innerText = config.destination || 'N/A';
+
+    document.getElementById('config-journal').innerHTML = `
+        <div class="leaf">REQ: ${config.journal?.request || 'NONE'}</div>
+        <div class="leaf">RES: ${config.journal?.response || 'NONE'}</div>
+    `;
+
+    let fHtml = '<div class="tree-view">';
+    if (config.filters && config.filters.length > 0) {
+        config.filters.forEach((f, i) => {
+            const branch = (i === config.filters.length - 1) ? '└─' : '├─';
+            fHtml += `<div class="leaf">${branch} ${f.name} <span class="sub">${JSON.stringify(f.args)}</span></div>`;
+        });
+    } else {
+        fHtml += `<div class="leaf">No filters configured.</div>`;
+    }
+    document.getElementById('config-filters').innerHTML = fHtml + '</div>';
+
+    panel.classList.add('open');
+    mainContainer.style.marginRight = '550px';
+}
+
+setInterval(update, 1000);
 update();

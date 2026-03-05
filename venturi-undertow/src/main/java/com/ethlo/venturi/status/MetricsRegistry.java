@@ -1,11 +1,11 @@
-package com.ethlo.venturi.metrics.filters;
-
-import com.ethlo.venturi.config.RouteDefinition;
+package com.ethlo.venturi.status;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import com.ethlo.venturi.config.RouteDefinition;
 
 public final class MetricsRegistry
 {

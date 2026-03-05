@@ -63,4 +63,24 @@ public final class HttpStatuses
             default -> "Unknown";
         };
     }
+
+    public static boolean is2xx(int statusCode)
+    {
+        return statusCode >= 200 && statusCode < 300;
+    }
+
+    public static boolean is3xx(int statusCode)
+    {
+        return statusCode >= 300 && statusCode < 400;
+    }
+
+    public static boolean is4xx(int statusCode)
+    {
+        return statusCode >= 400 && statusCode < 500;
+    }
+
+    public static boolean is5xx(int statusCode)
+    {
+        return statusCode >= 500 && statusCode < 600;
+    }
 }

@@ -1,4 +1,4 @@
-package com.ethlo.venturi.metrics.filters;
+package com.ethlo.venturi.status;
 
 import java.util.concurrent.atomic.LongAdder;
 
@@ -12,6 +12,7 @@ import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.undertow.UndertowGatewayExchange;
+import com.ethlo.venturi.util.constants.HttpStatuses;
 
 public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilter, GatewayFilterFactory.EmptyConfig>
 {
@@ -32,6 +33,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
     public static final class GF implements BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, FinishedGatewayFilter, ShortInfo
     {
         private final LongAdder totalRequests = new LongAdder();
+        private final LongAdder total2xxRequests = new LongAdder();
+        private final LongAdder total3xxRequests = new LongAdder();
+        private final LongAdder total4xxRequests = new LongAdder();
+        private final LongAdder total5xxRequests = new LongAdder();
+
         private final LongAdder activeRequests = new LongAdder();
         private final LongAdder upstreamRequests = new LongAdder();
         private final LongAdder totalDurationNanos = new LongAdder();
@@ -46,7 +52,7 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         @Override
         public void beforeCommit(final BeforeCommitGatewayExchange exchange)
         {
-            this.totalRequests.increment();
+            totalRequests.increment();
             this.activeRequests.increment();
         }
 
@@ -62,13 +68,30 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             this.activeRequests.decrement();
 
             final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
-            final long start = undertowExchange.getRequestStartNanos();
-            this.totalDurationNanos.add(System.nanoTime() - start);
             this.totalRequestHeaderBytes.add(undertowExchange.getTrafficMetrics().requestHeaderBytes());
             this.totalRequestBodyBytes.add(undertowExchange.getTrafficMetrics().requestBodyBytes());
             this.totalResponseHeaderBytes.add(undertowExchange.getTrafficMetrics().responseHeaderBytes());
             this.totalResponseBodyBytes.add(undertowExchange.getTrafficMetrics().responseBodyBytes());
             this.totalJournalBytes.add(undertowExchange.getJournalBytes());
+            this.totalDurationNanos.add(undertowExchange.getDurationNanos());
+
+            final int statusCode = exchange.clientResponse().status();
+            if (HttpStatuses.is2xx(statusCode))
+            {
+                total2xxRequests.increment();
+            }
+            else if (HttpStatuses.is3xx(statusCode))
+            {
+                total3xxRequests.increment();
+            }
+            else if (HttpStatuses.is4xx(statusCode))
+            {
+                total4xxRequests.increment();
+            }
+            else if (HttpStatuses.is5xx(statusCode))
+            {
+                total5xxRequests.increment();
+            }
         }
 
         @Override
@@ -121,6 +144,26 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         public long getTotalResponseBodyBytes()
         {
             return totalResponseBodyBytes.sum();
+        }
+
+        public long getStatus2xxRequests()
+        {
+            return total2xxRequests.sum();
+        }
+
+        public long getStatus3xxRequests()
+        {
+            return total3xxRequests.sum();
+        }
+
+        public long getStatus4xxRequests()
+        {
+            return total4xxRequests.sum();
+        }
+
+        public long getStatus5xxRequests()
+        {
+            return total5xxRequests.sum();
         }
     }
 }

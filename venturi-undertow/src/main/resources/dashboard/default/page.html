@@ -10,7 +10,7 @@
     <header>
         <div>
             <h1>ETHLO // <span>R7</span> GATEWAY</h1>
-            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | TOTAL RPS: --</div>
+            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | VERSION: -- | DISK: --</div>
         </div>
         <div class="sys-info" id="last-update">CONNECTING...</div>
     </header>
@@ -18,7 +18,8 @@
         <thead>
         <tr>
             <th>ROUTE ID</th>
-            <th>TRAFFIC (IN/OUT)</th>
+            <th>REQUESTS</th>
+            <th>TRAFFIC (INGRESS / EGRESS)</th>
             <th>JOURNAL</th>
             <th>ACTIVE</th>
             <th>AVG LATENCY</th>
@@ -31,7 +32,6 @@
 <div id="details-panel">
     <span class="close-btn" onclick="closeDetails()">[ CLOSE ]</span>
     <h2 id="route-title">ROUTE_ID</h2>
-    <div id="route-stats-summary"></div>
 
     <div class="config-section">
         <div class="config-label">Upstream Configuration</div>
