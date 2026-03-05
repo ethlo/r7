@@ -1,159 +1,93 @@
-# Venturi
+# Ethlo R7 Gateway
 
 **A focused, high-performance JVM gateway built for predictable throughput and low-impact visibility.**
 
-It provides:
-
-- A composable routing engine (predicates + filters)
-- A low-allocation execution model
-- Memory-mapped, append-only audit logging
-- Pluggable tailers for structured export and ingestion
-- JVM-native extensibility via ServiceLoader
-
-Venturi is designed for stacks where throughput, observability, and control matter.
+R7 is designed for stacks where throughput, observability, and control matter. It provides a clean separation between stable APIs, a composable routing engine, high-throughput memory-mapped journaling, and an Undertow-based HTTP entrypoint. The system is intentionally narrow in scope: evaluate requests, apply predicates and filters, route efficiently, and optionally audit.
 
 ---
 
-## Overview
+## Predictable Performance and Observability
 
-Venturi provides a clean separation between:
+The R7 gateway is designed around a core engineering philosophy: network infrastructure must provide deep, real-time observability without degrading the performance of the critical path. It achieves this by aligning its metrics architecture with the mechanical realities of the JVM and modern CPU caches, providing operators with high-density telemetry that costs virtually nothing to capture.
 
-- **API** – Stable interfaces for predicates, filters, requests, and attributes
-- **Core** – The routing engine and execution pipeline
-- **Audit** – High-throughput, low-allocation journaling
-- **Server integration** – Undertow-based HTTP entrypoint
+### Zero-Allocation Hot Path
 
-The system is intentionally narrow in scope: evaluate requests, apply predicates and filters, route efficiently, and optionally audit. It does not try to be an application framework.
+High-throughput Java applications frequently suffer from garbage collection pauses caused by continuous object churn. R7 eliminates this overhead in its core routing and monitoring layers. By initializing all tracking primitives at startup and minimizing per-request object creation, the gateway guarantees a zero-allocation hot path. Tracking request counts, payload byte totals, and latency incurs absolutely no heap pressure during runtime, allowing the system to maintain stable, predictable latency percentiles even under sustained heavy load.
 
----
+### Wait-Free Concurrency
 
-## Design Goals
-
-### Ease-of-use and
-Keeping the API contract clean and focused allows for writing predicates and filters that can be evaluated and tested without ceremony. 
-
-### Performance by design
-
-- Extremely efficient access logging
-- Predicate and filter singletons
-- Minimal per-request object creation inside the core
-
-The routing pipeline is designed to remain allocation-stable under sustained load.
+Traditional atomic counters introduce severe CPU cache-line contention when thousands of worker threads attempt simultaneous updates. The metrics engine avoids this by utilizing striped counting structures and relaxed memory barriers, such as lazy-set operations for timestamps. This creates a strictly asymmetric architecture: write operations on the hot path are completely wait-free and lock-free, while read operations are deferred to a cold path polled only when the dashboard is active. Capturing traffic data never blocks request processing.
 
 ---
 
-### Composability
+## Operational Simplicity and Instant Feedback
 
-Routing is built from small building blocks:
+R7 pairs a declarative configuration model with immediate operational visibility. Routes, predicates, and filter chains are defined in clean YAML, allowing operators to easily compose upstream targets and inject arguments into filters such as `StripPathPrefix` or `AddResponseHeader`. This simplicity extends to the forensic visibility plane, where journaling policies can be tuned independently per route and per request/response direction. The configuration natively supports the dynamic elevation of audit levels, such as automatically escalating a payload capture from `METADATA` to `HEADERS` when an upstream returns a 5xx error.
 
-- `GatewayPredicate`
-- `GatewayFilter`
-- Route definitions combining both
+**Example Configuration:**
 
-Predicates are simple boolean tests against a `GatewayRequest`. Filters can mutate or enrich request attributes.
+```yaml
+routes:
+  - id: undertow-internal-backend
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    match:
+      - PathStartsWith:
+          prefix: /hello
+      - Method:
+          include:
+            - GET
+            - POST
+    journal:
+      request:
+        level: FULL
+      response:
+        level: FULL
+    filters:
+      - SimpleMetrics
+      - AddResponseHeader:
+          name: X-Gateway
+          value: R7
+      - CorrelationIdHeader
+      - RequireAuthorizationHeader
 
-Example:
+```
 
-```java
-new Route(
-    new And(
-        new MethodPredicate("GET"),
-        new HeaderPredicate("Authorization")
-    ),
-    new JwtFilter(...)
-);
-````
-
-Predicates and filters are singletons and evaluated per request.
-
----
-
-### Extensibility via Service Provider Interface (SPI)
-
-Venturi stays on the JVM intentionally.
-
-Predicates and filters can be provided via Java’s `ServiceLoader`, allowing plugins to be added without modifying the core.
-
-This enables extensions such as:
-
-* JWT validation (including JWK rotation strategies)
-* Rate limiting
-* Custom authentication mechanisms
-* Request enrichment
-* Audit adapters
-
-The core remains focused; behavior is extended via modules.
+In production, the companion real-time dashboard translates this static configuration into a live operational instrument. Engineers can instantly inspect active route parameters, monitor the exact I/O cost of their configured journaling policies, and detect upstream degradation through tactical, color-coded error highlighting. This design ensures a tight, frictionless feedback loop between defining a route and observing its real-world behavior.
 
 ---
 
-## Full Audit Logging Without Runtime Penalty
+## Composability and Extensibility
 
-Most gateways force a trade-off between visibility and performance.
+Routing in R7 is built from small, testable building blocks: `GatewayPredicate` and `GatewayFilter`. Predicates act as simple boolean tests against a request, while filters can mutate or enrich request attributes.
 
-Venturi’s audit module takes a different approach:
+R7 stays on the JVM intentionally. Predicates and filters can be provided via Java’s `ServiceLoader` (SPI), allowing custom plugins to be added without modifying the core system. This enables extensions for:
 
-* Requests are written to a memory-mapped journal
-* Writes are append-only and mechanically simple
-* No per-request serialization in the hot path
-* No blocking I/O during request handling
-
-A separate **tailer** process owns the lifecycle of journal segments and is responsible for:
-
-* Converting entries to JSON, plain text, MsgPack, or other formats
-* Routing output to Vector, ClickHouse, S3-compatible storage, or other sinks
-* Applying predicates (e.g., only errors, specific routes, sampling)
-
-This separates:
-
-* The **data plane** (fast request handling)
-* The **visibility plane** (formatting, export, ingestion)
-
-The result is full audit capability with minimal impact on request latency.
+* JWT validation and JWK rotation strategies
+* Rate limiting and custom authentication mechanisms
+* Request enrichment and specialized audit adapters
 
 ---
 
-## Shared mmap for Metrics and Throughput
+## Decoupled Visibility: The R7F Journal
 
-The same memory-mapped approach can be used for:
+Most gateways force a trade-off between visibility and performance. R7’s audit module takes a radically different approach by strictly separating the fast data plane from the visibility plane.
 
-* Throughput counters
-* Status code metrics
-* Route-level statistics
-* Lightweight health signals
+It utilizes the **R7 Log Format (R7F)**, a binary write-ahead log designed for zero-copy, high-throughput logging.
 
-Because metrics are written to shared memory instead of being pushed through logging frameworks, they can be consumed by:
+* **Zero-Copy Hot Path**: Requests and responses are written to a memory-mapped journal using append-only, mechanically simple operations. There is no per-request serialization penalty or blocking I/O during request handling.
+* **Structured Payload Isolation**: Each entry isolates structured metadata (encoded via FlatBuffer `JournalEvent` tables) from variable raw payloads. This allows for efficient sequential logging and partial reads without full deserialization. Byte arrays are used to bypass UTF-8 validation overhead on the hot path.
+* **Integrity and Recovery**: Every file utilizes a 1024-byte preamble with a deterministic sequence ID, and every individual journal entry is secured by a CRC32C checksum.
+* **Asynchronous Tailers**: A separate tailer process owns the lifecycle of the journal segments. It is responsible for converting the binary entries into JSON, MsgPack, or plain text, and routing the output to external sinks like Vector, ClickHouse, or S3-compatible storage.
 
-* Sidecar processes
-* Vector
-* Custom monitoring agents
-* ClickHouse ingestion pipelines
-
-This allows high-frequency metrics without adding allocation pressure or network overhead in the request path.
-
----
-
-## Why Venturi
-
-Venturi is useful when you need:
-
-* A lightweight gateway core
-* Full control over routing behavior
-* Predictable performance characteristics
-* Plugin-based extensibility
-* JVM-native deployment
-* Tight integration with existing Java systems
-* High-throughput environments requiring full audit visibility
-
-It is not intended to replace full-featured API gateways. It is intended for cases where you want a focused, inspectable, and tunable core.
+The result is full forensic audit capability and high-frequency metrics collection with minimal impact on request latency.
 
 ---
 
 ## Technical Notes
 
-* Java 25
-* Undertow for HTTP integration
-* G1-compatible allocation profile
-* Emphasis on avoiding unnecessary intermediate objects
-* Designed for sustained high request rates
-
----
+* Implementation/technology-agnostic API for predicates and filters
+* Platform: Java 25
+* Reference server: Undertow
+* Target Environment: Designed for JVM-native deployment in high-throughput environments requiring full audit visibility and tight integration with existing Java systems.

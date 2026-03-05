@@ -36,13 +36,13 @@ routes:
       - CorrelationIdHeader
       - RequireAuthorizationHeader
 
-  - id: external-test
+  - id: home-assistant
     upstream:
       targets:
-        - url: https://www.nrk.no
+        - url: http://192.168.50.103:8123
     match:
       - PathStartsWith:
-          prefix: /nrk
+          prefix: /ha
     journal:
       request:
         level: METADATA
