@@ -16,20 +16,20 @@ import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.util.FastGatewayHeaders;
 import com.ethlo.venturi.util.MutableFastGatewayHeaders;
 
-public final class PolicyJournal implements Journal
+public final class StatefulJournal implements Journal
 {
     private final Journal delegate;
     private final RouteJournalConfig config;
     private final CompletedGatewayExchange exchange;
     private final CRC32C requestChecksum = new CRC32C();
     private final CRC32C responseChecksum = new CRC32C();
-    // --- Granular State Management ---
+
     private CharSequence requestId;
     private boolean clientReqFlushed = false;
     private boolean upstreamReqFlushed = false;
     private boolean upstreamResFlushed = false;
     private boolean clientResFlushed = false;
-    // Metadata clones
+
     private ByteBuffer clientReqLine;
     private GatewayHeaders clientReqHeaders;
     private ByteBuffer upstreamReqLine;
@@ -41,7 +41,9 @@ public final class PolicyJournal implements Journal
     private GatewayHeaders clientResHeaders;
     private int upstreamStatusCode;
 
-    public PolicyJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange)
+    private long bytesWritten;
+
+    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange)
     {
         this.delegate = delegate;
         this.config = config;
@@ -49,80 +51,89 @@ public final class PolicyJournal implements Journal
     }
 
     @Override
-    public void clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public int clientRequest(final JournalLevel level, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.requestId = reqId;
         this.clientReqLine = cloneBuffer(startLine);
         this.clientReqHeaders = headers;
 
-        // Early flush if the static config is already set to FULL
         if (config.request().level() == JournalLevel.FULL)
         {
-            checkAndFlushRequest();
+            return checkAndFlushRequest();
         }
+        return 0;
     }
 
     @Override
-    public void upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public int upstreamRequest(final JournalLevel level, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.upstreamReqLine = cloneBuffer(startLine);
         this.upstreamReqHeaders = headers;
 
         if (config.request().level() == JournalLevel.FULL)
         {
-            checkAndFlushRequest();
+            return checkAndFlushRequest();
         }
+        return 0;
     }
 
     @Override
-    public void upstreamResponse(JournalLevel level, CharSequence reqId, int upstreamStatusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public int upstreamResponse(final JournalLevel level, final CharSequence reqId, final int upstreamStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.upstreamResLine = cloneBuffer(startLine);
         this.upstreamResHeaders = headers;
         this.upstreamStatusCode = upstreamStatusCode;
 
-        // Response status is now known; resolve bilateral policy
-        checkAndFlushRequest();
-        checkAndFlushResponse();
+        int written = checkAndFlushRequest();
+        written += checkAndFlushResponse();
+        return written;
     }
 
     @Override
-    public void clientResponse(JournalLevel level, CharSequence reqId, int clientStatusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public int clientResponse(final JournalLevel level, final CharSequence reqId, final int clientStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.clientStatusCode = clientStatusCode;
         this.clientResLine = cloneBuffer(startLine);
         this.clientResHeaders = headers;
 
-        checkAndFlushResponse();
+        return checkAndFlushResponse();
     }
 
     @Override
-    public void requestBody(CharSequence reqId, ByteBuffer data)
+    public int requestBody(final CharSequence reqId, final ByteBuffer data)
     {
         if (config.request().level() == JournalLevel.FULL)
         {
             requestChecksum.update(data.duplicate());
-            delegate.requestBody(reqId, data);
+            final int written = delegate.requestBody(reqId, data);
+            this.bytesWritten += written;
+            return written;
         }
+        return 0;
     }
 
     @Override
-    public void responseBody(CharSequence reqId, ByteBuffer data)
+    public int responseBody(final CharSequence reqId, final ByteBuffer data)
     {
         if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
             responseChecksum.update(data.duplicate());
-            delegate.responseBody(reqId, data);
+            final int written = delegate.responseBody(reqId, data);
+            this.bytesWritten += written;
+            return written;
         }
+        return 0;
     }
 
     @Override
-    public void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
+    public int endExchange(final CharSequence reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
     {
-        // Final flush handles short-circuits or missed events
-        checkAndFlushRequest();
-        checkAndFlushResponse();
-        delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int) requestChecksum.getValue(), (int) responseChecksum.getValue());
+        int written = checkAndFlushRequest();
+        written += checkAndFlushResponse();
+
+        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int) requestChecksum.getValue(), (int) responseChecksum.getValue());
+        this.bytesWritten += endBytes;
+        return written + endBytes;
     }
 
     @Override
@@ -131,18 +142,17 @@ public final class PolicyJournal implements Journal
         delegate.close();
     }
 
-    private void checkAndFlushRequest()
+    private int checkAndFlushRequest()
     {
         if (clientReqFlushed && upstreamReqFlushed)
         {
-            return;
+            return 0;
         }
 
         final int status = exchange.clientResponse().status();
         final JournalLevel reqLevel = config.request().resolve(status);
         final JournalLevel resLevel = config.response().resolve(status);
 
-        // Bilateral Context Promotion
         JournalLevel effectiveLevel = reqLevel;
         if (effectiveLevel == JournalLevel.NONE && resLevel != JournalLevel.NONE)
         {
@@ -151,74 +161,85 @@ public final class PolicyJournal implements Journal
 
         if (effectiveLevel == JournalLevel.NONE)
         {
-            return;
+            return 0;
         }
 
-        handleClientRequest(effectiveLevel);
-
-        handleUpstreamRequest(effectiveLevel);
+        int written = handleClientRequest(effectiveLevel);
+        written += handleUpstreamRequest(effectiveLevel);
+        return written;
     }
 
-    private void handleUpstreamRequest(JournalLevel effectiveLevel)
+    private int handleUpstreamRequest(final JournalLevel effectiveLevel)
     {
         if (!upstreamReqFlushed && upstreamReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
-            delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine, headers);
+            final int written = delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine, headers);
+            this.bytesWritten += written;
             this.upstreamReqFlushed = true;
             this.upstreamReqLine = null;
+            return written;
         }
+        return 0;
     }
 
-    private void handleClientRequest(JournalLevel effectiveLevel)
+    private int handleClientRequest(final JournalLevel effectiveLevel)
     {
         if (!clientReqFlushed && clientReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
-            delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers);
+            final int written = delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers);
+            this.bytesWritten += written;
             this.clientReqFlushed = true;
             this.clientReqLine = null;
+            return written;
         }
+        return 0;
     }
 
-    private void checkAndFlushResponse()
+    private int checkAndFlushResponse()
     {
-        // Check final response logging level based on status code config
         final int status = exchange.clientResponse().status();
         final JournalLevel resLevel = config.response().resolve(status);
         if (resLevel == JournalLevel.NONE)
         {
-            return;
+            return 0;
         }
 
-        handleUpstreamResponse(resLevel);
-
-        handleClientResponse(resLevel);
+        int written = handleUpstreamResponse(resLevel);
+        written += handleClientResponse(resLevel);
+        return written;
     }
 
-    private void handleClientResponse(JournalLevel resLevel)
+    private int handleClientResponse(final JournalLevel resLevel)
     {
         if (!clientResFlushed && clientResLine != null)
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
-            delegate.clientResponse(resLevel, requestId, clientStatusCode, clientResLine, headers);
+            final int written = delegate.clientResponse(resLevel, requestId, clientStatusCode, clientResLine, headers);
+            this.bytesWritten += written;
             this.clientResFlushed = true;
             this.clientResLine = null;
+            return written;
         }
+        return 0;
     }
 
-    private void handleUpstreamResponse(JournalLevel resLevel)
+    private int handleUpstreamResponse(final JournalLevel resLevel)
     {
         if (!upstreamResFlushed && upstreamResLine != null)
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
-            delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers);
+            final int written = delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers);
+            this.bytesWritten += written;
             this.upstreamResFlushed = true;
             this.upstreamResLine = null;
+            return written;
         }
+        return 0;
     }
 
-    private GatewayHeaders redactHeaders(final GatewayHeaders original, Set<String> safeHeaders)
+    private GatewayHeaders redactHeaders(final GatewayHeaders original, final Set<String> safeHeaders)
     {
         if (original == null)
         {
@@ -253,5 +274,10 @@ public final class PolicyJournal implements Journal
         original.position(pos);
         copy.flip();
         return copy;
+    }
+
+    public long getBytesWritten()
+    {
+        return bytesWritten;
     }
 }

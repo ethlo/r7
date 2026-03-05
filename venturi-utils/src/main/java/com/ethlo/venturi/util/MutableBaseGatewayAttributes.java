@@ -4,8 +4,6 @@ import com.ethlo.venturi.api.EntryConsumer;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 
-import java.util.Map;
-
 class MutableBaseGatewayAttributes extends BaseGatewayAttributes implements MutableGatewayHeaders
 {
     protected MutableBaseGatewayAttributes()
@@ -16,13 +14,6 @@ class MutableBaseGatewayAttributes extends BaseGatewayAttributes implements Muta
     protected MutableBaseGatewayAttributes(int initialCapacity)
     {
         super(initialCapacity);
-    }
-
-    public static MutableBaseGatewayAttributes of(Map<CharSequence, CharSequence> headers)
-    {
-        final MutableBaseGatewayAttributes h = new MutableBaseGatewayAttributes();
-        headers.forEach(h::add);
-        return h;
     }
 
     @Override

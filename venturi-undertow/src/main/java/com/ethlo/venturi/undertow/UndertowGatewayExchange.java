@@ -26,6 +26,7 @@ public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, B
     private final GatewayRoute route;
     private GatewayResponse upstreamResponse;
     private TerminationGatewayResponse terminated;
+    private long journalBytes;
 
     public UndertowGatewayExchange(
             HttpServerExchange undertowExchange,
@@ -125,5 +126,15 @@ public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, B
     public TrafficMetricsHandler.TrafficMetrics getTrafficMetrics()
     {
         return undertowExchange.getAttachment(TrafficMetricsHandler.SIZE_METRICS_KEY);
+    }
+
+    public long getJournalBytes()
+    {
+        return journalBytes;
+    }
+
+    public void setJournalBytes(final long journalBytes)
+    {
+        this.journalBytes = journalBytes;
     }
 }

@@ -1,6 +1,5 @@
 package com.ethlo.venturi.util;
 
-import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 
 public class MutableFastGatewayHeaders extends FastGatewayHeaders implements MutableGatewayHeaders
@@ -13,11 +12,6 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     public MutableFastGatewayHeaders(int initialSize)
     {
         super(initialSize);
-    }
-
-    public static GatewayHeaders empty()
-    {
-        return new MutableFastGatewayHeaders(0);
     }
 
     @Override

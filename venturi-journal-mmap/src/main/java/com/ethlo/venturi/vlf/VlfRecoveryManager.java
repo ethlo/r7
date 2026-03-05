@@ -80,7 +80,6 @@ public final class VlfRecoveryManager
     {
         long lastValidPosition = VlfConstants.PREAMBLE_SIZE; // 1024
         long recordCount = 0;
-        boolean isEmpty = false;
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE))
         {
             final long size = channel.size();

@@ -5,9 +5,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
-import java.util.Optional;
 
+import com.ethlo.venturi.util.SystemUtil;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
@@ -65,24 +68,52 @@ public final class StatusHandler implements HttpHandler
 
     private void serveJson(final HttpServerExchange exchange)
     {
-        final StringBuilder json = new StringBuilder("{\"routes\":[");
-        final Map<String, SimpleMetricsFactory.GF> metrics = registry.getAll();
+        final StringBuilder json = new StringBuilder("{");
 
+        // 1. System Vitals
+        json.append(String.format("\"system\":{\"uptime_ms\":%d,\"start_ts\":\"%s\"},",
+                SystemUtil.getUptime(), getStartTime()
+        ));
+
+        // 2. Route Metrics with Granular Byte Accounting
+        json.append("\"routes\":[");
+        final Map<String, SimpleMetricsFactory.GF> metrics = registry.getAll();
         metrics.forEach((id, gf) -> {
             json.append(String.format(
                     "{\"id\":\"%s\",\"total\":%d,\"active\":%d,\"upstream\":%d,\"avg_latency_ns\":%d," +
-                            "\"bytes_in\":%d,\"bytes_out\":%d,\"journal_bytes\":%d},",
+                            "\"h_in\":%d,\"b_in\":%d,\"h_out\":%d,\"b_out\":%d,\"journal_bytes\":%d},",
                     id, gf.getTotalRequests(), gf.getActiveRequests(), gf.getUpstreamRequests(), gf.getAvgLatencyNanos(),
-                    gf.getTotalBytesIn(), gf.getTotalBytesOut(), 0
-            )); //gf.getBytesIn(), gf.getBytesOut(), gf.getJournalBytes()
-
+                    gf.getTotalRequestHeaderBytes(), gf.getTotalRequestBodyBytes(),
+                    gf.getTotalResponseHeaderBytes(), gf.getTotalResponseBodyBytes(),
+                    gf.getTotalJournalBytes()
+            ));
         });
-
         if (!metrics.isEmpty()) json.setLength(json.length() - 1);
-        json.append("]}");
+        json.append("],");
+
+        // 3. Static Configs remains unchanged
+        json.append("\"configs\":{");
+        registry.getRouteDefinitions().forEach((def) -> {
+            json.append(String.format("\"%s\":{\"upstream\":\"%s\",\"filters\":\"%s\",\"journal\":\"%s\"},",
+                    def.id(), escape(def.upstream()), escape(def.filters()), escape(def.journal())
+            ));
+        });
+        if (!registry.getRouteDefinitions().isEmpty()) json.setLength(json.length() - 1);
+        json.append("}}");
 
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
         exchange.getResponseSender().send(json.toString());
+    }
+
+    public OffsetDateTime getStartTime()
+    {
+        final long startupTime = SystemUtil.getUptime();
+        return OffsetDateTime.ofInstant(Instant.ofEpochMilli((System.nanoTime() - startupTime) / 1000), ZoneOffset.UTC);
+    }
+
+    private String escape(Object object)
+    {
+        return object.toString();
     }
 
     private void serveHtml(final HttpServerExchange exchange)

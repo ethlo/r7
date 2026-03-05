@@ -73,11 +73,12 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
 
             int hostLength = (colonIndex != -1) ? colonIndex : requestHost.length();
 
-            // Assuming CharSequenceUtil can match with a length boundary, or 
-            // you might need a custom equalsIgnoreCase that takes a length!
             for (String host : hosts)
             {
-                if (CharSequenceUtil.equalsIgnoreCase(requestHost, host)) return true;
+                if (CharSequenceUtil.regionEquals(requestHost, 0, hostLength, host, 0, hostLength, true))
+                {
+                    return true;
+                }
             }
             return false;
         }

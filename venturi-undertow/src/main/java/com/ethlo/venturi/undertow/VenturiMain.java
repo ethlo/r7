@@ -6,8 +6,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -21,7 +19,9 @@ import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.config.RouteRegistry;
+import com.ethlo.venturi.config.RoutesConfig;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
@@ -30,6 +30,8 @@ import com.ethlo.venturi.metrics.filters.SimpleMetricsFactory;
 import com.ethlo.venturi.metrics.filters.StatusHandler;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.undertow.experimental.TrafficMetricsHandler;
+import com.ethlo.venturi.util.CharSequenceUtil;
+import com.ethlo.venturi.util.SystemUtil;
 import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.validation.ValidationResult;
@@ -70,7 +72,8 @@ public final class VenturiMain
 
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
-        loader.load(configFile, routeRegistry);
+        final RoutesConfig routesConfig = loader.load(configFile, RoutesConfig.class);
+        loader.load(routesConfig, routeRegistry);
 
         final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
         consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
@@ -95,11 +98,15 @@ public final class VenturiMain
         final MetricsRegistry metricsRegistry = new MetricsRegistry();
         for (GatewayRoute route : routeRegistry.getRoutes())
         {
+            final RouteDefinition routeDefinition = routesConfig.routes.stream()
+                    .filter(r -> CharSequenceUtil.equals(r.id(), route.id()))
+                    .findFirst().orElseThrow();
+
             for (GatewayFilter filter : route.filters())
             {
                 if (filter instanceof SimpleMetricsFactory.GF metricsFilter)
                 {
-                    metricsRegistry.register(route.id().toString(), metricsFilter);
+                    metricsRegistry.register(routeDefinition, metricsFilter);
                 }
             }
         }
@@ -133,7 +140,7 @@ public final class VenturiMain
 
         server.start();
 
-        long uptime = getUptime();
+        long uptime = SystemUtil.getUptime();
         logger.info("🚀 Started in {}ms, listening at {}", uptime, server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
@@ -147,18 +154,11 @@ public final class VenturiMain
         target.build().start();
     }
 
-    private static long getUptime()
-    {
-        Instant start = ProcessHandle.current().info().startInstant().orElse(Instant.now());
-        Duration uptime = Duration.between(start, Instant.now());
-        return uptime.toMillis();
-    }
-
     // MUST be public
     public static void main(String[] args) throws IOException
     {
         setupLogging();
-        logger.debug("Main class started at {} ms since process start", getUptime());
+        logger.debug("Main class started at {} ms since process start", SystemUtil.getUptime());
         new VenturiMain(Paths.get("routes.yaml"), Paths.get("server.yaml"));
     }
 
@@ -182,18 +182,6 @@ public final class VenturiMain
         {
             // StatusPrinter will handle the error message
         }
-    }
-
-    private void printBanner()
-    {
-        logger.info("------------------------------------------------------------------");
-        logger.info("  _   _             _               _ ");
-        logger.info(" | | | | ___ _ __  | |_ _   _ _ __ (_)");
-        logger.info(" | | | |/ _ \\ '_ \\ | __| | | | '__|| |");
-        logger.info(" \\ \\_/ /  __/ | | || |_| |_| | |   | |");
-        logger.info("  \\___/ \\___|_| |_| \\__|\\__,_|_|   |_| ");
-        logger.info("------------------------------------------------------------------");
-
     }
 
     private void configureServer(Undertow.Builder builder, ServerConfig config)

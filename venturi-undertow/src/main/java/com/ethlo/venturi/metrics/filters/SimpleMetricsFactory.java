@@ -36,8 +36,12 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         private final LongAdder upstreamRequests = new LongAdder();
         private final LongAdder totalDurationNanos = new LongAdder();
 
-        private final LongAdder totalBytesIn = new LongAdder();
-        private final LongAdder totalBytesOut = new LongAdder();
+        private final LongAdder totalJournalBytes = new LongAdder();
+
+        private final LongAdder totalRequestHeaderBytes = new LongAdder();
+        private final LongAdder totalRequestBodyBytes = new LongAdder();
+        private final LongAdder totalResponseHeaderBytes = new LongAdder();
+        private final LongAdder totalResponseBodyBytes = new LongAdder();
 
         @Override
         public void beforeCommit(final BeforeCommitGatewayExchange exchange)
@@ -60,8 +64,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
             final long start = undertowExchange.getRequestStartNanos();
             this.totalDurationNanos.add(System.nanoTime() - start);
-            this.totalBytesIn.add(undertowExchange.getTrafficMetrics().totalRequestBytes());
-            this.totalBytesOut.add(undertowExchange.getTrafficMetrics().totalResponseBytes());
+            this.totalRequestHeaderBytes.add(undertowExchange.getTrafficMetrics().requestHeaderBytes());
+            this.totalRequestBodyBytes.add(undertowExchange.getTrafficMetrics().requestBodyBytes());
+            this.totalResponseHeaderBytes.add(undertowExchange.getTrafficMetrics().responseHeaderBytes());
+            this.totalResponseBodyBytes.add(undertowExchange.getTrafficMetrics().responseBodyBytes());
+            this.totalJournalBytes.add(undertowExchange.getJournalBytes());
         }
 
         @Override
@@ -91,14 +98,29 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             return upstreamRequests.sum();
         }
 
-        public long getTotalBytesIn()
+        public long getTotalJournalBytes()
         {
-            return totalBytesIn.sum();
+            return totalJournalBytes.sum();
         }
 
-        public long getTotalBytesOut()
+        public long getTotalRequestHeaderBytes()
         {
-            return totalBytesOut.sum();
+            return totalRequestHeaderBytes.sum();
+        }
+
+        public long getTotalRequestBodyBytes()
+        {
+            return totalRequestBodyBytes.sum();
+        }
+
+        public long getTotalResponseHeaderBytes()
+        {
+            return totalResponseHeaderBytes.sum();
+        }
+
+        public long getTotalResponseBodyBytes()
+        {
+            return totalResponseBodyBytes.sum();
         }
     }
 }

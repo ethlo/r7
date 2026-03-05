@@ -75,9 +75,4 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     {
         this.exchange.setRequestMethod(HttpString.tryFromString(method.toString()));
     }
-
-    public HttpServerExchange getExchange()
-    {
-        return exchange;
-    }
 }

@@ -34,7 +34,7 @@ import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.core.RequestIdGenerator;
 import com.ethlo.venturi.core.SortableRequestIdGenerator;
 import com.ethlo.venturi.core.helpers.StartLineBuilder;
-import com.ethlo.venturi.journal.PolicyJournal;
+import com.ethlo.venturi.journal.StatefulJournal;
 import com.ethlo.venturi.journal.api.Journal;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.time.ClockSource;
@@ -48,6 +48,7 @@ import com.ethlo.venturi.util.constants.HttpStatuses;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.vlf.VlfJournal;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
+import io.undertow.server.ExchangeCompletionListener;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
@@ -98,6 +99,41 @@ public final class VenturiUndertowHandler implements HttpHandler
         return result != null ? result : -1;
     }
 
+    private static void handleCompleted(Journal journal, HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange, RouteJournalConfig journalConfig, CharSequence requestId, HttpServerExchange ex, ExchangeCompletionListener.NextListener nextListener)
+    {
+        final long journalBytes = ((StatefulJournal) journal).getBytesWritten();
+        gatewayExchange.setJournalBytes(journalBytes);
+
+        final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
+        final long proxyEndTs = tmpProxyEndTs != null ? tmpProxyEndTs : ClockSource.now();
+
+        try
+        {
+            if (gatewayExchange.upstreamResponse() != null)
+            {
+                journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
+                journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
+            }
+
+            journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
+
+            final long requestEndTs = ClockSource.now();
+            final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
+            final long proxyStartTs = getLongValueOrMinusOne(exchange, PROXY_START_TS_KEY);
+
+            final long proxyFirstBytesTs = -1; //getLongValueOrMinusOne(exchange, PROXY_FIRST_BYTES_RECEIVED_TS_KEY);
+
+            // IMPORTANT: These are overwritten/handled in the PolicyJournal which is stateful
+            final int requestBodyCrc32 = -1;
+            final int responseBodyCrc32 = -1;
+            final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
+            journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
+        } finally
+        {
+            nextListener.proceed();
+        }
+    }
+
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
@@ -114,10 +150,10 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
 
         final GatewayRoute route = routeOpt.get();
-        execute(exchange, req, route, startNanosTs);
+        execute(exchange, req, route);
     }
 
-    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final GatewayRoute route, final long startNanosTs)
+    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final GatewayRoute route)
     {
         final CharSequence requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(new ImmutableHeaderSnapshot(exchange.getRequestHeaders()), exchange.getRequestPath(), exchange.getRequestURI(), exchange.getRequestMethod().toString(), exchange.getDecodedQueryString());
@@ -132,9 +168,8 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         final VlfJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
-        final Journal smartJournal = new PolicyJournal(rawJournal, journalConfig, gatewayExchange);
-
-        setupJournaling(smartJournal, exchange, gatewayExchange, journalConfig, requestId);
+        final Journal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
+        setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId);
 
         // Make list of filters
         final List<GatewayFilter> filters = new ArrayList<>();
@@ -144,6 +179,8 @@ public final class VenturiUndertowHandler implements HttpHandler
         final List<FinishedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof FinishedGatewayFilter).map(FinishedGatewayFilter.class::cast).toList();
         exchange.addExchangeCompleteListener((ex, next) ->
         {
+            handleCompleted(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, ex, next);
+
             try
             {
                 for (FinishedGatewayFilter filter : finishedGatewayFilters)
@@ -247,7 +284,10 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId)
     {
-        if (journalConfig == null) return;
+        if (journalConfig == null)
+        {
+            return;
+        }
 
         final boolean hasRequestLogging = journalConfig.request().level() != JournalLevel.NONE || journalConfig.request().statusOverrides() != null;
         final boolean hasResponseLogging = journalConfig.response().level() != JournalLevel.NONE || journalConfig.response().statusOverrides() != null;
@@ -276,38 +316,5 @@ public final class VenturiUndertowHandler implements HttpHandler
                     }
                     ));
         }
-
-        // Close the transaction when the exchange naturally completes
-        exchange.addExchangeCompleteListener((ex, nextListener) ->
-        {
-            final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
-            final long proxyEndTs = tmpProxyEndTs != null ? tmpProxyEndTs : ClockSource.now();
-
-            try
-            {
-                if (gatewayExchange.upstreamResponse() != null)
-                {
-                    journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
-                    journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
-                }
-
-                journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
-
-                final long requestEndTs = ClockSource.now();
-                final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
-                final long proxyStartTs = getLongValueOrMinusOne(exchange, PROXY_START_TS_KEY);
-
-                final long proxyFirstBytesTs = -1; //getLongValueOrMinusOne(exchange, PROXY_FIRST_BYTES_RECEIVED_TS_KEY);
-
-                // IMPORTANT: These are overwritten/handled in the PolicyJournal which is stateful
-                final int requestBodyCrc32 = -1;
-                final int responseBodyCrc32 = -1;
-                final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
-                journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, ex.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
-            } finally
-            {
-                nextListener.proceed();
-            }
-        });
     }
 }

@@ -1,6 +1,5 @@
 package com.ethlo.venturi.vlf;
 
-import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 
 import java.io.IOException;
@@ -85,7 +84,7 @@ public final class VlfJournal implements Journal
        ============================================================ */
 
     @Override
-    public synchronized void clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -97,11 +96,11 @@ public final class VlfJournal implements Journal
         ClientRequest.addReqId(fbb, reqIdOff);
         ClientRequest.addStartLine(fbb, lineOff);
         ClientRequest.addHeaders(fbb, headOff);
-        finishAndWrite(EventPayload.ClientRequest, ClientRequest.endClientRequest(fbb));
+        return finishAndWrite(EventPayload.ClientRequest, ClientRequest.endClientRequest(fbb));
     }
 
     @Override
-    public synchronized void upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -113,11 +112,11 @@ public final class VlfJournal implements Journal
         UpstreamRequest.addReqId(fbb, reqIdOff);
         UpstreamRequest.addStartLine(fbb, lineOff);
         UpstreamRequest.addHeaders(fbb, headOff);
-        finishAndWrite(EventPayload.UpstreamRequest, UpstreamRequest.endUpstreamRequest(fbb));
+        return finishAndWrite(EventPayload.UpstreamRequest, UpstreamRequest.endUpstreamRequest(fbb));
     }
 
     @Override
-    public synchronized void upstreamResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int upstreamResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -130,11 +129,11 @@ public final class VlfJournal implements Journal
         UpstreamResponse.addStatus(fbb, statusCode);
         UpstreamResponse.addStartLine(fbb, lineOff);
         UpstreamResponse.addHeaders(fbb, headOff);
-        finishAndWrite(EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
+        return finishAndWrite(EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
     }
 
     @Override
-    public synchronized void clientResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int clientResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -147,7 +146,7 @@ public final class VlfJournal implements Journal
         ClientResponse.addStatus(fbb, statusCode);
         ClientResponse.addStartLine(fbb, lineOff);
         ClientResponse.addHeaders(fbb, headOff);
-        finishAndWrite(EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));
+        return finishAndWrite(EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));
     }
 
     /* ============================================================
@@ -155,7 +154,7 @@ public final class VlfJournal implements Journal
        ============================================================ */
 
     @Override
-    public synchronized void requestBody(CharSequence reqId, ByteBuffer data)
+    public synchronized int requestBody(CharSequence reqId, ByteBuffer data)
     {
         if (!data.hasRemaining())
         {
@@ -166,11 +165,11 @@ public final class VlfJournal implements Journal
         RequestBody.startRequestBody(fbb);
         RequestBody.addReqId(fbb, reqIdOff);
         RequestBody.addLength(fbb, data.remaining());
-        finishAndWrite(EventPayload.RequestBody, RequestBody.endRequestBody(fbb), data);
+        return finishAndWrite(EventPayload.RequestBody, RequestBody.endRequestBody(fbb), data);
     }
 
     @Override
-    public synchronized void responseBody(CharSequence reqId, ByteBuffer data)
+    public synchronized int responseBody(CharSequence reqId, ByteBuffer data)
     {
         if (!data.hasRemaining())
         {
@@ -181,11 +180,11 @@ public final class VlfJournal implements Journal
         ResponseBody.startResponseBody(fbb);
         ResponseBody.addReqId(fbb, reqIdOff);
         ResponseBody.addLength(fbb, data.remaining());
-        finishAndWrite(EventPayload.ResponseBody, ResponseBody.endResponseBody(fbb), data);
+        return finishAndWrite(EventPayload.ResponseBody, ResponseBody.endResponseBody(fbb), data);
     }
 
     @Override
-    public synchronized void endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
+    public synchronized int endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -206,25 +205,78 @@ public final class VlfJournal implements Journal
         EndExchange.addAttributes(fbb, attrVecOff);
         EndExchange.addRequestCrc32c(fbb, requestCheckSumValue);
         EndExchange.addResponseCrc32c(fbb, responseChecksumValue);
-        finishAndWrite(EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
+        return finishAndWrite(EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
     }
 
     /* ============================================================
        PRIVATE LOGIC & UTILITIES
        ============================================================ */
 
-    private void finishAndWrite(byte type, int offset)
+    private int finishAndWrite(byte type, int offset)
     {
-        finishAndWrite(type, offset, null);
+        return finishAndWrite(type, offset, null);
     }
 
-    private void finishAndWrite(byte type, int offset, ByteBuffer rawData)
+    private int finishAndWrite(byte type, int offset, ByteBuffer rawData)
     {
         JournalEvent.startJournalEvent(fbb);
         JournalEvent.addEventType(fbb, type);
         JournalEvent.addEvent(fbb, offset);
         fbb.finish(JournalEvent.endJournalEvent(fbb));
-        writeEntry(fbb, rawData);
+        return writeEntry(fbb, rawData);
+    }
+
+    private int writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
+    {
+        if (segment == null || segment.byteSize() == 0)
+        {
+            throw new IllegalStateException("Segment not initialized");
+        }
+
+        final ByteBuffer fbBuf = fbBuilder.dataBuffer();
+        final int fbLen = fbBuf.remaining();
+        final MemorySegment fbSource = MemorySegment.ofBuffer(fbBuf);
+
+        final int rawLen = (rawData != null) ? rawData.remaining() : 0;
+
+        // payloadLen: fbLen + rawLen + 2 ints for metadata
+        final int payloadLen = Integer.BYTES + Integer.BYTES + fbLen + rawLen;
+        // totalLen: MAGIC + payloadLen field + payload + CRC footer
+        final int totalLen = Integer.BYTES + Integer.BYTES + payloadLen + Integer.BYTES;
+
+        ensureCapacity(totalLen);
+
+        // Header block
+        putInt(VlfConstants.MAGIC);
+        putInt(payloadLen);
+        putInt(fbLen);
+        putInt(rawLen);
+
+        // CRC Calculation
+        crc.reset();
+        updateInt(crc, payloadLen);
+        updateInt(crc, fbLen);
+        updateInt(crc, rawLen);
+        crc.update(fbBuf.duplicate());
+
+        // Copy FlatBuffer
+        MemorySegment.copy(fbSource, 0, segment, position, fbLen);
+        position += fbLen;
+
+        // Handle Body Chunks
+        if (rawLen > 0)
+        {
+            final MemorySegment rawSource = MemorySegment.ofBuffer(rawData);
+            crc.update(rawData.duplicate());
+            MemorySegment.copy(rawSource, 0, segment, position, rawLen);
+            position += rawLen;
+            rawData.position(rawData.position() + rawLen);
+        }
+
+        // Write CRC footer
+        putInt((int) crc.getValue());
+
+        return totalLen; // Returning the total binary size of the VLF entry
     }
 
     private int buildHeadersVector(GatewayHeaders headers)
@@ -389,69 +441,6 @@ public final class VlfJournal implements Journal
         }
     }
 
-    private void writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
-    {
-        if (segment == null || segment.byteSize() == 0)
-        {
-            throw new IllegalStateException("Segment not initialized");
-        }
-
-        // 1. Prepare FlatBuffer source
-        final ByteBuffer fbBuf = fbBuilder.dataBuffer();
-        final int fbLen = fbBuf.remaining();
-        // In Java, ofBuffer creates a segment starting at the buffer's current position
-        final MemorySegment fbSource = MemorySegment.ofBuffer(fbBuf);
-
-        // 2. Prepare Raw source
-        final int rawLen = (rawData != null) ? rawData.remaining() : 0;
-
-        // 3. Calculate lengths
-        final int payloadLen = Integer.BYTES + Integer.BYTES + fbLen + rawLen;
-        final int totalLen = Integer.BYTES + Integer.BYTES + payloadLen + Integer.BYTES;
-
-        ensureCapacity(totalLen);
-
-        // 4. Header block
-        putInt(VlfConstants.MAGIC);
-        putInt(payloadLen);
-        putInt(fbLen);
-        putInt(rawLen);
-
-        // 5. CRC Calculation
-        crc.reset();
-        updateInt(crc, payloadLen);
-        updateInt(crc, fbLen);
-        updateInt(crc, rawLen);
-
-        // FlatBufferBuilder.dataBuffer() returns a buffer positioned at the start of data
-        crc.update(fbBuf.duplicate());
-
-        // 6. Copy FlatBuffer data to segment
-        // Since fbSource starts AT the buffer's position, the source offset is 0
-        MemorySegment.copy(fbSource, 0, segment, position, fbLen);
-        position += fbLen;
-
-        // 7. Handle optional Raw data (Body chunks)
-        if (rawLen > 0)
-        {
-            // rawSource also starts AT the rawData's current position
-            final MemorySegment rawSource = MemorySegment.ofBuffer(rawData);
-
-            crc.update(rawData.duplicate());
-
-            // Source offset is 0 because the segment is a slice of the remaining bytes
-            MemorySegment.copy(rawSource, 0, segment, position, rawLen);
-
-            position += rawLen;
-
-            // Advance the original ByteBuffer position
-            rawData.position(rawData.position() + rawLen);
-        }
-
-        // 8. Write CRC footer
-        putInt((int) crc.getValue());
-    }
-
     private long remaining()
     {
         return segment.byteSize() - position;
@@ -471,12 +460,6 @@ public final class VlfJournal implements Journal
         putShort(VlfConstants.VERSION_1);
         putLong(System.currentTimeMillis());
         position = VlfConstants.PREAMBLE_SIZE;
-    }
-
-    private void putByte(byte v)
-    {
-        segment.set(JAVA_BYTE, position, v);
-        position += 1;
     }
 
     private void putInt(int v)

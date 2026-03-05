@@ -40,9 +40,8 @@ public final class VenturiLoader
         this.predicateRegistry = new PredicateRegistry(mapper);
     }
 
-    public void load(Path yamlFile, RouteRegistry routeRegistry)
+    public void load(RoutesConfig config, RouteRegistry routeRegistry)
     {
-        final RoutesConfig config = load(yamlFile, RoutesConfig.class);
         final ValidationResult validationResult = validate(config);
         validationResult.throwIfInvalid();
         final List<GatewayRoute> routes = config.routes.stream()

@@ -14,9 +14,7 @@ public class FastTerminationGatewayResponse implements TerminationGatewayRespons
 
     public FastTerminationGatewayResponse(final int status, final String contentType, final ByteBuffer body)
     {
-        this.body = body;
-        this.headers = contentTypeHeaders(contentType);
-        this.status = status;
+        this(contentTypeHeaders(contentType), status, body);
     }
 
     public FastTerminationGatewayResponse(final GatewayHeaders headers, final int status, final ByteBuffer body)
