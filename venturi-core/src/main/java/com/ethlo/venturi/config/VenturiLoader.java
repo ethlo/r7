@@ -47,17 +47,23 @@ public final class VenturiLoader
         final List<GatewayRoute> routes = config.routes.stream()
                 .map(def -> {
                     final List<GatewayFilter> instantiatedFilters = new ArrayList<>();
-                    for (final FilterDefinition filterDef : def.filters())
+                    if (def.filters() != null)
                     {
-                        final GatewayFilterFactory<?, ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
-                        final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
-                        c.validate(validationResult);
+                        for (final FilterDefinition filterDef : def.filters())
+                        {
+                            final GatewayFilterFactory<?, ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
+                            final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
+                            c.validate(validationResult);
 
-                        instantiatedFilters.add(typedFactory.create(c));
+                            instantiatedFilters.add(typedFactory.create(c));
+                        }
                     }
 
                     // Validate the structure and the plugin names
-                    def.match().validateTree(validationResult, predicateRegistry);
+                    if (def.match() != null)
+                    {
+                        def.match().validateTree(validationResult, predicateRegistry);
+                    }
 
                     final GatewayPredicate predicate = def.match().build(predicateRegistry);
 

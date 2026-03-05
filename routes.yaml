@@ -36,6 +36,23 @@ routes:
       - CorrelationIdHeader
       - RequireAuthorizationHeader
 
+  - id: ws-test
+    upstream:
+     targets:
+       - url: http://127.0.0.1:8080
+    match:
+       PathStartsWith:
+         prefix: /ws
+    journal:
+      request:
+        level: METADATA
+        status_overrides:
+          5xx: HEADERS
+      response:
+        level: HEADERS
+    filters:
+      - SimpleMetrics
+
   - id: home-assistant
     upstream:
       targets:
