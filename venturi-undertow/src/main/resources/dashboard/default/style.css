@@ -1,4 +1,5 @@
 :root {
+    --base-size: 14px;
     --bg: #0a0a0b;
     --fg: #e4e4e7;       /* Soft white for primary text */
     --accent: #ff5e00;   /* Racing Orange */
@@ -8,13 +9,17 @@
     --panel: #111112;
 }
 
+html {
+    font-size: var(--base-size);
+}
+
 body {
     font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
     background: var(--bg);
     color: var(--fg);
     margin: 0;
     padding: 2.5rem;
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 400; /* Removed bold entirely */
     -webkit-font-smoothing: antialiased;
 }
@@ -45,12 +50,12 @@ h1 span { color: var(--accent); }
 
 .sys-vitals {
     color: var(--dim);
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     margin-top: 0.5rem;
 }
 
 .sys-info {
-    font-size: 0.8rem;
+    font-size: 0.9rem;
     color: var(--dim);
 }
 
@@ -64,7 +69,7 @@ table {
 
 th {
     text-align: left;
-    font-size: 0.75rem;
+    font-size: 0.90rem;
     color: var(--dim);
     padding: 0.8rem 1rem;
     border-bottom: 1px solid var(--border);
@@ -101,7 +106,7 @@ tr.total-row td {
 
 /* Typography Hierarchy */
 .sub {
-    font-size: 0.7rem;
+    font-size: 0.85rem;
     color: var(--dim);
     margin-top: 4px;
 }
@@ -229,7 +234,7 @@ pre {
     border: 1px solid var(--border);
     color: var(--dim);
     font-family: inherit;
-    font-size: 0.6rem;
+    font-size: 0.8rem;
     padding: 4px 8px;
     cursor: pointer;
     margin-top: 8px;
@@ -262,3 +267,9 @@ body.light-mode .journal-active-none { background: rgba(113, 113, 122, 0.1); col
 body.light-mode .journal-active-metadata { background: rgba(14, 165, 233, 0.1); color: #0284c7; border-color: #0284c7; }
 body.light-mode .journal-active-headers { background: rgba(245, 158, 11, 0.1); color: #d97706; border-color: #d97706; }
 body.light-mode .journal-active-full { background: rgba(239, 68, 68, 0.1); color: #dc2626; border-color: #dc2626; }
+
+@media (min-width: 1920px) {
+    :root {
+        --base-size: 18px;
+    }
+}

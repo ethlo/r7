@@ -148,8 +148,8 @@ function renderTable(data) {
             </td>
             <td>
                 <div>SUM: ${totals.total.toLocaleString()}</div>
-                <div class="sub">2XX: ${totals.st_2xx.toLocaleString()} / 3XX: ${totals.st_3xx.toLocaleString()}</div>
-                <div class="sub">4XX: <span style="${t4xxStyle}">${totals.err_4xx.toLocaleString()}</span> / 5XX: <span style="${t5xxStyle}">${totals.err_5xx.toLocaleString()}</span></div>
+                <div class="sub">2xx: ${totals.st_2xx.toLocaleString()} / 3xx: ${totals.st_3xx.toLocaleString()}</div>
+                <div class="sub">4xx: <span style="${t4xxStyle}">${totals.err_4xx.toLocaleString()}</span> / 5xx: <span style="${t5xxStyle}">${totals.err_5xx.toLocaleString()}</span></div>
             </td>
             <td>
                 <div>SUM: ${formatBytes(totals.in_t, uTotal)} / ${formatBytes(totals.out_t, uTotal)}</div>
@@ -189,8 +189,8 @@ function renderTable(data) {
             </td>
             <td>
                 <div>SUM: ${s.total.toLocaleString()}</div>
-                <div class="sub">2XX: ${st2xx.toLocaleString()} / 3XX: ${st3xx.toLocaleString()}</div>
-                <div class="sub">4XX: <span style="${r4xxStyle}">${err4xx.toLocaleString()}</span> / 5XX: <span style="${r5xxStyle}">${err5xx.toLocaleString()}</span></div>
+                <div class="sub">2xx: ${st2xx.toLocaleString()} / 3xx: ${st3xx.toLocaleString()}</div>
+                <div class="sub">4xx: <span style="${r4xxStyle}">${err4xx.toLocaleString()}</span> / 5xx: <span style="${r5xxStyle}">${err5xx.toLocaleString()}</span></div>
             </td>
             <td>
                 <div>SUM: ${formatBytes(t.ingress.total_bytes, uRoute)} / ${formatBytes(t.egress.total_bytes, uRoute)}</div>
