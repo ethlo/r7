@@ -29,8 +29,9 @@ import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
 import com.ethlo.venturi.status.MetricsRegistry;
 import com.ethlo.venturi.status.SimpleMetricsFactory;
 import com.ethlo.venturi.status.StatusHandler;
-import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.status.TrafficMetricsHandler;
+import com.ethlo.venturi.status.VersionProvider;
+import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.CharSequenceUtil;
 import com.ethlo.venturi.util.SystemUtil;
 import com.ethlo.venturi.util.constants.HttpStatuses;
@@ -142,7 +143,7 @@ public final class VenturiMain
         server.start();
 
         final Duration uptime = SystemUtil.getUptime();
-        logger.info("🚀 Started in {}ms, listening at {}", uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+        logger.info("🚀 Started ethlo R7 version {} in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
     private static void setupTestBackEndForProxy(HttpHandler httpHandler)

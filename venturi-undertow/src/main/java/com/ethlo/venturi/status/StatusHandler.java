@@ -133,9 +133,10 @@ public final class StatusHandler implements HttpHandler
                 gf.getAvgLatencyNanos()
         );
 
-        final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
+        final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(), gf.getLastActiveTime(),
                 gf.getStatus2xxRequests(), gf.getStatus3xxRequests(), gf.getStatus4xxRequests(), gf.getStatus5xxRequests(),
-                gf.getUpstreamRequests());
+                gf.getUpstreamRequests()
+        );
 
         return new RouteMetricsDto(gfEntry.getKey(), stats, traffic, performance);
     }
@@ -145,6 +146,7 @@ public final class StatusHandler implements HttpHandler
         final Map<String, Object> root = new LinkedHashMap<>();
 
         root.put("system", Map.of(
+                        "version", VersionProvider.getVersion(),
                         "uptime", SystemUtil.getUptime(),
                         "started_at", SystemUtil.getStartTime()
                 )

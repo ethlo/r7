@@ -82,14 +82,10 @@ public final class TrafficMetricsHandler implements HttpHandler
         );
 
         exchange.addRequestWrapper((final ConduitFactory<StreamSourceConduit> factory, final HttpServerExchange ex) ->
-        {
-            return new CountingSourceConduit(factory.create(), requestBodyBytes);
-        });
+                new CountingSourceConduit(factory.create(), requestBodyBytes));
 
         exchange.addResponseWrapper((final ConduitFactory<StreamSinkConduit> factory, final HttpServerExchange ex) ->
-        {
-            return new CountingSinkConduit(factory.create(), responseBodyBytes);
-        });
+                new CountingSinkConduit(factory.create(), responseBodyBytes));
 
         this.next.handleRequest(exchange);
     }

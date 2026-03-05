@@ -1,5 +1,6 @@
 package com.ethlo.venturi.status;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 import com.ethlo.venturi.api.BeforeCommitGatewayExchange;
@@ -32,6 +33,8 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
 
     public static final class GF implements BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, FinishedGatewayFilter, ShortInfo
     {
+        private final AtomicLong lastActiveTime = new AtomicLong(0L);
+
         private final LongAdder totalRequests = new LongAdder();
         private final LongAdder total2xxRequests = new LongAdder();
         private final LongAdder total3xxRequests = new LongAdder();
@@ -52,7 +55,8 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         @Override
         public void beforeCommit(final BeforeCommitGatewayExchange exchange)
         {
-            totalRequests.increment();
+            this.lastActiveTime.lazySet(System.currentTimeMillis());
+            this.totalRequests.increment();
             this.activeRequests.increment();
         }
 
@@ -164,6 +168,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         public long getStatus5xxRequests()
         {
             return total5xxRequests.sum();
+        }
+
+        public long getLastActiveTime()
+        {
+            return lastActiveTime.get();
         }
     }
 }

@@ -151,3 +151,114 @@ pre {
 }
 
 .tree-view .leaf { margin-left: 10px; margin-top: 4px; }
+
+/* Footer Styling */
+.app-footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    text-align: right;
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+#sys-version {
+    color: var(--fg); /* Slightly brighter for the actual version number */
+    font-weight: 500;
+}
+
+/* Forensic Journal Policy Tags */
+.journal-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    background: #09090b;
+    padding: 1rem;
+    border: 1px solid var(--border);
+}
+
+.journal-label {
+    width: 45px;
+    color: var(--dim);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.journal-tag {
+    font-size: 0.65rem;
+    padding: 4px 8px;
+    margin-right: 8px;
+    color: #444; /* Dimmed out inactive state */
+    border: 1px solid #222;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease;
+}
+
+/* Active States (Escalating in visual weight) */
+.journal-active-none {
+    color: var(--dim);
+    border-color: var(--dim);
+    background: rgba(161, 161, 170, 0.1);
+}
+
+.journal-active-metadata {
+    color: #4facfe; /* Blue */
+    border-color: #4facfe;
+    background: rgba(79, 172, 254, 0.1);
+}
+
+.journal-active-headers {
+    color: #ffca28; /* Warning Yellow */
+    border-color: #ffca28;
+    background: rgba(255, 202, 40, 0.1);
+}
+
+.journal-active-full {
+    color: #ff4444; /* Critical Red */
+    border-color: #ff4444;
+    background: rgba(255, 68, 68, 0.1);
+}
+
+
+/* Theme Toggle Button */
+.theme-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 0.6rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    margin-top: 8px;
+    text-transform: uppercase;
+    border-radius: 3px;
+    transition: all 0.2s;
+}
+
+.theme-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+/* Light Mode Override Class */
+body.light-mode {
+    --bg: #fafafa;
+    --fg: #18181b;
+    --accent: #ea580c;
+    --dim: #71717a;
+    --border: #e4e4e7;
+    --row-hover: #f4f4f5;
+    --panel: #ffffff;
+}
+
+/* Override hardcoded dark elements when light mode is active */
+body.light-mode pre { background: #f4f4f5; border-color: var(--border); }
+body.light-mode .journal-row { background: #f4f4f5; }
+body.light-mode tr.total-row td { background: #f4f4f5 !important; }
+body.light-mode .journal-active-none { background: rgba(113, 113, 122, 0.1); color: var(--dim); border-color: var(--dim); }
+body.light-mode .journal-active-metadata { background: rgba(14, 165, 233, 0.1); color: #0284c7; border-color: #0284c7; }
+body.light-mode .journal-active-headers { background: rgba(245, 158, 11, 0.1); color: #d97706; border-color: #d97706; }
+body.light-mode .journal-active-full { background: rgba(239, 68, 68, 0.1); color: #dc2626; border-color: #dc2626; }

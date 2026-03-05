@@ -6,17 +6,30 @@ const mainContainer = document.getElementById('main-container');
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
-/**
- * Determines the highest necessary unit index (0-4) for a given byte value.
- */
+// Theme Toggle Logic
+const themeBtn = document.getElementById('theme-toggle');
+
+// Check local storage for saved preference on load
+if (localStorage.getItem('theme') === 'light') {
+    document.body.classList.add('light-mode');
+}
+
+themeBtn.addEventListener('click', () => {
+    document.body.classList.toggle('light-mode');
+
+    // Save preference to persist across the 1-second update cycle and page reloads
+    if (document.body.classList.contains('light-mode')) {
+        localStorage.setItem('theme', 'light');
+    } else {
+        localStorage.setItem('theme', 'dark');
+    }
+});
+
 function getUnitIndex(b) {
     if (b === 0 || b == null) return 0;
     return Math.min(Math.floor(Math.log(b) / Math.log(1024)), UNITS.length - 1);
 }
 
-/**
- * Formats bytes. If forceUnitIndex is provided, it locks the output to that specific unit.
- */
 function formatBytes(b, forceUnitIndex = -1) {
     const i = forceUnitIndex >= 0 ? forceUnitIndex : getUnitIndex(b);
     if (b === 0 || b == null) {
@@ -38,6 +51,24 @@ function formatUptime(iso) {
     return `${d}${h}:${m}:${s}`;
 }
 
+/**
+ * Converts an epoch timestamp into a relative infrastructure-style string.
+ */
+function timeAgo(ts) {
+    if (!ts || ts === 0) return 'NEVER';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 2) return 'NOW';
+    if (diff < 60) return `${diff}s AGO`;
+
+    const m = Math.floor(diff / 60);
+    if (m < 60) return `${m}m AGO`;
+
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h AGO`;
+
+    return `${Math.floor(h / 24)}d AGO`;
+}
+
 document.addEventListener('click', (e) => {
     if (panel.classList.contains('open') &&
         !panel.contains(e.target) &&
@@ -56,10 +87,13 @@ async function update() {
         const res = await fetch(window.location.href, {headers: {'Accept': 'application/json'}});
         const data = await res.json();
 
-        const version = data.system.version || 'Unknown';
-        // Free space dynamically calculates its own unit since forceUnitIndex is not passed
+        // Update Header Vitals
         const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
-        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | VERSION: ${version} | DISK: ${disk} FREE`;
+        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE`;
+
+        // 2. Update Footer Version
+        const version = data.system.version || 'Unknown';
+        document.getElementById('sys-version').innerText = version;
 
         timeEl.innerHTML = `<span class="status-indicator" style="color: #00ff88;">●</span>ONLINE`;
 
@@ -85,6 +119,7 @@ function renderTable(data) {
         err_4xx: acc.err_4xx + (r.request_statistics.status_4xx || 0),
         err_5xx: acc.err_5xx + (r.request_statistics.status_5xx || 0),
         active: acc.active + (r.request_statistics.active || 0),
+        last_active: Math.max(acc.last_active, (r.request_statistics.last_active_ts || 0)),
         in_h: acc.in_h + r.traffic_flow.ingress.header_bytes,
         in_b: acc.in_b + r.traffic_flow.ingress.body_bytes,
         in_t: acc.in_t + r.traffic_flow.ingress.total_bytes,
@@ -94,24 +129,27 @@ function renderTable(data) {
         journal: acc.journal + r.traffic_flow.journal_storage_bytes,
         latency: acc.latency + (r.performance_telemetry.average_latency_nanoseconds * (r.request_statistics.total || 0))
     }), {
-        total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0,
+        total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0, last_active: 0,
         in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0, latency: 0
     });
 
     const globalAvgLat = totals.total === 0 ? 0 : (totals.latency / totals.total / 1000000).toFixed(3);
-
-    // Lock unit for the totals row based on the largest metric
     const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
+
+    // Conditional Error Styles for Totals
+    const t4xxStyle = totals.err_4xx > 0 ? 'color: #ffca28; font-weight: 600;' : '';
+    const t5xxStyle = totals.err_5xx > 0 ? 'color: #ff4444; font-weight: 600;' : '';
 
     let html = `
         <tr class="total-row">
             <td>
                 <div>SYSTEM TOTALS</div>
+                <div class="sub">LAST: ${timeAgo(totals.last_active)}</div>
             </td>
             <td>
                 <div>SUM: ${totals.total.toLocaleString()}</div>
                 <div class="sub">2XX: ${totals.st_2xx.toLocaleString()} / 3XX: ${totals.st_3xx.toLocaleString()}</div>
-                <div class="sub">4XX: ${totals.err_4xx.toLocaleString()} / 5XX: ${totals.err_5xx.toLocaleString()}</div>
+                <div class="sub">4XX: <span style="${t4xxStyle}">${totals.err_4xx.toLocaleString()}</span> / 5XX: <span style="${t5xxStyle}">${totals.err_5xx.toLocaleString()}</span></div>
             </td>
             <td>
                 <div>SUM: ${formatBytes(totals.in_t, uTotal)} / ${formatBytes(totals.out_t, uTotal)}</div>
@@ -121,7 +159,9 @@ function renderTable(data) {
             <td>
                 <div>${formatBytes(totals.journal, uTotal)}</div>
             </td>
-            <td><div>${totals.active}</div></td>
+            <td>
+                <div>${totals.active}</div>
+            </td>
             <td><div>${globalAvgLat}ms</div></td>
         </tr>`;
 
@@ -135,18 +175,22 @@ function renderTable(data) {
         const err4xx = s.status_4xx || 0;
         const err5xx = s.status_5xx || 0;
 
-        // Lock unit for the individual route row based on its largest metric
         const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
+
+        // Conditional Error Styles for Routes
+        const r4xxStyle = err4xx > 0 ? 'color: #ffca28; font-weight: 600;' : '';
+        const r5xxStyle = err5xx > 0 ? 'color: #ff4444; font-weight: 600;' : '';
 
         html += `
         <tr class="clickable-row" onclick="showDetails('${r.id}')">
             <td>
                 <div>${r.id}</div>
+                <div class="sub">LAST: ${timeAgo(s.last_active_ts)}</div>
             </td>
             <td>
                 <div>SUM: ${s.total.toLocaleString()}</div>
                 <div class="sub">2XX: ${st2xx.toLocaleString()} / 3XX: ${st3xx.toLocaleString()}</div>
-                <div class="sub">4XX: ${err4xx.toLocaleString()} / 5XX: ${err5xx.toLocaleString()}</div>
+                <div class="sub">4XX: <span style="${r4xxStyle}">${err4xx.toLocaleString()}</span> / 5XX: <span style="${r5xxStyle}">${err5xx.toLocaleString()}</span></div>
             </td>
             <td>
                 <div>SUM: ${formatBytes(t.ingress.total_bytes, uRoute)} / ${formatBytes(t.egress.total_bytes, uRoute)}</div>
@@ -156,7 +200,9 @@ function renderTable(data) {
             <td>
                 <div>${formatBytes(t.journal_storage_bytes, uRoute)}</div>
             </td>
-            <td><div>${s.active}</div></td>
+            <td>
+                <div>${s.active}</div>
+            </td>
             <td><div>${(p.average_latency_nanoseconds / 1000000).toFixed(3)}ms</div></td>
         </tr>`;
     });
@@ -171,10 +217,9 @@ function showDetails(routeId) {
     document.getElementById('route-title').innerText = `${routeId} [INSPECT]`;
     document.getElementById('config-upstream').innerText = config.destination || 'N/A';
 
-    document.getElementById('config-journal').innerHTML = `
-        <div class="leaf">REQ: ${config.journal?.request || 'NONE'}</div>
-        <div class="leaf">RES: ${config.journal?.response || 'NONE'}</div>
-    `;
+    document.getElementById('config-journal').innerHTML =
+        buildJournalTags('REQ', config.journal?.request || 'NONE') +
+        buildJournalTags('RES', config.journal?.response || 'NONE');
 
     let fHtml = '<div class="tree-view">';
     if (config.filters && config.filters.length > 0) {
@@ -189,6 +234,19 @@ function showDetails(routeId) {
 
     panel.classList.add('open');
     mainContainer.style.marginRight = '550px';
+}
+
+function buildJournalTags(direction, activeLevel) {
+    const levels = ['NONE', 'METADATA', 'HEADERS', 'FULL'];
+    let html = `<div class="journal-row"><span class="journal-label">${direction}</span>`;
+
+    levels.forEach(lvl => {
+        const activeClass = lvl === activeLevel ? ` journal-active-${lvl.toLowerCase()}` : '';
+        html += `<span class="journal-tag${activeClass}">${lvl}</span>`;
+    });
+
+    html += `</div>`;
+    return html;
 }
 
 setInterval(update, 1000);
