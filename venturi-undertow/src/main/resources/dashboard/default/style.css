@@ -3,7 +3,8 @@
     --bg: #0a0a0b;
     --fg: #e4e4e7;       /* Soft white for primary text */
     --accent: #ff5e00;   /* Racing Orange */
-    --dim: #a1a1aa;      /* Brightened for actual readability */
+    --dim: #a1a1aa;
+    --brighter: #efeef1;
     --border: #27272a;
     --row-hover: #18181b;
     --panel: #111112;
@@ -111,6 +112,12 @@ tr.total-row td {
     margin-top: 4px;
 }
 
+.sum {
+    font-size: 0.85rem;
+    color: var(--brighter);
+    margin-top: 4px;
+}
+
 /* Sidebar Panel */
 #details-panel {
     position: fixed;
@@ -203,28 +210,29 @@ pre {
 }
 
 /* Active States (Escalating in visual weight) */
+/* Escalate data depth using a "cool" spectrum, avoiding alert colors */
 .journal-active-none {
     color: var(--dim);
     border-color: var(--dim);
-    background: rgba(161, 161, 170, 0.1);
+    background: rgba(161, 161, 170, 0.1); /* Neutral Zinc */
 }
 
 .journal-active-metadata {
-    color: #4facfe; /* Blue */
-    border-color: #4facfe;
-    background: rgba(79, 172, 254, 0.1);
+    color: #2dd4bf; /* Teal - Informative, lightweight data */
+    border-color: #2dd4bf;
+    background: rgba(45, 212, 191, 0.1);
 }
 
 .journal-active-headers {
-    color: #ffca28; /* Warning Yellow */
-    border-color: #ffca28;
-    background: rgba(255, 202, 40, 0.1);
+    color: #3b82f6; /* Blue - Standard network data density */
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
 }
 
 .journal-active-full {
-    color: #ff4444; /* Critical Red */
-    border-color: #ff4444;
-    background: rgba(255, 68, 68, 0.1);
+    color: #a855f7; /* Purple - Deep inspection, heavy payload */
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.1);
 }
 
 
@@ -253,6 +261,7 @@ body.light-mode {
     --bg: #fafafa;
     --fg: #18181b;
     --accent: #ea580c;
+    --brighter: #222;
     --dim: #71717a;
     --border: #e4e4e7;
     --row-hover: #f4f4f5;

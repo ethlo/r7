@@ -14,6 +14,7 @@ if (localStorage.getItem('theme') === 'light') {
     document.body.classList.add('light-mode');
 }
 
+/*
 themeBtn.addEventListener('click', () => {
     document.body.classList.toggle('light-mode');
 
@@ -24,7 +25,7 @@ themeBtn.addEventListener('click', () => {
         localStorage.setItem('theme', 'dark');
     }
 });
-
+*/
 function getUnitIndex(b) {
     if (b === 0 || b == null) return 0;
     return Math.min(Math.floor(Math.log(b) / Math.log(1024)), UNITS.length - 1);
@@ -143,16 +144,16 @@ function renderTable(data) {
     let html = `
         <tr class="total-row">
             <td>
-                <div>SYSTEM TOTALS</div>
+                <div class="sum">SYSTEM TOTALS</div>
                 <div class="sub">LAST: ${timeAgo(totals.last_active)}</div>
             </td>
             <td>
-                <div>SUM: ${totals.total.toLocaleString()}</div>
+                <div class="sum">SUM: ${totals.total.toLocaleString()}</div>
                 <div class="sub">2xx: ${totals.st_2xx.toLocaleString()} / 3xx: ${totals.st_3xx.toLocaleString()}</div>
                 <div class="sub">4xx: <span style="${t4xxStyle}">${totals.err_4xx.toLocaleString()}</span> / 5xx: <span style="${t5xxStyle}">${totals.err_5xx.toLocaleString()}</span></div>
             </td>
             <td>
-                <div>SUM: ${formatBytes(totals.in_t, uTotal)} / ${formatBytes(totals.out_t, uTotal)}</div>
+                <div class="sum">SUM: ${formatBytes(totals.in_t, uTotal)} / ${formatBytes(totals.out_t, uTotal)}</div>
                 <div class="sub">HDR: ${formatBytes(totals.in_h, uTotal)} / ${formatBytes(totals.out_h, uTotal)}</div>
                 <div class="sub">BDY: ${formatBytes(totals.in_b, uTotal)} / ${formatBytes(totals.out_b, uTotal)}</div>
             </td>
@@ -184,21 +185,21 @@ function renderTable(data) {
         html += `
         <tr class="clickable-row" onclick="showDetails('${r.id}')">
             <td>
-                <div>${r.id}</div>
+                <div class="sum">${r.id}</div>
                 <div class="sub">LAST: ${timeAgo(s.last_active_ts)}</div>
             </td>
             <td>
-                <div>SUM: ${s.total.toLocaleString()}</div>
+                <div class="sum">SUM: ${s.total.toLocaleString()}</div>
                 <div class="sub">2xx: ${st2xx.toLocaleString()} / 3xx: ${st3xx.toLocaleString()}</div>
                 <div class="sub">4xx: <span style="${r4xxStyle}">${err4xx.toLocaleString()}</span> / 5xx: <span style="${r5xxStyle}">${err5xx.toLocaleString()}</span></div>
             </td>
             <td>
-                <div>SUM: ${formatBytes(t.ingress.total_bytes, uRoute)} / ${formatBytes(t.egress.total_bytes, uRoute)}</div>
+                <div class="sum">SUM: ${formatBytes(t.ingress.total_bytes, uRoute)} / ${formatBytes(t.egress.total_bytes, uRoute)}</div>
                 <div class="sub">HDR: ${formatBytes(t.ingress.header_bytes, uRoute)} / ${formatBytes(t.egress.header_bytes, uRoute)}</div>
                 <div class="sub">BDY: ${formatBytes(t.ingress.body_bytes, uRoute)} / ${formatBytes(t.egress.body_bytes, uRoute)}</div>
             </td>
             <td>
-                <div>${formatBytes(t.journal_storage_bytes, uRoute)}</div>
+                <div class="sum">${formatBytes(t.journal_storage_bytes, uRoute)}</div>
             </td>
             <td>
                 <div>${s.active}</div>
@@ -214,7 +215,7 @@ function showDetails(routeId) {
     const config = window.currentConfigs[routeId];
     if (!config) return;
 
-    document.getElementById('route-title').innerText = `${routeId} [INSPECT]`;
+    document.getElementById('route-title').innerText = `${routeId}`;
     document.getElementById('config-upstream').innerText = config.destination || 'N/A';
 
     document.getElementById('config-journal').innerHTML =
