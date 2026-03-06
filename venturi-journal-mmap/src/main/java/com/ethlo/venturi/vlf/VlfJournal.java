@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -14,6 +15,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
+
+import com.ethlo.venturi.api.IpSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,18 +87,21 @@ public final class VlfJournal implements Journal
        ============================================================ */
 
     @Override
-    public synchronized int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress inetAddress, IpSource ipSource)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
         int headOff = buildHeadersVector(headers);
+        int remoteAddressOff = fbb.createByteVector(inetAddress.getAddress());
 
         ClientRequest.startClientRequest(fbb);
         ClientRequest.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
         ClientRequest.addReqId(fbb, reqIdOff);
         ClientRequest.addStartLine(fbb, lineOff);
         ClientRequest.addHeaders(fbb, headOff);
+        ClientRequest.addClientIp(fbb, remoteAddressOff);
+        ClientRequest.addClientIpSource(fbb, ipSource.byteValue());
         return finishAndWrite(EventPayload.ClientRequest, ClientRequest.endClientRequest(fbb));
     }
 

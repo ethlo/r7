@@ -3,6 +3,7 @@ package com.ethlo.venturi;
 import static java.nio.ByteBuffer.wrap;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +13,8 @@ import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
+
+import com.ethlo.venturi.api.IpSource;
 
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
@@ -37,6 +40,7 @@ public final class VlfPerformanceBenchmarkTest
         final int iterations = 2_000_000;
         final Path tempDir = Files.createTempDirectory("vlf-bench");
 
+        final InetAddress localhost = InetAddress.getLocalHost();
         try
         {
             logger.info("Setting up benchmark in {}", tempDir);
@@ -65,7 +69,7 @@ public final class VlfPerformanceBenchmarkTest
                             for (int i = 0; i < iterations; i++)
                             {
                                 final String id = "req" + i;
-                                journal.clientRequest(JournalLevel.FULL, id, startLine, headers);
+                                journal.clientRequest(JournalLevel.FULL, id, startLine, headers, localhost, IpSource.SOCKET);
                                 journal.upstreamRequest(JournalLevel.FULL, id, startLine, headers);
                                 journal.requestBody(id, requestBody.clear());
                                 journal.responseBody(id, responseBody.clear());

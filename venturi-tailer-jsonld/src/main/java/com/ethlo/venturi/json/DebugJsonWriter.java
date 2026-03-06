@@ -2,6 +2,7 @@ package com.ethlo.venturi.json;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -62,6 +63,8 @@ public class DebugJsonWriter implements ExchangeCompletionListener
 
             // --- Metadata ---
             generator.writeStringProperty("gateway_request_id", exchange.getRequestId().toString());
+            generator.writeStringProperty("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
+            generator.writeStringProperty("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
             generator.writeStringProperty("start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientStartTs())));
             writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
             generator.writeStringProperty("end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientEndTs())));

@@ -1,14 +1,16 @@
 package com.ethlo.venturi.vlf;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.IpSource;
 import com.ethlo.venturi.journal.api.JournalLevel;
 
 public interface JournalEventListener
 {
-    void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
+    void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource);
 
     void onUpstreamRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
 

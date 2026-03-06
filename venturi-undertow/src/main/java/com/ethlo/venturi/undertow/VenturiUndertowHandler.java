@@ -13,8 +13,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.ethlo.venturi.api.ClientRequestGatewayFilter;
-
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
 import org.xnio.ssl.XnioSsl;
@@ -22,6 +20,7 @@ import org.xnio.ssl.XnioSsl;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientRequestGatewayFilter;
 import com.ethlo.venturi.api.FinishedGatewayFilter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayFilter;
@@ -65,8 +64,8 @@ public final class VenturiUndertowHandler implements HttpHandler
     public static final AttachmentKey<UndertowGatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(UndertowGatewayExchange.class);
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
-    private static final CharSequence ROUTE_ID_KEY = "route_id";
     static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
+    private static final CharSequence ROUTE_ID_KEY = "route_id";
     private final Map<CharSequence, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -168,7 +167,7 @@ public final class VenturiUndertowHandler implements HttpHandler
     private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final GatewayRoute route)
     {
         final CharSequence requestId = requestIdGenerator.generate();
-        final GatewayRequest requestCopy = new ImmutableGatewayRequest(new ImmutableHeaderSnapshot(exchange.getRequestHeaders()), exchange.getRequestPath(), exchange.getRequestURI(), exchange.getRequestMethod().toString(), exchange.getDecodedQueryString());
+        final GatewayRequest requestCopy = new ImmutableGatewayRequest(new ImmutableHeaderSnapshot(exchange.getRequestHeaders()), exchange.getRequestPath(), exchange.getRequestURI(), exchange.getRequestMethod().toString(), exchange.getDecodedQueryString(), incomingRequest.remoteAddress(), incomingRequest.getRemoteAddressSource());
         final MutableGatewayResponse upstreamResponse = new UndertowGatewayResponse(exchange);
         final GatewayResponse responseCopy = null;
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
@@ -314,7 +313,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
 
         final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(gatewayExchange.clientRequest());
-        journal.clientRequest(JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.clientRequest().headers());
+        journal.clientRequest(JournalLevel.NONE, requestId, reqStartLine, gatewayExchange.clientRequest().headers(), gatewayExchange.clientRequest().remoteAddress(), ((ImmutableGatewayRequest) gatewayExchange.clientRequest()).ipSource());
 
         if (isWebSocket)
         {

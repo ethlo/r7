@@ -1,7 +1,10 @@
 package com.ethlo.venturi.vlf;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32C;
+
+import com.ethlo.venturi.api.IpSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,9 +33,9 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers)
+    public void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource)
     {
-        getOrCreate(reqId).setClientRequest(startLine, level, headers);
+        getOrCreate(reqId).setClientRequest(startLine, level, headers, remoteAddress, ipSource);
     }
 
     @Override

@@ -1,11 +1,13 @@
 package com.ethlo.venturi.journal.api;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.IpSource;
 
 /**
  * Stateful container for a single request/response lifecycle.
@@ -51,21 +53,21 @@ public final class JournalExchange
     private long requestBodyBytes;
     private long responseHeaderBytes;
     private long responseBodyBytes;
+    private InetAddress remoteAddress;
+    private IpSource remoteAddressSource;
 
     public JournalExchange(CharSequence requestId)
     {
         this.requestId = requestId;
     }
 
-    /* ============================================================
-       METADATA SETTERS (The Four Slices)
-       ============================================================ */
-
-    public void setClientRequest(CharSequence line, JournalLevel level, GatewayHeaders headers)
+    public void setClientRequest(CharSequence line, JournalLevel level, GatewayHeaders headers, InetAddress remoteAddress, final IpSource ipSource)
     {
         this.clientRequestStartLine = line;
         this.clientRequestLevel = level;
         this.clientRequestHeaders = headers;
+        this.remoteAddress = remoteAddress;
+        this.remoteAddressSource = ipSource;
     }
 
     public void setUpstreamRequest(CharSequence line, JournalLevel level, GatewayHeaders headers)
@@ -88,10 +90,6 @@ public final class JournalExchange
         this.clientResponseLevel = level;
         this.clientResponseHeaders = headers;
     }
-
-    /* ============================================================
-       BODY & METRICS
-       ============================================================ */
 
     public void appendRequestBody(ByteBuffer fragment)
     {
@@ -123,11 +121,6 @@ public final class JournalExchange
         return requestId;
     }
 
-    /* ============================================================
-       GETTERS
-       ============================================================ */
-
-    // Request Slices
     public CharSequence getClientRequestStartLine()
     {
         return clientRequestStartLine;
@@ -158,7 +151,6 @@ public final class JournalExchange
         return upstreamRequestLevel;
     }
 
-    // Response Slices
     public CharSequence getUpstreamResponseStartLine()
     {
         return upstreamResponseStartLine;
@@ -189,7 +181,6 @@ public final class JournalExchange
         return clientResponseLevel;
     }
 
-    // Body fragments
     public List<ByteBuffer> getRequestBodyFragments()
     {
         return requestBodyFragments;
@@ -306,5 +297,15 @@ public final class JournalExchange
     public long getResponseTotalBytes()
     {
         return responseHeaderBytes + responseBodyBytes;
+    }
+
+    public InetAddress remoteAddress()
+    {
+        return remoteAddress;
+    }
+
+    public IpSource getRemoteAddressSource()
+    {
+        return remoteAddressSource;
     }
 }

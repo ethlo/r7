@@ -1,21 +1,79 @@
 package com.ethlo.venturi.undertow;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+
+import com.ethlo.venturi.api.IpSource;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.undertow.util.HttpStringUtil;
 import com.ethlo.venturi.util.HttpStringCharSequence;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 
 public final class UndertowGatewayRequest implements MutableGatewayRequest
 {
     private final HttpServerExchange exchange;
     private final MutableGatewayHeaders headers;
+    private final InetAddress remoteAddress;
+    private final IpSource remoteAddressSource;
 
     public UndertowGatewayRequest(final HttpServerExchange exchange)
     {
         this.exchange = exchange;
         this.headers = new UndertowGatewayHeaders(exchange.getRequestHeaders());
+
+        final RemoteInfo info = resolveRemoteAddress(exchange);
+        this.remoteAddress = info.address();
+        this.remoteAddressSource = info.source();
+    }
+
+    private static RemoteInfo resolveRemoteAddress(final HttpServerExchange exchange)
+    {
+        // 1. Check X-Forwarded-For
+        final String xff = exchange.getRequestHeaders().getFirst(Headers.X_FORWARDED_FOR);
+        if (xff != null && !xff.isBlank())
+        {
+            final int commaIndex = xff.indexOf(',');
+            final String rawIp = commaIndex > 0 ? xff.substring(0, commaIndex).trim() : xff.trim();
+            try
+            {
+                return new RemoteInfo(InetAddress.getByName(rawIp), IpSource.X_FORWARDED_FOR);
+            }
+            catch (final UnknownHostException e)
+            {
+                // Fallthrough on malformed header
+            }
+        }
+
+        // 2. Check X-Real-IP
+        final String xRealIp = exchange.getRequestHeaders().getFirst("X-Real-IP");
+        if (xRealIp != null && !xRealIp.isBlank())
+        {
+            try
+            {
+                return new RemoteInfo(InetAddress.getByName(xRealIp.trim()), IpSource.X_REAL_IP);
+            }
+            catch (final UnknownHostException e)
+            {
+                // Fallthrough on malformed header
+            }
+        }
+
+        // 3. Fallback to Raw Socket Address (Zero allocations here)
+        final InetSocketAddress sourceAddress = exchange.getSourceAddress();
+        if (sourceAddress != null)
+        {
+            final InetAddress address = sourceAddress.getAddress();
+            if (address != null)
+            {
+                return new RemoteInfo(address, IpSource.SOCKET);
+            }
+        }
+
+        return new RemoteInfo(null, IpSource.UNKNOWN);
     }
 
     @Override
@@ -50,6 +108,12 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     }
 
     @Override
+    public InetAddress remoteAddress()
+    {
+        return remoteAddress;
+    }
+
+    @Override
     public void path(final CharSequence path)
     {
         final String newPath = path.toString();
@@ -74,5 +138,14 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     public void method(final CharSequence method)
     {
         this.exchange.setRequestMethod(HttpString.tryFromString(method.toString()));
+    }
+
+    public IpSource getRemoteAddressSource()
+    {
+        return remoteAddressSource;
+    }
+
+    private record RemoteInfo(InetAddress address, IpSource source)
+    {
     }
 }

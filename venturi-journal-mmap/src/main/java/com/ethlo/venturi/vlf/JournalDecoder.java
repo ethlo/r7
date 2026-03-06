@@ -2,12 +2,15 @@ package com.ethlo.venturi.vlf;
 
 import static com.ethlo.venturi.vlf.VlfConstants.MAGIC;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.zip.CRC32C;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.IpSource;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.vlf.fbs.ClientRequest;
 import com.ethlo.venturi.vlf.fbs.ClientResponse;
@@ -133,6 +136,29 @@ public final class JournalDecoder
         crc.update(value & 0xFF);
     }
 
+    public static InetAddress fromByteBuffer(final ByteBuffer buffer)
+    {
+        if (buffer == null || buffer.remaining() == 0)
+        {
+            return null;
+        }
+
+        // Allocate exactly 4 (IPv4) or 16 (IPv6) bytes
+        final byte[] ipBytes = new byte[buffer.remaining()];
+
+        // Copy the bytes out of the FlatBuffer slice
+        buffer.get(ipBytes);
+
+        try
+        {
+            return InetAddress.getByAddress(ipBytes);
+        }
+        catch (final UnknownHostException e)
+        {
+            // This only happens if the byte array length is not exactly 4 or 16.
+            throw new IllegalArgumentException("Invalid IP address byte length: " + ipBytes.length, e);
+        }
+    }
 
     private static void dispatch(final JournalEvent journalEvent, ByteBuffer buffer, JournalEventListener listener)
     {
@@ -145,7 +171,9 @@ public final class JournalDecoder
                 final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
                 final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsGatewayHeaders(ev);
-                listener.onClientRequest(reqId, level, startLine, headers);
+                final InetAddress remoteAddress = fromByteBuffer(ev.clientIpAsByteBuffer());
+                final IpSource ipSource = IpSource.valueOf(ev.clientIpSource());
+                listener.onClientRequest(reqId, level, startLine, headers, remoteAddress, ipSource);
             }
 
             case EventPayload.UpstreamRequest ->

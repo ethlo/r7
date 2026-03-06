@@ -3,11 +3,15 @@ package com.ethlo.venturi.vlf;
 import static java.nio.ByteBuffer.wrap;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.stream.Stream;
+
+import com.ethlo.venturi.api.IpSource;
 
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,7 +51,14 @@ class VlfJournalTest
                     {
                         for (int i = 0; i < iterations; i++)
                         {
-                            journal.clientRequest(JournalLevel.FULL, id, startLine, headers);
+                            try
+                            {
+                                journal.clientRequest(JournalLevel.FULL, id, startLine, headers, InetAddress.getLocalHost(), IpSource.SOCKET);
+                            }
+                            catch (UnknownHostException e)
+                            {
+                                throw new RuntimeException(e);
+                            }
                         }
                     }
             );

@@ -1,5 +1,7 @@
 package com.ethlo.venturi.undertow;
 
+import java.net.InetAddress;
+
 import com.ethlo.venturi.api.ClientRequestGatewayExchange;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.CompletedGatewayExchange;
@@ -7,6 +9,7 @@ import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.GatewayRouteInfo;
+import com.ethlo.venturi.api.IpSource;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.api.MutableGatewayResponse;
@@ -28,6 +31,8 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     private GatewayResponse upstreamResponse;
     private TerminationGatewayResponse terminated;
     private long journalBytes;
+    private InetAddress remoteAddress;
+    private IpSource remoteAddressSource;
 
     public UndertowGatewayExchange(
             HttpServerExchange undertowExchange,
@@ -103,6 +108,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
             }
         };
     }
+
 
     public void setUpstreamResponse(GatewayResponse clone)
     {

@@ -3,6 +3,7 @@ package com.ethlo.venturi;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +16,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
+
+import com.ethlo.venturi.api.IpSource;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -75,7 +78,7 @@ class JournalBinaryIntegrationTest
                     // 1. BEGIN
                     MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
                     headers.add("User-Agent", "JUnit");
-                    journal.clientRequest(JournalLevel.HEADERS, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers);
+                    journal.clientRequest(JournalLevel.HEADERS, reqId, ByteBuffer.wrap("GET /api/data HTTP/1.1".getBytes()), headers, InetAddress.getLocalHost(), IpSource.SOCKET);
 
                     // 2. INTERLEAVED BODY PARTS
                     byte[] largeBody = new byte[8192];
@@ -160,7 +163,7 @@ class JournalBinaryIntegrationTest
             headers.set(HttpHeaders.X_REQUEST_ID, "akdalskmdalsmdasmda");
             headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
             headers.set(HttpHeaders.CACHE_CONTROL, "no-cache");
-            journal.clientRequest(JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers);
+            journal.clientRequest(JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers, InetAddress.getLocalHost(), IpSource.SOCKET);
             journal.requestBody(id, ByteBuffer.wrap("Request chunk".getBytes()));
 
             journal.clientResponse(JournalLevel.FULL, id, 200, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());

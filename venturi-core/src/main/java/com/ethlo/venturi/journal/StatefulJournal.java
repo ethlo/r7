@@ -1,5 +1,6 @@
 package com.ethlo.venturi.journal;
 
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.zip.CRC32C;
@@ -8,6 +9,7 @@ import com.ethlo.venturi.RedactUtil;
 import com.ethlo.venturi.api.CompletedGatewayExchange;
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.IpSource;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 import com.ethlo.venturi.config.RouteJournalConfig;
@@ -24,6 +26,7 @@ public final class StatefulJournal implements Journal
     private final CRC32C requestChecksum = new CRC32C();
     private final CRC32C responseChecksum = new CRC32C();
 
+    private JournalLevel level;
     private CharSequence requestId;
     private boolean clientReqFlushed = false;
     private boolean upstreamReqFlushed = false;
@@ -42,6 +45,8 @@ public final class StatefulJournal implements Journal
     private int upstreamStatusCode;
 
     private long bytesWritten;
+    private InetAddress remoteAddress;
+    private IpSource remoteAddressSource;
 
     public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange)
     {
@@ -51,11 +56,13 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int clientRequest(final JournalLevel level, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int clientRequest(final JournalLevel level, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers, final InetAddress remoteAddress, IpSource ipSource)
     {
         this.requestId = reqId;
         this.clientReqLine = cloneBuffer(startLine);
         this.clientReqHeaders = headers;
+        this.remoteAddress = remoteAddress;
+        this.remoteAddressSource = ipSource;
 
         if (config.request().level() == JournalLevel.FULL)
         {
@@ -188,7 +195,7 @@ public final class StatefulJournal implements Journal
         if (!clientReqFlushed && clientReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
-            final int written = delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers);
+            final int written = delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers, remoteAddress, remoteAddressSource);
             this.bytesWritten += written;
             this.clientReqFlushed = true;
             this.clientReqLine = null;

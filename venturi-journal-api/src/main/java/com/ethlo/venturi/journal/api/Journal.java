@@ -1,14 +1,16 @@
 package com.ethlo.venturi.journal.api;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 
 import com.ethlo.venturi.api.GatewayAttributes;
 import com.ethlo.venturi.api.GatewayHeaders;
+import com.ethlo.venturi.api.IpSource;
 
 public interface Journal extends AutoCloseable
 {
-    int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
+    int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress remoteAddress, final IpSource ipSource);
 
     int upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers);
 

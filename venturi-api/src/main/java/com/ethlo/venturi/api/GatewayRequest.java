@@ -1,5 +1,7 @@
 package com.ethlo.venturi.api;
 
+import java.net.InetAddress;
+
 public interface GatewayRequest
 {
     CharSequence method();
@@ -11,4 +13,6 @@ public interface GatewayRequest
     CharSequence queryParams();
 
     GatewayHeaders headers();
+
+    InetAddress remoteAddress();
 }

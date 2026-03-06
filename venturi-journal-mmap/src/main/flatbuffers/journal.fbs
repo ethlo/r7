@@ -2,6 +2,13 @@ namespace com.ethlo.venturi.vlf.fbs;
 
 enum FbsJournalLevel : byte { NONE = 0, METADATA = 1, HEADERS = 2, FULL = 3 }
 
+enum IpSource : byte {
+    UNKNOWN = 0,
+    SOCKET = 1,
+    X_FORWARDED_FOR = 2,
+    X_REAL_IP = 3
+}
+
 table Header {
   name: [ubyte];
   value: [ubyte];
@@ -12,6 +19,8 @@ table ClientRequest {
   req_id: [ubyte];
   start_line: [ubyte];
   headers: [Header];
+  client_ip: [ubyte];
+  client_ip_source: IpSource;
 }
 
 table UpstreamRequest {
