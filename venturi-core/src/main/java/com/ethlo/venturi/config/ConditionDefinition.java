@@ -150,4 +150,58 @@ public final class ConditionDefinition
             not.validateTree(result, registry);
         }
     }
+
+    @Override
+    public String toString()
+    {
+        final List<String> parts = new ArrayList<>();
+
+        for (final Map.Entry<String, Object> entry : this.predicates.entrySet())
+        {
+            parts.add(entry.getKey() + "=" + entry.getValue());
+        }
+
+        if (this.not != null)
+        {
+            parts.add("NOT(" + this.not.toString() + ")");
+        }
+
+        if (this.and != null && !this.and.isEmpty())
+        {
+            if (this.and.size() == 1)
+            {
+                parts.add(this.and.getFirst().toString());
+            }
+            else
+            {
+                final List<String> andStrings = this.and.stream().map(ConditionDefinition::toString).toList();
+                parts.add("AND(" + String.join(", ", andStrings) + ")");
+            }
+        }
+
+        if (this.or != null && !this.or.isEmpty())
+        {
+            if (this.or.size() == 1)
+            {
+                parts.add(this.or.getFirst().toString());
+            }
+            else
+            {
+                final List<String> orStrings = this.or.stream().map(ConditionDefinition::toString).toList();
+                parts.add("OR(" + String.join(", ", orStrings) + ")");
+            }
+        }
+
+        if (parts.isEmpty())
+        {
+            return "MATCH_ALL";
+        }
+
+        if (parts.size() == 1)
+        {
+            return parts.getFirst();
+        }
+
+        return "AND(" + String.join(", ", parts) + ")";
+    }
 }

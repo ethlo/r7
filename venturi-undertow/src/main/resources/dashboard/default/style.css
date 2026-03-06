@@ -1,15 +1,45 @@
+/* ==========================================================================
+   1. THEMING & VARIABLES
+   ========================================================================== */
 :root {
     --base-size: 14px;
     --bg: #0a0a0b;
-    --fg: #e4e4e7;       /* Soft white for primary text */
-    --accent: #ff5e00;   /* Racing Orange */
+    --fg: #e4e4e7;
+    --accent: #ff5e00;
     --dim: #a1a1aa;
     --brighter: #efeef1;
     --border: #27272a;
+    --border-subtle: rgba(255, 255, 255, 0.05); /* Faint lines for dark mode */
+    --border-dotted: rgba(128, 128, 128, 0.3);
     --row-hover: #18181b;
     --panel: #111112;
 }
 
+body.light-mode {
+    --bg: #fafafa;
+    --fg: #18181b;
+    --accent: #ea580c;
+    --brighter: #222;
+    --dim: #71717a;
+    --border: #e4e4e7;
+    --border-subtle: rgba(0, 0, 0, 0.05); /* Faint lines for light mode */
+    --border-dotted: rgba(128, 128, 128, 0.3);
+    --row-hover: #f4f4f5;
+    --panel: #ffffff;
+}
+
+/* Light Mode Overrides for Hardcoded Backgrounds/Colors */
+body.light-mode pre { background: #f4f4f5; border-color: var(--border); }
+body.light-mode .journal-row { background: #f4f4f5; }
+body.light-mode tr.total-row td { background: #f4f4f5 !important; }
+body.light-mode .journal-active-none { background: rgba(113, 113, 122, 0.1); color: var(--dim); border-color: var(--dim); }
+body.light-mode .journal-active-metadata { background: rgba(14, 165, 233, 0.1); color: #0284c7; border-color: #0284c7; }
+body.light-mode .journal-active-headers { background: rgba(245, 158, 11, 0.1); color: #d97706; border-color: #d97706; }
+body.light-mode .journal-active-full { background: rgba(239, 68, 68, 0.1); color: #dc2626; border-color: #dc2626; }
+
+/* ==========================================================================
+   2. GLOBAL & BASE STYLES
+   ========================================================================== */
 html {
     font-size: var(--base-size);
 }
@@ -21,10 +51,31 @@ body {
     margin: 0;
     padding: 2.5rem;
     font-size: 1rem;
-    font-weight: 400; /* Removed bold entirely */
+    font-weight: 400;
     -webkit-font-smoothing: antialiased;
 }
 
+pre {
+    background: #09090b;
+    padding: 1rem;
+    color: var(--fg);
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+}
+
+h1 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 500;
+    letter-spacing: 2px;
+}
+
+h1 span { color: var(--accent); }
+
+/* ==========================================================================
+   3. LAYOUT COMPONENTS
+   ========================================================================== */
 .container {
     max-width: 1200px;
     margin: 0 auto;
@@ -40,32 +91,62 @@ header {
     align-items: center;
 }
 
-h1 {
-    margin: 0;
-    font-size: 1.2rem;
-    font-weight: 500;
+.app-footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    text-align: right;
+    font-size: 0.65rem;
+    color: var(--dim);
     letter-spacing: 2px;
+    text-transform: uppercase;
 }
 
-h1 span { color: var(--accent); }
+/* ==========================================================================
+   4. TYPOGRAPHY & UTILITIES
+   ========================================================================== */
+.sub { font-size: 0.85rem; color: var(--dim); margin-top: 4px; }
+.sum { font-size: 0.85rem; color: var(--brighter); margin-top: 4px; }
+.sys-vitals { color: var(--dim); font-size: 0.9rem; margin-top: 0.5rem; }
+.sys-info { font-size: 0.9rem; color: var(--dim); }
+#sys-version { color: var(--fg); font-weight: 500; }
 
-.sys-vitals {
-    color: var(--dim);
-    font-size: 0.9rem;
-    margin-top: 0.5rem;
-}
-
-.sys-info {
-    font-size: 0.9rem;
-    color: var(--dim);
-}
-
+.text-muted { opacity: 0.7; }
+.text-dim { opacity: 0.5; }
+.text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text-nowrap { white-space: nowrap; }
+.text-right { text-align: right; }
+.spacer-sm { height: 6px; }
 .status-indicator { margin-right: 6px; }
 
-/* Table Layout */
+/* Status Colors */
+.text-warn { color: #ffca28; font-weight: 600; }
+.text-err { color: #ff4444; font-weight: 600; }
+.text-http { color: #00d4ff; font-weight: 600; }
+.text-ws { color: #00ff88; font-weight: 600; }
+
+/* Theme Button */
+.theme-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    margin-top: 8px;
+    text-transform: uppercase;
+    border-radius: 3px;
+    transition: all 0.2s;
+}
+.theme-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ==========================================================================
+   5. TABLE STYLES
+   ========================================================================== */
 table {
     width: 100%;
-    border-collapse: collapse; /* Cleaner than separated borders */
+    border-collapse: collapse;
 }
 
 th {
@@ -83,21 +164,13 @@ td {
     vertical-align: top;
 }
 
-/* Clear Click Indicator */
-tr.clickable-row {
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
+th, td { border-right: 1px solid var(--border-subtle); }
+th:last-child, td:last-child { border-right: none; }
 
-tr.clickable-row:hover td {
-    background: var(--row-hover);
-}
+tr.clickable-row { cursor: pointer; transition: background 0.15s ease; }
+tr.clickable-row:hover td { background: var(--row-hover); }
+tr.clickable-row:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
-tr.clickable-row:hover td:first-child {
-    box-shadow: inset 3px 0 0 var(--accent); /* Orange line on the left */
-}
-
-/* System Totals Top Row */
 tr.total-row td {
     background: #131315;
     border-bottom: 1px solid var(--dim);
@@ -105,20 +178,29 @@ tr.total-row td {
     padding-bottom: 1.5rem;
 }
 
-/* Typography Hierarchy */
-.sub {
-    font-size: 0.85rem;
-    color: var(--dim);
-    margin-top: 4px;
+/* ==========================================================================
+   6. METRICS UI (Dotted Leaders)
+   ========================================================================== */
+.metric-row {
+    display: flex;
+    align-items: flex-end;
+    line-height: 1.1;
+    margin: 0;
+    padding-bottom: 2px;
 }
-
-.sum {
-    font-size: 0.85rem;
-    color: var(--brighter);
-    margin-top: 4px;
+.metric-label { opacity: 0.7; }
+.metric-leader {
+    flex-grow: 1;
+    border-bottom: 1px dotted var(--border-dotted);
+    margin: 0 0.5rem;
+    position: relative;
+    top: -4px;
 }
+.metric-value { white-space: nowrap; }
 
-/* Sidebar Panel */
+/* ==========================================================================
+   7. SIDE PANEL
+   ========================================================================== */
 #details-panel {
     position: fixed;
     right: -600px;
@@ -136,15 +218,65 @@ tr.total-row td {
 
 #details-panel.open { right: 0; }
 
-.close-btn {
-    color: var(--dim);
-    cursor: pointer;
-    float: right;
+.panel-header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+    gap: 1rem;
 }
 
-.close-btn:hover { color: var(--accent); }
+.panel-title {
+    font-size: 1.1em;
+    font-weight: 300;
+    color: var(--fg);
+    margin: 0 0 6px 0;
+    line-height: 1;
+}
 
-.config-section { margin-top: 2rem; }
+.panel-subtitle {
+    font-size: 0.9em;
+    color: var(--dim);
+    word-break: break-all;
+    line-height: 1.2;
+}
+
+.panel-close-btn {
+    background: rgba(128, 128, 128, 0.1);
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 0.85em;
+    padding: 6px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+.panel-close-btn:hover {
+    background: rgba(128, 128, 128, 0.25);
+    color: var(--fg);
+    border-color: rgba(128, 128, 128, 0.4);
+}
+.panel-close-icon { font-size: 1.2em; font-weight: bold; line-height: 0; }
+
+.panel-section { margin-top: 2rem; }
+.panel-section-title, .panel-header {
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.5;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+}
 
 .config-label {
     color: var(--dim);
@@ -153,35 +285,9 @@ tr.total-row td {
     text-transform: uppercase;
 }
 
-pre {
-    background: #09090b;
-    padding: 1rem;
-    color: var(--fg);
-    font-size: 0.8rem;
-    border: 1px solid var(--border);
-    overflow-x: auto;
-}
-
-.tree-view .leaf { margin-left: 10px; margin-top: 4px; }
-
-/* Footer Styling */
-.app-footer {
-    margin-top: 3rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--border);
-    text-align: right;
-    font-size: 0.65rem;
-    color: var(--dim);
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-}
-
-#sys-version {
-    color: var(--fg); /* Slightly brighter for the actual version number */
-    font-weight: 500;
-}
-
-/* Forensic Journal Policy Tags */
+/* ==========================================================================
+   8. JOURNALING & BADGES
+   ========================================================================== */
 .journal-row {
     display: flex;
     align-items: center;
@@ -190,7 +296,6 @@ pre {
     padding: 1rem;
     border: 1px solid var(--border);
 }
-
 .journal-label {
     width: 45px;
     color: var(--dim);
@@ -198,88 +303,52 @@ pre {
     font-weight: 500;
 }
 
+.pill-group { display: flex; gap: 4px; }
 .journal-tag {
-    font-size: 0.65rem;
-    padding: 4px 8px;
-    margin-right: 8px;
-    color: #444; /* Dimmed out inactive state */
-    border: 1px solid #222;
-    border-radius: 3px;
-    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    background: rgba(128, 128, 128, 0.1);
+    opacity: 0.5;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    letter-spacing: 1px;
     transition: all 0.2s ease;
 }
 
-/* Active States (Escalating in visual weight) */
-/* Escalate data depth using a "cool" spectrum, avoiding alert colors */
-.journal-active-none {
-    color: var(--dim);
-    border-color: var(--dim);
-    background: rgba(161, 161, 170, 0.1); /* Neutral Zinc */
+[class*="journal-active-"] {
+    opacity: 1;
+    border-color: currentColor;
 }
 
-.journal-active-metadata {
-    color: #2dd4bf; /* Teal - Informative, lightweight data */
-    border-color: #2dd4bf;
-    background: rgba(45, 212, 191, 0.1);
+.journal-active-none { color: var(--dim); border-color: var(--dim); background: rgba(161, 161, 170, 0.1); }
+.journal-active-metadata { color: #2dd4bf; border-color: #2dd4bf; background: rgba(45, 212, 191, 0.1); }
+.journal-active-headers { color: #3b82f6; border-color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+.journal-active-full { color: #a855f7; border-color: #a855f7; background: rgba(168, 85, 247, 0.1); }
+
+.j-badge {
+    font-weight: 900;
+    display: inline-block;
+    min-width: 14px;
+    text-align: center;
 }
 
-.journal-active-headers {
-    color: #3b82f6; /* Blue - Standard network data density */
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
+/* ==========================================================================
+   9. TREES & PIPELINES
+   ========================================================================== */
+.tree-view { margin-top: 8px; }
+.tree-node {
+    display: flex;
+    gap: 8px;
+    line-height: 1.1;
+    padding-bottom: 2px;
 }
+.tree-view .leaf { margin-left: 10px; margin-top: 4px; }
 
-.journal-active-full {
-    color: #a855f7; /* Purple - Deep inspection, heavy payload */
-    border-color: #a855f7;
-    background: rgba(168, 85, 247, 0.1);
-}
-
-.text-right { text-align: right; }
-
-/* Theme Toggle Button */
-.theme-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--dim);
-    font-family: inherit;
-    font-size: 0.8rem;
-    padding: 4px 8px;
-    cursor: pointer;
-    margin-top: 8px;
-    text-transform: uppercase;
-    border-radius: 3px;
-    transition: all 0.2s;
-}
-
-.theme-btn:hover {
-    color: var(--accent);
-    border-color: var(--accent);
-}
-
-/* Light Mode Override Class */
-body.light-mode {
-    --bg: #fafafa;
-    --fg: #18181b;
-    --accent: #ea580c;
-    --brighter: #222;
-    --dim: #71717a;
-    --border: #e4e4e7;
-    --row-hover: #f4f4f5;
-    --panel: #ffffff;
-}
-
-/* Override hardcoded dark elements when light mode is active */
-body.light-mode pre { background: #f4f4f5; border-color: var(--border); }
-body.light-mode .journal-row { background: #f4f4f5; }
-body.light-mode tr.total-row td { background: #f4f4f5 !important; }
-body.light-mode .journal-active-none { background: rgba(113, 113, 122, 0.1); color: var(--dim); border-color: var(--dim); }
-body.light-mode .journal-active-metadata { background: rgba(14, 165, 233, 0.1); color: #0284c7; border-color: #0284c7; }
-body.light-mode .journal-active-headers { background: rgba(245, 158, 11, 0.1); color: #d97706; border-color: #d97706; }
-body.light-mode .journal-active-full { background: rgba(239, 68, 68, 0.1); color: #dc2626; border-color: #dc2626; }
-
-@media (min-width: 1920px) {
-    :root {
-        --base-size: 18px;
-    }
-}
+/* ==========================================================================
+   10. MEDIA QUERIES (Progressive Column Hiding)
+   ========================================================================== */
+@media (max-width: 1400px) { .col-journal { display: none; } }
+@media (max-width: 1200px) { .col-success { display: none; } }
+@media (max-width: 950px) { .col-ingress, .col-egress { display: none; } }
+@media (max-width: 700px) { .col-latency { display: none; } }
+@media (max-width: 550px) { .col-errors { display: none; } }

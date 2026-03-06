@@ -18,12 +18,15 @@
     <table id="route-table">
         <thead>
         <tr>
-            <th>ROUTE ID</th>
-            <th class="text-right">REQUESTS</th>
-            <th class="text-right">TRAFFIC (INGRESS / EGRESS)</th>
-            <th class="text-right">JOURNAL</th>
-            <th class="text-right">ACTIVE</th>
-            <th class="text-right">AVG LATENCY</th>
+            <th class="col-route">ROUTE ID</th>
+            <th class="col-totals">TOTALS</th>
+            <th class="col-success">SUCCESS</th>
+            <th class="col-errors">ERRORS</th>
+            <th class="col-ingress">INGRESS</th>
+            <th class="col-egress">EGRESS</th>
+            <th class="col-active">ACTIVE</th>
+            <th class="col-latency">LATENCY</th>
+            <th class="col-journal">JOURNAL</th>
         </tr>
         </thead>
         <tbody id="view"></tbody>
@@ -35,23 +38,7 @@
 </div>
 
 <div id="details-panel">
-    <span class="close-btn" onclick="closeDetails()">[ CLOSE ]</span>
-    <h2 id="route-title">ROUTE_ID</h2>
-
-    <div class="config-section">
-        <div class="config-label">Upstream Configuration</div>
-        <pre id="config-upstream">Fetching...</pre>
-    </div>
-
-    <div class="config-section">
-        <div class="config-label">Filter Chain</div>
-        <pre id="config-filters">Fetching...</pre>
-    </div>
-
-    <div class="config-section">
-        <div class="config-label">Journal Policy</div>
-        <div id="config-journal">Fetching...</div>
-    </div>
+    <div id="details-content"></div>
 </div>
 <script src="script.js"></script>
 </body>
