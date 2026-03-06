@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface BeforeCommitGatewayExchange
+public interface ClientResponseGatewayExchange
 {
     CharSequence requestId();
 

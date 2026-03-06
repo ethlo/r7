@@ -1,7 +1,7 @@
 package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -56,7 +56,7 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<BeforeUpstr
         }
 
         @Override
-        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
+        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             if (override)
             {

@@ -3,13 +3,15 @@ package com.ethlo.venturi.status;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
-import com.ethlo.venturi.api.BeforeCommitGatewayExchange;
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientRequestGatewayExchange;
+import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.CompletedGatewayExchange;
 import com.ethlo.venturi.api.FinishedGatewayFilter;
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.ClientRequestGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.undertow.UndertowGatewayExchange;
@@ -31,17 +33,19 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         return new GF();
     }
 
-    public static final class GF implements BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, FinishedGatewayFilter, ShortInfo
+    public static final class GF implements ClientRequestGatewayFilter, BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, FinishedGatewayFilter, ShortInfo
     {
         private final AtomicLong lastActiveTime = new AtomicLong(0L);
 
         private final LongAdder totalRequests = new LongAdder();
+        private final LongAdder totalWsRequests = new LongAdder();
         private final LongAdder total2xxRequests = new LongAdder();
         private final LongAdder total3xxRequests = new LongAdder();
         private final LongAdder total4xxRequests = new LongAdder();
         private final LongAdder total5xxRequests = new LongAdder();
 
         private final LongAdder activeRequests = new LongAdder();
+        private final LongAdder activeWsRequests = new LongAdder();
         private final LongAdder upstreamRequests = new LongAdder();
         private final LongAdder totalDurationNanos = new LongAdder();
 
@@ -52,26 +56,41 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         private final LongAdder totalResponseHeaderBytes = new LongAdder();
         private final LongAdder totalResponseBodyBytes = new LongAdder();
 
+
         @Override
-        public void beforeCommit(final BeforeCommitGatewayExchange exchange)
+        public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            this.lastActiveTime.lazySet(System.currentTimeMillis());
             this.totalRequests.increment();
             this.activeRequests.increment();
         }
 
         @Override
-        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
+        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             this.upstreamRequests.increment();
         }
 
         @Override
-        public void completed(final CompletedGatewayExchange exchange)
+        public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
+            final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
+            if (undertowExchange.isWebsocketUpgraded())
+            {
+                undertowExchange.onWebSocketClose(this.activeWsRequests::decrement);
+                this.activeWsRequests.increment();
+                this.totalWsRequests.increment();
+            }
+
+            this.lastActiveTime.lazySet(System.currentTimeMillis());
+        }
+
+        @Override
+        public void onCompleted(final CompletedGatewayExchange exchange)
+        {
+            final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
+
             this.activeRequests.decrement();
 
-            final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
             this.totalRequestHeaderBytes.add(undertowExchange.getTrafficMetrics().requestHeaderBytes());
             this.totalRequestBodyBytes.add(undertowExchange.getTrafficMetrics().requestBodyBytes());
             this.totalResponseHeaderBytes.add(undertowExchange.getTrafficMetrics().responseHeaderBytes());
@@ -82,19 +101,19 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             final int statusCode = exchange.clientResponse().status();
             if (HttpStatuses.is2xx(statusCode))
             {
-                total2xxRequests.increment();
+                this.total2xxRequests.increment();
             }
             else if (HttpStatuses.is3xx(statusCode))
             {
-                total3xxRequests.increment();
+                this.total3xxRequests.increment();
             }
             else if (HttpStatuses.is4xx(statusCode))
             {
-                total4xxRequests.increment();
+                this.total4xxRequests.increment();
             }
             else if (HttpStatuses.is5xx(statusCode))
             {
-                total5xxRequests.increment();
+                this.total5xxRequests.increment();
             }
         }
 
@@ -106,73 +125,87 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
 
         public long getAvgLatencyNanos()
         {
-            final long count = totalRequests.sum();
-            return count == 0 ? 0 : totalDurationNanos.sum() / count;
+            final long count = this.totalRequests.sum();
+            if (count == 0)
+            {
+                return 0;
+            }
+            return this.totalDurationNanos.sum() / count;
         }
 
         public long getTotalRequests()
         {
-            return totalRequests.sum();
+            return this.totalRequests.sum();
+        }
+
+        public long getTotalWsRequests()
+        {
+            return this.totalWsRequests.sum();
         }
 
         public long getActiveRequests()
         {
-            return activeRequests.sum();
+            return this.activeRequests.sum();
+        }
+
+        public long getActiveWsRequests()
+        {
+            return this.activeWsRequests.sum();
         }
 
         public long getUpstreamRequests()
         {
-            return upstreamRequests.sum();
+            return this.upstreamRequests.sum();
         }
 
         public long getTotalJournalBytes()
         {
-            return totalJournalBytes.sum();
+            return this.totalJournalBytes.sum();
         }
 
         public long getTotalRequestHeaderBytes()
         {
-            return totalRequestHeaderBytes.sum();
+            return this.totalRequestHeaderBytes.sum();
         }
 
         public long getTotalRequestBodyBytes()
         {
-            return totalRequestBodyBytes.sum();
+            return this.totalRequestBodyBytes.sum();
         }
 
         public long getTotalResponseHeaderBytes()
         {
-            return totalResponseHeaderBytes.sum();
+            return this.totalResponseHeaderBytes.sum();
         }
 
         public long getTotalResponseBodyBytes()
         {
-            return totalResponseBodyBytes.sum();
+            return this.totalResponseBodyBytes.sum();
         }
 
         public long getStatus2xxRequests()
         {
-            return total2xxRequests.sum();
+            return this.total2xxRequests.sum();
         }
 
         public long getStatus3xxRequests()
         {
-            return total3xxRequests.sum();
+            return this.total3xxRequests.sum();
         }
 
         public long getStatus4xxRequests()
         {
-            return total4xxRequests.sum();
+            return this.total4xxRequests.sum();
         }
 
         public long getStatus5xxRequests()
         {
-            return total5xxRequests.sum();
+            return this.total5xxRequests.sum();
         }
 
         public long getLastActiveTime()
         {
-            return lastActiveTime.get();
+            return this.lastActiveTime.get();
         }
     }
 }

@@ -4,7 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -69,7 +69,7 @@ public class RewritePathFactory implements GatewayFilterFactory<BeforeUpstreamGa
         }
 
         @Override
-        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
+        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             final Matcher matcher = regexp.matcher(exchange.clientRequest().path());
 

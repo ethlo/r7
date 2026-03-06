@@ -92,9 +92,8 @@ async function update() {
         const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
         vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE`;
 
-        // 2. Update Footer Version
-        const version = data.system.version || 'Unknown';
-        document.getElementById('sys-version').innerText = version;
+        // Update Footer Version
+        document.getElementById('sys-version').innerText = data.system.version || 'Unknown';
 
         timeEl.innerHTML = `<span class="status-indicator" style="color: #00ff88;">●</span>ONLINE`;
 
@@ -113,13 +112,16 @@ async function update() {
 function renderTable(data) {
     if (!data.route_metrics) return;
 
+    // Aggregate totals, including the new WebSocket metrics
     const totals = data.route_metrics.reduce((acc, r) => ({
         total: acc.total + (r.request_statistics.total || 0),
+        ws_total: acc.ws_total + (r.request_statistics.websocket_total || 0),
         st_2xx: acc.st_2xx + (r.request_statistics.status_2xx || 0),
         st_3xx: acc.st_3xx + (r.request_statistics.status_3xx || 0),
         err_4xx: acc.err_4xx + (r.request_statistics.status_4xx || 0),
         err_5xx: acc.err_5xx + (r.request_statistics.status_5xx || 0),
         active: acc.active + (r.request_statistics.active || 0),
+        ws_active: acc.ws_active + (r.request_statistics.websocket_active || 0),
         last_active: Math.max(acc.last_active, (r.request_statistics.last_active_ts || 0)),
         in_h: acc.in_h + r.traffic_flow.ingress.header_bytes,
         in_b: acc.in_b + r.traffic_flow.ingress.body_bytes,
@@ -130,7 +132,7 @@ function renderTable(data) {
         journal: acc.journal + r.traffic_flow.journal_storage_bytes,
         latency: acc.latency + (r.performance_telemetry.average_latency_nanoseconds * (r.request_statistics.total || 0))
     }), {
-        total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0, last_active: 0,
+        total: 0, ws_total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0, ws_active: 0, last_active: 0,
         in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0, latency: 0
     });
 
@@ -148,7 +150,7 @@ function renderTable(data) {
                 <div class="sub">LAST: ${timeAgo(totals.last_active)}</div>
             </td>
             <td>
-                <div class="sum">SUM: ${totals.total.toLocaleString()}</div>
+                <div class="sum">REQ: ${totals.total.toLocaleString()} / WS: ${totals.ws_total.toLocaleString()}</div>
                 <div class="sub">2xx: ${totals.st_2xx.toLocaleString()} / 3xx: ${totals.st_3xx.toLocaleString()}</div>
                 <div class="sub">4xx: <span style="${t4xxStyle}">${totals.err_4xx.toLocaleString()}</span> / 5xx: <span style="${t5xxStyle}">${totals.err_5xx.toLocaleString()}</span></div>
             </td>
@@ -161,7 +163,8 @@ function renderTable(data) {
                 <div>${formatBytes(totals.journal, uTotal)}</div>
             </td>
             <td>
-                <div>${totals.active}</div>
+                <div class="sum">HTTP: ${totals.active}</div>
+                <div class="sub" style="color: #00ff88;">WS: ${totals.ws_active}</div>
             </td>
             <td><div>${globalAvgLat}ms</div></td>
         </tr>`;
@@ -175,6 +178,8 @@ function renderTable(data) {
         const st3xx = s.status_3xx || 0;
         const err4xx = s.status_4xx || 0;
         const err5xx = s.status_5xx || 0;
+        const wsTotal = s.websocket_total || 0;
+        const wsActive = s.websocket_active || 0;
 
         const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
 
@@ -189,7 +194,7 @@ function renderTable(data) {
                 <div class="sub">LAST: ${timeAgo(s.last_active_ts)}</div>
             </td>
             <td>
-                <div class="sum">SUM: ${s.total.toLocaleString()}</div>
+                <div class="sum">REQ: ${s.total.toLocaleString()} / WS: ${wsTotal.toLocaleString()}</div>
                 <div class="sub">2xx: ${st2xx.toLocaleString()} / 3xx: ${st3xx.toLocaleString()}</div>
                 <div class="sub">4xx: <span style="${r4xxStyle}">${err4xx.toLocaleString()}</span> / 5xx: <span style="${r5xxStyle}">${err5xx.toLocaleString()}</span></div>
             </td>
@@ -202,7 +207,8 @@ function renderTable(data) {
                 <div class="sum">${formatBytes(t.journal_storage_bytes, uRoute)}</div>
             </td>
             <td>
-                <div>${s.active}</div>
+                <div class="sum">HTTP: ${s.active}</div>
+                <div class="sub" style="color: #00ff88;">WS: ${wsActive}</div>
             </td>
             <td><div>${(p.average_latency_nanoseconds / 1000000).toFixed(3)}ms</div></td>
         </tr>`;

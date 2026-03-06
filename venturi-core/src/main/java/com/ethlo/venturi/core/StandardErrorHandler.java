@@ -1,26 +1,21 @@
 package com.ethlo.venturi.core;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.core.proxy.NoAvailableTargetException;
 import com.ethlo.venturi.core.proxy.ProxyConnectionException;
 import com.ethlo.venturi.core.proxy.ProxyPoolExhaustedException;
-import com.ethlo.venturi.util.FastTerminationGatewayResponse;
 import com.ethlo.venturi.util.constants.HttpStatuses;
-import com.ethlo.venturi.util.constants.MediaTypes;
 
 public final class StandardErrorHandler implements GatewayErrorHandler
 {
     private static final Logger log = LoggerFactory.getLogger(StandardErrorHandler.class);
 
     @Override
-    public void handleError(final BeforeUpstreamGatewayExchange exchange, final Throwable error)
+    public void handleError(final UpstreamRequestGatewayExchange exchange, final Throwable error)
     {
         // 1. Determine the correct status and message based on the exception type
         final int status;

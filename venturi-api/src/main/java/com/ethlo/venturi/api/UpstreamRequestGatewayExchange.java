@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface BeforeUpstreamGatewayExchange extends BaseGatewayExchange
+public interface UpstreamRequestGatewayExchange extends BaseGatewayExchange
 {
     GatewayRequest clientRequest();
 

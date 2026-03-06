@@ -46,6 +46,23 @@ public final class StatusHandler implements HttpHandler
                 .replace("<script src=\"script.js\"></script>", "<script>" + loadResource("script.js") + "</script>");
     }
 
+    private static TrafficFlowDto mapTraffic(SimpleMetricsFactory.GF gf)
+    {
+        final IngressDto ingress = new IngressDto(
+                gf.getTotalRequestHeaderBytes(),
+                gf.getTotalRequestBodyBytes(),
+                gf.getTotalRequestHeaderBytes() + gf.getTotalRequestBodyBytes()
+        );
+
+        final EgressDto egress = new EgressDto(
+                gf.getTotalResponseHeaderBytes(),
+                gf.getTotalResponseBodyBytes(),
+                gf.getTotalResponseHeaderBytes() + gf.getTotalResponseBodyBytes()
+        );
+
+        return new TrafficFlowDto(ingress, egress, gf.getTotalJournalBytes());
+    }
+
     private String loadResource(final String path)
     {
         final String fullPath = "/dashboard/default/" + path;
@@ -111,29 +128,10 @@ public final class StatusHandler implements HttpHandler
     private RouteMetricsDto mapToDto(final Map.Entry<String, SimpleMetricsFactory.GF> gfEntry)
     {
         final SimpleMetricsFactory.GF gf = gfEntry.getValue();
-        final IngressDto ingress = new IngressDto(
-                gf.getTotalRequestHeaderBytes(),
-                gf.getTotalRequestBodyBytes(),
-                gf.getTotalRequestHeaderBytes() + gf.getTotalRequestBodyBytes()
-        );
-
-        final EgressDto egress = new EgressDto(
-                gf.getTotalResponseHeaderBytes(),
-                gf.getTotalResponseBodyBytes(),
-                gf.getTotalResponseHeaderBytes() + gf.getTotalResponseBodyBytes()
-        );
-
-        final TrafficFlowDto traffic = new TrafficFlowDto(
-                ingress,
-                egress,
-                gf.getTotalJournalBytes()
-        );
-
-        final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(
-                gf.getAvgLatencyNanos()
-        );
-
-        final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(), gf.getLastActiveTime(),
+        final TrafficFlowDto traffic = mapTraffic(gf);
+        final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(gf.getAvgLatencyNanos());
+        final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
+                gf.getTotalWsRequests(), gf.getActiveWsRequests(), gf.getLastActiveTime(),
                 gf.getStatus2xxRequests(), gf.getStatus3xxRequests(), gf.getStatus4xxRequests(), gf.getStatus5xxRequests(),
                 gf.getUpstreamRequests()
         );

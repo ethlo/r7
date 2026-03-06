@@ -2,7 +2,7 @@ package com.ethlo.venturi.core.filters;
 
 import java.nio.ByteBuffer;
 
-import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -49,7 +49,7 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<B
         private static final ByteBuffer UNAUTHORIZED_BODY = ByteBuffer.wrap("Unauthorized".getBytes());
 
         @Override
-        public void beforeUpstream(final BeforeUpstreamGatewayExchange exchange)
+        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             final CharSequence sig = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
 

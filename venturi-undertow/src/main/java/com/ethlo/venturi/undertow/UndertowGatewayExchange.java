@@ -1,7 +1,7 @@
 package com.ethlo.venturi.undertow;
 
-import com.ethlo.venturi.api.BeforeCommitGatewayExchange;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayExchange;
+import com.ethlo.venturi.api.ClientRequestGatewayExchange;
+import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.CompletedGatewayExchange;
 import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
@@ -11,11 +11,12 @@ import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.TerminationGatewayResponse;
-import com.ethlo.venturi.time.ClockSource;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.status.TrafficMetricsHandler;
+import com.ethlo.venturi.time.ClockSource;
 import io.undertow.server.HttpServerExchange;
 
-public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, BeforeCommitGatewayExchange, CompletedGatewayExchange
+public class UndertowGatewayExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange
 {
     private final HttpServerExchange undertowExchange;
     private final CharSequence requestId;
@@ -141,5 +142,15 @@ public class UndertowGatewayExchange implements BeforeUpstreamGatewayExchange, B
     public long getDurationNanos()
     {
         return System.nanoTime() - getRequestStartNanos();
+    }
+
+    public boolean isWebsocketUpgraded()
+    {
+        return undertowExchange.getAttachment(VenturiUndertowHandler.IS_WEBSOCKET_KEY);
+    }
+
+    public void onWebSocketClose(Runnable closeListener)
+    {
+        undertowExchange.getConnection().addCloseListener(connection -> closeListener.run());
     }
 }

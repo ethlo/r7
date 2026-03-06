@@ -1,7 +1,7 @@
 package com.ethlo.venturi.core.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.BeforeCommitGatewayExchange;
+import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -56,7 +56,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeComm
         }
 
         @Override
-        public void beforeCommit(final BeforeCommitGatewayExchange exchange)
+        public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
             if (override)
             {

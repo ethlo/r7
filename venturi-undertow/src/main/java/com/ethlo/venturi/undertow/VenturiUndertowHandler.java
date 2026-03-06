@@ -13,6 +13,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.ethlo.venturi.api.ClientRequestGatewayFilter;
+
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
 import org.xnio.ssl.XnioSsl;
@@ -64,7 +66,7 @@ public final class VenturiUndertowHandler implements HttpHandler
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
     private static final CharSequence ROUTE_ID_KEY = "route_id";
-    private static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
+    static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
     private final Map<CharSequence, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -171,10 +173,18 @@ public final class VenturiUndertowHandler implements HttpHandler
         final GatewayResponse responseCopy = null;
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, upstreamResponse, responseCopy, attrs, route);
-
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
-
         final RouteJournalConfig journalConfig = ((DefaultGatewayRoute) route).routeDefinition().journal();
+
+        final List<GatewayFilter> filters = new ArrayList<>();
+        route.filters().forEach(filters::add);
+        final List<ClientRequestGatewayFilter> clientRequestGatewayFilters = filters.stream().filter(f -> f instanceof ClientRequestGatewayFilter).map(ClientRequestGatewayFilter.class::cast).toList();
+        for (final ClientRequestGatewayFilter filter : clientRequestGatewayFilters)
+        {
+            filter.onClientRequest(gatewayExchange);
+        }
+
+        // TODO: Remove me?
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         final boolean isWebSocket = exchange.getRequestHeaders().contains(io.undertow.util.Headers.UPGRADE) && "websocket".equalsIgnoreCase(exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.UPGRADE));
@@ -187,9 +197,6 @@ public final class VenturiUndertowHandler implements HttpHandler
         final Journal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
 
-        final List<GatewayFilter> filters = new ArrayList<>();
-        route.filters().forEach(filters::add);
-
         final List<FinishedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof FinishedGatewayFilter).map(FinishedGatewayFilter.class::cast).toList();
         exchange.addExchangeCompleteListener((ex, next) ->
         {
@@ -199,7 +206,7 @@ public final class VenturiUndertowHandler implements HttpHandler
             {
                 for (final FinishedGatewayFilter filter : finishedGatewayFilters)
                 {
-                    filter.completed(gatewayExchange);
+                    filter.onCompleted(gatewayExchange);
                 }
             } finally
             {
@@ -210,7 +217,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         final List<BeforeUpstreamGatewayFilter> beforeUpstreamGatewayFilters = filters.stream().filter(f -> f instanceof BeforeUpstreamGatewayFilter).map(BeforeUpstreamGatewayFilter.class::cast).toList();
         for (final BeforeUpstreamGatewayFilter filter : beforeUpstreamGatewayFilters)
         {
-            filter.beforeUpstream(gatewayExchange);
+            filter.onUpstreamRequest(gatewayExchange);
         }
 
         final List<BeforeCommitGatewayFilter> beforeCommitGatewayFilters = filters.stream().filter(f -> f instanceof BeforeCommitGatewayFilter).map(BeforeCommitGatewayFilter.class::cast).toList();
@@ -222,7 +229,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
                 for (final BeforeCommitGatewayFilter filter : beforeCommitGatewayFilters)
                 {
-                    filter.beforeCommit(gatewayExchange);
+                    filter.onClientResponse(gatewayExchange);
                 }
             });
         }
