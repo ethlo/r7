@@ -235,6 +235,7 @@ pre {
     background: rgba(168, 85, 247, 0.1);
 }
 
+.text-right { text-align: right; }
 
 /* Theme Toggle Button */
 .theme-btn {

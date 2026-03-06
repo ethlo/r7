@@ -112,7 +112,7 @@ async function update() {
 function renderTable(data) {
     if (!data.route_metrics) return;
 
-    // Aggregate totals, including the new WebSocket metrics
+    // Aggregate totals
     const totals = data.route_metrics.reduce((acc, r) => ({
         total: acc.total + (r.request_statistics.total || 0),
         ws_total: acc.ws_total + (r.request_statistics.websocket_total || 0),
@@ -139,9 +139,11 @@ function renderTable(data) {
     const globalAvgLat = totals.total === 0 ? 0 : (totals.latency / totals.total / 1000000).toFixed(3);
     const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
 
-    // Conditional Error Styles for Totals
+    // Conditional Styles for Totals
     const t4xxStyle = totals.err_4xx > 0 ? 'color: #ffca28; font-weight: 600;' : '';
     const t5xxStyle = totals.err_5xx > 0 ? 'color: #ff4444; font-weight: 600;' : '';
+    const tActiveHttpStyle = totals.active > 0 ? 'color: #00d4ff; font-weight: 600;' : '';
+    const tActiveWsStyle = totals.ws_active > 0 ? 'color: #00ff88; font-weight: 600;' : '';
 
     let html = `
         <tr class="total-row">
@@ -149,24 +151,26 @@ function renderTable(data) {
                 <div class="sum">SYSTEM TOTALS</div>
                 <div class="sub">LAST: ${timeAgo(totals.last_active)}</div>
             </td>
-            <td>
+            <td class="text-right">
                 <div class="sum">REQ: ${totals.total.toLocaleString()} / WS: ${totals.ws_total.toLocaleString()}</div>
                 <div class="sub">2xx: ${totals.st_2xx.toLocaleString()} / 3xx: ${totals.st_3xx.toLocaleString()}</div>
                 <div class="sub">4xx: <span style="${t4xxStyle}">${totals.err_4xx.toLocaleString()}</span> / 5xx: <span style="${t5xxStyle}">${totals.err_5xx.toLocaleString()}</span></div>
             </td>
-            <td>
+            <td class="text-right">
                 <div class="sum">SUM: ${formatBytes(totals.in_t, uTotal)} / ${formatBytes(totals.out_t, uTotal)}</div>
                 <div class="sub">HDR: ${formatBytes(totals.in_h, uTotal)} / ${formatBytes(totals.out_h, uTotal)}</div>
                 <div class="sub">BDY: ${formatBytes(totals.in_b, uTotal)} / ${formatBytes(totals.out_b, uTotal)}</div>
             </td>
-            <td>
-                <div>${formatBytes(totals.journal, uTotal)}</div>
+            <td class="text-right">
+                <div class="sum">${formatBytes(totals.journal, uTotal)}</div>
             </td>
-            <td>
-                <div class="sum">HTTP: ${totals.active}</div>
-                <div class="sub" style="color: #00ff88;">WS: ${totals.ws_active}</div>
+            <td class="text-right">
+                <div class="sum">HTTP: <span style="${tActiveHttpStyle}">${totals.active}</span></div>
+                <div class="sub">WS: <span style="${tActiveWsStyle}">${totals.ws_active}</span></div>
             </td>
-            <td><div>${globalAvgLat}ms</div></td>
+            <td class="text-right">
+                <div class="sum">${globalAvgLat}ms</div>
+            </td>
         </tr>`;
 
     data.route_metrics.forEach(r => {
@@ -183,9 +187,11 @@ function renderTable(data) {
 
         const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
 
-        // Conditional Error Styles for Routes
+        // Conditional Styles for Routes
         const r4xxStyle = err4xx > 0 ? 'color: #ffca28; font-weight: 600;' : '';
         const r5xxStyle = err5xx > 0 ? 'color: #ff4444; font-weight: 600;' : '';
+        const rActiveHttpStyle = s.active > 0 ? 'color: #00d4ff; font-weight: 600;' : '';
+        const rActiveWsStyle = wsActive > 0 ? 'color: #00ff88; font-weight: 600;' : '';
 
         html += `
         <tr class="clickable-row" onclick="showDetails('${r.id}')">
@@ -193,24 +199,26 @@ function renderTable(data) {
                 <div class="sum">${r.id}</div>
                 <div class="sub">LAST: ${timeAgo(s.last_active_ts)}</div>
             </td>
-            <td>
+            <td class="text-right">
                 <div class="sum">REQ: ${s.total.toLocaleString()} / WS: ${wsTotal.toLocaleString()}</div>
                 <div class="sub">2xx: ${st2xx.toLocaleString()} / 3xx: ${st3xx.toLocaleString()}</div>
                 <div class="sub">4xx: <span style="${r4xxStyle}">${err4xx.toLocaleString()}</span> / 5xx: <span style="${r5xxStyle}">${err5xx.toLocaleString()}</span></div>
             </td>
-            <td>
+            <td class="text-right">
                 <div class="sum">SUM: ${formatBytes(t.ingress.total_bytes, uRoute)} / ${formatBytes(t.egress.total_bytes, uRoute)}</div>
                 <div class="sub">HDR: ${formatBytes(t.ingress.header_bytes, uRoute)} / ${formatBytes(t.egress.header_bytes, uRoute)}</div>
                 <div class="sub">BDY: ${formatBytes(t.ingress.body_bytes, uRoute)} / ${formatBytes(t.egress.body_bytes, uRoute)}</div>
             </td>
-            <td>
+            <td class="text-right">
                 <div class="sum">${formatBytes(t.journal_storage_bytes, uRoute)}</div>
             </td>
-            <td>
-                <div class="sum">HTTP: ${s.active}</div>
-                <div class="sub" style="color: #00ff88;">WS: ${wsActive}</div>
+            <td class="text-right">
+                <div class="sum">HTTP: <span style="${rActiveHttpStyle}">${s.active}</span></div>
+                <div class="sub">WS: <span style="${rActiveWsStyle}">${wsActive}</span></div>
             </td>
-            <td><div>${(p.average_latency_nanoseconds / 1000000).toFixed(3)}ms</div></td>
+            <td class="text-right">
+                <div class="sum">${(p.average_latency_nanoseconds / 1000000).toFixed(3)}ms</div>
+            </td>
         </tr>`;
     });
 

@@ -188,10 +188,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         final boolean isWebSocket = exchange.getRequestHeaders().contains(io.undertow.util.Headers.UPGRADE) && "websocket".equalsIgnoreCase(exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.UPGRADE));
-        if (isWebSocket)
-        {
-            exchange.putAttachment(IS_WEBSOCKET_KEY, true);
-        }
+        exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
 
         final VlfJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
         final Journal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
