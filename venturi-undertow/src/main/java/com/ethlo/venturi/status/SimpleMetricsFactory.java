@@ -1,21 +1,14 @@
 package com.ethlo.venturi.status;
 
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
-
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
-import com.ethlo.venturi.api.ClientRequestGatewayExchange;
-import com.ethlo.venturi.api.ClientResponseGatewayExchange;
-import com.ethlo.venturi.api.CompletedGatewayExchange;
-import com.ethlo.venturi.api.FinishedGatewayFilter;
-import com.ethlo.venturi.api.GatewayFilter;
-import com.ethlo.venturi.api.ClientRequestGatewayFilter;
-import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
+import com.ethlo.venturi.api.*;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.status.dto.*;
 import com.ethlo.venturi.undertow.UndertowGatewayExchange;
 import com.ethlo.venturi.util.constants.HttpStatuses;
+
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilter, GatewayFilterFactory.EmptyConfig>
 {
@@ -206,6 +199,81 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         public long getLastActiveTime()
         {
             return this.lastActiveTime.get();
+        }
+
+        public void set(final RouteMetricsDto routeMetricsDto)
+        {
+            if (routeMetricsDto == null)
+            {
+                return;
+            }
+
+            final RequestStatsDto requestStatistics = routeMetricsDto.requestStatistics();
+            if (requestStatistics != null)
+            {
+                this.totalRequests.reset();
+                this.totalRequests.add(requestStatistics.total());
+
+                this.activeRequests.reset();
+                this.activeRequests.add(requestStatistics.active());
+
+                this.totalWsRequests.reset();
+                this.totalWsRequests.add(requestStatistics.websocketTotal());
+
+                this.activeWsRequests.reset();
+                this.activeWsRequests.add(requestStatistics.websocketActive());
+
+                this.lastActiveTime.set(requestStatistics.lastActive());
+
+                this.total2xxRequests.reset();
+                this.total2xxRequests.add(requestStatistics.status2xx());
+
+                this.total3xxRequests.reset();
+                this.total3xxRequests.add(requestStatistics.status3xx());
+
+                this.total4xxRequests.reset();
+                this.total4xxRequests.add(requestStatistics.status4xx());
+
+                this.total5xxRequests.reset();
+                this.total5xxRequests.add(requestStatistics.status5xx());
+
+                this.upstreamRequests.reset();
+                this.upstreamRequests.add(requestStatistics.upstream());
+            }
+
+            final TrafficFlowDto trafficFlow = routeMetricsDto.trafficFlow();
+            if (trafficFlow != null)
+            {
+                this.totalJournalBytes.reset();
+                this.totalJournalBytes.add(trafficFlow.journalStorageBytes());
+
+                final IngressDto ingress = trafficFlow.ingress();
+                if (ingress != null)
+                {
+                    this.totalRequestHeaderBytes.reset();
+                    this.totalRequestHeaderBytes.add(ingress.headerBytes());
+
+                    this.totalRequestBodyBytes.reset();
+                    this.totalRequestBodyBytes.add(ingress.bodyBytes());
+                }
+
+                final EgressDto egress = trafficFlow.egress();
+                if (egress != null)
+                {
+                    this.totalResponseHeaderBytes.reset();
+                    this.totalResponseHeaderBytes.add(egress.headerBytes());
+
+                    this.totalResponseBodyBytes.reset();
+                    this.totalResponseBodyBytes.add(egress.bodyBytes());
+                }
+            }
+
+            final PerformanceTelemetryDto performanceTelemetry = routeMetricsDto.performanceTelemetry();
+            if (performanceTelemetry != null && requestStatistics != null)
+            {
+                this.totalDurationNanos.reset();
+                this.totalDurationNanos.add(performanceTelemetry.averageLatencyNanoseconds() * requestStatistics.total());
+            }
         }
     }
 }

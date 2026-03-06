@@ -26,11 +26,16 @@ import com.ethlo.venturi.config.RoutesConfig;
 import com.ethlo.venturi.config.VenturiLoader;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
+import com.ethlo.venturi.status.FileTelemetryRepository;
 import com.ethlo.venturi.status.MetricsRegistry;
 import com.ethlo.venturi.status.SimpleMetricsFactory;
 import com.ethlo.venturi.status.StatusHandler;
+import com.ethlo.venturi.status.TelemetryRepository;
 import com.ethlo.venturi.status.TrafficMetricsHandler;
 import com.ethlo.venturi.status.VersionProvider;
+import com.ethlo.venturi.status.dto.ModelMapper;
+import com.ethlo.venturi.status.dto.RouteMetricsDto;
+import com.ethlo.venturi.status.dto.TelemetryFlusher;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.CharSequenceUtil;
 import com.ethlo.venturi.util.SystemUtil;
@@ -97,6 +102,8 @@ public final class VenturiMain
         }
         );
 
+        final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
+        final List<RouteMetricsDto> existingMetrics = telemetryRepository.load();
         final MetricsRegistry metricsRegistry = new MetricsRegistry();
         for (GatewayRoute route : routeRegistry.getRoutes())
         {
@@ -108,12 +115,21 @@ public final class VenturiMain
             {
                 if (filter instanceof SimpleMetricsFactory.GF metricsFilter)
                 {
+                    existingMetrics.stream()
+                            .filter(routeMetricsDto -> route.id().equals(routeMetricsDto.id()))
+                            .findFirst()
+                            .ifPresent(metricsFilter::set);
                     metricsRegistry.register(routeDefinition, metricsFilter);
                 }
             }
         }
+        final TelemetryFlusher telemetryFlusher = new TelemetryFlusher(telemetryRepository, () -> metricsRegistry.getAll().entrySet()
+                .stream()
+                .map(ModelMapper::mapToDto)
+                .toList()
+        );
+        telemetryFlusher.start();
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig);
-
         final VenturiUndertowHandler venturiUndertowHandler = new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(venturiUndertowHandler);
 

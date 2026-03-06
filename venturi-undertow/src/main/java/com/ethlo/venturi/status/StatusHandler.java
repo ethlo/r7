@@ -10,17 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.venturi.config.RouteDefinition;
-import com.ethlo.venturi.status.dto.EgressDto;
-import com.ethlo.venturi.status.dto.FilterDto;
-import com.ethlo.venturi.status.dto.IngressDto;
-import com.ethlo.venturi.status.dto.JournalDto;
-import com.ethlo.venturi.status.dto.MatchDto;
-import com.ethlo.venturi.status.dto.PerformanceTelemetryDto;
-import com.ethlo.venturi.status.dto.RequestStatsDto;
+import com.ethlo.venturi.status.dto.ModelMapper;
 import com.ethlo.venturi.status.dto.RouteConfigDto;
-import com.ethlo.venturi.status.dto.RouteMetricsDto;
-import com.ethlo.venturi.status.dto.TrafficFlowDto;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.SystemUtil;
 import com.ethlo.venturi.util.constants.MediaTypes;
@@ -44,23 +35,6 @@ public final class StatusHandler implements HttpHandler
         this.combinedHtml = loadResource("page.html")
                 .replace("<link rel=\"stylesheet\" href=\"style.css\">", "<style>" + loadResource("style.css") + "</style>")
                 .replace("<script src=\"script.js\"></script>", "<script>" + loadResource("script.js") + "</script>");
-    }
-
-    private static TrafficFlowDto mapTraffic(SimpleMetricsFactory.GF gf)
-    {
-        final IngressDto ingress = new IngressDto(
-                gf.getTotalRequestHeaderBytes(),
-                gf.getTotalRequestBodyBytes(),
-                gf.getTotalRequestHeaderBytes() + gf.getTotalRequestBodyBytes()
-        );
-
-        final EgressDto egress = new EgressDto(
-                gf.getTotalResponseHeaderBytes(),
-                gf.getTotalResponseBodyBytes(),
-                gf.getTotalResponseHeaderBytes() + gf.getTotalResponseBodyBytes()
-        );
-
-        return new TrafficFlowDto(ingress, egress, gf.getTotalJournalBytes());
     }
 
     private String loadResource(final String path)
@@ -100,45 +74,6 @@ public final class StatusHandler implements HttpHandler
         }
     }
 
-    private RouteConfigDto mapToDto(final RouteDefinition def)
-    {
-        final MatchDto match = new MatchDto(
-                def.match().getClass().getSimpleName(),
-                def.match().toString()
-        );
-
-        final JournalDto journal = new JournalDto(
-                def.journal().request().level().name(),
-                def.journal().response().level().name()
-        );
-
-        final List<FilterDto> filters = def.filters().stream()
-                .map(f -> new FilterDto(f.name(), f.args()))
-                .toList();
-
-        return new RouteConfigDto(
-                def.id().toString(),
-                match,
-                journal,
-                def.upstream().targets().toString(),
-                filters
-        );
-    }
-
-    private RouteMetricsDto mapToDto(final Map.Entry<String, SimpleMetricsFactory.GF> gfEntry)
-    {
-        final SimpleMetricsFactory.GF gf = gfEntry.getValue();
-        final TrafficFlowDto traffic = mapTraffic(gf);
-        final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(gf.getAvgLatencyNanos());
-        final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
-                gf.getTotalWsRequests(), gf.getActiveWsRequests(), gf.getLastActiveTime(),
-                gf.getStatus2xxRequests(), gf.getStatus3xxRequests(), gf.getStatus4xxRequests(), gf.getStatus5xxRequests(),
-                gf.getUpstreamRequests()
-        );
-
-        return new RouteMetricsDto(gfEntry.getKey(), stats, traffic, performance);
-    }
-
     private void serveJson(final HttpServerExchange exchange)
     {
         final Map<String, Object> root = new LinkedHashMap<>();
@@ -149,13 +84,11 @@ public final class StatusHandler implements HttpHandler
                         "started_at", SystemUtil.getStartTime()
                 )
         );
-
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
-
-        root.put("route_metrics", registry.getAll().entrySet().stream().map(this::mapToDto).toList());
+        root.put("route_metrics", registry.getAll().entrySet().stream().map(ModelMapper::mapToDto).toList());
 
         final List<RouteConfigDto> manifest = registry.getRouteDefinitions().stream()
-                .map(this::mapToDto)
+                .map(ModelMapper::mapToDto)
                 .toList();
         root.put("route_configs", manifest);
 
