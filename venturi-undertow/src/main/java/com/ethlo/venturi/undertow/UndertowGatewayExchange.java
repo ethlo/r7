@@ -1,7 +1,5 @@
 package com.ethlo.venturi.undertow;
 
-import java.net.InetAddress;
-
 import com.ethlo.venturi.api.ClientRequestGatewayExchange;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.CompletedGatewayExchange;
@@ -9,11 +7,11 @@ import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.GatewayRouteInfo;
-import com.ethlo.venturi.api.IpSource;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.TerminationGatewayResponse;
+import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.status.TrafficMetricsHandler;
 import com.ethlo.venturi.time.ClockSource;
@@ -24,15 +22,13 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     private final HttpServerExchange undertowExchange;
     private final CharSequence requestId;
     private final GatewayRequest request;
-    private final MutableGatewayRequest upstreamRequest;
+    private MutableGatewayRequest upstreamRequest;
     private final MutableGatewayResponse response;
     private final MutableGatewayAttributes attributes;
     private final GatewayRoute route;
     private GatewayResponse upstreamResponse;
     private TerminationGatewayResponse terminated;
     private long journalBytes;
-    private InetAddress remoteAddress;
-    private IpSource remoteAddressSource;
 
     public UndertowGatewayExchange(
             HttpServerExchange undertowExchange,
@@ -99,14 +95,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     @Override
     public GatewayRouteInfo route()
     {
-        return new GatewayRouteInfo()
-        {
-            @Override
-            public CharSequence id()
-            {
-                return route.id();
-            }
-        };
+        return route::id;
     }
 
 
@@ -158,5 +147,15 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     public void onWebSocketClose(Runnable closeListener)
     {
         undertowExchange.getConnection().addCloseListener(connection -> closeListener.run());
+    }
+
+    public boolean wasProxied()
+    {
+        return undertowExchange.getAttachment(VenturiUndertowHandler.PROXY_START_TS_KEY) != null;
+    }
+
+    public void setUpstreamRequest(UnproxiedUpstreamRequest unproxiedUpstreamRequest)
+    {
+        this.upstreamRequest = unproxiedUpstreamRequest;
     }
 }

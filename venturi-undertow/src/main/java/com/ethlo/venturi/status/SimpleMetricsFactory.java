@@ -1,14 +1,29 @@
 package com.ethlo.venturi.status;
 
-import com.ethlo.venturi.api.*;
-import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.spi.GatewayFilterFactory;
-import com.ethlo.venturi.status.dto.*;
-import com.ethlo.venturi.undertow.UndertowGatewayExchange;
-import com.ethlo.venturi.util.constants.HttpStatuses;
-
+import java.util.Arrays;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
+
+import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientRequestGatewayExchange;
+import com.ethlo.venturi.api.ClientRequestGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayExchange;
+import com.ethlo.venturi.api.CompletedGatewayExchange;
+import com.ethlo.venturi.api.CompletedGatewayFilter;
+import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
+import com.ethlo.venturi.core.ShortInfo;
+import com.ethlo.venturi.spi.GatewayFilterFactory;
+import com.ethlo.venturi.status.dto.EgressDto;
+import com.ethlo.venturi.status.dto.IngressDto;
+import com.ethlo.venturi.status.dto.PerformanceTelemetryDto;
+import com.ethlo.venturi.status.dto.RequestStatsDto;
+import com.ethlo.venturi.status.dto.RouteMetricsDto;
+import com.ethlo.venturi.status.dto.TrafficFlowDto;
+import com.ethlo.venturi.undertow.UndertowGatewayExchange;
 
 public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilter, GatewayFilterFactory.EmptyConfig>
 {
@@ -26,17 +41,16 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         return new GF();
     }
 
-    public static final class GF implements ClientRequestGatewayFilter, BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, FinishedGatewayFilter, ShortInfo
+    public static final class GF implements ClientRequestGatewayFilter, BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, CompletedGatewayFilter, ShortInfo
     {
+        public static final int STATUS_COUNT_ARRAY_SIZE = 500;
+        private static final int STATUS_COUNTER_OFFSET = 100;
         private final AtomicLong lastActiveTime = new AtomicLong(0L);
 
         private final LongAdder totalRequests = new LongAdder();
         private final LongAdder totalWsRequests = new LongAdder();
-        private final LongAdder total2xxRequests = new LongAdder();
-        private final LongAdder total3xxRequests = new LongAdder();
-        private final LongAdder total4xxRequests = new LongAdder();
-        private final LongAdder total5xxRequests = new LongAdder();
-
+        private final LongAdder[] clientResponseStatuses = new LongAdder[STATUS_COUNT_ARRAY_SIZE];
+        private final LongAdder[] upstreamResponseStatuses = new LongAdder[STATUS_COUNT_ARRAY_SIZE];
         private final LongAdder activeRequests = new LongAdder();
         private final LongAdder activeWsRequests = new LongAdder();
         private final LongAdder upstreamRequests = new LongAdder();
@@ -49,6 +63,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         private final LongAdder totalResponseHeaderBytes = new LongAdder();
         private final LongAdder totalResponseBodyBytes = new LongAdder();
 
+        public GF()
+        {
+            Arrays.setAll(this.clientResponseStatuses, i -> new LongAdder());
+            Arrays.setAll(this.upstreamResponseStatuses, i -> new LongAdder());
+        }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
@@ -91,22 +110,17 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             this.totalJournalBytes.add(undertowExchange.getJournalBytes());
             this.totalDurationNanos.add(undertowExchange.getDurationNanos());
 
-            final int statusCode = exchange.clientResponse().status();
-            if (HttpStatuses.is2xx(statusCode))
+            final int clientStatus = exchange.clientResponse() != null ? exchange.clientResponse().status() : 0;
+            // Bound the index between 0 and 499 to prevent crashes on weird internal status codes
+            final int clientIndex = Math.max(0, Math.min(clientStatus - STATUS_COUNTER_OFFSET, this.clientResponseStatuses.length - 1));
+            this.clientResponseStatuses[clientIndex].increment();
+
+            // Safe Upstream Status Logging
+            if (undertowExchange.wasProxied())
             {
-                this.total2xxRequests.increment();
-            }
-            else if (HttpStatuses.is3xx(statusCode))
-            {
-                this.total3xxRequests.increment();
-            }
-            else if (HttpStatuses.is4xx(statusCode))
-            {
-                this.total4xxRequests.increment();
-            }
-            else if (HttpStatuses.is5xx(statusCode))
-            {
-                this.total5xxRequests.increment();
+                final int upstreamStatus = exchange.upstreamResponse().status();
+                final int upstreamIndex = Math.max(0, Math.min(upstreamStatus - STATUS_COUNTER_OFFSET, this.upstreamResponseStatuses.length - 1));
+                this.upstreamResponseStatuses[upstreamIndex].increment();
             }
         }
 
@@ -176,24 +190,34 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             return this.totalResponseBodyBytes.sum();
         }
 
+        private long summarizeRanges(int lower, int upper)
+        {
+            long total = 0;
+            for (int i = lower - STATUS_COUNTER_OFFSET; i <= upper - STATUS_COUNTER_OFFSET; i++)
+            {
+                total += clientResponseStatuses[i].sum();
+            }
+            return total;
+        }
+
         public long getStatus2xxRequests()
         {
-            return this.total2xxRequests.sum();
+            return summarizeRanges(200, 299);
         }
 
         public long getStatus3xxRequests()
         {
-            return this.total3xxRequests.sum();
+            return summarizeRanges(300, 399);
         }
 
         public long getStatus4xxRequests()
         {
-            return this.total4xxRequests.sum();
+            return summarizeRanges(400, 499);
         }
 
         public long getStatus5xxRequests()
         {
-            return this.total5xxRequests.sum();
+            return summarizeRanges(STATUS_COUNT_ARRAY_SIZE, 599);
         }
 
         public long getLastActiveTime()
@@ -225,17 +249,8 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
 
                 this.lastActiveTime.set(requestStatistics.lastActive());
 
-                this.total2xxRequests.reset();
-                this.total2xxRequests.add(requestStatistics.status2xx());
-
-                this.total3xxRequests.reset();
-                this.total3xxRequests.add(requestStatistics.status3xx());
-
-                this.total4xxRequests.reset();
-                this.total4xxRequests.add(requestStatistics.status4xx());
-
-                this.total5xxRequests.reset();
-                this.total5xxRequests.add(requestStatistics.status5xx());
+                fromMap(this.upstreamResponseStatuses, requestStatistics.upstreamResponseStatuses());
+                fromMap(this.clientResponseStatuses, requestStatistics.clientResponseStatuses());
 
                 this.upstreamRequests.reset();
                 this.upstreamRequests.add(requestStatistics.upstream());
@@ -274,6 +289,45 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
                 this.totalDurationNanos.reset();
                 this.totalDurationNanos.add(performanceTelemetry.averageLatencyNanoseconds() * requestStatistics.total());
             }
+        }
+
+        public Map<Integer, Long> getUpstreamResponseStatuses()
+        {
+            return toMap(this.upstreamResponseStatuses);
+        }
+
+        public Map<Integer, Long> getClientResponseStatuses()
+        {
+            return toMap(this.clientResponseStatuses);
+        }
+
+        private Map<Integer, Long> toMap(LongAdder[] statuses)
+        {
+            final Map<Integer, Long> result = new TreeMap<>();
+            for (int i = 0; i < statuses.length; i++)
+            {
+                final long count = statuses[i].sum();
+                if (count > 0L)
+                {
+                    result.put(i + STATUS_COUNTER_OFFSET, count);
+                }
+            }
+            return result;
+        }
+
+        private void fromMap(final LongAdder[] target, Map<Integer, Long> statuses)
+        {
+            if (statuses == null)
+            {
+                return;
+            }
+
+            statuses.forEach((key, value) ->
+            {
+                final int index = key - STATUS_COUNTER_OFFSET;
+                target[index].reset();
+                target[index].add(value);
+            });
         }
     }
 }

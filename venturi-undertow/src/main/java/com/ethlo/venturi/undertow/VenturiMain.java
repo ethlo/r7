@@ -61,7 +61,6 @@ public final class VenturiMain
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
 
-
     public VenturiMain(Path configFile, Path serverFile) throws IOException
     {
         final HttpHandler benchMarkHandler = exchange -> {

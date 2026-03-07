@@ -51,8 +51,18 @@ function timeAgo(ts) {
     return `${Math.floor(h / 24)}d AGO`;
 }
 
+// Helper to calculate aggregate buckets from the status maps
+function sumStatuses(statusObj, min, max) {
+    if (!statusObj) return 0;
+    let sum = 0;
+    for (const [code, count] of Object.entries(statusObj)) {
+        const c = parseInt(code, 10);
+        if (c >= min && c <= max) sum += count;
+    }
+    return sum;
+}
+
 // Global UI Helpers
-// Pure CSS Global UI Helpers
 const mRow = (label, value, isSum = false, valueClass = '') => `
     <div class="${isSum ? 'sum' : 'sub'} metric-row">
         <span class="metric-label">${label}</span>
@@ -76,10 +86,11 @@ function showDetails(routeId) {
     const s = metrics.request_statistics;
     const p = metrics.performance_telemetry;
 
-    const st2xx = s.status_2xx || 0;
-    const st3xx = s.status_3xx || 0;
-    const err4xx = s.status_4xx || 0;
-    const err5xx = s.status_5xx || 0;
+    // Dynamically calculate the aggregates from the client_statuses map
+    const st2xx = sumStatuses(s.client_statuses, 200, 299);
+    const st3xx = sumStatuses(s.client_statuses, 300, 399);
+    const err4xx = sumStatuses(s.client_statuses, 400, 499);
+    const err5xx = sumStatuses(s.client_statuses, 500, 599);
     const wsTotal = s.websocket_total || 0;
     const wsActive = s.websocket_active || 0;
 
@@ -127,9 +138,21 @@ function showDetails(routeId) {
                 </div>`;
         });
     } else {
-        fHtml += `<div class="sub text-muted">No filters configured.</div>`;
+        fHtml += `<div class="sub text-muted" style="padding: 4px 8px;">No filters configured.</div>`;
     }
     fHtml += '</div>';
+
+    // Status Map Generators
+    const generateStatusRows = (statusMap) => {
+        if (!statusMap || Object.keys(statusMap).length === 0) {
+            return `<div class="sub text-muted" style="padding: 4px 8px;">No statuses recorded.</div>`;
+        }
+        return Object.entries(statusMap).map(([code, count]) => {
+            const codeNum = parseInt(code, 10);
+            const colorClass = codeNum >= 500 ? 'text-err' : (codeNum >= 400 ? 'text-warn' : '');
+            return mRow(`HTTP ${code}`, count.toLocaleString(), false, colorClass);
+        }).join('');
+    };
 
     document.getElementById('details-content').innerHTML = `
         <div class="panel-header-container">
@@ -156,13 +179,23 @@ function showDetails(routeId) {
         </div>
 
         <div class="panel-section">
-            <div class="panel-section-title">Requests</div>
+            <div class="panel-section-title">Requests (Aggregated)</div>
             ${mRow('HTTP TOTAL', s.total.toLocaleString(), true)}
             ${mRow('WEBSOCKET TOTAL', wsTotal.toLocaleString(), false)}
             ${mRow('2xx SUCCESS', st2xx.toLocaleString(), false)}
             ${mRow('3xx REDIRECT', st3xx.toLocaleString(), false)}
             ${mRow('4xx ERROR', err4xx.toLocaleString(), false, r4xxStyle)}
             ${mRow('5xx ERROR', err5xx.toLocaleString(), false, r5xxStyle)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Client Responses</div>
+            ${generateStatusRows(s.client_statuses)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Upstream Responses</div>
+            ${generateStatusRows(s.upstream_statuses)}
         </div>
 
         <div class="panel-section">
@@ -246,10 +279,10 @@ function renderTable(data) {
     const totals = data.route_metrics.reduce((acc, r) => ({
         total: acc.total + (r.request_statistics.total || 0),
         ws_total: acc.ws_total + (r.request_statistics.websocket_total || 0),
-        st_2xx: acc.st_2xx + (r.request_statistics.status_2xx || 0),
-        st_3xx: acc.st_3xx + (r.request_statistics.status_3xx || 0),
-        err_4xx: acc.err_4xx + (r.request_statistics.status_4xx || 0),
-        err_5xx: acc.err_5xx + (r.request_statistics.status_5xx || 0),
+        st_2xx: acc.st_2xx + sumStatuses(r.request_statistics.client_statuses, 200, 299),
+        st_3xx: acc.st_3xx + sumStatuses(r.request_statistics.client_statuses, 300, 399),
+        err_4xx: acc.err_4xx + sumStatuses(r.request_statistics.client_statuses, 400, 499),
+        err_5xx: acc.err_5xx + sumStatuses(r.request_statistics.client_statuses, 500, 599),
         active: acc.active + (r.request_statistics.active || 0),
         ws_active: acc.ws_active + (r.request_statistics.websocket_active || 0),
         last_active: Math.max(acc.last_active, (r.request_statistics.last_active_ts || 0)),
@@ -322,10 +355,11 @@ function renderTable(data) {
         const p = r.performance_telemetry;
         const config = window.currentConfigs[r.id];
 
-        const st2xx = s.status_2xx || 0;
-        const st3xx = s.status_3xx || 0;
-        const err4xx = s.status_4xx || 0;
-        const err5xx = s.status_5xx || 0;
+        // Dynamically compute the aggregates for the table view
+        const st2xx = sumStatuses(s.client_statuses, 200, 299);
+        const st3xx = sumStatuses(s.client_statuses, 300, 399);
+        const err4xx = sumStatuses(s.client_statuses, 400, 499);
+        const err5xx = sumStatuses(s.client_statuses, 500, 599);
         const wsTotal = s.websocket_total || 0;
         const wsActive = s.websocket_active || 0;
 

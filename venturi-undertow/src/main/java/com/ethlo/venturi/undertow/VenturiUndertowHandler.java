@@ -13,6 +13,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
+import com.ethlo.venturi.api.UnproxiedUpstreamResponse;
+
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
 import org.xnio.ssl.XnioSsl;
@@ -21,11 +24,10 @@ import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.api.ClientRequestGatewayFilter;
-import com.ethlo.venturi.api.FinishedGatewayFilter;
+import com.ethlo.venturi.api.CompletedGatewayFilter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRequest;
-import com.ethlo.venturi.api.GatewayResponse;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayResponse;
@@ -107,12 +109,17 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private static void handleCompleted(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final HttpServerExchange ex, final ExchangeCompletionListener.NextListener nextListener)
     {
+        if (!gatewayExchange.wasProxied())
+        {
+            gatewayExchange.setUpstreamRequest(UnproxiedUpstreamRequest.INSTANCE);
+            gatewayExchange.setUpstreamResponse(UnproxiedUpstreamResponse.INSTANCE);
+        }
         final long journalBytes = ((StatefulJournal) journal).getBytesWritten();
         gatewayExchange.setJournalBytes(journalBytes);
 
         try
         {
-            if (gatewayExchange.upstreamResponse() != null)
+            if (gatewayExchange.wasProxied())
             {
                 journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
                 journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
@@ -168,10 +175,9 @@ public final class VenturiUndertowHandler implements HttpHandler
     {
         final CharSequence requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(new ImmutableHeaderSnapshot(exchange.getRequestHeaders()), exchange.getRequestPath(), exchange.getRequestURI(), exchange.getRequestMethod().toString(), exchange.getDecodedQueryString(), incomingRequest.remoteAddress(), incomingRequest.getRemoteAddressSource());
-        final MutableGatewayResponse upstreamResponse = new UndertowGatewayResponse(exchange);
-        final GatewayResponse responseCopy = null;
+        final MutableGatewayResponse clientResponse = new UndertowGatewayResponse(exchange);
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
-        final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, upstreamResponse, responseCopy, attrs, route);
+        final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
         final RouteJournalConfig journalConfig = ((DefaultGatewayRoute) route).routeDefinition().journal();
 
@@ -193,14 +199,14 @@ public final class VenturiUndertowHandler implements HttpHandler
         final Journal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
 
-        final List<FinishedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof FinishedGatewayFilter).map(FinishedGatewayFilter.class::cast).toList();
+        final List<CompletedGatewayFilter> finishedGatewayFilters = filters.stream().filter(f -> f instanceof CompletedGatewayFilter).map(CompletedGatewayFilter.class::cast).toList();
         exchange.addExchangeCompleteListener((ex, next) ->
         {
             handleCompleted(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, ex, next);
 
             try
             {
-                for (final FinishedGatewayFilter filter : finishedGatewayFilters)
+                for (final CompletedGatewayFilter filter : finishedGatewayFilters)
                 {
                     filter.onCompleted(gatewayExchange);
                 }
@@ -221,7 +227,10 @@ public final class VenturiUndertowHandler implements HttpHandler
         {
             exchange.addResponseCommitListener(ex ->
             {
-                gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
+                if (gatewayExchange.wasProxied())
+                {
+                    gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
+                }
 
                 for (final BeforeCommitGatewayFilter filter : beforeCommitGatewayFilters)
                 {

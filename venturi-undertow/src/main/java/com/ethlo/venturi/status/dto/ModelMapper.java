@@ -40,7 +40,7 @@ public class ModelMapper
         final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(gf.getAvgLatencyNanos());
         final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
                 gf.getTotalWsRequests(), gf.getActiveWsRequests(), gf.getLastActiveTime(),
-                gf.getStatus2xxRequests(), gf.getStatus3xxRequests(), gf.getStatus4xxRequests(), gf.getStatus5xxRequests(),
+                gf.getUpstreamResponseStatuses(), gf.getClientResponseStatuses(),
                 gf.getUpstreamRequests()
         );
 
