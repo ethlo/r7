@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
-public final class VenturiLoader
+public final class ConfigurationManager
 {
     private static final ObjectMapper mapper;
 
@@ -34,17 +34,24 @@ public final class VenturiLoader
     private final FilterRegistry filterRegistry;
     private final PredicateRegistry predicateRegistry;
 
-    public VenturiLoader()
+    public ConfigurationManager()
     {
         this.filterRegistry = new FilterRegistry();
         this.predicateRegistry = new PredicateRegistry(mapper);
+    }
+
+    public static ValidationResult validate(ValidatableConfig config)
+    {
+        final ValidationResult validationResult = new ValidationResult();
+        config.validate(validationResult);
+        return validationResult;
     }
 
     public void load(RoutesConfig config, RouteRegistry routeRegistry)
     {
         final ValidationResult validationResult = validate(config);
         validationResult.throwIfInvalid();
-        final List<GatewayRoute> routes = config.routes.stream()
+        final List<GatewayRoute> routes = config.routes().stream()
                 .map(def -> {
                     final List<GatewayFilter> instantiatedFilters = new ArrayList<>();
                     if (def.filters() != null)
@@ -78,16 +85,6 @@ public final class VenturiLoader
                 .toList();
 
         routeRegistry.updateRoutes(routes);
-    }
-
-    private ValidationResult validate(RoutesConfig config)
-    {
-        final ValidationResult validationResult = new ValidationResult();
-        for (RouteDefinition route : config.routes)
-        {
-            route.validate(validationResult);
-        }
-        return validationResult;
     }
 
     public <T> T load(Path yamlFile, Class<T> type)

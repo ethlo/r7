@@ -9,6 +9,8 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
 
+import com.ethlo.venturi.config.HotReloadService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -23,7 +25,7 @@ import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.RoutesConfig;
-import com.ethlo.venturi.config.VenturiLoader;
+import com.ethlo.venturi.config.ConfigurationManager;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
 import com.ethlo.venturi.status.FileTelemetryRepository;
@@ -69,7 +71,7 @@ public final class VenturiMain
         };
 
         final RouteRegistry routeRegistry = new RouteRegistry();
-        final VenturiLoader loader = new VenturiLoader();
+        final ConfigurationManager loader = new ConfigurationManager();
 
         final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
         final ValidationResult result = new ValidationResult();
@@ -81,6 +83,10 @@ public final class VenturiMain
 
         final RoutesConfig routesConfig = loader.load(configFile, RoutesConfig.class);
         loader.load(routesConfig, routeRegistry);
+
+        final HotReloadService hotReloadService = new HotReloadService(configFile, loader, routeRegistry);
+        new Thread(hotReloadService, "hot-reload").start();
+        logger.info("HotReloadService started. Watching {}", configFile.toAbsolutePath());
 
         final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
         consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
@@ -107,7 +113,7 @@ public final class VenturiMain
         final MetricsRegistry metricsRegistry = new MetricsRegistry();
         for (GatewayRoute route : routeRegistry.getRoutes())
         {
-            final RouteDefinition routeDefinition = routesConfig.routes.stream()
+            final RouteDefinition routeDefinition = routesConfig.routes().stream()
                     .filter(r -> CharSequenceUtil.equals(r.id(), route.id()))
                     .findFirst().orElseThrow();
 

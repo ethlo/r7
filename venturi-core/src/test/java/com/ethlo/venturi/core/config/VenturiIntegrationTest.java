@@ -13,7 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.RouteRegistry;
-import com.ethlo.venturi.config.VenturiLoader;
+import com.ethlo.venturi.config.ConfigurationManager;
 
 class VenturiIntegrationTest
 {
@@ -47,7 +47,7 @@ class VenturiIntegrationTest
 
         // 2. Initialize the Venturi components
         final RouteRegistry registry = new RouteRegistry();
-        final VenturiLoader loader = new VenturiLoader();
+        final ConfigurationManager loader = new ConfigurationManager();
 
         // 3. Execute the load (The "Live Reload" entry point)
         // FIXME: loader.load(configFile, registry, s->);

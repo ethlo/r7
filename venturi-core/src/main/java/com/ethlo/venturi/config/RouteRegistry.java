@@ -13,22 +13,18 @@ public class RouteRegistry
     private final AtomicReference<List<GatewayRoute>> routes = new AtomicReference<>(Collections.emptyList());
 
     /**
-     * Swaps the current routing table for a new one. (Live Reload)
+     * Swaps the current routing table for a new one for hot-reload
      */
     public void updateRoutes(List<GatewayRoute> newRoutes)
     {
         this.routes.set(List.copyOf(newRoutes));
     }
 
-    /**
-     * Finds the first matching route. High-performance O(N) linear scan.
-     */
     public Optional<GatewayRoute> findRoute(GatewayRequest exchange)
     {
         final List<GatewayRoute> current = routes.get();
         for (GatewayRoute route : current)
         {
-            // This calls our zero-allocation predicates compiled from YAML
             if (route.predicate().test(exchange))
             {
                 return Optional.of(route);
@@ -40,10 +36,5 @@ public class RouteRegistry
     public List<GatewayRoute> getRoutes()
     {
         return this.routes.get();
-    }
-
-    public RouteRegistry()
-    {
-        super();
     }
 }

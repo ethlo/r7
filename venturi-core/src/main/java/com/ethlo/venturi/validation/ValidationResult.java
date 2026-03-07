@@ -25,4 +25,9 @@ public final class ValidationResult
             throw new IllegalStateException("Gateway configuration is invalid:\n - " + report);
         }
     }
+
+    public List<String> getErrors()
+    {
+        return errors;
+    }
 }
