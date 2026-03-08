@@ -1,5 +1,7 @@
 package com.ethlo.venturi.undertow.config;
 
+import java.util.Optional;
+
 import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
@@ -142,9 +144,29 @@ public record ServerConfig(
     }
 
     public record StorageConfig(
-            String workDir
+            String workDir,
+            Integer shardCount,
+            Long shardSize,
+            Boolean preFault
     )
     {
+        @Override
+        public Integer shardCount()
+        {
+            return Optional.ofNullable(shardCount).orElse(1);
+        }
+
+        @Override
+        public Long shardSize()
+        {
+            return Optional.ofNullable(shardSize).orElse(100L * 1024 * 1024);
+        }
+
+        @Override
+        public Boolean preFault()
+        {
+            return Optional.ofNullable(preFault).orElse(false);
+        }
     }
 
     public record OptionsConfig(

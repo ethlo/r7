@@ -1,5 +1,8 @@
 package com.ethlo.venturi.config;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +82,7 @@ public final class ConfigurationManager
                         new ValidatorUtils(validationResult).invalid(def.id().toString(), "upstream.targets", null, "upstream targets required");
                         validationResult.throwIfInvalid();
                     }
+
                     final List<CharSequence> urls = def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
                     return (GatewayRoute) new DefaultGatewayRoute(def.id(), urls, predicate, instantiatedFilters, def);
                 })
@@ -89,6 +93,16 @@ public final class ConfigurationManager
 
     public <T> T load(Path yamlFile, Class<T> type)
     {
-        return mapper.readValue(yamlFile, type);
+        final String contents;
+        try
+        {
+            contents = Files.readString(yamlFile);
+        }
+        catch (IOException e)
+        {
+            throw new UncheckedIOException(e);
+        }
+        final String interpolated = EnvInterpolator.interpolate(contents);
+        return mapper.readValue(interpolated, type);
     }
 }

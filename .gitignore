@@ -1,3 +1,4 @@
+docker/journals
 gc.log*
 target/
 !.mvn/wrapper/maven-wrapper.jar

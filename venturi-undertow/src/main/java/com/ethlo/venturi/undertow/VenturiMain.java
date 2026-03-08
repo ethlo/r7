@@ -56,8 +56,6 @@ import io.undertow.util.Headers;
 
 public final class VenturiMain
 {
-    public static final int JOURNAL_SHARD_COUNT = 4;
-    public static final int JOURNAL_SHARD_SIZE_BYTES = 1024 * 1024 * 100;
     private static final Logger logger = LoggerFactory.getLogger(VenturiMain.class);
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
 
@@ -83,9 +81,6 @@ public final class VenturiMain
         final RoutesConfig routesConfig = loader.load(configFile, RoutesConfig.class);
         loader.load(routesConfig, routeRegistry);
 
-        final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
-        consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
-
         final HotReloadService hotReloadService = new HotReloadService(configFile, loader, routeRegistry);
         new Thread(hotReloadService, "hot-reload").start();
         logger.info("HotReloadService started. Watching {}", configFile.toAbsolutePath());
@@ -100,9 +95,9 @@ public final class VenturiMain
         final List<Path> paths = VlfRecoveryManager.cleanAndRecover(workDir);
         paths.forEach(compressionEngine::submitForCompression);
 
-        final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(JOURNAL_SHARD_COUNT, shardIdx ->
+        final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
-            final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, JOURNAL_SHARD_SIZE_BYTES);
+            final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, storage.shardSize(), storage.preFault());
             return new VlfJournal(provider, compressionEngine::submitForCompression);
         }
         );
@@ -169,6 +164,9 @@ public final class VenturiMain
         // Have to happen after start
         statusHandler.setConnectorStatistics(server.getListenerInfo().getFirst().getConnectorStatistics());
 
+        final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
+        consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
+
         final Duration uptime = SystemUtil.getUptime();
         logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
@@ -217,6 +215,7 @@ public final class VenturiMain
             appender.setContext(context);
             appender.start();
 
+            /*
             final String[] targetLoggers = new String[]{
                     "io.undertow.request",
                     "io.undertow.request.io"
@@ -232,7 +231,8 @@ public final class VenturiMain
                 targetLogger.setAdditive(false);
             }
 
-            logger.info("Successfully injected ParserRejectionAppender for dark traffic telemetry");
+            logger.debug("Successfully injected ParserRejectionAppender for dark traffic telemetry");
+             */
         }
         catch (final JoranException je)
         {

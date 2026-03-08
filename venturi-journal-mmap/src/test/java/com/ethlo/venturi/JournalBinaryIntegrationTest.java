@@ -55,7 +55,7 @@ class JournalBinaryIntegrationTest
         VlfJournal[] journals = new VlfJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i, segmentSize));
+            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i, segmentSize, true));
         }
 
         int requestsPerThread = 50;
@@ -153,7 +153,7 @@ class JournalBinaryIntegrationTest
     void testRequestResponseInterleaving() throws IOException
     {
         final int segmentSize = 1024 * 1024;
-        VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, segmentSize);
+        VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, segmentSize, true);
 
         try (VlfJournal journal = new VlfJournal(provider))
         {

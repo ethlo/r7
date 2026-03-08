@@ -26,15 +26,17 @@ public class VlfJournalProvider implements AutoCloseable
     // Queue 1 extra mapped file ready
     private final BlockingQueue<WarmedSegment> pool = new SynchronousQueue<>();
     private final Thread warmerThread;
+    private final boolean preFault;
     private volatile boolean running = true;
 
-    public VlfJournalProvider(Path tempDir, int shardId, long segmentSizeBytes)
+    public VlfJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)
     {
         this.tempDir = tempDir;
         this.shardId = shardId;
         this.segmentSizeBytes = segmentSizeBytes;
 
         this.warmerThread = new Thread(this::warmupLoop, "venturi-warmer-shard-" + shardId);
+        this.preFault = preFault;
         this.warmerThread.setDaemon(true);
         this.warmerThread.setPriority(Thread.MIN_PRIORITY);
         this.warmerThread.start();
@@ -55,22 +57,22 @@ public class VlfJournalProvider implements AutoCloseable
                 {
                     // 1. Create a Shared Arena. It is created by the warmer thread,
                     // but will be written to and eventually closed by the Undertow/Gateway threads.
-                    Arena arena = Arena.ofShared();
+                    final Arena arena = Arena.ofShared();
+                    final MemorySegment segment = channel.map(FileChannel.MapMode.READ_WRITE, 0, segmentSizeBytes, arena);
 
-                    // 2. Map the file directly to a MemorySegment
-                    MemorySegment segment = channel.map(FileChannel.MapMode.READ_WRITE, 0, segmentSizeBytes, arena);
-
-                    // Pre-fault
-                    try
+                    if (preFault)
                     {
-                        segment.fill((byte) 0);
-                    }
-                    catch (InternalError e)
-                    {
-                        throw new UncheckedIOException(new IOException("Unable to pre-fault segment. is there enough disk space?"));
+                        try
+                        {
+                            segment.fill((byte) 0);
+                        }
+                        catch (InternalError e)
+                        {
+                            throw new UncheckedIOException(new IOException("Unable to pre-fault segment. is there enough disk space?"));
+                        }
                     }
 
-                    // 4. Queue it up. The channel closes here, but the Arena keeps the Segment alive!
+                    // The channel closes here, but the Arena keeps the Segment alive
                     pool.put(new WarmedSegment(nextPath, segment, arena));
                     log.debug("Warmed up and queue segment: {}", nextPath.getFileName());
                 }

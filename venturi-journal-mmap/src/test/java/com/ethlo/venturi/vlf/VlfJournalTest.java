@@ -42,7 +42,7 @@ class VlfJournalTest
 
         final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
 
-        final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE);
+        final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
         final String id = "adasqwteyutqwet";
         try (final VlfJournal journal = new VlfJournal(provider))
         {

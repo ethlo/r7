@@ -15,7 +15,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <flatbuffers.version>23.5.26</flatbuffers.version>
+        <flatbuffers.version>25.2.10</flatbuffers.version>
     </properties>
 
     <dependencies>
@@ -75,7 +75,7 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
-                            <executable>flatc</executable>
+                            <executable>${maven.multiModuleProjectDirectory}/bin/flatc</executable>
                             <arguments>
                                 <argument>--java</argument>
                                 <argument>-o</argument>
@@ -86,7 +86,6 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>

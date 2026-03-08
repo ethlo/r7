@@ -1,4 +1,4 @@
-version: ${git.rev.abbr}
+version: '{{git.rev.abbr}}'
 globals:
   timeouts:
     connect: PT5s
@@ -15,7 +15,7 @@ routes:
         - url: http://localhost:18888
     match:
       - PathStartsWith:
-          prefix: /my-secret-status
+          prefix: ${SECRET_URL:/status}
   - id: reject-benchmark
     upstream:
       targets:
