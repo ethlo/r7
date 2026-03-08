@@ -38,6 +38,10 @@ routes:
         level: NONE
     filters:
       - SimpleMetrics
+      - RateLimiter:
+          capacity: 10
+          refill_tokens: 5
+          refill_period: PT2s
       - AddResponseHeader:
           name: X-Gateway
           value: Venturi

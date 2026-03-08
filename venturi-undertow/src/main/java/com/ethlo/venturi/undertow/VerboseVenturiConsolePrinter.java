@@ -20,7 +20,7 @@ import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.config.DefaultGatewayRoute;
 import com.ethlo.venturi.config.JournalDirectionConfig;
 import com.ethlo.venturi.core.ShortInfo;
-import com.ethlo.venturi.core.predicates.CompositePredicate;
+import com.ethlo.venturi.predicates.CompositePredicate;
 import com.ethlo.venturi.journal.api.JournalLevel;
 import com.ethlo.venturi.undertow.config.ServerConfig;
 

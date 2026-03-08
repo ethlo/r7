@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.predicates;
+package com.ethlo.venturi.predicates;
 
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;

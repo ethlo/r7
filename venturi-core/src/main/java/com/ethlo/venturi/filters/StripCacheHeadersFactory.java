@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.filters;
+package com.ethlo.venturi.filters;
 
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;

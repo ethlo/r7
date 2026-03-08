@@ -1,17 +1,17 @@
-package com.ethlo.venturi.core.filters;
+package com.ethlo.venturi.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.ClientResponseGatewayExchange;
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
+import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeCommitGatewayFilter, AddResponseHeaderFactory.Config>
+public class AddRequestHeaderFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, AddRequestHeaderFactory.Config>
 {
-    private static final String FILTER_NAME = "AddResponseHeader";
+    private static final String FILTER_NAME = "AddRequestHeader";
 
     @Override
     public String name()
@@ -26,7 +26,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeComm
     }
 
     @Override
-    public BeforeCommitGatewayFilter create(Config config)
+    public BeforeUpstreamGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -42,7 +42,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeComm
         }
     }
 
-    private static class GF implements BeforeCommitGatewayFilter, ShortInfo
+    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
     {
         private final boolean override;
         private final String name;
@@ -50,21 +50,21 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeComm
 
         public GF(Config config)
         {
-            override = config.override() != null && config.override();
-            name = config.name();
-            value = config.value();
+            this.override = config.override() != null && config.override();
+            this.name = config.name();
+            this.value = config.value();
         }
 
         @Override
-        public void onClientResponse(final ClientResponseGatewayExchange exchange)
+        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             if (override)
             {
-                exchange.clientResponse().headers().set(name, value);
+                exchange.upstreamRequest().headers().set(name, value);
             }
             else
             {
-                exchange.clientResponse().headers().add(name, value);
+                exchange.upstreamRequest().headers().add(name, value);
             }
         }
 

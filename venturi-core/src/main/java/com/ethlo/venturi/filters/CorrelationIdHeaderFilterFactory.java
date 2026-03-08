@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.filters;
+package com.ethlo.venturi.filters;
 
 import static com.ethlo.venturi.util.constants.HttpHeaders.X_CORRELATION_ID;
 

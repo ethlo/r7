@@ -1,7 +1,4 @@
-package com.ethlo.venturi.core.predicates;
-
-import java.util.Arrays;
-import java.util.List;
+package com.ethlo.venturi.predicates;
 
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRequest;
@@ -12,9 +9,9 @@ import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Config>
+public class PathStartsWithFactory implements GatewayPredicateFactory<PathStartsWithFactory.Config>
 {
-    private static final String PREDICATE_NAME = "Method";
+    private static final String PREDICATE_NAME = "PathStartsWith";
 
     @Override
     public String name()
@@ -34,42 +31,34 @@ public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Conf
         return new GP(config);
     }
 
-    public record Config(List<String> include) implements ValidatableConfig
+    public record Config(String prefix) implements ValidatableConfig
     {
         @Override
         public void validate(ValidationResult result)
         {
-            new ValidatorUtils(result)
-                    .required(PREDICATE_NAME, "include", include)
-                    .notEmpty(PREDICATE_NAME, "include", include);
+            new ValidatorUtils(result).required(PREDICATE_NAME, "prefix", prefix);
         }
     }
 
     private static class GP implements GatewayPredicate, ShortInfo
     {
-        private final String[] include;
+        private final String prefix;
 
         public GP(Config config)
         {
-            // Array iteration is mechanically faster than Collection iteration
-            this.include = config.include().toArray(new String[0]);
+            this.prefix = config.prefix();
         }
 
         @Override
         public boolean test(GatewayRequest request)
         {
-            final CharSequence requestMethod = request.method();
-            for (final String m : include)
-            {
-                if (CharSequenceUtil.equals(m, requestMethod)) return true;
-            }
-            return false;
+            return CharSequenceUtil.startsWith(request.path(), prefix);
         }
 
         @Override
         public String summary()
         {
-            return PREDICATE_NAME + ": " + Arrays.toString(include);
+            return PREDICATE_NAME + ": " + prefix;
         }
     }
 }

@@ -98,7 +98,6 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         return route::id;
     }
 
-
     public void setUpstreamResponse(GatewayResponse clone)
     {
         this.upstreamResponse = clone;

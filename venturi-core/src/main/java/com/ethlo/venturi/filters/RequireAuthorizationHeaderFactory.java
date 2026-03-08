@@ -1,4 +1,4 @@
-package com.ethlo.venturi.core.filters;
+package com.ethlo.venturi.filters;
 
 import java.nio.ByteBuffer;
 

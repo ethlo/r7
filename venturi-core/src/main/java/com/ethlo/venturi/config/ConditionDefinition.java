@@ -7,10 +7,10 @@ import java.util.List;
 import java.util.Map;
 
 import com.ethlo.venturi.api.GatewayPredicate;
-import com.ethlo.venturi.core.predicates.AndPredicate;
-import com.ethlo.venturi.core.predicates.NotPredicate;
-import com.ethlo.venturi.core.predicates.OrPredicate;
-import com.ethlo.venturi.core.predicates.PredicateRegistry;
+import com.ethlo.venturi.predicates.AndPredicate;
+import com.ethlo.venturi.predicates.NotPredicate;
+import com.ethlo.venturi.predicates.OrPredicate;
+import com.ethlo.venturi.predicates.PredicateRegistry;
 import com.ethlo.venturi.validation.ValidationResult;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
@@ -63,7 +63,7 @@ public final class ConditionDefinition
         return Collections.emptyList();
     }
 
-    public GatewayPredicate build(com.ethlo.venturi.core.predicates.PredicateRegistry registry)
+    public GatewayPredicate build(PredicateRegistry registry)
     {
         final List<GatewayPredicate> list = new ArrayList<>();
 

@@ -7,7 +7,7 @@ import java.util.List;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayPredicate;
 import com.ethlo.venturi.api.GatewayRoute;
-import com.ethlo.venturi.core.predicates.PredicateRegistry;
+import com.ethlo.venturi.predicates.PredicateRegistry;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.FilterRegistry;
 import com.ethlo.venturi.util.ValidatorUtils;

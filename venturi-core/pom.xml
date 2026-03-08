@@ -47,6 +47,14 @@
             <version>3.0.4</version>
         </dependency>
 
+        <!-- Filters -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>8.10.1</version>
+            <scope>compile</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.graalvm.sdk</groupId>
             <artifactId>nativeimage</artifactId>
