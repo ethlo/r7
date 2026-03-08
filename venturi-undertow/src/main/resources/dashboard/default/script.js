@@ -4,6 +4,7 @@ const timeEl = document.getElementById('last-update');
 const panel = document.getElementById('details-panel');
 const mainContainer = document.getElementById('main-container');
 
+const FRACTION_DIGITS = 1;
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
 if (localStorage.getItem('theme') === 'light') {
@@ -20,7 +21,7 @@ function formatBytes(b, forceUnitIndex = -1) {
     if (b === 0 || b == null) {
         return forceUnitIndex >= 0 ? '0.00 ' + UNITS[i] : '0 B';
     }
-    return (b / Math.pow(1024, i)).toFixed(2) + ' ' + UNITS[i];
+    return (b / Math.pow(1024, i)).toFixed(FRACTION_DIGITS) + ' ' + UNITS[i];
 }
 
 function formatUptime(iso) {
@@ -121,8 +122,8 @@ function showSystemDetails() {
 
         <div class="panel-section">
             <div class="panel-section-title">Global Latency (Socket Level)</div>
-            ${mRow('AVERAGE PROCESSING', (avgProcessingNanos / 1000000).toFixed(3) + 'ms', true)}
-            ${mRow('MAXIMUM PROCESSING', (stats.max_processing_time_nanos / 1000000).toFixed(3) + 'ms', false)}
+            ${mRow('AVERAGE PROCESSING', (avgProcessingNanos / 1000000).toFixed(FRACTION_DIGITS) + 'ms', true)}
+            ${mRow('MAXIMUM PROCESSING', (stats.max_processing_time_nanos / 1000000).toFixed(FRACTION_DIGITS) + 'ms', false)}
         </div>
         
         <div class="panel-section">
@@ -238,7 +239,7 @@ function showDetails(routeId) {
             ${mRow('LAST ACTIVE', timeAgo(s.last_active_ts), true)}
             ${mRow('HTTP ACTIVE', s.active, false, rActiveHttpStyle)}
             ${mRow('WEBSOCKET ACTIVE', wsActive, false, rActiveWsStyle)}
-            ${mRow('AVERAGE LATENCY', (p.average_latency_nanoseconds / 1000000).toFixed(3) + 'ms', false)}
+            ${mRow('AVERAGE LATENCY', (p.average_latency_nanoseconds / 1000000).toFixed(FRACTION_DIGITS) + 'ms', false)}
         </div>
 
         <div class="panel-section">
@@ -380,7 +381,7 @@ function renderTable(data) {
         in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0, latency: 0
     });
 
-    const globalAvgLat = totals.total === 0 ? '0.000' : (totals.latency / totals.total / 1000000).toFixed(3);
+    const globalAvgLat = totals.total === 0 ? '0.000' : (totals.latency / totals.total / 1000000).toFixed(FRACTION_DIGITS);
     const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
 
     const t4xxStyle = totals.err_4xx > 0 ? 'text-warn' : '';
@@ -489,7 +490,7 @@ function renderTable(data) {
                 ${mRow('WS', wsActive, false, rActiveWsStyle)}
             </td>
             <td class="col-latency">
-                ${mRow('AVG', (p.average_latency_nanoseconds / 1000000).toFixed(3) + 'ms', true)}
+                ${mRow('AVG', (p.average_latency_nanoseconds / 1000000).toFixed(FRACTION_DIGITS) + 'ms', true)}
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
