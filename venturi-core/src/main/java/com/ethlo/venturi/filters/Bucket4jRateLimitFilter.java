@@ -12,6 +12,7 @@ import com.ethlo.venturi.api.ClientRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StateKey;
+import com.ethlo.venturi.core.GatewayContextKeys;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.FastTerminationGatewayResponse;
 import com.ethlo.venturi.util.MutableFastGatewayHeaders;
@@ -97,8 +98,11 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            // Extract IP for key
-            final String key = exchange.clientRequest().remoteAddress().getHostAddress();
+            // Check if a prior filter declared a specific rate-limit identity
+            final String customKey = exchange.getAttachment(GatewayContextKeys.RATE_LIMIT_KEY);
+
+            // Fallback to physical IP address if no identity was provided
+            final String key = (customKey != null) ? customKey : exchange.clientRequest().remoteAddress().getHostAddress();
 
             // Find and set bucket
             final Bucket bucket = buckets.get(key, this::createNewBucket);
