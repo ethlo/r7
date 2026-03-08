@@ -235,6 +235,11 @@ function showDetails(routeId) {
         </div>
         
         <div class="panel-section">
+            <div class="panel-section-title">Filter Pipeline</div>
+            ${fHtml}
+        </div>
+        
+        <div class="panel-section">
             <div class="panel-section-title">Status</div>
             ${mRow('LAST ACTIVE', timeAgo(s.last_active_ts), true)}
             ${mRow('HTTP ACTIVE', s.active, false, rActiveHttpStyle)}
@@ -278,11 +283,6 @@ function showDetails(routeId) {
             ${mRow('STORAGE USED', formatBytes(t.journal_storage_bytes, uRoute), true)}
             ${mRow('REQUEST', buildPills(reqJourn), false)}
             ${mRow('RESPONSE', buildPills(resJourn), false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Filter Pipeline</div>
-            ${fHtml}
         </div>
     `;
 
