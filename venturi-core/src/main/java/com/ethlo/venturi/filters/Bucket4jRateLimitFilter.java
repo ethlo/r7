@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
@@ -13,6 +14,7 @@ import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StateKey;
 import com.ethlo.venturi.core.GatewayContextKeys;
+import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.FastTerminationGatewayResponse;
 import com.ethlo.venturi.util.MutableFastGatewayHeaders;
@@ -77,9 +79,21 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
                     .required(FILTER_NAME, "refill_tokens", refillTokens)
                     .required(FILTER_NAME, "refill_period", refillPeriod);
         }
+
+        @Override
+        public String toString()
+        {
+            return new StringJoiner(", ", Config.class.getSimpleName() + "[", "]")
+                    .add("capacity=" + capacity())
+                    .add("refillTokens=" + refillTokens())
+                    .add("refillPeriod=" + refillPeriod())
+                    .add("maxBuckets=" + maxBuckets())
+                    .add("maxBucketTTL=" + maxBucketTTL())
+                    .toString();
+        }
     }
 
-    private static class GF implements ClientRequestGatewayFilter, BeforeCommitGatewayFilter
+    private static class GF implements ClientRequestGatewayFilter, BeforeCommitGatewayFilter, ShortInfo
     {
         private final Cache<String, Bucket> buckets;
         private final Config config;
@@ -146,6 +160,16 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
                 exchange.clientResponse().headers().set(HttpHeaders.X_RATELIMIT_LIMIT, this.capacityString);
                 exchange.clientResponse().headers().set(HttpHeaders.X_RATELIMIT_REMAINING, String.valueOf(remainingTokens));
             }
+        }
+
+        @Override
+        public String summary()
+        {
+            return new StringJoiner(", ", "RateLimiter" + "[", "]")
+                    .add("capacity=" + config.capacity())
+                    .add("refillTokens=" + config.refillTokens())
+                    .add("refillPeriod=" + config.refillPeriod())
+                    .toString();
         }
     }
 }

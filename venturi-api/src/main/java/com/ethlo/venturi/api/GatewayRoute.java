@@ -23,5 +23,5 @@ public interface GatewayRoute
     GatewayPredicate predicate();
 
 
-    Iterable<GatewayFilter> filters();
+    List<GatewayFilter> filters();
 }
