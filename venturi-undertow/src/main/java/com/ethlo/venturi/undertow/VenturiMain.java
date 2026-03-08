@@ -8,8 +8,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
-
-import com.ethlo.venturi.config.HotReloadService;
+import java.util.Optional;
+import java.util.stream.StreamSupport;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,12 +20,12 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.ethlo.venturi.ShardedJournalWriter;
 import com.ethlo.venturi.api.GatewayErrorHandler;
-import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.config.ConfigurationManager;
+import com.ethlo.venturi.config.HotReloadService;
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.config.RouteRegistry;
 import com.ethlo.venturi.config.RoutesConfig;
-import com.ethlo.venturi.config.ConfigurationManager;
 import com.ethlo.venturi.core.StandardErrorHandler;
 import com.ethlo.venturi.journal.compression.VlfCompressionEngine;
 import com.ethlo.venturi.status.FileTelemetryRepository;
@@ -83,12 +83,12 @@ public final class VenturiMain
         final RoutesConfig routesConfig = loader.load(configFile, RoutesConfig.class);
         loader.load(routesConfig, routeRegistry);
 
+        final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
+        consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
+
         final HotReloadService hotReloadService = new HotReloadService(configFile, loader, routeRegistry);
         new Thread(hotReloadService, "hot-reload").start();
         logger.info("HotReloadService started. Watching {}", configFile.toAbsolutePath());
-
-        final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
-        consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());
@@ -116,31 +116,31 @@ public final class VenturiMain
                     .filter(r -> CharSequenceUtil.equals(r.id(), route.id()))
                     .findFirst().orElseThrow();
 
-            for (GatewayFilter filter : route.filters())
-            {
-                if (filter instanceof SimpleMetricsFactory.GF metricsFilter)
-                {
-                    existingMetrics.stream()
-                            .filter(routeMetricsDto -> route.id().equals(routeMetricsDto.id()))
-                            .findFirst()
-                            .ifPresent(metricsFilter::set);
-                    metricsRegistry.register(routeDefinition, metricsFilter);
-                }
-            }
+            final Optional<SimpleMetricsFactory.GF> metricsFilter = StreamSupport.stream(route.filters().spliterator(), false)
+                    .filter(f -> f instanceof SimpleMetricsFactory.GF)
+                    .map(SimpleMetricsFactory.GF.class::cast)
+                    .findFirst();
+
+            metricsFilter.ifPresent(gf -> existingMetrics.stream()
+                    .filter(routeMetricsDto -> route.id().equals(routeMetricsDto.id()))
+                    .findFirst()
+                    .ifPresent(gf::set));
+
+            metricsRegistry.register(routeDefinition, metricsFilter.orElse(null));
         }
+
+
         final TelemetryFlusher telemetryFlusher = new TelemetryFlusher(telemetryRepository, () -> metricsRegistry.getAll().entrySet()
                 .stream()
                 .map(ModelMapper::mapToDto)
                 .toList()
         );
         telemetryFlusher.start();
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig);
+
         final VenturiUndertowHandler venturiUndertowHandler = new VenturiUndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(venturiUndertowHandler);
 
         final HttpHandler rootHandler = Handlers.path()
-                .addExactPath("/status", statusHandler)
-                .addExactPath("/benchmark", benchMarkHandler)
                 .addPrefixPath("/", trafficMetricsHandler);
 
         final Undertow.Builder builder = Undertow.builder();
@@ -150,6 +150,9 @@ public final class VenturiMain
 
         // Used for having fast internal HTTP endpoint to talk to
         setupTestBackEndForProxy(benchMarkHandler);
+
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig);
+        setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost());
 
         // Explicit Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
@@ -163,8 +166,11 @@ public final class VenturiMain
 
         server.start();
 
+        // Have to happen after start
+        statusHandler.setConnectorStatistics(server.getListenerInfo().getFirst().getConnectorStatistics());
+
         final Duration uptime = SystemUtil.getUptime();
-        logger.info("🚀 Started ethlo R7 version {} in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+        logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
     private static void setupTestBackEndForProxy(HttpHandler httpHandler)
@@ -193,18 +199,55 @@ public final class VenturiMain
             logger.info("No logback.xml file found");
             return;
         }
-        LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
+
+        final LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
         try
         {
-            JoranConfigurator configurator = new JoranConfigurator();
+            final JoranConfigurator configurator = new JoranConfigurator();
             configurator.setContext(context);
+
+            // This clears all existing configuration
             context.reset();
+
+            // Load the user's XML configuration
             configurator.doConfigure(configFilePath.toFile());
+
+            // Inject the telemetry appender after XML is loaded so it is not reset
+            final ParserRejectionAppender appender = new ParserRejectionAppender();
+            appender.setContext(context);
+            appender.start();
+
+            final String[] targetLoggers = new String[]{
+                    "io.undertow.request",
+                    "io.undertow.request.io"
+            };
+
+            for (final String s : targetLoggers)
+            {
+                final ch.qos.logback.classic.Logger targetLogger = context.getLogger(s);
+                targetLogger.addAppender(appender);
+                targetLogger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+
+                // Set false to prevent these debug logs from bleeding into the console/file appender
+                targetLogger.setAdditive(false);
+            }
+
+            logger.info("Successfully injected ParserRejectionAppender for dark traffic telemetry");
         }
-        catch (JoranException je)
+        catch (final JoranException je)
         {
             // StatusPrinter will handle the error message
         }
+    }
+
+    private void setupStatusBackend(final StatusHandler statusHandler, final int port, final String host)
+    {
+        final Undertow.Builder target = Undertow.builder();
+        final HttpHandler targetHandler = Handlers.path()
+                .addPrefixPath("/", statusHandler);
+        target.setHandler(targetHandler);
+        target.addHttpListener(port, host);
+        target.build().start();
     }
 
     private void configureServer(Undertow.Builder builder, ServerConfig config)
@@ -232,6 +275,7 @@ public final class VenturiMain
                 .setServerOption(UndertowOptions.MAX_HEADER_SIZE, opts.maxHeaderSize())
                 .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, opts.requestParseTimeout())
                 .setServerOption(UndertowOptions.MAX_HEADERS, opts.maxHeaderCount())
+                .setServerOption(UndertowOptions.ENABLE_STATISTICS, true)
 
                 .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, true)
 

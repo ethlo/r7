@@ -1,6 +1,9 @@
 host: 0.0.0.0
 port: 8888
 
+status_port: 18888
+status_host: 0.0.0.0
+
 worker:
   # Match this to your physical cores (e.g., if you have 8 cores)
   io_threads: 8

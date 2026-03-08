@@ -1,5 +1,12 @@
 version: ${git.rev.abbr}
 routes:
+  - id: forward-status
+    upstream:
+      targets:
+        - url: http://localhost:18888
+    match:
+      - PathStartsWith:
+          prefix: /my-secret-status
   - id: reject-benchmark
     upstream:
       targets:
@@ -24,11 +31,11 @@ routes:
             - POST
     journal:
       request:
-        level: FULL
+        level: NONE
         #status_overrides:
         #  2xx: METADATA
       response:
-        level: FULL
+        level: NONE
     filters:
       - SimpleMetrics
       - AddResponseHeader:

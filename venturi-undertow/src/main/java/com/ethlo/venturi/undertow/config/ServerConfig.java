@@ -7,6 +7,8 @@ import com.ethlo.venturi.validation.ValidationResult;
 public record ServerConfig(
         String host,
         int port,
+        String statusHost,
+        int statusPort,
         WorkerConfig worker,
         SocketConfig socket,
         ProxyConfig proxy,
@@ -14,16 +16,6 @@ public record ServerConfig(
         StorageConfig storage
 ) implements ValidatableConfig
 {
-    public ServerConfig host(String host)
-    {
-        return new ServerConfig(host, port, worker, socket, proxy, options, storage);
-    }
-
-    public ServerConfig port(int port)
-    {
-        return new ServerConfig(host, port, worker, socket, proxy, options, storage);
-    }
-
     @Override
     public void validate(final ValidationResult result)
     {

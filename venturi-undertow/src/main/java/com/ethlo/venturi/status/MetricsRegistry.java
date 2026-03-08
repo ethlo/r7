@@ -15,7 +15,10 @@ public final class MetricsRegistry
     public void register(final RouteDefinition route, final SimpleMetricsFactory.GF metrics)
     {
         this.routes.add(route);
-        routeMetrics.put(route.id().toString(), metrics);
+        if (metrics != null)
+        {
+            routeMetrics.put(route.id().toString(), metrics);
+        }
     }
 
     public Map<String, SimpleMetricsFactory.GF> getAll()

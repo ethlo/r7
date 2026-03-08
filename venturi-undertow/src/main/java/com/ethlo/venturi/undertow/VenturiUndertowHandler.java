@@ -2,7 +2,6 @@ package com.ethlo.venturi.undertow;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
@@ -10,11 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-
-import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
-import com.ethlo.venturi.api.UnproxiedUpstreamResponse;
 
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
@@ -32,6 +27,8 @@ import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayResponse;
 import com.ethlo.venturi.api.TerminationGatewayResponse;
+import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
+import com.ethlo.venturi.api.UnproxiedUpstreamResponse;
 import com.ethlo.venturi.config.DefaultGatewayRoute;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.config.RouteRegistry;
@@ -127,8 +124,8 @@ public final class VenturiUndertowHandler implements HttpHandler
 
             journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
 
-            final Boolean isWs = exchange.getAttachment(IS_WEBSOCKET_KEY);
-            if (Boolean.TRUE.equals(isWs))
+            final boolean isWebSocket = Boolean.TRUE.equals(exchange.getAttachment(IS_WEBSOCKET_KEY));
+            if (isWebSocket)
             {
                 return;
             }
@@ -157,17 +154,16 @@ public final class VenturiUndertowHandler implements HttpHandler
     public void handleRequest(final HttpServerExchange exchange)
     {
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange);
-        final Optional<GatewayRoute> routeOpt = routeRegistry.findRoute(req);
+        final GatewayRoute route = routeRegistry.findRoute(req);
 
-        if (routeOpt.isEmpty())
+        if (route == null)
         {
             exchange.setStatusCode(HttpStatuses.NOT_FOUND);
             exchange.getRequestHeaders().put(HttpString.tryFromString(HttpHeaders.CONTENT_TYPE), MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(ByteBuffer.wrap("No route found for request".getBytes(StandardCharsets.UTF_8)));
+            exchange.getResponseSender().send(ErrorMessages.NO_ROUTE.duplicate());
             return;
         }
 
-        final GatewayRoute route = routeOpt.get();
         execute(exchange, req, route);
     }
 

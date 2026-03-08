@@ -75,6 +75,69 @@ const jBadge = (lvl) => {
     return `<span class="journal-active-${l.toLowerCase()} j-badge">${l.charAt(0)}</span>`;
 };
 
+function showSystemDetails() {
+    const data = window.currentData;
+    if (!data) return;
+
+    window.currentOpenRoute = '__SYSTEM__';
+
+    // Fallback to zeros if the backend hasn't wired it up yet
+    const stats = data.connector_statistics || {
+        request_count: 0, bytes_sent: 0, bytes_received: 0, error_count: 0,
+        processing_time_nanos: 0, max_processing_time_nanos: 0,
+        active_connections: 0, max_active_connections: 0,
+        active_requests: 0, max_active_requests: 0
+    };
+
+    const avgProcessingNanos = stats.request_count > 0 ? (stats.processing_time_nanos / stats.request_count) : 0;
+    const uTotal = getUnitIndex(Math.max(stats.bytes_received, stats.bytes_sent));
+
+    document.getElementById('details-content').innerHTML = `
+        <div class="panel-header-container">
+            <div style="flex-grow: 1; min-width: 0;">
+                <h2 class="panel-title">System Totals</h2>
+                <div class="panel-subtitle">Undertow XNIO Connector Statistics</div>
+            </div>
+            <button class="panel-close-btn" onclick="closeDetails()">
+                CLOSE <span class="panel-close-icon">&times;</span>
+            </button>
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Raw Socket Traffic</div>
+            ${mRow('REQUESTS PROCESSED', stats.request_count.toLocaleString(), true)}
+            ${mRow('PARSER ERRORS (Dropped)', stats.error_count.toLocaleString(), false, stats.error_count > 0 ? 'text-warn' : '')}
+            ${mRow('BYTES RECEIVED', formatBytes(stats.bytes_received, uTotal), false)}
+            ${mRow('BYTES SENT', formatBytes(stats.bytes_sent, uTotal), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Concurrency</div>
+            ${mRow('ACTIVE CONNECTIONS', stats.active_connections.toLocaleString(), true, stats.active_connections > 0 ? 'text-http' : '')}
+            ${mRow('PEAK CONNECTIONS', stats.max_active_connections.toLocaleString(), false)}
+            ${mRow('ACTIVE REQUESTS', stats.active_requests.toLocaleString(), false)}
+            ${mRow('PEAK REQUESTS', stats.max_active_requests.toLocaleString(), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Global Latency (Socket Level)</div>
+            ${mRow('AVERAGE PROCESSING', (avgProcessingNanos / 1000000).toFixed(3) + 'ms', true)}
+            ${mRow('MAXIMUM PROCESSING', (stats.max_processing_time_nanos / 1000000).toFixed(3) + 'ms', false)}
+        </div>
+        
+        <div class="panel-section">
+            <div class="panel-section-title">Diagnostic Info</div>
+            <div class="sub text-dim" style="padding: 8px;">
+                These metrics represent the raw physical truth at the TCP/NIO layer, before any routing, filtering, or application logic occurs. 
+                Discrepancies between these numbers and the route aggregations indicate early socket terminations, malformed HTTP payloads, or unroutable dark traffic.
+            </div>
+        </div>
+    `;
+
+    panel.classList.add('open');
+    mainContainer.style.marginRight = '550px';
+}
+
 function showDetails(routeId) {
     const config = window.currentConfigs[routeId];
     const metrics = window.currentMetrics[routeId];
@@ -244,8 +307,14 @@ async function update() {
         const res = await fetch(window.location.href, {headers: {'Accept': 'application/json'}});
         const data = await res.json();
 
+        // Store the raw data globally for the system panel
+        window.currentData = data;
+
         const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
-        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE`;
+        const unroutable = data.connector_statistics?.error_count || 0;
+        const activeConns = data.connector_statistics?.active_connections || 0;
+
+        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE | TCP REJECTS: ${unroutable} | RAW CONNS: ${activeConns}`;
 
         const version = data.system.version || 'Unknown';
         document.getElementById('sys-version').innerText = version;
@@ -265,18 +334,30 @@ async function update() {
         renderTable(data);
 
         // Refresh panel if it is currently open
-        if (panel.classList.contains('open') && window.currentOpenRoute) {
-            showDetails(window.currentOpenRoute);
+        if (panel.classList.contains('open')) {
+            if (window.currentOpenRoute === '__SYSTEM__') {
+                showSystemDetails();
+            } else if (window.currentOpenRoute) {
+                showDetails(window.currentOpenRoute);
+            }
         }
     } catch (e) {
         timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;
     }
 }
 
-function renderTable(data) {
-    if (!data.route_metrics) return;
+// Add this helper constant at the top level
+const ZERO_METRICS = {
+    request_statistics: { total: 0, websocket_total: 0, active: 0, websocket_active: 0, last_active_ts: 0, client_statuses: {} },
+    traffic_flow: { ingress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, egress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, journal_storage_bytes: 0 },
+    performance_telemetry: { average_latency_nanoseconds: 0 }
+};
 
-    const totals = data.route_metrics.reduce((acc, r) => ({
+function renderTable(data) {
+    // Source of truth is now route_configs to ensure all routes show up
+    if (!data.route_configs) return;
+
+    const totals = (data.route_metrics || []).reduce((acc, r) => ({
         total: acc.total + (r.request_statistics.total || 0),
         ws_total: acc.ws_total + (r.request_statistics.websocket_total || 0),
         st_2xx: acc.st_2xx + sumStatuses(r.request_statistics.client_statuses, 200, 299),
@@ -308,7 +389,7 @@ function renderTable(data) {
     const tActiveWsStyle = totals.ws_active > 0 ? 'text-ws' : '';
 
     let html = `
-        <tr class="total-row">
+        <tr class="total-row clickable-row" onclick="showSystemDetails()">
             <td class="col-route">
                 <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">SYSTEM TOTALS</div>
                 <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(totals.last_active)}</div>
@@ -349,13 +430,15 @@ function renderTable(data) {
             </td>
         </tr>`;
 
-    data.route_metrics.forEach(r => {
+    // Map through configs so every route gets a row
+    data.route_configs.forEach(config => {
+        // Find matching metrics or use ZERO_METRICS fallback
+        const r = (data.route_metrics || []).find(m => m.id === config.id) || ZERO_METRICS;
+
         const t = r.traffic_flow;
         const s = r.request_statistics;
         const p = r.performance_telemetry;
-        const config = window.currentConfigs[r.id];
 
-        // Dynamically compute the aggregates for the table view
         const st2xx = sumStatuses(s.client_statuses, 200, 299);
         const st3xx = sumStatuses(s.client_statuses, 300, 399);
         const err4xx = sumStatuses(s.client_statuses, 400, 499);
@@ -363,8 +446,8 @@ function renderTable(data) {
         const wsTotal = s.websocket_total || 0;
         const wsActive = s.websocket_active || 0;
 
-        const reqJourn = config?.journal?.request || 'NONE';
-        const resJourn = config?.journal?.response || 'NONE';
+        const reqJourn = config.journal?.request || 'NONE';
+        const resJourn = config.journal?.response || 'NONE';
 
         const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
 
@@ -374,9 +457,9 @@ function renderTable(data) {
         const rActiveWsStyle = wsActive > 0 ? 'text-ws' : '';
 
         html += `
-        <tr class="clickable-row" onclick="showDetails('${r.id}')">
+        <tr class="clickable-row" onclick="showDetails('${config.id}')">
             <td class="col-route">
-                <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">${r.id}</div>
+                <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">${config.id}</div>
                 <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(s.last_active_ts)}</div>
             </td>
             <td class="col-totals">

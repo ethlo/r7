@@ -16,6 +16,7 @@ import com.ethlo.venturi.undertow.config.ServerConfig;
 import com.ethlo.venturi.util.SystemUtil;
 import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.vlf.DiskSpaceUtils;
+import io.undertow.server.ConnectorStatistics;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
@@ -27,6 +28,7 @@ public final class StatusHandler implements HttpHandler
     private final MetricsRegistry registry;
     private final ServerConfig serverConfig;
     private final String combinedHtml;
+    private ConnectorStatistics connectorStatistics;
 
     public StatusHandler(final MetricsRegistry registry, ServerConfig serverConfig)
     {
@@ -84,6 +86,7 @@ public final class StatusHandler implements HttpHandler
                         "started_at", SystemUtil.getStartTime()
                 )
         );
+        root.put("connector_statistics", ModelMapper.from(connectorStatistics));
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
         root.put("route_metrics", registry.getAll().entrySet().stream().map(ModelMapper::mapToDto).toList());
 
@@ -100,5 +103,10 @@ public final class StatusHandler implements HttpHandler
     {
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_HTML);
         exchange.getResponseSender().send(combinedHtml);
+    }
+
+    public void setConnectorStatistics(ConnectorStatistics connectorStatistics)
+    {
+        this.connectorStatistics = connectorStatistics;
     }
 }

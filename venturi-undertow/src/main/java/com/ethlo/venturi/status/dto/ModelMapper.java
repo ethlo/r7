@@ -2,7 +2,9 @@ package com.ethlo.venturi.status.dto;
 
 import com.ethlo.venturi.config.RouteDefinition;
 import com.ethlo.venturi.status.SimpleMetricsFactory;
+import io.undertow.server.ConnectorStatistics;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -20,9 +22,9 @@ public class ModelMapper
                 def.journal().response().level().name()
         );
 
-        final List<FilterDto> filters = def.filters().stream()
+        final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
                 .map(f -> new FilterDto(f.name(), f.args()))
-                .toList();
+                .toList() : Collections.emptyList();
 
         return new RouteConfigDto(
                 def.id().toString(),
@@ -62,5 +64,26 @@ public class ModelMapper
         );
 
         return new TrafficFlowDto(ingress, egress, gf.getTotalJournalBytes());
+    }
+
+    public static ConnectorStatisticsDto from(final ConnectorStatistics stats)
+    {
+        if (stats == null)
+        {
+            return null;
+        }
+
+        return new ConnectorStatisticsDto(
+                stats.getRequestCount(),
+                stats.getBytesSent(),
+                stats.getBytesReceived(),
+                stats.getErrorCount(),
+                stats.getProcessingTime(),
+                stats.getMaxProcessingTime(),
+                stats.getActiveConnections(),
+                stats.getMaxActiveConnections(),
+                stats.getActiveRequests(),
+                stats.getMaxActiveRequests()
+        );
     }
 }
