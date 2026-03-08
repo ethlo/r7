@@ -1,4 +1,13 @@
 version: ${git.rev.abbr}
+globals:
+  timeouts:
+    connect: PT5s
+    read: PT30s
+  filters:
+    - CorrelationIdHeader
+    - AddResponseHeader:
+        name: X-Powered-By
+        value: Venturi
 routes:
   - id: forward-status
     upstream:
@@ -32,19 +41,20 @@ routes:
     filters:
       - SimpleMetrics
       - RateLimiter:
-          capacity: 10
-          refill_tokens: 5
+          capacity: 5
+          refill_tokens: 1
           refill_period: PT2s
       - AddResponseHeader:
-          name: X-Gateway
-          value: ethlo-R7
+          name: X-Powered-By
+          value: Ethlo R7
       - CorrelationIdHeader
       - RequireAuthorizationHeader
     journal:
       request:
         level: NONE
         status_overrides:
-          4xx: METADATA
+          401,403: HEADERS
+          429: METADATA
       response:
         level: NONE
 
