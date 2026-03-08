@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface ClientResponseGatewayExchange
+public interface ClientResponseGatewayExchange extends BaseGatewayExchange
 {
     CharSequence requestId();
 

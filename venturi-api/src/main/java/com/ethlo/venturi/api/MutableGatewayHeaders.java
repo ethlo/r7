@@ -4,12 +4,14 @@ import java.util.List;
 
 public interface MutableGatewayHeaders extends GatewayHeaders, MutableMultiAttributes
 {
+    MutableGatewayHeaders set(final CharSequence name, final CharSequence value);
+
     MutableGatewayHeaders EMPTY = new MutableGatewayHeaders()
     {
         @Override
-        public void set(final CharSequence name, final CharSequence value)
+        public MutableGatewayHeaders set(final CharSequence name, final CharSequence value)
         {
-
+            return this;
         }
 
         @Override

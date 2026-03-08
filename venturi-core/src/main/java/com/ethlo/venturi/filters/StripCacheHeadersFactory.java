@@ -1,15 +1,15 @@
 package com.ethlo.venturi.filters;
 
-import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class StripCacheHeadersFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, StripCacheHeadersFactory.Config>
+public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCacheHeadersFactory.Config>
 {
     private static final String FILTER_NAME = "StripCacheHeaders";
 

@@ -58,7 +58,7 @@ public final class ConfigurationManager
                     {
                         for (final FilterDefinition filterDef : def.filters())
                         {
-                            final GatewayFilterFactory<?, ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
+                            final GatewayFilterFactory<ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
                             final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
                             c.validate(validationResult);
 

@@ -1,6 +1,7 @@
 package com.ethlo.venturi.util;
 
 import com.ethlo.venturi.api.EntryConsumer;
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.StatefulEntryConsumer;
 
@@ -23,9 +24,10 @@ class MutableBaseGatewayAttributes extends BaseGatewayAttributes implements Muta
     }
 
     @Override
-    public void set(CharSequence name, CharSequence value)
+    public MutableGatewayHeaders set(CharSequence name, CharSequence value)
     {
         setInternal(name, value);
+        return null;
     }
 
     @Override

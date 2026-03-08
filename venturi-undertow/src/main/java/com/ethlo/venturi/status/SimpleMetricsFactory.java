@@ -13,7 +13,6 @@ import com.ethlo.venturi.api.ClientRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.CompletedGatewayExchange;
 import com.ethlo.venturi.api.CompletedGatewayFilter;
-import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -25,7 +24,7 @@ import com.ethlo.venturi.status.dto.RouteMetricsDto;
 import com.ethlo.venturi.status.dto.TrafficFlowDto;
 import com.ethlo.venturi.undertow.UndertowGatewayExchange;
 
-public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilter, GatewayFilterFactory.EmptyConfig>
+public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
 {
     private static final String FILTER_NAME = "SimpleMetrics";
 

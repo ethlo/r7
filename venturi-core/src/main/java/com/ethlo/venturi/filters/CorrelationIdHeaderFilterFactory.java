@@ -2,15 +2,15 @@ package com.ethlo.venturi.filters;
 
 import static com.ethlo.venturi.util.constants.HttpHeaders.X_CORRELATION_ID;
 
-import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
-import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 
-public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<GatewayFilter, GatewayFilterFactory.EmptyConfig>
+public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
 {
     private static final String FILTER_NAME = "CorrelationIdHeader";
 

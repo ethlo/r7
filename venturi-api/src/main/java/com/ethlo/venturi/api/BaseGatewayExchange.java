@@ -7,4 +7,8 @@ public interface BaseGatewayExchange
     MutableGatewayAttributes attributes();
 
     GatewayRouteInfo route();
+
+    <T> void setAttachment(StateKey<T> key, T value);
+
+    <T> T getAttachment(StateKey<T> key);
 }

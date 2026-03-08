@@ -19,9 +19,6 @@ routes:
       - RequireAuthorizationHeader
 
   - id: undertow-internal-backend
-    upstream:
-      targets:
-        - url: http://localhost:1111
     match:
       - PathStartsWith:
           prefix: /hello
@@ -29,13 +26,9 @@ routes:
           include:
             - GET
             - POST
-    journal:
-      request:
-        level: NONE
-        #status_overrides:
-        #  2xx: METADATA
-      response:
-        level: NONE
+    upstream:
+      targets:
+        - url: http://localhost:1111
     filters:
       - SimpleMetrics
       - RateLimiter:
@@ -44,9 +37,16 @@ routes:
           refill_period: PT2s
       - AddResponseHeader:
           name: X-Gateway
-          value: Venturi
+          value: ethlo-R7
       - CorrelationIdHeader
       - RequireAuthorizationHeader
+    journal:
+      request:
+        level: NONE
+        status_overrides:
+          4xx: METADATA
+      response:
+        level: NONE
 
   - id: ws-test
     upstream:

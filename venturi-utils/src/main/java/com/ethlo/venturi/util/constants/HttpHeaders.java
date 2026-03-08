@@ -27,6 +27,9 @@ public final class HttpHeaders
     public static final String X_CORRELATION_ID = "X-Correlation-Id";
     public static final String X_REQUEST_ID = "X-Request-Id";
     public static final String X_FORWARDED_FOR = "X-Forwarded-For";
+    public static final String X_RATELIMIT_LIMIT = "X-RateLimit-Limit";
+    public static final String X_RATELIMIT_REMAINING = "X-RateLimit-Remaining";
+    public static final String X_FORWARDED_HOST = "X-Forwarded-Host";
 
 
     private HttpHeaders()

@@ -8,7 +8,7 @@ import com.ethlo.venturi.spi.GatewayFilterFactory;
 
 public final class FilterRegistry
 {
-    private final Map<String, GatewayFilterFactory<?, ?>> factories;
+    private final Map<String, GatewayFilterFactory<?>> factories;
 
     public FilterRegistry()
     {

@@ -2,8 +2,8 @@ package com.ethlo.venturi.filters;
 
 import java.nio.ByteBuffer;
 
-import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.CharSequenceUtil;
@@ -14,7 +14,7 @@ import com.ethlo.venturi.util.constants.MediaTypes;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<BeforeUpstreamGatewayFilter, RequireAuthorizationHeaderFactory.Config>
+public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<RequireAuthorizationHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "RequireAuthorizationHeader";
 

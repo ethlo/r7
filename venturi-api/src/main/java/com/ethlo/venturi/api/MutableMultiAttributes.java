@@ -4,8 +4,10 @@ public interface MutableMultiAttributes
 {
     /**
      * Replaces any existing values with this single value.
+     *
+     * @return
      */
-    void set(CharSequence name, CharSequence value);
+    MutableMultiAttributes set(CharSequence name, CharSequence value);
 
     void remove(CharSequence name);
 

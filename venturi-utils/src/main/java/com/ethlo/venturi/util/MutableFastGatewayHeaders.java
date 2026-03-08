@@ -1,5 +1,6 @@
 package com.ethlo.venturi.util;
 
+import com.ethlo.venturi.api.GatewayHeaders;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 
 public class MutableFastGatewayHeaders extends FastGatewayHeaders implements MutableGatewayHeaders
@@ -15,9 +16,10 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     }
 
     @Override
-    public void set(final CharSequence name, final CharSequence value)
+    public MutableGatewayHeaders set(final CharSequence name, final CharSequence value)
     {
         setInternal(name, value);
+        return this;
     }
 
     @Override

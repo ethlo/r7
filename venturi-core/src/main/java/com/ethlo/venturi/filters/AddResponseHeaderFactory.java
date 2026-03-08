@@ -1,15 +1,15 @@
 package com.ethlo.venturi.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
 import com.ethlo.venturi.util.ValidatorUtils;
 import com.ethlo.venturi.validation.ValidatableConfig;
 import com.ethlo.venturi.validation.ValidationResult;
 
-public class AddResponseHeaderFactory implements GatewayFilterFactory<BeforeCommitGatewayFilter, AddResponseHeaderFactory.Config>
+public class AddResponseHeaderFactory implements GatewayFilterFactory<AddResponseHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "AddResponseHeader";
 
