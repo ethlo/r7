@@ -55,7 +55,7 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
 
             if (sig == null || !(CharSequenceUtil.startsWith(sig, "Bearer ") || CharSequenceUtil.startsWith(sig, "Basic ")))
             {
-                exchange.terminate(new FastTerminationGatewayResponse(HttpStatuses.UNAUTHORIZED, MediaTypes.TEXT_PLAIN, UNAUTHORIZED_BODY.slice()));
+                exchange.shortCircuit(new FastTerminationGatewayResponse(HttpStatuses.UNAUTHORIZED, MediaTypes.TEXT_PLAIN, UNAUTHORIZED_BODY.slice()));
             }
         }
 

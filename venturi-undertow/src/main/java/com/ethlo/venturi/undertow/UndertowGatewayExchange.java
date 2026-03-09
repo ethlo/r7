@@ -10,9 +10,9 @@ import com.ethlo.venturi.api.GatewayRouteInfo;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayRequest;
 import com.ethlo.venturi.api.MutableGatewayResponse;
+import com.ethlo.venturi.api.ShortCircuitGatewayResponse;
 import com.ethlo.venturi.api.StateKey;
-import com.ethlo.venturi.api.TerminationGatewayResponse;
-import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
+import com.ethlo.venturi.UnproxiedUpstreamRequest;
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.status.TrafficMetricsHandler;
 import com.ethlo.venturi.time.ClockSource;
@@ -33,7 +33,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     private final GatewayRoute route;
     private MutableGatewayRequest upstreamRequest;
     private GatewayResponse upstreamResponse;
-    private TerminationGatewayResponse terminated;
+    private ShortCircuitGatewayResponse shortCircuitGatewayResponse;
     private long journalBytes;
 
     public UndertowGatewayExchange(
@@ -75,9 +75,9 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     }
 
     @Override
-    public void terminate(final TerminationGatewayResponse terminationResponse)
+    public void shortCircuit(final ShortCircuitGatewayResponse response)
     {
-        terminated = terminationResponse;
+        shortCircuitGatewayResponse = response;
     }
 
     @Override
@@ -173,9 +173,9 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         this.upstreamResponse = clone;
     }
 
-    public TerminationGatewayResponse getTerminated()
+    public ShortCircuitGatewayResponse getShortCircuitGatewayResponse()
     {
-        return terminated;
+        return shortCircuitGatewayResponse;
     }
 
     public long getRequestStartEpochNanos()
@@ -218,6 +218,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         undertowExchange.getConnection().addCloseListener(connection -> closeListener.run());
     }
 
+    @Override
     public boolean wasProxied()
     {
         return undertowExchange.getAttachment(VenturiUndertowHandler.PROXY_START_TS_KEY) != null;
@@ -228,8 +229,9 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         this.upstreamRequest = unproxiedUpstreamRequest;
     }
 
+    @Override
     public boolean isShortCircuited()
     {
-        return getTerminated() != null;
+        return getShortCircuitGatewayResponse() != null;
     }
 }

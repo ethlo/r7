@@ -135,7 +135,7 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
                         .set(HttpHeaders.X_RATELIMIT_LIMIT, capacityString)
                         .set(HttpHeaders.X_RATELIMIT_REMAINING, "0");
 
-                exchange.terminate(new FastTerminationGatewayResponse(headers, HttpStatuses.TOO_MANY_REQUESTS, ByteBuffer.wrap(REJECT_PAYLOAD)));
+                exchange.shortCircuit(new FastTerminationGatewayResponse(headers, HttpStatuses.TOO_MANY_REQUESTS, ByteBuffer.wrap(REJECT_PAYLOAD)));
             }
         }
 

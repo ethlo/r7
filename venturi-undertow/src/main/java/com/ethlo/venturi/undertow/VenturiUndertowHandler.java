@@ -24,9 +24,9 @@ import com.ethlo.venturi.api.GatewayRequest;
 import com.ethlo.venturi.api.GatewayRoute;
 import com.ethlo.venturi.api.MutableGatewayAttributes;
 import com.ethlo.venturi.api.MutableGatewayResponse;
-import com.ethlo.venturi.api.TerminationGatewayResponse;
-import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
-import com.ethlo.venturi.api.UnproxiedUpstreamResponse;
+import com.ethlo.venturi.api.ShortCircuitGatewayResponse;
+import com.ethlo.venturi.UnproxiedUpstreamRequest;
+import com.ethlo.venturi.UnproxiedUpstreamResponse;
 import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.config.DefaultGatewayRoute;
 import com.ethlo.venturi.config.RouteJournalConfig;
@@ -146,7 +146,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
     {
-        final TerminationGatewayResponse terminationResponse = gatewayExchange.getTerminated();
+        final ShortCircuitGatewayResponse terminationResponse = gatewayExchange.getShortCircuitGatewayResponse();
         gatewayExchange.clientResponse().status(terminationResponse.status());
         terminationResponse.headers().forEach(((name, value) -> gatewayExchange.clientResponse().headers().set(name, value)));
         exchange.getResponseSender().send(terminationResponse.body());

@@ -315,7 +315,7 @@ async function update() {
         const unroutable = data.connector_statistics?.error_count || 0;
         const activeConns = data.connector_statistics?.active_connections || 0;
 
-        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE | TCP REJECTS: ${unroutable} | RAW CONNS: ${activeConns}`;
+        vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
 
         const version = data.system.version || 'Unknown';
         document.getElementById('sys-version').innerText = version;

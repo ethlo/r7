@@ -3,10 +3,10 @@ package com.ethlo.venturi.util;
 import java.nio.ByteBuffer;
 
 import com.ethlo.venturi.api.GatewayHeaders;
-import com.ethlo.venturi.api.TerminationGatewayResponse;
+import com.ethlo.venturi.api.ShortCircuitGatewayResponse;
 import com.ethlo.venturi.util.constants.HttpHeaders;
 
-public class FastTerminationGatewayResponse implements TerminationGatewayResponse
+public class FastTerminationGatewayResponse implements ShortCircuitGatewayResponse
 {
     private final ByteBuffer body;
     private final GatewayHeaders headers;

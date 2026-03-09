@@ -2,7 +2,7 @@ package com.ethlo.venturi.api;
 
 import java.nio.ByteBuffer;
 
-public interface TerminationGatewayResponse extends GatewayResponse
+public interface ShortCircuitGatewayResponse extends GatewayResponse
 {
     GatewayHeaders headers();
 
