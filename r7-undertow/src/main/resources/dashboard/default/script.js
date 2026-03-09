@@ -4,7 +4,7 @@ const timeEl = document.getElementById('last-update');
 const panel = document.getElementById('details-panel');
 const mainContainer = document.getElementById('main-container');
 
-const FRACTION_DIGITS = 1;
+const FRACTION_DIGITS = 2;
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
 if (localStorage.getItem('theme') === 'light') {
@@ -97,7 +97,7 @@ function showSystemDetails() {
         <div class="panel-header-container">
             <div style="flex-grow: 1; min-width: 0;">
                 <h2 class="panel-title">System Totals</h2>
-                <div class="panel-subtitle">Undertow XNIO Connector Statistics</div>
+                <div class="panel-subtitle">Connector Statistics</div>
             </div>
             <button class="panel-close-btn" onclick="closeDetails()">
                 CLOSE <span class="panel-close-icon">&times;</span>
@@ -222,11 +222,19 @@ function showDetails(routeId) {
         <div class="panel-header-container">
             <div style="flex-grow: 1; min-width: 0;">
                 <h2 class="panel-title">${routeId}</h2>
-                <div class="panel-subtitle">${config.destination || 'N/A'}</div>
             </div>
             <button class="panel-close-btn" onclick="closeDetails()">
                 CLOSE <span class="panel-close-icon">&times;</span>
             </button>
+        </div>
+        
+        <div class="panel-section">
+            <div class="panel-section-title">Routing target</div>
+                <div class="sub tree-node">
+                <span class="text-nowrap">└─ TARGET</span>
+                <span class="text-dim text-truncate" title="${config.destination || 'N/A'}">${config.destination || 'N/A'}
+                </span>
+            </div>
         </div>
 
         <div class="panel-section">

@@ -12,7 +12,10 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xnio.OptionMap;
 import org.xnio.Options;
+import org.xnio.Xnio;
+import org.xnio.XnioWorker;
 
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
@@ -59,7 +62,7 @@ public final class R7Main
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final VlfCompressionEngine compressionEngine;
 
-    public R7Main(Path configFile, Path serverFile) throws IOException
+    public R7Main(final Path configFile, final Path serverFile) throws IOException
     {
         final HttpHandler benchMarkHandler = exchange -> {
             exchange.setStatusCode(HttpStatuses.OK);
@@ -105,7 +108,7 @@ public final class R7Main
         final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
         final List<RouteMetricsDto> existingMetrics = telemetryRepository.load();
         final MetricsRegistry metricsRegistry = new MetricsRegistry();
-        for (GatewayRoute route : routeRegistry.getRoutes())
+        for (final GatewayRoute route : routeRegistry.getRoutes())
         {
             final RouteDefinition routeDefinition = routesConfig.routes().stream()
                     .filter(r -> CharSequenceUtil.equals(r.id(), route.id()))
@@ -124,13 +127,15 @@ public final class R7Main
             metricsRegistry.register(routeDefinition, metricsFilter.orElse(null));
         }
 
-
         final TelemetryFlusher telemetryFlusher = new TelemetryFlusher(telemetryRepository, () -> metricsRegistry.getAll().entrySet()
                 .stream()
                 .map(ModelMapper::mapToDto)
                 .toList()
         );
         telemetryFlusher.start();
+
+        // 1. Create the single shared worker for all Undertow instances
+        final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
         final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
@@ -139,15 +144,17 @@ public final class R7Main
                 .addPrefixPath("/", trafficMetricsHandler);
 
         final Undertow.Builder builder = Undertow.builder();
+        builder.setWorker(sharedWorker);
         builder.setHandler(rootHandler);
         configureServer(builder, serverConfig);
         final Undertow server = builder.build();
 
         // Used for having fast internal HTTP endpoint to talk to
-        setupTestBackEndForProxy(benchMarkHandler);
+        setupTestBackEndForProxy(benchMarkHandler, sharedWorker);
 
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig);
-        setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost());
+
+        setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost(), sharedWorker);
 
         // Explicit Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
@@ -156,6 +163,7 @@ public final class R7Main
             gatewayExchangeDataWriter.shutdown();
             compressionEngine.close();
             server.stop();
+            sharedWorker.shutdown();
         }, "shutdown-hook"
         ));
 
@@ -172,18 +180,33 @@ public final class R7Main
         logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
-    private static void setupTestBackEndForProxy(HttpHandler httpHandler)
+    private XnioWorker createSharedWorker(final ServerConfig config) throws IOException
     {
-        final Undertow.Builder target = Undertow.builder();
+        final ServerConfig.WorkerConfig worker = config.worker();
+        final OptionMap.Builder options = OptionMap.builder()
+                .set(Options.WORKER_IO_THREADS, worker.ioThreads())
+                .set(Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
+                .set(Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
+                .set(Options.STACK_SIZE, worker.stackSize())
+                .set(Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
+                .set(Options.CONNECTION_LOW_WATER, worker.connectionLowWater());
+
+        return Xnio.getInstance().createWorker(options.getMap());
+    }
+
+    private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)
+    {
+        final Undertow.Builder routerBackendTest = Undertow.builder();
         final HttpHandler targetHandler = Handlers.path()
                 .addPrefixPath("/", httpHandler);
-        target.setHandler(targetHandler);
-        target.addHttpListener(1111, "0.0.0.0");
-        target.build().start();
+        routerBackendTest.setHandler(targetHandler);
+        routerBackendTest.setWorker(sharedWorker);
+        routerBackendTest.addHttpListener(1111, "0.0.0.0");
+        routerBackendTest.build().start();
     }
 
     // MUST be public
-    public static void main(String[] args) throws IOException
+    public static void main(final String[] args) throws IOException
     {
         setupLogging();
         logger.debug("Main class started at {} ms since process start", SystemUtil.getUptime());
@@ -215,25 +238,6 @@ public final class R7Main
             final ParserRejectionAppender appender = new ParserRejectionAppender();
             appender.setContext(context);
             appender.start();
-
-            /*
-            final String[] targetLoggers = new String[]{
-                    "io.undertow.request",
-                    "io.undertow.request.io"
-            };
-
-            for (final String s : targetLoggers)
-            {
-                final ch.qos.logback.classic.Logger targetLogger = context.getLogger(s);
-                targetLogger.addAppender(appender);
-                targetLogger.setLevel(ch.qos.logback.classic.Level.DEBUG);
-
-                // Set false to prevent these debug logs from bleeding into the console/file appender
-                targetLogger.setAdditive(false);
-            }
-
-            logger.debug("Successfully injected ParserRejectionAppender for dark traffic telemetry");
-             */
         }
         catch (final JoranException je)
         {
@@ -241,21 +245,21 @@ public final class R7Main
         }
     }
 
-    private void setupStatusBackend(final StatusHandler statusHandler, final int port, final String host)
+    private void setupStatusBackend(final StatusHandler statusHandler, final int port, final String host, final XnioWorker sharedWorker)
     {
-        final Undertow.Builder target = Undertow.builder();
+        final Undertow.Builder statusServer = Undertow.builder();
         final HttpHandler targetHandler = Handlers.path()
                 .addPrefixPath("/", statusHandler);
-        target.setHandler(targetHandler);
-        target.addHttpListener(port, host);
-        target.build().start();
+        statusServer.setHandler(targetHandler);
+        statusServer.setWorker(sharedWorker);
+        statusServer.addHttpListener(port, host);
+        statusServer.build().start();
     }
 
-    private void configureServer(Undertow.Builder builder, ServerConfig config)
+    private void configureServer(final Undertow.Builder builder, final ServerConfig config)
     {
-        ServerConfig.WorkerConfig worker = config.worker();
-        ServerConfig.SocketConfig socket = config.socket();
-        ServerConfig.OptionsConfig opts = config.options();
+        final ServerConfig.SocketConfig socket = config.socket();
+        final ServerConfig.OptionsConfig opts = config.options();
 
         builder.addHttpListener(config.port(), config.host())
                 // Socket Layer
@@ -264,13 +268,7 @@ public final class R7Main
                 .setSocketOption(Options.BACKLOG, socket.backlog())
                 .setSocketOption(Options.READ_TIMEOUT, socket.readTimeout())
 
-                // Worker Layer
-                .setWorkerOption(Options.WORKER_IO_THREADS, worker.ioThreads())
-                .setWorkerOption(Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
-                .setWorkerOption(Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
-                .setWorkerOption(Options.STACK_SIZE, worker.stackSize())
-                .setWorkerOption(Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
-                .setWorkerOption(Options.CONNECTION_LOW_WATER, worker.connectionLowWater())
+                // Worker Layer removed here because the shared worker handles it
 
                 // Protocol & Memory
                 .setServerOption(UndertowOptions.MAX_HEADER_SIZE, opts.maxHeaderSize())

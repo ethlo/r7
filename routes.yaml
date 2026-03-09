@@ -43,10 +43,10 @@ routes:
       - RateLimiter:
           capacity: 5
           refill_tokens: 1
-          refill_period: PT2s
+          refill_period: PT1s
       - AddResponseHeader:
           name: X-Powered-By
-          value: Ethlo R7
+          value: R7
       - CorrelationIdHeader
       - RequireAuthorizationHeader
     journal:
@@ -57,7 +57,7 @@ routes:
           429: METADATA
           5xx: HEADERS
       response:
-        level: NONE
+        level: METADATA
 
   - id: ws-test
     upstream:

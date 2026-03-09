@@ -13,9 +13,10 @@ import java.util.concurrent.Executors;
 
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
-import org.xnio.ssl.XnioSsl;
 
 import com.ethlo.r7.ShardedJournalWriter;
+import com.ethlo.r7.UnproxiedUpstreamRequest;
+import com.ethlo.r7.UnproxiedUpstreamResponse;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
@@ -25,8 +26,6 @@ import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
-import com.ethlo.r7.UnproxiedUpstreamRequest;
-import com.ethlo.r7.UnproxiedUpstreamResponse;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteJournalConfig;
@@ -67,11 +66,10 @@ public final class R7UndertowHandler implements HttpHandler
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final ServerConfig serverConfig;
-    private final XnioSsl xnioSsl;
     private final RouteRegistry routeRegistry;
     private final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter;
-
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    private UndertowXnioSsl xnioSsl;
 
     public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler)
     {
@@ -79,19 +77,6 @@ public final class R7UndertowHandler implements HttpHandler
         this.routeRegistry = routeRegistry;
         this.gatewayExchangeDataWriter = gatewayExchangeDataWriter;
         this.errorHandler = errorHandler;
-        this.xnioSsl = getXnioSsl();
-    }
-
-    private static UndertowXnioSsl getXnioSsl()
-    {
-        try
-        {
-            return new UndertowXnioSsl(Xnio.getInstance(), OptionMap.EMPTY);
-        }
-        catch (NoSuchProviderException | NoSuchAlgorithmException | KeyManagementException e)
-        {
-            throw new IllegalStateException(e);
-        }
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -104,15 +89,13 @@ public final class R7UndertowHandler implements HttpHandler
         return -1;
     }
 
-    private static void handleCompleted(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final HttpServerExchange serverExchange)
+    private static void handleCompleted(final StatefulJournal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final HttpServerExchange serverExchange)
     {
         if (!gatewayExchange.wasProxied())
         {
             gatewayExchange.setUpstreamRequest(UnproxiedUpstreamRequest.INSTANCE);
             gatewayExchange.setUpstreamResponse(UnproxiedUpstreamResponse.INSTANCE);
         }
-        final long journalBytes = ((StatefulJournal) journal).getBytesWritten();
-        gatewayExchange.setJournalBytes(journalBytes);
 
         if (gatewayExchange.wasProxied())
         {
@@ -125,6 +108,8 @@ public final class R7UndertowHandler implements HttpHandler
         final boolean isWebSocket = Boolean.TRUE.equals(exchange.getAttachment(IS_WEBSOCKET_KEY));
         if (isWebSocket)
         {
+            final long journalBytes = journal.getBytesWritten();
+            gatewayExchange.setJournalBytes(journalBytes);
             return;
         }
 
@@ -142,6 +127,8 @@ public final class R7UndertowHandler implements HttpHandler
         final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
 
         journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, serverExchange.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
+        final long journalBytes = journal.getBytesWritten();
+        gatewayExchange.setJournalBytes(journalBytes);
     }
 
     private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
@@ -152,7 +139,7 @@ public final class R7UndertowHandler implements HttpHandler
         exchange.getResponseSender().send(terminationResponse.body());
     }
 
-    private static void shortCircuit(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
+    private static void shortCircuit(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
         for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
         {
@@ -166,7 +153,7 @@ public final class R7UndertowHandler implements HttpHandler
         sendResponse(exchange, gatewayExchange);
     }
 
-    private static void setupCompletionHandler(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
+    private static void setupCompletionHandler(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
         exchange.addExchangeCompleteListener((serverExchange, next) ->
         {
@@ -183,6 +170,25 @@ public final class R7UndertowHandler implements HttpHandler
                 next.proceed();
             }
         });
+    }
+
+    private UndertowXnioSsl getXnioSsl()
+    {
+        if (xnioSsl == null)
+        {
+            synchronized (this)
+            {
+                try
+                {
+                    return new UndertowXnioSsl(Xnio.getInstance(), OptionMap.EMPTY);
+                }
+                catch (NoSuchProviderException | NoSuchAlgorithmException | KeyManagementException e)
+                {
+                    throw new IllegalStateException(e);
+                }
+            }
+        }
+        return xnioSsl;
     }
 
     @Override
@@ -219,13 +225,13 @@ public final class R7UndertowHandler implements HttpHandler
         exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
 
         final VlfJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
-        final Journal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
+        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
 
         executeRequestFilters(exchange, route, gatewayExchange, statefulJournal, 0);
     }
 
-    private void continueUpstream(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
+    private void continueUpstream(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
         for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())
         {
@@ -274,7 +280,7 @@ public final class R7UndertowHandler implements HttpHandler
                             .forEach(u -> {
                                 if ("https".equalsIgnoreCase(u.getScheme()))
                                 {
-                                    rawClient.addHost(u, xnioSsl);
+                                    rawClient.addHost(u, getXnioSsl());
                                 }
                                 else
                                 {
@@ -282,7 +288,6 @@ public final class R7UndertowHandler implements HttpHandler
                                 }
                             });
 
-                    final boolean logProxyError = true;
                     final ProxyClient client = new DiagnosticProxyClient(rawClient, errorHandler);
 
                     return ProxyHandler.builder()
@@ -342,7 +347,7 @@ public final class R7UndertowHandler implements HttpHandler
         }
     }
 
-    private void executeRequestFilters(final HttpServerExchange exchange, final DefaultGatewayRoute route, final UndertowGatewayExchange gatewayExchange, final Journal statefulJournal, final int startIndex)
+    private void executeRequestFilters(final HttpServerExchange exchange, final DefaultGatewayRoute route, final UndertowGatewayExchange gatewayExchange, final StatefulJournal statefulJournal, final int startIndex)
     {
         final ClientRequestGatewayFilter[] filters = route.clientRequestFilters();
 

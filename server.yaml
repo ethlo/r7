@@ -44,4 +44,4 @@ socket:
 
 # Disk settings for journaling
 storage:
-  work_dir: /tmp/r7
+  work_dir: /tmp/r7/journal

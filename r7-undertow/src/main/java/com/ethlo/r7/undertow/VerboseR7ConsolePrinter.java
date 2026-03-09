@@ -124,8 +124,11 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
 
         // Storage
         logLine("");
-        logLine("   " + CSS_HEADER + "Storage & Buffering" + RESET);
-        logLine("   " + TREE_LAST + "Directory:         " + config.storage().workDir());
+        logLine("   " + CSS_HEADER + "Journaling" + RESET);
+        logLine("   " + TREE_BRANCH + "Shard count:         " + config.storage().shardCount());
+        logLine("   " + TREE_BRANCH + "Shard size:          " + config.storage().shardSize());
+        logLine("   " + TREE_BRANCH + "Pre-fault segments:  " + config.storage().preFault());
+        logLine("   " + TREE_LAST +   "Directory:           " + config.storage().workDir());
 
         final MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
         final MemoryUsage heap = memBean.getHeapMemoryUsage();
@@ -151,6 +154,13 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
         logLine("   " + TREE_BRANCH + "Heap Used/Max:     " + (heap.getUsed() / 1024 / 1024) + " MB / " + (heap.getMax() / 1024 / 1024) + " MB");
         logLine("   " + TREE_BRANCH + "Direct Buffer:     " + (directBufUsed / 1024) + " KB");
         logLine("   " + TREE_LAST + "Total Threads:     " + ManagementFactory.getThreadMXBean().getThreadCount());
+
+
+        /*final long[] ids = ManagementFactory.getThreadMXBean().getAllThreadIds();
+        for (long id : ids) {
+            logger.info("{}", ManagementFactory.getThreadMXBean().getThreadInfo(id));
+        }*/
+
     }
 
     private void printRouteTableInternal(final List<GatewayRoute> routes)
