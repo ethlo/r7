@@ -1,20 +1,28 @@
 package com.ethlo.venturi.api;
 
-public interface ClientRequestGatewayFilter {
-
+/**
+ * Intercepts incoming client requests before upstream routing.
+ * <p>
+ * Filters execute sequentially by mutating the {@link ClientRequestGatewayExchange}.
+ * To reject a request (e.g., for auth failure or rate limiting), use the exchange's
+ * short-circuit methods rather than throwing exceptions.
+ */
+public interface ClientRequestGatewayFilter extends GatewayFilter
+{
+    /**
+     * Executes the filter logic on the incoming request.
+     *
+     * @param exchange the request context and mutable state
+     */
     void onClientRequest(final ClientRequestGatewayExchange exchange);
 
     /**
-     * Indicates whether this filter performs blocking operations, such as
-     * synchronous database queries, heavy cryptographic work, or external HTTP calls.
+     * Indicates if this filter performs blocking operations (e.g., network I/O, database queries).
      * <p>
-     * By default, filters are expected to be non-blocking and execute inline on the
-     * server's primary network I/O thread to maximize throughput. If this method
-     * returns true, the underlying gateway engine is instructed to dispatch the
-     * execution of this filter to a dedicated worker thread (e.g., a Virtual Thread).
-     * This ensures that blocking operations do not stall the server's network event loop.
+     * If {@code true}, the engine dispatches execution to a worker thread (e.g., a Virtual Thread)
+     * to prevent stalling the server's non-blocking I/O loop.
      *
-     * @return true if the filter requires dispatching off the primary I/O thread, false otherwise.
+     * @return {@code true} if blocking, {@code false} for inline fast-path execution.
      */
     default boolean requiresDispatch()
     {
