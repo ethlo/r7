@@ -1,18 +1,23 @@
 package com.ethlo.venturi.api;
 
-public interface ClientRequestGatewayFilter extends GatewayFilter
+public interface ClientRequestGatewayFilter
 {
+
+    void onClientRequest(ClientRequestGatewayExchange exchange);
+
     /**
-     * Indicates if this filter performs blocking operations (e.g., synchronous network I/O).
-     * If true, the pipeline engine will dispatch this filter's execution to a
-     * Virtual Thread to prevent stalling the underlying non-blocking IO loop.
+     * Indicates whether this filter performs blocking operations, such as
+     * synchronous database queries or external HTTP calls.
+     * * By default, filters execute inline on the highly optimized Undertow IO thread.
+     * If this method returns true, the gateway engine will dispatch the execution
+     * of this filter (and subsequent request filters) to a Virtual Thread. This
+     * prevents the blocking operation from stalling the underlying non-blocking
+     * network event loop.
      *
-     * @return true if the filter requires dispatching off the IO thread.
+     * @return true if the filter requires dispatching off the IO thread, false otherwise.
      */
     default boolean requiresDispatch()
     {
         return false;
     }
-
-    void onClientRequest(ClientRequestGatewayExchange exchange);
 }
