@@ -16,7 +16,7 @@
         <appender-ref ref="ASYNC_STDOUT"/>
     </root>
 
-    <logger name="venturi" level="INFO" additivity="false">
+    <logger name="r7" level="INFO" additivity="false">
         <appender-ref ref="STDOUT-RAW"/>
     </logger>
 
@@ -26,5 +26,5 @@
         </encoder>
     </appender>
 
-    <logger name="venturi.access" level="WARN"/>
+    <logger name="r7.access" level="WARN"/>
 </configuration>

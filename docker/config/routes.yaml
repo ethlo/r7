@@ -7,7 +7,7 @@ globals:
     - CorrelationIdHeader
     - AddResponseHeader:
         name: X-Powered-By
-        value: Venturi
+        value: R7
 routes:
   - id: forward-status
     upstream:

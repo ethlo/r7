@@ -8,7 +8,7 @@ DURATION="10s"
 # Use an array to handle the spaces and quotes properly
 HEADERS=()
 for i in {1..10}; do
-    HEADERS+=("-H" "X-Venturi-Header-$i: value-$i")
+    HEADERS+=("-H" "X-R7-Header-$i: value-$i")
 done
 
 #echo "--- Starting Warmup (10s) ---"

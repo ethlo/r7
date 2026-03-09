@@ -4,7 +4,7 @@ TARGET_HOST="localhost"
 TARGET_PORT="8888"
 TARGET_URL="http://$TARGET_HOST:$TARGET_PORT/hello"
 
-echo "--- Venturi Stress Suite V2 ---"
+echo "--- R7 Stress Suite V2 ---"
 
 # 1. Bypassing ARG_MAX for the 1MB Header
 # We write the header to a file and tell curl to read it, avoiding the shell limit.

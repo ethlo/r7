@@ -1,8 +1,0 @@
-com.ethlo.venturi.filters.AddResponseHeaderFactory
-com.ethlo.venturi.filters.CorrelationIdHeaderFilterFactory
-com.ethlo.venturi.filters.AddRequestHeaderFactory
-com.ethlo.venturi.filters.RequireAuthorizationHeaderFactory
-com.ethlo.venturi.filters.RewritePathFactory
-com.ethlo.venturi.filters.StripCacheHeadersFactory
-com.ethlo.venturi.filters.StripPathPrefixFactory
-com.ethlo.venturi.filters.Bucket4jRateLimitFilter

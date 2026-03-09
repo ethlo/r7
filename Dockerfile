@@ -15,14 +15,14 @@ COPY . .
 
 # Build everything.
 RUN --mount=type=cache,target=/root/.m2 \
-    ./mvnw clean install -Pnative -DskipTests -pl venturi-undertow -am && \
-    ./mvnw native:compile -Pnative -DskipTests -pl venturi-undertow
+    ./mvnw clean install -Pnative -DskipTests -pl r7-undertow -am && \
+    ./mvnw native:compile -Pnative -DskipTests -pl r7-undertow
 
 # STAGE 2: Runtime
 FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
 
-COPY --from=builder /build/venturi-undertow/target/venturi-server /app/server
+COPY --from=builder /build/r7-undertow/target/r7-server /app/server
 
 USER 65532:65532
 ENTRYPOINT ["/app/server"]

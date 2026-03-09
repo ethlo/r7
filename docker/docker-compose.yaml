@@ -1,6 +1,6 @@
 services:
-  venturi-api:
-    image: venturi-server:latest
+  r7-api:
+    image: r7-server:latest
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"

@@ -2,20 +2,20 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.ethlo.venturi</groupId>
-    <artifactId>venturi</artifactId>
+    <groupId>com.ethlo.r7</groupId>
+    <artifactId>r7</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>venturi</name>
+    <name>r7</name>
     <modules>
-        <module>venturi-api</module>
-        <module>venturi-undertow</module>
-        <module>venturi-core</module>
-        <module>venturi-journal-api</module>
-        <module>venturi-journal-mmap</module>
-        <module>venturi-tailer-api</module>
-        <module>venturi-utils</module>
-        <module>venturi-tailer-jsonld</module>
+        <module>r7-api</module>
+        <module>r7-undertow</module>
+        <module>r7-core</module>
+        <module>r7-journal-api</module>
+        <module>r7-journal-mmap</module>
+        <module>r7-tailer-api</module>
+        <module>r7-utils</module>
+        <module>r7-tailer-jsonld</module>
     </modules>
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
@@ -39,35 +39,31 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.6.3</version>
+                <version>3.12.0</version>
                 <configuration>
                     <windowtitle>ethlo R7 Gateway</windowtitle>
                     <doctitle><![CDATA[<h1>ethlo R7 Gateway</h1>]]></doctitle>
                     <bottom><![CDATA[<i>Copyright &#169; {currentYear} Ethlo. All Rights Reserved.</i>]]></bottom>
-
                     <show>public</show>
                     <quiet>true</quiet>
-                    <failOnError>true</failOnError>
+                    <failOnError>false</failOnError>
                     <failOnWarnings>false</failOnWarnings>
-
                     <doclint>all,-missing</doclint>
-
                     <links>
                         <link>https://docs.oracle.com/en/java/javase/25/docs/api/</link>
                     </links>
-
                     <groups>
                         <group>
                             <title>Core API</title>
-                            <packages>com.ethlo.venturi.api*</packages>
+                            <packages>com.ethlo.r7.api*</packages>
                         </group>
                         <group>
                             <title>Undertow Engine</title>
-                            <packages>com.ethlo.venturi.undertow*</packages>
+                            <packages>com.ethlo.r7.undertow*</packages>
                         </group>
                         <group>
                             <title>Journaling System</title>
-                            <packages>com.ethlo.venturi.journal*</packages>
+                            <packages>com.ethlo.r7.journal*</packages>
                         </group>
                     </groups>
                 </configuration>

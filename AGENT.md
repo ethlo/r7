@@ -1,4 +1,4 @@
-# Venturi Proxy: Agent Context & Rules
+# R7 Proxy: Agent Context & Rules
 
 ## Core Philosophy: Mechanical Sympathy
 - **Zero-Allocation**: Avoid `new` in the hot path. Use `CharSequence`, `ByteBuffer`, and reusable objects.
@@ -8,7 +8,7 @@
 ## Architectural Constraints
 - **Sharded Journals**: Audit logs are sharded by `requestId` hash to prevent lock contention.
 - **Binary First**: All journaling is binary-encoded via `Marker` constants (BEGIN=0x01, BODY=0x02, END=0x03).
-- **Sidecar Processing**: The `VenturiTailer` handles the conversion from binary to JSON; the Gateway does NOT write JSON.
+- **Sidecar Processing**: The `R7Tailer` handles the conversion from binary to JSON; the Gateway does NOT write JSON.
 
 ## Target Metrics
 - **Throughput**: 100k+ req/s.
