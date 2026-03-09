@@ -164,6 +164,7 @@ public final class VenturiMain
         // Have to happen after start
         statusHandler.setConnectorStatistics(server.getListenerInfo().getFirst().getConnectorStatistics());
 
+        System.gc();
         final VenturiConsolePrinter consolePrinter = new VerboseVenturiConsolePrinter();
         consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
 

@@ -2,8 +2,6 @@ package com.ethlo.venturi.api;
 
 public interface ClientResponseGatewayExchange extends BaseGatewayExchange
 {
-    CharSequence requestId();
-
     GatewayRequest clientRequest();
 
     GatewayRequest upstreamRequest();
@@ -11,8 +9,4 @@ public interface ClientResponseGatewayExchange extends BaseGatewayExchange
     GatewayResponse upstreamResponse();
 
     MutableGatewayResponse clientResponse();
-
-    MutableGatewayAttributes attributes();
-
-    GatewayRouteInfo route();
 }

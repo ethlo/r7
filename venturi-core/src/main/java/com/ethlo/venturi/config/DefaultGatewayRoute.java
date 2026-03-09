@@ -2,8 +2,8 @@ package com.ethlo.venturi.config;
 
 import java.util.List;
 
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientRequestGatewayFilter;
 import com.ethlo.venturi.api.CompletedGatewayFilter;
 import com.ethlo.venturi.api.GatewayFilter;
@@ -19,8 +19,8 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final RouteDefinition routeDefinition;
     private final ClientRequestGatewayFilter[] clientRequestFilters;
     private final CompletedGatewayFilter[] completedGatewayFilters;
-    private final BeforeCommitGatewayFilter[] beforeCommitGatewayFilters;
-    private final BeforeUpstreamGatewayFilter[] beforeUpstreamGatewayFilters;
+    private final ClientResponseGatewayFilter[] beforeCommitGatewayFilters;
+    private final UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters;
 
     public DefaultGatewayRoute(final CharSequence id, final List<CharSequence> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteDefinition routeDefinition)
     {
@@ -35,16 +35,16 @@ public class DefaultGatewayRoute implements GatewayRoute
                 .toList()
                 .toArray(new ClientRequestGatewayFilter[0]);
 
-        this.beforeUpstreamGatewayFilters = filters.stream().filter(f -> f instanceof BeforeUpstreamGatewayFilter)
-                .map(BeforeUpstreamGatewayFilter.class::cast)
+        this.beforeUpstreamGatewayFilters = filters.stream().filter(f -> f instanceof UpstreamRequestGatewayFilter)
+                .map(UpstreamRequestGatewayFilter.class::cast)
                 .toList()
-                .toArray(new BeforeUpstreamGatewayFilter[0]);
+                .toArray(new UpstreamRequestGatewayFilter[0]);
 
 
-        this.beforeCommitGatewayFilters = filters.stream().filter(f -> f instanceof BeforeCommitGatewayFilter)
-                .map(BeforeCommitGatewayFilter.class::cast)
+        this.beforeCommitGatewayFilters = filters.stream().filter(f -> f instanceof ClientResponseGatewayFilter)
+                .map(ClientResponseGatewayFilter.class::cast)
                 .toList()
-                .toArray(new BeforeCommitGatewayFilter[0]);
+                .toArray(new ClientResponseGatewayFilter[0]);
 
         this.completedGatewayFilters = filters.stream().filter(f -> f instanceof CompletedGatewayFilter)
                 .map(CompletedGatewayFilter.class::cast)
@@ -88,12 +88,12 @@ public class DefaultGatewayRoute implements GatewayRoute
         return completedGatewayFilters;
     }
 
-    public BeforeCommitGatewayFilter[] beforeCommitGatewayFilters()
+    public ClientResponseGatewayFilter[] beforeCommitGatewayFilters()
     {
         return beforeCommitGatewayFilters;
     }
 
-    public BeforeUpstreamGatewayFilter[] beforeUpstreamGatewayFilters()
+    public UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters()
     {
         return beforeUpstreamGatewayFilters;
     }

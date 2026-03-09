@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayFilter;
 import com.ethlo.venturi.api.ClientRequestGatewayExchange;
 import com.ethlo.venturi.api.ClientRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
@@ -93,7 +93,7 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         }
     }
 
-    private static class GF implements ClientRequestGatewayFilter, BeforeCommitGatewayFilter, ShortInfo
+    private static class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
         private final Cache<String, Bucket> buckets;
         private final Config config;

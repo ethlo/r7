@@ -6,8 +6,8 @@ import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientRequestGatewayExchange;
 import com.ethlo.venturi.api.ClientRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
@@ -35,12 +35,12 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
     }
 
     @Override
-    public BeforeCommitGatewayFilter create(final EmptyConfig config)
+    public ClientResponseGatewayFilter create(final EmptyConfig config)
     {
         return new GF();
     }
 
-    public static final class GF implements ClientRequestGatewayFilter, BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, CompletedGatewayFilter, ShortInfo
+    public static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
     {
         public static final int STATUS_COUNT_ARRAY_SIZE = 500;
         private static final int STATUS_COUNTER_OFFSET = 100;

@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface BeforeUpstreamGatewayFilter extends GatewayFilter
+public interface UpstreamRequestGatewayFilter extends GatewayFilter
 {
     /**
      * Before we call the upstream service

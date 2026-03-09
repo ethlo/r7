@@ -1,6 +1,6 @@
 package com.ethlo.venturi.filters;
 
-import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.api.MutableGatewayHeaders;
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
@@ -26,7 +26,7 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
     }
 
     @Override
-    public BeforeUpstreamGatewayFilter create(Config config)
+    public UpstreamRequestGatewayFilter create(Config config)
     {
         return new GF();
     }
@@ -40,7 +40,7 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
         }
     }
 
-    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
+    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)

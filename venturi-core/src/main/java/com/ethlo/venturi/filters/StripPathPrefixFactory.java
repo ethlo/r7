@@ -1,6 +1,6 @@
 package com.ethlo.venturi.filters;
 
-import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -25,7 +25,7 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
     }
 
     @Override
-    public BeforeUpstreamGatewayFilter create(Config config)
+    public UpstreamRequestGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -45,7 +45,7 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         }
     }
 
-    private static class GF implements BeforeUpstreamGatewayFilter, ShortInfo
+    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         private final int parts;
 

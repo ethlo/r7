@@ -1,6 +1,6 @@
 package com.ethlo.venturi.api;
 
-public interface BeforeCommitGatewayFilter extends GatewayFilter
+public interface ClientResponseGatewayFilter extends GatewayFilter
 {
     /**
      * The upstream service has responded with headers.

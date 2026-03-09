@@ -1,7 +1,7 @@
 package com.ethlo.venturi.filters;
 
 import com.ethlo.venturi.RedactUtil;
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayFilter;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.core.ShortInfo;
 import com.ethlo.venturi.spi.GatewayFilterFactory;
@@ -26,7 +26,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
     }
 
     @Override
-    public BeforeCommitGatewayFilter create(Config config)
+    public ClientResponseGatewayFilter create(Config config)
     {
         return new GF(config);
     }
@@ -42,7 +42,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
         }
     }
 
-    private static class GF implements BeforeCommitGatewayFilter, ShortInfo
+    private static class GF implements ClientResponseGatewayFilter, ShortInfo
     {
         private final boolean override;
         private final String name;

@@ -2,8 +2,8 @@ package com.ethlo.venturi.filters;
 
 import static com.ethlo.venturi.util.constants.HttpHeaders.X_CORRELATION_ID;
 
-import com.ethlo.venturi.api.BeforeCommitGatewayFilter;
-import com.ethlo.venturi.api.BeforeUpstreamGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayFilter;
+import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.api.ClientResponseGatewayExchange;
 import com.ethlo.venturi.api.GatewayFilter;
 import com.ethlo.venturi.api.UpstreamRequestGatewayExchange;
@@ -26,7 +26,7 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Ga
         return new GF();
     }
 
-    private static class GF implements BeforeUpstreamGatewayFilter, BeforeCommitGatewayFilter, ShortInfo
+    private static class GF implements UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)

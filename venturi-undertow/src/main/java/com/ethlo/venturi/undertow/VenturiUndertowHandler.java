@@ -139,7 +139,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private static void terminate(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
     {
-        for (final BeforeCommitGatewayFilter filter : route.beforeCommitGatewayFilters())
+        for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
         {
             filter.onClientResponse(gatewayExchange);
         }
@@ -229,7 +229,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
     private void continueUpstream(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
     {
-        for (final BeforeUpstreamGatewayFilter filter : route.beforeUpstreamGatewayFilters())
+        for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())
         {
             filter.onUpstreamRequest(gatewayExchange);
         }
@@ -241,7 +241,7 @@ public final class VenturiUndertowHandler implements HttpHandler
                 gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
             }
 
-            for (final BeforeCommitGatewayFilter filter : route.beforeCommitGatewayFilters())
+            for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
             {
                 filter.onClientResponse(gatewayExchange);
             }
