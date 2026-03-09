@@ -8,6 +8,8 @@ import java.security.NoSuchProviderException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
@@ -69,6 +71,8 @@ public final class VenturiUndertowHandler implements HttpHandler
     private final RouteRegistry routeRegistry;
     private final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter;
 
+    private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
     public VenturiUndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler)
     {
         this.serverConfig = serverConfig;
@@ -90,9 +94,9 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
     }
 
-    private static long getLongValueOrMinusOne(final HttpServerExchange exchange, final AttachmentKey<Long> key)
+    private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
     {
-        final Long result = exchange.getAttachment(key);
+        final Long result = exchange.getAttachment(VenturiUndertowHandler.PROXY_START_TS_KEY);
         if (result != null)
         {
             return result;
@@ -126,7 +130,7 @@ public final class VenturiUndertowHandler implements HttpHandler
 
         final long requestEndTs = ClockSource.now();
         final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
-        final long proxyStartTs = getLongValueOrMinusOne(exchange, PROXY_START_TS_KEY);
+        final long proxyStartTs = getProxyStartOrMinusOne(exchange);
         final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
         final long proxyEndTs;
 
@@ -218,24 +222,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         final Journal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
 
-        for (final ClientRequestGatewayFilter filter : route.clientRequestFilters())
-        {
-            filter.onClientRequest(gatewayExchange);
-            if (gatewayExchange.isShortCircuited())
-            {
-                // Early exit
-                break;
-            }
-        }
-
-        if (gatewayExchange.isShortCircuited())
-        {
-            shortCircuit(exchange, route, gatewayExchange, statefulJournal);
-        }
-        else
-        {
-            continueUpstream(exchange, route, gatewayExchange, statefulJournal);
-        }
+        executeRequestFilters(exchange, route, gatewayExchange, statefulJournal, 0);
     }
 
     private void continueUpstream(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
@@ -355,13 +342,62 @@ public final class VenturiUndertowHandler implements HttpHandler
         }
     }
 
+    private void executeRequestFilters(final HttpServerExchange exchange, final DefaultGatewayRoute route, final UndertowGatewayExchange gatewayExchange, final Journal statefulJournal, final int startIndex)
+    {
+        final ClientRequestGatewayFilter[] filters = route.clientRequestFilters();
+
+        for (int i = startIndex; i < filters.length; i++)
+        {
+            final ClientRequestGatewayFilter filter = filters[i];
+
+            // Only dispatch if the filter needs it AND we are currently on the Undertow IO thread
+            if (filter.requiresDispatch() && exchange.isInIoThread())
+            {
+                final int nextIndex = i + 1;
+
+                // Undertow handles the async hand-off. The IO thread will immediately
+                // return after this block and go back to accepting TCP connections.
+                exchange.dispatch(this.virtualThreadExecutor, () ->
+                        {
+                            filter.onClientRequest(gatewayExchange);
+
+                            if (gatewayExchange.isShortCircuited())
+                            {
+                                shortCircuit(exchange, route, gatewayExchange, statefulJournal);
+                            }
+                            else
+                            {
+                                // Resume the loop on the Virtual Thread
+                                executeRequestFilters(exchange, route, gatewayExchange, statefulJournal, nextIndex);
+                            }
+                        }
+                );
+
+                return; // Surrender the Undertow IO thread immediately
+            }
+
+            // FAST PATH: Execute inline if we don't need to block, OR if we are
+            // already running on a Virtual Thread from a previous dispatch.
+            filter.onClientRequest(gatewayExchange);
+
+            if (gatewayExchange.isShortCircuited())
+            {
+                shortCircuit(exchange, route, gatewayExchange, statefulJournal);
+                return;
+            }
+        }
+
+        // If we exit the loop natively, all filters passed. Proceed to proxy.
+        continueUpstream(exchange, route, gatewayExchange, statefulJournal);
+    }
+
     private void attachWebSocketLifecycleTracking(final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final Journal journal, final CharSequence requestId)
     {
         exchange.getConnection().addCloseListener(connection -> {
             final long requestEndTs = ClockSource.now();
             final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
 
-            final long proxyStartTs = getLongValueOrMinusOne(exchange, PROXY_START_TS_KEY);
+            final long proxyStartTs = getProxyStartOrMinusOne(exchange);
             final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
             final long proxyEndTs = Objects.requireNonNullElse(tmpProxyEndTs, requestEndTs);
 
