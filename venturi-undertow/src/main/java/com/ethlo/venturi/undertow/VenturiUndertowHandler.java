@@ -1,7 +1,31 @@
 package com.ethlo.venturi.undertow;
 
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.xnio.OptionMap;
+import org.xnio.Xnio;
+import org.xnio.ssl.XnioSsl;
+
 import com.ethlo.venturi.ShardedJournalWriter;
-import com.ethlo.venturi.api.*;
+import com.ethlo.venturi.api.ClientRequestGatewayFilter;
+import com.ethlo.venturi.api.ClientResponseGatewayFilter;
+import com.ethlo.venturi.api.CompletedGatewayFilter;
+import com.ethlo.venturi.api.GatewayErrorHandler;
+import com.ethlo.venturi.api.GatewayRequest;
+import com.ethlo.venturi.api.GatewayRoute;
+import com.ethlo.venturi.api.MutableGatewayAttributes;
+import com.ethlo.venturi.api.MutableGatewayResponse;
+import com.ethlo.venturi.api.TerminationGatewayResponse;
+import com.ethlo.venturi.api.UnproxiedUpstreamRequest;
+import com.ethlo.venturi.api.UnproxiedUpstreamResponse;
+import com.ethlo.venturi.api.UpstreamRequestGatewayFilter;
 import com.ethlo.venturi.config.DefaultGatewayRoute;
 import com.ethlo.venturi.config.RouteJournalConfig;
 import com.ethlo.venturi.config.RouteRegistry;
@@ -29,19 +53,6 @@ import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.AttachmentKey;
 import io.undertow.util.HttpString;
-
-import org.xnio.OptionMap;
-import org.xnio.Xnio;
-import org.xnio.ssl.XnioSsl;
-
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class VenturiUndertowHandler implements HttpHandler
 {
@@ -129,7 +140,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, serverExchange.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
     }
 
-    private static void sendTermination(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
+    private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
     {
         final TerminationGatewayResponse terminationResponse = gatewayExchange.getTerminated();
         gatewayExchange.clientResponse().status(terminationResponse.status());
@@ -137,7 +148,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         exchange.getResponseSender().send(terminationResponse.body());
     }
 
-    private static void terminate(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
+    private static void shortCircuit(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
     {
         for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
         {
@@ -148,7 +159,7 @@ public final class VenturiUndertowHandler implements HttpHandler
         setupCompletionHandler(exchange, route, gatewayExchange, statefulJournal);
 
         // Undertow will trigger the listener above when done.
-        sendTermination(exchange, gatewayExchange);
+        sendResponse(exchange, gatewayExchange);
     }
 
     private static void setupCompletionHandler(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, Journal statefulJournal)
@@ -210,16 +221,16 @@ public final class VenturiUndertowHandler implements HttpHandler
         for (final ClientRequestGatewayFilter filter : route.clientRequestFilters())
         {
             filter.onClientRequest(gatewayExchange);
-            if (gatewayExchange.isTerminated())
+            if (gatewayExchange.isShortCircuited())
             {
                 // Early exit
                 break;
             }
         }
 
-        if (gatewayExchange.isTerminated())
+        if (gatewayExchange.isShortCircuited())
         {
-            terminate(exchange, route, gatewayExchange, statefulJournal);
+            shortCircuit(exchange, route, gatewayExchange, statefulJournal);
         }
         else
         {

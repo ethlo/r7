@@ -228,7 +228,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         this.upstreamRequest = unproxiedUpstreamRequest;
     }
 
-    public boolean isTerminated()
+    public boolean isShortCircuited()
     {
         return getTerminated() != null;
     }
