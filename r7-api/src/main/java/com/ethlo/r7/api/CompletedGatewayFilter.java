@@ -1,0 +1,15 @@
+package com.ethlo.r7.api;
+
+/**
+ * Invoked once the exchange lifecycle is fully completed and resources are ready for cleanup.
+ */
+@FunctionalInterface
+public interface CompletedGatewayFilter extends GatewayFilter
+{
+    /**
+     * Performs final telemetry recording or resource cleanup.
+     *
+     * @param exchange the terminal state of the gateway exchange
+     */
+    void onCompleted(CompletedGatewayExchange exchange);
+}

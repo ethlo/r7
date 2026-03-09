@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ETHLO R7 // STATUS</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container" id="main-container">
+    <header>
+        <div>
+            <h1>ETHLO // <span>R7</span> GATEWAY</h1>
+            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | VERSION: -- | DISK: --</div>
+        </div>
+        <div class="sys-info" id="last-update">CONNECTING...</div>
+        <!--<button id="theme-toggle" class="theme-btn">TOGGLE THEME</button>-->
+    </header>
+    <table id="route-table">
+        <thead>
+        <tr>
+            <th class="col-route">ROUTE ID</th>
+            <th class="col-totals">TOTALS</th>
+            <th class="col-success">SUCCESS</th>
+            <th class="col-errors">ERRORS</th>
+            <th class="col-ingress">INGRESS</th>
+            <th class="col-egress">EGRESS</th>
+            <th class="col-active">ACTIVE</th>
+            <th class="col-latency">LATENCY</th>
+            <th class="col-journal">JOURNAL</th>
+        </tr>
+        </thead>
+        <tbody id="view"></tbody>
+    </table>
+
+    <footer class="app-footer">
+        ETHLO // R7 GATEWAY // VERSION: <span id="sys-version">--</span>
+    </footer>
+</div>
+
+<div id="details-panel">
+    <div id="details-content"></div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

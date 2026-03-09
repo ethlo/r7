@@ -1,0 +1,4 @@
+com.ethlo.r7.predicates.HostFactory
+com.ethlo.r7.predicates.MethodFactory
+com.ethlo.r7.predicates.PathStartsWithFactory
+com.ethlo.r7.predicates.RegexPathFactory
