@@ -21,10 +21,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 990M
+          memory: 200M
           cpus: 16
         reservations:
-          memory: 500M
+          memory: 200M
 
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8888"]

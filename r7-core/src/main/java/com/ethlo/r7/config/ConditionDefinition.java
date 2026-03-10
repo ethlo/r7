@@ -67,12 +67,8 @@ public final class ConditionDefinition
     {
         final List<GatewayPredicate> list = new ArrayList<>();
 
-        // 1. Process Flat Predicates (Implicit AND)
-        // e.g., pathStartsWith: /hello
-        predicates.forEach((name, value) ->
-                list.add(registry.create(name, value)));
+        predicates.forEach((name, value) -> list.add(registry.create(name, value)));
 
-        // 2. Process Logical Groups
         if (and != null && !and.isEmpty())
         {
             final List<GatewayPredicate> andChildren = and.stream()

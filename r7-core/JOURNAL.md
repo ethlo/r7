@@ -1,4 +1,4 @@
-# R7 Journal Technical Specification
+# r7 Journal Technical Specification
 
 High-performance, sharded, append-only journal system using Memory-Mapped I/O (mmap) for HTTP audit logging. Optimized
 for workloads exceeding 150k events/sec.

@@ -1,6 +1,6 @@
-# R7 Journal MMAP
+# r7 Journal MMAP
 
-R7 Journal MMAP is the append-only, commit-marked storage module of the R7 gateway. It provides deterministic, high-fidelity capture of streaming HTTP requests with bounded durability guarantees. It is designed as a foundational upstream ingest capture layer where silent data loss is unacceptable, while allowing streaming responses and unbounded request sizes.
+r7 Journal MMAP is the append-only, commit-marked storage module of the r7 gateway. It provides deterministic, high-fidelity capture of streaming HTTP requests with bounded durability guarantees. It is designed as a foundational upstream ingest capture layer where silent data loss is unacceptable, while allowing streaming responses and unbounded request sizes.
 
 ---
 
@@ -19,7 +19,7 @@ R7 Journal MMAP is the append-only, commit-marked storage module of the R7 gatew
 
 ### Limitations
 
-R7 Journal does *not* guarantee:
+r7 Journal does *not* guarantee:
 
 * Synchronous durability before HTTP acknowledgment
 * Protection against catastrophic disk destruction
@@ -70,7 +70,7 @@ The `END` marker contains total byte count and a rolling CRC32C over all payload
 
 ### 3. Deterministic Replay
 
-On restart, R7 Journal:
+On restart, r7 Journal:
 
 * Scans the journal sequentially
 * Rebuilds request state
@@ -91,7 +91,7 @@ All data up to the last completed `force()` call is guaranteed durable. Data wri
 
 ### 5. Backpressure Over Silent Loss
 
-R7 Journal is designed to *not* silently drop requests. Under resource constraints:
+r7 Journal is designed to *not* silently drop requests. Under resource constraints:
 
 * Disk full → new requests are rejected
 * Journal size limit exceeded → ingestion stops

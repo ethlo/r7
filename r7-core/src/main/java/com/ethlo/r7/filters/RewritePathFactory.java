@@ -4,8 +4,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.core.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;

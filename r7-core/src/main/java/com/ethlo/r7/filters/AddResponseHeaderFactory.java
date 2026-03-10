@@ -1,8 +1,8 @@
 package com.ethlo.r7.filters;
 
 import com.ethlo.r7.RedactUtil;
-import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.core.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;

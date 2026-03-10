@@ -1,18 +1,18 @@
-# Ethlo R7 Gateway
+# Ethlo r7 Gateway
 
 **A focused, high-performance JVM gateway built for predictable throughput and low-impact visibility.**
 
-R7 is designed for stacks where throughput, observability, and control matter. It provides a clean separation between stable APIs, a composable routing engine, high-throughput memory-mapped journaling, and an Undertow-based HTTP entrypoint. The system is intentionally narrow in scope: evaluate requests, apply predicates and filters, route efficiently, and optionally audit.
+r7 is designed for stacks where throughput, observability, and control matter. It provides a clean separation between stable APIs, a composable routing engine, high-throughput memory-mapped journaling, and an Undertow-based HTTP entrypoint. The system is intentionally narrow in scope: evaluate requests, apply predicates and filters, route efficiently, and optionally audit.
 
 ---
 
 ## Predictable Performance and Observability
 
-The R7 gateway is designed around a core engineering philosophy: network infrastructure must provide deep, real-time observability without degrading the performance of the critical path. It achieves this by aligning its metrics architecture with the mechanical realities of the JVM and modern CPU caches, providing operators with high-density telemetry that costs virtually nothing to capture.
+The r7 gateway is designed around a core engineering philosophy: network infrastructure must provide deep, real-time observability without degrading the performance of the critical path. It achieves this by aligning its metrics architecture with the mechanical realities of the JVM and modern CPU caches, providing operators with high-density telemetry that costs virtually nothing to capture.
 
 ### Zero-Allocation Hot Path
 
-High-throughput Java applications frequently suffer from garbage collection pauses caused by continuous object churn. R7 eliminates this overhead in its core routing and monitoring layers. By initializing all tracking primitives at startup and minimizing per-request object creation, the gateway guarantees a zero-allocation hot path. Tracking request counts, payload byte totals, and latency incurs absolutely no heap pressure during runtime, allowing the system to maintain stable, predictable latency percentiles even under sustained heavy load.
+High-throughput Java applications frequently suffer from garbage collection pauses caused by continuous object churn. r7 eliminates this overhead in its core routing and monitoring layers. By initializing all tracking primitives at startup and minimizing per-request object creation, the gateway guarantees a zero-allocation hot path. Tracking request counts, payload byte totals, and latency incurs absolutely no heap pressure during runtime, allowing the system to maintain stable, predictable latency percentiles even under sustained heavy load.
 
 ### Wait-Free Concurrency
 
@@ -22,7 +22,7 @@ Traditional atomic counters introduce severe CPU cache-line contention when thou
 
 ## Operational Simplicity and Instant Feedback
 
-R7 pairs a declarative configuration model with immediate operational visibility. Routes, predicates, and filter chains are defined in clean YAML, allowing operators to easily compose upstream targets and inject arguments into filters such as `StripPathPrefix` or `AddResponseHeader`. This simplicity extends to the forensic visibility plane, where journaling policies can be tuned independently per route and per request/response direction. The configuration natively supports the dynamic elevation of audit levels, such as automatically escalating a payload capture from `METADATA` to `HEADERS` when an upstream returns a 5xx error.
+r7 pairs a declarative configuration model with immediate operational visibility. Routes, predicates, and filter chains are defined in clean YAML, allowing operators to easily compose upstream targets and inject arguments into filters such as `StripPathPrefix` or `AddResponseHeader`. This simplicity extends to the forensic visibility plane, where journaling policies can be tuned independently per route and per request/response direction. The configuration natively supports the dynamic elevation of audit levels, such as automatically escalating a payload capture from `METADATA` to `HEADERS` when an upstream returns a 5xx error.
 
 **Example Configuration:**
 
@@ -48,7 +48,7 @@ routes:
       - SimpleMetrics
       - AddResponseHeader:
           name: X-Gateway
-          value: R7
+          value: r7
       - CorrelationIdHeader
       - RequireAuthorizationHeader
 
@@ -60,9 +60,9 @@ In production, the companion real-time dashboard translates this static configur
 
 ## Composability and Extensibility
 
-Routing in R7 is built from small, testable building blocks: `GatewayPredicate` and `GatewayFilter`. Predicates act as simple boolean tests against a request, while filters can mutate or enrich request attributes.
+Routing in r7 is built from small, testable building blocks: `GatewayPredicate` and `GatewayFilter`. Predicates act as simple boolean tests against a request, while filters can mutate or enrich request attributes.
 
-R7 stays on the JVM intentionally. Predicates and filters can be provided via Java’s `ServiceLoader` (SPI), allowing custom plugins to be added without modifying the core system. This enables extensions for:
+r7 stays on the JVM intentionally. Predicates and filters can be provided via Java’s `ServiceLoader` (SPI), allowing custom plugins to be added without modifying the core system. This enables extensions for:
 
 * JWT validation and JWK rotation strategies
 * Rate limiting and custom authentication mechanisms
@@ -70,11 +70,11 @@ R7 stays on the JVM intentionally. Predicates and filters can be provided via Ja
 
 ---
 
-## Decoupled Visibility: The R7F Journal
+## Decoupled Visibility: The r7F Journal
 
-Most gateways force a trade-off between visibility and performance. R7’s audit module takes a radically different approach by strictly separating the fast data plane from the visibility plane.
+Most gateways force a trade-off between visibility and performance. r7’s audit module takes a radically different approach by strictly separating the fast data plane from the visibility plane.
 
-It utilizes the **R7 Log Format (R7F)**, a binary write-ahead log designed for zero-copy, high-throughput logging.
+It utilizes the **r7 Log Format (r7F)**, a binary write-ahead log designed for zero-copy, high-throughput logging.
 
 * **Zero-Copy Hot Path**: Requests and responses are written to a memory-mapped journal using append-only, mechanically simple operations. There is no per-request serialization penalty or blocking I/O during request handling.
 * **Structured Payload Isolation**: Each entry isolates structured metadata (encoded via FlatBuffer `JournalEvent` tables) from variable raw payloads. This allows for efficient sequential logging and partial reads without full deserialization. Byte arrays are used to bypass UTF-8 validation overhead on the hot path.

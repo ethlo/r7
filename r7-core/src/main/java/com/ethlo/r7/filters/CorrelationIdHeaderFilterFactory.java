@@ -2,11 +2,11 @@ package com.ethlo.r7.filters;
 
 import static com.ethlo.r7.util.constants.HttpHeaders.X_CORRELATION_ID;
 
-import com.ethlo.r7.api.ClientResponseGatewayFilter;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.core.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 

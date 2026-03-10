@@ -29,12 +29,16 @@ routes:
 
   - id: undertow-internal-backend
     match:
-      - PathStartsWith:
-          prefix: /hello
-      - Method:
-          include:
-            - GET
-            - POST
+      - not:
+        - PathStartsWith:
+            prefix: /hello
+      - or:
+        - Method:
+            include:
+              - GET
+              - POST
+        - RemoteAddr:
+            source: 192.168.1/24
     upstream:
       targets:
         - url: http://localhost:1111

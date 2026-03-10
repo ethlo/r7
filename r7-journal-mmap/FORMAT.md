@@ -1,16 +1,16 @@
 # r7f Journal Entry Format
 
-The **R7 Log Format (r7f)** is a binary write-ahead log format designed for zero-copy, high-throughput logging of HTTP request/response events, including structured FlatBuffer metadata and optional raw payloads.
+The **r7 Log Format (r7f)** is a binary write-ahead log format designed for zero-copy, high-throughput logging of HTTP request/response events, including structured FlatBuffer metadata and optional raw payloads.
 
 ## File Preamble (Header)
 
-Every R7 log segment (both `.active` and `.r7f` files) begins with a fixed-length **1024-byte** (1KB) file preamble. This header identifies the file type, dictates the parser version, ensures deterministic log replay ordering, and reserves significant space for future file-level metadata (such as compression dictionaries, routing labels, or encryption keys).
+Every r7 log segment (both `.active` and `.r7f` files) begins with a fixed-length **1024-byte** (1KB) file preamble. This header identifies the file type, dictates the parser version, ensures deterministic log replay ordering, and reserves significant space for future file-level metadata (such as compression dictionaries, routing labels, or encryption keys).
 
 ### Preamble Field Descriptions
 
 | Field | Size (bytes) | Description |
 | --- | --- | --- |
-| **File Magic** | 4 | Fixed magic number `0x564C4631` (`r7f1`) identifying the file as a R7 log segment. |
+| **File Magic** | 4 | Fixed magic number `0x564C4631` (`r7f1`) identifying the file as a r7 log segment. |
 | **Version** | 2 | Format version (`0x0001`). Used to ensure parser compatibility. |
 | **Sequence ID** | 8 | Monotonically increasing segment identifier for chronological ordering during crash recovery. |
 | **Reserved** | 1010 | Zero-padded bytes reserved for future file-level metadata. |

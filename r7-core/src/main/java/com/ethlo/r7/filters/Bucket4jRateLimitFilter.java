@@ -7,10 +7,10 @@ import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
-import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.core.GatewayContextKeys;
