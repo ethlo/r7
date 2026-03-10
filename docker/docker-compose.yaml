@@ -1,14 +1,17 @@
 services:
   r7-api:
-    image: r7-server:latest
+    image: ethlo-r7:latest
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"
       - "19999:18888"
+    # ADD THIS TO UNBLOCK clone3:
+    security_opt:
+      - seccomp=unconfined
+    cap_add:
+      - SYS_PTRACE
     volumes:
-      - ./config/routes.yaml:/workspace/routes.yaml:ro
-      - ./config/server.yaml:/workspace/server.yaml:ro
-      - ./config/logback.xml:/workspace/logback.xml:ro
+      - ./config:/app/config:ro
       - ./journals:/journals:rw
     environment:
       - JAVA_TOOL_OPTIONS=

@@ -25,4 +25,13 @@ WORKDIR /app
 COPY --from=builder /build/r7-undertow/target/r7-server /app/server
 
 USER 65532:65532
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/server", "-Djava.security.egd=file:/dev/./urandom"]
+
+
+## Install strace
+ #RUN apt-get update && apt-get install -y strace && rm -rf /var/lib/apt/lists/*
+ #
+ #COPY --from=builder /build/r7-undertow/target/r7-server /app/server
+ #
+ ## Run the server wrapped in strace
+ #ENTRYPOINT ["strace", "-f", "/app/server"]

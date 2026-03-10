@@ -16,13 +16,12 @@ import java.nio.file.StandardCopyOption;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
-import com.ethlo.r7.api.IpSource;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.vlf.fbs.ClientRequest;
@@ -365,38 +364,94 @@ public final class VlfJournal implements Journal
 
     private void rotateSegment()
     {
-        // 1. Finalize the old segment if it exists
+        // 1. Capture the retiring segment state BEFORE offloading
         if (segment != null)
         {
-            // (Your logic here to write the EOF marker or truncate pre-faulted zeros)
-            Path finalizedPath = null;
-            try
-            {
-                finalizedPath = finalizeActiveSegment();
-            }
-            catch (IOException e)
-            {
-                logger.error("Unable to rotate segment", e);
-            }
+            final MemorySegment retiringSegment = this.segment;
+            final Arena retiringArena = this.arena;
+            final FileChannel retiringChannel = this.channel;
+            final Path retiringPath = this.activePath;
+            final long finalPosition = this.position;
 
-            if (finalizedPath != null)
-            {
-                // Trigger the delayed compression queue
-                finishedJournalFileSupplier.accept(finalizedPath);
-            }
+            // Clear the instance references immediately
+            this.segment = null;
+            this.arena = null;
+            this.channel = null;
+
+            // 2. Offload the blocking disk I/O to a Virtual Thread
+            Thread.startVirtualThread(() -> {
+                try
+                {
+                    final Path finalizedPath = finalizeSegmentAsync(
+                            retiringSegment,
+                            retiringArena,
+                            retiringChannel,
+                            retiringPath,
+                            finalPosition
+                    );
+
+                    if (finalizedPath != null)
+                    {
+                        // Trigger the delayed compression queue
+                        finishedJournalFileSupplier.accept(finalizedPath);
+                    }
+                }
+                catch (final IOException e)
+                {
+                    logger.error("Unable to rotate segment", e);
+                }
+            });
         }
 
-        // Instant O(1) swap to the pre-faulted segment
+        // 3. Instant O(1) swap to the pre-faulted segment (still inside the synchronized monitor)
         final VlfJournalProvider.WarmedSegment next = provider.getNextSegment();
         this.segment = next.segment();
         this.activePath = next.path();
         this.arena = next.arena();
+        // this.channel = next.channel(); // (Ensure channel is populated if it comes from the provider)
 
         // Write the VLF Preamble directly
         writePreamble();
     }
 
-    private Path finalizeActiveSegment() throws IOException
+    /**
+     * This method now takes explicit parameters instead of reading instance variables,
+     * making it completely thread-safe to run asynchronously.
+     */
+    private Path finalizeSegmentAsync(
+            final MemorySegment oldSegment,
+            final Arena oldArena,
+            final FileChannel oldChannel,
+            final Path oldPath,
+            final long finalPosition) throws IOException
+    {
+        // REMOVED: oldSegment.force();
+        // Let the Linux Kernel Page Cache manage the flush to physical media.
+
+        oldArena.close(); // Unmap BEFORE truncating
+
+        if (oldChannel != null && oldChannel.isOpen())
+        {
+            // Shrink the file to remove the trailing pre-faulted zeros
+            oldChannel.truncate(finalPosition);
+            oldChannel.close();
+        }
+
+        if (finalPosition <= VlfConstants.PREAMBLE_SIZE)
+        {
+            Files.delete(oldPath);
+            return null;
+        }
+        else
+        {
+            final String newName = oldPath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+            final Path target = oldPath.resolveSibling(newName);
+            Files.move(oldPath, target, StandardCopyOption.ATOMIC_MOVE);
+            return target;
+        }
+    }
+
+    private void finalizeActiveSegment() throws IOException
     {
         segment.force();
         arena.close(); // Unmap BEFORE truncating
@@ -416,14 +471,12 @@ public final class VlfJournal implements Journal
         if (position <= VlfConstants.PREAMBLE_SIZE)
         {
             Files.delete(activePath);
-            return null;
         }
         else
         {
             String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
             final Path target = activePath.resolveSibling(newName);
             Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
-            return target;
         }
     }
 

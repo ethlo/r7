@@ -20,6 +20,7 @@ import org.xnio.XnioWorker;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
+import ch.qos.logback.core.util.StatusPrinter;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.GatewayRoute;
@@ -180,20 +181,6 @@ public final class R7Main
         logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
-    private XnioWorker createSharedWorker(final ServerConfig config) throws IOException
-    {
-        final ServerConfig.WorkerConfig worker = config.worker();
-        final OptionMap.Builder options = OptionMap.builder()
-                .set(Options.WORKER_IO_THREADS, worker.ioThreads())
-                .set(Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
-                .set(Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
-                .set(Options.STACK_SIZE, worker.stackSize())
-                .set(Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
-                .set(Options.CONNECTION_LOW_WATER, worker.connectionLowWater());
-
-        return Xnio.getInstance().createWorker(options.getMap());
-    }
-
     private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)
     {
         final Undertow.Builder routerBackendTest = Undertow.builder();
@@ -208,17 +195,25 @@ public final class R7Main
     // MUST be public
     public static void main(final String[] args) throws IOException
     {
+        // Force all silent background thread crashes to print to standard error
+        Thread.setDefaultUncaughtExceptionHandler((t, e) ->
+        {
+            System.err.println("FATAL THREAD CRASH [" + t.getName() + "]: " + e.getMessage());
+            e.printStackTrace(System.err);
+        });
+
         setupLogging();
+
         logger.debug("Main class started at {} ms since process start", SystemUtil.getUptime());
-        new R7Main(Paths.get("routes.yaml"), Paths.get("server.yaml"));
+        new R7Main(Paths.get("config/routes.yaml"), Paths.get("config/server.yaml"));
     }
 
     private static void setupLogging()
     {
-        final Path configFilePath = Paths.get("logback.xml").toAbsolutePath();
+        final Path configFilePath = Paths.get("config/logback.xml").toAbsolutePath();
         if (!Files.exists(configFilePath))
         {
-            logger.info("No logback.xml file found");
+            System.err.println("No logback.xml file found");
             return;
         }
 
@@ -241,8 +236,26 @@ public final class R7Main
         }
         catch (final JoranException je)
         {
-            // StatusPrinter will handle the error message
+            System.err.println("FATAL: Logback failed to configure from XML: " + je.getMessage());
+        } finally
+        {
+            // This is the magic line that will reveal the GraalVM reflection error
+            StatusPrinter.printInCaseOfErrorsOrWarnings(context);
         }
+    }
+
+    private XnioWorker createSharedWorker(final ServerConfig config) throws IOException
+    {
+        final ServerConfig.WorkerConfig worker = config.worker();
+        final OptionMap.Builder options = OptionMap.builder()
+                .set(Options.WORKER_IO_THREADS, worker.ioThreads())
+                .set(Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
+                .set(Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
+                .set(Options.STACK_SIZE, worker.stackSize())
+                .set(Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
+                .set(Options.CONNECTION_LOW_WATER, worker.connectionLowWater());
+
+        return Xnio.getInstance().createWorker(options.getMap());
     }
 
     private void setupStatusBackend(final StatusHandler statusHandler, final int port, final String host, final XnioWorker sharedWorker)

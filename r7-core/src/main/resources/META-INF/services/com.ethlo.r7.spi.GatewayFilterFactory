@@ -6,3 +6,4 @@ com.ethlo.r7.filters.RewritePathFactory
 com.ethlo.r7.filters.StripCacheHeadersFactory
 com.ethlo.r7.filters.StripPathPrefixFactory
 com.ethlo.r7.filters.Bucket4jRateLimitFilter
+com.ethlo.r7.filters.CircuitBreakerFilter

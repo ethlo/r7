@@ -40,12 +40,15 @@ routes:
         - url: http://localhost:1111
     filters:
       - SimpleMetrics
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT15s
       - RateLimiter:
           capacity: 5
           refill_tokens: 1
           refill_period: PT1s
       - AddResponseHeader:
-          name: X-Powered-By
+          name: Powered-By
           value: R7
       - CorrelationIdHeader
       - RequireAuthorizationHeader
@@ -61,11 +64,11 @@ routes:
 
   - id: ws-test
     upstream:
-     targets:
-       - url: http://127.0.0.1:8080
+      targets:
+        - url: http://127.0.0.1:8080
     match:
-       PathStartsWith:
-         prefix: /ws
+      PathStartsWith:
+        prefix: /ws
     journal:
       request:
         level: METADATA

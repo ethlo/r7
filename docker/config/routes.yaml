@@ -44,6 +44,9 @@ routes:
           capacity: 5
           refill_tokens: 1
           refill_period: PT2s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT12s
       - AddResponseHeader:
           name: X-Powered-By
           value: Ethlo R7
