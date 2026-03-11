@@ -1,19 +1,22 @@
 package com.ethlo.r7.status;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
-import com.ethlo.r7.api.ClientResponseGatewayFilter;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.core.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.status.dto.EgressDto;
@@ -225,9 +228,13 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             return summarizeRanges(STATUS_COUNT_ARRAY_SIZE, 599);
         }
 
-        public long getLastActiveTime()
+        public OffsetDateTime getLastActiveTime()
         {
-            return this.lastActiveTime.get();
+            if (this.lastActiveTime.get() != 0)
+            {
+                return Instant.ofEpochMilli(this.lastActiveTime.get()).atOffset(ZoneOffset.UTC);
+            }
+            return null;
         }
 
         public void set(final RouteMetricsDto routeMetricsDto)
@@ -252,7 +259,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
                 this.activeWsRequests.reset();
                 this.activeWsRequests.add(requestStatistics.websocketActive());
 
-                this.lastActiveTime.set(requestStatistics.lastActive());
+                if (requestStatistics.lastActive() != null)
+                {
+                    final long epochNanos = requestStatistics.lastActive().toInstant().toEpochMilli();
+                    this.lastActiveTime.set(epochNanos);
+                }
 
                 fromMap(this.upstreamResponseStatuses, requestStatistics.upstreamResponseStatuses());
                 fromMap(this.clientResponseStatuses, requestStatistics.clientResponseStatuses());
@@ -289,10 +300,10 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
             }
 
             final PerformanceTelemetryDto performanceTelemetry = routeMetricsDto.performanceTelemetry();
-            if (performanceTelemetry != null && requestStatistics != null)
+            if (performanceTelemetry != null && performanceTelemetry.averageLatency() != null && requestStatistics != null)
             {
                 this.totalDurationNanos.reset();
-                this.totalDurationNanos.add(performanceTelemetry.averageLatencyNanoseconds() * requestStatistics.total());
+                this.totalDurationNanos.add(performanceTelemetry.averageLatency().toNanos() * requestStatistics.total());
             }
         }
 

@@ -111,8 +111,8 @@ header {
 .sys-info { font-size: 0.9rem; color: var(--dim); }
 #sys-version { color: var(--fg); font-weight: 500; }
 
-.text-muted { opacity: 0.7; }
-.text-dim { opacity: 0.5; }
+.text-muted { opacity: 1; }
+.text-dim { opacity: 0.7; }
 .text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .text-nowrap { white-space: nowrap; }
 .text-right { text-align: right; }
@@ -120,10 +120,10 @@ header {
 .status-indicator { margin-right: 6px; }
 
 /* Status Colors */
-.text-warn { color: #ffca28; font-weight: 600; }
-.text-err { color: #ff4444; font-weight: 600; }
-.text-http { color: #00d4ff; font-weight: 600; }
-.text-ws { color: #00ff88; font-weight: 600; }
+.text-warn { color: #ffca28; font-weight: 300; }
+.text-err { color: #ff4444; font-weight: 300; }
+.text-http { color: #00d4ff; font-weight: 300; }
+.text-ws { color: #00ff88; font-weight: 300; }
 
 /* Theme Button */
 .theme-btn {
@@ -188,7 +188,7 @@ tr.total-row td {
     margin: 0;
     padding-bottom: 2px;
 }
-.metric-label { opacity: 0.7; }
+.metric-label { opacity: 1; }
 .metric-leader {
     flex-grow: 1;
     border-bottom: 1px dotted var(--border-dotted);
@@ -272,7 +272,7 @@ tr.total-row td {
     font-size: 0.85em;
     text-transform: uppercase;
     letter-spacing: 1px;
-    opacity: 0.5;
+    opacity: 0.9;
     border-bottom: 1px solid rgba(128, 128, 128, 0.3);
     padding-bottom: 4px;
     margin-bottom: 12px;

@@ -45,7 +45,9 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
                 try
                 {
                     final String[] parts = this.source().split("/");
-                    InetAddress.getByName(parts[0]); // Validates the IP part
+
+                    // Validates the IP part
+                    InetAddress.getByName(parts[0]);
 
                     if (parts.length > 1)
                     {

@@ -1,17 +1,14 @@
 package com.ethlo.r7.status;
 
-import com.ethlo.r7.status.dto.RouteMetricsDto;
-import tools.jackson.databind.ObjectMapper;
-
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+
+import com.ethlo.r7.status.dto.RouteMetricsDto;
+import tools.jackson.databind.ObjectMapper;
 
 public final class FileTelemetryRepository implements TelemetryRepository
 {

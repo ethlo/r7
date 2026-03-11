@@ -37,9 +37,31 @@ function formatUptime(iso) {
     return `${d}${h}:${m}:${s}`;
 }
 
+// Helper to convert Java ISO-8601 Duration string (e.g., PT0.000001319S) to milliseconds
+function parseDurationMs(iso) {
+    if (!iso || !iso.startsWith('P')) return 0;
+    let ms = 0;
+    const h = iso.match(/([\d.]+)H/);
+    const m = iso.match(/([\d.]+)M/);
+    const s = iso.match(/([\d.]+)S/);
+
+    if (h) ms += parseFloat(h[1]) * 3600000;
+    if (m) ms += parseFloat(m[1]) * 60000;
+    if (s) ms += parseFloat(s[1]) * 1000;
+
+    return ms;
+}
+
+// Helper to convert ISO-8601 Timestamp to JS epoch, handling Java's default Epoch Zero
+function parseTimestamp(iso) {
+    if (!iso || iso === "1970-01-01T00:00:00Z") return 0;
+    return new Date(iso).getTime();
+}
+
 function timeAgo(ts) {
-    if (!ts || ts === 0) return 'NEVER';
-    const diff = Math.floor((Date.now() - ts) / 1000);
+    const time = typeof ts === 'string' ? parseTimestamp(ts) : ts;
+    if (!time || time === 0) return 'NEVER';
+    const diff = Math.floor((Date.now() - time) / 1000);
     if (diff < 2) return 'NOW';
     if (diff < 60) return `${diff}s AGO`;
 
@@ -74,7 +96,6 @@ const jBadge = (lvl) => {
     return `<span class="journal-active-${l.toLowerCase()} j-badge">${l.charAt(0)}</span>`;
 };
 
-// Flattens the nested Onion JSON into chronological lifecycle stages
 function buildFilterPipelineHtml(node) {
     if (!node) return '<div class="sub text-muted" style="padding: 4px;">No pipeline configured.</div>';
 
@@ -88,15 +109,12 @@ function buildFilterPipelineHtml(node) {
 
     let curr = node;
     while (curr) {
-        // Detect the innermost core proxy
         if (!curr.on_client_request && !curr.on_upstream_request && !curr.on_client_response && !curr.on_completed && !curr.child) {
             phases.core = curr.id;
         } else {
-            // Forward execution appends to the end of the list
             if (curr.on_client_request) phases.clientReq.push(curr.id);
             if (curr.on_upstream_request) phases.upstreamReq.push(curr.id);
 
-            // Reverse execution prepends to the list (unwinds the stack perfectly for UI reading)
             if (curr.on_client_response) phases.clientRes.unshift(curr.id);
             if (curr.on_completed) phases.completed.unshift(curr.id);
         }
@@ -303,10 +321,10 @@ function showDetails(routeId) {
         
         <div class="panel-section">
             <div class="panel-section-title">Status</div>
-            ${mRow('LAST ACTIVE', timeAgo(s.last_active_ts), true)}
+            ${mRow('LAST ACTIVE', timeAgo(s.last_active), true)}
             ${mRow('HTTP ACTIVE', s.active, false, rActiveHttpStyle)}
             ${mRow('WEBSOCKET ACTIVE', wsActive, false, rActiveWsStyle)}
-            ${mRow('AVERAGE LATENCY', (p.average_latency_nanoseconds / 1000000).toFixed(FRACTION_DIGITS) + 'ms', false)}
+            ${mRow('AVERAGE LATENCY', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
         </div>
 
         <div class="panel-section">
@@ -381,7 +399,7 @@ async function update() {
         const version = data.system.version || 'Unknown';
         document.getElementById('sys-version').innerText = version;
 
-        timeEl.innerHTML = `<span class="status-indicator" style="color: #00ff88;">●</span>ONLINE`;
+        timeEl.innerHTML = `<span class="status-indicator" style="color: #00aa00;">●</span>ONLINE`;
 
         window.currentConfigs = {};
         if (data.route_configs) {
@@ -408,9 +426,9 @@ async function update() {
 }
 
 const ZERO_METRICS = {
-    request_statistics: { total: 0, websocket_total: 0, active: 0, websocket_active: 0, last_active_ts: 0, client_statuses: {} },
+    request_statistics: { total: 0, websocket_total: 0, active: 0, websocket_active: 0, last_active: "1970-01-01T00:00:00Z", client_statuses: {} },
     traffic_flow: { ingress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, egress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, journal_storage_bytes: 0 },
-    performance_telemetry: { average_latency_nanoseconds: 0 }
+    performance_telemetry: { average_latency: "PT0S" }
 };
 
 function renderTable(data) {
@@ -425,7 +443,7 @@ function renderTable(data) {
         err_5xx: acc.err_5xx + sumStatuses(r.request_statistics.client_statuses, 500, 599),
         active: acc.active + (r.request_statistics.active || 0),
         ws_active: acc.ws_active + (r.request_statistics.websocket_active || 0),
-        last_active: Math.max(acc.last_active, (r.request_statistics.last_active_ts || 0)),
+        last_active: Math.max(acc.last_active, parseTimestamp(r.request_statistics.last_active)),
         in_h: acc.in_h + r.traffic_flow.ingress.header_bytes,
         in_b: acc.in_b + r.traffic_flow.ingress.body_bytes,
         in_t: acc.in_t + r.traffic_flow.ingress.total_bytes,
@@ -433,13 +451,13 @@ function renderTable(data) {
         out_b: acc.out_b + r.traffic_flow.egress.body_bytes,
         out_t: acc.out_t + r.traffic_flow.egress.total_bytes,
         journal: acc.journal + r.traffic_flow.journal_storage_bytes,
-        latency: acc.latency + (r.performance_telemetry.average_latency_nanoseconds * (r.request_statistics.total || 0))
+        latency: acc.latency + (parseDurationMs(r.performance_telemetry.average_latency) * (r.request_statistics.total || 0))
     }), {
         total: 0, ws_total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0, ws_active: 0, last_active: 0,
         in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0, latency: 0
     });
 
-    const globalAvgLat = totals.total === 0 ? '0.000' : (totals.latency / totals.total / 1000000).toFixed(FRACTION_DIGITS);
+    const globalAvgLat = totals.total === 0 ? '0.00' : (totals.latency / totals.total).toFixed(FRACTION_DIGITS);
     const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
 
     const t4xxStyle = totals.err_4xx > 0 ? 'text-warn' : '';
@@ -517,7 +535,7 @@ function renderTable(data) {
         <tr class="clickable-row" onclick="showDetails('${config.id}')">
             <td class="col-route">
                 <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">${config.id}</div>
-                <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(s.last_active_ts)}</div>
+                <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(s.last_active)}</div>
             </td>
             <td class="col-totals">
                 ${mRow('REQ', s.total.toLocaleString(), true)}
@@ -546,7 +564,7 @@ function renderTable(data) {
                 ${mRow('WS', wsActive, false, rActiveWsStyle)}
             </td>
             <td class="col-latency">
-                ${mRow('AVG', (p.average_latency_nanoseconds / 1000000).toFixed(FRACTION_DIGITS) + 'ms', true)}
+                ${mRow('AVG', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', true)}
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}

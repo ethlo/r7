@@ -1,5 +1,8 @@
 package com.ethlo.r7.status.dto;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +47,7 @@ public class ModelMapper
     {
         final SimpleMetricsFactory.GF gf = gfEntry.getValue();
         final TrafficFlowDto traffic = mapTraffic(gf);
-        final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(gf.getAvgLatencyNanos());
+        final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(Duration.ofNanos(gf.getAvgLatencyNanos()));
         final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
                 gf.getTotalWsRequests(), gf.getActiveWsRequests(), gf.getLastActiveTime(),
                 gf.getUpstreamResponseStatuses(), gf.getClientResponseStatuses(),
