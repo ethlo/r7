@@ -1,5 +1,5 @@
-site_name: ethlo R7 Gateway
-site_description: The Zero-Allocation Java API Gateway
+site_name: ethlo r7 Gateway
+site_description: The performant Java Gateway
 site_url: https://ethlo.github.io/r7/
 repo_url: https://github.com/ethlo/r7
 repo_name: ethlo/r7
@@ -14,9 +14,22 @@ theme:
     - navigation.tabs
     - content.code.copy
     - toc.integrate
+  logo: assets/logo.svg
+  favicon: assets/favicon.png
 
 nav:
   - Overview: index.md
   - Architecture: architecture.md
   - Benchmarks: benchmarks.md
   - Quickstart: quickstart.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: true
+      pygments_lang_class: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
