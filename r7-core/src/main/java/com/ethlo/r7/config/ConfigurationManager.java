@@ -54,18 +54,22 @@ public final class ConfigurationManager
     {
         final ValidationResult validationResult = validate(config);
         validationResult.throwIfInvalid();
+
+        // Load global filters
+        final List<GatewayFilter> globalFilters = new ArrayList<>();
+        for (final FilterDefinition filterDef : config.filters())
+        {
+            instantiateFilters(validationResult, globalFilters, filterDef);
+        }
+
         final List<GatewayRoute> routes = config.routes().stream()
                 .map(def -> {
-                    final List<GatewayFilter> instantiatedFilters = new ArrayList<>();
+                    final List<GatewayFilter> filters = new ArrayList<>(globalFilters);
                     if (def.filters() != null)
                     {
                         for (final FilterDefinition filterDef : def.filters())
                         {
-                            final GatewayFilterFactory<ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
-                            final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
-                            c.validate(validationResult);
-                            validationResult.throwIfInvalid();
-                            instantiatedFilters.add(typedFactory.create(c));
+                            instantiateFilters(validationResult, filters, filterDef);
                         }
                     }
 
@@ -84,11 +88,20 @@ public final class ConfigurationManager
                     }
 
                     final List<CharSequence> urls = def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
-                    return (GatewayRoute) new DefaultGatewayRoute(def.id(), urls, predicate, instantiatedFilters, def);
+                    return (GatewayRoute) new DefaultGatewayRoute(def.id(), urls, predicate, filters, def);
                 })
                 .toList();
 
         routeRegistry.updateRoutes(routes);
+    }
+
+    private void instantiateFilters(final ValidationResult validationResult, final List<GatewayFilter> instantiatedFilters, final FilterDefinition filterDef)
+    {
+        final GatewayFilterFactory<ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
+        final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
+        c.validate(validationResult);
+        validationResult.throwIfInvalid();
+        instantiatedFilters.add(typedFactory.create(c));
     }
 
     public <T> T load(Path yamlFile, Class<T> type)

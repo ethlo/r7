@@ -161,9 +161,11 @@ public final class R7UndertowHandler implements HttpHandler
 
             try
             {
-                for (final CompletedGatewayFilter filter : route.completedGatewayFilters())
+                // Reverse iteration on way out (onion)
+                final CompletedGatewayFilter[] completedFilters = route.completedGatewayFilters();
+                for (int i = completedFilters.length - 1; i >= 0; i--)
                 {
-                    filter.onCompleted(gatewayExchange);
+                    completedFilters[i].onCompleted(gatewayExchange);
                 }
             } finally
             {
@@ -245,9 +247,10 @@ public final class R7UndertowHandler implements HttpHandler
                 gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
             }
 
-            for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
+            final ClientResponseGatewayFilter[] beforeCommitFilters = route.beforeCommitGatewayFilters();
+            for (int i = beforeCommitFilters.length - 1; i >= 0; i--)
             {
-                filter.onClientResponse(gatewayExchange);
+                beforeCommitFilters[i].onClientResponse(gatewayExchange);
             }
         });
 

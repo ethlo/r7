@@ -12,8 +12,6 @@ public record FilterDefinition(String name, Object args)
     {
         if (raw instanceof String name)
         {
-            // Case 1: Zero-config shorthand
-            // - CorrelationIdHeader
             return new FilterDefinition(name, Collections.emptyMap());
         }
         else if (raw instanceof Map<?, ?> map)

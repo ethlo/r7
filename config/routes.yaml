@@ -1,13 +1,7 @@
 version: '{{git.rev.abbr}}'
-globals:
-  timeouts:
-    connect: PT5s
-    read: PT30s
-  filters:
-    - CorrelationIdHeader
-    - AddResponseHeader:
-        name: X-Powered-By
-        value: R7
+filters:
+  - SimpleMetrics
+
 routes:
   - id: forward-status
     upstream:
@@ -24,7 +18,6 @@ routes:
       - PathStartsWith:
           prefix: /benchmark
     filters:
-      - SimpleMetrics
       - RequireAuthorizationHeader
 
   - id: undertow-internal-backend
@@ -43,7 +36,6 @@ routes:
       targets:
         - url: http://localhost:1111
     filters:
-      - SimpleMetrics
       - CircuitBreaker:
           failure_threshold: 10
           cooldown_period: PT15s
@@ -82,8 +74,6 @@ routes:
         level: HEADERS
         status_overrides:
           2xx: NONE
-    filters:
-      - SimpleMetrics
 
   - id: home-assistant
     upstream:
@@ -100,6 +90,5 @@ routes:
       response:
         level: HEADERS
     filters:
-      - SimpleMetrics
       - StripPathPrefix:
           parts: 1
