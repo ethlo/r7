@@ -153,7 +153,7 @@ public final class R7Main
         // Used for having fast internal HTTP endpoint to talk to
         setupTestBackEndForProxy(benchMarkHandler, sharedWorker);
 
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig);
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry.getRoutes());
 
         setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost(), sharedWorker);
 

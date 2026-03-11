@@ -1,7 +1,6 @@
 version: '{{git.rev.abbr}}'
 filters:
   - SimpleMetrics
-
 routes:
   - id: forward-status
     upstream:
@@ -29,6 +28,7 @@ routes:
         - Method:
             include:
               - GET
+              - GET
               - POST
         - RemoteAddr:
             source: 192.168.1/24
@@ -36,18 +36,15 @@ routes:
       targets:
         - url: http://localhost:1111
     filters:
-      - CircuitBreaker:
-          failure_threshold: 10
-          cooldown_period: PT15s
       - RateLimiter:
           capacity: 5
           refill_tokens: 1
           refill_period: PT1s
-      - AddResponseHeader:
-          name: Powered-By
-          value: R7
-      - CorrelationIdHeader
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT15s
       - RequireAuthorizationHeader
+      - CorrelationIdHeader
     journal:
       request:
         level: NONE

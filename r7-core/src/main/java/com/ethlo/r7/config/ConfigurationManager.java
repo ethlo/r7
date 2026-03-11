@@ -55,15 +55,16 @@ public final class ConfigurationManager
         final ValidationResult validationResult = validate(config);
         validationResult.throwIfInvalid();
 
-        // Load global filters
-        final List<GatewayFilter> globalFilters = new ArrayList<>();
-        for (final FilterDefinition filterDef : config.filters())
-        {
-            instantiateFilters(validationResult, globalFilters, filterDef);
-        }
-
         final List<GatewayRoute> routes = config.routes().stream()
-                .map(def -> {
+                .map(def ->
+                {
+                    // Load global filters
+                    final List<GatewayFilter> globalFilters = new ArrayList<>();
+                    for (final FilterDefinition filterDef : config.filters())
+                    {
+                        instantiateFilters(validationResult, globalFilters, filterDef);
+                    }
+
                     final List<GatewayFilter> filters = new ArrayList<>(globalFilters);
                     if (def.filters() != null)
                     {

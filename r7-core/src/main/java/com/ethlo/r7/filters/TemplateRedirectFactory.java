@@ -108,6 +108,12 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + this.responseStatus + " -> " + this.targetTemplate;

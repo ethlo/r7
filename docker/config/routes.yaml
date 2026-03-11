@@ -6,7 +6,7 @@ globals:
   filters:
     - CorrelationIdHeader
     - AddResponseHeader:
-        name: X-Powered-By
+        name: Powered-By
         value: R7
 routes:
   - id: forward-status

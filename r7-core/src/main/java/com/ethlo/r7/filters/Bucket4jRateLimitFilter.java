@@ -163,12 +163,18 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return new StringJoiner(", ", "RateLimiter" + "[", "]")
                     .add("capacity=" + config.capacity())
-                    .add("refillTokens=" + config.refillTokens())
-                    .add("refillPeriod=" + config.refillPeriod())
+                    .add("refill_tokens=" + config.refillTokens())
+                    .add("refill_period=" + config.refillPeriod())
                     .toString();
         }
     }

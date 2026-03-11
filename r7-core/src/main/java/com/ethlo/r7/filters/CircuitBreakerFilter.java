@@ -89,6 +89,12 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             final State currentState = state.get();
@@ -119,11 +125,7 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            // The response filter easily lets us observe the upstream result
-            final int statusCode = exchange.clientResponse().status();
-            final boolean isFailure = (statusCode >= 500);
-
-            if (isFailure)
+            if (HttpStatuses.is5xx(exchange.clientResponse().status()))
             {
                 handleFailure();
             }
@@ -185,11 +187,10 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         @Override
         public String summary()
         {
-            // Included currentState so it shows up natively in your terminal UI
             return new StringJoiner(", ", "CircuitBreaker" + "[", "]")
-                    .add("failureThreshold=" + config.failureThreshold())
-                    .add("cooldownPeriod=" + config.cooldownPeriod())
-                    .add("currentState=" + state.get().name())
+                    .add("failure_threshold=" + config.failureThreshold())
+                    .add("cool_down=" + config.cooldownPeriod())
+                    .add("state=" + state.get().name())
                     .toString();
         }
     }

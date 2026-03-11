@@ -165,6 +165,12 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + " (Origins: " + (this.isAnyOrigin ? "*" : String.join(", ", this.specificOrigins)) + ")";

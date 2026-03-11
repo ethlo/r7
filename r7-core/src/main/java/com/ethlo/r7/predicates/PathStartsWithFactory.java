@@ -56,6 +56,12 @@ public class PathStartsWithFactory implements GatewayPredicateFactory<PathStarts
         }
 
         @Override
+        public String name()
+        {
+            return PREDICATE_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return PREDICATE_NAME + ": " + prefix;

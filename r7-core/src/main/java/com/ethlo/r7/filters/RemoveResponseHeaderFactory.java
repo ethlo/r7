@@ -55,6 +55,12 @@ public final class RemoveResponseHeaderFactory implements GatewayFilterFactory<R
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + this.name;

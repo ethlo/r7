@@ -74,6 +74,12 @@ public final class RequestSizeFilterFactory implements GatewayFilterFactory<Requ
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + " (" + this.maxBytes + " bytes)";

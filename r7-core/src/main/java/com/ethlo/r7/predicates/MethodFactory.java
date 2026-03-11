@@ -67,6 +67,12 @@ public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Conf
         }
 
         @Override
+        public String name()
+        {
+            return PREDICATE_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return PREDICATE_NAME + ": " + Arrays.toString(include);

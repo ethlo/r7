@@ -81,6 +81,12 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + regexp.pattern() + " -> " + replacement;

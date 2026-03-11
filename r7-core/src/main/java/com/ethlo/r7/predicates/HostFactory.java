@@ -84,6 +84,12 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
         }
 
         @Override
+        public String name()
+        {
+            return PREDICATE_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return PREDICATE_NAME + ": " + String.join(", ", hosts);

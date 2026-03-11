@@ -1,6 +1,8 @@
 package com.ethlo.r7.config;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.StringJoiner;
 
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
@@ -101,5 +103,21 @@ public class DefaultGatewayRoute implements GatewayRoute
     public RouteDefinition routeDefinition()
     {
         return routeDefinition;
+    }
+
+    @Override
+    public String toString()
+    {
+        return new StringJoiner(", ", DefaultGatewayRoute.class.getSimpleName() + "[", "]")
+                .add("id=" + id)
+                .add("uri=" + uri)
+                .add("predicate=" + predicate)
+                .add("filters=" + filters)
+                .add("routeDefinition=" + routeDefinition)
+                .add("clientRequestFilters=" + Arrays.toString(clientRequestFilters))
+                .add("completedGatewayFilters=" + Arrays.toString(completedGatewayFilters))
+                .add("beforeCommitGatewayFilters=" + Arrays.toString(beforeCommitGatewayFilters))
+                .add("beforeUpstreamGatewayFilters=" + Arrays.toString(beforeUpstreamGatewayFilters))
+                .toString();
     }
 }

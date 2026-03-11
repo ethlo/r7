@@ -53,6 +53,12 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME;

@@ -69,6 +69,12 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestH
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + name + ": " + RedactUtil.fingerprint(value);

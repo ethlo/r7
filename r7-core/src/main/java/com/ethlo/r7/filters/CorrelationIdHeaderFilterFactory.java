@@ -41,6 +41,12 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Ga
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + X_CORRELATION_ID;

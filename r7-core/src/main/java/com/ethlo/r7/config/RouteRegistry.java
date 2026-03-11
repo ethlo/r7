@@ -20,12 +20,12 @@ public class RouteRegistry
         this.routes.set(List.copyOf(newRoutes));
     }
 
-    public GatewayRoute findRoute(GatewayRequest exchange)
+    public GatewayRoute findRoute(GatewayRequest gatewayRequest)
     {
         final List<GatewayRoute> current = routes.get();
         for (GatewayRoute route : current)
         {
-            if (route.predicate().test(exchange))
+            if (route.predicate().test(gatewayRequest))
             {
                 return route;
             }

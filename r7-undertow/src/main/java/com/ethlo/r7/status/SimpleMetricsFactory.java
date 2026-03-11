@@ -124,6 +124,12 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME;

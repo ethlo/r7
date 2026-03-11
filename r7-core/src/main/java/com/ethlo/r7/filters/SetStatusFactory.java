@@ -61,6 +61,12 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + this.status;

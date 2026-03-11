@@ -1,17 +1,21 @@
 package com.ethlo.r7.status.dto;
 
-import com.ethlo.r7.config.RouteDefinition;
-import com.ethlo.r7.status.SimpleMetricsFactory;
-import io.undertow.server.ConnectorStatistics;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.RouteDefinition;
+import com.ethlo.r7.status.PipelineVisualizer;
+import com.ethlo.r7.status.SimpleMetricsFactory;
+import io.undertow.server.ConnectorStatistics;
+
 public class ModelMapper
 {
-    public static  RouteConfigDto mapToDto(final RouteDefinition def)
+    public static RouteConfigDto mapToDto(final DefaultGatewayRoute route)
     {
+        final RouteDefinition def = route.routeDefinition();
         final MatchDto match = new MatchDto(
                 def.match().getClass().getSimpleName(),
                 def.match().toString()
@@ -31,7 +35,8 @@ public class ModelMapper
                 match,
                 journal,
                 def.upstream().targets().toString(),
-                filters
+                filters,
+                PipelineVisualizer.buildNestedVisualization(route.filters().toArray(new GatewayFilter[0]))
         );
     }
 

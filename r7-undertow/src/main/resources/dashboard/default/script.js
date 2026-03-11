@@ -52,7 +52,6 @@ function timeAgo(ts) {
     return `${Math.floor(h / 24)}d AGO`;
 }
 
-// Helper to calculate aggregate buckets from the status maps
 function sumStatuses(statusObj, min, max) {
     if (!statusObj) return 0;
     let sum = 0;
@@ -63,7 +62,6 @@ function sumStatuses(statusObj, min, max) {
     return sum;
 }
 
-// Global UI Helpers
 const mRow = (label, value, isSum = false, valueClass = '') => `
     <div class="${isSum ? 'sum' : 'sub'} metric-row">
         <span class="metric-label">${label}</span>
@@ -76,13 +74,71 @@ const jBadge = (lvl) => {
     return `<span class="journal-active-${l.toLowerCase()} j-badge">${l.charAt(0)}</span>`;
 };
 
+// Flattens the nested Onion JSON into chronological lifecycle stages
+function buildFilterPipelineHtml(node) {
+    if (!node) return '<div class="sub text-muted" style="padding: 4px;">No pipeline configured.</div>';
+
+    const phases = {
+        clientReq: [],
+        upstreamReq: [],
+        core: 'UpstreamProxy',
+        clientRes: [],
+        completed: []
+    };
+
+    let curr = node;
+    while (curr) {
+        // Detect the innermost core proxy
+        if (!curr.on_client_request && !curr.on_upstream_request && !curr.on_client_response && !curr.on_completed && !curr.child) {
+            phases.core = curr.id;
+        } else {
+            // Forward execution appends to the end of the list
+            if (curr.on_client_request) phases.clientReq.push(curr.id);
+            if (curr.on_upstream_request) phases.upstreamReq.push(curr.id);
+
+            // Reverse execution prepends to the list (unwinds the stack perfectly for UI reading)
+            if (curr.on_client_response) phases.clientRes.unshift(curr.id);
+            if (curr.on_completed) phases.completed.unshift(curr.id);
+        }
+        curr = curr.child;
+    }
+
+    const renderPhase = (title, items, icon) => {
+        if (items.length === 0) return '';
+        let html = `<div style="margin-bottom: 12px;">`;
+        html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 4px; padding-bottom: 2px;">${icon} ${title}</div>`;
+        items.forEach((item, index) => {
+            const connector = (index === items.length - 1) ? '└─' : '├─';
+            html += `<div class="sub" style="padding-left: 4px; opacity: 0.9;"><span class="text-dim" style="margin-right: 4px;">${connector}</span>${item}</div>`;
+        });
+        html += `</div>`;
+        return html;
+    };
+
+    let html = '<div style="font-family: monospace; font-size: 0.9em; padding: 4px;">';
+
+    html += renderPhase('CLIENT REQUEST', phases.clientReq, '↓');
+    html += renderPhase('UPSTREAM REQUEST', phases.upstreamReq, '↓');
+
+    html += `<div style="margin-bottom: 12px;">`;
+    html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 4px; padding-bottom: 2px;">◆ TARGET PROXY</div>`;
+    html += `<div class="sub" style="padding-left: 4px; opacity: 0.9;"><span class="text-dim" style="margin-right: 4px;">└─</span>${phases.core}</div>`;
+    html += `</div>`;
+
+    html += renderPhase('CLIENT RESPONSE', phases.clientRes, '↑');
+    html += renderPhase('COMPLETED', phases.completed, '↑');
+
+    html += '</div>';
+
+    return html;
+}
+
 function showSystemDetails() {
     const data = window.currentData;
     if (!data) return;
 
     window.currentOpenRoute = '__SYSTEM__';
 
-    // Fallback to zeros if the backend hasn't wired it up yet
     const stats = data.connector_statistics || {
         request_count: 0, bytes_sent: 0, bytes_received: 0, error_count: 0,
         processing_time_nanos: 0, max_processing_time_nanos: 0,
@@ -150,7 +206,6 @@ function showDetails(routeId) {
     const s = metrics.request_statistics;
     const p = metrics.performance_telemetry;
 
-    // Dynamically calculate the aggregates from the client_statuses map
     const st2xx = sumStatuses(s.client_statuses, 200, 299);
     const st3xx = sumStatuses(s.client_statuses, 300, 399);
     const err4xx = sumStatuses(s.client_statuses, 400, 499);
@@ -167,7 +222,6 @@ function showDetails(routeId) {
     const reqJourn = config.journal?.request || 'NONE';
     const resJourn = config.journal?.response || 'NONE';
 
-    // Pills Generator
     const buildPills = (activeLevel) => {
         const levels = ['NONE', 'METADATA', 'HEADERS', 'FULL'];
         return `<div class="pill-group">` +
@@ -177,7 +231,6 @@ function showDetails(routeId) {
             }).join('') + `</div>`;
     };
 
-    // Predicate Generator
     let pHtml = '<div class="tree-view">';
     if (config.match && config.match.expression) {
         pHtml += `
@@ -190,9 +243,11 @@ function showDetails(routeId) {
     }
     pHtml += '</div>';
 
-    // Filter Pipeline Generator
-    let fHtml = '<div class="tree-view">';
-    if (config.filters && config.filters.length > 0) {
+    let fHtml = '';
+    if (config.filter_nodes) {
+        fHtml = buildFilterPipelineHtml(config.filter_nodes);
+    } else if (config.filters && config.filters.length > 0) {
+        fHtml += '<div class="tree-view" style="font-family: monospace; font-size: 0.9em; padding: 4px;">';
         config.filters.forEach((f, i) => {
             const branch = (i === config.filters.length - 1) ? '└─' : '├─';
             fHtml += `
@@ -201,12 +256,11 @@ function showDetails(routeId) {
                     <span class="text-dim text-truncate" title='${JSON.stringify(f.args)}'>${JSON.stringify(f.args)}</span>
                 </div>`;
         });
+        fHtml += '</div>';
     } else {
-        fHtml += `<div class="sub text-muted" style="padding: 4px 8px;">No filters configured.</div>`;
+        fHtml = `<div class="sub text-muted" style="padding: 4px 8px;">No filters configured.</div>`;
     }
-    fHtml += '</div>';
 
-    // Status Map Generators
     const generateStatusRows = (statusMap) => {
         if (!statusMap || Object.keys(statusMap).length === 0) {
             return `<div class="sub text-muted" style="padding: 4px 8px;">No statuses recorded.</div>`;
@@ -243,7 +297,7 @@ function showDetails(routeId) {
         </div>
         
         <div class="panel-section">
-            <div class="panel-section-title">Filter Pipeline</div>
+            <div class="panel-section-title">Execution Pipeline</div>
             ${fHtml}
         </div>
         
@@ -316,7 +370,6 @@ async function update() {
         const res = await fetch(window.location.href, {headers: {'Accept': 'application/json'}});
         const data = await res.json();
 
-        // Store the raw data globally for the system panel
         window.currentData = data;
 
         const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
@@ -342,7 +395,6 @@ async function update() {
 
         renderTable(data);
 
-        // Refresh panel if it is currently open
         if (panel.classList.contains('open')) {
             if (window.currentOpenRoute === '__SYSTEM__') {
                 showSystemDetails();
@@ -355,7 +407,6 @@ async function update() {
     }
 }
 
-// Add this helper constant at the top level
 const ZERO_METRICS = {
     request_statistics: { total: 0, websocket_total: 0, active: 0, websocket_active: 0, last_active_ts: 0, client_statuses: {} },
     traffic_flow: { ingress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, egress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, journal_storage_bytes: 0 },
@@ -363,7 +414,6 @@ const ZERO_METRICS = {
 };
 
 function renderTable(data) {
-    // Source of truth is now route_configs to ensure all routes show up
     if (!data.route_configs) return;
 
     const totals = (data.route_metrics || []).reduce((acc, r) => ({
@@ -439,9 +489,7 @@ function renderTable(data) {
             </td>
         </tr>`;
 
-    // Map through configs so every route gets a row
     data.route_configs.forEach(config => {
-        // Find matching metrics or use ZERO_METRICS fallback
         const r = (data.route_metrics || []).find(m => m.id === config.id) || ZERO_METRICS;
 
         const t = r.traffic_flow;

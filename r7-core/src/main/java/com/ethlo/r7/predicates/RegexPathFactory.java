@@ -70,6 +70,12 @@ public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactor
         }
 
         @Override
+        public String name()
+        {
+            return PREDICATE_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return PREDICATE_NAME + ": " + pattern.pattern();

@@ -80,6 +80,12 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         }
 
         @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
         public String summary()
         {
             return FILTER_NAME + ": " + (parts == 1 ? "1 part" : parts + " parts");

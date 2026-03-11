@@ -3,7 +3,6 @@ package com.ethlo.r7.api;
 /**
  * Invoked once the exchange lifecycle is fully completed and resources are ready for cleanup.
  */
-@FunctionalInterface
 public interface CompletedGatewayFilter extends GatewayFilter
 {
     /**

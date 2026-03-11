@@ -28,7 +28,7 @@ public final class FileTelemetryRepository implements TelemetryRepository
     @Override
     public void save(final List<RouteMetricsDto> metrics)
     {
-        mapper.writeValue(tempFile, metrics);
+        mapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, metrics);
         try
         {
             Files.move(tempFile, targetFile, StandardCopyOption.ATOMIC_MOVE);
