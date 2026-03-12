@@ -9,7 +9,6 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +64,6 @@ public final class R7Main
     private static final Logger logger = LoggerFactory.getLogger(R7Main.class);
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final VlfCompressionEngine compressionEngine;
-    private final XnioWorker sharedWorker;
     private final GracefulShutdownHandler gracefulShutdownHandler;
 
     public R7Main(final Path configFile, final Path serverFile) throws IOException
@@ -141,7 +139,7 @@ public final class R7Main
         telemetryFlusher.start();
 
         // 1. Create the single shared worker for all Undertow instances
-        this.sharedWorker = createSharedWorker(serverConfig);
+        final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
         final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
@@ -270,7 +268,6 @@ public final class R7Main
             System.err.println("FATAL: Logback failed to configure from XML: " + je.getMessage());
         } finally
         {
-            // This is the magic line that will reveal the GraalVM reflection error
             StatusPrinter.printInCaseOfErrorsOrWarnings(context);
         }
     }
