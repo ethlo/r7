@@ -186,20 +186,6 @@ public final class R7Main
             logger.info("Stopping Undertow server...");
             server.stop();
 
-            // Allow XNIO a brief moment to process the connection-closed events
-            // before we terminate the underlying thread pool.
-            try
-            {
-                Thread.sleep(500);
-            }
-            catch (final InterruptedException e)
-            {
-                logger.warn("Interrupted while waiting for XNIO conduit cleanup.");
-                Thread.currentThread().interrupt();
-            }
-
-            //shutdownThreadpool();
-
             // Close auxiliary resources safely
             logger.info("Closing compression engine...");
             this.compressionEngine.close();
@@ -224,28 +210,6 @@ public final class R7Main
 
         final Duration uptime = SystemUtil.getUptime();
         logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
-    }
-
-    private void shutdownThreadpool()
-    {
-        logger.info("Shutting down shared worker...");
-        this.sharedWorker.shutdown();
-
-        try
-        {
-            // wait for it to finish
-            if (!this.sharedWorker.awaitTermination(2, TimeUnit.SECONDS))
-            {
-                logger.warn("Worker did not terminate gracefully in time. Forcing shutdown.");
-                this.sharedWorker.shutdownNow();
-            }
-        }
-        catch (final InterruptedException e)
-        {
-            logger.warn("Interrupted while waiting for worker shutdown.");
-            this.sharedWorker.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
     }
 
     private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)
