@@ -40,24 +40,29 @@ public final class StatusHandler implements HttpHandler
         this.routes = routes;
         this.combinedHtml = loadResource("page.html")
                 .replace("<link rel=\"stylesheet\" href=\"style.css\">", "<style>" + loadResource("style.css") + "</style>")
-                .replace("<script src=\"script.js\"></script>", "<script>" + loadResource("script.js") + "</script>");
+                .replace("<script src=\"script.js\"></script>", "<script>" + loadResource("r7-utils.js", "r7-details.js", "r7-app.js") + "</script>");
     }
 
-    private String loadResource(final String path)
+    private String loadResource(final String... paths)
     {
-        final String fullPath = "/dashboard/default/" + path;
-        try (final InputStream stream = getClass().getResourceAsStream(fullPath))
+        final StringBuilder sb = new StringBuilder();
+        for (String p : paths)
         {
-            if (stream == null)
+            final String fullPath = "/dashboard/default/" + p;
+            try (final InputStream stream = getClass().getResourceAsStream(fullPath))
             {
-                throw new FileNotFoundException("Resource not found: " + fullPath);
+                if (stream == null)
+                {
+                    throw new FileNotFoundException("Resource not found: " + fullPath);
+                }
+                sb.append(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
             }
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            catch (IOException e)
+            {
+                throw new UncheckedIOException(e);
+            }
         }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
-        }
+        return sb.toString();
     }
 
     @Override

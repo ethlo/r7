@@ -103,10 +103,10 @@ header {
 .text-http { color: #00d4ff; font-weight: 300; }
 .text-ws { color: #00ff88; font-weight: 300; }
 
-.text-4xx { color: #ff9800; font-weight: 300; }
-.text-5xx { color: #ee4444; font-weight: 300; }
-.text-3xx { color: #007acc; font-weight: 300; }
-.text-2xx { color: #00cc55; font-weight: 300; }
+.text-4xx { color: rgba(200, 152, 0, 0.7); font-weight: 300; }
+.text-5xx { color: rgba(238, 100, 100, 0.7); font-weight: 300; }
+.text-3xx { color: rgba(50, 150, 255, 0.7); font-weight: 300; }
+.text-2xx { color: rgba(0, 200, 100, 0.7); font-weight: 300; }
 
 /* Theme Button */
 .theme-btn {
@@ -330,8 +330,17 @@ tr.total-row td {
 /* ==========================================================================
    10. MEDIA QUERIES (Progressive Column Hiding)
    ========================================================================== */
+/*
 @media (max-width: 1400px) { .col-journal { display: none; } }
 @media (max-width: 1200px) { .col-success { display: none; } }
 @media (max-width: 950px) { .col-ingress, .col-egress { display: none; } }
 @media (max-width: 700px) { .col-latency { display: none; } }
 @media (max-width: 550px) { .col-errors { display: none; } }
+*/
+
+.col-route {
+    width: 250px;
+    min-width: 250px;
+    max-width: 250px;
+    padding-right: 15px;
+}
