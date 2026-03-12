@@ -1,11 +1,16 @@
 package com.ethlo.r7.status;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.time.Duration;
+
 public final class SparklineRingBuffer
 {
     private final int capacity;
     private final int[] success;
     private final int[] clientError;
     private final int[] serverError;
+    private final Duration interval;
     private boolean isFirstTick;
 
     private int head;
@@ -15,7 +20,7 @@ public final class SparklineRingBuffer
     private long lastClientErrorTotal;
     private long lastServerErrorTotal;
 
-    public SparklineRingBuffer(final int capacity)
+    public SparklineRingBuffer(final int capacity, final Duration interval)
     {
         this.capacity = capacity;
         this.success = new int[capacity];
@@ -23,6 +28,7 @@ public final class SparklineRingBuffer
         this.serverError = new int[capacity];
         this.head = 0;
         this.isFirstTick = true;
+        this.interval = interval;
     }
 
     public void recordTick(final long currentSuccess, final long currentClientError, final long currentServerError)
@@ -72,10 +78,20 @@ public final class SparklineRingBuffer
             index = (index + 1) % this.capacity;
         }
 
-        return new SparklineSnapshot(snapSuccess, snapClientError, snapServerError);
+        return new SparklineSnapshot(new SparklineMetadata(capacity, interval), snapSuccess, snapClientError, snapServerError);
     }
 
-    public record SparklineSnapshot(int[] success, int[] client_error, int[] server_error)
+    public record SparklineMetadata(int capacity, Duration interval)
+    {
+    }
+
+    public record SparklineSnapshot(
+            SparklineMetadata metadata,
+            int[] success,
+            @JsonProperty("client_error")
+            int[] clientError,
+            @JsonProperty("server_error")
+            int[] serverError)
     {
     }
 }

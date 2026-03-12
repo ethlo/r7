@@ -15,28 +15,6 @@
     --panel: #111112;
 }
 
-body.light-mode {
-    --bg: #fafafa;
-    --fg: #18181b;
-    --accent: #ea580c;
-    --brighter: #222;
-    --dim: #71717a;
-    --border: #e4e4e7;
-    --border-subtle: rgba(0, 0, 0, 0.05); /* Faint lines for light mode */
-    --border-dotted: rgba(128, 128, 128, 0.3);
-    --row-hover: #f4f4f5;
-    --panel: #ffffff;
-}
-
-/* Light Mode Overrides for Hardcoded Backgrounds/Colors */
-body.light-mode pre { background: #f4f4f5; border-color: var(--border); }
-body.light-mode .journal-row { background: #f4f4f5; }
-body.light-mode tr.total-row td { background: #f4f4f5 !important; }
-body.light-mode .journal-active-none { background: rgba(113, 113, 122, 0.1); color: var(--dim); border-color: var(--dim); }
-body.light-mode .journal-active-metadata { background: rgba(14, 165, 233, 0.1); color: #0284c7; border-color: #0284c7; }
-body.light-mode .journal-active-headers { background: rgba(245, 158, 11, 0.1); color: #d97706; border-color: #d97706; }
-body.light-mode .journal-active-full { background: rgba(239, 68, 68, 0.1); color: #dc2626; border-color: #dc2626; }
-
 /* ==========================================================================
    2. GLOBAL & BASE STYLES
    ========================================================================== */
@@ -120,10 +98,15 @@ header {
 .status-indicator { margin-right: 6px; }
 
 /* Status Colors */
-.text-warn { color: #ffca28; font-weight: 300; }
-.text-err { color: #ff4444; font-weight: 300; }
+.text-warn { color: #ff9800; font-weight: 300; }
+.text-err { color: #ee4444; font-weight: 300; }
 .text-http { color: #00d4ff; font-weight: 300; }
 .text-ws { color: #00ff88; font-weight: 300; }
+
+.text-4xx { color: #ff9800; font-weight: 300; }
+.text-5xx { color: #ee4444; font-weight: 300; }
+.text-3xx { color: #007acc; font-weight: 300; }
+.text-2xx { color: #00cc55; font-weight: 300; }
 
 /* Theme Button */
 .theme-btn {

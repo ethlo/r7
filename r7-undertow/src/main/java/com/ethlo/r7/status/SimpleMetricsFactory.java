@@ -44,8 +44,10 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
     @Override
     public ClientResponseGatewayFilter create(final EmptyConfig config)
     {
-        final GF gf = new GF();
-        scheduler.scheduleEvery(Duration.ofSeconds(1), gf::trigger);
+        final Duration tickInterval = Duration.ofSeconds(2);
+        final int capacity = 150;
+        final GF gf = new GF(capacity, tickInterval);
+        scheduler.scheduleEvery(tickInterval, gf::trigger);
         return gf;
     }
 
@@ -73,12 +75,13 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         private final LongAdder totalRequestBodyBytes = new LongAdder();
         private final LongAdder totalResponseHeaderBytes = new LongAdder();
         private final LongAdder totalResponseBodyBytes = new LongAdder();
-        private final SparklineRingBuffer sparklineRingBuffer = new SparklineRingBuffer(100);
+        private final SparklineRingBuffer sparklineRingBuffer;
 
-        public GF()
+        public GF(final int capacity, Duration tickInterval)
         {
             Arrays.setAll(this.clientResponseStatuses, i -> new LongAdder());
             Arrays.setAll(this.upstreamResponseStatuses, i -> new LongAdder());
+            sparklineRingBuffer = new SparklineRingBuffer(capacity, tickInterval);
         }
 
         @Override
@@ -260,14 +263,8 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
                 this.totalRequests.reset();
                 this.totalRequests.add(requestStatistics.total());
 
-                this.activeRequests.reset();
-                this.activeRequests.add(requestStatistics.active());
-
                 this.totalWsRequests.reset();
                 this.totalWsRequests.add(requestStatistics.websocketTotal());
-
-                this.activeWsRequests.reset();
-                this.activeWsRequests.add(requestStatistics.websocketActive());
 
                 if (requestStatistics.lastActive() != null)
                 {

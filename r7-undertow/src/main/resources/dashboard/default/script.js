@@ -505,7 +505,7 @@ function drawStackedSparkline(canvas, data) {
 
         if (sHeight > 0) {
             currentY -= sHeight;
-            ctx.fillStyle = '#007acc';
+            ctx.fillStyle = '#00cc55';
             ctx.fillRect(x, currentY, drawWidth, sHeight);
         }
 
@@ -517,7 +517,7 @@ function drawStackedSparkline(canvas, data) {
 
         if (eHeight > 0) {
             currentY -= eHeight;
-            ctx.fillStyle = '#cc0000';
+            ctx.fillStyle = '#ee4444';
             ctx.fillRect(x, currentY, drawWidth, eHeight);
         }
     }
@@ -552,8 +552,10 @@ function renderTable(data) {
     const globalAvgLat = totals.total === 0 ? '0.00' : (totals.latency / totals.total).toFixed(FRACTION_DIGITS);
     const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
 
-    const t4xxStyle = totals.err_4xx > 0 ? 'text-warn' : '';
-    const t5xxStyle = totals.err_5xx > 0 ? 'text-err' : '';
+    const t2xxStyle = 'text-2xx';
+    const t3xxStyle = 'text-3xx';
+    const t4xxStyle = totals.err_4xx > 0 ? 'text-4xx' : '';
+    const t5xxStyle = totals.err_5xx > 0 ? 'text-5xx' : '';
     const tActiveHttpStyle = totals.active > 0 ? 'text-http' : '';
     const tActiveWsStyle = totals.ws_active > 0 ? 'text-ws' : '';
 
@@ -569,8 +571,8 @@ function renderTable(data) {
                 ${mRow('WS', totals.ws_total.toLocaleString(), false)}
             </td>
             <td class="col-success">
-                ${mRow('2xx', totals.st_2xx.toLocaleString(), false)}
-                ${mRow('3xx', totals.st_3xx.toLocaleString(), false)}
+                ${mRow('2xx', totals.st_2xx.toLocaleString(), false, t2xxStyle)}
+                ${mRow('3xx', totals.st_3xx.toLocaleString(), false, t3xxStyle)}
             </td>
             <td class="col-errors">
                 ${mRow('4xx', totals.err_4xx.toLocaleString(), false, t4xxStyle)}
@@ -638,8 +640,8 @@ function renderTable(data) {
                 ${mRow('WS', wsTotal.toLocaleString(), false)}
             </td>
             <td class="col-success">
-                ${mRow('2xx', st2xx.toLocaleString(), false)}
-                ${mRow('3xx', st3xx.toLocaleString(), false)}
+                ${mRow('2xx', st2xx.toLocaleString(), false, t2xxStyle)}
+                ${mRow('3xx', st3xx.toLocaleString(), false, t3xxStyle)}
             </td>
             <td class="col-errors">
                 ${mRow('4xx', err4xx.toLocaleString(), false, r4xxStyle)}
