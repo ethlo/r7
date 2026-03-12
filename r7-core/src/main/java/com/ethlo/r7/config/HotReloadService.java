@@ -1,87 +1,51 @@
 package com.ethlo.r7.config;
 
-import java.nio.file.FileSystems;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardWatchEventKinds;
-import java.nio.file.WatchEvent;
-import java.nio.file.WatchKey;
-import java.nio.file.WatchService;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.validation.ValidationResult;
 
-public final class HotReloadService implements Runnable
+public final class HotReloadService
 {
     private static final Logger log = LoggerFactory.getLogger(HotReloadService.class);
-    private static final long DEBOUNCE_MILLIS = 1000L;
 
-    private final Path configDirectory;
-    private final String configFileName;
+    private final Path configFilePath;
     private final ConfigurationManager configManager;
     private final RouteRegistry routeRegistry;
+    private long lastKnownModified;
 
-    private long lastReloadTime = 0L;
-
-    public HotReloadService(final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
+    public HotReloadService(final GatewayScheduler scheduler, final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
     {
-        this.configDirectory = configFilePath.toAbsolutePath().getParent();
-        this.configFileName = configFilePath.getFileName().toString();
+        scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
+        this.configFilePath = configFilePath;
         this.configManager = configManager;
         this.routeRegistry = routeRegistry;
+        this.lastKnownModified = System.currentTimeMillis();
     }
 
-    @Override
-    public void run()
+    private void pollForChanges()
     {
-        try (final WatchService watcher = FileSystems.getDefault().newWatchService())
+        final long currentModified;
+        try
         {
-            this.configDirectory.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
-
-            log.info("Started watching {} for configuration changes", this.configFileName);
-
-            while (!Thread.currentThread().isInterrupted())
-            {
-                final WatchKey key = watcher.poll(1, TimeUnit.SECONDS);
-
-                if (key != null)
-                {
-                    boolean configChanged = false;
-                    for (final WatchEvent<?> event : key.pollEvents())
-                    {
-                        final Path changedFile = (Path) event.context();
-                        if (changedFile != null && changedFile.toString().equals(this.configFileName))
-                        {
-                            configChanged = true;
-                        }
-                    }
-
-                    if (configChanged)
-                    {
-                        final long now = System.currentTimeMillis();
-                        if (now - this.lastReloadTime > DEBOUNCE_MILLIS)
-                        {
-                            // Wait briefly to ensure the OS has finished writing the file
-                            Thread.sleep(500);
-                            this.reloadPipeline();
-                            this.lastReloadTime = System.currentTimeMillis();
-                        }
-                    }
-
-                    key.reset();
-                }
-            }
+            currentModified = Files.getLastModifiedTime(configFilePath).toMillis();
         }
-        catch (final InterruptedException e)
+        catch (IOException e)
         {
-            Thread.currentThread().interrupt();
-            log.info("Hot reload service interrupted. Shutting down watcher.");
+            throw new RuntimeException(e);
         }
-        catch (final Exception e)
+
+        if (currentModified > this.lastKnownModified)
         {
-            log.error("Fatal error in hot reload watcher: {}", e.getMessage(), e);
+            log.debug("Detected change in configuration file {}", configFilePath.toAbsolutePath());
+            this.lastKnownModified = currentModified;
+            reloadPipeline();
         }
     }
 
@@ -89,7 +53,7 @@ public final class HotReloadService implements Runnable
     {
         try
         {
-            final RoutesConfig routesConfig = this.configManager.load(this.configDirectory.resolve(this.configFileName), RoutesConfig.class);
+            final RoutesConfig routesConfig = this.configManager.load(this.configFilePath, RoutesConfig.class);
             final ValidationResult validationResult = ConfigurationManager.validate(routesConfig);
             if (validationResult.hasErrors())
             {
@@ -98,7 +62,7 @@ public final class HotReloadService implements Runnable
             }
 
             this.configManager.load(routesConfig, this.routeRegistry);
-            log.info("Configuration successfully reloaded {} with version {}", this.configFileName, routesConfig.version());
+            log.info("Configuration successfully reloaded {} with version {}", this.configFilePath, routesConfig.version());
         }
         catch (final Exception e)
         {

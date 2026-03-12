@@ -21,6 +21,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import ch.qos.logback.core.util.StatusPrinter;
+import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.GatewayRoute;
@@ -72,7 +73,8 @@ public final class R7Main
         };
 
         final RouteRegistry routeRegistry = new RouteRegistry();
-        final ConfigurationManager loader = new ConfigurationManager();
+        final GatewayScheduler scheduler = new GatewayScheduler(2);
+        final ConfigurationManager loader = new ConfigurationManager(scheduler);
 
         final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
         final ValidationResult result = new ValidationResult();
@@ -85,9 +87,8 @@ public final class R7Main
         final RoutesConfig routesConfig = loader.load(configFile, RoutesConfig.class);
         loader.load(routesConfig, routeRegistry);
 
-        final HotReloadService hotReloadService = new HotReloadService(configFile, loader, routeRegistry);
-        new Thread(hotReloadService, "hot-reload").start();
-        logger.info("HotReloadService started. Watching {}", configFile.toAbsolutePath());
+        final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, loader, routeRegistry);
+        logger.info("Watching config file {} for changes", configFile.toAbsolutePath());
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());

@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.ethlo.r7.GatewayScheduler;
+import com.ethlo.r7.SchedulerAware;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
@@ -36,9 +38,11 @@ public final class ConfigurationManager
 
     private final FilterRegistry filterRegistry;
     private final PredicateRegistry predicateRegistry;
+    private final GatewayScheduler scheduler;
 
-    public ConfigurationManager()
+    public ConfigurationManager(GatewayScheduler scheduler)
     {
+        this.scheduler = scheduler;
         this.filterRegistry = new FilterRegistry();
         this.predicateRegistry = new PredicateRegistry(mapper);
     }
@@ -99,6 +103,11 @@ public final class ConfigurationManager
     private void instantiateFilters(final ValidationResult validationResult, final List<GatewayFilter> instantiatedFilters, final FilterDefinition filterDef)
     {
         final GatewayFilterFactory<ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
+        if (typedFactory instanceof SchedulerAware schedulerAware)
+        {
+            schedulerAware.setScheduler(scheduler);
+        }
+
         final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
         c.validate(validationResult);
         validationResult.throwIfInvalid();

@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.ethlo.r7.GatewayScheduler;
+
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,7 +49,9 @@ class R7IntegrationTest
 
         // 2. Initialize the R7 components
         final RouteRegistry registry = new RouteRegistry();
-        final ConfigurationManager loader = new ConfigurationManager();
+
+        final GatewayScheduler scheduler = new GatewayScheduler(2);
+        final ConfigurationManager loader = new ConfigurationManager(scheduler);
 
         // 3. Execute the load (The "Live Reload" entry point)
         // FIXME: loader.load(configFile, registry, s->);

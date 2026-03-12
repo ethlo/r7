@@ -1,5 +1,6 @@
 package com.ethlo.r7.status;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -9,6 +10,8 @@ import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
+import com.ethlo.r7.GatewayScheduler;
+import com.ethlo.r7.SchedulerAware;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
@@ -27,9 +30,10 @@ import com.ethlo.r7.status.dto.RouteMetricsDto;
 import com.ethlo.r7.status.dto.TrafficFlowDto;
 import com.ethlo.r7.undertow.UndertowGatewayExchange;
 
-public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
+public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>, SchedulerAware
 {
     private static final String FILTER_NAME = "SimpleMetrics";
+    private GatewayScheduler scheduler;
 
     @Override
     public String name()
@@ -40,7 +44,15 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
     @Override
     public ClientResponseGatewayFilter create(final EmptyConfig config)
     {
-        return new GF();
+        final GF gf = new GF();
+        scheduler.scheduleEvery(Duration.ofSeconds(1), gf::trigger);
+        return gf;
+    }
+
+    @Override
+    public void setScheduler(final GatewayScheduler scheduler)
+    {
+        this.scheduler = scheduler;
     }
 
     public static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
@@ -48,7 +60,6 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         public static final int STATUS_COUNT_ARRAY_SIZE = 500;
         private static final int STATUS_COUNTER_OFFSET = 100;
         private final AtomicLong lastActiveTime = new AtomicLong(0L);
-
         private final LongAdder totalRequests = new LongAdder();
         private final LongAdder totalWsRequests = new LongAdder();
         private final LongAdder[] clientResponseStatuses = new LongAdder[STATUS_COUNT_ARRAY_SIZE];
@@ -57,13 +68,12 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         private final LongAdder activeWsRequests = new LongAdder();
         private final LongAdder upstreamRequests = new LongAdder();
         private final LongAdder totalDurationNanos = new LongAdder();
-
         private final LongAdder totalJournalBytes = new LongAdder();
-
         private final LongAdder totalRequestHeaderBytes = new LongAdder();
         private final LongAdder totalRequestBodyBytes = new LongAdder();
         private final LongAdder totalResponseHeaderBytes = new LongAdder();
         private final LongAdder totalResponseBodyBytes = new LongAdder();
+        private final SparklineRingBuffer sparklineRingBuffer = new SparklineRingBuffer(100);
 
         public GF()
         {
@@ -315,6 +325,16 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         public Map<Integer, Long> getClientResponseStatuses()
         {
             return toMap(this.clientResponseStatuses);
+        }
+
+        public SparklineRingBuffer.SparklineSnapshot getSparklineData()
+        {
+            return sparklineRingBuffer.getSnapshot();
+        }
+
+        private void trigger()
+        {
+            this.sparklineRingBuffer.recordTick(getStatus2xxRequests(), getStatus4xxRequests(), getStatus5xxRequests());
         }
 
         private Map<Integer, Long> toMap(LongAdder[] statuses)

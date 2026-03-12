@@ -1,4 +1,4 @@
-version: '{{git.rev.abbr}}'
+version: '{{git.rev.abbr}}99'
 filters:
   - SimpleMetrics
 routes:

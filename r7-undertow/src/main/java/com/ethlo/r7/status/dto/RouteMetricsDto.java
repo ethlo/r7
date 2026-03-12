@@ -1,5 +1,6 @@
 package com.ethlo.r7.status.dto;
 
+import com.ethlo.r7.status.SparklineRingBuffer;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record RouteMetricsDto(
@@ -12,8 +13,10 @@ public record RouteMetricsDto(
         TrafficFlowDto trafficFlow,
 
         @JsonProperty("performance_telemetry")
-        PerformanceTelemetryDto performanceTelemetry
-)
+        PerformanceTelemetryDto performanceTelemetry,
+
+        @JsonProperty("sparkline_data")
+        SparklineRingBuffer.SparklineSnapshot sparklineData)
 {
 }
 

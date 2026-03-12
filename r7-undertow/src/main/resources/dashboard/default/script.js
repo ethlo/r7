@@ -426,10 +426,102 @@ async function update() {
 }
 
 const ZERO_METRICS = {
-    request_statistics: { total: 0, websocket_total: 0, active: 0, websocket_active: 0, last_active: "1970-01-01T00:00:00Z", client_statuses: {} },
-    traffic_flow: { ingress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, egress: { total_bytes: 0, header_bytes: 0, body_bytes: 0 }, journal_storage_bytes: 0 },
-    performance_telemetry: { average_latency: "PT0S" }
+    request_statistics: {
+        total: 0,
+        websocket_total: 0,
+        active: 0,
+        websocket_active: 0,
+        last_active: "1970-01-01T00:00:00Z",
+        client_statuses: {}
+    },
+    traffic_flow: {
+        ingress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
+        egress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
+        journal_storage_bytes: 0
+    },
+    performance_telemetry: {average_latency: "PT0S"}
 };
+
+function drawStackedSparkline(canvas, data) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    if (!data) return;
+
+    const successData = data.success || [];
+    const clientData = data.client_error || [];
+    const serverData = data.server_error || [];
+
+    const len = Math.max(successData.length, clientData.length, serverData.length);
+    if (len === 0) return;
+
+    let maxTotal = 0;
+    for (let i = 0; i < len; i++) {
+        // STRICT CAST: Prevent "5" + "227442" = "5227442" string concatenation bugs
+        const total = (Number(successData[i]) || 0) + (Number(clientData[i]) || 0) + (Number(serverData[i]) || 0);
+        if (total > maxTotal) {
+            maxTotal = total;
+        }
+    }
+
+    if (maxTotal === 0) {
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(0, height - 1, width, 1);
+        return;
+    }
+
+    const barWidth = width / len;
+
+    for (let i = 0; i < len; i++) {
+        const sVal = Number(successData[i]) || 0;
+        const cVal = Number(clientData[i]) || 0;
+        const eVal = Number(serverData[i]) || 0;
+        const total = sVal + cVal + eVal;
+
+        if (total === 0) continue;
+
+        // Calculate heights and enforce the 1-pixel minimum visibility rule
+        let sHeight = Math.max(sVal > 0 ? 1 : 0, (sVal / maxTotal) * height);
+        let cHeight = Math.max(cVal > 0 ? 1 : 0, (cVal / maxTotal) * height);
+        let eHeight = Math.max(eVal > 0 ? 1 : 0, (eVal / maxTotal) * height);
+
+        // Safety: If the 1-pixel minimums push us over the canvas height, scale them back proportionally
+        const calcTotal = sHeight + cHeight + eHeight;
+        if (calcTotal > height) {
+            const shrink = height / calcTotal;
+            sHeight *= shrink;
+            cHeight *= shrink;
+            eHeight *= shrink;
+        }
+
+        // Math.round ensures we don't infinitely stack on the exact same sub-pixel X coordinate
+        const x = Math.round(i * barWidth);
+        const drawWidth = Math.max(1, Math.ceil(barWidth));
+
+        let currentY = height;
+
+        if (sHeight > 0) {
+            currentY -= sHeight;
+            ctx.fillStyle = '#007acc';
+            ctx.fillRect(x, currentY, drawWidth, sHeight);
+        }
+
+        if (cHeight > 0) {
+            currentY -= cHeight;
+            ctx.fillStyle = '#ff9800';
+            ctx.fillRect(x, currentY, drawWidth, cHeight);
+        }
+
+        if (eHeight > 0) {
+            currentY -= eHeight;
+            ctx.fillStyle = '#cc0000';
+            ctx.fillRect(x, currentY, drawWidth, eHeight);
+        }
+    }
+}
 
 function renderTable(data) {
     if (!data.route_configs) return;
@@ -467,6 +559,7 @@ function renderTable(data) {
 
     let html = `
         <tr class="total-row clickable-row" onclick="showSystemDetails()">
+            <td>&nbsp;</td>
             <td class="col-route">
                 <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">SYSTEM TOTALS</div>
                 <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(totals.last_active)}</div>
@@ -533,6 +626,9 @@ function renderTable(data) {
 
         html += `
         <tr class="clickable-row" onclick="showDetails('${config.id}')">
+            <td>
+                <canvas id="canvas_${config.id}" width="150" height="60"></canvas>
+            </td>
             <td class="col-route">
                 <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">${config.id}</div>
                 <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(s.last_active)}</div>
@@ -575,6 +671,17 @@ function renderTable(data) {
     });
 
     view.innerHTML = html;
+
+    data.route_configs.forEach((config, index) => {
+        try {
+            const canvas = document.getElementById(`canvas_${config.id}`);
+            const metrics = (data.route_metrics || []).find(m => m.id === config.id);
+            drawStackedSparkline(canvas, metrics.sparkline_data);
+        } catch (err) {
+            // This will bypass any Promise swallowing and force the error into the console
+            console.error(`CRASH on route ${config.id}:`, err);
+        }
+    });
 }
 
 setInterval(update, 1000);

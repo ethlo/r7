@@ -54,7 +54,7 @@ public class ModelMapper
                 gf.getUpstreamRequests()
         );
 
-        return new RouteMetricsDto(gfEntry.getKey(), stats, traffic, performance);
+        return new RouteMetricsDto(gfEntry.getKey(), stats, traffic, performance, gf.getSparklineData());
     }
 
     private static TrafficFlowDto mapTraffic(SimpleMetricsFactory.GF gf)
