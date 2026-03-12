@@ -276,12 +276,12 @@ function showDetails(routeId) {
         });
         fHtml += '</div>';
     } else {
-        fHtml = `<div class="sub text-muted" style="padding: 4px 8px;">No filters configured.</div>`;
+        fHtml = `<div class="sub text-muted" style="padding: 4px 4px;">No filters configured.</div>`;
     }
 
     const generateStatusRows = (statusMap) => {
         if (!statusMap || Object.keys(statusMap).length === 0) {
-            return `<div class="sub text-muted" style="padding: 4px 8px;">No statuses recorded.</div>`;
+            return `<div class="sub text-muted" style="padding: 4px 4px;">No statuses recorded.</div>`;
         }
         return Object.entries(statusMap).map(([code, count]) => {
             const codeNum = parseInt(code, 10);
@@ -421,6 +421,7 @@ async function update() {
             }
         }
     } catch (e) {
+        console.error(e)
         timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;
     }
 }
@@ -559,22 +560,23 @@ function renderTable(data) {
     const tActiveHttpStyle = totals.active > 0 ? 'text-http' : '';
     const tActiveWsStyle = totals.ws_active > 0 ? 'text-ws' : '';
 
-    let html = `
+    const last = function (arr) {
+        return arr[arr.length - 1];
+    }
+
+    let html = '';
+
+    html += `
         <tr class="total-row clickable-row" onclick="showSystemDetails()">
             <td>&nbsp;</td>
             <td class="col-route">
                 <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">SYSTEM TOTALS</div>
                 <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(totals.last_active)}</div>
             </td>
-            <td class="col-totals">
-                ${mRow('REQ', totals.total.toLocaleString(), true)}
-                ${mRow('WS', totals.ws_total.toLocaleString(), false)}
-            </td>
             <td class="col-success">
+                ${mRow('SUM', totals.total.toLocaleString(), true)}
                 ${mRow('2xx', totals.st_2xx.toLocaleString(), false, t2xxStyle)}
                 ${mRow('3xx', totals.st_3xx.toLocaleString(), false, t3xxStyle)}
-            </td>
-            <td class="col-errors">
                 ${mRow('4xx', totals.err_4xx.toLocaleString(), false, t4xxStyle)}
                 ${mRow('5xx', totals.err_5xx.toLocaleString(), false, t5xxStyle)}
             </td>
@@ -589,11 +591,8 @@ function renderTable(data) {
                 ${mRow('BDY', formatBytes(totals.out_b, uTotal), false)}
             </td>
             <td class="col-active">
-                ${mRow('HTTP', totals.active, true, tActiveHttpStyle)}
-                ${mRow('WS', totals.ws_active, false, tActiveWsStyle)}
-            </td>
-            <td class="col-latency">
-                ${mRow('AVG', globalAvgLat + 'ms', true)}
+                ${mRow('ACT', totals.active, true, tActiveHttpStyle)}
+                ${mRow('LAT', globalAvgLat + 'ms', true)}
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(totals.journal, uTotal), true)}
@@ -636,14 +635,9 @@ function renderTable(data) {
                 <div class="sub" style="margin: 0; line-height: 1.1;">LAST: ${timeAgo(s.last_active)}</div>
             </td>
             <td class="col-totals">
-                ${mRow('REQ', s.total.toLocaleString(), true)}
-                ${mRow('WS', wsTotal.toLocaleString(), false)}
-            </td>
-            <td class="col-success">
+                ${mRow('SUM', s.total.toLocaleString(), true)}
                 ${mRow('2xx', st2xx.toLocaleString(), false, t2xxStyle)}
                 ${mRow('3xx', st3xx.toLocaleString(), false, t3xxStyle)}
-            </td>
-            <td class="col-errors">
                 ${mRow('4xx', err4xx.toLocaleString(), false, r4xxStyle)}
                 ${mRow('5xx', err5xx.toLocaleString(), false, r5xxStyle)}
             </td>
@@ -659,10 +653,8 @@ function renderTable(data) {
             </td>
             <td class="col-active">
                 ${mRow('HTTP', s.active, true, rActiveHttpStyle)}
-                ${mRow('WS', wsActive, false, rActiveWsStyle)}
-            </td>
-            <td class="col-latency">
                 ${mRow('AVG', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', true)}
+                ${mRow('RPS', ((last(r.sparkline_data.success) + last(r.sparkline_data.client_error) + last(r.sparkline_data.server_error)) / 2).toLocaleString())}
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
@@ -675,14 +667,9 @@ function renderTable(data) {
     view.innerHTML = html;
 
     data.route_configs.forEach((config, index) => {
-        try {
-            const canvas = document.getElementById(`canvas_${config.id}`);
-            const metrics = (data.route_metrics || []).find(m => m.id === config.id);
-            drawStackedSparkline(canvas, metrics.sparkline_data);
-        } catch (err) {
-            // This will bypass any Promise swallowing and force the error into the console
-            console.error(`CRASH on route ${config.id}:`, err);
-        }
+        const canvas = document.getElementById(`canvas_${config.id}`);
+        const metrics = (data.route_metrics || []).find(m => m.id === config.id);
+        drawStackedSparkline(canvas, metrics.sparkline_data);
     });
 }
 

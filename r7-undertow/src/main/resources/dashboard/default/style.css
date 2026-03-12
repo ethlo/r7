@@ -142,7 +142,7 @@ th {
 }
 
 td {
-    padding: 1rem;
+    padding: 0.8rem;
     border-bottom: 1px solid var(--border);
     vertical-align: top;
 }
@@ -157,8 +157,8 @@ tr.clickable-row:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent);
 tr.total-row td {
     background: #131315;
     border-bottom: 1px solid var(--dim);
-    padding-top: 1.5rem;
-    padding-bottom: 1.5rem;
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
 }
 
 /* ==========================================================================

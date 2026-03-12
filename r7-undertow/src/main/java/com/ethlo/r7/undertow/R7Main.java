@@ -9,6 +9,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,7 @@ import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
+import io.undertow.server.handlers.GracefulShutdownHandler;
 import io.undertow.util.Headers;
 
 public final class R7Main
@@ -63,6 +65,8 @@ public final class R7Main
     private static final Logger logger = LoggerFactory.getLogger(R7Main.class);
     private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final VlfCompressionEngine compressionEngine;
+    private final XnioWorker sharedWorker;
+    private final GracefulShutdownHandler gracefulShutdownHandler;
 
     public R7Main(final Path configFile, final Path serverFile) throws IOException
     {
@@ -100,7 +104,7 @@ public final class R7Main
         final List<Path> paths = VlfRecoveryManager.cleanAndRecover(workDir);
         paths.forEach(compressionEngine::submitForCompression);
 
-        final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
+        final ShardedJournalWriter<VlfJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
             final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, storage.shardSize(), storage.preFault());
             return new VlfJournal(provider, compressionEngine::submitForCompression);
@@ -137,9 +141,9 @@ public final class R7Main
         telemetryFlusher.start();
 
         // 1. Create the single shared worker for all Undertow instances
-        final XnioWorker sharedWorker = createSharedWorker(serverConfig);
+        this.sharedWorker = createSharedWorker(serverConfig);
 
-        final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler);
+        final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
 
         final HttpHandler rootHandler = Handlers.path()
@@ -147,7 +151,8 @@ public final class R7Main
 
         final Undertow.Builder builder = Undertow.builder();
         builder.setWorker(sharedWorker);
-        builder.setHandler(rootHandler);
+        this.gracefulShutdownHandler = new GracefulShutdownHandler(rootHandler);
+        builder.setHandler(gracefulShutdownHandler);
         configureServer(builder, serverConfig);
         final Undertow server = builder.build();
 
@@ -161,12 +166,51 @@ public final class R7Main
         // Explicit Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
-            logger.info("Shutdown signal received.");
-            gatewayExchangeDataWriter.shutdown();
-            compressionEngine.close();
+            logger.info("Shutdown signal received. Initiating graceful shutdown sequence...");
+
+            // 1. Drain in-flight requests (Requires Undertow's GracefulShutdownHandler)
+            logger.info("Rejecting new requests and draining in-flight traffic...");
+            gracefulShutdownHandler.shutdown();
+            try
+            {
+                // Give active requests up to 5 seconds to finish naturally
+                gracefulShutdownHandler.awaitShutdown(5000);
+            }
+            catch (final InterruptedException e)
+            {
+                logger.warn("Interrupted while waiting for in-flight requests to drain.");
+                Thread.currentThread().interrupt();
+            }
+
+            // 2. Stop the Undertow listener
+            logger.info("Stopping Undertow server...");
             server.stop();
-            sharedWorker.shutdown();
-        }, "shutdown-hook"
+
+            // Allow XNIO a brief moment to process the connection-closed events
+            // before we terminate the underlying thread pool.
+            try
+            {
+                Thread.sleep(500);
+            }
+            catch (final InterruptedException e)
+            {
+                logger.warn("Interrupted while waiting for XNIO conduit cleanup.");
+                Thread.currentThread().interrupt();
+            }
+
+            //shutdownThreadpool();
+
+            // Close auxiliary resources safely
+            logger.info("Closing compression engine...");
+            this.compressionEngine.close();
+
+            // The journal closes absolutely LAST to ensure all drained requests were logged
+            logger.info("Shutting down journal writer...");
+            journalWriter.shutdown();
+
+            logger.info("Shutdown sequence complete.");
+
+        }, "r7-shutdown-hook"
         ));
 
         server.start();
@@ -180,6 +224,28 @@ public final class R7Main
 
         final Duration uptime = SystemUtil.getUptime();
         logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+    }
+
+    private void shutdownThreadpool()
+    {
+        logger.info("Shutting down shared worker...");
+        this.sharedWorker.shutdown();
+
+        try
+        {
+            // wait for it to finish
+            if (!this.sharedWorker.awaitTermination(2, TimeUnit.SECONDS))
+            {
+                logger.warn("Worker did not terminate gracefully in time. Forcing shutdown.");
+                this.sharedWorker.shutdownNow();
+            }
+        }
+        catch (final InterruptedException e)
+        {
+            logger.warn("Interrupted while waiting for worker shutdown.");
+            this.sharedWorker.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)

@@ -1,4 +1,4 @@
-version: '{{git.rev.abbr}}99'
+version: '{{git.rev.abbr}}'
 filters:
   - SimpleMetrics
 routes:
@@ -37,8 +37,8 @@ routes:
         - url: http://localhost:1111
     filters:
       - RateLimiter:
-          capacity: 5
-          refill_tokens: 1
+          capacity: 500000
+          refill_tokens: 20000
           refill_period: PT1s
       - CircuitBreaker:
           failure_threshold: 10

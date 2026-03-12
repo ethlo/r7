@@ -66,6 +66,7 @@ public final class VlfJournal implements Journal
     private FileChannel channel;
     private int currentHeaderCount;
     private int currentAttributeCount;
+    private boolean closed;
 
     public VlfJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
@@ -80,10 +81,6 @@ public final class VlfJournal implements Journal
                 }
         );
     }
-
-    /* ============================================================
-       THE FOUR METADATA SLICES
-       ============================================================ */
 
     @Override
     public synchronized int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress inetAddress, IpSource ipSource)
@@ -233,6 +230,12 @@ public final class VlfJournal implements Journal
 
     private int writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
     {
+        if (closed)
+        {
+            logger.warn("Journal is closed");
+            return 0;
+        }
+
         if (segment == null || segment.byteSize() == 0)
         {
             throw new IllegalStateException("Segment not initialized");
@@ -356,6 +359,7 @@ public final class VlfJournal implements Journal
     @Override
     public synchronized void close() throws IOException
     {
+        this.closed = true;
         if (segment != null)
         {
             finalizeActiveSegment();
