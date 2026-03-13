@@ -191,10 +191,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
 
     private void writeNumber(String name, long value) throws IOException
     {
-        if (value != 0)
-        {
-            generator.writeNumberProperty(name, value);
-        }
+        generator.writeNumberProperty(name, value);
     }
 
     private void writePart(final JsonGenerator generator, final int index, final CharSequence seq, final int start, final int end) throws IOException
