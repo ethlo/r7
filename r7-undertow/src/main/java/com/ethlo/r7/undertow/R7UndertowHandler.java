@@ -97,8 +97,6 @@ public final class R7UndertowHandler implements HttpHandler
 
     private static void handleCompleted(final StatefulJournal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final HttpServerExchange serverExchange)
     {
-        tagExchangeAttributes(exchange, gatewayExchange);
-
         if (!gatewayExchange.wasProxied())
         {
             gatewayExchange.setUpstreamRequest(UnproxiedUpstreamRequest.INSTANCE);
@@ -121,22 +119,26 @@ public final class R7UndertowHandler implements HttpHandler
             return;
         }
 
-        final long requestEndTs = ClockSource.now();
-        final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
-        final long proxyStartTs = getProxyStartOrMinusOne(exchange);
-        final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
-        final long proxyEndTs;
+        if (journalConfig.isAtLeastMetadata(gatewayExchange.clientResponse().status()))
+        {
+            final long requestEndTs = ClockSource.now();
+            final long requestStartTs = gatewayExchange.getRequestStartEpochNanos();
+            final long proxyStartTs = getProxyStartOrMinusOne(exchange);
+            final Long tmpProxyEndTs = exchange.getAttachment(PROXY_END_TS_KEY);
+            final long proxyEndTs;
 
-        proxyEndTs = Objects.requireNonNullElseGet(tmpProxyEndTs, ClockSource::now);
+            proxyEndTs = Objects.requireNonNullElseGet(tmpProxyEndTs, ClockSource::now);
 
-        final long proxyFirstBytesTs = -1;
-        final int requestBodyCrc32 = -1;
-        final int responseBodyCrc32 = -1;
-        final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
+            final long proxyFirstBytesTs = -1;
+            final int requestBodyCrc32 = -1;
+            final int responseBodyCrc32 = -1;
+            final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
 
-        journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, serverExchange.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
-        final long journalBytes = journal.getBytesWritten();
-        gatewayExchange.setJournalBytes(journalBytes);
+            tagExchangeAttributes(exchange, gatewayExchange);
+            journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, serverExchange.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
+            final long journalBytes = journal.getBytesWritten();
+            gatewayExchange.setJournalBytes(journalBytes);
+        }
     }
 
     private static void tagExchangeAttributes(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)

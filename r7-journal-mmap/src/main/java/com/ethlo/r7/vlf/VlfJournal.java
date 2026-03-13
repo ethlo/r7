@@ -230,12 +230,6 @@ public final class VlfJournal implements Journal
 
     private int writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
     {
-        if (closed)
-        {
-            logger.warn("Journal is closed");
-            return 0;
-        }
-
         if (segment == null || segment.byteSize() == 0)
         {
             throw new IllegalStateException("Segment not initialized");

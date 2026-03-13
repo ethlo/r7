@@ -6,23 +6,22 @@ import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
-public record RouteJournalConfig(
-        JournalDirectionConfig request,
-        JournalDirectionConfig response
-) implements ValidatableConfig
+public record RouteJournalConfig(JournalDirectionConfig request,
+                                 JournalDirectionConfig response) implements ValidatableConfig
 {
+    private static final JournalDirectionConfig NONE = new JournalDirectionConfig(JournalLevel.NONE, null);
+
+    public RouteJournalConfig(JournalDirectionConfig request, JournalDirectionConfig response)
+    {
+        this.request = Optional.ofNullable(request).orElse(NONE);
+        this.response = Optional.ofNullable(response).orElse(NONE);
+    }
+
     @Override
     public void validate(final ValidationResult result)
     {
-        if (request != null)
-        {
-            validateDirection("request", request, result);
-        }
-
-        if (response != null)
-        {
-            validateDirection("response", response, result);
-        }
+        validateDirection("request", request, result);
+        validateDirection("response", response, result);
     }
 
     private void validateDirection(final String directionName, final JournalDirectionConfig config, final ValidationResult result)
@@ -54,13 +53,12 @@ public record RouteJournalConfig(
         }
     }
 
-    public JournalDirectionConfig request()
+    public boolean isAtLeastMetadata(int statusCode)
     {
-        return Optional.ofNullable(request).orElse(new JournalDirectionConfig(JournalLevel.NONE, null));
-    }
-
-    public JournalDirectionConfig response()
-    {
-        return Optional.ofNullable(response).orElse(new JournalDirectionConfig(JournalLevel.NONE, null));
+        final int metadataOrdinal = JournalLevel.METADATA.ordinal();
+        return request.level().ordinal() >= metadataOrdinal
+                || response.level().ordinal() >= metadataOrdinal
+                || request.resolve(statusCode).ordinal() >= metadataOrdinal
+                || response.resolve(statusCode).ordinal() >= metadataOrdinal;
     }
 }

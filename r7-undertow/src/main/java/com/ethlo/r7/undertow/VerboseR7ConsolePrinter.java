@@ -220,7 +220,7 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
 
     private String formatOverrides(final JournalLevel[] overrides)
     {
-        if (overrides == null)
+        if (overrides.length == 0)
         {
             return "";
         }
