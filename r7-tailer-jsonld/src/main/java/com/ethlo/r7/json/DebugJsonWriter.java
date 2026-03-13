@@ -42,10 +42,6 @@ public class DebugJsonWriter implements ExchangeCompletionListener
                 .build();
 
         this.generator = mapper.createGenerator(out);
-        if (prettyPrint)
-        {
-            //this.generator = generator.getPrettyPrinter();
-        }
     }
 
     public void writePlainDouble(final JsonGenerator gen, final String fieldName, final double value) throws IOException
@@ -74,7 +70,6 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             if (exchange.wasProxied())
             {
                 generator.writeStringProperty("proxy_start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyStartTs())));
-                //generator.writeStringProperty("proxy_first_bytes_received", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyFirstByteReceivedTs())));
                 generator.writeStringProperty("proxy_end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyEndTs())));
                 writePlainDouble(generator, "proxy_duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
             }
@@ -102,15 +97,18 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             );
 
             // --- Upstream Object ---
-            generator.writeName("upstream");
-            writeExchangeNode(
-                    exchange.getUpstreamRequestLevel(),
-                    exchange.getUpstreamRequestStartLine(),
-                    exchange.getUpstreamRequestHeaders(),
-                    exchange.getUpstreamResponseLevel(),
-                    exchange.getUpstreamResponseStartLine(),
-                    exchange.getUpstreamResponseHeaders()
-            );
+            if (exchange.wasProxied())
+            {
+                generator.writeName("upstream");
+                writeExchangeNode(
+                        exchange.getUpstreamRequestLevel(),
+                        exchange.getUpstreamRequestStartLine(),
+                        exchange.getUpstreamRequestHeaders(),
+                        exchange.getUpstreamResponseLevel(),
+                        exchange.getUpstreamResponseStartLine(),
+                        exchange.getUpstreamResponseHeaders()
+                );
+            }
 
             // --- Payload Debugging ---
             writeBody("request_body", exchange.getRequestBodyFragments());

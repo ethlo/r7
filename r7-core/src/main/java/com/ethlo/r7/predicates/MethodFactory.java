@@ -5,7 +5,7 @@ import java.util.List;
 
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.util.ValidatorUtils;

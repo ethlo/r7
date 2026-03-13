@@ -78,6 +78,8 @@ public final class JournalSecurity
                             "access-control-max-age",
                             "access-control-allow-credentials",
                             "x-content-type-options",
+                            "x-ratelimit-remaining",
+                            "x-ratelimit-limit",
                             "x-frame-options",
                             "strict-transport-security"
                     )

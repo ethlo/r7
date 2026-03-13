@@ -19,7 +19,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.JournalDirectionConfig;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.undertow.config.ServerConfig;

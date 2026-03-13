@@ -14,7 +14,7 @@ import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.core.GatewayContextKeys;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;

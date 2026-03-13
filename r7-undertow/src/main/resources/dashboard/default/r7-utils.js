@@ -81,7 +81,7 @@ const mRow = (label, primaryValue, isSum = false, valueClass = '', rateValue = n
     const valContainer = rateValue !== null
         ? `<div style="display: grid; grid-template-columns: 60px 60px; gap: 8px; text-align: right; font-variant-numeric: tabular-nums;">
              <span class="${valueClass}">${primaryValue}</span>
-             <span class="${valueClass}">${rateValue}<span class="text-dim" style="opacity: 0.5;">/s</span></span>
+             <span class="${valueClass}">${rateValue}<span class="text-dim" style="opacity: 0.5;"></span></span>
            </div>`
         : `<div style="display: grid; grid-template-columns: 128px; text-align: right; font-variant-numeric: tabular-nums;">
              <span class="${valueClass}">${primaryValue}</span>
@@ -120,7 +120,6 @@ function buildFilterPipelineHtml(node, destination) {
         } else {
             if (curr.on_client_request) phases.clientReq.push(curr.id);
             if (curr.on_upstream_request) phases.upstreamReq.push(curr.id);
-
             if (curr.on_client_response) phases.clientRes.unshift(curr.id);
             if (curr.on_completed) phases.completed.unshift(curr.id);
         }

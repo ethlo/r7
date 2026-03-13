@@ -14,7 +14,7 @@ public class R7FullJsonTailerApp
 {
     public static void main(String[] args) throws Exception
     {
-        final Path logDir = Paths.get("/tmp/r7");
+        final Path logDir = Paths.get("/tmp/r7/journal");
         final Path auditFile = Paths.get("/tmp/r7/audit_trail.jsonl");
 
         OutputStream out = new BufferedOutputStream(Files.newOutputStream(auditFile,

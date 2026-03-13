@@ -7,7 +7,7 @@ import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 
 public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>

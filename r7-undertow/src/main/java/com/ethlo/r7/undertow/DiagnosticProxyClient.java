@@ -1,6 +1,15 @@
 package com.ethlo.r7.undertow;
 
 
+import static com.ethlo.r7.undertow.R7UndertowHandler.GATEWAY_EXCHANGE_KEY;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.core.proxy.NoAvailableTargetException;
 import com.ethlo.r7.core.proxy.ProxyConnectionException;
@@ -11,15 +20,6 @@ import io.undertow.server.handlers.proxy.ProxyCallback;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyConnection;
 import io.undertow.util.AttachmentKey;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.lang.reflect.Field;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import static com.ethlo.r7.undertow.R7UndertowHandler.GATEWAY_EXCHANGE_KEY;
 
 public class DiagnosticProxyClient implements ProxyClient
 {
@@ -53,6 +53,21 @@ public class DiagnosticProxyClient implements ProxyClient
         this.gatewayErrorHandler = gatewayErrorHandler;
     }
 
+    public static String[] getAttemptedUris(HttpServerExchange exchange)
+    {
+        final List<LoadBalancingProxyClient.Host> attempted = exchange.getAttachmentList(ATTEMPTED_HOSTS_KEY);
+        if (attempted != null && !attempted.isEmpty())
+        {
+            final String[] retVal = new String[attempted.size()];
+            for (int i = 0; i < attempted.size(); i++)
+            {
+                retVal[i] = attempted.get(i).getUri().toString();
+            }
+            return retVal;
+        }
+        return new String[0];
+    }
+
     @Override
     public void getConnection(ProxyTarget target, HttpServerExchange exchange,
                               ProxyCallback<ProxyConnection> callback,
@@ -69,15 +84,8 @@ public class DiagnosticProxyClient implements ProxyClient
                     @Override
                     public void failed(HttpServerExchange exchange)
                     {
-                        // Undertow stores attempted hosts in an attachment list
-                        final List<LoadBalancingProxyClient.Host> attempted = exchange.getAttachmentList(ATTEMPTED_HOSTS_KEY);
-                        String actualUri = "Unknown";
-                        if (attempted != null && !attempted.isEmpty())
-                        {
-                            // Get the last host attempted
-                            actualUri = attempted.getLast().getUri().toString();
-                        }
-
+                        final String[] attemptedUris = getAttemptedUris(exchange);
+                        final String actualUri = attemptedUris.length > 0 ? attemptedUris[attemptedUris.length - 1] : "Unknown";
                         reportError(exchange, new ProxyConnectionException("TCP Connection failed to: " + actualUri));
                         callback.failed(exchange);
                     }

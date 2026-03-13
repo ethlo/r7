@@ -20,7 +20,7 @@ import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.status.dto.EgressDto;
 import com.ethlo.r7.status.dto.IngressDto;

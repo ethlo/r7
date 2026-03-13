@@ -7,7 +7,7 @@ import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;

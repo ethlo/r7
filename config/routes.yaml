@@ -37,8 +37,8 @@ routes:
         - url: http://localhost:1111
     filters:
       - RateLimiter:
-          capacity: 500000
-          refill_tokens: 20000
+          capacity: 50000
+          refill_tokens: 2000
           refill_period: PT1s
       - CircuitBreaker:
           failure_threshold: 10
@@ -47,13 +47,13 @@ routes:
       - CorrelationIdHeader
     journal:
       request:
-        level: NONE
+        level: HEADERS
         status_overrides:
           401,403: HEADERS
           429: METADATA
           5xx: HEADERS
       response:
-        level: METADATA
+        level: FULL
 
   - id: ws-test
     upstream:

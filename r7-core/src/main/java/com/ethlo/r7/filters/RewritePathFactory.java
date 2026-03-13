@@ -6,7 +6,7 @@ import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.core.ShortInfo;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;

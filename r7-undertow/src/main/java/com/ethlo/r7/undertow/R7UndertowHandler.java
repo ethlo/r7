@@ -5,8 +5,10 @@ import java.nio.ByteBuffer;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,6 +23,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayErrorHandler;
+import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayAttributes;
@@ -61,7 +64,10 @@ public final class R7UndertowHandler implements HttpHandler
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
     static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
-    private static final CharSequence ROUTE_ID_KEY = "route_id";
+    private static final CharSequence ROUTE_ID_KEY = "gateway.route.id";
+    private static final CharSequence UPSTREAM_TARGET_KEY = "gateway.target";
+    private static final CharSequence SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
+    private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
     private final Map<String, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -91,6 +97,8 @@ public final class R7UndertowHandler implements HttpHandler
 
     private static void handleCompleted(final StatefulJournal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final HttpServerExchange serverExchange)
     {
+        tagExchangeAttributes(exchange, gatewayExchange);
+
         if (!gatewayExchange.wasProxied())
         {
             gatewayExchange.setUpstreamRequest(UnproxiedUpstreamRequest.INSTANCE);
@@ -131,6 +139,26 @@ public final class R7UndertowHandler implements HttpHandler
         gatewayExchange.setJournalBytes(journalBytes);
     }
 
+    private static void tagExchangeAttributes(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
+    {
+        gatewayExchange.attributes().add(ROUTE_ID_KEY, gatewayExchange.route().id());
+        Optional.ofNullable(exchange.getAttachment(REASON_FILTER_KEY)).map(GatewayFilter::name).ifPresent(name ->
+                gatewayExchange.attributes().add(SHORT_CIRCUIT_FILTER_KEY, name));
+
+        if (gatewayExchange.wasProxied())
+        {
+            final String[] attemptedUris = DiagnosticProxyClient.getAttemptedUris(exchange);
+            if (attemptedUris.length == 1)
+            {
+                gatewayExchange.attributes().set(UPSTREAM_TARGET_KEY, attemptedUris[0]);
+            }
+            else
+            {
+                gatewayExchange.attributes().set(UPSTREAM_TARGET_KEY, List.of(attemptedUris));
+            }
+        }
+    }
+
     private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
     {
         final ShortCircuitGatewayResponse terminationResponse = gatewayExchange.getShortCircuitGatewayResponse();
@@ -139,8 +167,9 @@ public final class R7UndertowHandler implements HttpHandler
         exchange.getResponseSender().send(terminationResponse.body());
     }
 
-    private static void shortCircuit(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
+    private static void shortCircuit(final GatewayFilter reasonFilter, HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
+        exchange.putAttachment(REASON_FILTER_KEY, reasonFilter);
         for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
         {
             filter.onClientResponse(gatewayExchange);
@@ -219,9 +248,6 @@ public final class R7UndertowHandler implements HttpHandler
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
         final RouteJournalConfig journalConfig = route.routeDefinition().journal();
-
-        // TODO: Remove me?
-        gatewayExchange.attributes().add(ROUTE_ID_KEY, route.id());
 
         final boolean isWebSocket = exchange.getRequestHeaders().contains(io.undertow.util.Headers.UPGRADE) && "websocket".equalsIgnoreCase(exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.UPGRADE));
         exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
@@ -365,13 +391,13 @@ public final class R7UndertowHandler implements HttpHandler
 
                 // Undertow handles the async hand-off. The IO thread will immediately
                 // return after this block and go back to accepting TCP connections.
-                exchange.dispatch(this.virtualThreadExecutor, () ->
+                exchange.dispatch(virtualThreadExecutor, () ->
                         {
                             filter.onClientRequest(gatewayExchange);
 
                             if (gatewayExchange.isShortCircuited())
                             {
-                                shortCircuit(exchange, route, gatewayExchange, statefulJournal);
+                                shortCircuit(filter, exchange, route, gatewayExchange, statefulJournal);
                             }
                             else
                             {
@@ -390,7 +416,7 @@ public final class R7UndertowHandler implements HttpHandler
 
             if (gatewayExchange.isShortCircuited())
             {
-                shortCircuit(exchange, route, gatewayExchange, statefulJournal);
+                shortCircuit(filter, exchange, route, gatewayExchange, statefulJournal);
                 return;
             }
         }
