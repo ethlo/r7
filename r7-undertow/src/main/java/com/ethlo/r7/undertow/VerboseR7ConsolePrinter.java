@@ -67,7 +67,7 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
     {
         logBorder(BORDER_TOP);
         logLine("");
-        logLine("  " + CSS_HEADER + "V E N T U R I" + RESET + "  " + RESET + " GATEWAY");
+        logLine("  " + CSS_HEADER + "r7" + RESET + "  " + RESET + " GATEWAY");
         logLine("  " + CSS_MUTED + "»".repeat(WIDTH - 4) + RESET);
         logLine("");
     }

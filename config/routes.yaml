@@ -55,6 +55,24 @@ routes:
       response:
         level: FULL
 
+  - id: undertow-internal-backend-no-journal
+    match:
+      - PathStartsWith:
+          prefix: /hello
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    filters:
+      - RateLimiter:
+          capacity: 50000
+          refill_tokens: 2000
+          refill_period: PT1s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT15s
+      #- RequireAuthorizationHeader
+      - CorrelationIdHeader
+
   - id: ws-test
     upstream:
       targets:

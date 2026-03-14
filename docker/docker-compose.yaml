@@ -1,15 +1,10 @@
 services:
   r7-api:
-    image: ethlo-r7:latest
+    image: ghcr.io/ethlo/r7-jvm:latest #ethlo-r7:latest
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"
       - "19999:18888"
-    # ADD THIS TO UNBLOCK clone3:
-    security_opt:
-      - seccomp=unconfined
-    cap_add:
-      - SYS_PTRACE
     volumes:
       - ./config:/app/config:ro
       - ./journals:/journals:rw
@@ -21,10 +16,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M
+          memory: 600M
           cpus: 16
         reservations:
-          memory: 200M
+          memory: 400M
 
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8888"]
