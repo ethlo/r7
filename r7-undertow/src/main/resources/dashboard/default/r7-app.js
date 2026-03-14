@@ -8,6 +8,8 @@ if (localStorage.getItem('theme') === 'light') {
     document.body.classList.add('light-mode');
 }
 
+const PER_SEC = '/s';
+
 const ZERO_METRICS = {
     request_statistics: {
         total: 0,
@@ -316,11 +318,10 @@ function renderTable(data) {
                 <canvas id="canvas___SYSTEM__" width="200" height="70" style="margin-top: 8px;"></canvas>
             </td>
             <td class="col-totals">
-                ${mRow('SUM', formatCompact(totals.total), true, '', formatCompact(Math.round(sysRpsTotal)))}
-                ${mRow('2xx', formatCompact(totals.st_2xx), false, t2xxStyle, formatCompact(Math.round(sys2xxRps)))}
-                ${mRow('3xx', formatCompact(totals.st_3xx), false, t3xxStyle, '0')}
-                ${mRow('4xx', formatCompact(totals.err_4xx), false, t4xxStyle, formatCompact(Math.round(sys4xxRps)))}
-                ${mRow('5xx', formatCompact(totals.err_5xx), false, t5xxStyle, formatCompact(Math.round(sys5xxRps)))}
+                ${mRow('SUM', formatCompact(totals.total), true, '', formatCompact(Math.round(sysRpsTotal)) + PER_SEC)}
+                ${mRow('2xx', formatCompact(totals.st_2xx), false, t2xxStyle, formatCompact(Math.round(sys2xxRps)) + PER_SEC)}
+                ${mRow('4xx', formatCompact(totals.err_4xx), false, t4xxStyle, formatCompact(Math.round(sys4xxRps)) + PER_SEC)}
+                ${mRow('5xx', formatCompact(totals.err_5xx), false, t5xxStyle, formatCompact(Math.round(sys5xxRps)) + PER_SEC)}
             </td>
             <td class="col-ingress">
                 ${mRow('SUM', formatBytes(totals.in_t, uTotal), true, '', formatBytes(totals.out_t, uTotal))}
@@ -333,8 +334,6 @@ function renderTable(data) {
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(totals.journal, uTotal), true)}
-                ${mRow('REQ', '-', false)}
-                ${mRow('RES', '-', false)}
             </td>
         </tr>`;
 
@@ -368,11 +367,10 @@ function renderTable(data) {
                 <canvas id="canvas_${config.id}" width="200" height="70" style="margin-top: 8px;"></canvas>
             </td>
             <td class="col-totals">
-                ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)))}
-                ${mRow('2xx', formatCompact(st2xx), false, t2xxStyle, formatCompact(Math.round(r2xxRps)))}
-                ${mRow('3xx', formatCompact(st3xx), false, t3xxStyle, '0')}
-                ${mRow('4xx', formatCompact(err4xx), false, t4xxStyle, formatCompact(Math.round(r4xxRps)))}
-                ${mRow('5xx', formatCompact(err5xx), false, t5xxStyle, formatCompact(Math.round(r5xxRps)))}
+                ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)) + PER_SEC)}
+                ${mRow('2xx', formatCompact(st2xx), false, t2xxStyle, formatCompact(Math.round(r2xxRps)) + PER_SEC)}
+                ${mRow('4xx', formatCompact(err4xx), false, t4xxStyle, formatCompact(Math.round(r4xxRps)) + PER_SEC)}
+                ${mRow('5xx', formatCompact(err5xx), false, t5xxStyle, formatCompact(Math.round(r5xxRps)) + PER_SEC)}
             </td>
             <td class="col-ingress">
                 ${mRow('SUM', formatBytes(t.ingress.total_bytes, uRoute), true, '', formatBytes(t.egress.total_bytes, uRoute))}
@@ -385,8 +383,7 @@ function renderTable(data) {
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
-                ${mRow('REQ', jBadge(reqJourn), false)}
-                ${mRow('RES', jBadge(resJourn), false)}
+                ${mRow('LVL', 'REQ: ' + jBadge(reqJourn), false, '', 'RES: ' + jBadge(resJourn))}
             </td>
         </tr>`;
     });

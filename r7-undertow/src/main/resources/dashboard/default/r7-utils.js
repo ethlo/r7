@@ -16,7 +16,7 @@ function formatBytes(b, forceUnitIndex = -1) {
 
 function formatCompact(num) {
     if (num === 0 || num == null) return '0';
-    return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(num);
+    return new Intl.NumberFormat(window.locale, { notation: 'compact', minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(num);
 }
 
 function formatUptime(iso) {
