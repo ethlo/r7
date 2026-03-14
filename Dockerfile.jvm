@@ -1,0 +1,11 @@
+# Dockerfile.jvm
+FROM gcr.io/distroless/java25-debian12:nonroot
+WORKDIR /app
+
+# We assume the JAR is already compiled by the CI runner
+# The glob matches your 17MB fat JAR, and we can just use the exact prefix
+# to avoid scooping up the javadoc jar by accident if we use a tighter wildcard.
+COPY r7-undertow/target/r7-undertow-*.jar /app/server.jar
+
+USER 65532:65532
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]
