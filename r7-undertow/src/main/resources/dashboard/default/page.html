@@ -674,12 +674,11 @@
 
         document.getElementById('details-content').innerHTML = `
         <div class="panel-header-container">
-            <div style="flex-grow: 1; min-width: 0;">
-                <h2 class="panel-title">System Configuration</h2>
-                <div class="panel-subtitle">Undertow Engine & Environment</div>
+            <div class="panel-title">
+                <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> CONFIGURATION
             </div>
             <button class="panel-close-btn" onclick="closeDetails()">
-                CLOSE <span class="panel-close-icon">&times;</span>
+                <span class="panel-close-icon">←</span> BACK
             </button>
         </div>
 
@@ -997,11 +996,11 @@
 
         document.getElementById('details-content').innerHTML = `
         <div class="panel-header-container">
-            <div style="flex-grow: 1; min-width: 0;">
-                <h2 class="panel-title">${routeId}</h2>
+            <div class="panel-title">
+                <span style="color: var(--dim); font-weight: 300;">ROUTE //</span> ${routeId}
             </div>
             <button class="panel-close-btn" onclick="closeDetails()">
-                CLOSE <span class="panel-close-icon">&times;</span>
+                <span class="panel-close-icon">←</span> BACK
             </button>
         </div>
 
@@ -1108,12 +1107,11 @@
 
         document.getElementById('details-content').innerHTML = `
         <div class="panel-header-container">
-            <div style="flex-grow: 1; min-width: 0;">
-                <h2 class="panel-title">System Totals</h2>
-                <div class="panel-subtitle">Connector Statistics</div>
+            <div class="panel-title">
+                <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> RAW TRAFFIC
             </div>
             <button class="panel-close-btn" onclick="closeDetails()">
-                CLOSE <span class="panel-close-icon">&times;</span>
+                <span class="panel-close-icon">←</span> BACK
             </button>
         </div>
 
@@ -1401,7 +1399,7 @@
                 if (window.currentOpenRoute === '__SYSTEM__') {
                     showSystemDetails();
                 } else if (window.currentOpenRoute === '__CONFIG__') {
-                    showConfigDetails(); // <--- Add this line
+                    showConfigDetails();
                 } else if (window.currentOpenRoute) {
                     showDetails(window.currentOpenRoute);
                 }
