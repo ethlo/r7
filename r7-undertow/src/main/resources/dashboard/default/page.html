@@ -58,7 +58,9 @@
             letter-spacing: 2px;
         }
 
-        h1 span { color: var(--accent); }
+        h1 span {
+            color: var(--accent);
+        }
 
         /* ==========================================================================
            3. LAYOUT COMPONENTS
@@ -91,30 +93,104 @@
         /* ==========================================================================
            4. TYPOGRAPHY & UTILITIES
            ========================================================================== */
-        .sub { font-size: 0.85rem; color: var(--dim); margin-top: 4px; }
-        .sum { font-size: 0.85rem; color: var(--brighter); margin-top: 4px; }
-        .sys-vitals { color: var(--dim); font-size: 0.9rem; margin-top: 0.5rem; }
-        .sys-info { font-size: 0.9rem; color: var(--dim); }
-        #sys-version { color: var(--fg); font-weight: 500; }
+        .sub {
+            font-size: 0.85rem;
+            color: var(--dim);
+            margin-top: 4px;
+        }
 
-        .text-muted { opacity: 1; }
-        .text-dim { opacity: 0.7; }
-        .text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .text-nowrap { white-space: nowrap; }
-        .text-right { text-align: right; }
-        .spacer-sm { height: 6px; }
-        .status-indicator { margin-right: 6px; }
+        .sum {
+            font-size: 0.85rem;
+            color: var(--brighter);
+            margin-top: 4px;
+        }
+
+        .sys-vitals {
+            color: var(--dim);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .sys-info {
+            font-size: 0.9rem;
+            color: var(--dim);
+        }
+
+        #sys-version {
+            color: var(--fg);
+            font-weight: 500;
+        }
+
+        .text-muted {
+            opacity: 1;
+        }
+
+        .text-dim {
+            opacity: 0.7;
+        }
+
+        .text-truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .text-nowrap {
+            white-space: nowrap;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .spacer-sm {
+            height: 6px;
+        }
+
+        .status-indicator {
+            margin-right: 6px;
+        }
 
         /* Status Colors */
-        .text-warn { color: #ff9800; font-weight: 300; }
-        .text-err { color: #ee4444; font-weight: 300; }
-        .text-http { color: #00d4ff; font-weight: 300; }
-        .text-ws { color: #00ff88; font-weight: 300; }
+        .text-warn {
+            color: #ff9800;
+            font-weight: 300;
+        }
 
-        .text-4xx { color: rgba(200, 152, 0, 0.7); font-weight: 300; }
-        .text-5xx { color: rgba(238, 100, 100, 0.7); font-weight: 300; }
-        .text-3xx { color: rgba(50, 150, 255, 0.7); font-weight: 300; }
-        .text-2xx { color: rgba(0, 200, 100, 0.7); font-weight: 300; }
+        .text-err {
+            color: #ee4444;
+            font-weight: 300;
+        }
+
+        .text-http {
+            color: #00d4ff;
+            font-weight: 300;
+        }
+
+        .text-ws {
+            color: #00ff88;
+            font-weight: 300;
+        }
+
+        .text-4xx {
+            color: rgba(200, 152, 0, 0.7);
+            font-weight: 300;
+        }
+
+        .text-5xx {
+            color: rgba(238, 100, 100, 0.7);
+            font-weight: 300;
+        }
+
+        .text-3xx {
+            color: rgba(50, 150, 255, 0.7);
+            font-weight: 300;
+        }
+
+        .text-2xx {
+            color: rgba(0, 200, 100, 0.7);
+            font-weight: 300;
+        }
 
         /* ==========================================================================
            5. TABLE STYLES
@@ -139,12 +215,26 @@
             vertical-align: top;
         }
 
-        th, td { border-right: 1px solid var(--border-subtle); }
-        th:last-child, td:last-child { border-right: none; }
+        th, td {
+            border-right: 1px solid var(--border-subtle);
+        }
 
-        tr.clickable-row { cursor: pointer; transition: background 0.15s ease; }
-        tr.clickable-row:hover td { background: var(--row-hover); }
-        tr.clickable-row:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+        th:last-child, td:last-child {
+            border-right: none;
+        }
+
+        tr.clickable-row {
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        tr.clickable-row:hover td {
+            background: var(--row-hover);
+        }
+
+        tr.clickable-row:hover td:first-child {
+            box-shadow: inset 3px 0 0 var(--accent);
+        }
 
         tr.total-row td {
             background: var(--card-bg);
@@ -170,7 +260,11 @@
             margin: 0;
             padding-bottom: 2px;
         }
-        .metric-label { opacity: 1; }
+
+        .metric-label {
+            opacity: 1;
+        }
+
         .metric-leader {
             flex-grow: 1;
             border-bottom: 1px dotted var(--border-dotted);
@@ -178,7 +272,10 @@
             position: relative;
             top: -4px;
         }
-        .metric-value { white-space: nowrap; }
+
+        .metric-value {
+            white-space: nowrap;
+        }
 
         /* ==========================================================================
            7. FULL PAGE DETAILS PANEL (Cards Layout)
@@ -257,18 +354,24 @@
             align-items: center;
             gap: 8px;
         }
+
         .panel-close-btn:hover {
             background: rgba(128, 128, 128, 0.25);
             color: var(--fg);
             border-color: rgba(128, 128, 128, 0.4);
         }
-        .panel-close-icon { font-size: 1.2em; font-weight: bold; line-height: 0; }
+
+        .panel-close-icon {
+            font-size: 1.2em;
+            font-weight: bold;
+            line-height: 0;
+        }
 
         .panel-section {
             background: var(--card-bg);
             border: 1px solid var(--border);
             padding: 1.2rem;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             /* Prevent the cards from being split in half across columns */
             break-inside: avoid;
             page-break-inside: avoid;
@@ -289,7 +392,14 @@
         /* ==========================================================================
            8. JOURNALING & BADGES
            ========================================================================== */
-        .pill-group { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px;  font-size:0.85em}
+        .pill-group {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            font-size: 0.85em
+        }
+
         .journal-tag {
             padding: 2px 6px;
             border-radius: 4px;
@@ -306,16 +416,54 @@
             border-color: currentColor;
         }
 
-        .journal-active-none { color: var(--dim); border-color: var(--dim); background: rgba(161, 161, 170, 0.1); }
-        .journal-active-metadata { color: #2dd4bf; border-color: #2dd4bf; background: rgba(45, 212, 191, 0.1); }
-        .journal-active-headers { color: #3b82f6; border-color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
-        .journal-active-full { color: #a855f7; border-color: #a855f7; background: rgba(168, 85, 247, 0.1); }
+        .journal-active-none {
+            color: var(--dim);
+            border-color: var(--dim);
+            background: rgba(161, 161, 170, 0.1);
+        }
+
+        .journal-active-metadata {
+            color: #2dd4bf;
+            border-color: #2dd4bf;
+            background: rgba(45, 212, 191, 0.1);
+        }
+
+        .journal-active-headers {
+            color: #3b82f6;
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .journal-active-full {
+            color: #a855f7;
+            border-color: #a855f7;
+            background: rgba(168, 85, 247, 0.1);
+        }
 
         .j-badge {
             font-weight: 900;
             display: inline-block;
             min-width: 14px;
             text-align: center;
+        }
+
+        .sys-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--dim);
+            padding: 6px 12px;
+            font-family: inherit;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .sys-btn:hover {
+            background: var(--card-bg);
+            color: var(--fg);
+            border-color: rgba(128, 128, 128, 0.4);
         }
     </style>
 </head>
@@ -327,7 +475,10 @@
             <h1><span>r7</span> GATEWAY</h1>
             <div class="sys-vitals" id="sys-vitals">UPTIME: -- | VERSION: -- | DISK: --</div>
         </div>
-        <div class="sys-info" id="last-update">CONNECTING...</div>
+        <div style="display: flex; gap: 20px; align-items: center;">
+            <button class="sys-btn" onclick="showConfigDetails()">CONFIG</button>
+            <div class="sys-info" id="last-update">CONNECTING...</div>
+        </div>
     </header>
 
     <table id="route-table">
@@ -356,6 +507,9 @@
     const FRACTION_DIGITS = 2;
     const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
+    let previousGcTime = null;
+    let currentGcRate = 0;
+
     function getUnitIndex(b) {
         if (b === 0 || b == null) return 0;
         return Math.min(Math.floor(Math.log(b) / Math.log(1024)), UNITS.length - 1);
@@ -367,6 +521,14 @@
             return forceUnitIndex >= 0 ? '0.00 ' + UNITS[i] : '0 B';
         }
         return (b / Math.pow(1024, i)).toFixed(FRACTION_DIGITS) + ' ' + UNITS[i];
+    }
+
+    function getPressureClass(used, max) {
+        if (!max || max <= 0) return '';
+        const ratio = used / max;
+        if (ratio >= 0.90) return 'text-err';
+        if (ratio >= 0.80) return 'text-warn';
+        return '';
     }
 
     function formatCompact(num) {
@@ -436,15 +598,15 @@
         return sum;
     }
 
-    const mRow = (label, primaryValue, isSum = false, valueClass = '', rateValue = null) => {
-        const valContainer = rateValue !== null
-            ? `<div style="display: grid; grid-template-columns: 60px 60px; gap: 8px; text-align: right; font-variant-numeric: tabular-nums;">
-             <span class="${valueClass}">${primaryValue}</span>
-             <span class="${valueClass}">${rateValue}<span class="text-dim" style="opacity: 0.5;"></span></span>
-           </div>`
-            : `<div style="display: grid; grid-template-columns: 128px; text-align: right; font-variant-numeric: tabular-nums;">
-             <span class="${valueClass}">${primaryValue}</span>
-           </div>`;
+    const mRow = (label, primaryValue, isSum = false, valueClass = '', secondaryValue = null) => {
+        const valContainer = secondaryValue !== null
+            ? `<div style="display: flex; justify-content: flex-end; gap: 1.25rem; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                 <span class="${valueClass}">${primaryValue}</span>
+                 <span class="${valueClass}">${secondaryValue}</span>
+               </div>`
+            : `<div style="display: block; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                 <span class="${valueClass}">${primaryValue}</span>
+               </div>`;
 
         return `
     <div class="${isSum ? 'sum' : 'sub'} metric-row" style="display: flex; align-items: baseline;">
@@ -460,6 +622,109 @@
         const l = (lvl || 'NONE').toUpperCase();
         return `<span class="journal-active-${l.toLowerCase()} j-badge">${l.charAt(0)}</span>`;
     };
+
+    function formatPrimitive(val) {
+        if (typeof val === 'boolean') return val ? '<span class="text-2xx">TRUE</span>' : '<span class="text-dim">FALSE</span>';
+        if (val == null) return '--';
+        return val;
+    }
+
+    function showConfigDetails() {
+        const data = window.currentData;
+        if (!data || !data.system) return;
+
+        window.currentOpenRoute = '__CONFIG__';
+        const sys = data.system;
+        const cfg = sys.configuration || {};
+
+        // Fallback if memory metrics are mapped differently in your final JSON
+        const mem = sys.memory || data.memory || null;
+
+        document.getElementById('details-content').innerHTML = `
+        <div class="panel-header-container">
+            <div style="flex-grow: 1; min-width: 0;">
+                <h2 class="panel-title">System Configuration</h2>
+                <div class="panel-subtitle">Undertow Engine & Environment</div>
+            </div>
+            <button class="panel-close-btn" onclick="closeDetails()">
+                CLOSE <span class="panel-close-icon">&times;</span>
+            </button>
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Environment Info</div>
+            ${mRow('VERSION', sys.version, true)}
+            ${mRow('STARTED AT', new Date(sys.started_at).toLocaleString(), false)}
+            ${mRow('UPTIME', formatUptime(sys.uptime), false)}
+            <div class="spacer-sm"></div>
+            ${mRow('BIND ADDRESS', `${cfg.host}:${cfg.port}`, false)}
+            ${mRow('STATUS ADDRESS', `${cfg.status_host}:${cfg.status_port}`, false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Undertow Options</div>
+            ${mRow('HTTP/2 ENABLED', formatPrimitive(cfg.options?.enable_http2), true)}
+            ${mRow('DIRECT BUFFERS', formatPrimitive(cfg.options?.direct_buffers), false)}
+            ${mRow('BUFFER SIZE', formatBytes(cfg.options?.buffer_size), false)}
+            ${mRow('MAX HEADER SIZE', formatBytes(cfg.options?.max_header_size), false)}
+            ${mRow('MAX HEADER COUNT', cfg.options?.max_header_count, false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Worker Thread Pool</div>
+            ${mRow('I/O THREADS', cfg.worker?.io_threads, true)}
+            ${mRow('TASK CORE THREADS', cfg.worker?.task_core_threads, false)}
+            ${mRow('TASK MAX THREADS', cfg.worker?.task_max_threads, false)}
+            ${mRow('STACK SIZE', formatBytes(cfg.worker?.stack_size), false)}
+            ${mRow('CONN LOW WATER', cfg.worker?.connection_low_water?.toLocaleString(), false)}
+            ${mRow('CONN HIGH WATER', cfg.worker?.connection_high_water?.toLocaleString(), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Socket & Proxy</div>
+            ${mRow('TCP NODELAY', formatPrimitive(cfg.socket?.tcp_nodelay), true)}
+            ${mRow('REUSE ADDRESSES', formatPrimitive(cfg.socket?.reuse_addresses), false)}
+            ${mRow('BACKLOG', cfg.socket?.backlog, false)}
+            <div class="spacer-sm"></div>
+            ${mRow('PROXY MAX QUEUE', cfg.proxy?.max_queue_size, false)}
+            ${mRow('PROXY CONNS / THREAD', cfg.proxy?.connections_per_thread, false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Journal Storage</div>
+            ${mRow('WORK DIR', `<span class="text-dim text-truncate" style="max-width: 150px; display: inline-block; vertical-align: bottom;" title="${cfg.storage?.work_dir}">${cfg.storage?.work_dir}</span>`, true)}
+            ${mRow('SHARD COUNT', cfg.storage?.shard_count, false)}
+            ${mRow('SHARD SIZE', formatBytes(cfg.storage?.shard_size), false)}
+            ${mRow('PRE-FAULT', formatPrimitive(cfg.storage?.pre_fault), false)}
+        </div>
+
+        <div class="panel-section" id="mem-section">
+            <div class="panel-section-title">Resource Pressure</div>
+            ${mem ? `
+                ${mRow('HEAP MEMORY',
+            `<span class="${getPressureClass(mem.heap_used, mem.heap_max)}">${formatBytes(mem.heap_used)}</span>`,
+            true, '', formatBytes(mem.heap_max) + ' MAX')}
+
+                ${mRow('DIRECT MEMORY (NIO)',
+            formatBytes(mem.direct_used),
+            false, '', mem.direct_max > 0 ? formatBytes(mem.direct_max) + ' MAX' : 'UNLIMITED')}
+
+                ${mRow('FILE DESCRIPTORS',
+            `<span class="${getPressureClass(mem.open_fds, mem.max_fds)}">${mem.open_fds.toLocaleString()}</span>`,
+            false, '', mem.max_fds > 0 ? mem.max_fds.toLocaleString() + ' MAX' : '--')}
+                ${mRow('TOTAL GC TIME',
+            mem.gc_time_ms.toLocaleString() + ' ms',
+            false,
+            '',
+            `<span class="${currentGcRate > 50 ? 'text-warn' : (currentGcRate > 200 ? 'text-err' : 'text-dim')}">
+           +${currentGcRate} ms/s
+       </span>`)}
+            ` : `<div class="sub text-dim" style="padding: 4px;">Resource data pending...</div>`}
+        </div>
+    `;
+
+        openDetails();
+    }
 
     function drawStackedSparkline(canvas, data) {
         const ctx = canvas.getContext('2d');
@@ -894,8 +1159,23 @@
             journal: acc.journal + r.traffic_flow.journal_storage_bytes,
             latency: acc.latency + (parseDurationMs(r.performance_telemetry.average_latency) * (r.request_statistics.total || 0))
         }), {
-            total: 0, ws_total: 0, st_2xx: 0, st_3xx: 0, err_4xx: 0, err_5xx: 0, active: 0, ws_active: 0, last_active: 0,
-            in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0, latency: 0
+            total: 0,
+            ws_total: 0,
+            st_2xx: 0,
+            st_3xx: 0,
+            err_4xx: 0,
+            err_5xx: 0,
+            active: 0,
+            ws_active: 0,
+            last_active: 0,
+            in_h: 0,
+            in_b: 0,
+            in_t: 0,
+            out_h: 0,
+            out_b: 0,
+            out_t: 0,
+            journal: 0,
+            latency: 0
         });
 
         const globalAvgLat = totals.total === 0 ? '0.00' : (totals.latency / totals.total).toFixed(FRACTION_DIGITS);
@@ -1043,6 +1323,17 @@
 
             window.currentData = data;
 
+            const sys = data.system;
+            const mem = sys.memory || data.memory || null;
+
+            if (mem && mem.gc_time_ms !== undefined) {
+                if (previousGcTime !== null) {
+                    // Since we poll every 1 second, the delta is roughly our ms/sec rate
+                    currentGcRate = mem.gc_time_ms - previousGcTime;
+                }
+                previousGcTime = mem.gc_time_ms;
+            }
+
             const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
             const activeConns = data.connector_statistics?.active_connections || 0;
 
@@ -1068,6 +1359,8 @@
             if (panel.classList.contains('open')) {
                 if (window.currentOpenRoute === '__SYSTEM__') {
                     showSystemDetails();
+                } else if (window.currentOpenRoute === '__CONFIG__') {
+                    showConfigDetails(); // <--- Add this line
                 } else if (window.currentOpenRoute) {
                     showDetails(window.currentOpenRoute);
                 }

@@ -98,7 +98,9 @@ public final class StatusHandler implements HttpHandler
         root.put("system", Map.of(
                         "version", VersionProvider.getVersion(),
                         "uptime", SystemUtil.getUptime(),
-                        "started_at", SystemUtil.getStartTime()
+                        "started_at", SystemUtil.getStartTime(),
+                        "configuration", serverConfig,
+                        "memory", SystemMetricsCollector.collect()
                 )
         );
         root.put("connector_statistics", ModelMapper.from(connectorStatistics));
