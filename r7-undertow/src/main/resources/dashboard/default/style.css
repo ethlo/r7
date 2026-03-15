@@ -344,3 +344,14 @@ tr.total-row td {
     max-width: 250px;
     padding-right: 15px;
 }
+
+#details-panel {
+    /* Ensure the panel itself handles vertical scrolling */
+    height: 100vh;
+    overflow-y: auto;
+}
+
+#details-content {
+    /* Add bottom padding so the last item isn't cut off */
+    padding-bottom: 60px;
+}

@@ -16,7 +16,11 @@ function formatBytes(b, forceUnitIndex = -1) {
 
 function formatCompact(num) {
     if (num === 0 || num == null) return '0';
-    return new Intl.NumberFormat(window.locale, { notation: 'compact', minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(num);
+    return new Intl.NumberFormat(window.locale, {
+        notation: 'compact',
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+    }).format(num);
 }
 
 function formatUptime(iso) {
@@ -228,4 +232,118 @@ function drawStackedSparkline(canvas, data) {
     drawLine(successData, COLOR_SUCCESS);
     drawLine(clientData, COLOR_CLIENT_ERR);
     drawLine(serverData, COLOR_SERVER_ERR);
+}
+
+function buildExecutionFlowHtml(config) {
+    let html = '<div style="font-family: monospace; font-size: 0.9em; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px;">';
+
+    html += `<div class="sub text-dim" style="margin-bottom: 8px; font-weight: bold; letter-spacing: 1px;">MATCH LOGIC</div>`;
+    if (config.match) {
+        html += buildMatchTree(config.match);
+    } else {
+        html += `<div style="padding-left: 16px; border-left: 2px solid rgba(128,128,128,0.2);"><span class="text-dim">Default (All Traffic)</span></div>`;
+    }
+
+    html += `<div style="height: 20px;"></div>`;
+
+    html += `<div class="sub text-dim" style="margin-bottom: 12px; font-weight: bold; letter-spacing: 1px;">PIPELINE PHASES</div>`;
+    html += buildPipelinePhasesHtml(config.filter_nodes, config.destination);
+
+    html += '</div>';
+    return html;
+}
+
+function buildMatchTree(node) {
+    if (!node) return '';
+
+    let displayText = node.summary || node.name;
+    if (displayText.startsWith(node.name + ': ')) {
+        displayText = displayText.substring(node.name.length + 2);
+    } else if (displayText === node.name) {
+        displayText = '';
+    }
+
+    let html = `
+    <div style="margin-left: 8px; padding-left: 16px; border-left: 2px solid rgba(128,128,128,0.2); margin-top: 6px; position: relative;">
+        <div style="position: absolute; left: 0; top: 10px; width: 12px; border-top: 2px solid rgba(128,128,128,0.2);"></div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="text-info" style="font-weight: 600; background: rgba(0, 168, 255, 0.08); padding: 2px 6px; border-radius: 4px;">${node.name}</span>
+            ${displayText ? `<span class="text-dim text-truncate" title="${displayText}">${displayText}</span>` : ''}
+        </div>`;
+
+    if (node.children && node.children.length > 0) {
+        node.children.forEach(child => {
+            html += buildMatchTree(child);
+        });
+    }
+    html += `</div>`;
+    return html;
+}
+
+function buildPipelinePhasesHtml(node, destination) {
+    if (!node) return '<div class="sub text-muted" style="padding: 4px;">No pipeline configured.</div>';
+
+    const phases = {
+        clientReq: [],
+        upstreamReq: [],
+        core: 'UpstreamProxy',
+        clientRes: [],
+        completed: []
+    };
+
+    let curr = node;
+    while (curr) {
+        // If it has no lifecycle hooks and no children, treat it as the terminal upstream node
+        if (!curr.on_client_request && !curr.on_upstream_request && !curr.on_client_response && !curr.on_completed && !curr.child) {
+            phases.core = curr.id || curr.name;
+        } else {
+            if (curr.on_client_request) phases.clientReq.push(curr.name);
+            if (curr.on_upstream_request) phases.upstreamReq.push(curr.name);
+            // Unshift to reverse the order for outward-bound phases
+            if (curr.on_client_response) phases.clientRes.unshift(curr.name);
+            if (curr.on_completed) phases.completed.unshift(curr.name);
+        }
+        curr = curr.child;
+    }
+
+    // Extract raw URL from TargetConfig string
+    let cleanDest = destination || phases.core || 'N/A';
+    const destMatch = cleanDest.match(/url='([^']+)'/);
+    if (destMatch && destMatch[1]) {
+        cleanDest = destMatch[1];
+    }
+
+    const renderPhase = (title, items, icon, colorHex, bgColor) => {
+        if (items.length === 0) return '';
+        let html = `<div style="margin-bottom: 16px;">`;
+        html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 600; font-size: 0.8em; letter-spacing: 0.5px;">${icon} ${title}</div>`;
+        items.forEach((item) => {
+            html += `
+            <div style="padding-left: 12px; border-left: 2px solid ${colorHex}; margin-top: 6px; margin-bottom: 6px;">
+                <span style="color: ${colorHex}; font-weight: 600; background: ${bgColor}; padding: 2px 6px; border-radius: 4px; display: inline-block;">${item}</span>
+            </div>`;
+        });
+        html += `</div>`;
+        return html;
+    };
+
+    let html = '<div style="margin-left: 4px;">';
+
+    html += renderPhase('CLIENT REQUEST', phases.clientReq, '↓', '#a29bfe', 'rgba(162, 155, 254, 0.08)');
+    html += renderPhase('UPSTREAM REQUEST', phases.upstreamReq, '↓', '#74b9ff', 'rgba(116, 185, 255, 0.08)');
+
+    // Render Target Block
+    html += `<div style="margin-bottom: 16px;">`;
+    html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 600; font-size: 0.8em; letter-spacing: 0.5px;">◆ TARGET</div>`;
+    html += `
+    <div style="padding-left: 12px; border-left: 2px solid #e84118; margin-top: 6px; margin-bottom: 6px;">
+        <span class="text-err" style="font-weight: 600; background: rgba(232, 65, 24, 0.08); padding: 2px 6px; border-radius: 4px; display: inline-block;">${cleanDest}</span>
+    </div>`;
+    html += `</div>`;
+
+    html += renderPhase('CLIENT RESPONSE', phases.clientRes, '↑', '#fdcb6e', 'rgba(253, 203, 110, 0.08)');
+    html += renderPhase('COMPLETED', phases.completed, '↑', '#00b894', 'rgba(0, 184, 148, 0.08)');
+
+    html += '</div>';
+    return html;
 }

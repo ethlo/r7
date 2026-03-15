@@ -1,5 +1,5 @@
 version: '{{git.rev.abbr}}'
-filters:
+global_filters:
   - SimpleMetrics
 routes:
   - id: forward-status
@@ -27,7 +27,6 @@ routes:
       - or:
         - Method:
             include:
-              - GET
               - GET
               - POST
         - RemoteAddr:

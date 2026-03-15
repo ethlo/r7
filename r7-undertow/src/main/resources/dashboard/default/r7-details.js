@@ -1,7 +1,19 @@
 function showDetails(routeId) {
     const config = window.currentConfigs[routeId];
-    const metrics = window.currentMetrics[routeId];
-    if (!config || !metrics) return;
+    if (!config) return;
+
+    const metrics = window.currentMetrics[routeId] || {
+        request_statistics: {
+            total: 0, websocket_total: 0, active: 0, websocket_active: 0,
+            last_active: "1970-01-01T00:00:00Z", client_statuses: {}, upstream_statuses: {}
+        },
+        traffic_flow: {
+            ingress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
+            egress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
+            journal_storage_bytes: 0
+        },
+        performance_telemetry: {average_latency: "PT0S"}
+    };
 
     window.currentOpenRoute = routeId;
 
@@ -22,8 +34,10 @@ function showDetails(routeId) {
     const rActiveWsStyle = wsActive > 0 ? 'text-ws' : '';
 
     const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
-    const reqJourn = config.journal?.request || 'NONE';
-    const resJourn = config.journal?.response || 'NONE';
+
+    // Corrected keys mapping here
+    const reqJourn = config.journal?.request_level || 'NONE';
+    const resJourn = config.journal?.response_level || 'NONE';
 
     const buildPills = (activeLevel) => {
         const levels = ['NONE', 'METADATA', 'HEADERS', 'FULL'];
@@ -34,35 +48,19 @@ function showDetails(routeId) {
             }).join('') + `</div>`;
     };
 
-    let pHtml = '<div class="tree-view">';
-    if (config.match && config.match.expression) {
-        pHtml += `
-            <div class="sub tree-node">
-                <span class="text-nowrap">└─ MATCH</span>
-                <span class="text-dim text-truncate" title="${config.match.expression}">${config.match.expression}</span>
+    const buildOverrides = (overrides) => {
+        if (!overrides || Object.keys(overrides).length === 0) return '';
+        let ovHtml = '<div style="margin-top: 6px; padding-left: 8px; border-left: 2px solid rgba(128,128,128,0.2);">';
+        Object.entries(overrides).forEach(([codes, lvl]) => {
+            ovHtml += `<div class="sub text-dim" style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                <span style="font-size: 0.85em; width: 45px;">${codes}</span>
+                ${jBadge(lvl)}
+                <span style="font-size: 0.85em;">${lvl}</span>
             </div>`;
-    } else {
-        pHtml += `<div class="sub text-muted">Default (All Traffic)</div>`;
-    }
-    pHtml += '</div>';
-
-    let fHtml = '';
-    if (config.filter_nodes) {
-        fHtml = buildFilterPipelineHtml(config.filter_nodes);
-    } else if (config.filters && config.filters.length > 0) {
-        fHtml += '<div class="tree-view" style="font-family: monospace; font-size: 0.9em; padding: 4px;">';
-        config.filters.forEach((f, i) => {
-            const branch = (i === config.filters.length - 1) ? '└─' : '├─';
-            fHtml += `
-                <div class="sub tree-node">
-                    <span class="text-nowrap">${branch} ${f.name}</span>
-                    <span class="text-dim text-truncate" title='${JSON.stringify(f.args)}'>${JSON.stringify(f.args)}</span>
-                </div>`;
         });
-        fHtml += '</div>';
-    } else {
-        fHtml = `<div class="sub text-muted" style="padding: 4px 4px;">No filters configured.</div>`;
-    }
+        ovHtml += '</div>';
+        return ovHtml;
+    };
 
     const generateStatusRows = (statusMap) => {
         if (!statusMap || Object.keys(statusMap).length === 0) {
@@ -86,22 +84,8 @@ function showDetails(routeId) {
         </div>
         
         <div class="panel-section">
-            <div class="panel-section-title">Routing target</div>
-                <div class="sub tree-node">
-                <span class="text-nowrap">└─ TARGET</span>
-                <span class="text-dim text-truncate" title="${config.destination || 'N/A'}">${config.destination || 'N/A'}
-                </span>
-            </div>
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Routing Predicate</div>
-            ${pHtml}
-        </div>
-        
-        <div class="panel-section">
-            <div class="panel-section-title">Execution Pipeline</div>
-            ${fHtml}
+            <div class="panel-section-title">Execution Flow</div>
+            ${buildExecutionFlowHtml(config)}
         </div>
         
         <div class="panel-section">
@@ -146,8 +130,8 @@ function showDetails(routeId) {
         <div class="panel-section">
             <div class="panel-section-title">Journaling</div>
             ${mRow('STORAGE USED', formatBytes(t.journal_storage_bytes, uRoute), true)}
-            ${mRow('REQUEST', buildPills(reqJourn), false)}
-            ${mRow('RESPONSE', buildPills(resJourn), false)}
+            ${mRow('REQUEST', buildPills(reqJourn) + buildOverrides(config.journal?.request_overrides), false)}
+            ${mRow('RESPONSE', buildPills(resJourn) + buildOverrides(config.journal?.response_overrides), false)}
         </div>
     `;
 
