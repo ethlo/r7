@@ -6,9 +6,9 @@ import java.util.Optional;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
-public record RoutesConfig(
+public record RoutesDefinition(
         String version,
-        List<FilterDefinition> filters,
+        List<FilterDefinition> globalFilters,
         List<RouteDefinition> routes
 ) implements ValidatableConfig, VersionedConfig
 {
@@ -28,8 +28,8 @@ public record RoutesConfig(
     }
 
     @Override
-    public List<FilterDefinition> filters()
+    public List<FilterDefinition> globalFilters()
     {
-        return Optional.ofNullable(filters).orElse(List.of());
+        return Optional.ofNullable(globalFilters).orElse(List.of());
     }
 }

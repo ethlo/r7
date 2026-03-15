@@ -20,7 +20,7 @@ import org.xnio.XnioWorker;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
-import ch.qos.logback.core.util.StatusPrinter;
+import ch.qos.logback.core.util.StatusPrinter2;
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayErrorHandler;
@@ -29,7 +29,7 @@ import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.config.RouteRegistry;
-import com.ethlo.r7.config.RoutesConfig;
+import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.journal.compression.VlfCompressionEngine;
 import com.ethlo.r7.status.FileTelemetryRepository;
@@ -86,7 +86,7 @@ public final class R7Main
 
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
-        final RoutesConfig routesConfig = loader.load(configFile, RoutesConfig.class);
+        final RoutesDefinition routesConfig = loader.load(configFile, RoutesDefinition.class);
         loader.load(routesConfig, routeRegistry);
 
         final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, loader, routeRegistry);
@@ -133,7 +133,7 @@ public final class R7Main
 
         final TelemetryFlusher telemetryFlusher = new TelemetryFlusher(telemetryRepository, () -> metricsRegistry.getAll().entrySet()
                 .stream()
-                .map(ModelMapper::mapToDto)
+                .map(ModelMapper::routeMetrics)
                 .toList()
         );
         telemetryFlusher.start();
@@ -157,42 +157,36 @@ public final class R7Main
         // Used for having fast internal HTTP endpoint to talk to
         setupTestBackEndForProxy(benchMarkHandler, sharedWorker);
 
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry.getRoutes());
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
 
         setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost(), sharedWorker);
 
-        // Explicit Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
             logger.info("Shutdown signal received. Initiating graceful shutdown sequence...");
 
-            // 1. Drain in-flight requests (Requires Undertow's GracefulShutdownHandler)
             logger.info("Rejecting new requests and draining in-flight traffic...");
             gracefulShutdownHandler.shutdown();
             try
             {
-                // Give active requests up to 5 seconds to finish naturally
-                gracefulShutdownHandler.awaitShutdown(5000);
+                gracefulShutdownHandler.awaitShutdown(10_000);
             }
             catch (final InterruptedException e)
             {
-                logger.warn("Interrupted while waiting for in-flight requests to drain.");
+                logger.warn("Interrupted while waiting for in-flight requests to drain");
                 Thread.currentThread().interrupt();
             }
 
-            // 2. Stop the Undertow listener
             logger.info("Stopping Undertow server...");
             server.stop();
 
-            // Close auxiliary resources safely
             logger.info("Closing compression engine...");
             this.compressionEngine.close();
 
-            // The journal closes absolutely LAST to ensure all drained requests were logged
             logger.info("Shutting down journal writer...");
             journalWriter.shutdown();
 
-            logger.info("Shutdown sequence complete.");
+            logger.info("Shutdown sequence complete");
 
         }, "r7-shutdown-hook"
         ));
@@ -268,7 +262,7 @@ public final class R7Main
             System.err.println("FATAL: Logback failed to configure from XML: " + je.getMessage());
         } finally
         {
-            StatusPrinter.printInCaseOfErrorsOrWarnings(context);
+            new StatusPrinter2().printInCaseOfErrorsOrWarnings(context);
         }
     }
 

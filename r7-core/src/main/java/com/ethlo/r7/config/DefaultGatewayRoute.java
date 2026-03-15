@@ -18,18 +18,20 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final List<CharSequence> uri;
     private final GatewayPredicate predicate;
     private final List<GatewayFilter> filters;
+    private final RouteJournalConfig journal;
     private final RouteDefinition routeDefinition;
     private final ClientRequestGatewayFilter[] clientRequestFilters;
     private final CompletedGatewayFilter[] completedGatewayFilters;
     private final ClientResponseGatewayFilter[] beforeCommitGatewayFilters;
     private final UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters;
 
-    public DefaultGatewayRoute(final CharSequence id, final List<CharSequence> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteDefinition routeDefinition)
+    public DefaultGatewayRoute(final List<CharSequence> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
-        this.id = id;
+        this.id = routeDefinition.id();
         this.uri = uri;
         this.predicate = predicate;
         this.filters = filters;
+        this.journal = journal;
         this.routeDefinition = routeDefinition;
 
         this.clientRequestFilters = filters.stream().filter(f -> f instanceof ClientRequestGatewayFilter)
@@ -112,12 +114,17 @@ public class DefaultGatewayRoute implements GatewayRoute
                 .add("id=" + id)
                 .add("uri=" + uri)
                 .add("predicate=" + predicate)
-                .add("filters=" + filters)
+                .add("globalFilters=" + filters)
                 .add("routeDefinition=" + routeDefinition)
                 .add("clientRequestFilters=" + Arrays.toString(clientRequestFilters))
                 .add("completedGatewayFilters=" + Arrays.toString(completedGatewayFilters))
                 .add("beforeCommitGatewayFilters=" + Arrays.toString(beforeCommitGatewayFilters))
                 .add("beforeUpstreamGatewayFilters=" + Arrays.toString(beforeUpstreamGatewayFilters))
                 .toString();
+    }
+
+    public RouteJournalConfig journal()
+    {
+        return journal;
     }
 }

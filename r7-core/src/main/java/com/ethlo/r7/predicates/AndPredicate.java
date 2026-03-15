@@ -12,4 +12,16 @@ public record AndPredicate(List<GatewayPredicate> children) implements Composite
     {
         return children.stream().allMatch(p -> p.test(exchange));
     }
+
+    @Override
+    public String name()
+    {
+        return "and";
+    }
+
+    @Override
+    public String summary()
+    {
+        return "and";
+    }
 }

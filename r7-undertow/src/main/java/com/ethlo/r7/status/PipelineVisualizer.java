@@ -5,17 +5,17 @@ import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.status.dto.FilterNode;
 
 public final class PipelineVisualizer
 {
-    public static FilterNode buildNestedVisualization(final GatewayFilter[] routeFilters)
+    public static FilterNode buildNestedVisualization(final UpstreamConfig upstreamConfig, final GatewayFilter[] routeFilters)
     {
-        // 1. The innermost core of the onion is always the Upstream Proxy
-        FilterNode currentNode = new FilterNode("UpstreamProxy", false, false, false, false, null);
+        // The innermost core of the onion
+        FilterNode currentNode = new FilterNode("upstream", upstreamConfig.toString(), false, false, false, false, null);
 
-        // 2. Iterate backward through the array, wrapping from the inside out
+        // Iterate backward through the array, wrapping from the inside out
         for (int i = routeFilters.length - 1; i >= 0; i--)
         {
             final GatewayFilter filter = routeFilters[i];
@@ -26,7 +26,8 @@ public final class PipelineVisualizer
             final boolean hasCompleted = filter instanceof CompletedGatewayFilter;
 
             currentNode = new FilterNode(
-                    filter instanceof ShortInfo shortInfo ? shortInfo.summary() : filter.getClass().getName(),
+                    filter.name(),
+                    filter.summary(),
                     hasClientReq,
                     hasUpstreamReq,
                     hasClientRes,
@@ -35,7 +36,7 @@ public final class PipelineVisualizer
             );
         }
 
-        // 3. The final currentNode is the outermost wrapper (index 0)
+        // The final currentNode is the outermost wrapper (index 0)
         return currentNode;
     }
 }

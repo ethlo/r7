@@ -9,7 +9,7 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
 public record RouteDefinition(CharSequence id, UpstreamConfig upstream, ConditionDefinition match,
-                              RouteJournalConfig journal,
+                              JournalDefinition journal,
                               List<FilterDefinition> filters) implements ValidatableConfig
 {
     @Override
@@ -29,8 +29,9 @@ public record RouteDefinition(CharSequence id, UpstreamConfig upstream, Conditio
         }
     }
 
-    public RouteJournalConfig journal()
+    @Override
+    public JournalDefinition journal()
     {
-        return Optional.ofNullable(journal).orElse(new RouteJournalConfig(new JournalDirectionConfig(JournalLevel.NONE, null), new JournalDirectionConfig(JournalLevel.NONE, null)));
+        return Optional.ofNullable(journal).orElse(new JournalDefinition(new JournalDirectionDefinition(JournalLevel.NONE, null), new JournalDirectionDefinition(JournalLevel.NONE, null)));
     }
 }

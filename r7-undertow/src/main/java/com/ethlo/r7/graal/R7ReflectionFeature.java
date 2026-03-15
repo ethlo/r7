@@ -2,6 +2,8 @@ package com.ethlo.r7.graal;
 
 import java.util.ServiceLoader;
 
+import com.ethlo.r7.config.RoutesDefinition;
+
 import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
@@ -94,7 +96,7 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.config.TargetConfig.class,
                 com.ethlo.r7.config.RouteJournalConfig.class,
                 com.ethlo.r7.config.JournalDirectionConfig.class,
-                com.ethlo.r7.config.RoutesConfig.class,
+                RoutesDefinition.class,
                 com.ethlo.r7.config.UpstreamConfig.class,
                 com.ethlo.r7.config.HealthCheckConfig.class,
                 com.ethlo.r7.config.TimeoutConfig.class,

@@ -18,4 +18,16 @@ public record NotPredicate(GatewayPredicate predicate) implements CompositePredi
     {
         return !predicate.test(request);
     }
+
+    @Override
+    public String name()
+    {
+        return "not";
+    }
+
+    @Override
+    public String summary()
+    {
+        return "not";
+    }
 }

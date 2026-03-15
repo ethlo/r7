@@ -17,11 +17,11 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.JournalDirectionConfig;
-import com.ethlo.r7.api.ShortInfo;
-import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.undertow.config.ServerConfig;
 
 /**
@@ -128,7 +128,7 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
         logLine("   " + TREE_BRANCH + "Shard count:         " + config.storage().shardCount());
         logLine("   " + TREE_BRANCH + "Shard size:          " + config.storage().shardSize());
         logLine("   " + TREE_BRANCH + "Pre-fault segments:  " + config.storage().preFault());
-        logLine("   " + TREE_LAST +   "Directory:           " + config.storage().workDir());
+        logLine("   " + TREE_LAST + "Directory:           " + config.storage().workDir());
 
         final MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
         final MemoryUsage heap = memBean.getHeapMemoryUsage();
@@ -154,13 +154,6 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
         logLine("   " + TREE_BRANCH + "Heap Used/Max:     " + (heap.getUsed() / 1024 / 1024) + " MB / " + (heap.getMax() / 1024 / 1024) + " MB");
         logLine("   " + TREE_BRANCH + "Direct Buffer:     " + (directBufUsed / 1024) + " KB");
         logLine("   " + TREE_LAST + "Total Threads:     " + ManagementFactory.getThreadMXBean().getThreadCount());
-
-
-        /*final long[] ids = ManagementFactory.getThreadMXBean().getAllThreadIds();
-        for (long id : ids) {
-            logger.info("{}", ManagementFactory.getThreadMXBean().getThreadInfo(id));
-        }*/
-
     }
 
     private void printRouteTableInternal(final List<GatewayRoute> routes)
@@ -175,8 +168,8 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
             logLine("   " + CSS_MUTED + "│" + RESET + " Match Logic:");
             printPredicate(route.predicate(), "   " + CSS_MUTED + "│" + RESET + "  ", true);
 
-            final JournalDirectionConfig reqConfig = ((DefaultGatewayRoute) route).routeDefinition().journal().request();
-            final JournalDirectionConfig resConfig = ((DefaultGatewayRoute) route).routeDefinition().journal().response();
+            final JournalDirectionConfig reqConfig = ((DefaultGatewayRoute) route).journal().request();
+            final JournalDirectionConfig resConfig = ((DefaultGatewayRoute) route).journal().response();
 
             logLine("   " + CSS_MUTED + "│" + RESET + " Journaling:");
             logLine("   " + CSS_MUTED + "│" + RESET + "  " + TREE_BRANCH + "Request:  " + colorLevel(reqConfig.level()) + formatOverrides(reqConfig.statusOverrides()));

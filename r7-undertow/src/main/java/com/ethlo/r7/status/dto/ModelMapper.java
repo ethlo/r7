@@ -1,32 +1,31 @@
 package com.ethlo.r7.status.dto;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteDefinition;
+import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.status.PipelineVisualizer;
 import com.ethlo.r7.status.SimpleMetricsFactory;
 import io.undertow.server.ConnectorStatistics;
 
 public class ModelMapper
 {
-    public static RouteConfigDto mapToDto(final DefaultGatewayRoute route)
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route)
     {
         final RouteDefinition def = route.routeDefinition();
-        final MatchDto match = new MatchDto(
-                def.match().getClass().getSimpleName(),
-                def.match().toString()
-        );
 
         final JournalDto journal = new JournalDto(
-                def.journal().request().level().name(),
-                def.journal().response().level().name()
+                def.journal().request().level(),
+                def.journal().request().statusOverrides(),
+                def.journal().response().level(),
+                def.journal().response().statusOverrides()
         );
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
@@ -35,15 +34,39 @@ public class ModelMapper
 
         return new RouteConfigDto(
                 def.id().toString(),
-                match,
+                toPredicateNode(route.predicate()),
                 journal,
                 def.upstream().targets().toString(),
                 filters,
-                PipelineVisualizer.buildNestedVisualization(route.filters().toArray(new GatewayFilter[0]))
+                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]))
         );
     }
 
-    public static RouteMetricsDto mapToDto(final Map.Entry<String, SimpleMetricsFactory.GF> gfEntry)
+    private static MatchDto toPredicateNode(final GatewayPredicate predicate)
+    {
+        if (predicate == null)
+        {
+            return null;
+        }
+
+        final List<MatchDto> childNodes = new ArrayList<>();
+        final List<GatewayPredicate> children = predicate instanceof CompositePredicate compositePredicate ? compositePredicate.children() : null;
+        if (children != null)
+        {
+            for (final GatewayPredicate child : children)
+            {
+                childNodes.add(toPredicateNode(child));
+            }
+        }
+
+        return new MatchDto(
+                predicate.name(),
+                predicate.summary(),
+                childNodes
+        );
+    }
+
+    public static RouteMetricsDto routeMetrics(final Map.Entry<String, SimpleMetricsFactory.GF> gfEntry)
     {
         final SimpleMetricsFactory.GF gf = gfEntry.getValue();
         final TrafficFlowDto traffic = mapTraffic(gf);

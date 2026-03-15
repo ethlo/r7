@@ -53,7 +53,7 @@ public final class HotReloadService
     {
         try
         {
-            final RoutesConfig routesConfig = this.configManager.load(this.configFilePath, RoutesConfig.class);
+            final RoutesDefinition routesConfig = this.configManager.load(this.configFilePath, RoutesDefinition.class);
             final ValidationResult validationResult = ConfigurationManager.validate(routesConfig);
             if (validationResult.hasErrors())
             {

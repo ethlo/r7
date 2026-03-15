@@ -10,8 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
 import com.ethlo.r7.undertow.config.ServerConfig;
@@ -22,22 +22,30 @@ import io.undertow.server.ConnectorStatistics;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.json.JsonMapper;
 
 public final class StatusHandler implements HttpHandler
 {
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private final MetricsRegistry registry;
+    public static final ObjectMapper MAPPER = JsonMapper.builder()
+            .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+            .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .build();
+
+    private final MetricsRegistry metricsRegistry;
     private final ServerConfig serverConfig;
-    private final List<GatewayRoute> routes;
+    private final RouteRegistry routeRegistry;
     private final String combinedHtml;
     private ConnectorStatistics connectorStatistics;
 
-    public StatusHandler(final MetricsRegistry registry, ServerConfig serverConfig, List<GatewayRoute> routes)
+    public StatusHandler(final MetricsRegistry metricsRegistry, ServerConfig serverConfig, RouteRegistry routeRegistry)
     {
-        this.registry = registry;
+        this.metricsRegistry = metricsRegistry;
         this.serverConfig = serverConfig;
-        this.routes = routes;
+        this.routeRegistry = routeRegistry;
         this.combinedHtml = loadResource("page.html")
                 .replace("<link rel=\"stylesheet\" href=\"style.css\">", "<style>" + loadResource("style.css") + "</style>")
                 .replace("<script src=\"script.js\"></script>", "<script>" + loadResource("r7-utils.js", "r7-details.js", "r7-app.js") + "</script>");
@@ -66,7 +74,7 @@ public final class StatusHandler implements HttpHandler
     }
 
     @Override
-    public void handleRequest(final HttpServerExchange exchange) throws IOException
+    public void handleRequest(final HttpServerExchange exchange)
     {
         if (exchange.isInIoThread())
         {
@@ -97,13 +105,14 @@ public final class StatusHandler implements HttpHandler
         );
         root.put("connector_statistics", ModelMapper.from(connectorStatistics));
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
-        root.put("route_metrics", registry.getAll().entrySet().stream().map(ModelMapper::mapToDto).toList());
+        root.put("route_metrics", metricsRegistry.getAll().entrySet().stream().map(ModelMapper::routeMetrics).toList());
 
-        final List<RouteConfigDto> manifest = routes.stream()
+        final List<RouteConfigDto> routeConfigs = routeRegistry.getRoutes().stream()
                 .map(DefaultGatewayRoute.class::cast)
-                .map(ModelMapper::mapToDto)
+                .map(ModelMapper::mapRouteConfig)
                 .toList();
-        root.put("route_configs", manifest);
+        root.put("route_version", routeRegistry.getConfigVersion());
+        root.put("route_configs", routeConfigs);
 
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
         exchange.getResponseSender().send(MAPPER.writeValueAsString(root));

@@ -188,7 +188,7 @@ public final class R7UndertowHandler implements HttpHandler
     {
         exchange.addExchangeCompleteListener((serverExchange, next) ->
         {
-            handleCompleted(statefulJournal, exchange, gatewayExchange, route.routeDefinition().journal(), gatewayExchange.requestId(), serverExchange);
+            handleCompleted(statefulJournal, exchange, gatewayExchange, route.journal(), gatewayExchange.requestId(), serverExchange);
 
             try
             {
@@ -249,7 +249,7 @@ public final class R7UndertowHandler implements HttpHandler
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
-        final RouteJournalConfig journalConfig = route.routeDefinition().journal();
+        final RouteJournalConfig journalConfig = route.journal();
 
         final boolean isWebSocket = exchange.getRequestHeaders().contains(io.undertow.util.Headers.UPGRADE) && "websocket".equalsIgnoreCase(exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.UPGRADE));
         exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
@@ -423,7 +423,7 @@ public final class R7UndertowHandler implements HttpHandler
             }
         }
 
-        // If we exit the loop natively, all filters passed. Proceed to proxy.
+        // If we exit the loop natively, all globalFilters passed. Proceed to proxy.
         continueUpstream(exchange, route, gatewayExchange, statefulJournal);
     }
 

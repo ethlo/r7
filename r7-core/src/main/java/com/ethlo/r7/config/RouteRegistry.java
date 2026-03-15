@@ -11,12 +11,14 @@ import com.ethlo.r7.api.GatewayRoute;
 public class RouteRegistry
 {
     private final AtomicReference<List<GatewayRoute>> routes = new AtomicReference<>(Collections.emptyList());
+    private String version;
 
     /**
      * Swaps the current routing table for a new one for hot-reload
      */
-    public void updateRoutes(List<GatewayRoute> newRoutes)
+    public void updateRoutes(final String version, final List<GatewayRoute> newRoutes)
     {
+        this.version = version;
         this.routes.set(List.copyOf(newRoutes));
     }
 
@@ -36,5 +38,10 @@ public class RouteRegistry
     public List<GatewayRoute> getRoutes()
     {
         return this.routes.get();
+    }
+
+    public String getConfigVersion()
+    {
+        return version;
     }
 }

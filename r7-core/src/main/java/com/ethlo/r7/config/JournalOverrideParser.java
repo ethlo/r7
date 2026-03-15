@@ -6,7 +6,7 @@ import com.ethlo.r7.journal.api.JournalLevel;
 
 public final class JournalOverrideParser
 {
-    public static JournalLevel[] parseOverrides(final Map<String, String> rawOverrides)
+    public static JournalLevel[] parseOverrides(final Map<String, JournalLevel> rawOverrides)
     {
         if (rawOverrides == null || rawOverrides.isEmpty())
         {
@@ -15,10 +15,10 @@ public final class JournalOverrideParser
 
         final JournalLevel[] expanded = new JournalLevel[600];
 
-        for (final Map.Entry<String, String> entry : rawOverrides.entrySet())
+        for (final Map.Entry<String, JournalLevel> entry : rawOverrides.entrySet())
         {
             final String key = entry.getKey().trim().toLowerCase();
-            final JournalLevel level = JournalLevel.valueOf(entry.getValue().toUpperCase());
+            final JournalLevel level = entry.getValue();
 
             if (key.endsWith("xx"))
             {

@@ -54,50 +54,60 @@ public final class ConfigurationManager
         return validationResult;
     }
 
-    public void load(RoutesConfig config, RouteRegistry routeRegistry)
+    public void load(RoutesDefinition config, RouteRegistry routeRegistry)
     {
         final ValidationResult validationResult = validate(config);
         validationResult.throwIfInvalid();
 
         final List<GatewayRoute> routes = config.routes().stream()
-                .map(def ->
+                .map(routeDefinition ->
                 {
                     // Load global filters
                     final List<GatewayFilter> globalFilters = new ArrayList<>();
-                    for (final FilterDefinition filterDef : config.filters())
+                    for (final FilterDefinition filterDef : config.globalFilters())
                     {
                         instantiateFilters(validationResult, globalFilters, filterDef);
                     }
 
                     final List<GatewayFilter> filters = new ArrayList<>(globalFilters);
-                    if (def.filters() != null)
+                    if (routeDefinition.filters() != null)
                     {
-                        for (final FilterDefinition filterDef : def.filters())
+                        for (final FilterDefinition filterDef : routeDefinition.filters())
                         {
                             instantiateFilters(validationResult, filters, filterDef);
                         }
                     }
 
+                    final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal());
+
                     // Validate the structure and the plugin names
-                    if (def.match() != null)
+                    if (routeDefinition.match() != null)
                     {
-                        def.match().validateTree(validationResult, predicateRegistry);
+                        routeDefinition.match().validateTree(validationResult, predicateRegistry);
                     }
 
-                    final GatewayPredicate predicate = def.match().build(predicateRegistry);
+                    final GatewayPredicate predicate = routeDefinition.match().build(predicateRegistry);
 
-                    if (def.upstream().targets() == null)
+                    if (routeDefinition.upstream().targets() == null)
                     {
-                        new ValidatorUtils(validationResult).invalid(def.id().toString(), "upstream.targets", null, "upstream targets required");
+                        new ValidatorUtils(validationResult).invalid(routeDefinition.id().toString(), "upstream.targets", null, "upstream targets required");
                         validationResult.throwIfInvalid();
                     }
 
-                    final List<CharSequence> urls = def.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
-                    return (GatewayRoute) new DefaultGatewayRoute(def.id(), urls, predicate, filters, def);
+                    final List<CharSequence> urls = routeDefinition.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
+                    return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, journalConfig, routeDefinition);
                 })
                 .toList();
 
-        routeRegistry.updateRoutes(routes);
+        routeRegistry.updateRoutes(config.version(), routes);
+    }
+
+    private RouteJournalConfig createJournalConfig(JournalDefinition definition)
+    {
+        return new RouteJournalConfig(
+                new JournalDirectionConfig(definition.request().level(), JournalOverrideParser.parseOverrides(definition.request().statusOverrides())),
+                new JournalDirectionConfig(definition.response().level(), JournalOverrideParser.parseOverrides(definition.response().statusOverrides()))
+        );
     }
 
     private void instantiateFilters(final ValidationResult validationResult, final List<GatewayFilter> instantiatedFilters, final FilterDefinition filterDef)

@@ -70,7 +70,7 @@ class R7IntegrationTest
         assertThat(route.predicate()).isNotNull();
 
         // 6. Assert Filter Chain Construction
-        // We expect 2 filters: 1 Audit filter (injected) and 1 AddRequestHeader
+        // We expect 2 globalFilters: 1 Audit filter (injected) and 1 AddRequestHeader
         final List<GatewayFilter> filters = (List<GatewayFilter>) route.filters();
         assertThat(filters).hasSize(2);
 

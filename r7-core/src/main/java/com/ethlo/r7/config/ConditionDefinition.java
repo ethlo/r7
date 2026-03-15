@@ -103,7 +103,7 @@ public final class ConditionDefinition
         if (list.isEmpty())
         {
             // If the match block is completely empty, it matches everything
-            return request -> true;
+            return TruePredicate.INSTANCE;
         }
         if (list.size() == 1)
         {

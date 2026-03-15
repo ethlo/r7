@@ -3,7 +3,8 @@ package com.ethlo.r7.status.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record FilterNode(
-        String id,
+        String name,
+        String summary,
         @JsonProperty("on_client_request")
         boolean onClientRequest,
         @JsonProperty("on_upstream_request")

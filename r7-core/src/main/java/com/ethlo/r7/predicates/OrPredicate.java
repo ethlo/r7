@@ -12,4 +12,16 @@ public record OrPredicate(List<GatewayPredicate> children) implements CompositeP
     {
         return children.stream().anyMatch(p -> p.test(request));
     }
+
+    @Override
+    public String name()
+    {
+        return "or";
+    }
+
+    @Override
+    public String summary()
+    {
+        return "or";
+    }
 }

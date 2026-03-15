@@ -1,10 +1,9 @@
 package com.ethlo.r7.api;
 
 /**
- * A functional interface used to evaluate if a {@link GatewayRequest} matches a specific route.
+ * An interface used to evaluate if a {@link GatewayRequest} matches a specific route.
  */
-@FunctionalInterface
-public interface GatewayPredicate
+public interface GatewayPredicate extends ShortInfo
 {
     /**
      * Tests the given request against the predicate criteria.
