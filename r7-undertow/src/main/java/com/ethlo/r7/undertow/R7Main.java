@@ -138,7 +138,7 @@ public final class R7Main
         );
         telemetryFlusher.start();
 
-        // 1. Create the single shared worker for all Undertow instances
+        // Use single shared worker for all Undertow instances
         final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
         final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler);
@@ -285,6 +285,7 @@ public final class R7Main
         final Undertow.Builder statusServer = Undertow.builder();
         final HttpHandler targetHandler = Handlers.path()
                 .addPrefixPath("/", statusHandler);
+
         statusServer.setHandler(targetHandler);
         statusServer.setWorker(sharedWorker);
         statusServer.addHttpListener(port, host);

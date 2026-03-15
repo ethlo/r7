@@ -24,7 +24,7 @@ public class DiskSpaceUtils
             return -1L;
         }
 
-        // 1. Find the nearest existing parent to avoid NoSuchFileException
+        // Find the nearest existing parent to avoid NoSuchFileException
         Path existingPath = path;
         while (existingPath != null && !Files.exists(existingPath))
         {
@@ -63,8 +63,7 @@ public class DiskSpaceUtils
             return "Unknown";
         }
 
-        // Fixed: Added "B" to the start of the array
-        String[] units = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
+        final String[] units = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
         int unitIndex = 0;
         double size = bytes;
 
@@ -76,7 +75,6 @@ public class DiskSpaceUtils
             unitIndex++;
         }
 
-        // Optional polish: Return whole numbers for raw bytes, 1 decimal place for larger units
         if (unitIndex == 0)
         {
             return "%d %s".formatted((long) size, units[unitIndex]);

@@ -46,9 +46,7 @@ public final class StatusHandler implements HttpHandler
         this.metricsRegistry = metricsRegistry;
         this.serverConfig = serverConfig;
         this.routeRegistry = routeRegistry;
-        this.combinedHtml = loadResource("page.html")
-                .replace("<link rel=\"stylesheet\" href=\"style.css\">", "<style>" + loadResource("style.css") + "</style>")
-                .replace("<script src=\"script.js\"></script>", "<script>" + loadResource("r7-utils.js", "r7-details.js", "r7-app.js") + "</script>");
+        this.combinedHtml = loadResource("page.html");
     }
 
     private String loadResource(final String... paths)

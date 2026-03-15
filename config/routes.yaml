@@ -35,6 +35,7 @@ routes:
       targets:
         - url: http://localhost:1111
     filters:
+      - RequireAuthorizationHeader
       - RateLimiter:
           capacity: 50000
           refill_tokens: 2000
@@ -42,7 +43,6 @@ routes:
       - CircuitBreaker:
           failure_threshold: 10
           cooldown_period: PT15s
-      - RequireAuthorizationHeader
       - CorrelationIdHeader
     journal:
       request:

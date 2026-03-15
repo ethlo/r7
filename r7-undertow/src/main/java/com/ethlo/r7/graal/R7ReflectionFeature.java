@@ -2,12 +2,11 @@ package com.ethlo.r7.graal;
 
 import java.util.ServiceLoader;
 
-import com.ethlo.r7.config.RoutesDefinition;
-
 import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
 
+import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 
@@ -16,7 +15,6 @@ public final class R7ReflectionFeature implements Feature
     @Override
     public void beforeAnalysis(final BeforeAnalysisAccess access)
     {
-        // 1. Explicitly register all core configuration and external classes
         registerExplicitConfigClasses();
 
         final ServiceLoader<GatewayFilterFactory> filters = ServiceLoader.load(GatewayFilterFactory.class);
@@ -39,10 +37,8 @@ public final class R7ReflectionFeature implements Feature
     private void registerCaffeineCaches()
     {
         final String[] caffeineClasses = new String[]{
-                // SSMSA = Strong keys, Strong values, Maximum size, Sync, Expire After Access
                 "com.github.benmanes.caffeine.cache.SSMSA",
                 "com.github.benmanes.caffeine.cache.PSAMS",
-                // SSMSW = Strong keys, Strong values, Maximum size, Sync, Expire After Write
                 "com.github.benmanes.caffeine.cache.SSMSW",
                 "com.github.benmanes.caffeine.cache.PSW",
                 "com.github.benmanes.caffeine.cache.PSA"
@@ -66,7 +62,6 @@ public final class R7ReflectionFeature implements Feature
 
     private void registerDashboardResources()
     {
-        // Obtain the module (works perfectly even if your app is on the unnamed classpath)
         final Module module = R7ReflectionFeature.class.getModule();
 
         // Note: Do not use a leading slash here. GraalVM requires the exact internal JAR path.

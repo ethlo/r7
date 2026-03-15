@@ -121,7 +121,7 @@ public final class ConditionDefinition
      */
     public void validateTree(final ValidationResult result, final PredicateRegistry registry)
     {
-        // 1. Check flat leaf nodes
+        // Check flat leaf nodes
         predicates.keySet().forEach(name ->
         {
             if (!registry.exists(name))
@@ -130,7 +130,7 @@ public final class ConditionDefinition
             }
         });
 
-        // 2. Recurse down the logical branches
+        // Recurse down the logical branches
         if (and != null)
         {
             and.forEach(c -> c.validateTree(result, registry));
