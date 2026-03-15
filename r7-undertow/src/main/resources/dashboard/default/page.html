@@ -277,58 +277,92 @@
             white-space: nowrap;
         }
 
-        /* ==========================================================================
-           7. FULL PAGE DETAILS PANEL (Cards Layout)
-           ========================================================================== */
-        #details-panel {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(10, 10, 11, 0.98); /* Base bg with slight transparency */
-            backdrop-filter: blur(8px);
-            z-index: 1000;
-            overflow-y: auto;
-            opacity: 0;
-            pointer-events: none;
-            transform: scale(0.98);
-            transition: opacity 0.25s ease, transform 0.25s ease;
+        /*
+        ==========================================================================
+        7. VIEW SLIDER (In-Place Transition)
+        ========================================================================== */
+        #view-slider {
+            position: relative;
+            width: 100%;
+            min-height: 400px;
         }
 
-        #details-panel.open {
+        .slide-pane {
+            width: 100%;
+            transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
+        }
+
+        /* Default State: Table is active, Details are hidden */
+        #pane-table {
+            position: relative;
+            transform: translateX(0);
             opacity: 1;
             pointer-events: auto;
-            transform: scale(1);
         }
 
+        #pane-details {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: translateX(40px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Active State: Details are active, Table is hidden */
+        #view-slider.show-details-view #pane-table {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: translateX(-40px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #view-slider.show-details-view #pane-details {
+            position: relative;
+            transform: translateX(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Masonry Grid inside the details pane */
         #details-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2.5rem;
-            padding-bottom: 60px;
-            /* Switch to multi-column layout for true masonry floating */
             column-width: 360px;
             column-gap: 1.5rem;
+            padding-bottom: 2rem;
+        }
+
+        /* Prevent column breaks inside cards */
+        .panel-section {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            padding: 1.2rem;
+            margin-bottom: 1.5rem;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            overflow: hidden;
         }
 
         .panel-header-container {
-            /* Forces the header to span across all columns at the top */
             column-span: all;
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 1.25rem;
-            margin-bottom: 2rem;
+            align-items: center; /* Center align instead of flex-start */
+            border-bottom: 1px solid rgba(128, 128, 128, 0.15); /* Much softer border */
+            padding-bottom: 0.75rem; /* Tighter spacing */
+            margin-bottom: 1.5rem;
         }
 
         .panel-title {
-            font-size: 1.5em;
-            font-weight: 300;
+            font-size: 1.05em; /* Scaled down significantly */
+            font-weight: 500;
             color: var(--fg);
-            margin: 0 0 6px 0;
-            line-height: 1;
+            margin: 0;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
         }
 
         .panel-subtitle {
@@ -338,48 +372,7 @@
             line-height: 1.2;
         }
 
-        .panel-close-btn {
-            background: rgba(128, 128, 128, 0.1);
-            border: 1px solid rgba(128, 128, 128, 0.2);
-            color: var(--dim);
-            font-family: inherit;
-            font-size: 0.85em;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 6px;
-            transition: all 0.2s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .panel-close-btn:hover {
-            background: rgba(128, 128, 128, 0.25);
-            color: var(--fg);
-            border-color: rgba(128, 128, 128, 0.4);
-        }
-
-        .panel-close-icon {
-            font-size: 1.2em;
-            font-weight: bold;
-            line-height: 0;
-        }
-
-        .panel-section {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            padding: 1.2rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            /* Prevent the cards from being split in half across columns */
-            break-inside: avoid;
-            page-break-inside: avoid;
-            margin-bottom: 1.5rem;
-            overflow: hidden;
-        }
-
-        .panel-section-title, .panel-header {
+        .panel-section-title {
             font-size: 0.85em;
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -387,6 +380,35 @@
             border-bottom: 1px solid rgba(128, 128, 128, 0.3);
             padding-bottom: 8px;
             margin-bottom: 16px;
+        }
+
+        /* Convert the close button to a subtle text link */
+        .panel-close-btn {
+            background: transparent;
+            border: none;
+            color: var(--dim);
+            font-family: inherit;
+            font-size: 0.8rem;
+            padding: 4px 8px;
+            cursor: pointer;
+            transition: color 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .panel-close-btn:hover {
+            color: var(--fg);
+            background: transparent;
+        }
+
+        .panel-close-icon {
+            font-size: 1.2em;
+            line-height: 0;
+            position: relative;
+            top: -1px;
         }
 
         /* ==========================================================================
@@ -481,18 +503,28 @@
         </div>
     </header>
 
-    <table id="route-table">
-        <thead>
-        <tr>
-            <th class="col-route">ROUTE</th>
-            <th class="col-totals">TOTALS</th>
-            <th class="col-ingress">INGRESS / EGRESS</th>
-            <th class="col-active">STATUS</th>
-            <th class="col-journal">JOURNAL</th>
-        </tr>
-        </thead>
-        <tbody id="view"></tbody>
-    </table>
+    <div id="view-slider">
+
+        <div id="pane-table" class="slide-pane">
+            <table id="route-table">
+                <thead>
+                <tr>
+                    <th class="col-route">ROUTE</th>
+                    <th class="col-totals">TOTALS</th>
+                    <th class="col-ingress">INGRESS / EGRESS</th>
+                    <th class="col-active">STATUS</th>
+                    <th class="col-journal">JOURNAL</th>
+                </tr>
+                </thead>
+                <tbody id="view"></tbody>
+            </table>
+        </div>
+
+        <div id="pane-details" class="slide-pane">
+            <div id="details-content"></div>
+        </div>
+
+    </div>
 
     <footer class="app-footer">
         r7 GATEWAY // VERSION: <span id="sys-version">--</span>
@@ -1119,16 +1151,25 @@
         openDetails();
     }
 
+    const slider = document.getElementById('view-slider');
+
     function openDetails() {
-        panel.classList.add('open');
-        document.body.style.overflow = 'hidden'; // Lock background scrolling
+        slider.classList.add('show-details-view');
+        // Smoothly snap back to the top of the details if scrolled down
+        window.scrollTo({top: 0, behavior: 'smooth'});
     }
 
     function closeDetails() {
-        panel.classList.remove('open');
-        document.body.style.overflow = 'auto'; // Restore background scrolling
+        slider.classList.remove('show-details-view');
         window.currentOpenRoute = null;
     }
+
+    // Update the Escape key listener to match the new class
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && slider.classList.contains('show-details-view')) {
+            closeDetails();
+        }
+    });
 
     // Add Escape key listener to close details panel gracefully
     document.addEventListener('keydown', (e) => {
