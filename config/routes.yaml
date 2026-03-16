@@ -1,8 +1,8 @@
-version: '{{git.rev.abbr}}'
+version: v2026-03-14-acf3a9
 global_filters:
   - SimpleMetrics
 routes:
-  - id: forward-status
+  - id: dashboard
     upstream:
       targets:
         - url: http://localhost:18888
@@ -19,7 +19,7 @@ routes:
     filters:
       - RequireAuthorizationHeader
 
-  - id: undertow-internal-backend
+  - id: static-content
     match:
       - not:
         - PathStartsWith:
@@ -54,7 +54,7 @@ routes:
       response:
         level: FULL
 
-  - id: undertow-internal-backend-no-journal
+  - id: static-content-without-journal
     match:
       - PathStartsWith:
           prefix: /hello
@@ -72,7 +72,7 @@ routes:
       #- RequireAuthorizationHeader
       - CorrelationIdHeader
 
-  - id: ws-test
+  - id: ws-chat
     upstream:
       targets:
         - url: http://127.0.0.1:8080
