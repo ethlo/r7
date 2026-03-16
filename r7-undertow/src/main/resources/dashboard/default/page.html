@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>r7 gateway</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0b'/%3E%3Ctext x='12' y='44' font-family='monospace' font-size='34' font-weight='bold' fill='%23e4e4e7'%3Er%3C/text%3E%3Ctext x='32' y='44' font-family='monospace' font-size='34' font-weight='bold' fill='%23ff5e00'%3E7%3C/text%3E%3C/svg%3E">
     <style>
         /* ==========================================================================
            1. THEMING & VARIABLES
@@ -495,7 +496,7 @@
     <header>
         <div>
             <h1><span>r7</span> GATEWAY</h1>
-            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | VERSION: -- | DISK: --</div>
+            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
             <button class="sys-btn" onclick="showConfigDetails()">CONFIG</button>
@@ -510,9 +511,9 @@
                 <thead>
                 <tr>
                     <th class="col-route">ROUTE</th>
+                    <th class="col-active">STATUS</th>
                     <th class="col-totals">TOTALS</th>
                     <th class="col-ingress">INGRESS / EGRESS</th>
-                    <th class="col-active">STATUS</th>
                     <th class="col-journal">JOURNAL</th>
                 </tr>
                 </thead>
@@ -527,12 +528,12 @@
     </div>
 
     <footer class="app-footer">
-        r7 GATEWAY // VERSION: <span id="sys-version">--</span>
+        r7 GATEWAY // SYS: <span id="sys-version">--</span> // ROUTES: <span id="routes-version">--</span>
     </footer>
 </div>
 
 <div id="details-panel">
-    <div id="details-content"></div>
+
 </div>
 
 <script>
@@ -759,68 +760,118 @@
 
     function drawStackedSparkline(canvas, data) {
         const ctx = canvas.getContext('2d');
-        const width = canvas.width;
-        const height = canvas.height;
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
 
-        ctx.clearRect(0, 0, width, height);
-        if (!data) return;
-
-        const successData = data.success || [];
-        const clientData = data.client_error || [];
-        const serverData = data.server_error || [];
-
-        const len = Math.max(successData.length, clientData.length, serverData.length);
-        if (len === 0) return;
-
-        let maxValue = 0;
-        for (let i = 0; i < len; i++) {
-            const s = Number(successData[i]) || 0;
-            const c = Number(clientData[i]) || 0;
-            const e = Number(serverData[i]) || 0;
-            maxValue = Math.max(maxValue, s, c, e);
+        if (canvas.width !== rect.width * dpr) {
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
         }
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-        ctx.fillRect(0, height - 1, width, 1);
+        const logicalWidth = rect.width;
+        const logicalHeight = rect.height;
+        const labelHeight = 18;
+        const chartHeight = logicalHeight - labelHeight;
 
-        if (maxValue === 0) return;
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
 
-        const stepX = width / Math.max(1, len - 1);
+        const metadata = data?.metadata || { capacity: 150, interval: 'PT2S' };
+        const successData = data?.success || [];
+        const clientData = data?.client_error || [];
+        const serverData = data?.server_error || [];
+        const capacity = metadata.capacity;
 
-        const drawLine = (dataArray, color) => {
-            ctx.beginPath();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
-            ctx.lineJoin = 'round';
-            ctx.lineCap = 'round';
+        let maxValue = 0;
+        [successData, clientData, serverData].forEach(arr => {
+            arr.forEach(v => { if (v > maxValue) maxValue = v; });
+        });
 
+        // Determine state
+        const isSystemSilent = maxValue === 0;
+        const displayMax = maxValue * 1.1; // 10% Headroom
+
+        // 1. Grid and Labels
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = (chartHeight / 4) * i;
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(logicalWidth, y); ctx.stroke();
+            const x = (logicalWidth / 4) * i;
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, chartHeight); ctx.stroke();
+        }
+
+        ctx.font = '600 11px ui-monospace, "Roboto Mono", monospace';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 0.7 Opacity
+        const intervalSec = parseInt(metadata.interval.match(/\d+/)[0]) || 1;
+        const timeVal = (capacity * intervalSec) >= 60 ? `${Math.round((capacity * intervalSec) / 60)}m` : `${capacity * intervalSec}s`;
+        ctx.textAlign = 'left'; ctx.fillText(`-${timeVal}`, 2, logicalHeight - 5);
+        ctx.textAlign = 'right'; ctx.fillText('now', logicalWidth - 2, logicalHeight - 5);
+
+        if (isSystemSilent) {
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillText('AWAITING TELEMETRY', logicalWidth / 2, (chartHeight / 2) + 5);
+            ctx.restore();
+            return;
+        }
+
+        // 2. Drawing Logic
+        const stepX = logicalWidth / (capacity - 1);
+
+        const renderPath = (dataArray, color, isSuccess = false) => {
+            if (!dataArray.length) return;
+
+            // Create Path
+            const linePath = new Path2D();
             let isDrawing = false;
 
-            for (let i = 0; i < len; i++) {
+            for (let i = 0; i < dataArray.length; i++) {
                 const val = Number(dataArray[i]) || 0;
-
-                if (val === 0) {
-                    isDrawing = false;
-                    continue;
-                }
-
-                const y = Math.max(1, height - ((val / maxValue) * height));
                 const x = i * stepX;
+                const y = chartHeight - ((val / displayMax) * chartHeight);
 
-                if (!isDrawing) {
-                    ctx.moveTo(x, y);
-                    ctx.lineTo(x + 0.1, y);
-                    isDrawing = true;
+                if (val > 0) {
+                    if (!isDrawing) {
+                        linePath.moveTo(x, y);
+                        isDrawing = true;
+                    } else {
+                        linePath.lineTo(x, y);
+                    }
                 } else {
-                    ctx.lineTo(x, y);
+                    isDrawing = false;
                 }
             }
-            ctx.stroke();
+
+            // Draw the Fill for Success only
+            if (isSuccess) {
+                const fillPath = new Path2D(linePath);
+                // Close the path to the bottom
+                fillPath.lineTo(logicalWidth, chartHeight);
+                fillPath.lineTo(0, chartHeight);
+                fillPath.closePath();
+
+                const grad = ctx.createLinearGradient(0, 0, 0, chartHeight);
+                grad.addColorStop(0, 'rgba(46, 204, 113, 0.15)');
+                grad.addColorStop(1, 'rgba(46, 204, 113, 0)');
+                ctx.fillStyle = grad;
+                ctx.fill(fillPath);
+            }
+
+            // Draw the Line
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke(linePath);
         };
 
-        drawLine(successData, '#2ecc71');
-        drawLine(clientData, '#f39c12');
-        drawLine(serverData, '#e74c3c');
+        renderPath(successData, '#2ecc71', true);
+        renderPath(clientData, '#f39c12', true);
+        renderPath(serverData, '#e74c3c', true);
+
+        ctx.restore();
     }
 
     function buildExecutionFlowHtml(config) {
@@ -830,8 +881,17 @@
         return html;
     }
 
-    function buildMatchTree(node) {
+    function buildMatchTree(node, isRoot = false) {
         if (!node) return '';
+
+        // Silently unwrap the implicit root 'AndPredicate'
+        if (isRoot && node.name === 'AndPredicate' && node.children && node.children.length > 0) {
+            let unwrappedHtml = '';
+            node.children.forEach(child => {
+                unwrappedHtml += buildMatchTree(child, false);
+            });
+            return unwrappedHtml;
+        }
 
         let displayText = node.summary || node.name;
         if (displayText.startsWith(node.name + ': ')) {
@@ -850,7 +910,7 @@
 
         if (node.children && node.children.length > 0) {
             node.children.forEach(child => {
-                html += buildMatchTree(child);
+                html += buildMatchTree(child, false);
             });
         }
         html += `</div>`;
@@ -1006,7 +1066,7 @@
 
         <div class="panel-section">
             <div class="panel-section-title">ROUTE MATCHING</div>
-            ${buildMatchTree(config.match)}
+            ${buildMatchTree(config.match, true)}
         </div>
 
         <div class="panel-section">
@@ -1246,8 +1306,13 @@
         html += `
         <tr class="total-row clickable-row" onclick="showSystemDetails()">
             <td class="col-route">
-                <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">SYSTEM TOTALS - ${timeAgo(totals.last_active)}</div>
-                <canvas id="canvas___SYSTEM__" width="200" height="70" style="margin-top: 8px;"></canvas>
+                ${mRow('SYSTEM TOTALS', '', true)}
+                ${mRow('LAST ACTIVE', timeAgo(totals.last_active), false)}
+                ${mRow('ACTIVE REQUESTS', totals.active, false)}
+                ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(totals.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
+            </td>
+            <td class="col-active">
+                <canvas id="canvas___SYSTEM__" width="200" height="60" style="margin-top: 8px;"></canvas>
             </td>
             <td class="col-totals">
                 ${mRow('SUM', formatCompact(totals.total), true, '', formatCompact(Math.round(sysRpsTotal)) + PER_SEC)}
@@ -1259,10 +1324,6 @@
                 ${mRow('SUM', formatBytes(totals.in_t, uTotal), true, '', formatBytes(totals.out_t, uTotal))}
                 ${mRow('HDR', formatBytes(totals.in_h, uTotal), false, '', formatBytes(totals.out_h, uTotal))}
                 ${mRow('BDY', formatBytes(totals.in_b, uTotal), false, '', formatBytes(totals.out_b, uTotal))}
-            </td>
-            <td class="col-active">
-                ${mRow('ACT', totals.active, true, tActiveHttpStyle)}
-                ${mRow('LAT', globalAvgLat + 'ms', true)}
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(totals.journal, uTotal), true)}
@@ -1295,8 +1356,13 @@
             html += `
         <tr class="clickable-row" onclick="showDetails('${config.id}')">
             <td class="col-route">
-                <div class="sum" style="margin: 0; line-height: 1.1; padding-bottom: 2px;">${config.id} - ${timeAgo(s.last_active)}</div>
-                <canvas id="canvas_${config.id}" width="200" height="70" style="margin-top: 8px;"></canvas>
+                ${mRow('ROUTE', config.id, true)}
+                ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
+                ${mRow('ACTIVE REQUESTS', s.active, false, rActiveHttpStyle)}
+                ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
+            </td>
+            <td class="col-active">
+               <canvas id="canvas_${config.id}" width="200" height="60" style="margin-top: 8px;"></canvas>
             </td>
             <td class="col-totals">
                 ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)) + PER_SEC)}
@@ -1308,10 +1374,6 @@
                 ${mRow('SUM', formatBytes(t.ingress.total_bytes, uRoute), true, '', formatBytes(t.egress.total_bytes, uRoute))}
                 ${mRow('HDR', formatBytes(t.ingress.header_bytes, uRoute), false, '', formatBytes(t.egress.header_bytes, uRoute))}
                 ${mRow('BDY', formatBytes(t.ingress.body_bytes, uRoute), false, '', formatBytes(t.egress.body_bytes, uRoute))}
-            </td>
-            <td class="col-active">
-                ${mRow('ACT', s.active, true, rActiveHttpStyle)}
-                ${mRow('AVG', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', true)}
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
@@ -1376,10 +1438,14 @@
             const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
             const activeConns = data.connector_statistics?.active_connections || 0;
 
-            vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
+            // Fallback to 'Unversioned' if the YAML doesn't specify one
+            const routesVer = data.route_version || 'Unversioned';
+
+            vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | ROUTES: ${routesVer} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
 
             const version = data.system.version || 'Unknown';
             document.getElementById('sys-version').innerText = version;
+            document.getElementById('routes-version').innerText = routesVer;
 
             timeEl.innerHTML = `<span class="status-indicator" style="color: #00aa00;">●</span>ONLINE`;
 
