@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>r7 gateway</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0b'/%3E%3Ctext x='12' y='44' font-family='monospace' font-size='34' font-weight='bold' fill='%23e4e4e7'%3Er%3C/text%3E%3Ctext x='32' y='44' font-family='monospace' font-size='34' font-weight='bold' fill='%23ff5e00'%3E7%3C/text%3E%3C/svg%3E">
-    <style>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0b'/%3E%3Ctext x='6' y='48' font-family='monospace' font-size='48' font-weight='bold' fill='%23e4e4e7'%3Er%3C/text%3E%3Ctext x='30' y='48' font-family='monospace' font-size='48' font-weight='bold' fill='%23ff5e00'%3E7%3C/text%3E%3C/svg%3E">    <style>
         /* ==========================================================================
            1. THEMING & VARIABLES
            ========================================================================== */
@@ -495,7 +494,7 @@
 <div class="container" id="main-container">
     <header>
         <div>
-            <h1><span>r7</span> GATEWAY</h1>
+            <h1>r<span>7</span> GATEWAY</h1>
             <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
@@ -1476,7 +1475,7 @@
         }
     }
 
-    setInterval(update, 1000);
+    setInterval(update, 500);
     update();
 </script>
 </body>
