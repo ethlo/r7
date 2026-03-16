@@ -105,7 +105,7 @@ public final class StatusHandler implements HttpHandler
         );
         root.put("connector_statistics", ModelMapper.from(connectorStatistics));
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
-        root.put("route_metrics", metricsRegistry.getAll().entrySet().stream().map(ModelMapper::routeMetrics).toList());
+        root.put("route_metrics", metricsRegistry.getAll());
 
         final List<RouteConfigDto> routeConfigs = routeRegistry.getRoutes().stream()
                 .map(DefaultGatewayRoute.class::cast)

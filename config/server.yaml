@@ -45,3 +45,5 @@ socket:
 # Disk settings for journaling
 storage:
   work_dir: /tmp/r7/journal
+  shard_size: 200000000
+  shard_count: 4

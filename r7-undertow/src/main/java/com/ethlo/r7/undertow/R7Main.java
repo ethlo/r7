@@ -8,7 +8,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,26 +23,21 @@ import ch.qos.logback.core.util.StatusPrinter2;
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayErrorHandler;
-import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.HotReloadService;
-import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.journal.compression.VlfCompressionEngine;
 import com.ethlo.r7.status.FileTelemetryRepository;
 import com.ethlo.r7.status.MetricsRegistry;
-import com.ethlo.r7.status.SimpleMetricsFactory;
 import com.ethlo.r7.status.StatusHandler;
 import com.ethlo.r7.status.TelemetryRepository;
 import com.ethlo.r7.status.TrafficMetricsHandler;
 import com.ethlo.r7.status.VersionProvider;
 import com.ethlo.r7.status.dto.ModelMapper;
-import com.ethlo.r7.status.dto.RouteMetricsDto;
 import com.ethlo.r7.status.dto.TelemetryFlusher;
 import com.ethlo.r7.undertow.config.ServerConfig;
-import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -76,9 +70,9 @@ public final class R7Main
 
         final RouteRegistry routeRegistry = new RouteRegistry();
         final GatewayScheduler scheduler = new GatewayScheduler(2);
-        final ConfigurationManager loader = new ConfigurationManager(scheduler);
+        final ConfigurationManager configurationManager = new ConfigurationManager(scheduler);
 
-        final ServerConfig serverConfig = loader.load(serverFile, ServerConfig.class);
+        final ServerConfig serverConfig = configurationManager.load(serverFile, ServerConfig.class);
         final ValidationResult result = new ValidationResult();
         serverConfig.validate(result);
         result.throwIfInvalid();
@@ -86,10 +80,10 @@ public final class R7Main
 
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
-        final RoutesDefinition routesConfig = loader.load(configFile, RoutesDefinition.class);
-        loader.load(routesConfig, routeRegistry);
+        final RoutesDefinition routesConfig = configurationManager.load(configFile, RoutesDefinition.class);
+        configurationManager.load(routesConfig, routeRegistry);
 
-        final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, loader, routeRegistry);
+        final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
         logger.info("Watching config file {} for changes", configFile.toAbsolutePath());
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
@@ -108,35 +102,6 @@ public final class R7Main
             return new VlfJournal(provider, compressionEngine::submitForCompression);
         }
         );
-
-        final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
-        final List<RouteMetricsDto> existingMetrics = telemetryRepository.load();
-        final MetricsRegistry metricsRegistry = new MetricsRegistry();
-        for (final GatewayRoute route : routeRegistry.getRoutes())
-        {
-            final RouteDefinition routeDefinition = routesConfig.routes().stream()
-                    .filter(r -> CharSequenceUtil.equals(r.id(), route.id()))
-                    .findFirst().orElseThrow();
-
-            final Optional<SimpleMetricsFactory.GF> metricsFilter = route.filters().stream()
-                    .filter(f -> f instanceof SimpleMetricsFactory.GF)
-                    .map(SimpleMetricsFactory.GF.class::cast)
-                    .findFirst();
-
-            metricsFilter.ifPresent(gf -> existingMetrics.stream()
-                    .filter(routeMetricsDto -> route.id().equals(routeMetricsDto.id()))
-                    .findFirst()
-                    .ifPresent(gf::set));
-
-            metricsRegistry.register(routeDefinition, metricsFilter.orElse(null));
-        }
-
-        final TelemetryFlusher telemetryFlusher = new TelemetryFlusher(telemetryRepository, () -> metricsRegistry.getAll().entrySet()
-                .stream()
-                .map(ModelMapper::routeMetrics)
-                .toList()
-        );
-        telemetryFlusher.start();
 
         // Use single shared worker for all Undertow instances
         final XnioWorker sharedWorker = createSharedWorker(serverConfig);
@@ -157,6 +122,7 @@ public final class R7Main
         // Used for having fast internal HTTP endpoint to talk to
         setupTestBackEndForProxy(benchMarkHandler, sharedWorker);
 
+        final MetricsRegistry metricsRegistry = setupMetricsRegistry(workDir, routeRegistry, routesConfig);
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
 
         setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost(), sharedWorker);
@@ -196,12 +162,18 @@ public final class R7Main
         // Have to happen after start
         statusHandler.setConnectorStatistics(server.getListenerInfo().getFirst().getConnectorStatistics());
 
-        System.gc();
-        final R7ConsolePrinter consolePrinter = new VerboseR7ConsolePrinter();
-        consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
+        //System.gc();
+        //final R7ConsolePrinter consolePrinter = new VerboseR7ConsolePrinter();
+        //consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
 
         final Duration uptime = SystemUtil.getUptime();
-        logger.info("🚀 Ethlo R7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+        logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
+    }
+
+    private static MetricsRegistry setupMetricsRegistry(Path workDir, RouteRegistry routeRegistry, RoutesDefinition routesConfig)
+    {
+        final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
+        return new MetricsRegistry(routeRegistry, telemetryRepository);
     }
 
     private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)

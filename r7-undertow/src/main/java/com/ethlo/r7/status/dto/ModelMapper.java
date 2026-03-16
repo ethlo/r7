@@ -12,7 +12,7 @@ import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.status.PipelineVisualizer;
-import com.ethlo.r7.status.SimpleMetricsFactory;
+import com.ethlo.r7.status.RouteMetricsBucket;
 import io.undertow.server.ConnectorStatistics;
 
 public class ModelMapper
@@ -66,9 +66,9 @@ public class ModelMapper
         );
     }
 
-    public static RouteMetricsDto routeMetrics(final Map.Entry<String, SimpleMetricsFactory.GF> gfEntry)
+    public static RouteMetricsDto routeMetrics(final Map.Entry<String, RouteMetricsBucket> routeMetricsBucket)
     {
-        final SimpleMetricsFactory.GF gf = gfEntry.getValue();
+        final RouteMetricsBucket gf = routeMetricsBucket.getValue();
         final TrafficFlowDto traffic = mapTraffic(gf);
         final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(Duration.ofNanos(gf.getAvgLatencyNanos()));
         final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
@@ -77,24 +77,24 @@ public class ModelMapper
                 gf.getUpstreamRequests()
         );
 
-        return new RouteMetricsDto(gfEntry.getKey(), stats, traffic, performance, gf.getSparklineData());
+        return new RouteMetricsDto(routeMetricsBucket.getKey(), stats, traffic, performance, gf.getSparklineData());
     }
 
-    private static TrafficFlowDto mapTraffic(SimpleMetricsFactory.GF gf)
+    private static TrafficFlowDto mapTraffic(RouteMetricsBucket routeMetricsBucket)
     {
         final IngressDto ingress = new IngressDto(
-                gf.getTotalRequestHeaderBytes(),
-                gf.getTotalRequestBodyBytes(),
-                gf.getTotalRequestHeaderBytes() + gf.getTotalRequestBodyBytes()
+                routeMetricsBucket.getTotalRequestHeaderBytes(),
+                routeMetricsBucket.getTotalRequestBodyBytes(),
+                routeMetricsBucket.getTotalRequestHeaderBytes() + routeMetricsBucket.getTotalRequestBodyBytes()
         );
 
         final EgressDto egress = new EgressDto(
-                gf.getTotalResponseHeaderBytes(),
-                gf.getTotalResponseBodyBytes(),
-                gf.getTotalResponseHeaderBytes() + gf.getTotalResponseBodyBytes()
+                routeMetricsBucket.getTotalResponseHeaderBytes(),
+                routeMetricsBucket.getTotalResponseBodyBytes(),
+                routeMetricsBucket.getTotalResponseHeaderBytes() + routeMetricsBucket.getTotalResponseBodyBytes()
         );
 
-        return new TrafficFlowDto(ingress, egress, gf.getTotalJournalBytes());
+        return new TrafficFlowDto(ingress, egress, routeMetricsBucket.getTotalJournalBytes());
     }
 
     public static ConnectorStatisticsDto from(final ConnectorStatistics stats)
