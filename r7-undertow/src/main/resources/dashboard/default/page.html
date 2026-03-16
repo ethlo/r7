@@ -669,7 +669,6 @@
         const sys = data.system;
         const cfg = sys.configuration || {};
 
-        // Fallback if memory metrics are mapped differently in your final JSON
         const mem = sys.memory || data.memory || null;
 
         document.getElementById('details-content').innerHTML = `
@@ -1293,9 +1292,9 @@
         data.route_configs.forEach(c => {
             const r = (data.route_metrics || []).find(m => m.id === c.id);
             if (r && r.sparkline_data) {
-                sys2xxRps += last(r.sparkline_data.success) / 2;
-                sys4xxRps += last(r.sparkline_data.client_error) / 2;
-                sys5xxRps += last(r.sparkline_data.server_error) / 2;
+                sys2xxRps += last(r.sparkline_data.success);
+                sys4xxRps += last(r.sparkline_data.client_error);
+                sys5xxRps += last(r.sparkline_data.server_error);
             }
         });
         const sysRpsTotal = sys2xxRps + sys4xxRps + sys5xxRps;
@@ -1376,7 +1375,8 @@
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
-                ${mRow('LVL', 'REQ: ' + jBadge(reqJourn), false, '', 'RES: ' + jBadge(resJourn))}
+                ${mRow('REQUEST', jBadge(reqJourn), false)}
+                ${mRow('RESPONSE', jBadge(resJourn), false)}
             </td>
         </tr>`;
         });
@@ -1475,7 +1475,7 @@
         }
     }
 
-    setInterval(update, 500);
+    setInterval(update, 1000);
     update();
 </script>
 </body>
