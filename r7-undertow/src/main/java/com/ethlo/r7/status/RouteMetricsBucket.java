@@ -45,17 +45,39 @@ public final class RouteMetricsBucket
         this.sparklineRingBuffer = new SparklineRingBuffer(capacity, tickInterval);
     }
 
-    public void incrementTotalRequests() { this.totalRequests.increment(); }
-    public void incrementActiveRequests() { this.activeRequests.increment(); }
-    public void decrementActiveRequests() { this.activeRequests.decrement(); }
-    public void incrementUpstreamRequests() { this.upstreamRequests.increment(); }
-    public void incrementActiveWsRequests() { this.activeWsRequests.increment(); }
-    public void decrementActiveWsRequests() { this.activeWsRequests.decrement(); }
-    public void incrementTotalWsRequests() { this.totalWsRequests.increment(); }
-    
-    public void setLastActiveTime(final long timestamp)
+    public void incrementTotalRequests()
     {
-        this.lastActiveTime.lazySet(timestamp);
+        this.totalRequests.increment();
+    }
+
+    public void incrementActiveRequests()
+    {
+        this.activeRequests.increment();
+    }
+
+    public void decrementActiveRequests()
+    {
+        this.activeRequests.decrement();
+    }
+
+    public void incrementUpstreamRequests()
+    {
+        this.upstreamRequests.increment();
+    }
+
+    public void incrementActiveWsRequests()
+    {
+        this.activeWsRequests.increment();
+    }
+
+    public void decrementActiveWsRequests()
+    {
+        this.activeWsRequests.decrement();
+    }
+
+    public void incrementTotalWsRequests()
+    {
+        this.totalWsRequests.increment();
     }
 
     public void addTrafficMetrics(final long reqHeaders, final long reqBody, final long resHeaders, final long resBody, final long journalBytes, final long durationNanos)
@@ -117,7 +139,10 @@ public final class RouteMetricsBucket
 
     public void hydrateFromDto(final RouteMetricsDto routeMetricsDto)
     {
-        if (routeMetricsDto == null) { return; }
+        if (routeMetricsDto == null)
+        {
+            return;
+        }
 
         final RequestStatsDto requestStatistics = routeMetricsDto.requestStatistics();
         if (requestStatistics != null)
@@ -175,38 +200,102 @@ public final class RouteMetricsBucket
         }
     }
 
-    // --- Accessors for Mapping ---
-
     public long getAvgLatencyNanos()
     {
         final long count = this.totalRequests.sum();
-        if (count == 0) { return 0; }
+        if (count == 0)
+        {
+            return 0;
+        }
         return this.totalDurationNanos.sum() / count;
     }
 
-    public long getTotalRequests() { return this.totalRequests.sum(); }
-    public long getTotalWsRequests() { return this.totalWsRequests.sum(); }
-    public long getActiveRequests() { return this.activeRequests.sum(); }
-    public long getActiveWsRequests() { return this.activeWsRequests.sum(); }
-    public long getUpstreamRequests() { return this.upstreamRequests.sum(); }
-    public long getTotalJournalBytes() { return this.totalJournalBytes.sum(); }
-    public long getTotalRequestHeaderBytes() { return this.totalRequestHeaderBytes.sum(); }
-    public long getTotalRequestBodyBytes() { return this.totalRequestBodyBytes.sum(); }
-    public long getTotalResponseHeaderBytes() { return this.totalResponseHeaderBytes.sum(); }
-    public long getTotalResponseBodyBytes() { return this.totalResponseBodyBytes.sum(); }
-    public SparklineRingBuffer.SparklineSnapshot getSparklineData() { return this.sparklineRingBuffer.getSnapshot(); }
+    // --- Accessors for Mapping ---
+
+    public long getTotalRequests()
+    {
+        return this.totalRequests.sum();
+    }
+
+    public long getTotalWsRequests()
+    {
+        return this.totalWsRequests.sum();
+    }
+
+    public long getActiveRequests()
+    {
+        return this.activeRequests.sum();
+    }
+
+    public long getActiveWsRequests()
+    {
+        return this.activeWsRequests.sum();
+    }
+
+    public long getUpstreamRequests()
+    {
+        return this.upstreamRequests.sum();
+    }
+
+    public long getTotalJournalBytes()
+    {
+        return this.totalJournalBytes.sum();
+    }
+
+    public long getTotalRequestHeaderBytes()
+    {
+        return this.totalRequestHeaderBytes.sum();
+    }
+
+    public long getTotalRequestBodyBytes()
+    {
+        return this.totalRequestBodyBytes.sum();
+    }
+
+    public long getTotalResponseHeaderBytes()
+    {
+        return this.totalResponseHeaderBytes.sum();
+    }
+
+    public long getTotalResponseBodyBytes()
+    {
+        return this.totalResponseBodyBytes.sum();
+    }
+
+    public SparklineRingBuffer.SparklineSnapshot getSparklineData()
+    {
+        return this.sparklineRingBuffer.getSnapshot();
+    }
 
     public OffsetDateTime getLastActiveTime()
     {
         final long time = this.lastActiveTime.get();
-        if (time != 0) { return Instant.ofEpochMilli(time).atOffset(ZoneOffset.UTC); }
+        if (time != 0)
+        {
+            return Instant.ofEpochMilli(time).atOffset(ZoneOffset.UTC);
+        }
         return null;
     }
 
-    public Map<Integer, Long> getUpstreamResponseStatuses() { return toMap(this.upstreamResponseStatuses); }
-    public Map<Integer, Long> getClientResponseStatuses() { return toMap(this.clientResponseStatuses); }
+    public void setLastActiveTime(final long timestamp)
+    {
+        this.lastActiveTime.lazySet(timestamp);
+    }
 
-    public boolean isEmpty() { return totalRequests.sum() == 0; }
+    public Map<Integer, Long> getUpstreamResponseStatuses()
+    {
+        return toMap(this.upstreamResponseStatuses);
+    }
+
+    public Map<Integer, Long> getClientResponseStatuses()
+    {
+        return toMap(this.clientResponseStatuses);
+    }
+
+    public boolean isEmpty()
+    {
+        return totalRequests.sum() == 0;
+    }
 
     private long summarizeRanges(final int lower, final int upper)
     {
@@ -218,9 +307,20 @@ public final class RouteMetricsBucket
         return total;
     }
 
-    private long getStatus2xxRequests() { return summarizeRanges(200, 299); }
-    private long getStatus4xxRequests() { return summarizeRanges(400, 499); }
-    private long getStatus5xxRequests() { return summarizeRanges(STATUS_COUNT_ARRAY_SIZE, 599); }
+    private long getStatus2xxRequests()
+    {
+        return summarizeRanges(200, 299);
+    }
+
+    private long getStatus4xxRequests()
+    {
+        return summarizeRanges(400, 499);
+    }
+
+    private long getStatus5xxRequests()
+    {
+        return summarizeRanges(STATUS_COUNT_ARRAY_SIZE, 599);
+    }
 
     private Map<Integer, Long> toMap(final LongAdder[] statuses)
     {
@@ -238,7 +338,10 @@ public final class RouteMetricsBucket
 
     private void fromMap(final LongAdder[] target, final Map<Integer, Long> statuses)
     {
-        if (statuses == null) { return; }
+        if (statuses == null)
+        {
+            return;
+        }
         statuses.forEach((key, value) -> {
             final int index = key - STATUS_COUNTER_OFFSET;
             target[index].reset();

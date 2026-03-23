@@ -8,11 +8,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 import com.ethlo.r7.status.dto.RouteMetricsDto;
-import tools.jackson.databind.ObjectMapper;
+import com.ethlo.r7.util.JsonUtil;
 
 public final class FileTelemetryRepository implements TelemetryRepository
 {
-    private static final ObjectMapper mapper = new ObjectMapper();
     private final Path targetFile;
     private final Path tempFile;
 
@@ -25,7 +24,7 @@ public final class FileTelemetryRepository implements TelemetryRepository
     @Override
     public void save(final List<RouteMetricsDto> metrics)
     {
-        mapper.writerWithDefaultPrettyPrinter().writeValue(tempFile, metrics);
+        JsonUtil.writeValue(tempFile, metrics);
         try
         {
             Files.move(tempFile, targetFile, StandardCopyOption.ATOMIC_MOVE);
@@ -41,7 +40,7 @@ public final class FileTelemetryRepository implements TelemetryRepository
     {
         if (Files.exists(targetFile))
         {
-            return mapper.readValue(targetFile, mapper.getTypeFactory().constructCollectionType(List.class, RouteMetricsDto.class));
+            return JsonUtil.readValue(targetFile, JsonUtil.collectionType(List.class, RouteMetricsDto.class));
         }
         return List.of();
     }

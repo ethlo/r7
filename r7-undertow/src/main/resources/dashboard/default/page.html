@@ -5,489 +5,489 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>r7 gateway</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0b'/%3E%3Ctext x='6' y='48' font-family='monospace' font-size='48' font-weight='bold' fill='%23e4e4e7'%3Er%3C/text%3E%3Ctext x='30' y='48' font-family='monospace' font-size='48' font-weight='bold' fill='%23ff5e00'%3E7%3C/text%3E%3C/svg%3E">    <style>
-        /* ==========================================================================
-           1. THEMING & VARIABLES
-           ========================================================================== */
-        :root {
-            --base-size: 14px;
-            --bg: #0a0a0b;
-            --fg: #e4e4e7;
-            --accent: #ff5e00;
-            --dim: #a1a1aa;
-            --brighter: #efeef1;
-            --border: #27272a;
-            --border-subtle: rgba(255, 255, 255, 0.05);
-            --border-dotted: rgba(128, 128, 128, 0.3);
-            --row-hover: #18181b;
-            --panel: #111112;
-            --card-bg: #131315;
-        }
-
-        /* ==========================================================================
-           2. GLOBAL & BASE STYLES
-           ========================================================================== */
-        html {
-            font-size: var(--base-size);
-        }
-
-        body {
-            font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
-            background: var(--bg);
-            color: var(--fg);
-            margin: 0;
-            padding: 2.5rem;
-            font-size: 1rem;
-            font-weight: 400;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        pre {
-            background: #09090b;
-            padding: 1rem;
-            color: var(--fg);
-            font-size: 0.8rem;
-            border: 1px solid var(--border);
-            overflow-x: auto;
-            border-radius: 6px;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 1.2rem;
-            font-weight: 500;
-            letter-spacing: 2px;
-        }
-
-        h1 span {
-            color: var(--accent);
-        }
-
-        /* ==========================================================================
-           3. LAYOUT COMPONENTS
-           ========================================================================== */
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        header {
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 1.5rem;
-            margin-bottom: 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .app-footer {
-            margin-top: 3rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--border);
-            text-align: right;
-            font-size: 0.65rem;
-            color: var(--dim);
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
-
-        /* ==========================================================================
-           4. TYPOGRAPHY & UTILITIES
-           ========================================================================== */
-        .sub {
-            font-size: 0.85rem;
-            color: var(--dim);
-            margin-top: 4px;
-        }
-
-        .sum {
-            font-size: 0.85rem;
-            color: var(--brighter);
-            margin-top: 4px;
-        }
-
-        .sys-vitals {
-            color: var(--dim);
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-        }
-
-        .sys-info {
-            font-size: 0.9rem;
-            color: var(--dim);
-        }
-
-        #sys-version {
-            color: var(--fg);
-            font-weight: 500;
-        }
-
-        .text-muted {
-            opacity: 1;
-        }
-
-        .text-dim {
-            opacity: 0.7;
-        }
-
-        .text-truncate {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .text-nowrap {
-            white-space: nowrap;
-        }
-
-        .text-right {
-            text-align: right;
-        }
-
-        .spacer-sm {
-            height: 6px;
-        }
-
-        .status-indicator {
-            margin-right: 6px;
-        }
-
-        /* Status Colors */
-        .text-warn {
-            color: #ff9800;
-            font-weight: 300;
-        }
-
-        .text-err {
-            color: #ee4444;
-            font-weight: 300;
-        }
-
-        .text-http {
-            color: #00d4ff;
-            font-weight: 300;
-        }
-
-        .text-ws {
-            color: #00ff88;
-            font-weight: 300;
-        }
-
-        .text-4xx {
-            color: rgba(200, 152, 0, 0.7);
-            font-weight: 300;
-        }
-
-        .text-5xx {
-            color: rgba(238, 100, 100, 0.7);
-            font-weight: 300;
-        }
-
-        .text-3xx {
-            color: rgba(50, 150, 255, 0.7);
-            font-weight: 300;
-        }
-
-        .text-2xx {
-            color: rgba(0, 200, 100, 0.7);
-            font-weight: 300;
-        }
-
-        /* ==========================================================================
-           5. TABLE STYLES
-           ========================================================================== */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th {
-            text-align: left;
-            font-size: 0.90rem;
-            color: var(--dim);
-            padding: 0.8rem 1rem;
-            border-bottom: 1px solid var(--border);
-            font-weight: 400;
-        }
-
-        td {
-            padding: 0.8rem;
-            border-bottom: 1px solid var(--border);
-            vertical-align: top;
-        }
-
-        th, td {
-            border-right: 1px solid var(--border-subtle);
-        }
-
-        th:last-child, td:last-child {
-            border-right: none;
-        }
-
-        tr.clickable-row {
-            cursor: pointer;
-            transition: background 0.15s ease;
-        }
-
-        tr.clickable-row:hover td {
-            background: var(--row-hover);
-        }
-
-        tr.clickable-row:hover td:first-child {
-            box-shadow: inset 3px 0 0 var(--accent);
-        }
-
-        tr.total-row td {
-            background: var(--card-bg);
-            border-bottom: 1px solid var(--dim);
-            padding-top: 0.8rem;
-            padding-bottom: 0.8rem;
-        }
-
-        .col-route {
-            width: 250px;
-            min-width: 250px;
-            max-width: 250px;
-            padding-right: 15px;
-        }
-
-        /* ==========================================================================
-           6. METRICS UI (Dotted Leaders)
-           ========================================================================== */
-        .metric-row {
-            display: flex;
-            align-items: flex-end;
-            line-height: 1.1;
-            margin: 0;
-            padding-bottom: 2px;
-        }
-
-        .metric-label {
-            opacity: 1;
-        }
-
-        .metric-leader {
-            flex-grow: 1;
-            border-bottom: 1px dotted var(--border-dotted);
-            margin: 0 0.5rem;
-            position: relative;
-            top: -4px;
-        }
-
-        .metric-value {
-            white-space: nowrap;
-        }
-
-        /*
-        ==========================================================================
-        7. VIEW SLIDER (In-Place Transition)
-        ========================================================================== */
-        #view-slider {
-            position: relative;
-            width: 100%;
-            min-height: 400px;
-        }
-
-        .slide-pane {
-            width: 100%;
-            transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
-        }
-
-        /* Default State: Table is active, Details are hidden */
-        #pane-table {
-            position: relative;
-            transform: translateX(0);
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        #pane-details {
-            position: absolute;
-            top: 0;
-            left: 0;
-            transform: translateX(40px);
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        /* Active State: Details are active, Table is hidden */
-        #view-slider.show-details-view #pane-table {
-            position: absolute;
-            top: 0;
-            left: 0;
-            transform: translateX(-40px);
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        #view-slider.show-details-view #pane-details {
-            position: relative;
-            transform: translateX(0);
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        /* Masonry Grid inside the details pane */
-        #details-content {
-            column-width: 360px;
-            column-gap: 1.5rem;
-            padding-bottom: 2rem;
-        }
-
-        /* Prevent column breaks inside cards */
-        .panel-section {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            padding: 1.2rem;
-            margin-bottom: 1.5rem;
-            break-inside: avoid;
-            page-break-inside: avoid;
-            overflow: hidden;
-        }
-
-        .panel-header-container {
-            column-span: all;
-            display: flex;
-            justify-content: space-between;
-            align-items: center; /* Center align instead of flex-start */
-            border-bottom: 1px solid rgba(128, 128, 128, 0.15); /* Much softer border */
-            padding-bottom: 0.75rem; /* Tighter spacing */
-            margin-bottom: 1.5rem;
-        }
-
-        .panel-title {
-            font-size: 1.05em; /* Scaled down significantly */
-            font-weight: 500;
-            color: var(--fg);
-            margin: 0;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
-        }
-
-        .panel-subtitle {
-            font-size: 0.9em;
-            color: var(--dim);
-            word-break: break-all;
-            line-height: 1.2;
-        }
-
-        .panel-section-title {
-            font-size: 0.85em;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--brighter);
-            border-bottom: 1px solid rgba(128, 128, 128, 0.3);
-            padding-bottom: 8px;
-            margin-bottom: 16px;
-        }
-
-        /* Convert the close button to a subtle text link */
-        .panel-close-btn {
-            background: transparent;
-            border: none;
-            color: var(--dim);
-            font-family: inherit;
-            font-size: 0.8rem;
-            padding: 4px 8px;
-            cursor: pointer;
-            transition: color 0.2s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .panel-close-btn:hover {
-            color: var(--fg);
-            background: transparent;
-        }
-
-        .panel-close-icon {
-            font-size: 1.2em;
-            line-height: 0;
-            position: relative;
-            top: -1px;
-        }
-
-        /* ==========================================================================
-           8. JOURNALING & BADGES
-           ========================================================================== */
-        .pill-group {
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-            margin-bottom: 8px;
-            font-size: 0.85em
-        }
-
-        .journal-tag {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            background: rgba(128, 128, 128, 0.1);
-            opacity: 0.5;
-            border: 1px solid rgba(128, 128, 128, 0.2);
-            letter-spacing: 1px;
-            transition: all 0.2s ease;
-        }
-
-        [class*="journal-active-"] {
-            opacity: 1;
-            border-color: currentColor;
-        }
-
-        .journal-active-none {
-            color: var(--dim);
-            border-color: var(--dim);
-            background: rgba(161, 161, 170, 0.1);
-        }
-
-        .journal-active-metadata {
-            color: #2dd4bf;
-            border-color: #2dd4bf;
-            background: rgba(45, 212, 191, 0.1);
-        }
-
-        .journal-active-headers {
-            color: #3b82f6;
-            border-color: #3b82f6;
-            background: rgba(59, 130, 246, 0.1);
-        }
-
-        .journal-active-full {
-            color: #a855f7;
-            border-color: #a855f7;
-            background: rgba(168, 85, 247, 0.1);
-        }
-
-        .j-badge {
-            font-weight: 900;
-            display: inline-block;
-            min-width: 14px;
-            text-align: center;
-        }
-
-        .sys-btn {
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--dim);
-            padding: 6px 12px;
-            font-family: inherit;
-            font-size: 0.8rem;
-            letter-spacing: 1px;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: all 0.2s ease;
-        }
-
-        .sys-btn:hover {
-            background: var(--card-bg);
-            color: var(--fg);
-            border-color: rgba(128, 128, 128, 0.4);
-        }
-    </style>
+    /* ==========================================================================
+       1. THEMING & VARIABLES
+       ========================================================================== */
+    :root {
+        --base-size: 14px;
+        --bg: #0a0a0b;
+        --fg: #e4e4e7;
+        --accent: #ff5e00;
+        --dim: #a1a1aa;
+        --brighter: #efeef1;
+        --border: #27272a;
+        --border-subtle: rgba(255, 255, 255, 0.05);
+        --border-dotted: rgba(128, 128, 128, 0.3);
+        --row-hover: #18181b;
+        --panel: #111112;
+        --card-bg: #131315;
+    }
+
+    /* ==========================================================================
+       2. GLOBAL & BASE STYLES
+       ========================================================================== */
+    html {
+        font-size: var(--base-size);
+    }
+
+    body {
+        font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
+        background: var(--bg);
+        color: var(--fg);
+        margin: 0;
+        padding: 2.5rem;
+        font-size: 1rem;
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    pre {
+        background: #09090b;
+        padding: 1rem;
+        color: var(--fg);
+        font-size: 0.8rem;
+        border: 1px solid var(--border);
+        overflow-x: auto;
+        border-radius: 6px;
+    }
+
+    h1 {
+        margin: 0;
+        font-size: 1.2rem;
+        font-weight: 500;
+        letter-spacing: 2px;
+    }
+
+    h1 span {
+        color: var(--accent);
+    }
+
+    /* ==========================================================================
+       3. LAYOUT COMPONENTS
+       ========================================================================== */
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    header {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 1.5rem;
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .app-footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        text-align: right;
+        font-size: 0.65rem;
+        color: var(--dim);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+
+    /* ==========================================================================
+       4. TYPOGRAPHY & UTILITIES
+       ========================================================================== */
+    .sub {
+        font-size: 0.85rem;
+        color: var(--dim);
+        margin-top: 4px;
+    }
+
+    .sum {
+        font-size: 0.85rem;
+        color: var(--brighter);
+        margin-top: 4px;
+    }
+
+    .sys-vitals {
+        color: var(--dim);
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    }
+
+    .sys-info {
+        font-size: 0.9rem;
+        color: var(--dim);
+    }
+
+    #sys-version {
+        color: var(--fg);
+        font-weight: 500;
+    }
+
+    .text-muted {
+        opacity: 1;
+    }
+
+    .text-dim {
+        opacity: 0.7;
+    }
+
+    .text-truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .text-nowrap {
+        white-space: nowrap;
+    }
+
+    .text-right {
+        text-align: right;
+    }
+
+    .spacer-sm {
+        height: 6px;
+    }
+
+    .status-indicator {
+        margin-right: 6px;
+    }
+
+    /* Status Colors */
+    .text-warn {
+        color: #ff9800;
+        font-weight: 300;
+    }
+
+    .text-err {
+        color: #ee4444;
+        font-weight: 300;
+    }
+
+    .text-http {
+        color: #00d4ff;
+        font-weight: 300;
+    }
+
+    .text-ws {
+        color: #00ff88;
+        font-weight: 300;
+    }
+
+    .text-4xx {
+        color: rgba(200, 152, 0, 0.7);
+        font-weight: 300;
+    }
+
+    .text-5xx {
+        color: rgba(238, 100, 100, 0.7);
+        font-weight: 300;
+    }
+
+    .text-3xx {
+        color: rgba(50, 150, 255, 0.7);
+        font-weight: 300;
+    }
+
+    .text-2xx {
+        color: rgba(0, 200, 100, 0.7);
+        font-weight: 300;
+    }
+
+    /* ==========================================================================
+       5. TABLE STYLES
+       ========================================================================== */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        text-align: left;
+        font-size: 0.90rem;
+        color: var(--dim);
+        padding: 0.8rem 1rem;
+        border-bottom: 1px solid var(--border);
+        font-weight: 400;
+    }
+
+    td {
+        padding: 0.8rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+    }
+
+    th, td {
+        border-right: 1px solid var(--border-subtle);
+    }
+
+    th:last-child, td:last-child {
+        border-right: none;
+    }
+
+    tr.clickable-row {
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    tr.clickable-row:hover td {
+        background: var(--row-hover);
+    }
+
+    tr.clickable-row:hover td:first-child {
+        box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    tr.total-row td {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--dim);
+        padding-top: 0.8rem;
+        padding-bottom: 0.8rem;
+    }
+
+    .col-route {
+        width: 250px;
+        min-width: 250px;
+        max-width: 250px;
+        padding-right: 15px;
+    }
+
+    /* ==========================================================================
+       6. METRICS UI (Dotted Leaders)
+       ========================================================================== */
+    .metric-row {
+        display: flex;
+        align-items: flex-end;
+        line-height: 1.1;
+        margin: 0;
+        padding-bottom: 2px;
+    }
+
+    .metric-label {
+        opacity: 1;
+    }
+
+    .metric-leader {
+        flex-grow: 1;
+        border-bottom: 1px dotted var(--border-dotted);
+        margin: 0 0.5rem;
+        position: relative;
+        top: -4px;
+    }
+
+    .metric-value {
+        white-space: nowrap;
+    }
+
+    /*
+    ==========================================================================
+    7. VIEW SLIDER (In-Place Transition)
+    ========================================================================== */
+    #view-slider {
+        position: relative;
+        width: 100%;
+        min-height: 400px;
+    }
+
+    .slide-pane {
+        width: 100%;
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
+    }
+
+    /* Default State: Table is active, Details are hidden */
+    #pane-table {
+        position: relative;
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    #pane-details {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform: translateX(40px);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* Active State: Details are active, Table is hidden */
+    #view-slider.show-details-view #pane-table {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform: translateX(-40px);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    #view-slider.show-details-view #pane-details {
+        position: relative;
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Masonry Grid inside the details pane */
+    #details-content {
+        column-width: 360px;
+        column-gap: 1.5rem;
+        padding-bottom: 2rem;
+    }
+
+    /* Prevent column breaks inside cards */
+    .panel-section {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        padding: 1.2rem;
+        margin-bottom: 1.5rem;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        overflow: hidden;
+    }
+
+    .panel-header-container {
+        column-span: all;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+        padding-bottom: 0.75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .panel-title {
+        font-size: 1.05em;
+        font-weight: 500;
+        color: var(--fg);
+        margin: 0;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }
+
+    .panel-subtitle {
+        font-size: 0.9em;
+        color: var(--dim);
+        word-break: break-all;
+        line-height: 1.2;
+    }
+
+    .panel-section-title {
+        font-size: 0.85em;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--brighter);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+    }
+
+    /* Convert the close button to a subtle text link */
+    .panel-close-btn {
+        background: transparent;
+        border: none;
+        color: var(--dim);
+        font-family: inherit;
+        font-size: 0.8rem;
+        padding: 4px 8px;
+        cursor: pointer;
+        transition: color 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .panel-close-btn:hover {
+        color: var(--fg);
+        background: transparent;
+    }
+
+    .panel-close-icon {
+        font-size: 1.2em;
+        line-height: 0;
+        position: relative;
+        top: -1px;
+    }
+
+    /* ==========================================================================
+       8. JOURNALING & BADGES
+       ========================================================================== */
+    .pill-group {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+        font-size: 0.85em
+    }
+
+    .journal-tag {
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        background: rgba(128, 128, 128, 0.1);
+        opacity: 0.5;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        letter-spacing: 1px;
+        transition: all 0.2s ease;
+    }
+
+    [class*="journal-active-"] {
+        opacity: 1;
+        border-color: currentColor;
+    }
+
+    .journal-active-none {
+        color: var(--dim);
+        border-color: var(--dim);
+        background: rgba(161, 161, 170, 0.1);
+    }
+
+    .journal-active-metadata {
+        color: #2dd4bf;
+        border-color: #2dd4bf;
+        background: rgba(45, 212, 191, 0.1);
+    }
+
+    .journal-active-headers {
+        color: #3b82f6;
+        border-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.1);
+    }
+
+    .journal-active-full {
+        color: #a855f7;
+        border-color: #a855f7;
+        background: rgba(168, 85, 247, 0.1);
+    }
+
+    .j-badge {
+        font-weight: 900;
+        display: inline-block;
+        min-width: 14px;
+        text-align: center;
+    }
+
+    .sys-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--dim);
+        padding: 6px 12px;
+        font-family: inherit;
+        font-size: 0.8rem;
+        letter-spacing: 1px;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+
+    .sys-btn:hover {
+        background: var(--card-bg);
+        color: var(--fg);
+        border-color: rgba(128, 128, 128, 0.4);
+    }
+</style>
 </head>
 <body>
 
@@ -498,7 +498,7 @@
             <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
-            <button class="sys-btn" onclick="showConfigDetails()">CONFIG</button>
+            <button class="sys-btn" onclick="handleConfigClick()">CONFIG</button>
             <div class="sys-info" id="last-update">CONNECTING...</div>
         </div>
     </header>
@@ -531,15 +531,12 @@
     </footer>
 </div>
 
-<div id="details-panel">
-
-</div>
-
 <script>
     const FRACTION_DIGITS = 2;
     const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
     let previousGcTime = null;
+    let lastUpdateTime = null;
     let currentGcRate = 0;
 
     function getUnitIndex(b) {
@@ -661,17 +658,50 @@
         return val;
     }
 
+    // --- Click Handlers to centralize Scroll logic ---
+    function handleRowClick(routeId) {
+        window.currentOpenRoute = routeId;
+        slider.classList.add('show-details-view');
+        window.scrollTo({top: 0, behavior: 'smooth'});
+        showDetails(routeId);
+    }
+
+    function handleSystemClick() {
+        window.currentOpenRoute = '__SYSTEM__';
+        slider.classList.add('show-details-view');
+        window.scrollTo({top: 0, behavior: 'smooth'});
+        showSystemDetails();
+    }
+
+    function handleConfigClick() {
+        window.currentOpenRoute = '__CONFIG__';
+        slider.classList.add('show-details-view');
+        window.scrollTo({top: 0, behavior: 'smooth'});
+        showConfigDetails();
+    }
+
+    function closeDetails() {
+        slider.classList.remove('show-details-view');
+        window.currentOpenRoute = null;
+    }
+
+    const slider = document.getElementById('view-slider');
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && slider.classList.contains('show-details-view')) {
+            closeDetails();
+        }
+    });
+
     function showConfigDetails() {
         const data = window.currentData;
         if (!data || !data.system) return;
 
-        window.currentOpenRoute = '__CONFIG__';
         const sys = data.system;
         const cfg = sys.configuration || {};
-
         const mem = sys.memory || data.memory || null;
 
-        document.getElementById('details-content').innerHTML = `
+        const content = `
         <div class="panel-header-container">
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> CONFIGURATION
@@ -751,12 +781,27 @@
        </span>`)}
             ` : `<div class="sub text-dim" style="padding: 4px;">Resource data pending...</div>`}
         </div>
-    `;
+        `;
 
-        openDetails();
+        const container = document.getElementById('details-content');
+        const scrollPos = window.scrollY;
+        container.innerHTML = content;
+        window.scrollTo(0, scrollPos);
     }
 
-    function drawStackedSparkline(canvas, data) {
+    // Weighted Moving Average smoothing kernel (1-2-1)
+    function smoothArray(arr, isEnabled) {
+        if (!isEnabled || arr.length < 3) return arr;
+        const res = new Array(arr.length);
+        res[0] = arr[0];
+        for (let i = 1; i < arr.length - 1; i++) {
+            res[i] = (arr[i-1] + arr[i]*2 + arr[i+1]) / 4;
+        }
+        res[arr.length - 1] = arr[arr.length - 1];
+        return res;
+    }
+
+    function drawStackedSparkline(canvas, data, options = { showYAxis: false, smooth: true }) {
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
@@ -777,10 +822,13 @@
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, logicalWidth, logicalHeight);
 
-        const metadata = data?.metadata || { capacity: 150, interval: 'PT2S' };
-        const successData = data?.success || [];
-        const clientData = data?.client_error || [];
-        const serverData = data?.server_error || [];
+        const metadata = data.metadata;
+
+        // Apply WMA smoothing to eliminate sampling jitter
+        const successData = smoothArray(data?.success || [], options.smooth);
+        const clientData = smoothArray(data?.client_error || [], options.smooth);
+        const serverData = smoothArray(data?.server_error || [], options.smooth);
+
         const capacity = metadata.capacity;
 
         let maxValue = 0;
@@ -803,10 +851,32 @@
         }
 
         ctx.font = '600 11px ui-monospace, "Roboto Mono", monospace';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 0.7 Opacity
         const intervalSec = parseInt(metadata.interval.match(/\d+/)[0]) || 1;
+
+        // Draw the explicit Y Axis labels if requested (For the Detail Graph)
+        if (options.showYAxis && maxValue > 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+
+            // Peak requests per second based on the highest point
+            const maxRps = (maxValue / intervalSec).toFixed(1);
+            ctx.fillText(`PEAK: ${maxRps} req/s`, 4, 4);
+
+            // Draw a subtle dashed ceiling line at the exact peak value
+            ctx.beginPath();
+            const yLine = chartHeight - ((maxValue / displayMax) * chartHeight);
+            ctx.moveTo(0, yLine);
+            ctx.lineTo(logicalWidth, yLine);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]); // reset for next strokes
+        }
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 0.7 Opacity
         const timeVal = (capacity * intervalSec) >= 60 ? `${Math.round((capacity * intervalSec) / 60)}m` : `${capacity * intervalSec}s`;
-        ctx.textAlign = 'left'; ctx.fillText(`-${timeVal}`, 2, logicalHeight - 5);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`-${timeVal}`, 2, logicalHeight - 5);
         ctx.textAlign = 'right'; ctx.fillText('now', logicalWidth - 2, logicalHeight - 5);
 
         if (isSystemSilent) {
@@ -995,8 +1065,6 @@
             performance_telemetry: {average_latency: "PT0S"}
         };
 
-        window.currentOpenRoute = routeId;
-
         const t = metrics.traffic_flow;
         const s = metrics.request_statistics;
         const p = metrics.performance_telemetry;
@@ -1052,7 +1120,7 @@
             }).join('');
         };
 
-        document.getElementById('details-content').innerHTML = `
+        const content = `
         <div class="panel-header-container">
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">ROUTE //</span> ${routeId}
@@ -1060,6 +1128,16 @@
             <button class="panel-close-btn" onclick="closeDetails()">
                 <span class="panel-close-icon">←</span> BACK
             </button>
+        </div>
+
+        <div class="panel-section" style="column-span: all; padding-bottom: 0.5rem;">
+            <div class="panel-section-title" style="margin-bottom: 12px; border: none; padding-bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;">
+                <span>TRAFFIC HISTORY</span>
+                <span class="text-dim" style="font-size: 0.8em; letter-spacing: 0;">SMOOTHED (WMA)</span>
+            </div>
+            <div style="width: 100%; height: 180px; position: relative; margin-bottom: 1rem;">
+                <canvas id="detail-canvas-${routeId}" style="width: 100%; height: 100%; display: block;"></canvas>
+            </div>
         </div>
 
         <div class="panel-section">
@@ -1123,15 +1201,23 @@
             ${buildPills(resJourn)}
             ${buildOverrides(config.journal?.response_overrides)}
         </div>
-    `;
+        `;
 
-        openDetails();
+        const container = document.getElementById('details-content');
+        const scrollPos = window.scrollY; // Save scroll position
+        container.innerHTML = content;
+        window.scrollTo(0, scrollPos); // Restore it
+
+        // Draw the sparkline in the newly created canvas for the detail view
+        const detailCanvas = document.getElementById(`detail-canvas-${routeId}`);
+        if (detailCanvas && metrics.sparkline_data) {
+            drawStackedSparkline(detailCanvas, metrics.sparkline_data, { showYAxis: true, smooth: true });
+        }
     }
 
     const view = document.getElementById('view');
     const vitals = document.getElementById('sys-vitals');
     const timeEl = document.getElementById('last-update');
-    const panel = document.getElementById('details-panel');
 
     const PER_SEC = '/s';
     const ZERO_METRICS = {
@@ -1151,8 +1237,6 @@
         const data = window.currentData;
         if (!data) return;
 
-        window.currentOpenRoute = '__SYSTEM__';
-
         const stats = data.connector_statistics || {
             request_count: 0, bytes_sent: 0, bytes_received: 0, error_count: 0,
             processing_time_nanos: 0, max_processing_time_nanos: 0,
@@ -1163,7 +1247,7 @@
         const avgProcessingNanos = stats.request_count > 0 ? (stats.processing_time_nanos / stats.request_count) : 0;
         const uTotal = getUnitIndex(Math.max(stats.bytes_received, stats.bytes_sent));
 
-        document.getElementById('details-content').innerHTML = `
+        const content = `
         <div class="panel-header-container">
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> RAW TRAFFIC
@@ -1202,37 +1286,13 @@
                 Discrepancies between these numbers and the route aggregations indicate early socket terminations, malformed HTTP payloads, or unroutable dark traffic.
             </div>
         </div>
-    `;
+        `;
 
-        openDetails();
+        const container = document.getElementById('details-content');
+        const scrollPos = window.scrollY;
+        container.innerHTML = content;
+        window.scrollTo(0, scrollPos);
     }
-
-    const slider = document.getElementById('view-slider');
-
-    function openDetails() {
-        slider.classList.add('show-details-view');
-        // Smoothly snap back to the top of the details if scrolled down
-        window.scrollTo({top: 0, behavior: 'smooth'});
-    }
-
-    function closeDetails() {
-        slider.classList.remove('show-details-view');
-        window.currentOpenRoute = null;
-    }
-
-    // Update the Escape key listener to match the new class
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && slider.classList.contains('show-details-view')) {
-            closeDetails();
-        }
-    });
-
-    // Add Escape key listener to close details panel gracefully
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && panel.classList.contains('open')) {
-            closeDetails();
-        }
-    });
 
     function renderTable(data) {
         if (!data.route_configs) return;
@@ -1275,26 +1335,19 @@
             latency: 0
         });
 
-        const globalAvgLat = totals.total === 0 ? '0.00' : (totals.latency / totals.total).toFixed(FRACTION_DIGITS);
         const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
 
         const t2xxStyle = 'text-2xx';
-        const t3xxStyle = 'text-3xx';
         const t4xxStyle = totals.err_4xx > 0 ? 'text-4xx' : '';
         const t5xxStyle = totals.err_5xx > 0 ? 'text-5xx' : '';
-        const tActiveHttpStyle = totals.active > 0 ? 'text-http' : '';
-
-        const last = function (arr) {
-            return (arr && arr.length > 0) ? arr[arr.length - 1] : 0;
-        };
 
         let sys2xxRps = 0, sys4xxRps = 0, sys5xxRps = 0;
         data.route_configs.forEach(c => {
             const r = (data.route_metrics || []).find(m => m.id === c.id);
             if (r && r.sparkline_data) {
-                sys2xxRps += last(r.sparkline_data.success);
-                sys4xxRps += last(r.sparkline_data.client_error);
-                sys5xxRps += last(r.sparkline_data.server_error);
+                sys2xxRps += r.sparkline_data.success_rate;
+                sys4xxRps += r.sparkline_data.client_error_rate;
+                sys5xxRps += r.sparkline_data.server_error_rate;
             }
         });
         const sysRpsTotal = sys2xxRps + sys4xxRps + sys5xxRps;
@@ -1302,7 +1355,7 @@
         let html = '';
 
         html += `
-        <tr class="total-row clickable-row" onclick="showSystemDetails()">
+        <tr class="total-row clickable-row" onclick="handleSystemClick()">
             <td class="col-route">
                 ${mRow('SYSTEM TOTALS', '', true)}
                 ${mRow('LAST ACTIVE', timeAgo(totals.last_active), false)}
@@ -1346,13 +1399,13 @@
             const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
             const rActiveHttpStyle = s.active > 0 ? 'text-http' : '';
 
-            const r2xxRps = r.sparkline_data ? last(r.sparkline_data.success) / 2 : 0;
-            const r4xxRps = r.sparkline_data ? last(r.sparkline_data.client_error) / 2 : 0;
-            const r5xxRps = r.sparkline_data ? last(r.sparkline_data.server_error) / 2 : 0;
+            const r2xxRps = r.sparkline_data ? r.sparkline_data.success_rate : 0;
+            const r4xxRps = r.sparkline_data ? r.sparkline_data.client_error_rate : 0;
+            const r5xxRps = r.sparkline_data ? r.sparkline_data.server_error_rate : 0;
             const rRpsTotal = r2xxRps + r4xxRps + r5xxRps;
 
             html += `
-        <tr class="clickable-row" onclick="showDetails('${config.id}')">
+        <tr class="clickable-row" onclick="handleRowClick('${config.id}')">
             <td class="col-route">
                 ${mRow('ROUTE', config.id, true)}
                 ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
@@ -1383,10 +1436,24 @@
 
         view.innerHTML = html;
 
-        const sysSparkline = {success: [], client_error: [], server_error: []};
-        const bufferSize = data.route_metrics && data.route_metrics[0] && data.route_metrics[0].sparkline_data ? data.route_metrics[0].sparkline_data.success.length : 0;
+        const sysSparkline = {
+            metadata: null,
+            successRate: 0,
+            clientErrorRate: 0,
+            serverErrorRate: 0,
+            success: [],
+            client_error: [],
+            server_error: []
+        };
+
+        // Find the first route that actually has sparkline data to extract the global metadata/buffer size
+        const firstRouteWithSparkline = (data.route_metrics || []).find(m => m.sparkline_data);
+        const bufferSize = firstRouteWithSparkline ? firstRouteWithSparkline.sparkline_data.success.length : 0;
 
         if (bufferSize > 0) {
+            // Assign the global metadata (capacity & interval)
+            sysSparkline.metadata = firstRouteWithSparkline.sparkline_data.metadata;
+
             for (let i = 0; i < bufferSize; i++) {
                 sysSparkline.success[i] = 0;
                 sysSparkline.client_error[i] = 0;
@@ -1395,23 +1462,29 @@
 
             (data.route_metrics || []).forEach(m => {
                 if (m.sparkline_data) {
+                    // Sum the pre-calculated rates from the backend
+                    sysSparkline.successRate += (m.sparkline_data.successRate || 0);
+                    sysSparkline.clientErrorRate += (m.sparkline_data.clientErrorRate || m.sparkline_data.client_error_rate || 0);
+                    sysSparkline.serverErrorRate += (m.sparkline_data.serverErrorRate || m.sparkline_data.server_error_rate || 0);
+
+                    // Sum the historical arrays for the visual graph
                     for (let i = 0; i < bufferSize; i++) {
                         sysSparkline.success[i] += (m.sparkline_data.success[i] || 0);
-                        sysSparkline.client_error[i] += (m.sparkline_data.client_error[i] || 0);
-                        sysSparkline.server_error[i] += (m.sparkline_data.server_error[i] || 0);
+                        sysSparkline.client_error[i] += (m.sparkline_data.client_error[i] || m.sparkline_data.clientError?.[i] || 0);
+                        sysSparkline.server_error[i] += (m.sparkline_data.server_error[i] || m.sparkline_data.serverError?.[i] || 0);
                     }
                 }
             });
 
             const sysCanvas = document.getElementById('canvas___SYSTEM__');
-            if (sysCanvas) drawStackedSparkline(sysCanvas, sysSparkline);
+            if (sysCanvas) drawStackedSparkline(sysCanvas, sysSparkline, { showYAxis: false, smooth: true });
         }
 
         data.route_configs.forEach(config => {
             const canvas = document.getElementById(`canvas_${config.id}`);
             const metrics = (data.route_metrics || []).find(m => m.id === config.id);
             if (canvas && metrics && metrics.sparkline_data) {
-                drawStackedSparkline(canvas, metrics.sparkline_data);
+                drawStackedSparkline(canvas, metrics.sparkline_data, { showYAxis: false, smooth: true });
             }
         });
     }
@@ -1425,19 +1498,22 @@
 
             const sys = data.system;
             const mem = sys.memory || data.memory || null;
+            const now = performance.now();
 
             if (mem && mem.gc_time_ms !== undefined) {
-                if (previousGcTime !== null) {
-                    // Since we poll every 1 second, the delta is roughly our ms/sec rate
-                    currentGcRate = mem.gc_time_ms - previousGcTime;
+                if (previousGcTime !== null && lastUpdateTime !== null) {
+                    const timeDeltaMs = now - lastUpdateTime;
+                    const gcDelta = mem.gc_time_ms - previousGcTime;
+                    if (timeDeltaMs > 0) {
+                        currentGcRate = Math.round((gcDelta / timeDeltaMs) * 1000); // Scale to ms per second
+                    }
                 }
                 previousGcTime = mem.gc_time_ms;
             }
+            lastUpdateTime = now;
 
             const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
             const activeConns = data.connector_statistics?.active_connections || 0;
-
-            // Fallback to 'Unversioned' if the YAML doesn't specify one
             const routesVer = data.route_version || 'Unversioned';
 
             vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | ROUTES: ${routesVer} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
@@ -1458,9 +1534,12 @@
                 data.route_metrics.forEach(m => window.currentMetrics[m.id] = m);
             }
 
+            // Bulletproof scroll retention for the entire redraw tick
+            const currentGlobalScroll = window.scrollY;
+
             renderTable(data);
 
-            if (panel.classList.contains('open')) {
+            if (slider.classList.contains('show-details-view')) {
                 if (window.currentOpenRoute === '__SYSTEM__') {
                     showSystemDetails();
                 } else if (window.currentOpenRoute === '__CONFIG__') {
@@ -1469,6 +1548,9 @@
                     showDetails(window.currentOpenRoute);
                 }
             }
+
+            window.scrollTo(0, currentGlobalScroll);
+
         } catch (e) {
             console.error(e)
             timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;

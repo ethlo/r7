@@ -1,7 +1,5 @@
 package com.ethlo.r7.status;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import java.time.Duration;
 
 public final class SparklineRingBuffer
@@ -15,7 +13,7 @@ public final class SparklineRingBuffer
 
     private int head;
 
-    // Track the absolute totals from the previous tick to calculate the 10-second delta
+    // Track the absolute totals from the previous tick to calculate the delta
     private long lastSuccessTotal;
     private long lastClientErrorTotal;
     private long lastServerErrorTotal;
@@ -69,6 +67,7 @@ public final class SparklineRingBuffer
         final int[] snapClientError = new int[this.capacity];
         final int[] snapServerError = new int[this.capacity];
 
+        // Unwrap the ring buffer so index 0 is the oldest, and capacity-1 is the newest
         int index = this.head;
         for (int i = 0; i < this.capacity; i++)
         {
@@ -78,7 +77,27 @@ public final class SparklineRingBuffer
             index = (index + 1) % this.capacity;
         }
 
-        return new SparklineSnapshot(new SparklineMetadata(capacity, interval), snapSuccess, snapClientError, snapServerError);
+        // The newest data in the array is ALREADY the discrete count for the last interval window
+        final int latestSuccess = snapSuccess[this.capacity - 1];
+        final int latestClientError = snapClientError[this.capacity - 1];
+        final int latestServerError = snapServerError[this.capacity - 1];
+
+        // Calculate rates per second using the raw bucket counts
+        final double intervalSeconds = Math.max(0.001, this.interval.toMillis() / 1000.0);
+
+        final int successRate = (int) Math.round(latestSuccess / intervalSeconds);
+        final int clientErrorRate = (int) Math.round(latestClientError / intervalSeconds);
+        final int serverErrorRate = (int) Math.round(latestServerError / intervalSeconds);
+
+        return new SparklineSnapshot(
+                new SparklineMetadata(this.capacity, this.interval),
+                successRate,
+                snapSuccess,
+                clientErrorRate,
+                snapClientError,
+                serverErrorRate,
+                snapServerError
+        );
     }
 
     public record SparklineMetadata(int capacity, Duration interval)
@@ -87,11 +106,16 @@ public final class SparklineRingBuffer
 
     public record SparklineSnapshot(
             SparklineMetadata metadata,
+            int successRate,
             int[] success,
-            @JsonProperty("client_error")
+            int clientErrorRate,
             int[] clientError,
-            @JsonProperty("server_error")
+            int serverErrorRate,
             int[] serverError)
     {
+        public int rate()
+        {
+            return successRate + clientErrorRate + serverErrorRate;
+        }
     }
 }

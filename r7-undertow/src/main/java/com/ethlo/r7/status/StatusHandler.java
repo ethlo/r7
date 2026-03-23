@@ -15,6 +15,7 @@ import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
 import com.ethlo.r7.undertow.config.ServerConfig;
+import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.vlf.DiskSpaceUtils;
@@ -22,19 +23,9 @@ import io.undertow.server.ConnectorStatistics;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.PropertyNamingStrategies;
-import tools.jackson.databind.json.JsonMapper;
 
 public final class StatusHandler implements HttpHandler
 {
-    public static final ObjectMapper MAPPER = JsonMapper.builder()
-            .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-            .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            .build();
-
     private final MetricsRegistry metricsRegistry;
     private final ServerConfig serverConfig;
     private final RouteRegistry routeRegistry;
@@ -115,7 +106,7 @@ public final class StatusHandler implements HttpHandler
         root.put("route_configs", routeConfigs);
 
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
-        exchange.getResponseSender().send(MAPPER.writeValueAsString(root));
+        exchange.getResponseSender().send(JsonUtil.writeValueAsString(root));
     }
 
     private void serveHtml(final HttpServerExchange exchange)

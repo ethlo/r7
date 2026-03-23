@@ -1,6 +1,7 @@
 package com.ethlo.r7.status;
 
 import java.time.Duration;
+import java.util.Optional;
 
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.SchedulerAware;
@@ -15,8 +16,9 @@ import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.undertow.UndertowGatewayExchange;
+import com.ethlo.r7.validation.ValidatableConfig;
 
-public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>, SchedulerAware
+public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMetricsFactory.Config>, SchedulerAware
 {
     private static final String FILTER_NAME = "SimpleMetrics";
     private GatewayScheduler scheduler;
@@ -28,13 +30,16 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
     }
 
     @Override
-    public ClientResponseGatewayFilter create(final EmptyConfig config)
+    public Class<Config> configClass()
     {
-        final Duration tickInterval = Duration.ofSeconds(2);
-        final int capacity = 150;
+        return Config.class;
+    }
 
-        final GF gf = new GF(capacity, tickInterval);
-        this.scheduler.scheduleEvery(tickInterval, gf::trigger);
+    @Override
+    public ClientResponseGatewayFilter create(final Config config)
+    {
+        final GF gf = new GF(config);
+        this.scheduler.scheduleEvery(config.interval(), gf::trigger);
         return gf;
     }
 
@@ -44,15 +49,36 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         this.scheduler = scheduler;
     }
 
+    public record Config(Duration period, Duration interval) implements ValidatableConfig
+    {
+        @Override
+        public Duration period()
+        {
+            return Optional.ofNullable(period).orElse(Duration.ofMinutes(2));
+        }
+
+        @Override
+        public Duration interval()
+        {
+            return Optional.ofNullable(interval).orElse(Duration.ofSeconds(1));
+        }
+
+        public int capacity()
+        {
+            return (int) period().dividedBy(interval());
+        }
+    }
+
     public static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
     {
+        private final Config config;
         // Volatile ensures the hot-swap by the registry is instantly visible to worker threads
         private volatile RouteMetricsBucket bucket;
 
-        public GF(final int capacity, final Duration tickInterval)
+        public GF(Config config)
         {
-            // Start with a temporary local bucket to ensure no dropped requests during init
-            this.bucket = new RouteMetricsBucket(capacity, tickInterval);
+            this.bucket = new RouteMetricsBucket(config.capacity(), config.period());
+            this.config = config;
         }
 
         /**
@@ -65,11 +91,6 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
                 persistentBucket.merge(this.bucket);
                 this.bucket = persistentBucket;
             }
-        }
-
-        public RouteMetricsBucket getBucket()
-        {
-            return this.bucket;
         }
 
         @Override
@@ -138,6 +159,16 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<GatewayF
         public void trigger()
         {
             this.bucket.triggerSparkline();
+        }
+
+        public int capacity()
+        {
+            return config.capacity();
+        }
+
+        public Duration interval()
+        {
+            return config.interval();
         }
     }
 }
