@@ -10,13 +10,13 @@ public interface GatewayFilterFactory<C extends ValidatableConfig>
     /**
      * @return The specific config class to map config against
      */
-    default Class<C> configClass()
-    {
-        return null;
-    }
+    Class<C> configClass();
 
-    GatewayFilter create(C config);
+    GatewayFilter create(C config, FilterCreationContext filterCreationContext);
 
+    /**
+     * Default placeholder for filters that have zero configuration options
+     */
     record EmptyConfig() implements ValidatableConfig
     {
     }

@@ -7,6 +7,7 @@ import java.util.regex.PatternSyntaxException;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -29,7 +30,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(Config config)
+    public UpstreamRequestGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

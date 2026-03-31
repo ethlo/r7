@@ -6,6 +6,7 @@ import java.util.Base64;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -29,7 +30,7 @@ public final class InjectBasicAuthFactory implements GatewayFilterFactory<Inject
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(final Config config)
+    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

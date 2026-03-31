@@ -3,6 +3,7 @@ package com.ethlo.r7.filters;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -25,7 +26,7 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
     }
 
     @Override
-    public ClientResponseGatewayFilter create(final Config config)
+    public ClientResponseGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

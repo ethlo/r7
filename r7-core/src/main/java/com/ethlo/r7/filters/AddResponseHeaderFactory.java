@@ -4,6 +4,7 @@ import com.ethlo.r7.RedactUtil;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -26,7 +27,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
     }
 
     @Override
-    public ClientResponseGatewayFilter create(Config config)
+    public ClientResponseGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

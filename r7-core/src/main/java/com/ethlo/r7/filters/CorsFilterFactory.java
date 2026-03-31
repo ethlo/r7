@@ -10,6 +10,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -42,7 +43,7 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config)
+    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

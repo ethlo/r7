@@ -6,8 +6,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import com.ethlo.r7.GatewayScheduler;
+
+import com.ethlo.r7.spi.EngineContext;
 
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,10 +54,7 @@ class R7IntegrationTest
         final RouteRegistry registry = new RouteRegistry();
 
         final GatewayScheduler scheduler = new GatewayScheduler(2);
-        final ConfigurationManager loader = new ConfigurationManager(scheduler);
-
-        // 3. Execute the load (The "Live Reload" entry point)
-        // FIXME: loader.load(configFile, registry, s->);
+        final ConfigurationManager loader = new ConfigurationManager(new EngineContext(Map.of()));
 
         // 4. Assert the Registry state
         // We look for our "secure-api" route

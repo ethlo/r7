@@ -5,9 +5,10 @@ import static com.ethlo.r7.util.constants.HttpHeaders.X_CORRELATION_ID;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 
 public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
@@ -21,7 +22,13 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Ga
     }
 
     @Override
-    public GatewayFilter create(EmptyConfig config)
+    public Class<EmptyConfig> configClass()
+    {
+        return EmptyConfig.class;
+    }
+
+    @Override
+    public GatewayFilter create(EmptyConfig config, FilterCreationContext filterCreationContext)
     {
         return new GF();
     }

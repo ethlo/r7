@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -31,7 +32,7 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
     }
 
     @Override
-    public ClientRequestGatewayFilter create(Config config)
+    public ClientRequestGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
     {
         return new GF();
     }

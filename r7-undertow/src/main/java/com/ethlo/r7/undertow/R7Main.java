@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,14 +30,13 @@ import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.journal.compression.VlfCompressionEngine;
+import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.status.FileTelemetryRepository;
 import com.ethlo.r7.status.MetricsRegistry;
 import com.ethlo.r7.status.StatusHandler;
 import com.ethlo.r7.status.TelemetryRepository;
 import com.ethlo.r7.status.TrafficMetricsHandler;
 import com.ethlo.r7.status.VersionProvider;
-import com.ethlo.r7.status.dto.ModelMapper;
-import com.ethlo.r7.status.dto.TelemetryFlusher;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -70,9 +70,8 @@ public final class R7Main
 
         final RouteRegistry routeRegistry = new RouteRegistry();
         final GatewayScheduler scheduler = new GatewayScheduler(2);
-        final ConfigurationManager configurationManager = new ConfigurationManager(scheduler);
 
-        final ServerConfig serverConfig = configurationManager.load(serverFile, ServerConfig.class);
+        final ServerConfig serverConfig = ConfigurationManager.load(serverFile, ServerConfig.class);
         final ValidationResult result = new ValidationResult();
         serverConfig.validate(result);
         result.throwIfInvalid();
@@ -80,15 +79,22 @@ public final class R7Main
 
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
 
-        final RoutesDefinition routesConfig = configurationManager.load(configFile, RoutesDefinition.class);
+        final ServerConfig.StorageConfig storage = serverConfig.storage();
+        final Path workDir = Paths.get(storage.workDir());
+        Files.createDirectories(workDir);
+
+        final RoutesDefinition routesConfig = ConfigurationManager.load(configFile, RoutesDefinition.class);
+        final MetricsRegistry metricsRegistry = setupMetricsRegistry(workDir, scheduler);
+        final EngineContext engineContext = new EngineContext(Map.of(
+                GatewayScheduler.class, scheduler,
+                MetricsRegistry.class, metricsRegistry
+        ));
+        final ConfigurationManager configurationManager = new ConfigurationManager(engineContext);
+
         configurationManager.load(routesConfig, routeRegistry);
 
         final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
         logger.info("Watching config file {} for changes", configFile.toAbsolutePath());
-
-        final ServerConfig.StorageConfig storage = serverConfig.storage();
-        final Path workDir = Paths.get(storage.workDir());
-        Files.createDirectories(workDir);
 
         logger.info("Work directory is {} with {} free disk space", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
 
@@ -122,7 +128,6 @@ public final class R7Main
         // Used for having fast internal HTTP endpoint to talk to
         setupTestBackEndForProxy(benchMarkHandler, sharedWorker);
 
-        final MetricsRegistry metricsRegistry = setupMetricsRegistry(workDir, routeRegistry, routesConfig);
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
 
         setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost(), sharedWorker);
@@ -170,10 +175,10 @@ public final class R7Main
         logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
-    private static MetricsRegistry setupMetricsRegistry(Path workDir, RouteRegistry routeRegistry, RoutesDefinition routesConfig)
+    private static MetricsRegistry setupMetricsRegistry(Path workDir, GatewayScheduler scheduler)
     {
         final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
-        return new MetricsRegistry(routeRegistry, telemetryRepository);
+        return new MetricsRegistry(telemetryRepository, scheduler);
     }
 
     private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)

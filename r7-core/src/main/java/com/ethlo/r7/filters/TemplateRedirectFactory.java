@@ -8,6 +8,7 @@ import java.util.regex.PatternSyntaxException;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -35,7 +36,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config)
+    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
