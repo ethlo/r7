@@ -42,7 +42,7 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
                 config.capacity(),
                 config.interval()
         );
-        return new GF(config, persistentBucket);
+        return new GF(persistentBucket);
     }
 
     public record Config(Duration period, Duration interval) implements ValidatableConfig
@@ -67,13 +67,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
 
     public static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
     {
-        private final Config config;
         private final RouteMetricsBucket bucket;
 
-        public GF(Config config, final RouteMetricsBucket routeMetricsBucket)
+        public GF(final RouteMetricsBucket routeMetricsBucket)
         {
             this.bucket = routeMetricsBucket;
-            this.config = config;
         }
 
         @Override
@@ -137,16 +135,6 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
         public String summary()
         {
             return FILTER_NAME;
-        }
-
-        public int capacity()
-        {
-            return config.capacity();
-        }
-
-        public Duration interval()
-        {
-            return config.interval();
         }
     }
 }

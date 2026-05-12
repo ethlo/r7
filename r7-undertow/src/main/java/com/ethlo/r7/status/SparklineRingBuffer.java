@@ -118,4 +118,24 @@ public final class SparklineRingBuffer
             return successRate + clientErrorRate + serverErrorRate;
         }
     }
+
+    public void hydrate(final SparklineSnapshot snapshot)
+    {
+        if (snapshot == null || snapshot.metadata() == null)
+        {
+            return;
+        }
+
+        // Safety check: Only restore the arrays if the capacity exactly matches the new YAML config.
+        // If the configuration changed, we discard the old visual sparkline data, but the lifetime totals remain intact.
+        if (snapshot.metadata().capacity() == this.capacity)
+        {
+            System.arraycopy(snapshot.success(), 0, this.success, 0, this.capacity);
+            System.arraycopy(snapshot.clientError(), 0, this.clientError, 0, this.capacity);
+            System.arraycopy(snapshot.serverError(), 0, this.serverError, 0, this.capacity);
+
+            this.head = 0;
+        }
+        this.isFirstTick = true;
+    }
 }

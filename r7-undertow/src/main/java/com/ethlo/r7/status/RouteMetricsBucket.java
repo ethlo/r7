@@ -198,6 +198,12 @@ public final class RouteMetricsBucket
             this.totalDurationNanos.reset();
             this.totalDurationNanos.add(performanceTelemetry.averageLatency().toNanos() * requestStatistics.total());
         }
+
+        final SparklineRingBuffer.SparklineSnapshot sparklineData = routeMetricsDto.sparklineData();
+        if (sparklineData != null)
+        {
+            this.sparklineRingBuffer.hydrate(sparklineData);
+        }
     }
 
     public long getAvgLatencyNanos()
