@@ -1,3 +1,4 @@
+site
 docker/journals
 gc.log*
 target/
