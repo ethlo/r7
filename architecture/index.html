@@ -406,17 +406,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-low-allocation-hot-path" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The Low-Allocation Hot Path
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#the-filter-ecosystem" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -511,17 +500,19 @@
 
 <h1 id="architecture">Architecture</h1>
 <p>r7 achieves its throughput not by reinventing the wheel, but by aggressively optimizing how data flows between the network socket and the business logic.</p>
-<h2 id="the-low-allocation-hot-path">The Low-Allocation Hot Path</h2>
-<p>The most expensive operation in a Java-based network proxy isn't I/O; it is the Garbage Collector pausing the world to clean up millions of short-lived objects.</p>
-<p>r7’s filter pipeline is built to respect the heap:
-* <strong>Array-Backed Execution:</strong> Filter chains compile down to flat arrays, allowing the JVM to iterate via raw index loops rather than instantiating <code>Iterator</code> objects per request.
-* <strong>Stateful Attachments:</strong> Request context (like Rate Limit keys and JWT Identities) is passed via a lock-free attachment registry rather than creating new wrapper objects at every layer.
-* <strong>Pre-Computed Cryptography:</strong> Expensive operations, like SHA-256 Vault authentication, utilize <code>ThreadLocal</code> message digests to reuse cryptographic contexts across the Undertow worker pool.</p>
+<p>r7’s filter pipeline is built to respect the heap:</p>
+<ul>
+<li><strong>Array-Backed Execution:</strong> Filter chains compile down to flat arrays, allowing the JVM to iterate via raw index loops rather than instantiating <code>Iterator</code> objects per request.</li>
+<li><strong>Stateful Attachments:</strong> Request context (like Rate Limit keys and JWT Identities) is passed via a lock-free attachment registry rather than creating new wrapper objects at every layer.</li>
+<li><strong>Pre-Computed Cryptography:</strong> Expensive operations, like SHA-256 Vault authentication, utilize <code>ThreadLocal</code> message digests to reuse cryptographic contexts across the Undertow worker pool.</li>
+</ul>
 <h2 id="the-filter-ecosystem">The Filter Ecosystem</h2>
-<p>Authentication, traffic mutation, and resiliency are handled by a strict pipeline of modular filters:
-* <strong>Security:</strong> <code>RequireAuthorizationHeader</code>, <code>TokenAuth</code>, <code>JwtAuth</code>
-* <strong>Resiliency:</strong> <code>RateLimiter</code> (Bucket4j/Caffeine), <code>CircuitBreaker</code>
-* <strong>Mutation:</strong> <code>AddRequestHeader</code>, <code>RewritePath</code>, <code>StripPathPrefix</code></p>
+<p>Authentication, traffic mutation, and resiliency are handled by a strict pipeline of modular filters:</p>
+<ul>
+<li><strong>Security:</strong> <code>RequireAuthorizationHeader</code>, <code>TokenAuth</code>, <code>JwtAuth</code></li>
+<li><strong>Resiliency:</strong> <code>RateLimiter</code> (Bucket4j/Caffeine), <code>CircuitBreaker</code></li>
+<li><strong>Mutation:</strong> <code>AddRequestHeader</code>, <code>RewritePath</code>, <code>StripPathPrefix</code></li>
+</ul>
 
 
 
