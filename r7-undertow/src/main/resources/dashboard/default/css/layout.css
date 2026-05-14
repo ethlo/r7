@@ -1,0 +1,33 @@
+
+body{
+background:var(--bg);
+color:var(--fg);
+margin:0;
+padding:32px;
+}
+
+.header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+border-bottom:1px solid var(--border);
+padding-bottom:20px;
+margin-bottom:30px;
+}
+
+h1 span{
+color:var(--accent);
+}
+
+.sys-vitals{
+color:var(--dim);
+margin-top:6px;
+}
+
+.footer{
+margin-top:40px;
+border-top:1px solid var(--border);
+padding-top:16px;
+font-size:12px;
+color:var(--dim);
+}

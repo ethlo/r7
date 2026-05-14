@@ -1,0 +1,16 @@
+com.ethlo.r7.filters.AddResponseHeaderFactory
+com.ethlo.r7.filters.CorrelationIdHeaderFilterFactory
+com.ethlo.r7.filters.AddRequestHeaderFactory
+com.ethlo.r7.filters.RequireAuthorizationHeaderFactory
+com.ethlo.r7.filters.RewritePathFactory
+com.ethlo.r7.filters.StripCacheHeadersFactory
+com.ethlo.r7.filters.StripPathPrefixFactory
+com.ethlo.r7.filters.Bucket4jRateLimitFilter
+com.ethlo.r7.filters.CircuitBreakerFilter
+com.ethlo.r7.filters.CorsFilterFactory
+com.ethlo.r7.filters.InjectBasicAuthFactory
+com.ethlo.r7.filters.RemoveRequestHeaderFactory
+com.ethlo.r7.filters.RemoveResponseHeaderFactory
+com.ethlo.r7.filters.SetStatusFactory
+com.ethlo.r7.filters.StripPathPrefixFactory
+com.ethlo.r7.filters.RequestSizeFilterFactory

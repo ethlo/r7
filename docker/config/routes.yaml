@@ -1,0 +1,90 @@
+version: '{{git.rev.abbr}}'
+filters:
+  - SimpleMetrics
+  - CorrelationIdHeader
+routes:
+  - id: forward-status
+    upstream:
+      targets:
+        - url: http://localhost:18888
+    match:
+      - PathStartsWith:
+          prefix: ${SECRET_URL:/status}
+  - id: reject-benchmark
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    match:
+      - PathStartsWith:
+          prefix: /benchmark
+    filters:
+      - RequireAuthorizationHeader
+
+  - id: undertow-internal-backend
+    match:
+      - PathStartsWith:
+          prefix: /hello
+      - Method:
+          include:
+            - GET
+            - POST
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    filters:
+      - RateLimiter:
+          capacity: 5
+          refill_tokens: 1
+          refill_period: PT2s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT12s
+      - AddResponseHeader:
+          name: X-Powered-By
+          value: Ethlo R7
+      - CorrelationIdHeader
+      - RequireAuthorizationHeader
+    journal:
+      request:
+        level: NONE
+        status_overrides:
+          401,403: HEADERS
+          429: METADATA
+          5xx: HEADERS
+      response:
+        level: NONE
+
+  - id: ws-test
+    upstream:
+     targets:
+       - url: http://127.0.0.1:8080
+    match:
+       PathStartsWith:
+         prefix: /ws
+    journal:
+      request:
+        level: METADATA
+        status_overrides:
+          5xx: HEADERS
+      response:
+        level: HEADERS
+        status_overrides:
+          2xx: NONE
+
+  - id: home-assistant
+    upstream:
+      targets:
+        - url: http://192.168.50.103:8123
+    match:
+      - PathStartsWith:
+          prefix: /ha
+    journal:
+      request:
+        level: METADATA
+        status_overrides:
+          5xx: HEADERS
+      response:
+        level: HEADERS
+    filters:
+      - StripPathPrefix:
+          parts: 1

@@ -1,0 +1,9 @@
+# Dockerfile.jvm
+FROM gcr.io/distroless/java25-debian13:nonroot
+WORKDIR /app
+
+# We assume the JAR is already compiled by the CI runner
+COPY r7-undertow/target/r7-undertow-*.jar /app/server.jar
+
+USER 65532:65532
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]

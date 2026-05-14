@@ -1,0 +1,110 @@
+version: v2026-03-14
+global_filters:
+  - SimpleMetrics:
+      period: PT5M
+      interval: PT2S
+routes:
+  - id: dashboard
+    upstream:
+      targets:
+        - url: http://localhost:18888
+    match:
+      - PathStartsWith:
+          prefix: ${SECRET_URL:/status}
+  - id: reject-benchmark
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    match:
+      - PathStartsWith:
+          prefix: /benchmark
+    filters:
+      - RequireAuthorizationHeader
+
+  - id: static-content
+    match:
+      - not:
+        - PathStartsWith:
+            prefix: /hello
+      - or:
+        - Method:
+            include:
+              - GET
+              - POST
+        - RemoteAddr:
+            source: 192.168.1/24
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    filters:
+      - RequireAuthorizationHeader
+      - RateLimiter:
+          capacity: 50000
+          refill_tokens: 100000
+          refill_period: PT1s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT15s
+      - CorrelationIdHeader
+    journal:
+      request:
+        level: HEADERS
+        status_overrides:
+          401,403: HEADERS
+          429: METADATA
+          5xx: HEADERS
+      response:
+        level: FULL
+
+  - id: static-content-without-journal
+    match:
+      - PathStartsWith:
+          prefix: /hello
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    filters:
+      - RateLimiter:
+          capacity: 50000
+          refill_tokens: 12000
+          refill_period: PT1s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT15s
+      #- RequireAuthorizationHeader
+      - CorrelationIdHeader
+
+  - id: ws-chat
+    upstream:
+      targets:
+        - url: http://127.0.0.1:8080
+    match:
+      PathStartsWith:
+        prefix: /ws
+    journal:
+      request:
+        level: METADATA
+        status_overrides:
+          5xx: HEADERS
+      response:
+        level: HEADERS
+        status_overrides:
+          2xx: NONE
+
+  - id: home-assistant
+    upstream:
+      targets:
+        - url: http://192.168.50.103:8123
+    match:
+      - PathStartsWith:
+          prefix: /ha
+    journal:
+      request:
+        level: METADATA
+        status_overrides:
+          5xx: HEADERS
+      response:
+        level: HEADERS
+    filters:
+      - StripPathPrefix:
+          parts: 1

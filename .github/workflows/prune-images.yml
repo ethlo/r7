@@ -1,0 +1,21 @@
+name: Prune Old GHCR Images
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  clean-ghcr:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete old images
+        uses: snok/container-retention-policy@v3
+        with:
+          image-names: r7-gateway
+          cut-off: 3 days ago
+          keep-at-least: 2
+          account-type: personal
+          token: ${{ secrets.GITHUB_TOKEN }}

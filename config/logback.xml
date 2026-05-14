@@ -1,0 +1,30 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) [%cyan(%thread)] %magenta(%logger{15}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="ASYNC_STDOUT" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="STDOUT"/>
+        <queueSize>10000</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="ASYNC_STDOUT"/>
+    </root>
+
+    <logger name="r7" level="INFO" additivity="false">
+        <appender-ref ref="STDOUT-RAW"/>
+    </logger>
+
+    <appender name="STDOUT-RAW" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="r7.access" level="WARN"/>
+</configuration>

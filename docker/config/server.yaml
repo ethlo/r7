@@ -1,0 +1,50 @@
+host: 0.0.0.0
+port: 8888
+
+status_port: 18888
+status_host: 0.0.0.0
+
+worker:
+  # Match this to your physical cores (e.g., if you have 8 cores)
+  io_threads: 8
+  # Reduce these to prevent excessive context switching
+  task_core_threads: 16
+  task_max_threads: 16
+  stack_size: 262144 # 256KB
+  # Allow more concurrent backend connections
+  connection_low_water: 10000
+  connection_high_water: 20000
+
+options:
+  # 16KB is large for small text files; try 8KB to stay in cache
+  buffer_size: 8192
+  direct_buffers: true
+  # Force TCP optimization
+  tcp_nodelay: true
+  enable_http2: true
+  always_set_keep_alive: true
+  max_header_size: 8192
+  max_header_count: 50
+  request_parse_timeout: 2000
+
+proxy:
+  ttl: 30000
+  max_request_time: 60000
+  # Increase this significantly to avoid pooling bottlenecks
+  connections_per_thread: 2000
+  # Increase queue size to handle micro-bursts
+  max_queue_size: 1000
+
+# Tuning for the Socket layer
+socket:
+  tcp_nodelay: true
+  reuse_addresses: true
+  backlog: 1000
+  read_timeout: 30000
+
+# Disk settings for journaling
+storage:
+  work_dir: /journals
+  shard_count: 8
+  shard_size: 50000000
+  pre_fault: false
