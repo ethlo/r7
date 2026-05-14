@@ -14,14 +14,17 @@ theme:
     - navigation.tabs
     - content.code.copy
     - toc.integrate
-  logo: assets/logo.png
-  favicon: assets/favicon.png
+  logo: assets/r7.svg
+  favicon: assets/r7.svg
 
 nav:
   - Overview: index.md
-  - Architecture: architecture.md
-  - Benchmarks: benchmarks.md
   - Quickstart: quickstart.md
+  - Routes Configuration: routes_config.md
+  - Server Configuration: server_config.md
+  - Predicates: predicates.md
+  - Filters: filters.md
+  - Benchmarks: benchmarks.md
 
 markdown_extensions:
   - pymdownx.highlight:
