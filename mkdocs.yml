@@ -1,5 +1,5 @@
 site_name: ethlo r7 Gateway
-site_description: The performant Java Gateway
+site_description: The Performant Java Gateway
 site_url: https://r7.ethlo.com
 repo_url: https://github.com/ethlo/r7
 repo_name: ethlo/r7
@@ -20,10 +20,9 @@ theme:
 nav:
   - Overview: index.md
   - Quickstart: quickstart.md
-  - Routes Configuration: routes_config.md
-  - Server Configuration: server_config.md
-  - Predicates: predicates.md
-  - Filters: filters.md
+  - Configuration: config.md
+  - Extensibility: extensibility.md
+  - Journaling: journaling.md
   - Benchmarks: benchmarks.md
 
 markdown_extensions:
