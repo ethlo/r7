@@ -17,6 +17,10 @@ theme:
   logo: assets/r7.svg
   favicon: assets/r7.svg
 
+extra:
+  announcement: >
+    **Note:** r7 is currently in active pre-release development. Features, configuration schemas, and APIs may change without notice.
+
 nav:
   - Overview: index.md
   - Quickstart: quickstart.md

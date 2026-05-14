@@ -27,34 +27,46 @@ r7 pairs a declarative configuration model with immediate operational visibility
 
 This simplicity extends to the forensic visibility plane, where journaling policies can be tuned independently per route and per request/response direction. The configuration natively supports the dynamic elevation of audit levels, such as automatically escalating a payload capture from `METADATA` to `HEADERS` when an upstream returns a 5xx error.
 
+![r7 Dashboard route view](assets/route_view.png)
+
 **Example Configuration:**
 
 ```yaml
 routes:
-  - id: undertow-internal-backend
+  - id: static-content
+    match:
+      - not:
+          - PathStartsWith:
+              prefix: /hello
+      - or:
+          - Method:
+              include:
+                - GET
+                - POST
+          - RemoteAddr:
+              source: 192.168.1/24
     upstream:
       targets:
         - url: http://localhost:1111
-    match:
-      - PathStartsWith:
-          prefix: /hello
-      - Method:
-          include:
-            - GET
-            - POST
+    filters:
+      - RequireAuthorizationHeader
+      - RateLimiter:
+          capacity: 50000
+          refill_tokens: 100000
+          refill_period: PT1s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: PT15s
+      - CorrelationIdHeader
     journal:
       request:
-        level: FULL
+        level: HEADERS
+        status_overrides:
+          401,403: HEADERS
+          429: METADATA
+          5xx: HEADERS
       response:
         level: FULL
-    filters:
-      - SimpleMetrics
-      - AddResponseHeader:
-          name: X-Gateway
-          value: r7
-      - CorrelationIdHeader
-      - RequireAuthorizationHeader
-
 ```
 
 In production, the companion real-time dashboard translates this static configuration into a live operational instrument. Engineers can instantly inspect active route parameters, monitor the exact I/O cost of their configured journaling policies, and detect upstream degradation through tactical, color-coded error highlighting. This design ensures a tight, frictionless feedback loop between defining a route and observing its real-world behavior.
