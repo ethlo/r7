@@ -1,15 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://ethlo.github.io/r7/</loc>
+         <loc>https://r7.ethlo.com/</loc>
          <lastmod>2026-05-14</lastmod>
     </url>
     <url>
-         <loc>https://ethlo.github.io/r7/architecture/</loc>
+         <loc>https://r7.ethlo.com/benchmarks/</loc>
          <lastmod>2026-05-14</lastmod>
     </url>
     <url>
-         <loc>https://ethlo.github.io/r7/benchmarks/</loc>
+         <loc>https://r7.ethlo.com/filters/</loc>
+         <lastmod>2026-05-14</lastmod>
+    </url>
+    <url>
+         <loc>https://r7.ethlo.com/predicates/</loc>
+         <lastmod>2026-05-14</lastmod>
+    </url>
+    <url>
+         <loc>https://r7.ethlo.com/quickstart/</loc>
+         <lastmod>2026-05-14</lastmod>
+    </url>
+    <url>
+         <loc>https://r7.ethlo.com/routes_config/</loc>
+         <lastmod>2026-05-14</lastmod>
+    </url>
+    <url>
+         <loc>https://r7.ethlo.com/server_config/</loc>
          <lastmod>2026-05-14</lastmod>
     </url>
 </urlset>

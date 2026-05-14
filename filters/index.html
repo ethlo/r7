@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://r7.ethlo.com/benchmarks/">
+        <link rel="canonical" href="https://r7.ethlo.com/filters/">
       
       
-        <link rel="prev" href="../filters/">
+        <link rel="prev" href="../predicates/">
       
+      
+        <link rel="next" href="../benchmarks/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Benchmarks - ethlo r7 Gateway</title>
+        <title>Filters - ethlo r7 Gateway</title>
       
     
     
@@ -74,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#performance-the-memory-squeeze" class="md-skip">
+        <a href="#r7-proxy-filters-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -107,7 +109,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Benchmarks
+              Filters
             
           </span>
         </div>
@@ -285,9 +287,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../filters/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
         
   
   
@@ -304,11 +308,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
         
   
   
@@ -506,33 +508,6 @@
       
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../filters/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Filters
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
     
   
   
@@ -552,7 +527,7 @@
   <span class="md-ellipsis">
     
   
-    Benchmarks
+    Filters
   
 
     
@@ -570,7 +545,7 @@
   <span class="md-ellipsis">
     
   
-    Benchmarks
+    Filters
   
 
     
@@ -596,10 +571,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-results" class="md-nav__link">
+  <a href="#addrequestheader" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The Results
+        AddRequestHeader
       
     </span>
   </a>
@@ -607,10 +582,164 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#analysis-finding-the-floor" class="md-nav__link">
+  <a href="#addresponseheader" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Analysis: Finding the Floor
+        AddResponseHeader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#circuitbreaker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitBreaker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#correlationidheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CorrelationIdHeader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#injectbasicauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        InjectBasicAuth
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ratelimiter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimiter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#removerequestheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoveRequestHeader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#removeresponseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoveResponseHeader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requestsize" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RequestSize
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requireauthorizationheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RequireAuthorizationHeader
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rewritepath" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RewritePath
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SetStatus
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stripcacheheaders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StripCacheHeaders
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#strippathprefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StripPathPrefix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#templateredirect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TemplateRedirect
       
     </span>
   </a>
@@ -621,6 +750,33 @@
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -645,54 +801,379 @@
   
 
 
-<h1 id="performance-the-memory-squeeze">Performance &amp; The Memory Squeeze</h1>
-<p>Benchmarking API gateways often devolves into synthetic "apples-to-oranges" comparisons. Instead of claiming arbitrary high scores, we benchmarked r7 to demonstrate its behavior under severe memory constraints.</p>
-<p>The goal: <strong>Sustain 20,000 Requests Per Second (RPS) with a 12-thread worker pool, while progressively shrinking the container's RAM.</strong></p>
-<p><strong>The Test Vector:</strong>
-<code>wrk2 -t12 -c200 -d30s -R20000 -H "Authorization: Bearer &lt;token&gt;" http://localhost:9999/hello --latency</code></p>
-<h2 id="the-results">The Results</h2>
+<h1 id="r7-proxy-filters-reference">r7 Proxy Filters Reference</h1>
+<p>This document outlines the available filters for the r7 proxy, their behaviors, and their configuration parameters.</p>
+<h2 id="addrequestheader">AddRequestHeader</h2>
+<p>Adds or overrides an HTTP header before the request is forwarded to the upstream target.</p>
 <table>
 <thead>
 <tr>
-<th>Container Size</th>
-<th>Median Latency (P50)</th>
-<th>Tail Latency (P99)</th>
-<th>Max Latency</th>
-<th>Result</th>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>990 MB</strong></td>
-<td>1.10 ms</td>
-<td>6.54 ms</td>
-<td>21.25 ms</td>
-<td>Stable</td>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the HTTP header.</td>
 </tr>
 <tr>
-<td><strong>300 MB</strong></td>
-<td>1.05 ms</td>
-<td>5.13 ms</td>
-<td>32.00 ms</td>
-<td>Stable</td>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value to assign to the header.</td>
 </tr>
 <tr>
-<td><strong>200 MB</strong></td>
-<td>1.02 ms</td>
-<td>78.08 ms</td>
-<td>176.38 ms</td>
-<td>GC Squeeze</td>
+<td><code>override</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, overwrites existing headers with the same name. If <code>false</code> or omitted, appends the value.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="analysis-finding-the-floor">Analysis: Finding the Floor</h2>
-<p>The data reveals exactly how r7 interacts with the HotSpot JVM:</p>
-<ol>
-<li><strong>The P50 Consistency:</strong> Across all three memory tiers, the median latency remained locked at <code>~1.05ms</code>. This proves the core routing engine and zero-locking hot path execute instantly when the CPU is unimpeded.</li>
-<li><strong>The 300MB Sweet Spot:</strong> Dropping from 1GB to 300MB had almost zero impact on tail latencies. r7 is highly memory-efficient and can run comfortably in heavily constrained cloud environments.</li>
-<li><strong>The 200MB GC Squeeze:</strong> At 200MB, the container reached its physical limit. Between thread stacks, XNIO direct buffers, and the heap, the JVM ran out of breathing room. To survive the 20k RPS barrage without OOMing, the Garbage Collector triggered frequent "Stop-The-World" pauses, directly causing the P99 latency to spike to 78ms.</li>
-</ol>
-<p>By understanding these boundaries, infrastructure engineers can accurately provision r7 for Envoy-tier throughput using standard Kubernetes resource limits (<code>requests: 250Mi</code>, <code>limits: 350Mi</code>).</p>
+<h2 id="addresponseheader">AddResponseHeader</h2>
+<p>Adds or overrides an HTTP header on the client response before returning it to the client.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the HTTP header.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value to assign to the header.</td>
+</tr>
+<tr>
+<td><code>override</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, overwrites existing headers with the same name. If <code>false</code> or omitted, appends the value.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="circuitbreaker">CircuitBreaker</h2>
+<p>Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of <code>5xx</code> server errors is reached. Fast-fails with <code>503 Service Unavailable</code> while open.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>failureThreshold</code></td>
+<td>Integer</td>
+<td>Yes</td>
+<td>The number of consecutive <code>5xx</code> failures required to open the circuit.</td>
+</tr>
+<tr>
+<td><code>cooldownPeriod</code></td>
+<td>Duration</td>
+<td>Yes</td>
+<td>The time to wait before transitioning to a half-open state to probe upstream health.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="correlationidheader">CorrelationIdHeader</h2>
+<p>Automatically injects the gateway's internal request ID into both the upstream request and the client response using the <code>X-Correlation-Id</code> header.</p>
+<p><em>This filter requires no configuration parameters.</em></p>
+<h2 id="cors">Cors</h2>
+<p>Handles Cross-Origin Resource Sharing (CORS). Intercepts <code>OPTIONS</code> preflight requests returning <code>204 No Content</code>, and decorates standard responses with appropriate Access-Control headers.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allowedOrigins</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>Comma-separated list of permitted origins, or <code>*</code> to allow any origin.</td>
+</tr>
+<tr>
+<td><code>allowedMethods</code></td>
+<td>String</td>
+<td>No</td>
+<td>Value mapped to <code>Access-Control-Allow-Methods</code>.</td>
+</tr>
+<tr>
+<td><code>allowedHeaders</code></td>
+<td>String</td>
+<td>No</td>
+<td>Value mapped to <code>Access-Control-Allow-Headers</code>.</td>
+</tr>
+<tr>
+<td><code>maxAge</code></td>
+<td>String</td>
+<td>No</td>
+<td>Value mapped to <code>Access-Control-Max-Age</code>.</td>
+</tr>
+<tr>
+<td><code>allowCredentials</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, sets <code>Access-Control-Allow-Credentials</code> to <code>true</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="injectbasicauth">InjectBasicAuth</h2>
+<p>Generates a Base64 encoded Basic Authentication string and injects it into the <code>Authorization</code> header of the upstream request.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>username</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The authentication username.</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The authentication password.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ratelimiter">RateLimiter</h2>
+<p>Provides token-bucket rate limiting based on the client's IP address or a custom rate-limit key. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capacity</code></td>
+<td>Long</td>
+<td>Yes</td>
+<td>Maximum number of tokens the bucket can hold.</td>
+</tr>
+<tr>
+<td><code>refillTokens</code></td>
+<td>Long</td>
+<td>Yes</td>
+<td>Number of tokens added to the bucket per refill period.</td>
+</tr>
+<tr>
+<td><code>refillPeriod</code></td>
+<td>Duration</td>
+<td>Yes</td>
+<td>The time interval for the token refill.</td>
+</tr>
+<tr>
+<td><code>maxBuckets</code></td>
+<td>Long</td>
+<td>No</td>
+<td>Maximum number of buckets to track. Defaults to <code>10000</code>.</td>
+</tr>
+<tr>
+<td><code>maxBucketTTL</code></td>
+<td>Duration</td>
+<td>No</td>
+<td>Time-to-live for idle buckets. Defaults to <code>max(refillPeriod * 10, 30s)</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="removerequestheader">RemoveRequestHeader</h2>
+<p>Strips a specified HTTP header from the client request before it is forwarded to the upstream target.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header to remove.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="removeresponseheader">RemoveResponseHeader</h2>
+<p>Strips a specified HTTP header from the upstream response before it is returned to the client.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header to remove.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="requestsize">RequestSize</h2>
+<p>Evaluates the <code>Content-Length</code> header of incoming requests. Rejects payloads exceeding the configured limit with <code>413 Payload Too Large</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>maxBytes</code></td>
+<td>Long</td>
+<td>Yes</td>
+<td>The maximum allowed request size in bytes (must be &gt; 0).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="requireauthorizationheader">RequireAuthorizationHeader</h2>
+<p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Rejects requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.</p>
+<p><em>This filter requires no configuration parameters.</em></p>
+<h2 id="rewritepath">RewritePath</h2>
+<p>Rewrites the upstream request path using regular expressions before forwarding it to the target.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>regexp</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The regular expression pattern to match against the request path.</td>
+</tr>
+<tr>
+<td><code>replacement</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The replacement string applied to the matched path.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="setstatus">SetStatus</h2>
+<p>Overrides the HTTP response status code returned to the client, regardless of the upstream target's response.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>Integer</td>
+<td>Yes</td>
+<td>The valid HTTP status code (100-599) to enforce on the response.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="stripcacheheaders">StripCacheHeaders</h2>
+<p>Strips cache validation headers (<code>If-Modified-Since</code>, <code>If-None-Match</code>) and injects strict no-cache directives (<code>Cache-Control: no-cache</code>, <code>Pragma: no-cache</code>) into the upstream request.</p>
+<p><em>This filter requires no configuration parameters.</em></p>
+<h2 id="strippathprefix">StripPathPrefix</h2>
+<p>Removes a specified number of structural path segments from the beginning of the request path before it is routed upstream.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>parts</code></td>
+<td>Integer</td>
+<td>Yes</td>
+<td>The number of path segments (separated by <code>/</code>) to strip. Must be greater than 0.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="templateredirect">TemplateRedirect</h2>
+<p>Intercepts the request and immediately issues an HTTP redirect (3xx) based on a regex match of the path and a substitution template. Supports capturing regex groups using <code>{{1}}</code> or <code>{{var}}</code> syntax.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The regular expression pattern to match against the request path.</td>
+</tr>
+<tr>
+<td><code>target</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The destination URL template. Regex capture groups can be referenced using <code>{{name}}</code> or <code>{{index}}</code>.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>Integer</td>
+<td>No</td>
+<td>The HTTP redirect status code. Defaults to <code>302</code> (Found).</td>
+</tr>
+</tbody>
+</table>
 
 
 

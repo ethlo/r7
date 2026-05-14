@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://r7.ethlo.com/benchmarks/">
+        <link rel="canonical" href="https://r7.ethlo.com/predicates/">
       
       
-        <link rel="prev" href="../filters/">
+        <link rel="prev" href="../server_config/">
       
+      
+        <link rel="next" href="../filters/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Benchmarks - ethlo r7 Gateway</title>
+        <title>Predicates - ethlo r7 Gateway</title>
       
     
     
@@ -74,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#performance-the-memory-squeeze" class="md-skip">
+        <a href="#r7-proxy-predicates-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -107,7 +109,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Benchmarks
+              Predicates
             
           </span>
         </div>
@@ -266,9 +268,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../predicates/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
         
   
   
@@ -304,11 +308,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
         
   
   
@@ -479,10 +481,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../predicates/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Predicates
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -498,6 +527,109 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#logical-meta-predicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logical Meta-Predicates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-predicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Predicates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available Predicates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pathstartswith" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PathStartsWith
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#regexpath" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RegexPath
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remoteaddr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteAddr
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -533,37 +665,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Benchmarks
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
         
   
   
@@ -579,48 +684,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#the-results" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The Results
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#analysis-finding-the-floor" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Analysis: Finding the Floor
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -645,54 +708,131 @@
   
 
 
-<h1 id="performance-the-memory-squeeze">Performance &amp; The Memory Squeeze</h1>
-<p>Benchmarking API gateways often devolves into synthetic "apples-to-oranges" comparisons. Instead of claiming arbitrary high scores, we benchmarked r7 to demonstrate its behavior under severe memory constraints.</p>
-<p>The goal: <strong>Sustain 20,000 Requests Per Second (RPS) with a 12-thread worker pool, while progressively shrinking the container's RAM.</strong></p>
-<p><strong>The Test Vector:</strong>
-<code>wrk2 -t12 -c200 -d30s -R20000 -H "Authorization: Bearer &lt;token&gt;" http://localhost:9999/hello --latency</code></p>
-<h2 id="the-results">The Results</h2>
+<h1 id="r7-proxy-predicates-reference">r7 Proxy Predicates Reference</h1>
+<p>Predicates define the matching conditions that determine whether an incoming request should be routed to a specific upstream target. A route is only executed if its predicates evaluate to true.</p>
+<h2 id="logical-meta-predicates">Logical Meta-Predicates</h2>
+<p>Predicates can be nested and combined using logical operators. This allows for complex routing rules based on multiple conditions.</p>
+<ul>
+<li><code>and</code>: Evaluates to true only if <strong>all</strong> child predicates evaluate to true.</li>
+<li><code>or</code>: Evaluates to true if <strong>at least one</strong> child predicate evaluates to true.</li>
+<li><code>not</code>: Inverts the result of a <strong>single</strong> child predicate.</li>
+</ul>
+<p><strong>Example of Nesting:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">and</span><span class="p">:</span>
+</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">        </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/secure/</span>
+</span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">or</span><span class="p">:</span>
+</span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Method</span><span class="p">:</span>
+</span><span id="True-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">          </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span>
+</span><span id="True-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
+</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PUT</span>
+</span><span id="True-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">not</span><span class="p">:</span>
+</span><span id="True-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">          </span><span class="nt">RemoteAddr</span><span class="p">:</span>
+</span><span id="True-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">            </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.0/8</span>
+</span></code></pre></div>
+<hr />
+<h2 id="available-predicates">Available Predicates</h2>
+<h3 id="host">Host</h3>
+<p>Matches the incoming request against a list of allowed <code>Host</code> headers. It automatically handles matching with or without port numbers included in the header.</p>
 <table>
 <thead>
 <tr>
-<th>Container Size</th>
-<th>Median Latency (P50)</th>
-<th>Tail Latency (P99)</th>
-<th>Max Latency</th>
-<th>Result</th>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>990 MB</strong></td>
-<td>1.10 ms</td>
-<td>6.54 ms</td>
-<td>21.25 ms</td>
-<td>Stable</td>
-</tr>
-<tr>
-<td><strong>300 MB</strong></td>
-<td>1.05 ms</td>
-<td>5.13 ms</td>
-<td>32.00 ms</td>
-<td>Stable</td>
-</tr>
-<tr>
-<td><strong>200 MB</strong></td>
-<td>1.02 ms</td>
-<td>78.08 ms</td>
-<td>176.38 ms</td>
-<td>GC Squeeze</td>
+<td><code>hosts</code></td>
+<td>List of Strings</td>
+<td>Yes</td>
+<td>A list of acceptable hostnames. Must contain at least one element.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="analysis-finding-the-floor">Analysis: Finding the Floor</h2>
-<p>The data reveals exactly how r7 interacts with the HotSpot JVM:</p>
-<ol>
-<li><strong>The P50 Consistency:</strong> Across all three memory tiers, the median latency remained locked at <code>~1.05ms</code>. This proves the core routing engine and zero-locking hot path execute instantly when the CPU is unimpeded.</li>
-<li><strong>The 300MB Sweet Spot:</strong> Dropping from 1GB to 300MB had almost zero impact on tail latencies. r7 is highly memory-efficient and can run comfortably in heavily constrained cloud environments.</li>
-<li><strong>The 200MB GC Squeeze:</strong> At 200MB, the container reached its physical limit. Between thread stacks, XNIO direct buffers, and the heap, the JVM ran out of breathing room. To survive the 20k RPS barrage without OOMing, the Garbage Collector triggered frequent "Stop-The-World" pauses, directly causing the P99 latency to spike to 78ms.</li>
-</ol>
-<p>By understanding these boundaries, infrastructure engineers can accurately provision r7 for Envoy-tier throughput using standard Kubernetes resource limits (<code>requests: 250Mi</code>, <code>limits: 350Mi</code>).</p>
+<h3 id="method">Method</h3>
+<p>Matches the HTTP method (e.g., <code>GET</code>, <code>POST</code>, <code>PUT</code>) of the incoming request.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include</code></td>
+<td>List of Strings</td>
+<td>Yes</td>
+<td>A list of allowed HTTP methods. Must contain at least one element.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pathstartswith">PathStartsWith</h3>
+<p>Matches if the request path begins with a specific string prefix.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prefix</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact string prefix to match against the request path.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="regexpath">RegexPath</h3>
+<p>Matches the full request URI against a defined regular expression pattern.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>regexp</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>A valid Java regular expression pattern to evaluate against the URI.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="remoteaddr">RemoteAddr</h3>
+<p>Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6 network definitions.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The IP address or CIDR notation (e.g., <code>192.168.1.5</code> or <code>10.0.0.0/24</code>) to match against the client's remote address.</td>
+</tr>
+</tbody>
+</table>
 
 
 
