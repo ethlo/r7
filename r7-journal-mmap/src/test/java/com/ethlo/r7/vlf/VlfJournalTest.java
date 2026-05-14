@@ -47,7 +47,8 @@ class VlfJournalTest
         try (final VlfJournal journal = new VlfJournal(provider))
         {
             Chronograph chronograph = Chronograph.create();
-            chronograph.time("client-request encoding", () ->
+            final String taskName = "client-request encoding (" + iterations + ")";
+            chronograph.time(taskName, () ->
                     {
                         for (int i = 0; i < iterations; i++)
                         {

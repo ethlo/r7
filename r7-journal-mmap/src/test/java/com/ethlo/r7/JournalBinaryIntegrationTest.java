@@ -17,13 +17,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
-import com.ethlo.r7.api.IpSource;
-
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayAttributes;
@@ -36,6 +36,7 @@ import com.ethlo.r7.vlf.VlfConstants;
 import com.ethlo.r7.vlf.VlfJournal;
 import com.ethlo.r7.vlf.VlfJournalProvider;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class JournalBinaryIntegrationTest
 {
     private static final Logger logger = LoggerFactory.getLogger(JournalBinaryIntegrationTest.class);
