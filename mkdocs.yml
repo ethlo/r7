@@ -26,6 +26,7 @@ nav:
   - Benchmarks: benchmarks.md
 
 markdown_extensions:
+  - admonition
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: true
