@@ -9,23 +9,19 @@
          <lastmod>2026-05-14</lastmod>
     </url>
     <url>
-         <loc>https://r7.ethlo.com/filters/</loc>
+         <loc>https://r7.ethlo.com/config/</loc>
          <lastmod>2026-05-14</lastmod>
     </url>
     <url>
-         <loc>https://r7.ethlo.com/predicates/</loc>
+         <loc>https://r7.ethlo.com/extensibility/</loc>
+         <lastmod>2026-05-14</lastmod>
+    </url>
+    <url>
+         <loc>https://r7.ethlo.com/journaling/</loc>
          <lastmod>2026-05-14</lastmod>
     </url>
     <url>
          <loc>https://r7.ethlo.com/quickstart/</loc>
-         <lastmod>2026-05-14</lastmod>
-    </url>
-    <url>
-         <loc>https://r7.ethlo.com/routes_config/</loc>
-         <lastmod>2026-05-14</lastmod>
-    </url>
-    <url>
-         <loc>https://r7.ethlo.com/server_config/</loc>
          <lastmod>2026-05-14</lastmod>
     </url>
 </urlset>

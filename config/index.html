@@ -1,0 +1,1955 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The Performant Java Gateway">
+      
+      
+      
+        <link rel="canonical" href="https://r7.ethlo.com/config/">
+      
+      
+        <link rel="prev" href="../quickstart/">
+      
+      
+        <link rel="next" href="../extensibility/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/r7.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration - ethlo r7 Gateway</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#r7-proxy-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ethlo r7 Gateway" class="md-header__button md-logo" aria-label="ethlo r7 Gateway" data-md-component="logo">
+      
+  <img src="../assets/r7.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ethlo r7 Gateway
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ethlo/r7" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ethlo/r7
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Overview
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../extensibility/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Extensibility
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../journaling/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Journaling
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ethlo r7 Gateway" class="md-nav__button md-logo" aria-label="ethlo r7 Gateway" data-md-component="logo">
+      
+  <img src="../assets/r7.svg" alt="logo">
+
+    </a>
+    ethlo r7 Gateway
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ethlo/r7" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ethlo/r7
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#routing-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Routing Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-concepts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Concepts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#root-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Root Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#worker-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worker Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proxy Client
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#socket-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Socket Layer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#storage-journaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage &amp; Journaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#predicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Predicates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Predicates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#logical-meta-predicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logical Meta-Predicates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pathstartswith" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PathStartsWith
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#regexpath" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RegexPath
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remoteaddr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteAddr
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#addrequestheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AddRequestHeader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#addresponseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AddResponseHeader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitbreaker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitBreaker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#correlationidheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CorrelationIdHeader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#injectbasicauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        InjectBasicAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimiter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimiter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removerequestheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoveRequestHeader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removeresponseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoveResponseHeader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestsize" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RequestSize
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requireauthorizationheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RequireAuthorizationHeader
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rewritepath" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RewritePath
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SetStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stripcacheheaders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StripCacheHeaders
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strippathprefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StripPathPrefix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#templateredirect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TemplateRedirect
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../journaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Journaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="r7-proxy-reference">r7 Proxy Reference</h1>
+<h2 id="routing-configuration">Routing Configuration</h2>
+<p>The r7 proxy is configured using a declarative YAML file called <code>routes.yaml</code>. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.
+The configuration supports environment variable interpolation (e.g., <code>${ENV_VAR:default_value}</code>), allowing you to use a single configuration structure across multiple environments.</p>
+<h3 id="core-concepts">Core Concepts</h3>
+<ul>
+<li><strong>Global Filters:</strong> Applied to every request passing through the proxy, ensuring baseline behaviors like metric collection or correlation ID injection.</li>
+<li><strong>Routes:</strong> The core mapping logic. Each route requires a unique <code>id</code>, a <code>match</code> condition (like path prefixes or HTTP methods), and an <code>upstream</code> target.</li>
+<li><strong>Route Filters:</strong> Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched.</li>
+<li><strong>Journaling:</strong> Granular control over what is logged. You can define base logging levels (e.g., <code>NONE</code>, <code>METADATA</code>, <code>HEADERS</code>, <code>FULL</code>) and override these levels based on specific HTTP status codes.</li>
+</ul>
+<h3 id="example-configuration">Example Configuration</h3>
+<p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, and conditional journaling.</p>
+<p>Sample <code>routing.yaml</code>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;{{git.rev.abbr}}&#39;</span>
+</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Global filters applied to all routes</span>
+</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
+</span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CorrelationIdHeader</span>
+</span><span id="True-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="True-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nt">routes</span><span class="p">:</span>
+</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="c1"># 1. Simple routing with environment variable fallback</span>
+</span><span id="True-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">forward-status</span>
+</span><span id="True-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:18888</span>
+</span><span id="True-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${SECRET_URL:/status}</span><span class="w"> </span><span class="c1"># Uses SECRET_URL or defaults to /status</span>
+</span><span id="True-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+</span><span id="True-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="c1"># 2. Routing with authorization enforcement</span>
+</span><span id="True-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reject-benchmark</span>
+</span><span id="True-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:1111</span>
+</span><span id="True-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/benchmark</span>
+</span><span id="True-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
+</span><span id="True-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>
+</span><span id="True-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">  </span><span class="c1"># 3. Complex routing with method matching, configured filters, and conditional journaling</span>
+</span><span id="True-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">undertow-internal-backend</span>
+</span><span id="True-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/hello</span>
+</span><span id="True-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Method</span><span class="p">:</span>
+</span><span id="True-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">          </span><span class="nt">include</span><span class="p">:</span>
+</span><span id="True-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET</span>
+</span><span id="True-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
+</span><span id="True-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:1111</span>
+</span><span id="True-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">      </span><span class="c1"># Filters can be declared with specific configuration arguments</span>
+</span><span id="True-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
+</span><span id="True-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="True-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="True-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT2s</span>
+</span><span id="True-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
+</span><span id="True-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="True-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT12s</span>
+</span><span id="True-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">AddResponseHeader</span><span class="p">:</span>
+</span><span id="True-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Powered-By</span>
+</span><span id="True-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ethlo R7</span>
+</span><span id="True-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">      </span><span class="c1"># Filters requiring no arguments are declared by name only</span>
+</span><span id="True-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CorrelationIdHeader</span>
+</span><span id="True-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
+</span><span id="True-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span>
+</span><span id="True-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">        </span><span class="c1"># Increase log verbosity dynamically based on the response status</span>
+</span><span id="True-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
+</span><span id="True-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">401,403</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span><span id="True-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">          </span><span class="nt">429</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span><span id="True-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span>
+</span><span id="True-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>
+</span><span id="True-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">  </span><span class="c1"># 4. Routing with path stripping</span>
+</span><span id="True-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">home-assistant</span>
+</span><span id="True-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">http</span><span class="p p-Indicator">:</span><span class="nv">//192.168.50.103</span><span class="p p-Indicator">:</span><span class="nv">8123</span><span class="p p-Indicator">]</span><span class="l l-Scalar l-Scalar-Plain">(http://192.168.50.103:8123)</span>
+</span><span id="True-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/ha</span>
+</span><span id="True-0-75"><a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-76"><a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a><span class="w">      </span><span class="c1"># Strips the &quot;/ha&quot; prefix before forwarding to the upstream target</span>
+</span><span id="True-0-77"><a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StripPathPrefix</span><span class="p">:</span>
+</span><span id="True-0-78"><a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a><span class="w">          </span><span class="nt">parts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="True-0-79"><a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-0-80"><a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-0-81"><a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-0-82"><a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
+</span><span id="True-0-83"><a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span><span id="True-0-84"><a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-0-85"><a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span></code></pre></div></p>
+<h2 id="server-configuration">Server Configuration</h2>
+<p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 proxy. This includes network binding, thread pool sizing, low-level socket behaviors, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
+<h3 id="root-configuration">Root Configuration</h3>
+<p>Defines the primary listening interfaces and ports for both the proxy and its internal status endpoints.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code></td>
+<td>String</td>
+<td>The IP address or interface the primary proxy binds to (e.g., <code>0.0.0.0</code> for all interfaces).</td>
+</tr>
+<tr>
+<td><code>port</code></td>
+<td>Integer</td>
+<td>The primary port the proxy listens on for incoming traffic.</td>
+</tr>
+<tr>
+<td><code>status_host</code></td>
+<td>String</td>
+<td>The interface for the internal status and metrics server.</td>
+</tr>
+<tr>
+<td><code>status_port</code></td>
+<td>Integer</td>
+<td>The port for the internal status and metrics server.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="worker-options">Worker Options</h3>
+<p>Controls the threading model and connection watermark levels. Proper tuning here is critical for high-throughput, low-allocation environments.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>io_threads</code></td>
+<td>Integer</td>
+<td>The number of non-blocking I/O threads. Typically mapped 1:1 with available physical CPU cores.</td>
+</tr>
+<tr>
+<td><code>task_core_threads</code></td>
+<td>Integer</td>
+<td>The minimum number of threads in the blocking task pool.</td>
+</tr>
+<tr>
+<td><code>task_max_threads</code></td>
+<td>Integer</td>
+<td>The maximum number of threads in the blocking task pool. Keeping this close to the core count prevents excessive context switching.</td>
+</tr>
+<tr>
+<td><code>stack_size</code></td>
+<td>Integer</td>
+<td>Thread stack size in bytes (e.g., <code>262144</code> for 256KB).</td>
+</tr>
+<tr>
+<td><code>connection_low_water</code></td>
+<td>Integer</td>
+<td>The lower bound watermark for concurrent backend connections.</td>
+</tr>
+<tr>
+<td><code>connection_high_water</code></td>
+<td>Integer</td>
+<td>The upper bound watermark for concurrent backend connections.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="server-options">Server Options</h3>
+<p>Configures the HTTP server layer, including buffer management, protocol support, and request parsing limits.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>buffer_size</code></td>
+<td>Integer</td>
+<td>The size of the byte buffers used for I/O operations (e.g., <code>8192</code> for 8KB). Tuning this to fit into L1/L2 cache can improve performance.</td>
+</tr>
+<tr>
+<td><code>direct_buffers</code></td>
+<td>Boolean</td>
+<td>When <code>true</code>, uses off-heap memory (Direct Buffers) to minimize JVM garbage collection and eliminate memory copies during socket I/O.</td>
+</tr>
+<tr>
+<td><code>tcp_nodelay</code></td>
+<td>Boolean</td>
+<td>Disables Nagle's algorithm to reduce latency for small packets.</td>
+</tr>
+<tr>
+<td><code>enable_http2</code></td>
+<td>Boolean</td>
+<td>Enables HTTP/2 protocol support.</td>
+</tr>
+<tr>
+<td><code>always_set_keep_alive</code></td>
+<td>Boolean</td>
+<td>Forces the server to send the <code>Connection: keep-alive</code> header to maintain persistent connections.</td>
+</tr>
+<tr>
+<td><code>max_header_size</code></td>
+<td>Integer</td>
+<td>The maximum allowed size for a single HTTP header, in bytes.</td>
+</tr>
+<tr>
+<td><code>max_header_count</code></td>
+<td>Integer</td>
+<td>The maximum number of HTTP headers allowed per request.</td>
+</tr>
+<tr>
+<td><code>request_parse_timeout</code></td>
+<td>Integer</td>
+<td>The timeout in milliseconds for parsing an incoming HTTP request.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="proxy-client">Proxy Client</h3>
+<p>Configures the behavior of the internal reverse proxy client that connects to upstream targets.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ttl</code></td>
+<td>Integer</td>
+<td>The time-to-live in milliseconds for idle upstream connections in the pool.</td>
+</tr>
+<tr>
+<td><code>max_request_time</code></td>
+<td>Integer</td>
+<td>The absolute maximum time in milliseconds a proxy request is allowed to take before timing out.</td>
+</tr>
+<tr>
+<td><code>connections_per_thread</code></td>
+<td>Integer</td>
+<td>The maximum number of pooled upstream connections allowed <em>per worker thread</em>.</td>
+</tr>
+<tr>
+<td><code>max_queue_size</code></td>
+<td>Integer</td>
+<td>The maximum number of pending requests allowed to queue while waiting for an available upstream connection.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="socket-layer">Socket Layer</h3>
+<p>Low-level operating system socket configurations for the listener.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tcp_nodelay</code></td>
+<td>Boolean</td>
+<td>Disables Nagle's algorithm at the server socket level.</td>
+</tr>
+<tr>
+<td><code>reuse_addresses</code></td>
+<td>Boolean</td>
+<td>Enables <code>SO_REUSEADDR</code>, allowing the server to bind to an address/port that is currently in a <code>TIME_WAIT</code> state.</td>
+</tr>
+<tr>
+<td><code>backlog</code></td>
+<td>Integer</td>
+<td>The maximum OS-level queue length for incoming connection requests.</td>
+</tr>
+<tr>
+<td><code>read_timeout</code></td>
+<td>Integer</td>
+<td>The socket read timeout in milliseconds.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="storage-journaling">Storage &amp; Journaling</h3>
+<p>Configures the disk-backed storage mechanism used for high-speed request and response journaling.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>work_dir</code></td>
+<td>String</td>
+<td>The directory path where the memory-mapped journal files are stored.</td>
+</tr>
+<tr>
+<td><code>shard_count</code></td>
+<td>Integer</td>
+<td>The number of shards (files) to split the journal across to reduce lock contention and manage file sizes.</td>
+</tr>
+<tr>
+<td><code>shard_size</code></td>
+<td>Integer</td>
+<td>The target size limit in bytes for a single journal shard (e.g., <code>500000000</code> for 500MB).</td>
+</tr>
+<tr>
+<td><code>pre_fault</code></td>
+<td>Boolean</td>
+<td>When <code>true</code>, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="predicates">Predicates</h2>
+<p>Predicates define the matching conditions that determine whether an incoming request should be routed to a specific upstream target. A route is only executed if its predicates evaluate to true.</p>
+<h3 id="logical-meta-predicates">Logical Meta-Predicates</h3>
+<p>Predicates can be nested and combined using logical operators. This allows for complex routing rules based on multiple conditions.</p>
+<ul>
+<li><code>and</code>: Evaluates to true only if <strong>all</strong> child predicates evaluate to true.</li>
+<li><code>or</code>: Evaluates to true if <strong>at least one</strong> child predicate evaluates to true.</li>
+<li><code>not</code>: Inverts the result of a <strong>single</strong> child predicate.</li>
+</ul>
+<p><strong>Example of Nesting:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">and</span><span class="p">:</span>
+</span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">        </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/secure/</span>
+</span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">or</span><span class="p">:</span>
+</span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Method</span><span class="p">:</span>
+</span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">          </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span>
+</span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
+</span><span id="True-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PUT</span>
+</span><span id="True-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">not</span><span class="p">:</span>
+</span><span id="True-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">          </span><span class="nt">RemoteAddr</span><span class="p">:</span>
+</span><span id="True-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">            </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.0/8</span>
+</span></code></pre></div>
+<h3 id="host">Host</h3>
+<p>Matches the incoming request against a list of allowed <code>Host</code> headers. It automatically handles matching with or without port numbers included in the header.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hosts</code></td>
+<td>List of Strings</td>
+<td>Yes</td>
+<td>A list of acceptable hostnames. Must contain at least one element.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="method">Method</h3>
+<p>Matches the HTTP method (e.g., <code>GET</code>, <code>POST</code>, <code>PUT</code>) of the incoming request.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include</code></td>
+<td>List of Strings</td>
+<td>Yes</td>
+<td>A list of allowed HTTP methods. Must contain at least one element.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pathstartswith">PathStartsWith</h3>
+<p>Matches if the request path begins with a specific string prefix.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prefix</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact string prefix to match against the request path.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="regexpath">RegexPath</h3>
+<p>Matches the full request URI against a defined regular expression pattern.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>regexp</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>A valid Java regular expression pattern to evaluate against the URI.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="remoteaddr">RemoteAddr</h3>
+<p>Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6 network definitions.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The IP address or CIDR notation (e.g., <code>192.168.1.5</code> or <code>10.0.0.0/24</code>) to match against the client's remote address.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="filters">Filters</h2>
+<p>This document outlines the available filters for the r7 proxy, their behaviors, and their configuration parameters.</p>
+<h3 id="addrequestheader">AddRequestHeader</h3>
+<p>Adds or overrides an HTTP header before the request is forwarded to the upstream target.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the HTTP header.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value to assign to the header.</td>
+</tr>
+<tr>
+<td><code>override</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, overwrites existing headers with the same name. If <code>false</code> or omitted, appends the value.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">AddRequestHeader</span><span class="p">:</span>
+</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Custom-Header</span>
+</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-custom-value</span>
+</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">override</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<h3 id="addresponseheader">AddResponseHeader</h3>
+<p>Adds or overrides an HTTP header on the client response before returning it to the client.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the HTTP header.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value to assign to the header.</td>
+</tr>
+<tr>
+<td><code>override</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, overwrites existing headers with the same name. If <code>false</code> or omitted, appends the value.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">AddResponseHeader</span><span class="p">:</span>
+</span><span id="True-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Powered-By</span>
+</span><span id="True-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ethlo R7</span>
+</span></code></pre></div>
+<h3 id="circuitbreaker">CircuitBreaker</h3>
+<p>Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of <code>5xx</code> server errors is reached. Fast-fails with <code>503 Service Unavailable</code> while open.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>failure_threshold</code></td>
+<td>Integer</td>
+<td>Yes</td>
+<td>The number of consecutive <code>5xx</code> failures required to open the circuit.</td>
+</tr>
+<tr>
+<td><code>cooldown_period</code></td>
+<td>Duration</td>
+<td>Yes</td>
+<td>The time to wait before transitioning to a half-open state to probe upstream health.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
+</span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">      </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT12s</span>
+</span></code></pre></div>
+<h3 id="correlationidheader">CorrelationIdHeader</h3>
+<p>Automatically injects the gateway's internal request ID into both the upstream request and the client response using the <code>X-Correlation-Id</code> header.</p>
+<p><em>This filter requires no configuration parameters.</em></p>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CorrelationIdHeader</span>
+</span></code></pre></div>
+<h3 id="cors">Cors</h3>
+<p>Handles Cross-Origin Resource Sharing (CORS). Intercepts <code>OPTIONS</code> preflight requests returning <code>204 No Content</code>, and decorates standard responses with appropriate Access-Control headers.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allowed_origins</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>Comma-separated list of permitted origins, or <code>*</code> to allow any origin.</td>
+</tr>
+<tr>
+<td><code>allowed_methods</code></td>
+<td>String</td>
+<td>No</td>
+<td>Value mapped to <code>Access-Control-Allow-Methods</code>.</td>
+</tr>
+<tr>
+<td><code>allowed_headers</code></td>
+<td>String</td>
+<td>No</td>
+<td>Value mapped to <code>Access-Control-Allow-Headers</code>.</td>
+</tr>
+<tr>
+<td><code>max_age</code></td>
+<td>String</td>
+<td>No</td>
+<td>Value mapped to <code>Access-Control-Max-Age</code>.</td>
+</tr>
+<tr>
+<td><code>allow_credentials</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, sets <code>Access-Control-Allow-Credentials</code> to <code>true</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Cors</span><span class="p">:</span>
+</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">      </span><span class="nt">allowed_origins</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;[https://example.com](https://example.com),</span><span class="nv"> </span><span class="s">[https://app.example.com](https://app.example.com)&quot;</span>
+</span><span id="True-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">allowed_methods</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;GET,</span><span class="nv"> </span><span class="s">POST,</span><span class="nv"> </span><span class="s">PUT,</span><span class="nv"> </span><span class="s">DELETE,</span><span class="nv"> </span><span class="s">OPTIONS&quot;</span>
+</span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">allowed_headers</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Authorization,</span><span class="nv"> </span><span class="s">Content-Type&quot;</span>
+</span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">max_age</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3600&quot;</span>
+</span><span id="True-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">allow_credentials</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<h3 id="injectbasicauth">InjectBasicAuth</h3>
+<p>Generates a Base64 encoded Basic Authentication string and injects it into the <code>Authorization</code> header of the upstream request.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>username</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The authentication username.</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The authentication password.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">InjectBasicAuth</span><span class="p">:</span>
+</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">      </span><span class="nt">username</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">      </span><span class="nt">password</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">supersecretpassword</span>
+</span></code></pre></div>
+<h3 id="ratelimiter">RateLimiter</h3>
+<p>Provides token-bucket rate limiting based on the client's IP address or a custom rate-limit key. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capacity</code></td>
+<td>Long</td>
+<td>Yes</td>
+<td>Maximum number of tokens the bucket can hold.</td>
+</tr>
+<tr>
+<td><code>refill_tokens</code></td>
+<td>Long</td>
+<td>Yes</td>
+<td>Number of tokens added to the bucket per refill period.</td>
+</tr>
+<tr>
+<td><code>refill_period</code></td>
+<td>Duration</td>
+<td>Yes</td>
+<td>The time interval for the token refill.</td>
+</tr>
+<tr>
+<td><code>max_buckets</code></td>
+<td>Long</td>
+<td>No</td>
+<td>Maximum number of buckets to track. Defaults to <code>10000</code>.</td>
+</tr>
+<tr>
+<td><code>max_bucket_ttl</code></td>
+<td>Duration</td>
+<td>No</td>
+<td>Time-to-live for idle buckets. Defaults to <code>max(refillPeriod * 10, 30s)</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
+</span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">      </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="True-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">      </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="True-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT2s</span>
+</span></code></pre></div>
+<h3 id="removerequestheader">RemoveRequestHeader</h3>
+<p>Strips a specified HTTP header from the client request before it is forwarded to the upstream target.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header to remove.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RemoveRequestHeader</span><span class="p">:</span>
+</span><span id="True-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Forwarded-Host</span>
+</span></code></pre></div>
+<h3 id="removeresponseheader">RemoveResponseHeader</h3>
+<p>Strips a specified HTTP header from the upstream response before it is returned to the client.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header to remove.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RemoveResponseHeader</span><span class="p">:</span>
+</span><span id="True-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Server</span>
+</span></code></pre></div>
+<h3 id="requestsize">RequestSize</h3>
+<p>Evaluates the <code>Content-Length</code> header of incoming requests. Rejects payloads exceeding the configured limit with <code>413 Payload Too Large</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_bytes</code></td>
+<td>Long</td>
+<td>Yes</td>
+<td>The maximum allowed request size in bytes (must be &gt; 0).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RequestSize</span><span class="p">:</span>
+</span><span id="True-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">      </span><span class="nt">max_bytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10485760</span><span class="w"> </span><span class="c1"># 10MB</span>
+</span></code></pre></div>
+<h3 id="requireauthorizationheader">RequireAuthorizationHeader</h3>
+<p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Rejects requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.</p>
+<p><em>This filter requires no configuration parameters.</em></p>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
+</span></code></pre></div>
+<h3 id="rewritepath">RewritePath</h3>
+<p>Rewrites the upstream request path using regular expressions before forwarding it to the target.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>regexp</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The regular expression pattern to match against the request path.</td>
+</tr>
+<tr>
+<td><code>replacement</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The replacement string applied to the matched path.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RewritePath</span><span class="p">:</span>
+</span><span id="True-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">      </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;^/api/v1/(.*)&quot;</span>
+</span><span id="True-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">      </span><span class="nt">replacement</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/$1&quot;</span>
+</span></code></pre></div>
+<h3 id="setstatus">SetStatus</h3>
+<p>Overrides the HTTP response status code returned to the client, regardless of the upstream target's response.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>Integer</td>
+<td>Yes</td>
+<td>The valid HTTP status code (100-599) to enforce on the response.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetStatus</span><span class="p">:</span>
+</span><span id="True-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">404</span>
+</span></code></pre></div>
+<h3 id="stripcacheheaders">StripCacheHeaders</h3>
+<p>Strips cache validation headers (<code>If-Modified-Since</code>, <code>If-None-Match</code>) and injects strict no-cache directives (<code>Cache-Control: no-cache</code>, <code>Pragma: no-cache</code>) into the upstream request.</p>
+<p><em>This filter requires no configuration parameters.</em></p>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">StripCacheHeaders</span>
+</span></code></pre></div>
+<h3 id="strippathprefix">StripPathPrefix</h3>
+<p>Removes a specified number of structural path segments from the beginning of the request path before it is routed upstream.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>parts</code></td>
+<td>Integer</td>
+<td>Yes</td>
+<td>The number of path segments (separated by <code>/</code>) to strip. Must be greater than 0.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StripPathPrefix</span><span class="p">:</span>
+</span><span id="True-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">      </span><span class="nt">parts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span></code></pre></div>
+<h3 id="templateredirect">TemplateRedirect</h3>
+<p>Intercepts the request and immediately issues an HTTP redirect (3xx) based on a regex match of the path and a substitution template. Supports capturing regex groups using <code>{{1}}</code> or <code>{{var}}</code> syntax.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The regular expression pattern to match against the request path.</td>
+</tr>
+<tr>
+<td><code>target</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The destination URL template. Regex capture groups can be referenced using <code>{{name}}</code> or <code>{{index}}</code>.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>Integer</td>
+<td>No</td>
+<td>The HTTP redirect status code. Defaults to <code>302</code> (Found).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">TemplateRedirect</span><span class="p">:</span>
+</span><span id="True-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">      </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;^/old-path/(.*)&quot;</span>
+</span><span id="True-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">      </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/new-path/{{1}}&quot;</span>
+</span><span id="True-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">301</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

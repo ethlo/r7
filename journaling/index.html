@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The performant Java Gateway">
+        <meta name="description" content="The Performant Java Gateway">
       
       
       
-        <link rel="canonical" href="https://r7.ethlo.com/server_config/">
+        <link rel="canonical" href="https://r7.ethlo.com/journaling/">
       
       
-        <link rel="prev" href="../routes_config/">
+        <link rel="prev" href="../extensibility/">
       
       
-        <link rel="next" href="../predicates/">
+        <link rel="next" href="../benchmarks/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Server Configuration - ethlo r7 Gateway</title>
+        <title>Journaling - ethlo r7 Gateway</title>
       
     
     
@@ -75,11 +75,6 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
-        
-        <a href="#server-configuration-reference" class="md-skip">
-          Skip to content
-        </a>
-      
     </div>
     <div data-md-component="announce">
       
@@ -109,7 +104,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Server Configuration
+              Journaling
             
           </span>
         </div>
@@ -232,13 +227,32 @@
   
   
     <li class="md-tabs__item">
-      <a href="../routes_config/" class="md-tabs__link">
+      <a href="../config/" class="md-tabs__link">
         
   
   
     
   
-  Routes Configuration
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../extensibility/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Extensibility
 
       </a>
     </li>
@@ -259,45 +273,7 @@
   
     
   
-  Server Configuration
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../predicates/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Predicates
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
-      <a href="../filters/" class="md-tabs__link">
-        
-  
-  
-    
-  
-  Filters
+  Journaling
 
       </a>
     </li>
@@ -430,14 +406,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../routes_config/" class="md-nav__link">
+      <a href="../config/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Routes Configuration
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extensibility
   
 
     
@@ -463,26 +466,6 @@
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
       
       
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Server Configuration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
       
       <a href="./" class="md-nav__link md-nav__link--active">
         
@@ -491,7 +474,7 @@
   <span class="md-ellipsis">
     
   
-    Server Configuration
+    Journaling
   
 
     
@@ -501,145 +484,6 @@
 
       </a>
       
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#root-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Root Configuration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#worker-options-worker" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Worker Options (worker)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#server-options-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Server Options (options)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#proxy-client-proxy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Proxy Client (proxy)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#socket-layer-socket" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Socket Layer (socket)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#storage-journaling-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage &amp; Journaling (storage)
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../predicates/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Predicates
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../filters/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Filters
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -691,242 +535,9 @@
   
 
 
-<h1 id="server-configuration-reference">Server Configuration Reference</h1>
-<p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 proxy. This includes network binding, thread pool sizing, low-level socket behaviors, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
-<hr />
-<h2 id="root-configuration">Root Configuration</h2>
-<p>Defines the primary listening interfaces and ports for both the proxy and its internal status endpoints.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>host</code></td>
-<td>String</td>
-<td>The IP address or interface the primary proxy binds to (e.g., <code>0.0.0.0</code> for all interfaces).</td>
-</tr>
-<tr>
-<td><code>port</code></td>
-<td>Integer</td>
-<td>The primary port the proxy listens on for incoming traffic.</td>
-</tr>
-<tr>
-<td><code>status_host</code></td>
-<td>String</td>
-<td>The interface for the internal status and metrics server.</td>
-</tr>
-<tr>
-<td><code>status_port</code></td>
-<td>Integer</td>
-<td>The port for the internal status and metrics server.</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="worker-options-worker">Worker Options (<code>worker</code>)</h2>
-<p>Controls the threading model and connection watermark levels. Proper tuning here is critical for high-throughput, low-allocation environments.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>io_threads</code></td>
-<td>Integer</td>
-<td>The number of non-blocking I/O threads. Typically mapped 1:1 with available physical CPU cores.</td>
-</tr>
-<tr>
-<td><code>task_core_threads</code></td>
-<td>Integer</td>
-<td>The minimum number of threads in the blocking task pool.</td>
-</tr>
-<tr>
-<td><code>task_max_threads</code></td>
-<td>Integer</td>
-<td>The maximum number of threads in the blocking task pool. Keeping this close to the core count prevents excessive context switching.</td>
-</tr>
-<tr>
-<td><code>stack_size</code></td>
-<td>Integer</td>
-<td>Thread stack size in bytes (e.g., <code>262144</code> for 256KB).</td>
-</tr>
-<tr>
-<td><code>connection_low_water</code></td>
-<td>Integer</td>
-<td>The lower bound watermark for concurrent backend connections.</td>
-</tr>
-<tr>
-<td><code>connection_high_water</code></td>
-<td>Integer</td>
-<td>The upper bound watermark for concurrent backend connections.</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="server-options-options">Server Options (<code>options</code>)</h2>
-<p>Configures the HTTP server layer, including buffer management, protocol support, and request parsing limits.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>buffer_size</code></td>
-<td>Integer</td>
-<td>The size of the byte buffers used for I/O operations (e.g., <code>8192</code> for 8KB). Tuning this to fit into L1/L2 cache can improve performance.</td>
-</tr>
-<tr>
-<td><code>direct_buffers</code></td>
-<td>Boolean</td>
-<td>When <code>true</code>, uses off-heap memory (Direct Buffers) to minimize JVM garbage collection and eliminate memory copies during socket I/O.</td>
-</tr>
-<tr>
-<td><code>tcp_nodelay</code></td>
-<td>Boolean</td>
-<td>Disables Nagle's algorithm to reduce latency for small packets.</td>
-</tr>
-<tr>
-<td><code>enable_http2</code></td>
-<td>Boolean</td>
-<td>Enables HTTP/2 protocol support.</td>
-</tr>
-<tr>
-<td><code>always_set_keep_alive</code></td>
-<td>Boolean</td>
-<td>Forces the server to send the <code>Connection: keep-alive</code> header to maintain persistent connections.</td>
-</tr>
-<tr>
-<td><code>max_header_size</code></td>
-<td>Integer</td>
-<td>The maximum allowed size for a single HTTP header, in bytes.</td>
-</tr>
-<tr>
-<td><code>max_header_count</code></td>
-<td>Integer</td>
-<td>The maximum number of HTTP headers allowed per request.</td>
-</tr>
-<tr>
-<td><code>request_parse_timeout</code></td>
-<td>Integer</td>
-<td>The timeout in milliseconds for parsing an incoming HTTP request.</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="proxy-client-proxy">Proxy Client (<code>proxy</code>)</h2>
-<p>Configures the behavior of the internal reverse proxy client that connects to upstream targets.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>ttl</code></td>
-<td>Integer</td>
-<td>The time-to-live in milliseconds for idle upstream connections in the pool.</td>
-</tr>
-<tr>
-<td><code>max_request_time</code></td>
-<td>Integer</td>
-<td>The absolute maximum time in milliseconds a proxy request is allowed to take before timing out.</td>
-</tr>
-<tr>
-<td><code>connections_per_thread</code></td>
-<td>Integer</td>
-<td>The maximum number of pooled upstream connections allowed <em>per worker thread</em>.</td>
-</tr>
-<tr>
-<td><code>max_queue_size</code></td>
-<td>Integer</td>
-<td>The maximum number of pending requests allowed to queue while waiting for an available upstream connection.</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="socket-layer-socket">Socket Layer (<code>socket</code>)</h2>
-<p>Low-level operating system socket configurations for the listener.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>tcp_nodelay</code></td>
-<td>Boolean</td>
-<td>Disables Nagle's algorithm at the server socket level.</td>
-</tr>
-<tr>
-<td><code>reuse_addresses</code></td>
-<td>Boolean</td>
-<td>Enables <code>SO_REUSEADDR</code>, allowing the server to bind to an address/port that is currently in a <code>TIME_WAIT</code> state.</td>
-</tr>
-<tr>
-<td><code>backlog</code></td>
-<td>Integer</td>
-<td>The maximum OS-level queue length for incoming connection requests.</td>
-</tr>
-<tr>
-<td><code>read_timeout</code></td>
-<td>Integer</td>
-<td>The socket read timeout in milliseconds.</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="storage-journaling-storage">Storage &amp; Journaling (<code>storage</code>)</h2>
-<p>Configures the disk-backed storage mechanism used for high-speed request and response journaling.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>work_dir</code></td>
-<td>String</td>
-<td>The directory path where the memory-mapped journal files are stored.</td>
-</tr>
-<tr>
-<td><code>shard_count</code></td>
-<td>Integer</td>
-<td>The number of shards (files) to split the journal across to reduce lock contention and manage file sizes.</td>
-</tr>
-<tr>
-<td><code>shard_size</code></td>
-<td>Integer</td>
-<td>The target size limit in bytes for a single journal shard (e.g., <code>500000000</code> for 500MB).</td>
-</tr>
-<tr>
-<td><code>pre_fault</code></td>
-<td>Boolean</td>
-<td>When <code>true</code>, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency.</td>
-</tr>
-</tbody>
-</table>
+  <h1>Journaling</h1>
+
+<p>TBD</p>
 
 
 
