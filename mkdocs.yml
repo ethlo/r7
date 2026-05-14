@@ -14,7 +14,7 @@ theme:
     - navigation.tabs
     - content.code.copy
     - toc.integrate
-  logo: assets/logo.svg
+  logo: assets/logo.png
   favicon: assets/favicon.png
 
 nav:
