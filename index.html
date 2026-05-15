@@ -533,6 +533,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#journal-durability-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Journal durability model
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -875,6 +886,9 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <p>Handles request routing and filtering in a low-allocation hot path executed per request.</p>
 <h3 id="internal-observability">Internal observability</h3>
 <p>Derived from request execution state, r7 maintains an asynchronous journal and live runtime projection without impacting request latency.</p>
+<h3 id="journal-durability-model">Journal durability model</h3>
+<p>The r7 journal is crash-consistent at segment level.</p>
+<p>Under abrupt termination (e.g. SIGKILL), partial entries at the tail may be discarded during recovery. Only fully validated entries are retained during journal replay.</p>
 <hr />
 <h2 id="extensibility">Extensibility</h2>
 <p>Custom behavior can be added via JVM ServiceLoader (SPI):</p>
