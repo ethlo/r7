@@ -701,11 +701,10 @@ This benchmark focuses on a controlled variable: memory pressure under sustained
 <h3 id="test-goal">Test Goal</h3>
 <p>Sustain <strong>20,000 RPS</strong> with a <strong>12-thread worker pool</strong>, while progressively reducing container memory limits to observe latency behavior under constrained runtime conditions.</p>
 <h3 id="test-configuration">Test Configuration</h3>
-<p>```bash
-wrk2 -t12 -c200 -d30s -R20000 \
--H "Authorization: Bearer <token>" \
-http://localhost:9999/hello --latency
-````</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>wrk2<span class="w"> </span>-t12<span class="w"> </span>-c200<span class="w"> </span>-d30s<span class="w"> </span>-R20000<span class="w"> </span><span class="se">\</span>
+</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer &lt;token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>http://localhost:9999/hello<span class="w"> </span>--latency
+</span></code></pre></div>
 <h3 id="results">Results</h3>
 <table>
 <thead>
