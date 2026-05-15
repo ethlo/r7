@@ -1,106 +1,146 @@
 # r7 Gateway
 
-**A focused, high-performance JVM gateway built for predictable throughput and low-impact visibility.**
+A high-performance JVM gateway for routing, filtering, and observability with a deterministic execution model and minimal runtime overhead.
 
-r7 is designed for stacks where throughput, observability, and control matter. It provides a clean separation between stable APIs, a composable routing engine, high-throughput memory-mapped journaling, and an Undertow-based HTTP entrypoint. The system is intentionally narrow in scope: evaluate requests, apply predicates and filters, route efficiently, and optionally audit.
+r7 sits between services and traffic sources, providing a stable and predictable execution layer for HTTP request handling, routing, and auditing.
+
+---
+
+## Designed for predictable systems
+
+r7 is built for environments where performance consistency matters more than peak benchmarks:
+
+- Stable low-latency request processing under load
+- Predictable behavior under memory constraints
+- Minimal garbage collection pressure in the hot path
+- Full request visibility without blocking execution
+
+---
+
+## Core capabilities
+
+- Composable routing engine (predicates + filters)
+- High-throughput HTTP entrypoint (Undertow-based)
+- Memory-mapped journaling for full request/response auditing
+- Real-time operational dashboard
+- Plugin system via JVM ServiceLoader (SPI)
+
+---
+
+## Deterministic execution model
+
+r7 uses a straightforward synchronous request execution model for routing and filtering.
+
+This avoids the complexity introduced by reactive or coroutine-based pipelines, where request flow is distributed across multiple execution contexts.
+
+Benefits:
+
+- Predictable request lifecycle from ingress to response
+- Easier debugging with direct stack traces
+- No reactive state management or callback chains
+- Reduced cognitive overhead in failure analysis under load
+
+---
+
+## Performance under constraint
+
+r7 is designed to maintain stable latency under constrained memory conditions where traditional gateways exhibit tail latency degradation.
+
+See [Benchmarks](/benchmarks) for measured results under controlled memory and load conditions.
+
+---
+
+## Operational visibility
+
+r7 includes a built-in dashboard for live system introspection:
+
+- Route-level inspection
+- Request and response journaling
+- Error-level filtering and escalation
+- Real-time traffic visibility
 
 ![r7 Dashboard Snapshot](assets/overview.png)
----
-
-## Predictable Performance and Observability
-
-The r7 gateway is designed around a core engineering philosophy: network infrastructure must provide deep, real-time observability without degrading the performance of the critical path. It achieves this by aligning its metrics architecture with the mechanical realities of the JVM and modern CPU caches, providing operators with high-density telemetry that costs virtually nothing to capture.
-
-### The Low-Allocation Hot Path
-
-High-throughput Java applications frequently suffer from Garbage Collection pauses caused by continuous object churn. r7 drastically reduces this overhead in its core routing and monitoring layers. By initializing all tracking primitives at startup and ruthlessly minimizing per-request object creation, the gateway guarantees a rigorously GC-optimized hot path. Tracking request counts, payload byte totals, and latency incurs almost zero heap pressure during runtime, allowing the system to maintain stable, predictable latency percentiles even under sustained heavy load.
-
-### Wait-Free Concurrency
-
-Traditional atomic counters introduce severe CPU cache-line contention when thousands of worker threads attempt simultaneous updates. The r7 metrics engine avoids this by utilizing striped counting structures and relaxed memory barriers, such as lazy-set operations for timestamps. This creates a strictly asymmetric architecture: write operations on the hot path are completely wait-free and lock-free, while read operations are deferred to a cold path polled only when the dashboard is active. Capturing traffic data never blocks request processing.
 
 ---
 
-## Operational Simplicity and Instant Feedback
+## Declarative configuration model
 
-r7 pairs a declarative configuration model with immediate operational visibility. Routes, predicates, and filter chains are defined in clean YAML, allowing operators to easily compose upstream targets and inject arguments into filters such as `StripPathPrefix` or `AddResponseHeader`.
+r7 is fully configured using a simple, self-documenting YAML model.
 
-This simplicity extends to the forensic visibility plane, where journaling policies can be tuned independently per route and per request/response direction. The configuration natively supports the dynamic elevation of audit levels, such as automatically escalating a payload capture from `METADATA` to `HEADERS` when an upstream returns a 5xx error.
+Routes, predicates, filters, and journaling behavior are defined declaratively and evaluated consistently at runtime without hidden conventions or external orchestration systems.
 
-![r7 Dashboard route view](assets/route_view.png)
+This allows:
 
-**Example Configuration:**
+- Fast onboarding without framework-specific knowledge
+- Explicit routing behavior that is easy to reason about
+- Configuration that can be reviewed, versioned, and audited like code
+- No runtime DSLs or embedded scripting required
+
+---
+
+## Example configuration
 
 ```yaml
 routes:
   - id: static-content
     match:
-      - not:
-          - PathStartsWith:
-              prefix: /hello
-      - or:
-          - Method:
-              include:
-                - GET
-                - POST
-          - RemoteAddr:
-              source: 192.168.1/24
+      - Method:
+          include: [GET, POST]
     upstream:
       targets:
         - url: http://localhost:1111
     filters:
-      - RequireAuthorizationHeader
+      - CorrelationIdHeader
       - RateLimiter:
           capacity: 50000
-          refill_tokens: 100000
           refill_period: PT1s
-      - CircuitBreaker:
-          failure_threshold: 10
-          cooldown_period: PT15s
-      - CorrelationIdHeader
     journal:
       request:
         level: HEADERS
-        status_overrides:
-          401,403: HEADERS
-          429: METADATA
-          5xx: HEADERS
       response:
         level: FULL
-```
+````
 
-In production, the companion real-time dashboard translates this static configuration into a live operational instrument. Engineers can instantly inspect active route parameters, monitor the exact I/O cost of their configured journaling policies, and detect upstream degradation through tactical, color-coded error highlighting. This design ensures a tight, frictionless feedback loop between defining a route and observing its real-world behavior.
-
----
-
-## Composability and Extensibility
-
-Routing in r7 is built from small, testable building blocks: `GatewayPredicate` and `GatewayFilter`. Predicates act as simple boolean tests against a request, while filters can mutate or enrich request attributes.
-
-r7 stays on the JVM intentionally. Predicates and filters can be provided via Java’s `ServiceLoader` (SPI), allowing custom plugins to be added without modifying the core system. This enables rapid enterprise extensions for:
-
-* JWT validation and JWK rotation strategies
-* Rate limiting and custom authentication mechanisms
-* Request enrichment and specialized audit adapters
+![r7 Dashboard Snapshot - route view](assets/route_view.png)
 
 ---
 
-## Decoupled Visibility: The r7F Journal
+## Architecture overview
 
-Most gateways force a trade-off between visibility and performance. r7’s audit module takes a radically different approach by strictly separating the fast data plane from the visibility plane. It utilizes the **r7 Log Format (r7F)**, a binary write-ahead log designed for zero-copy, high-throughput logging.
+r7 separates execution into two planes:
 
-* **Zero-Copy Hot Path:** Requests and responses are written to a memory-mapped journal using append-only, mechanically simple operations. There is no per-request serialization penalty or blocking I/O during request handling.
-* **Structured Payload Isolation:** Each entry isolates structured metadata (encoded via FlatBuffer `JournalEvent` tables) from variable raw payloads. This allows for efficient sequential logging and partial reads without full deserialization. Byte arrays bypass UTF-8 validation overhead on the hot path.
-* **Integrity and Recovery:** Every file utilizes a 1024-byte preamble with a deterministic sequence ID, and every individual journal entry is secured by a CRC32C checksum.
-* **Asynchronous Tailers:** A separate tailer process owns the lifecycle of the journal segments. It is responsible for converting the binary entries into JSON, MsgPack, or plain text, and routing the output to external sinks like Vector, ClickHouse, or S3-compatible storage.
+### Data plane
 
-The result is full forensic audit capability and high-frequency metrics collection with minimal impact on request latency.
+Handles request routing and filtering in a low-allocation hot path executed per request.
+
+### Visibility plane
+
+Asynchronous journaling and telemetry processing decoupled from request execution, ensuring observability does not impact latency.
 
 ---
 
-## Technical Profile
+## Extensibility
 
-* **Core API:** Implementation and technology-agnostic interface for predicates and filters.
-* **Platform:** Java 25
-* **Reference Server:** Undertow (XNIO)
-* **Target Environment:** Designed for JVM-native deployment in high-throughput environments requiring full audit visibility and tight integration with existing Java systems.
+Custom behavior can be added via JVM ServiceLoader (SPI):
+
+* Authentication and JWT validation
+* Rate limiting strategies
+* Request enrichment
+* Audit and telemetry adapters
+
+See [Extensibility](/extensibility) page for documentation.
+
+---
+
+## Performance characteristics
+
+r7 is designed for stable behavior under constrained environments, where traditional gateways begin to exhibit tail latency degradation due to memory pressure.
+
+---
+
+## Technical profile
+
+* Platform: Java 25+
+* Server: Undertow (XNIO)
+* Design: JVM-native, high-throughput gateway architecture
+
