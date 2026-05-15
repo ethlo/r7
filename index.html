@@ -895,9 +895,9 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <li>Authentication and JWT validation</li>
 <li>Rate limiting strategies</li>
 <li>Request enrichment</li>
-<li>Audit and telemetry adapters</li>
 </ul>
 <p>See <a href="/extensibility">Extensibility</a> page for documentation.</p>
+<p>Note: Audit and telemetry processing are handled externally via journal tailers, not as in-process extensions.</p>
 <hr />
 <h2 id="performance-characteristics">Performance characteristics</h2>
 <p>r7 is designed for stable behavior under constrained environments, where traditional gateways begin to exhibit tail latency degradation due to memory pressure.</p>
