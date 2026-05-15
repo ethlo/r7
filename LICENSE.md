@@ -1,14 +1,14 @@
-Business Source License 1.1
+# Business Source License 1.1
 
 License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
 "Business Source License" is a trademark of MariaDB Corporation Ab.
 
 ## Parameters
 
-Licensor: ethlo / Morten Haraldsen
-Licensed Work: r7 Gateway and related components in this repository
-Change Date: 3 years after the publication of each specific release
-Change License: Apache License 2.0
+* Licensor: ethlo / Morten Haraldsen
+* Licensed Work: r7 Gateway and related components in this repository
+* Change Date: 3 years after the publication of each specific release
+* Change License: Apache License 2.0
 
 ## Additional Use Grant
 
