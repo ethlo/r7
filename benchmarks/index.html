@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#performance-the-memory-squeeze" class="md-skip">
+        <a href="#performance-memory-behavior" class="md-skip">
           Skip to content
         </a>
       
@@ -517,8 +517,6 @@
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
       
       
-        
-      
       
         <label class="md-nav__link md-nav__link--active" for="__toc">
           
@@ -561,8 +559,6 @@
   
   
   
-    
-  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -571,24 +567,74 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-results" class="md-nav__link">
+  <a href="#performance-memory-behavior" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The Results
+        Performance &amp; Memory Behavior
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance &amp; Memory Behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Goal
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#analysis-finding-the-floor" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#test-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Analysis: Finding the Floor
+        Test Configuration
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpretation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -647,54 +693,63 @@
   
 
 
-<h1 id="performance-the-memory-squeeze">Performance &amp; The Memory Squeeze</h1>
-<p>Benchmarking API gateways often devolves into synthetic "apples-to-oranges" comparisons. Instead of claiming arbitrary high scores, we benchmarked r7 to demonstrate its behavior under severe memory constraints.</p>
-<p>The goal: <strong>Sustain 20,000 Requests Per Second (RPS) with a 12-thread worker pool, while progressively shrinking the container's RAM.</strong></p>
-<p><strong>The Test Vector:</strong>
-<code>wrk2 -t12 -c200 -d30s -R20000 -H "Authorization: Bearer &lt;token&gt;" http://localhost:9999/hello --latency</code></p>
-<h2 id="the-results">The Results</h2>
+  <h1>Benchmarks</h1>
+
+<h2 id="performance-memory-behavior">Performance &amp; Memory Behavior</h2>
+<p>API gateway benchmarks are often misleading due to synthetic comparisons and inconsistent configurations.<br />
+This benchmark focuses on a controlled variable: memory pressure under sustained request load.</p>
+<h3 id="test-goal">Test Goal</h3>
+<p>Sustain <strong>20,000 RPS</strong> with a <strong>12-thread worker pool</strong>, while progressively reducing container memory limits to observe latency behavior under constrained runtime conditions.</p>
+<h3 id="test-configuration">Test Configuration</h3>
+<p>```bash
+wrk2 -t12 -c200 -d30s -R20000 \
+-H "Authorization: Bearer <token>" \
+http://localhost:9999/hello --latency
+````</p>
+<h3 id="results">Results</h3>
 <table>
 <thead>
 <tr>
 <th>Container Size</th>
-<th>Median Latency (P50)</th>
-<th>Tail Latency (P99)</th>
+<th>P50 Latency</th>
+<th>P99 Latency</th>
 <th>Max Latency</th>
 <th>Result</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>990 MB</strong></td>
+<td>990 MB</td>
 <td>1.10 ms</td>
 <td>6.54 ms</td>
 <td>21.25 ms</td>
 <td>Stable</td>
 </tr>
 <tr>
-<td><strong>300 MB</strong></td>
+<td>300 MB</td>
 <td>1.05 ms</td>
 <td>5.13 ms</td>
 <td>32.00 ms</td>
 <td>Stable</td>
 </tr>
 <tr>
-<td><strong>200 MB</strong></td>
+<td>200 MB</td>
 <td>1.02 ms</td>
 <td>78.08 ms</td>
 <td>176.38 ms</td>
-<td>GC Squeeze</td>
+<td>GC pressure</td>
 </tr>
 </tbody>
 </table>
-<h2 id="analysis-finding-the-floor">Analysis: Finding the Floor</h2>
-<p>The data reveals exactly how r7 interacts with the HotSpot JVM:</p>
-<ol>
-<li><strong>The P50 Consistency:</strong> Across all three memory tiers, the median latency remained locked at <code>~1.05ms</code>. This proves the core routing engine and zero-locking hot path execute instantly when the CPU is unimpeded.</li>
-<li><strong>The 300MB Sweet Spot:</strong> Dropping from 1GB to 300MB had almost zero impact on tail latencies. r7 is highly memory-efficient and can run comfortably in heavily constrained cloud environments.</li>
-<li><strong>The 200MB GC Squeeze:</strong> At 200MB, the container reached its physical limit. Between thread stacks, XNIO direct buffers, and the heap, the JVM ran out of breathing room. To survive the 20k RPS barrage without OOMing, the Garbage Collector triggered frequent "Stop-The-World" pauses, directly causing the P99 latency to spike to 78ms.</li>
-</ol>
-<p>By understanding these boundaries, infrastructure engineers can accurately provision r7 for Envoy-tier throughput using standard Kubernetes resource limits (<code>requests: 250Mi</code>, <code>limits: 350Mi</code>).</p>
+<h3 id="observations">Observations</h3>
+<ul>
+<li><strong>Median latency stability:</strong> P50 remains ~1.0–1.1ms across all tested memory configurations, indicating stable request-path performance under CPU-bound conditions.</li>
+<li><strong>300MB operating range:</strong> Reducing memory from 990MB to 300MB shows no measurable degradation in tail latency under this workload.</li>
+<li><strong>200MB constraint threshold:</strong> At 200MB, the runtime exhibits increased tail latency under sustained load, consistent with elevated garbage collection pressure and reduced JVM headroom.</li>
+</ul>
+<h3 id="interpretation">Interpretation</h3>
+<p>The data suggests r7 maintains consistent request-path performance under moderate to tight memory allocations, with degradation appearing only when container memory approaches JVM operational limits under sustained high RPS workloads.</p>
+<p>This indicates that practical deployments should provision memory above the observed degradation threshold to avoid GC-induced tail latency spikes.</p>
 
 
 
