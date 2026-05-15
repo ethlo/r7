@@ -28,6 +28,7 @@ nav:
   - Extensibility: extensibility.md
   - Journaling: journaling.md
   - Benchmarks: benchmarks.md
+  - Licensing: licensing.md
 
 markdown_extensions:
   - admonition
