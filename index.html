@@ -773,8 +773,38 @@
 
 
 <h1 id="r7-gateway">r7 Gateway</h1>
+<p><img alt="r7 Dashboard Snapshot" src="assets/overview.png" /></p>
 <p>A high-performance JVM gateway for routing, filtering, and observability with a deterministic execution model and minimal runtime overhead.</p>
 <p>r7 sits between services and traffic sources, providing a stable and predictable execution layer for HTTP request handling, routing, and auditing.</p>
+<pre class="mermaid"><code>graph LR
+
+%% External systems (top / context)
+Up[Upstream Services]
+
+Client[Clients / APIs] --&gt; Edge[Edge Layer&lt;br/&gt;TLS + WAF]
+Edge --&gt; R7[r7 Gateway]
+
+Up --&gt; DP
+
+%% r7 core
+subgraph CORE[r7 Execution System]
+
+DP[Data Plane&lt;br/&gt;Routing + Filters]
+JOURNAL[Journal&lt;br/&gt;r7F Memory-mapped state]
+DASH[Live Dashboard&lt;br/&gt;Runtime projection]
+
+R7 --&gt; DP
+R7 --&gt; JOURNAL
+R7 --&gt; DASH
+
+end
+
+DP --&gt; Up
+
+%% right-side consumers
+JOURNAL --&gt; Exp[External Tailers / Exporters&lt;br/&gt;ClickHouse / S3 / Vector]
+
+DASH --&gt; Ops[Operators / SREs]</code></pre>
 <hr />
 <h2 id="designed-for-predictable-systems">Designed for predictable systems</h2>
 <p>r7 is built for environments where performance consistency matters more than peak benchmarks:</p>
