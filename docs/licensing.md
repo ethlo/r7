@@ -11,9 +11,9 @@ Free for:
 * Individuals
 * Hobby projects
 * Startups
-* Internal company use under $25M annual revenue/funding
-* **Important Restriction:** 
-Offering r7 as a commercial hosted service, SaaS, PaaS, or IaaS to third parties is not permitted under Community Use if it provides r7 functionality directly or indirectly as a substitute gateway service. This always requires a commercial license, regardless of revenue.
+* Internal company use under $25M annual revenue or equivalent annual operating budget
+* **Commercial Service Restriction:**
+  Offering r7 as a commercial hosted service, SaaS, PaaS, or IaaS to third parties is not permitted under Community Use if it provides r7-like gateway functionality as a managed service. This always requires a commercial license, regardless of revenue.
 
 ## Enterprise Use
 
@@ -23,4 +23,4 @@ If your organization exceeds this threshold, or if you plan to build a managed g
 
 ## Future Open Source
 
-Every release of r7 is guaranteed to convert to the **Apache License 2.0** exactly 3 years after its publication date.
+Each release of r7 will convert to the **Apache License 2.0** exactly 3 years after its publication date.
