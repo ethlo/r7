@@ -1,25 +1,36 @@
-# Performance & The Memory Squeeze
+## Performance & Memory Behavior
 
-Benchmarking API gateways often devolves into synthetic "apples-to-oranges" comparisons. Instead of claiming arbitrary high scores, we benchmarked r7 to demonstrate its behavior under severe memory constraints.
+API gateway benchmarks are often misleading due to synthetic comparisons and inconsistent configurations.  
+This benchmark focuses on a controlled variable: memory pressure under sustained request load.
 
-The goal: **Sustain 20,000 Requests Per Second (RPS) with a 12-thread worker pool, while progressively shrinking the container's RAM.**
+### Test Goal
 
-**The Test Vector:**
-`wrk2 -t12 -c200 -d30s -R20000 -H "Authorization: Bearer <token>" http://localhost:9999/hello --latency`
+Sustain **20,000 RPS** with a **12-thread worker pool**, while progressively reducing container memory limits to observe latency behavior under constrained runtime conditions.
 
-## The Results
+### Test Configuration
 
-| Container Size | Median Latency (P50) | Tail Latency (P99) | Max Latency | Result |
-|----------------|----------------------|--------------------|-------------|--------|
-| **990 MB** | 1.10 ms              | 6.54 ms            | 21.25 ms    | Stable |
-| **300 MB** | 1.05 ms              | 5.13 ms            | 32.00 ms    | Stable |
-| **200 MB** | 1.02 ms              | 78.08 ms           | 176.38 ms   | GC Squeeze |
+```bash
+wrk2 -t12 -c200 -d30s -R20000 \
+-H "Authorization: Bearer <token>" \
+http://localhost:9999/hello --latency
+````
 
-## Analysis: Finding the Floor
-The data reveals exactly how r7 interacts with the HotSpot JVM:
+### Results
 
-1. **The P50 Consistency:** Across all three memory tiers, the median latency remained locked at `~1.05ms`. This proves the core routing engine and zero-locking hot path execute instantly when the CPU is unimpeded.
-2. **The 300MB Sweet Spot:** Dropping from 1GB to 300MB had almost zero impact on tail latencies. r7 is highly memory-efficient and can run comfortably in heavily constrained cloud environments.
-3. **The 200MB GC Squeeze:** At 200MB, the container reached its physical limit. Between thread stacks, XNIO direct buffers, and the heap, the JVM ran out of breathing room. To survive the 20k RPS barrage without OOMing, the Garbage Collector triggered frequent "Stop-The-World" pauses, directly causing the P99 latency to spike to 78ms.
+| Container Size | P50 Latency | P99 Latency | Max Latency | Result      |
+| -------------- | ----------- | ----------- | ----------- | ----------- |
+| 990 MB         | 1.10 ms     | 6.54 ms     | 21.25 ms    | Stable      |
+| 300 MB         | 1.05 ms     | 5.13 ms     | 32.00 ms    | Stable      |
+| 200 MB         | 1.02 ms     | 78.08 ms    | 176.38 ms   | GC pressure |
 
-By understanding these boundaries, infrastructure engineers can accurately provision r7 for Envoy-tier throughput using standard Kubernetes resource limits (`requests: 250Mi`, `limits: 350Mi`).
+### Observations
+
+* **Median latency stability:** P50 remains ~1.0–1.1ms across all tested memory configurations, indicating stable request-path performance under CPU-bound conditions.
+* **300MB operating range:** Reducing memory from 990MB to 300MB shows no measurable degradation in tail latency under this workload.
+* **200MB constraint threshold:** At 200MB, the runtime exhibits increased tail latency under sustained load, consistent with elevated garbage collection pressure and reduced JVM headroom.
+
+### Interpretation
+
+The data suggests r7 maintains consistent request-path performance under moderate to tight memory allocations, with degradation appearing only when container memory approaches JVM operational limits under sustained high RPS workloads.
+
+This indicates that practical deployments should provision memory above the observed degradation threshold to avoid GC-induced tail latency spikes.
