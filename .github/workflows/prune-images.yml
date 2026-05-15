@@ -15,7 +15,7 @@ jobs:
         uses: snok/container-retention-policy@v3.0.1 
         with:
           image-names: r7-gateway
-          cut-off: 3 days ago
+          cut-off: 3 days
           keep-n-most-recent: 2
           account: user
           token: ${{ secrets.GITHUB_TOKEN }}
