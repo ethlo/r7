@@ -456,10 +456,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#deterministic-execution-model" class="md-nav__link">
+  <a href="#execution-model-runtime-guarantees" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Deterministic execution model
+        Execution model &amp; runtime guarantees
       
     </span>
   </a>
@@ -467,21 +467,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#performance-under-constraint" class="md-nav__link">
+  <a href="#live-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Performance under constraint
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#operational-visibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Operational visibility
+        Live Dashboard
       
     </span>
   </a>
@@ -534,10 +523,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#visibility-plane" class="md-nav__link">
+  <a href="#internal-observability" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Visibility plane
+        Internal observability
       
     </span>
   </a>
@@ -774,7 +763,7 @@
 
 <h1 id="r7-gateway">r7 Gateway</h1>
 <p><img alt="r7 Dashboard Snapshot" src="assets/overview.png" /></p>
-<p>A high-performance JVM gateway for routing, filtering, and observability with a deterministic execution model and minimal runtime overhead.</p>
+<p>A high-performance JVM gateway for routing, filtering, and observability with minimal runtime overhead.</p>
 <p>r7 sits between services and traffic sources, providing a stable and predictable execution layer for HTTP request handling, routing, and auditing.</p>
 <pre class="mermaid"><code>graph LR
 
@@ -824,22 +813,20 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <li>Plugin system via JVM ServiceLoader (SPI)</li>
 </ul>
 <hr />
-<h2 id="deterministic-execution-model">Deterministic execution model</h2>
-<p>r7 uses a straightforward synchronous request execution model for routing and filtering.</p>
-<p>This avoids the complexity introduced by reactive or coroutine-based pipelines, where request flow is distributed across multiple execution contexts.</p>
-<p>Benefits:</p>
+<h2 id="execution-model-runtime-guarantees">Execution model &amp; runtime guarantees</h2>
+<p>r7 uses a deterministic, streaming execution model for HTTP request processing.</p>
+<p>Requests are handled synchronously in a single logical flow, without reactive pipelines or coroutine-based scheduling.</p>
+<p>Payloads are processed as streams and are not buffered or modified within the gateway. This ensures strict memory control and predictable runtime behavior under load.</p>
+<p>This design leads to:</p>
 <ul>
-<li>Predictable request lifecycle from ingress to response</li>
-<li>Easier debugging with direct stack traces</li>
-<li>No reactive state management or callback chains</li>
-<li>Reduced cognitive overhead in failure analysis under load</li>
+<li>Deterministic request lifecycle from ingress to response</li>
+<li>No hidden buffering or allocation spikes in the hot path</li>
+<li>Stable tail latency under memory-constrained environments</li>
+<li>Reduced complexity in failure analysis and debugging</li>
 </ul>
-<hr />
-<h2 id="performance-under-constraint">Performance under constraint</h2>
-<p>r7 is designed to maintain stable latency under constrained memory conditions where traditional gateways exhibit tail latency degradation.</p>
 <p>See <a href="/benchmarks">Benchmarks</a> for measured results under controlled memory and load conditions.</p>
 <hr />
-<h2 id="operational-visibility">Operational visibility</h2>
+<h2 id="live-dashboard">Live Dashboard</h2>
 <p>r7 includes a built-in dashboard for live system introspection:</p>
 <ul>
 <li>Route-level inspection</li>
@@ -886,8 +873,8 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <p>r7 separates execution into two planes:</p>
 <h3 id="data-plane">Data plane</h3>
 <p>Handles request routing and filtering in a low-allocation hot path executed per request.</p>
-<h3 id="visibility-plane">Visibility plane</h3>
-<p>Asynchronous journaling and telemetry processing decoupled from request execution, ensuring observability does not impact latency.</p>
+<h3 id="internal-observability">Internal observability</h3>
+<p>Derived from request execution state, r7 maintains an asynchronous journal and live runtime projection without impacting request latency.</p>
 <hr />
 <h2 id="extensibility">Extensibility</h2>
 <p>Custom behavior can be added via JVM ServiceLoader (SPI):</p>
@@ -897,7 +884,7 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <li>Request enrichment</li>
 </ul>
 <p>See <a href="/extensibility">Extensibility</a> page for documentation.</p>
-<p>Note: Audit and telemetry processing are handled externally via journal tailers, not as in-process extensions.</p>
+<p>Note: Audit and telemetry pipelines operate on the journal stream via external tailers and are not part of the request execution runtime.</p>
 <hr />
 <h2 id="performance-characteristics">Performance characteristics</h2>
 <p>r7 is designed for stable behavior under constrained environments, where traditional gateways begin to exhibit tail latency degradation due to memory pressure.</p>
