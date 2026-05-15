@@ -2,7 +2,7 @@
 
 r7 is licensed under the **Business Source License (BSL) 1.1**, which converts to the open-source **Apache License 2.0** after 3 years.
 
-This summary is provided for convenience only and is not part of the legal license. Please refer to the full [LICENSE.md](https://github.com/ethlo/r7/LICENSE.md) for binding terms.
+This summary is provided for convenience only and is not part of the legal license. Please refer to the full [LICENSE.md](https://github.com/ethlo/r7/blob/main/LICENSE.md) for binding terms.
 
 ## Community Use
 
