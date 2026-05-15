@@ -16,6 +16,6 @@ jobs:
         with:
           image-names: r7-gateway
           cut-off: 3 days ago
-          keep-at-least: 2
-          account-type: personal
+          keep-n-most-recent: 2
+          account: user
           token: ${{ secrets.GITHUB_TOKEN }}
