@@ -13,7 +13,7 @@ Sustain **20,000 RPS** with a **12-thread worker pool**, while progressively red
 wrk2 -t12 -c200 -d30s -R20000 \
 -H "Authorization: Bearer <token>" \
 http://localhost:9999/hello --latency
-````
+```
 
 ### Results
 
