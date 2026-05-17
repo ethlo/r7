@@ -1,4 +1,4 @@
-r7f Journal File Format (Clean Separation Edition)
+r7f Journal File Format
 
 ## Status of This Memo
 
