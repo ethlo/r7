@@ -1,155 +1,229 @@
-# r7f Journal Entry Format
+You’re right to push back. The clean separation is:
 
-The **r7 Log Format (r7f)** is a binary write-ahead log format designed for zero-copy, high-throughput logging of HTTP request/response events, including structured FlatBuffer metadata and optional raw payloads.
+* **r7f RFC = physical file format + integrity + entry framing**
+* **r7fbs (FlatBuffer schema) = already-defined external contract**
+* Anything that repeats schema definitions inside the RFC is drift, not documentation.
 
-## File Preamble (Header)
+What you want is a **stricter RFC that treats FlatBuffers as an external dependency**, not a redefined artifact.
 
-Every r7 log segment (both `.active` and `.r7f` files) begins with a fixed-length **1024-byte** (1KB) file preamble. This header identifies the file type, dictates the parser version, ensures deterministic log replay ordering, and reserves significant space for future file-level metadata (such as compression dictionaries, routing labels, or encryption keys).
-
-### Preamble Field Descriptions
-
-| Field | Size (bytes) | Description |
-| --- | --- | --- |
-| **File Magic** | 4 | Fixed magic number `0x564C4631` (`r7f1`) identifying the file as a r7 log segment. |
-| **Version** | 2 | Format version (`0x0001`). Used to ensure parser compatibility. |
-| **Sequence ID** | 8 | Monotonically increasing segment identifier for chronological ordering during crash recovery. |
-| **Reserved** | 1010 | Zero-padded bytes reserved for future file-level metadata. |
-
-### Byte Ranges
-
-| Field | Start Offset | End Offset | Size |
-| --- | --- | --- | --- |
-| **File Magic** | 0 | 3 | 4 B |
-| **Version** | 4 | 5 | 2 B |
-| **Sequence ID** | 6 | 13 | 8 B |
-| **Reserved** | 14 | 1023 | 1010 B |
-
-> **Note:** The first journal entry begins immediately at offset `1024`. The entry-level magic numbers (`0x564C4631`) act as synchronization markers throughout the remainder of the file.
-
-Each journal entry is self-contained and includes a CRC32C checksum for integrity verification.
-
-## Entry Layout
-
-```text
-+-----------------+--------------------+---------------------+---------------------+---------------------+---------------------+-----------------+
-| Magic (4 bytes) | Payload Len (4 B)  | FB Len (4 bytes)    | Raw Len (4 bytes)   | FlatBuffer Payload  | Raw Payload        | CRC32C (4 bytes)|
-+-----------------+--------------------+---------------------+---------------------+---------------------+---------------------+-----------------+
-
-```
-
-Each journal entry is self-contained and includes a CRC32C checksum for integrity verification.
-
-### Field Descriptions
-
-| Field | Size (bytes) | Description |
-| --- | --- | --- |
-| **Magic** | 4 | Fixed magic number `0x564C4631` (`r7f1`) to identify the start of an entry. |
-| **Payload Length** | 4 | Total length of the entry payload (FB Len + Raw Len + 2 × 4 bytes for lengths). |
-| **FlatBuffer Length** | 4 | Number of bytes in the FlatBuffer section. |
-| **Raw Length** | 4 | Number of bytes in the optional raw payload section. |
-| **FlatBuffer Payload** | variable | FlatBuffer-encoded `JournalEvent` root table containing the `EventPayload` union. |
-| **Raw Payload** | variable | Optional raw binary data, e.g., request or response body. Present if `Raw Length > 0`. |
-| **CRC32C** | 4 | CRC32C checksum covering **Payload Length**, **FB Length**, **Raw Length**, **FlatBuffer Payload**, and **Raw Payload**. |
+Here is a corrected version that fixes that.
 
 ---
 
-## Entry Example
+# RFC 0001 — r7f Journal File Format (Clean Separation Edition)
 
-```text
-Magic:        V L F 1 -> 0x564C4631
-Payload Len:  0x000001DC (476 bytes)
-FB Len:       0x000000E4 (228 bytes)
-Raw Len:      0x00000098 (152 bytes)
-FlatBuffer:   <JournalEvent root encoded>
-Raw Payload:  <raw body bytes>
-CRC32C:       0x12345678
+## Status of This Memo
 
+This document specifies the r7f journal file format used by r7 for high-throughput event logging.
 
+It defines only:
+
+* file layout
+* entry framing
+* integrity model
+* replay constraints
+
+It does **not define event schemas**.
+
+---
+
+# 1. Scope
+
+The r7f format is a **binary append-only file format** for storing serialized journal events.
+
+Event encoding is delegated to an external specification:
+
+> FlatBuffer schema: `com.ethlo.r7.vlf.fbs` (see r7fbs specification)
+
+This document MUST NOT be used to interpret event payload structure.
+
+---
+
+# 2. Conventions
+
+* MUST / SHOULD / MAY are as per RFC 2119.
+* All integers MUST be big-endian.
+* File is strictly append-only.
+
+---
+
+# 3. File Layout
+
+## 3.1 Structure
+
+A r7f file MUST have the following layout:
+
+```
+[1024-byte preamble][entry][entry]...[entry]
 ```
 
 ---
 
-## Event Types in FlatBuffer Payload
+## 3.2 Preamble
 
-All FlatBuffer payloads are encoded using **`JournalEvent`** as the root table. This table contains an `EventPayload` union that wraps one of the specific underlying event types. Using byte arrays (`[ubyte]`) avoids UTF-8 validation overhead on the hot path.
+The first 1024 bytes MUST be reserved as a file header:
 
-1. **ClientRequest & UpstreamRequest** – Marks the start of a request.
+| Field       | Size | Requirement                   |
+| ----------- | ---- | ----------------------------- |
+| File Magic  | 4    | MUST be `0x564C4631`          |
+| Version     | 2    | MUST identify format version  |
+| Sequence ID | 8    | MUST be monotonic per segment |
+| Reserved    | 1010 | MUST be zero-filled           |
 
-* `journal_level` (`FbsJournalLevel`)
-* `req_id` (byte array)
-* `start_line` (byte array)
-* `headers` (array of `Header` objects)
-
-2. **ClientResponse & UpstreamResponse** – Marks the start of a response.
-
-* `journal_level` (`FbsJournalLevel`)
-* `req_id` (byte array)
-* `start_line` (byte array)
-* `headers` (array of `Header` objects)
-* `status` (uint16)
-
-3. **RequestBody & ResponseBody** – Contains metadata about a request/response body chunk.
-
-* `req_id` (byte array)
-* `length` (uint32)
-
-4. **EndExchange** – Marks the completion of an exchange.
-
-* `req_id` (byte array)
-* `client_start` (long)
-* `client_end` (long)
-* `status` (uint16)
-* `request_crc32c` (uint32) - Cumulative checksum of the request body
-* `response_crc32c` (uint32) - Cumulative checksum of the response body
-* `proxy_start` (int64)
-* `proxy_first_byte_received` (int64)
-* `proxy_end` (int64)
-* `request_header_bytes` (long)
-* `request_body_bytes` (long)
-* `response_header_bytes` (long)
-* `response_body_bytes` (long)
-* `attributes` (array of `Header` objects)
+The first entry MUST begin at offset 1024.
 
 ---
 
-## Integrity
+# 4. Entry Format
 
-**CRC32C** is calculated over the following in order:
+Each entry MUST be encoded as:
 
-* Payload Length (4 bytes)
-* FlatBuffer Length (4 bytes)
-* Raw Length (4 bytes)
-* FlatBuffer Payload
-* Raw Payload (if present)
-
-Any mismatch during decoding indicates data corruption.
-
----
-
-## Notes
-
-* **Alignment**: All integer fields are **big-endian**.
-* **Raw payloads** follow immediately after FlatBuffer data; they are optional and can be zero-length.
-* **Segment rotation**: When the active memory-mapped segment is full, a new segment file is created. Old segments are finalized as `.raw` files.
-* **FlatBuffer Builder**: Each entry builds a FlatBuffer independently, ensuring zero-copy writes and compact storage.
+```
+Magic (4)
+PayloadLen (4)
+FBLen (4)
+RawLen (4)
+FlatBufferPayload (FBLen)
+RawPayload (RawLen)
+CRC32C (4)
+```
 
 ---
 
-This format allows:
+## 4.1 Field Definitions
 
-* Efficient sequential logging
-* Partial reads of large raw payloads without deserializing the FlatBuffer
-* Integrity checking with minimal overhead
+### Magic
 
-### Byte Ranges Example
+MUST equal `0x564C4631`.
 
-| Field | Start Offset | End Offset | Size |
-| --- | --- | --- | --- |
-| **Magic** | 0 | 3 | 4 B |
-| **Payload Length** | 4 | 7 | 4 B |
-| **FlatBuffer Length** | 8 | 11 | 4 B |
-| **Raw Length** | 12 | 15 | 4 B |
-| **FlatBuffer Payload** | 16 | 16+FBLen-1 | FBLen |
-| **Raw Payload** | 16+FBLen | 16+FBLen+RawLen-1 | RawLen |
-| **CRC32C** | 16+FBLen+RawLen | 16+FBLen+RawLen+3 | 4 B |
+---
 
+### PayloadLen
+
+MUST equal:
+
+```
+FBLen + RawLen + 8
+```
+
+---
+
+### FlatBufferPayload
+
+* MUST contain a valid FlatBuffer-encoded `JournalEvent`
+* MUST conform to external specification:
+
+  ```
+  com.ethlo.r7.vlf.fbs
+  ```
+* This RFC does NOT define or interpret its contents.
+
+---
+
+### RawPayload
+
+* MAY be present
+* If present, MUST follow FlatBufferPayload immediately
+* MUST NOT be interpreted by the journal layer
+
+---
+
+### CRC32C
+
+CRC MUST be computed over:
+
+* PayloadLen
+* FBLen
+* RawLen
+* FlatBufferPayload
+* RawPayload (if present)
+
+Entries with invalid CRC MUST be considered corrupted.
+
+---
+
+# 5. Entry Semantics
+
+The journal layer defines only **structural integrity**, not event meaning.
+
+Specifically:
+
+* Entries are opaque at the journal layer
+* Ordering is defined strictly by file sequence
+* No semantic interpretation of payload is permitted
+
+---
+
+# 6. Replay Model
+
+A compliant reader MUST:
+
+1. Scan entries sequentially
+2. Validate CRC32C per entry
+3. Skip corrupted entries
+4. Treat entries as opaque byte records
+5. Pass FlatBufferPayload to external decoder if needed
+
+Replay semantics of `JournalEvent` are defined in the FlatBuffer specification, not here.
+
+---
+
+# 7. Determinism
+
+Implementations:
+
+* MUST NOT reorder entries
+* MUST NOT modify existing entries
+* MUST append only
+* SHOULD rely on OS page cache for writeback
+
+---
+
+# 8. Failure Model
+
+| Condition  | Behavior                                  |
+| ---------- | ----------------------------------------- |
+| Crash      | Tail entries may be incomplete            |
+| Power loss | Last dirty pages may be lost              |
+| Disk full  | Writes fail; ingestion must halt upstream |
+| Corruption | Entry is dropped via CRC failure          |
+
+---
+
+# 9. Non-Goals
+
+This specification explicitly does NOT define:
+
+* Event schema (FlatBuffers)
+* HTTP semantics
+* Routing logic
+* Retry behavior
+* Distributed replication
+* Indexing or query systems
+
+---
+
+# 10. Design Intent
+
+r7f is intentionally minimal:
+
+* It defines **how bytes are stored**
+* It does NOT define **what the bytes mean**
+
+The FlatBuffer schema is intentionally external to preserve:
+
+* independent evolution
+* versioning decoupling
+* multi-consumer compatibility
+
+---
+
+# 11. Summary
+
+r7f is:
+
+* append-only binary log format
+* framed by fixed-size preamble
+* entry-based CRC32C integrity model
+* schema-agnostic payload container
+* replayable via sequential scan
