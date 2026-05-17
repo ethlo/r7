@@ -1,16 +1,4 @@
-You’re right to push back. The clean separation is:
-
-* **r7f RFC = physical file format + integrity + entry framing**
-* **r7fbs (FlatBuffer schema) = already-defined external contract**
-* Anything that repeats schema definitions inside the RFC is drift, not documentation.
-
-What you want is a **stricter RFC that treats FlatBuffers as an external dependency**, not a redefined artifact.
-
-Here is a corrected version that fixes that.
-
----
-
-# RFC 0001 — r7f Journal File Format (Clean Separation Edition)
+r7f Journal File Format (Clean Separation Edition)
 
 ## Status of This Memo
 
