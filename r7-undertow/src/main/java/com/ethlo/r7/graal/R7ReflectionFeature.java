@@ -101,11 +101,13 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.config.FilterDefinition.class,
 
                 ServerConfig.class,
+                ServerConfig.ServerCoreConfig.class,
                 ServerConfig.HttpConfig.class,
                 ServerConfig.AdvancedConfig.class,
                 ServerConfig.LimitsConfig.class,
                 ServerConfig.StorageConfig.class,
                 ServerConfig.ProxyConfig.class,
+                ServerConfig.ManagementConfig.class,
 
                 // Logback / Logging Infrastructure
                 ch.qos.logback.classic.joran.JoranConfigurator.class,
