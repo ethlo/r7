@@ -420,9 +420,9 @@ filters:
 
 Evaluates the `Content-Length` header of incoming requests. Rejects payloads exceeding the configured limit with `413 Payload Too Large`.
 
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `max_bytes` | Size | Yes | The maximum allowed request size formatted with a size suffix (e.g., `10MB`). |
+| Parameter  | Type | Required | Description |
+|------------| --- | --- | --- |
+| `max_size` | Size | Yes | The maximum allowed request size formatted with a size suffix (e.g., `10MB`). |
 
 **Example:**
 
