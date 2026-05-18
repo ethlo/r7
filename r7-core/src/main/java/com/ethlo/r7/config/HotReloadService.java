@@ -76,7 +76,7 @@ public final class HotReloadService
         }
         catch (final Exception e)
         {
-            log.warn("Hot reload failed during deserialization. Retaining current configuration: {}", e.getMessage());
+            log.warn("Hot reload failed. Retaining current configuration: {}", e.getMessage());
         }
     }
 }
