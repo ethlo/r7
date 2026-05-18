@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,8 @@ public final class HotReloadService
         this.configManager = configManager;
         this.routeRegistry = routeRegistry;
         this.lastKnownModified = System.currentTimeMillis();
+
+        reloadPipeline();
     }
 
     private void pollForChanges()
@@ -53,7 +56,14 @@ public final class HotReloadService
     {
         try
         {
-            final RoutesDefinition routesConfig = this.configManager.load(this.configFilePath, RoutesDefinition.class);
+            RoutesDefinition routesConfig = ConfigurationManager.load(this.configFilePath, RoutesDefinition.class);
+
+            if (routesConfig == null)
+            {
+                log.warn("No settings found in routes.yaml");
+                routesConfig = new RoutesDefinition(null, List.of(), List.of());
+            }
+
             final ValidationResult validationResult = ConfigurationManager.validate(routesConfig);
             if (validationResult.hasErrors())
             {
@@ -62,7 +72,7 @@ public final class HotReloadService
             }
 
             this.configManager.load(routesConfig, this.routeRegistry);
-            log.info("Configuration successfully reloaded {} with version {}", this.configFilePath, routesConfig.version());
+            log.info("Configuration successfully loaded {} with version {}", this.configFilePath, routesConfig.version());
         }
         catch (final Exception e)
         {

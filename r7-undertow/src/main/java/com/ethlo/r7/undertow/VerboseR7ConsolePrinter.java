@@ -24,10 +24,6 @@ import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.undertow.config.ServerConfig;
 
-/**
- * A themed console printer using "CSS-style" color mapping and rounded layout constants.
- * All original configuration properties restored.
- */
 public class VerboseR7ConsolePrinter implements R7ConsolePrinter
 {
     private static final Logger logger = LoggerFactory.getLogger("r7");
@@ -36,13 +32,13 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
 
     // --- "CSS" THEME CONSTANTS ---
     private static final String RESET = "\u001B[0m";
-    private static final String CSS_PRIMARY = "\u001B[1;36m";   // Bold Cyan
-    private static final String CSS_SECONDARY = "\u001B[95m"; // Bright Magenta
-    private static final String CSS_SUCCESS = "\u001B[92m";   // Acid Green
-    private static final String CSS_ALERT = "\u001B[93m";     // Neon Yellow
-    private static final String CSS_CRITICAL = "\u001B[91m";  // Bright Red
-    private static final String CSS_MUTED = "\u001B[90m";     // Dark Grey
-    private static final String CSS_HEADER = "\u001B[1;97m";  // Bold White
+    private static final String CSS_PRIMARY = "\u001B[1;36m";
+    private static final String CSS_SECONDARY = "\u001B[95m";
+    private static final String CSS_SUCCESS = "\u001B[92m";
+    private static final String CSS_ALERT = "\u001B[93m";
+    private static final String CSS_CRITICAL = "\u001B[91m";
+    private static final String CSS_MUTED = "\u001B[90m";
+    private static final String CSS_HEADER = "\u001B[1;97m";
 
     // --- LAYOUT CONSTANTS ---
     private static final String BORDER_TOP = "╭" + "─".repeat(WIDTH + 2) + "╮";
@@ -91,44 +87,43 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
     private void printServerConfigInternal(final ServerConfig config)
     {
         logLine(" " + CSS_PRIMARY + "◆ SYSTEM CONFIGURATION" + RESET);
-        logLine("   " + CSS_SECONDARY + "Server:       " + CSS_SUCCESS + config.host() + ":" + config.port() + RESET);
 
-        // Worker Section
-        logLine("");
-        logLine("   " + CSS_HEADER + "Worker & Threads" + RESET);
-        logLine("   " + TREE_BRANCH + "IO Threads:        " + config.worker().ioThreads());
-        logLine("   " + TREE_BRANCH + "Task Core/Max:     " + config.worker().taskCoreThreads() + " / " + config.worker().taskMaxThreads());
-        logLine("   " + TREE_BRANCH + "Stack Size:        " + (config.worker().stackSize() / 1024) + " KB");
-        logLine("   " + TREE_LAST + "Watermark (H/L):   " + config.worker().connectionHighWater() + " / " + config.worker().connectionLowWater());
+        // Planes
+        logLine("   " + CSS_SECONDARY + "Server (Data):   " + CSS_SUCCESS + config.server().host() + ":" + config.server().port() + RESET);
+        logLine("   " + CSS_SECONDARY + "Management:      " + CSS_SUCCESS + config.management().host() + ":" + config.management().port() + RESET);
 
-        // Options & Socket
+        // HTTP & Proxy Behavior
         logLine("");
-        logLine("   " + CSS_HEADER + "Networking" + RESET);
-        logLine("   " + TREE_BRANCH + "TCP No-Delay:      " + config.socket().tcpNodelay());
-        logLine("   " + TREE_BRANCH + "Backlog:           " + config.socket().backlog());
-        logLine("   " + TREE_BRANCH + "Read-timeout:      " + config.socket().readTimeout());
-        logLine("   " + TREE_BRANCH + "Reuse address:     " + config.socket().reuseAddresses());
-        logLine("   " + TREE_BRANCH + "Max header count:  " + config.options().maxHeaderCount());
-        logLine("   " + TREE_BRANCH + "Max header length: " + config.options().maxHeaderSize());
-        logLine("   " + TREE_BRANCH + "Request timeout:   " + config.options().requestParseTimeout());
-        logLine("   " + TREE_BRANCH + "HTTP/2:            " + (config.options().enableHttp2() ? CSS_SUCCESS + "Enabled" : CSS_MUTED + "Disabled") + RESET);
-        logLine("   " + TREE_LAST + "Buffer:            " + (config.options().bufferSize() / 1024) + " KB (" + (config.options().directBuffers() ? "Direct" : "Heap") + ")");
-
-        // Proxy Section
-        logLine("");
-        logLine("   " + CSS_HEADER + "Proxy & Timing" + RESET);
+        logLine("   " + CSS_HEADER + "HTTP & Proxy Behavior" + RESET);
+        logLine("   " + TREE_BRANCH + "HTTP/2:            " + (config.http().enableHttp2() ? CSS_SUCCESS + "Enabled" : CSS_MUTED + "Disabled") + RESET);
+        logLine("   " + TREE_BRANCH + "Parse Timeout:     " + config.http().requestParseTimeout().toMillis() + " ms");
         logLine("   " + TREE_BRANCH + "Conn/Thread:       " + config.proxy().connectionsPerThread());
         logLine("   " + TREE_BRANCH + "Max Queue:         " + config.proxy().maxQueueSize());
-        logLine("   " + TREE_BRANCH + "Max Req Time:      " + config.proxy().maxRequestTime() + " ms");
-        logLine("   " + TREE_LAST + "TTL:               " + (config.proxy().ttl() == -1 ? "Infinite" : config.proxy().ttl() + " ms"));
+        logLine("   " + TREE_BRANCH + "Max Req Time:      " + config.proxy().maxRequestTime().toMillis() + " ms");
+        logLine("   " + TREE_LAST + "TTL:               " + (config.proxy().ttl().toMillis() == -1 ? "Infinite" : config.proxy().ttl().toMillis() + " ms"));
+
+        // Security & Limits
+        logLine("");
+        logLine("   " + CSS_HEADER + "Security & Limits" + RESET);
+        logLine("   " + TREE_BRANCH + "Max Header Size:   " + (config.limits().maxHeaderSize().toBytes() / 1024) + " KB");
+        logLine("   " + TREE_BRANCH + "Max Header Count:  " + config.limits().maxHeaderCount());
+        logLine("   " + TREE_LAST + "Max Entity Size:   " + (config.limits().maxEntitySize().toBytes() / 1024 / 1024) + " MB");
 
         // Storage
         logLine("");
-        logLine("   " + CSS_HEADER + "Journaling" + RESET);
-        logLine("   " + TREE_BRANCH + "Shard count:         " + config.storage().shardCount());
-        logLine("   " + TREE_BRANCH + "Shard size:          " + config.storage().shardSize());
-        logLine("   " + TREE_BRANCH + "Pre-fault segments:  " + config.storage().preFault());
-        logLine("   " + TREE_LAST + "Directory:           " + config.storage().workDir());
+        logLine("   " + CSS_HEADER + "Journaling & Storage" + RESET);
+        logLine("   " + TREE_BRANCH + "Directory:         " + config.storage().workDir());
+        logLine("   " + TREE_BRANCH + "Shard Count:       " + config.storage().shardCount());
+        logLine("   " + TREE_BRANCH + "Shard Size:        " + (config.storage().shardSize().toBytes() / 1024 / 1024) + " MB");
+        logLine("   " + TREE_LAST + "Pre-fault:         " + config.storage().preFault());
+
+        // Advanced Tuning
+        logLine("");
+        logLine("   " + CSS_HEADER + "Advanced Tuning" + RESET);
+        logLine("   " + TREE_BRANCH + "IO/Task Threads:   " + config.advanced().ioThreads() + " / " + config.advanced().taskThreads());
+        logLine("   " + TREE_BRANCH + "Socket Backlog:    " + config.advanced().socketBacklog());
+        logLine("   " + TREE_BRANCH + "TCP No-Delay:      " + config.advanced().tcpNoDelay());
+        logLine("   " + TREE_LAST + "Buffer Pool:       " + (config.advanced().directBuffers() ? "Direct" : "Heap"));
 
         final MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
         final MemoryUsage heap = memBean.getHeapMemoryUsage();
@@ -141,7 +136,7 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
                 .orElse("Unknown");
 
         final long directBufUsed = bufferPools.stream()
-                .filter(p -> p.getName().equals("direct"))
+                .filter((final BufferPoolMXBean p) -> p.getName().equals("direct"))
                 .mapToLong(BufferPoolMXBean::getMemoryUsed)
                 .findFirst()
                 .orElse(0L);
@@ -243,13 +238,13 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
 
                 if (isHundredBlock)
                 {
-                    grouped.computeIfAbsent(level, k -> new ArrayList<>()).add((i / 100) + "xx");
+                    grouped.computeIfAbsent(level, (final JournalLevel k) -> new ArrayList<>()).add((i / 100) + "xx");
                     i += 100;
                     continue;
                 }
                 else
                 {
-                    grouped.computeIfAbsent(level, k -> new ArrayList<>()).add(String.valueOf(i));
+                    grouped.computeIfAbsent(level, (final JournalLevel k) -> new ArrayList<>()).add(String.valueOf(i));
                 }
             }
             i++;
