@@ -1,6 +1,7 @@
 # r7 Proxy Reference
 
 ## Routing Configuration
+
 The r7 proxy is configured using a declarative YAML file called `routes.yaml`. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.
 The configuration supports environment variable interpolation (e.g., `${ENV_VAR:default_value}`), allowing you to use a single configuration structure across multiple environments.
 
@@ -16,6 +17,7 @@ The configuration supports environment variable interpolation (e.g., `${ENV_VAR:
 The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, and conditional journaling.
 
 Sample `routing.yaml`
+
 ```yaml
 version: '{{git.rev.abbr}}'
 
@@ -62,10 +64,10 @@ routes:
       - RateLimiter:
           capacity: 5
           refill_tokens: 1
-          refill_period: PT2s
+          refill_period: 2s
       - CircuitBreaker:
           failure_threshold: 10
-          cooldown_period: PT12s
+          cooldown_period: 12s
       - AddResponseHeader:
           name: X-Powered-By
           value: Ethlo R7
@@ -87,7 +89,7 @@ routes:
   - id: home-assistant
     upstream:
       targets:
-        - url: [http://192.168.50.103:8123](http://192.168.50.103:8123)
+        - url: http://192.168.50.103:8123
     match:
         - PathStartsWith:
           prefix: /ha
@@ -102,82 +104,73 @@ routes:
           5xx: HEADERS
       response:
         level: HEADERS
-``` 
+
+```
 
 ## Server Configuration
 
-The `server.yaml` file controls the foundational infrastructure of the r7 proxy. This includes network binding, thread pool sizing, low-level socket behaviors, upstream connection pooling, and disk-backed storage configurations for journaling.
+The `server.yaml` file controls the foundational infrastructure of the r7 proxy. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
 
-### Root Configuration
+### Server Configuration (`server`)
 
-Defines the primary listening interfaces and ports for both the proxy and its internal status endpoints.
+Defines the primary listening interfaces and ports for the proxy.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `host` | String | The IP address or interface the primary proxy binds to (e.g., `0.0.0.0` for all interfaces). |
 | `port` | Integer | The primary port the proxy listens on for incoming traffic. |
-| `status_host` | String | The interface for the internal status and metrics server. |
-| `status_port` | Integer | The port for the internal status and metrics server. |
 
-### Worker Options
+### Management Configuration (`management`)
 
-Controls the threading model and connection watermark levels. Proper tuning here is critical for high-throughput, low-allocation environments.
+Defines the interfaces for the internal status and metrics endpoints.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `io_threads` | Integer | The number of non-blocking I/O threads. Typically mapped 1:1 with available physical CPU cores. |
-| `task_core_threads` | Integer | The minimum number of threads in the blocking task pool. |
-| `task_max_threads` | Integer | The maximum number of threads in the blocking task pool. Keeping this close to the core count prevents excessive context switching. |
-| `stack_size` | Integer | Thread stack size in bytes (e.g., `262144` for 256KB). |
-| `connection_low_water` | Integer | The lower bound watermark for concurrent backend connections. |
-| `connection_high_water` | Integer | The upper bound watermark for concurrent backend connections. |
+| `host` | String | The interface for the internal management server. |
+| `port` | Integer | The port for the internal management server. |
 
-### Server Options
+### HTTP Options (`http`)
 
-Configures the HTTP server layer, including buffer management, protocol support, and request parsing limits.
+Configures the HTTP server layer, including protocol support and request parsing behaviors.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `buffer_size` | Integer | The size of the byte buffers used for I/O operations (e.g., `8192` for 8KB). Tuning this to fit into L1/L2 cache can improve performance. |
-| `direct_buffers` | Boolean | When `true`, uses off-heap memory (Direct Buffers) to minimize JVM garbage collection and eliminate memory copies during socket I/O. |
-| `tcp_nodelay` | Boolean | Disables Nagle's algorithm to reduce latency for small packets. |
 | `enable_http2` | Boolean | Enables HTTP/2 protocol support. |
 | `always_set_keep_alive` | Boolean | Forces the server to send the `Connection: keep-alive` header to maintain persistent connections. |
-| `max_header_size` | Integer | The maximum allowed size for a single HTTP header, in bytes. |
-| `max_header_count` | Integer | The maximum number of HTTP headers allowed per request. |
-| `request_parse_timeout` | Integer | The timeout in milliseconds for parsing an incoming HTTP request. |
+| `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. |
 
-### Proxy Client
+### Limits Configuration (`limits`)
+
+Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `max_header_size` | Size | The maximum allowed size for a single HTTP header (e.g., `8KB`). |
+| `max_header_count` | Integer | The maximum number of HTTP headers allowed per request. |
+| `max_entity_size` | Size | The maximum allowed request payload/entity size (e.g., `2MB`). |
+| `max_parameter_count` | Integer | The maximum number of parameters allowed per request. |
+| `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
+
+### Proxy Client (`proxy`)
 
 Configures the behavior of the internal reverse proxy client that connects to upstream targets.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `ttl` | Integer | The time-to-live in milliseconds for idle upstream connections in the pool. |
-| `max_request_time` | Integer | The absolute maximum time in milliseconds a proxy request is allowed to take before timing out. |
 | `connections_per_thread` | Integer | The maximum number of pooled upstream connections allowed *per worker thread*. |
 | `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
+| `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. |
+| `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. |
 
-### Socket Layer
-
-Low-level operating system socket configurations for the listener.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `tcp_nodelay` | Boolean | Disables Nagle's algorithm at the server socket level. |
-| `reuse_addresses` | Boolean | Enables `SO_REUSEADDR`, allowing the server to bind to an address/port that is currently in a `TIME_WAIT` state. |
-| `backlog` | Integer | The maximum OS-level queue length for incoming connection requests. |
-| `read_timeout` | Integer | The socket read timeout in milliseconds. |
-
-### Storage & Journaling
+### Storage & Journaling (`storage`)
 
 Configures the disk-backed storage mechanism used for high-speed request and response journaling.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `work_dir` | String | The directory path where the memory-mapped journal files are stored. |
+| `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). |
 | `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. |
-| `shard_size` | Integer | The target size limit in bytes for a single journal shard (e.g., `500000000` for 500MB). |
 | `pre_fault` | Boolean | When `true`, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. |
 
 ---
@@ -209,7 +202,6 @@ match:
       - not:
           RemoteAddr:
             source: 10.0.0.0/8
-
 ```
 
 ### Host
@@ -276,7 +268,6 @@ filters:
       name: X-Custom-Header
       value: my-custom-value
       override: true
-
 ```
 
 ### AddResponseHeader
@@ -296,7 +287,6 @@ filters:
   - AddResponseHeader:
       name: X-Powered-By
       value: Ethlo R7
-
 ```
 
 ### CircuitBreaker
@@ -306,7 +296,7 @@ Monitors upstream responses and temporarily blocks routing to the target if a sp
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `failure_threshold` | Integer | Yes | The number of consecutive `5xx` failures required to open the circuit. |
-| `cooldown_period` | Duration | Yes | The time to wait before transitioning to a half-open state to probe upstream health. |
+| `cooldown_period` | Duration | Yes | The time to wait (e.g., `12s`) before transitioning to a half-open state to probe upstream health. |
 
 **Example:**
 
@@ -314,8 +304,7 @@ Monitors upstream responses and temporarily blocks routing to the target if a sp
 filters:
   - CircuitBreaker:
       failure_threshold: 10
-      cooldown_period: PT12s
-
+      cooldown_period: 12s
 ```
 
 ### CorrelationIdHeader
@@ -329,7 +318,6 @@ Automatically injects the gateway's internal request ID into both the upstream r
 ```yaml
 filters:
   - CorrelationIdHeader
-
 ```
 
 ### Cors
@@ -349,12 +337,11 @@ Handles Cross-Origin Resource Sharing (CORS). Intercepts `OPTIONS` preflight req
 ```yaml
 filters:
   - Cors:
-      allowed_origins: "[https://example.com](https://example.com), [https://app.example.com](https://app.example.com)"
+      allowed_origins: "https://example.com, https://app.example.com"
       allowed_methods: "GET, POST, PUT, DELETE, OPTIONS"
       allowed_headers: "Authorization, Content-Type"
       max_age: "3600"
       allow_credentials: true
-
 ```
 
 ### InjectBasicAuth
@@ -373,7 +360,6 @@ filters:
   - InjectBasicAuth:
       username: admin
       password: supersecretpassword
-
 ```
 
 ### RateLimiter
@@ -384,9 +370,9 @@ Provides token-bucket rate limiting based on the client's IP address or a custom
 | --- | --- | --- | --- |
 | `capacity` | Long | Yes | Maximum number of tokens the bucket can hold. |
 | `refill_tokens` | Long | Yes | Number of tokens added to the bucket per refill period. |
-| `refill_period` | Duration | Yes | The time interval for the token refill. |
+| `refill_period` | Duration | Yes | The time interval (e.g., `2s`) for the token refill. |
 | `max_buckets` | Long | No | Maximum number of buckets to track. Defaults to `10000`. |
-| `max_bucket_ttl` | Duration | No | Time-to-live for idle buckets. Defaults to `max(refillPeriod * 10, 30s)`. |
+| `max_bucket_ttl` | Duration | No | Time-to-live for idle buckets (e.g., `30s`). Defaults to `max(refillPeriod * 10, 30s)`. |
 
 **Example:**
 
@@ -395,8 +381,7 @@ filters:
   - RateLimiter:
       capacity: 5
       refill_tokens: 1
-      refill_period: PT2s
-
+      refill_period: 2s
 ```
 
 ### RemoveRequestHeader
@@ -413,7 +398,6 @@ Strips a specified HTTP header from the client request before it is forwarded to
 filters:
   - RemoveRequestHeader:
       name: X-Forwarded-Host
-
 ```
 
 ### RemoveResponseHeader
@@ -430,7 +414,6 @@ Strips a specified HTTP header from the upstream response before it is returned 
 filters:
   - RemoveResponseHeader:
       name: Server
-
 ```
 
 ### RequestSize
@@ -439,15 +422,14 @@ Evaluates the `Content-Length` header of incoming requests. Rejects payloads exc
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `max_bytes` | Long | Yes | The maximum allowed request size in bytes (must be > 0). |
+| `max_bytes` | Size | Yes | The maximum allowed request size formatted with a size suffix (e.g., `10MB`). |
 
 **Example:**
 
 ```yaml
 filters:
   - RequestSize:
-      max_bytes: 10485760 # 10MB
-
+      max_size: 10MB
 ```
 
 ### RequireAuthorizationHeader
@@ -461,7 +443,6 @@ Validates that incoming requests contain an `Authorization` header starting with
 ```yaml
 filters:
   - RequireAuthorizationHeader
-
 ```
 
 ### RewritePath
@@ -480,7 +461,6 @@ filters:
   - RewritePath:
       regexp: "^/api/v1/(.*)"
       replacement: "/$1"
-
 ```
 
 ### SetStatus
@@ -497,7 +477,6 @@ Overrides the HTTP response status code returned to the client, regardless of th
 filters:
   - SetStatus:
       status: 404
-
 ```
 
 ### StripCacheHeaders
@@ -511,7 +490,6 @@ Strips cache validation headers (`If-Modified-Since`, `If-None-Match`) and injec
 ```yaml
 filters:
   - StripCacheHeaders
-
 ```
 
 ### StripPathPrefix
@@ -528,7 +506,6 @@ Removes a specified number of structural path segments from the beginning of the
 filters:
   - StripPathPrefix:
       parts: 2
-
 ```
 
 ### TemplateRedirect

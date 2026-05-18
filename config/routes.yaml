@@ -3,6 +3,8 @@ global_filters:
   - SimpleMetrics:
       period: 5M
       interval: 2S
+  - RequestSize:
+      max_size: 10MB
 routes:
   - id: dashboard
     upstream:
