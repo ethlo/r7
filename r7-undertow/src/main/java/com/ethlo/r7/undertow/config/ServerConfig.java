@@ -126,34 +126,6 @@ public record ServerConfig(
         {
             result.addError(ctx, "proxy.connections_per_thread must be >= 1");
         }
-        if (proxyConfig.maxQueueSize() < 0)
-        {
-            result.addError(ctx, "proxy.max_queue_size must be >= 0");
-        }
-        final Object requestParseTimeout = proxyConfig.requestParseTimeout();
-        if (requestParseTimeout instanceof Duration duration && duration.isNegative())
-        {
-            result.addError(ctx, "proxy.request_parse_timeout must be >= 0");
-        }
-        else if (requestParseTimeout instanceof Optional<?> optional
-                && optional.isPresent()
-                && optional.get() instanceof Duration duration
-                && duration.isNegative())
-        {
-            result.addError(ctx, "proxy.request_parse_timeout must be >= 0");
-        }
-        final Object ttl = proxyConfig.ttl();
-        if (ttl instanceof Duration duration && duration.isNegative())
-        {
-            result.addError(ctx, "proxy.ttl must be >= 0");
-        }
-        else if (ttl instanceof Optional<?> optional
-                && optional.isPresent()
-                && optional.get() instanceof Duration duration
-                && duration.isNegative())
-        {
-            result.addError(ctx, "proxy.ttl must be >= 0");
-        }
 
         // Storage
         final StorageConfig storageConfig = storage();
