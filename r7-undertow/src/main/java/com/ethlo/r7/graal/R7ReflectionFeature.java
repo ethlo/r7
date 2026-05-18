@@ -9,6 +9,7 @@ import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
 import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.undertow.config.ServerConfig;
 
 public final class R7ReflectionFeature implements Feature
 {
@@ -99,12 +100,14 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.config.ConditionDefinition.class,
                 com.ethlo.r7.config.FilterDefinition.class,
 
-                com.ethlo.r7.undertow.config.ServerConfig.class,
-                com.ethlo.r7.undertow.config.ServerConfig.WorkerConfig.class,
-                com.ethlo.r7.undertow.config.ServerConfig.SocketConfig.class,
-                com.ethlo.r7.undertow.config.ServerConfig.OptionsConfig.class,
-                com.ethlo.r7.undertow.config.ServerConfig.StorageConfig.class,
-                com.ethlo.r7.undertow.config.ServerConfig.ProxyConfig.class,
+                ServerConfig.class,
+                ServerConfig.ServerCoreConfig.class,
+                ServerConfig.HttpConfig.class,
+                ServerConfig.AdvancedConfig.class,
+                ServerConfig.LimitsConfig.class,
+                ServerConfig.StorageConfig.class,
+                ServerConfig.ProxyConfig.class,
+                ServerConfig.ManagementConfig.class,
 
                 // Logback / Logging Infrastructure
                 ch.qos.logback.classic.joran.JoranConfigurator.class,

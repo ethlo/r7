@@ -1,8 +1,10 @@
 version: v2026-03-14
 global_filters:
   - SimpleMetrics:
-      period: PT5M
-      interval: PT2S
+      period: 5M
+      interval: 2S
+  - RequestSize:
+      max_size: 10MB
 routes:
   - id: dashboard
     upstream:
@@ -24,27 +26,27 @@ routes:
   - id: static-content
     match:
       - not:
-        - PathStartsWith:
-            prefix: /hello
+          - PathStartsWith:
+              prefix: /hello
       - or:
-        - Method:
-            include:
-              - GET
-              - POST
-        - RemoteAddr:
-            source: 192.168.1/24
+          - Method:
+              include:
+                - GET
+                - POST
+          - RemoteAddr:
+              source: 192.168.1/24
     upstream:
       targets:
         - url: http://localhost:1111
     filters:
       - RequireAuthorizationHeader
       - RateLimiter:
-          capacity: 50000
+          capacity: 200000
           refill_tokens: 100000
-          refill_period: PT1s
+          refill_period: 1s
       - CircuitBreaker:
           failure_threshold: 10
-          cooldown_period: PT15s
+          cooldown_period: 15s
       - CorrelationIdHeader
     journal:
       request:
@@ -67,10 +69,10 @@ routes:
       - RateLimiter:
           capacity: 50000
           refill_tokens: 12000
-          refill_period: PT1s
+          refill_period: 1s
       - CircuitBreaker:
           failure_threshold: 10
-          cooldown_period: PT15s
+          cooldown_period: 15s
       #- RequireAuthorizationHeader
       - CorrelationIdHeader
 

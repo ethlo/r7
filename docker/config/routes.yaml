@@ -1,5 +1,5 @@
 version: '{{git.rev.abbr}}'
-filters:
+global_filters:
   - SimpleMetrics
   - CorrelationIdHeader
 routes:

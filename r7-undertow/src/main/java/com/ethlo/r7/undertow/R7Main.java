@@ -24,10 +24,10 @@ import ch.qos.logback.core.util.StatusPrinter2;
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayErrorHandler;
+import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
-import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.journal.compression.VlfCompressionEngine;
 import com.ethlo.r7.spi.EngineContext;
@@ -71,10 +71,7 @@ public final class R7Main
         final RouteRegistry routeRegistry = new RouteRegistry();
         final GatewayScheduler scheduler = new GatewayScheduler(2);
 
-        final ServerConfig serverConfig = ConfigurationManager.load(serverFile, ServerConfig.class);
-        final ValidationResult result = new ValidationResult();
-        serverConfig.validate(result);
-        result.throwIfInvalid();
+        final ServerConfig serverConfig = loadServerSettings(serverFile);
         logger.debug("Loaded server config: {}", serverConfig);
 
         final GatewayErrorHandler errorHandler = new StandardErrorHandler();
@@ -83,7 +80,7 @@ public final class R7Main
         final Path workDir = Paths.get(storage.workDir());
         Files.createDirectories(workDir);
 
-        final RoutesDefinition routesConfig = ConfigurationManager.load(configFile, RoutesDefinition.class);
+
         final MetricsRegistry metricsRegistry = setupMetricsRegistry(workDir, scheduler);
         final EngineContext engineContext = new EngineContext(Map.of(
                 GatewayScheduler.class, scheduler,
@@ -91,7 +88,7 @@ public final class R7Main
         ));
         final ConfigurationManager configurationManager = new ConfigurationManager(engineContext);
 
-        configurationManager.load(routesConfig, routeRegistry);
+        //final RoutesDefinition routesConfig = loadRoutesConfig(configFile, configurationManager, routeRegistry);
 
         final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
         logger.info("Watching config file {} for changes", configFile.toAbsolutePath());
@@ -104,7 +101,7 @@ public final class R7Main
 
         final ShardedJournalWriter<VlfJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
-            final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, storage.shardSize(), storage.preFault());
+            final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, storage.shardSize().toBytes(), storage.preFault());
             return new VlfJournal(provider, compressionEngine::submitForCompression);
         }
         );
@@ -130,7 +127,7 @@ public final class R7Main
 
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
 
-        setupStatusBackend(statusHandler, serverConfig.statusPort(), serverConfig.statusHost(), sharedWorker);
+        setupStatusBackend(statusHandler, serverConfig.management().port(), serverConfig.management().host(), sharedWorker);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
@@ -167,15 +164,32 @@ public final class R7Main
         // Have to happen after start
         statusHandler.setConnectorStatistics(server.getListenerInfo().getFirst().getConnectorStatistics());
 
-        //System.gc();
-        //final R7ConsolePrinter consolePrinter = new VerboseR7ConsolePrinter();
-        //consolePrinter.printFullReport(serverConfig, routeRegistry.getRoutes());
-
         final Duration uptime = SystemUtil.getUptime();
         logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms, listening at {}", VersionProvider.getVersion(), uptime.toMillis(), server.getListenerInfo().stream().map(Undertow.ListenerInfo::getAddress).toList());
     }
 
-    private static MetricsRegistry setupMetricsRegistry(Path workDir, GatewayScheduler scheduler)
+    private static ServerConfig loadServerSettings(final Path serverFile)
+    {
+        if (!Files.exists(serverFile))
+        {
+            logger.warn("No server.yaml file found at {}", serverFile.toAbsolutePath());
+            return ServerConfig.standard();
+        }
+
+        logger.info("Loading server settings from {}", serverFile.toAbsolutePath());
+        ServerConfig serverConfig = ConfigurationManager.load(serverFile, ServerConfig.class);
+        if (serverConfig == null)
+        {
+            logger.warn("No settings found in server.yaml, using only defaults");
+            serverConfig = ServerConfig.standard();
+        }
+        final ValidationResult result = new ValidationResult();
+        serverConfig.validate(result);
+        result.throwIfInvalid();
+        return serverConfig;
+    }
+
+    private static MetricsRegistry setupMetricsRegistry(final Path workDir, final GatewayScheduler scheduler)
     {
         final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
         return new MetricsRegistry(telemetryRepository, scheduler);
@@ -192,14 +206,20 @@ public final class R7Main
         routerBackendTest.build().start();
     }
 
-    // MUST be public
     public static void main(final String[] args) throws IOException
     {
         // Force all silent background thread crashes to print to standard error
         Thread.setDefaultUncaughtExceptionHandler((t, e) ->
         {
-            System.err.println("FATAL THREAD CRASH [" + t.getName() + "]: " + e.getMessage());
-            e.printStackTrace(System.err);
+            if (e instanceof ConfigurationException)
+            {
+                System.err.println(e.getMessage());
+            }
+            else
+            {
+                System.err.println("FATAL THREAD CRASH [" + t.getName() + "]: " + e.getMessage());
+                e.printStackTrace(System.err);
+            }
         });
 
         setupLogging();
@@ -245,14 +265,13 @@ public final class R7Main
 
     private XnioWorker createSharedWorker(final ServerConfig config) throws IOException
     {
-        final ServerConfig.WorkerConfig worker = config.worker();
+        final ServerConfig.AdvancedConfig advanced = config.advanced();
         final OptionMap.Builder options = OptionMap.builder()
-                .set(Options.WORKER_IO_THREADS, worker.ioThreads())
-                .set(Options.WORKER_TASK_CORE_THREADS, worker.taskCoreThreads())
-                .set(Options.WORKER_TASK_MAX_THREADS, worker.taskMaxThreads())
-                .set(Options.STACK_SIZE, worker.stackSize())
-                .set(Options.CONNECTION_HIGH_WATER, worker.connectionHighWater())
-                .set(Options.CONNECTION_LOW_WATER, worker.connectionLowWater());
+                .set(Options.WORKER_IO_THREADS, advanced.ioThreads())
+                .set(Options.WORKER_TASK_CORE_THREADS, advanced.taskThreads())
+                .set(Options.WORKER_TASK_MAX_THREADS, advanced.taskThreads())
+                .set(Options.CONNECTION_HIGH_WATER, advanced.connectionHighWater())
+                .set(Options.CONNECTION_LOW_WATER, advanced.connectionLowWater());
 
         return Xnio.getInstance().createWorker(options.getMap());
     }
@@ -271,29 +290,35 @@ public final class R7Main
 
     private void configureServer(final Undertow.Builder builder, final ServerConfig config)
     {
-        final ServerConfig.SocketConfig socket = config.socket();
-        final ServerConfig.OptionsConfig opts = config.options();
+        final ServerConfig.ServerCoreConfig server = config.server();
+        final ServerConfig.AdvancedConfig advanced = config.advanced();
+        final ServerConfig.LimitsConfig limits = config.limits();
+        final ServerConfig.HttpConfig http = config.http();
 
-        builder.addHttpListener(config.port(), config.host())
+        builder.addHttpListener(server.port(), server.host())
                 // Socket Layer
-                .setSocketOption(Options.TCP_NODELAY, socket.tcpNodelay())
-                .setSocketOption(Options.REUSE_ADDRESSES, socket.reuseAddresses())
-                .setSocketOption(Options.BACKLOG, socket.backlog())
-                .setSocketOption(Options.READ_TIMEOUT, socket.readTimeout())
+                .setSocketOption(Options.TCP_NODELAY, advanced.tcpNoDelay())
+                .setSocketOption(Options.REUSE_ADDRESSES, advanced.reuseAddresses())
+                .setSocketOption(Options.BACKLOG, advanced.socketBacklog())
+                .setSocketOption(Options.READ_TIMEOUT, (int) advanced.socketReadTimeout().toMillis())
 
-                // Worker Layer removed here because the shared worker handles it
+                // HTTP Protocol
+                .setServerOption(UndertowOptions.MAX_HEADER_SIZE, (int) limits.maxHeaderSize().toBytes())
+                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, (int) http.requestParseTimeout().toMillis())
+                .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, limits.maxEntitySize().toBytes())
+                .setServerOption(UndertowOptions.ENABLE_HTTP2, http.enableHttp2())
+                .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, http.alwaysSetKeepAlive())
 
-                // Protocol & Memory
-                .setServerOption(UndertowOptions.MAX_HEADER_SIZE, opts.maxHeaderSize())
-                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, opts.requestParseTimeout())
-                .setServerOption(UndertowOptions.MAX_HEADERS, opts.maxHeaderCount())
-                .setServerOption(UndertowOptions.ENABLE_STATISTICS, true)
+                // Limits
+                .setServerOption(UndertowOptions.MAX_HEADERS, limits.maxHeaderCount())
+                .setServerOption(UndertowOptions.MAX_PARAMETERS, limits.maxParameterCount())
+                .setServerOption(UndertowOptions.MAX_COOKIES, limits.maxCookieCount())
 
-                .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, true)
+                // Options
+                .setServerOption(UndertowOptions.ENABLE_STATISTICS, advanced.enableStatistics())
+                .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, advanced.recordRequestStartTime())
 
-                .setServerOption(UndertowOptions.ENABLE_HTTP2, opts.enableHttp2())
-                .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, opts.alwaysSetKeepAlive())
-                .setBufferSize(opts.bufferSize())
-                .setDirectBuffers(opts.directBuffers());
+                // Memory Configuration
+                .setDirectBuffers(advanced.directBuffers());
     }
 }

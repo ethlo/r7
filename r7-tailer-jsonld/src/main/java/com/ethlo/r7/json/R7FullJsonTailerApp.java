@@ -23,7 +23,7 @@ public class R7FullJsonTailerApp
 
         final DebugJsonWriter jsonWriter = new DebugJsonWriter(out, false);
         final R7Tailer tailer = new R7Tailer(logDir, Duration.ofHours(1), jsonWriter);
-        System.out.println("📂 Writing JSONEachRow to: " + auditFile);
+        System.out.println("Writing JSONEachRow to: " + auditFile);
 
         while (!Thread.currentThread().isInterrupted())
         {

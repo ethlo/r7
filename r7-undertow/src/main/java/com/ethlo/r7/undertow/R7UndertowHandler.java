@@ -303,7 +303,7 @@ public final class R7UndertowHandler implements HttpHandler
                     final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
                             .setConnectionsPerThread(pConfig.connectionsPerThread())
                             .setMaxQueueSize(serverConfig.proxy().maxQueueSize())
-                            .setTtl(pConfig.ttl());
+                            .setTtl(Math.toIntExact(pConfig.ttl().toMillis()));
 
                     route.uri().stream()
                             .map(CharSequence::toString)
@@ -323,7 +323,7 @@ public final class R7UndertowHandler implements HttpHandler
 
                     return ProxyHandler.builder()
                             .setProxyClient(client)
-                            .setMaxRequestTime(pConfig.maxRequestTime())
+                            .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
                             .setReuseXForwarded(false)
                             .setRewriteHostHeader(true)
                             .build();
