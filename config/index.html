@@ -541,10 +541,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#root-configuration" class="md-nav__link">
+  <a href="#server-configuration-server" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Root Configuration
+        Server Configuration (server)
       
     </span>
   </a>
@@ -552,10 +552,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#worker-options" class="md-nav__link">
+  <a href="#management-configuration-management" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Worker Options
+        Management Configuration (management)
       
     </span>
   </a>
@@ -563,10 +563,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#server-options" class="md-nav__link">
+  <a href="#http-options-http" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Server Options
+        HTTP Options (http)
       
     </span>
   </a>
@@ -574,10 +574,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#proxy-client" class="md-nav__link">
+  <a href="#limits-configuration-limits" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Proxy Client
+        Limits Configuration (limits)
       
     </span>
   </a>
@@ -585,10 +585,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#socket-layer" class="md-nav__link">
+  <a href="#proxy-client-proxy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Socket Layer
+        Proxy Client (proxy)
       
     </span>
   </a>
@@ -596,10 +596,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#storage-journaling" class="md-nav__link">
+  <a href="#storage-journaling-storage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Storage &amp; Journaling
+        Storage &amp; Journaling (storage)
       
     </span>
   </a>
@@ -1036,7 +1036,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </ul>
 <h3 id="example-configuration">Example Configuration</h3>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, and conditional journaling.</p>
-<p>Sample <code>routing.yaml</code>
+<p>Sample <code>routing.yaml</code></p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;{{git.rev.abbr}}&#39;</span>
 </span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Global filters applied to all routes</span>
@@ -1082,10 +1082,10 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </span><span id="True-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
 </span><span id="True-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 </span><span id="True-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="True-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT2s</span>
+</span><span id="True-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
 </span><span id="True-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
 </span><span id="True-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-</span><span id="True-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT12s</span>
+</span><span id="True-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12s</span>
 </span><span id="True-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">AddResponseHeader</span><span class="p">:</span>
 </span><span id="True-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Powered-By</span>
 </span><span id="True-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ethlo R7</span>
@@ -1107,7 +1107,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </span><span id="True-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">home-assistant</span>
 </span><span id="True-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
 </span><span id="True-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
-</span><span id="True-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">http</span><span class="p p-Indicator">:</span><span class="nv">//192.168.50.103</span><span class="p p-Indicator">:</span><span class="nv">8123</span><span class="p p-Indicator">]</span><span class="l l-Scalar l-Scalar-Plain">(http://192.168.50.103:8123)</span>
+</span><span id="True-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://192.168.50.103:8123</span>
 </span><span id="True-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
 </span><span id="True-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
 </span><span id="True-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/ha</span>
@@ -1122,11 +1122,11 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </span><span id="True-0-83"><a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
 </span><span id="True-0-84"><a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
 </span><span id="True-0-85"><a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span></code></pre></div></p>
+</span></code></pre></div>
 <h2 id="server-configuration">Server Configuration</h2>
-<p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 proxy. This includes network binding, thread pool sizing, low-level socket behaviors, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
-<h3 id="root-configuration">Root Configuration</h3>
-<p>Defines the primary listening interfaces and ports for both the proxy and its internal status endpoints.</p>
+<p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 proxy. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
+<h3 id="server-configuration-server">Server Configuration (<code>server</code>)</h3>
+<p>Defines the primary listening interfaces and ports for the proxy.</p>
 <table>
 <thead>
 <tr>
@@ -1146,20 +1146,33 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td>Integer</td>
 <td>The primary port the proxy listens on for incoming traffic.</td>
 </tr>
+</tbody>
+</table>
+<h3 id="management-configuration-management">Management Configuration (<code>management</code>)</h3>
+<p>Defines the interfaces for the internal status and metrics endpoints.</p>
+<table>
+<thead>
 <tr>
-<td><code>status_host</code></td>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code></td>
 <td>String</td>
-<td>The interface for the internal status and metrics server.</td>
+<td>The interface for the internal management server.</td>
 </tr>
 <tr>
-<td><code>status_port</code></td>
+<td><code>port</code></td>
 <td>Integer</td>
-<td>The port for the internal status and metrics server.</td>
+<td>The port for the internal management server.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="worker-options">Worker Options</h3>
-<p>Controls the threading model and connection watermark levels. Proper tuning here is critical for high-throughput, low-allocation environments.</p>
+<h3 id="http-options-http">HTTP Options (<code>http</code>)</h3>
+<p>Configures the HTTP server layer, including protocol support and request parsing behaviors.</p>
 <table>
 <thead>
 <tr>
@@ -1169,64 +1182,6 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>io_threads</code></td>
-<td>Integer</td>
-<td>The number of non-blocking I/O threads. Typically mapped 1:1 with available physical CPU cores.</td>
-</tr>
-<tr>
-<td><code>task_core_threads</code></td>
-<td>Integer</td>
-<td>The minimum number of threads in the blocking task pool.</td>
-</tr>
-<tr>
-<td><code>task_max_threads</code></td>
-<td>Integer</td>
-<td>The maximum number of threads in the blocking task pool. Keeping this close to the core count prevents excessive context switching.</td>
-</tr>
-<tr>
-<td><code>stack_size</code></td>
-<td>Integer</td>
-<td>Thread stack size in bytes (e.g., <code>262144</code> for 256KB).</td>
-</tr>
-<tr>
-<td><code>connection_low_water</code></td>
-<td>Integer</td>
-<td>The lower bound watermark for concurrent backend connections.</td>
-</tr>
-<tr>
-<td><code>connection_high_water</code></td>
-<td>Integer</td>
-<td>The upper bound watermark for concurrent backend connections.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="server-options">Server Options</h3>
-<p>Configures the HTTP server layer, including buffer management, protocol support, and request parsing limits.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>buffer_size</code></td>
-<td>Integer</td>
-<td>The size of the byte buffers used for I/O operations (e.g., <code>8192</code> for 8KB). Tuning this to fit into L1/L2 cache can improve performance.</td>
-</tr>
-<tr>
-<td><code>direct_buffers</code></td>
-<td>Boolean</td>
-<td>When <code>true</code>, uses off-heap memory (Direct Buffers) to minimize JVM garbage collection and eliminate memory copies during socket I/O.</td>
-</tr>
-<tr>
-<td><code>tcp_nodelay</code></td>
-<td>Boolean</td>
-<td>Disables Nagle's algorithm to reduce latency for small packets.</td>
-</tr>
 <tr>
 <td><code>enable_http2</code></td>
 <td>Boolean</td>
@@ -1238,9 +1193,27 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td>Forces the server to send the <code>Connection: keep-alive</code> header to maintain persistent connections.</td>
 </tr>
 <tr>
+<td><code>request_parse_timeout</code></td>
+<td>Duration</td>
+<td>The timeout (e.g., <code>2s</code>) for parsing an incoming HTTP request.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="limits-configuration-limits">Limits Configuration (<code>limits</code>)</h3>
+<p>Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td><code>max_header_size</code></td>
-<td>Integer</td>
-<td>The maximum allowed size for a single HTTP header, in bytes.</td>
+<td>Size</td>
+<td>The maximum allowed size for a single HTTP header (e.g., <code>8KB</code>).</td>
 </tr>
 <tr>
 <td><code>max_header_count</code></td>
@@ -1248,13 +1221,23 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td>The maximum number of HTTP headers allowed per request.</td>
 </tr>
 <tr>
-<td><code>request_parse_timeout</code></td>
+<td><code>max_entity_size</code></td>
+<td>Size</td>
+<td>The maximum allowed request payload/entity size (e.g., <code>2MB</code>).</td>
+</tr>
+<tr>
+<td><code>max_parameter_count</code></td>
 <td>Integer</td>
-<td>The timeout in milliseconds for parsing an incoming HTTP request.</td>
+<td>The maximum number of parameters allowed per request.</td>
+</tr>
+<tr>
+<td><code>max_cookie_count</code></td>
+<td>Integer</td>
+<td>The maximum number of cookies allowed per request.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="proxy-client">Proxy Client</h3>
+<h3 id="proxy-client-proxy">Proxy Client (<code>proxy</code>)</h3>
 <p>Configures the behavior of the internal reverse proxy client that connects to upstream targets.</p>
 <table>
 <thead>
@@ -1266,16 +1249,6 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </thead>
 <tbody>
 <tr>
-<td><code>ttl</code></td>
-<td>Integer</td>
-<td>The time-to-live in milliseconds for idle upstream connections in the pool.</td>
-</tr>
-<tr>
-<td><code>max_request_time</code></td>
-<td>Integer</td>
-<td>The absolute maximum time in milliseconds a proxy request is allowed to take before timing out.</td>
-</tr>
-<tr>
 <td><code>connections_per_thread</code></td>
 <td>Integer</td>
 <td>The maximum number of pooled upstream connections allowed <em>per worker thread</em>.</td>
@@ -1285,42 +1258,19 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td>Integer</td>
 <td>The maximum number of pending requests allowed to queue while waiting for an available upstream connection.</td>
 </tr>
-</tbody>
-</table>
-<h3 id="socket-layer">Socket Layer</h3>
-<p>Low-level operating system socket configurations for the listener.</p>
-<table>
-<thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>tcp_nodelay</code></td>
-<td>Boolean</td>
-<td>Disables Nagle's algorithm at the server socket level.</td>
+<td><code>max_request_time</code></td>
+<td>Duration</td>
+<td>The absolute maximum time (e.g., <code>60s</code>) a proxy request is allowed to take before timing out.</td>
 </tr>
 <tr>
-<td><code>reuse_addresses</code></td>
-<td>Boolean</td>
-<td>Enables <code>SO_REUSEADDR</code>, allowing the server to bind to an address/port that is currently in a <code>TIME_WAIT</code> state.</td>
-</tr>
-<tr>
-<td><code>backlog</code></td>
-<td>Integer</td>
-<td>The maximum OS-level queue length for incoming connection requests.</td>
-</tr>
-<tr>
-<td><code>read_timeout</code></td>
-<td>Integer</td>
-<td>The socket read timeout in milliseconds.</td>
+<td><code>ttl</code></td>
+<td>Duration</td>
+<td>The time-to-live (e.g., <code>30s</code>) for idle upstream connections in the pool.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="storage-journaling">Storage &amp; Journaling</h3>
+<h3 id="storage-journaling-storage">Storage &amp; Journaling (<code>storage</code>)</h3>
 <p>Configures the disk-backed storage mechanism used for high-speed request and response journaling.</p>
 <table>
 <thead>
@@ -1337,14 +1287,14 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td>The directory path where the memory-mapped journal files are stored.</td>
 </tr>
 <tr>
+<td><code>shard_size</code></td>
+<td>Size</td>
+<td>The target size limit for a single journal shard (e.g., <code>200MB</code>).</td>
+</tr>
+<tr>
 <td><code>shard_count</code></td>
 <td>Integer</td>
 <td>The number of shards (files) to split the journal across to reduce lock contention and manage file sizes.</td>
-</tr>
-<tr>
-<td><code>shard_size</code></td>
-<td>Integer</td>
-<td>The target size limit in bytes for a single journal shard (e.g., <code>500000000</code> for 500MB).</td>
 </tr>
 <tr>
 <td><code>pre_fault</code></td>
@@ -1579,7 +1529,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td><code>cooldown_period</code></td>
 <td>Duration</td>
 <td>Yes</td>
-<td>The time to wait before transitioning to a half-open state to probe upstream health.</td>
+<td>The time to wait (e.g., <code>12s</code>) before transitioning to a half-open state to probe upstream health.</td>
 </tr>
 </tbody>
 </table>
@@ -1587,7 +1537,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
 </span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">      </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT12s</span>
+</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">      </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12s</span>
 </span></code></pre></div>
 <h3 id="correlationidheader">CorrelationIdHeader</h3>
 <p>Automatically injects the gateway's internal request ID into both the upstream request and the client response using the <code>X-Correlation-Id</code> header.</p>
@@ -1643,7 +1593,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <p><strong>Example:</strong></p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Cors</span><span class="p">:</span>
-</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">      </span><span class="nt">allowed_origins</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;[https://example.com](https://example.com),</span><span class="nv"> </span><span class="s">[https://app.example.com](https://app.example.com)&quot;</span>
+</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">      </span><span class="nt">allowed_origins</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://example.com,</span><span class="nv"> </span><span class="s">https://app.example.com&quot;</span>
 </span><span id="True-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">allowed_methods</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;GET,</span><span class="nv"> </span><span class="s">POST,</span><span class="nv"> </span><span class="s">PUT,</span><span class="nv"> </span><span class="s">DELETE,</span><span class="nv"> </span><span class="s">OPTIONS&quot;</span>
 </span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">allowed_headers</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Authorization,</span><span class="nv"> </span><span class="s">Content-Type&quot;</span>
 </span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">max_age</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3600&quot;</span>
@@ -1709,7 +1659,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td><code>refill_period</code></td>
 <td>Duration</td>
 <td>Yes</td>
-<td>The time interval for the token refill.</td>
+<td>The time interval (e.g., <code>2s</code>) for the token refill.</td>
 </tr>
 <tr>
 <td><code>max_buckets</code></td>
@@ -1721,7 +1671,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 <td><code>max_bucket_ttl</code></td>
 <td>Duration</td>
 <td>No</td>
-<td>Time-to-live for idle buckets. Defaults to <code>max(refillPeriod * 10, 30s)</code>.</td>
+<td>Time-to-live for idle buckets (e.g., <code>30s</code>). Defaults to <code>max(refillPeriod * 10, 30s)</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -1730,7 +1680,7 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
 </span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">      </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
 </span><span id="True-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">      </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="True-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT2s</span>
+</span><span id="True-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
 </span></code></pre></div>
 <h3 id="removerequestheader">RemoveRequestHeader</h3>
 <p>Strips a specified HTTP header from the client request before it is forwarded to the upstream target.</p>
@@ -1795,17 +1745,17 @@ The configuration supports environment variable interpolation (e.g., <code>${ENV
 </thead>
 <tbody>
 <tr>
-<td><code>max_bytes</code></td>
-<td>Long</td>
+<td><code>max_size</code></td>
+<td>Size</td>
 <td>Yes</td>
-<td>The maximum allowed request size in bytes (must be &gt; 0).</td>
+<td>The maximum allowed request size formatted with a size suffix (e.g., <code>10MB</code>).</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Example:</strong></p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RequestSize</span><span class="p">:</span>
-</span><span id="True-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">      </span><span class="nt">max_bytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10485760</span><span class="w"> </span><span class="c1"># 10MB</span>
+</span><span id="True-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">      </span><span class="nt">max_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10MB</span>
 </span></code></pre></div>
 <h3 id="requireauthorizationheader">RequireAuthorizationHeader</h3>
 <p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Rejects requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.</p>
