@@ -1,112 +1,5 @@
 # r7 Proxy Reference
 
-## Routing Configuration
-
-The r7 proxy is configured using a declarative YAML file called `routes.yaml`. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.
-The configuration supports environment variable interpolation (e.g., `${ENV_VAR:default_value}`), allowing you to use a single configuration structure across multiple environments.
-
-### Core Concepts
-
-* **Global Filters:** Applied to every request passing through the proxy, ensuring baseline behaviors like metric collection or correlation ID injection.
-* **Routes:** The core mapping logic. Each route requires a unique `id`, a `match` condition (like path prefixes or HTTP methods), and an `upstream` target.
-* **Route Filters:** Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched.
-* **Journaling:** Granular control over what is logged. You can define base logging levels (e.g., `NONE`, `METADATA`, `HEADERS`, `FULL`) and override these levels based on specific HTTP status codes.
-
-### Example Configuration
-
-The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, and conditional journaling.
-
-Sample `routing.yaml`
-
-```yaml
-version: '{{git.rev.abbr}}'
-
-# Global filters applied to all routes
-filters:
-  - SimpleMetrics
-  - CorrelationIdHeader
-
-routes:
-  # 1. Simple routing with environment variable fallback
-  - id: forward-status
-    upstream:
-      targets:
-        - url: http://localhost:18888
-    match:
-      - PathStartsWith:
-          prefix: ${SECRET_URL:/status} # Uses SECRET_URL or defaults to /status
-
-  # 2. Routing with authorization enforcement
-  - id: reject-benchmark
-    upstream:
-      targets:
-        - url: http://localhost:1111
-    match:
-      - PathStartsWith:
-          prefix: /benchmark
-    filters:
-      - RequireAuthorizationHeader
-
-  # 3. Complex routing with method matching, configured filters, and conditional journaling
-  - id: undertow-internal-backend
-    match:
-      - PathStartsWith:
-          prefix: /hello
-      - Method:
-          include:
-            - GET
-            - POST
-    upstream:
-      targets:
-        - url: http://localhost:1111
-    filters:
-      # Filters can be declared with specific configuration arguments
-      - RateLimiter:
-          capacity: 5
-          refill_tokens: 1
-          refill_period: 2s
-      - CircuitBreaker:
-          failure_threshold: 10
-          cooldown_period: 12s
-      - AddResponseHeader:
-          name: X-Powered-By
-          value: Ethlo R7
-      # Filters requiring no arguments are declared by name only
-      - CorrelationIdHeader
-      - RequireAuthorizationHeader
-    journal:
-      request:
-        level: NONE
-        # Increase log verbosity dynamically based on the response status
-        status_overrides:
-          401,403: HEADERS
-          429: METADATA
-          5xx: HEADERS
-      response:
-        level: NONE
-
-  # 4. Routing with path stripping
-  - id: home-assistant
-    upstream:
-      targets:
-        - url: http://192.168.50.103:8123
-    match:
-        - PathStartsWith:
-          prefix: /ha
-    filters:
-      # Strips the "/ha" prefix before forwarding to the upstream target
-      - StripPathPrefix:
-          parts: 1
-    journal:
-      request:
-        level: METADATA
-        status_overrides:
-          5xx: HEADERS
-      response:
-        level: HEADERS
-
-```
-
 ## Server Configuration
 
 The `server.yaml` file controls the foundational infrastructure of the r7 proxy. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
@@ -175,6 +68,37 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 
 ---
 
+## Routing Configuration
+
+The r7 proxy is configured using a declarative YAML file called `routes.yaml`. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.
+
+The configuration supports environment variable interpolation (e.g., `${ENV_VAR:default_value}`), allowing you to use a single configuration structure across multiple environments.
+
+### Core Concepts
+
+* **Global Filters:** Applied to every request passing through the proxy, ensuring baseline behaviors like metric collection or correlation ID injection.
+* **Routes:** The core mapping logic. Each route requires a unique `id`, a `match` condition (like path prefixes or HTTP methods), and an `upstream` target.
+* **Route Filters:** Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched.
+* **Journaling:** Granular control over what is logged. You can define base logging levels (e.g., `NONE`, `METADATA`, `HEADERS`, `FULL`) and override these levels based on specific HTTP status codes.
+
+---
+
+## Upstream & Health Checks
+
+The `upstream` block defines where r7 forwards matched requests. It consists of a list of `targets` and an optional `health_check` configuration for active background monitoring and dynamic load balancing.
+
+### Health Check Properties
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `interval` | Duration | `10s` | The frequency of background HTTP probes against the targets. |
+| `path` | String | `/health` | The URI path appended to the target URL for the ping request. Must return `200 OK`. |
+| `rise` | Integer | `2` | Number of consecutive successful probes required to mark an unhealthy node as available. |
+| `fall` | Integer | `2` | Number of consecutive failed probes required to evict a healthy node from the routing pool. |
+| `override` | Enum | `NONE` | Overrides the probe state. Use `FORCE_UP` to bypass failing checks, or `FORCE_DOWN` for manual maintenance. |
+
+---
+
 ## Predicates
 
 Predicates define the matching conditions that determine whether an incoming request should be routed to a specific upstream target. A route is only executed if its predicates evaluate to true.
@@ -202,6 +126,7 @@ match:
       - not:
           RemoteAddr:
             source: 10.0.0.0/8
+
 ```
 
 ### Host
@@ -268,6 +193,7 @@ filters:
       name: X-Custom-Header
       value: my-custom-value
       override: true
+
 ```
 
 ### AddResponseHeader
@@ -287,6 +213,7 @@ filters:
   - AddResponseHeader:
       name: X-Powered-By
       value: Ethlo R7
+
 ```
 
 ### CircuitBreaker
@@ -305,6 +232,7 @@ filters:
   - CircuitBreaker:
       failure_threshold: 10
       cooldown_period: 12s
+
 ```
 
 ### CorrelationIdHeader
@@ -318,6 +246,7 @@ Automatically injects the gateway's internal request ID into both the upstream r
 ```yaml
 filters:
   - CorrelationIdHeader
+
 ```
 
 ### Cors
@@ -342,6 +271,7 @@ filters:
       allowed_headers: "Authorization, Content-Type"
       max_age: "3600"
       allow_credentials: true
+
 ```
 
 ### InjectBasicAuth
@@ -360,6 +290,7 @@ filters:
   - InjectBasicAuth:
       username: admin
       password: supersecretpassword
+
 ```
 
 ### RateLimiter
@@ -382,6 +313,7 @@ filters:
       capacity: 5
       refill_tokens: 1
       refill_period: 2s
+
 ```
 
 ### RemoveRequestHeader
@@ -398,6 +330,7 @@ Strips a specified HTTP header from the client request before it is forwarded to
 filters:
   - RemoveRequestHeader:
       name: X-Forwarded-Host
+
 ```
 
 ### RemoveResponseHeader
@@ -414,14 +347,15 @@ Strips a specified HTTP header from the upstream response before it is returned 
 filters:
   - RemoveResponseHeader:
       name: Server
+
 ```
 
 ### RequestSize
 
 Evaluates the `Content-Length` header of incoming requests. Rejects payloads exceeding the configured limit with `413 Payload Too Large`.
 
-| Parameter  | Type | Required | Description |
-|------------| --- | --- | --- |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
 | `max_size` | Size | Yes | The maximum allowed request size formatted with a size suffix (e.g., `10MB`). |
 
 **Example:**
@@ -430,6 +364,7 @@ Evaluates the `Content-Length` header of incoming requests. Rejects payloads exc
 filters:
   - RequestSize:
       max_size: 10MB
+
 ```
 
 ### RequireAuthorizationHeader
@@ -443,6 +378,7 @@ Validates that incoming requests contain an `Authorization` header starting with
 ```yaml
 filters:
   - RequireAuthorizationHeader
+
 ```
 
 ### RewritePath
@@ -461,6 +397,7 @@ filters:
   - RewritePath:
       regexp: "^/api/v1/(.*)"
       replacement: "/$1"
+
 ```
 
 ### SetStatus
@@ -477,6 +414,7 @@ Overrides the HTTP response status code returned to the client, regardless of th
 filters:
   - SetStatus:
       status: 404
+
 ```
 
 ### StripCacheHeaders
@@ -490,6 +428,7 @@ Strips cache validation headers (`If-Modified-Since`, `If-None-Match`) and injec
 ```yaml
 filters:
   - StripCacheHeaders
+
 ```
 
 ### StripPathPrefix
@@ -506,6 +445,7 @@ Removes a specified number of structural path segments from the beginning of the
 filters:
   - StripPathPrefix:
       parts: 2
+
 ```
 
 ### TemplateRedirect
@@ -526,4 +466,90 @@ filters:
       source: "^/old-path/(.*)"
       target: "/new-path/{{1}}"
       status: 301
+
+```
+
+---
+
+## Complete Example Configuration
+
+The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, conditional journaling, and active health checks.
+
+Sample `routes.yaml`
+
+```yaml
+version: '{{git.rev.abbr}}'
+
+# Global filters applied to all routes
+filters:
+  - SimpleMetrics
+  - CorrelationIdHeader
+
+routes:
+  # Simple routing with environment variable fallback
+  - id: forward-status
+    upstream:
+      targets:
+        - url: http://localhost:18888
+    match:
+      - PathStartsWith:
+          prefix: ${SECRET_URL:/status} # Uses SECRET_URL or defaults to /status
+
+  # Full option upstream config with active health checking
+  - id: search-api
+    match:
+      - PathStartsWith:
+          prefix: /search
+    filters:
+      - StripPathPrefix:
+          parts: 1
+    upstream:
+      health_check:
+        interval: 5s
+        rise: 2
+        fall: 3
+        path: /system/health
+        # override: FORCE_DOWN # Uncomment to manually force all targets in this pool up or down
+      targets:
+        - url: https://search-1.example.com
+        - url: https://search-2.example.com
+
+  # Complex routing with method matching, configured filters, and conditional journaling
+  - id: my-service
+    match:
+      - PathStartsWith:
+          prefix: /hello
+      - Method:
+          include:
+            - GET
+            - POST
+    upstream:
+      targets:
+        - url: http://localhost:1111
+    filters:
+      # Filters can be declared with specific configuration arguments
+      - RateLimiter:
+          capacity: 5
+          refill_tokens: 1
+          refill_period: 2s
+      - CircuitBreaker:
+          failure_threshold: 10
+          cooldown_period: 12s
+      - AddResponseHeader:
+          name: X-Powered-By
+          value: ethlo r7
+      # Filters requiring no arguments are declared by name only
+      - CorrelationIdHeader
+      - RequireAuthorizationHeader
+    journal:
+      request:
+        level: NONE
+        # Increase log verbosity dynamically based on the response status
+        status_overrides:
+          401,403: HEADERS
+          429: METADATA
+          5xx: HEADERS
+      response:
+        level: NONE
+
 ```
