@@ -2,20 +2,13 @@ package com.ethlo.r7.config;
 
 import java.util.StringJoiner;
 
-public record TargetConfig(
-        String url,
-        Integer weight
-)
+public record TargetConfig(String url)
 {
     @Override
     public String toString()
     {
-        final StringJoiner builder = new StringJoiner(", ", TargetConfig.class.getSimpleName() + "[", "]");
-        builder.add("url='" + url + "'");
-        if (weight != null)
-        {
-            builder.add("weight=" + weight);
-        }
-        return builder.toString();
+        return new StringJoiner(", ", TargetConfig.class.getSimpleName() + "[", "]")
+                .add("url='" + url + "'")
+                .toString();
     }
 }

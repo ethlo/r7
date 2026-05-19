@@ -9,13 +9,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xnio.OptionMap;
 import org.xnio.Xnio;
 
+import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.UnproxiedUpstreamRequest;
 import com.ethlo.r7.UnproxiedUpstreamResponse;
@@ -31,6 +36,7 @@ import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.HealthCheckConfig;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.core.RequestIdGenerator;
@@ -39,12 +45,16 @@ import com.ethlo.r7.core.helpers.StartLineBuilder;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.status.PeriodicUpstreamHealthMonitor;
 import com.ethlo.r7.status.TrafficMetricsHandler;
+import com.ethlo.r7.status.UpstreamHealthMonitor;
+import com.ethlo.r7.status.UpstreamTargetObserver;
 import com.ethlo.r7.time.ClockSource;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
+import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -56,6 +66,7 @@ import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
 import io.undertow.util.AttachmentKey;
+import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 
 public final class R7UndertowHandler implements HttpHandler
@@ -68,21 +79,24 @@ public final class R7UndertowHandler implements HttpHandler
     private static final CharSequence UPSTREAM_TARGET_KEY = "gateway.target";
     private static final CharSequence SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
     private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
-    private final Map<String, HttpHandler> routeProxyCache = new ConcurrentHashMap<>();
+    private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
+    private final Map<String, RouteUpstreamContext> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final ServerConfig serverConfig;
     private final RouteRegistry routeRegistry;
     private final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    private final GatewayScheduler scheduler;
     private UndertowXnioSsl xnioSsl;
 
-    public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler)
+    public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
     {
         this.serverConfig = serverConfig;
         this.routeRegistry = routeRegistry;
         this.gatewayExchangeDataWriter = gatewayExchangeDataWriter;
         this.errorHandler = errorHandler;
+        this.scheduler = scheduler;
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -294,50 +308,133 @@ public final class R7UndertowHandler implements HttpHandler
         proxyCall(route, exchange, gatewayExchange);
     }
 
-    private void proxyCall(final GatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
+    private void proxyCall(final DefaultGatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
     {
         final ServerConfig.ProxyConfig pConfig = serverConfig.proxy();
 
-        final HttpHandler proxyHandler = routeProxyCache.computeIfAbsent(route.id().toString(), uri ->
+        final RouteUpstreamContext upstreamContext = routeProxyCache.computeIfAbsent(route.id().toString(), uri ->
                 {
                     final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
                             .setConnectionsPerThread(pConfig.connectionsPerThread())
-                            .setMaxQueueSize(serverConfig.proxy().maxQueueSize())
+                            .setMaxQueueSize(pConfig.maxQueueSize())
                             .setTtl(Math.toIntExact(pConfig.ttl().toMillis()));
 
-                    route.uri().stream()
+                    final Set<URI> targets = route.uri().stream()
                             .map(CharSequence::toString)
                             .map(URI::create)
-                            .forEach(u -> {
-                                if ("https".equalsIgnoreCase(u.getScheme()))
-                                {
-                                    rawClient.addHost(u, getXnioSsl());
-                                }
-                                else
-                                {
-                                    rawClient.addHost(u);
-                                }
-                            });
+                            .collect(Collectors.toSet());
+
+                    final UpstreamTargetObserver undertowAdapter = new UpstreamTargetObserver()
+                    {
+                        @Override
+                        public void onTargetUp(final URI target)
+                        {
+                            logger.info("Target {} is reported as available", target);
+                            if ("https".equalsIgnoreCase(target.getScheme()))
+                            {
+                                rawClient.addHost(target, getXnioSsl());
+                            }
+                            else
+                            {
+                                rawClient.addHost(target);
+                            }
+                        }
+
+                        @Override
+                        public void onTargetDown(final URI target)
+                        {
+                            logger.info("Target {} is reported as unavailable", target);
+                            rawClient.removeHost(target);
+                        }
+                    };
 
                     final ProxyClient client = new DiagnosticProxyClient(rawClient, errorHandler);
 
-                    return ProxyHandler.builder()
+                    final HttpHandler handler = ProxyHandler.builder()
                             .setProxyClient(client)
                             .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
                             .setReuseXForwarded(false)
                             .setRewriteHostHeader(true)
                             .build();
+
+                    final HealthCheckConfig healthCheck = route.routeDefinition().upstream().healthCheck();
+
+                    if (healthCheck != null)
+                    {
+                        final PeriodicUpstreamHealthMonitor monitor = new PeriodicUpstreamHealthMonitor(targets, undertowAdapter, healthCheck);
+                        monitor.start(this.scheduler);
+                        return new RouteUpstreamContext(handler, monitor);
+                    }
+                    else
+                    {
+                        // No health monitor is being used, so we must manually register the
+                        // static targets with the Undertow engine immediately.
+                        for (final URI target : targets)
+                        {
+                            undertowAdapter.onTargetUp(target);
+                        }
+
+                        return new RouteUpstreamContext(handler, new UpstreamHealthMonitor()
+                        {
+                            @Override
+                            public boolean hasAvailableTargets()
+                            {
+                                return true;
+                            }
+
+                            @Override
+                            public void stop()
+                            {
+                                // NOP
+                            }
+                        }
+                        );
+                    }
                 }
         );
 
+        if (!upstreamContext.hasAvailableTargets())
+        {
+            executeFallback(route, exchange, gatewayExchange);
+            return;
+        }
+
         try
         {
-            proxyHandler.handleRequest(exchange);
+            upstreamContext.getProxyHandler().handleRequest(exchange);
         }
         catch (final Exception e)
         {
             errorHandler.handleError(gatewayExchange, e);
         }
+    }
+
+    /**
+     * Must be invoked by the configuration live-reload listener
+     * whenever routes.yaml changes.
+     */
+    public void evictProxyCache()
+    {
+        this.logger.info("Evicting route proxy cache for live reload");
+
+        for (final RouteUpstreamContext context : this.routeProxyCache.values())
+        {
+            context.stop();
+        }
+
+        this.routeProxyCache.clear();
+    }
+
+    private void executeFallback(final GatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
+    {
+        exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
+        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
+        exchange.getResponseSender().send(JsonUtil.writeValueAsString(Map.of("status", HttpStatuses.SERVICE_UNAVAILABLE, "message", "Upstream server is unavailable", "route", route.id().toString())));
+
+        // TODO: Make this configurable
+        // 1. Look up the fallback route ID from the `route` configuration
+        // 2. Fetch the filter chain for the fallback route
+        // 3. Execute it (e.g., returning the 503 Maintenance JSON)
     }
 
     private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final boolean isWebSocket)
@@ -456,5 +553,36 @@ public final class R7UndertowHandler implements HttpHandler
                     -1
             );
         });
+    }
+
+    static final class RouteUpstreamContext
+    {
+        private final HttpHandler proxyHandler;
+        private final UpstreamHealthMonitor healthMonitor;
+
+        public RouteUpstreamContext(final HttpHandler proxyHandler, final UpstreamHealthMonitor healthMonitor)
+        {
+            this.proxyHandler = proxyHandler;
+            this.healthMonitor = healthMonitor;
+        }
+
+        public HttpHandler getProxyHandler()
+        {
+            return this.proxyHandler;
+        }
+
+        /**
+         * Fast, lock-free check to determine if the route has any healthy upstream nodes.
+         * Delegates entirely to the background health monitor's active state.
+         */
+        public boolean hasAvailableTargets()
+        {
+            return healthMonitor.hasAvailableTargets();
+        }
+
+        public void stop()
+        {
+            healthMonitor.stop();
+        }
     }
 }
