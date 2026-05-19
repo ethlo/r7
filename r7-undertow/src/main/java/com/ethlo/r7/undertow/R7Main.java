@@ -57,7 +57,7 @@ public final class R7Main
     public R7Main(final Path configFile, final Path serverFile) throws IOException
     {
         final RouteRegistry routeRegistry = new RouteRegistry();
-        final GatewayScheduler scheduler = new GatewayScheduler(2);
+        final GatewayScheduler scheduler = new GatewayScheduler(5);
 
         final ServerConfig serverConfig = loadServerSettings(serverFile);
         logger.debug("Loaded server config: {}", serverConfig);
@@ -67,7 +67,6 @@ public final class R7Main
         final ServerConfig.StorageConfig storage = serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());
         Files.createDirectories(workDir);
-
 
         final MetricsRegistry metricsRegistry = setupMetricsRegistry(workDir, scheduler);
         final EngineContext engineContext = new EngineContext(Map.of(
@@ -95,7 +94,7 @@ public final class R7Main
         // Use single shared worker for all Undertow instances
         final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
-        final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler);
+        final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler, scheduler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
 
         final HttpHandler rootHandler = Handlers.path()

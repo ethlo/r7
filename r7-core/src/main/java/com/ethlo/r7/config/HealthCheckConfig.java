@@ -1,5 +1,7 @@
 package com.ethlo.r7.config;
 
+import java.time.Duration;
+
 /**
  * Configuration for background health probes
  *
@@ -8,7 +10,7 @@ package com.ethlo.r7.config;
  */
 public record HealthCheckConfig(
         String path,
-        String interval
+        Duration interval
 )
 {
 }

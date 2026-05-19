@@ -1,5 +1,6 @@
 package com.ethlo.r7.undertow;
 
+import com.ethlo.chronograph.internal.util.StringUtil;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayExchange;
@@ -101,7 +102,20 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     @Override
     public GatewayRouteInfo route()
     {
-        return route::id;
+        return new GatewayRouteInfo()
+        {
+            @Override
+            public CharSequence id()
+            {
+                return route.id();
+            }
+
+            @Override
+            public String toString()
+            {
+                return route.uri().toString();
+            }
+        };
     }
 
     @Override
