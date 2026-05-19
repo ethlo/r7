@@ -1,4 +1,4 @@
-site_name: ethlo r7 Gateway
+site_name: r7 Gateway
 site_description: The Performant Java Gateway
 site_url: https://r7.ethlo.com
 repo_url: https://github.com/ethlo/r7
@@ -9,9 +9,25 @@ theme:
   name: material
   variant: classic
   palette:
-    scheme: slate
-    primary: black
-    accent: amber
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: lucide/sun-moon
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: lucide/moon
+        name: Switch to system preference
   features:
     - navigation.tabs
     - content.code.copy
