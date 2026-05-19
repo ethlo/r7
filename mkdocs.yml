@@ -5,7 +5,9 @@ repo_url: https://github.com/ethlo/r7
 repo_name: ethlo/r7
 
 theme:
+  custom_dir: docs/overrides
   name: material
+  variant: classic
   palette:
     scheme: slate
     primary: black
@@ -14,12 +16,16 @@ theme:
     - navigation.tabs
     - content.code.copy
     - toc.integrate
+    - announce.dismiss
   logo: assets/r7.svg
   favicon: assets/r7.svg
 
+extra_css:
+  - stylesheets/custom.css
+
 extra:
   announcement: >
-    **Note:** r7 is currently in active pre-release development. Features, configuration schemas, and APIs may change without notice.
+    **Note:** r7 is currently in active pre-release development. Features, configuration, and APIs may change without notice.
 
 nav:
   - Overview: index.md

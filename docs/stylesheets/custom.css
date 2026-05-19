@@ -1,0 +1,18 @@
+.r7-banner {
+    padding: 0.8rem 1rem;
+
+    background-color: var(--zn-surface-color, #232830);
+    border: 2px solid #ffb300;
+
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+
+    margin: 0.5rem auto;
+    max-width: fit-content;
+    text-align: center;
+}
+
+:root[data-theme="dark"] {
+    --zn-bg-color: #1e212b;
+    --zn-surface-color: #232830;
+}
