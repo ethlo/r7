@@ -1,5 +1,5 @@
 .r7-banner {
-    padding: 0.8rem 1rem;
+    padding: 0.4rem 0.6rem;
 
     background-color: var(--zn-surface-color, #232830);
     border: 2px solid #ffb300;
@@ -7,10 +7,26 @@
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 
+    font-size: 0.8em;
+
     margin: 0.5rem auto;
     max-width: fit-content;
     text-align: center;
 }
+
+.md-banner {
+    background-color: #111;
+}
+
+.md-header {
+    background-color: #111;
+}
+
+.md-tabs {
+    background-color: #111;
+}
+
+
 
 :root[data-theme="dark"] {
     --zn-bg-color: #1e212b;
