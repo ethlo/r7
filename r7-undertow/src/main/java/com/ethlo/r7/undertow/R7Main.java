@@ -1,8 +1,6 @@
 package com.ethlo.r7.undertow;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -39,8 +37,6 @@ import com.ethlo.r7.status.TrafficMetricsHandler;
 import com.ethlo.r7.status.VersionProvider;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.SystemUtil;
-import com.ethlo.r7.util.constants.HttpStatuses;
-import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidationResult;
 import com.ethlo.r7.vlf.DiskSpaceUtils;
 import com.ethlo.r7.vlf.VlfJournal;
@@ -51,23 +47,15 @@ import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.GracefulShutdownHandler;
-import io.undertow.util.Headers;
 
 public final class R7Main
 {
     private static final Logger logger = LoggerFactory.getLogger(R7Main.class);
-    private static final ByteBuffer OK = ByteBuffer.wrap("OK".getBytes(StandardCharsets.UTF_8));
     private final VlfCompressionEngine compressionEngine;
     private final GracefulShutdownHandler gracefulShutdownHandler;
 
     public R7Main(final Path configFile, final Path serverFile) throws IOException
     {
-        final HttpHandler benchMarkHandler = exchange -> {
-            exchange.setStatusCode(HttpStatuses.OK);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(OK.duplicate());
-        };
-
         final RouteRegistry routeRegistry = new RouteRegistry();
         final GatewayScheduler scheduler = new GatewayScheduler(2);
 
@@ -88,9 +76,7 @@ public final class R7Main
         ));
         final ConfigurationManager configurationManager = new ConfigurationManager(engineContext);
 
-        //final RoutesDefinition routesConfig = loadRoutesConfig(configFile, configurationManager, routeRegistry);
-
-        final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
+        new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
         logger.info("Watching config file {} for changes", configFile.toAbsolutePath());
 
         logger.info("Work directory is {} with {} free disk space", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
@@ -121,9 +107,6 @@ public final class R7Main
         builder.setHandler(gracefulShutdownHandler);
         configureServer(builder, serverConfig);
         final Undertow server = builder.build();
-
-        // Used for having fast internal HTTP endpoint to talk to
-        setupTestBackEndForProxy(benchMarkHandler, sharedWorker);
 
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
 
@@ -193,17 +176,6 @@ public final class R7Main
     {
         final TelemetryRepository telemetryRepository = new FileTelemetryRepository(workDir);
         return new MetricsRegistry(telemetryRepository, scheduler);
-    }
-
-    private static void setupTestBackEndForProxy(final HttpHandler httpHandler, final XnioWorker sharedWorker)
-    {
-        final Undertow.Builder routerBackendTest = Undertow.builder();
-        final HttpHandler targetHandler = Handlers.path()
-                .addPrefixPath("/", httpHandler);
-        routerBackendTest.setHandler(targetHandler);
-        routerBackendTest.setWorker(sharedWorker);
-        routerBackendTest.addHttpListener(1111, "0.0.0.0");
-        routerBackendTest.build().start();
     }
 
     public static void main(final String[] args) throws IOException

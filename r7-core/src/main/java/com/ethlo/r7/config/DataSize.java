@@ -1,5 +1,7 @@
 package com.ethlo.r7.config;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+
 public class DataSize
 {
     private final long bytes;
@@ -29,6 +31,7 @@ public class DataSize
         return ofMegabytes(amount * 1024L);
     }
 
+    @JsonValue
     public long toBytes()
     {
         return bytes;

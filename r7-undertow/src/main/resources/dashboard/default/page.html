@@ -701,6 +701,15 @@
         const cfg = sys.configuration || {};
         const mem = sys.memory || data.memory || null;
 
+        // Helper to handle strings ("10MB"), raw bytes, or empty objects ({}) from the backend
+        const formatConfigSize = (val) => {
+            if (val == null) return '--';
+            if (typeof val === 'string') return val;
+            if (typeof val === 'number') return formatBytes(val);
+            if (typeof val === 'object' && Object.keys(val).length === 0) return 'DEFAULT';
+            return String(val);
+        };
+
         const content = `
         <div class="panel-header-container">
             <div class="panel-title">
@@ -717,44 +726,50 @@
             ${mRow('STARTED AT', new Date(sys.started_at).toLocaleString(), false)}
             ${mRow('UPTIME', formatUptime(sys.uptime), false)}
             <div class="spacer-sm"></div>
-            ${mRow('BIND ADDRESS', `${cfg.host}:${cfg.port}`, false)}
-            ${mRow('STATUS ADDRESS', `${cfg.status_host}:${cfg.status_port}`, false)}
+            ${mRow('SERVER BIND', `${cfg.server?.host}:${cfg.server?.port}`, false)}
+            ${mRow('MANAGEMENT BIND', `${cfg.management?.host}:${cfg.management?.port}`, false)}
         </div>
 
         <div class="panel-section">
-            <div class="panel-section-title">Undertow Options</div>
-            ${mRow('HTTP/2 ENABLED', formatPrimitive(cfg.options?.enable_http2), true)}
-            ${mRow('DIRECT BUFFERS', formatPrimitive(cfg.options?.direct_buffers), false)}
-            ${mRow('BUFFER SIZE', formatBytes(cfg.options?.buffer_size), false)}
-            ${mRow('MAX HEADER SIZE', formatBytes(cfg.options?.max_header_size), false)}
-            ${mRow('MAX HEADER COUNT', cfg.options?.max_header_count, false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Worker Thread Pool</div>
-            ${mRow('I/O THREADS', cfg.worker?.io_threads, true)}
-            ${mRow('TASK CORE THREADS', cfg.worker?.task_core_threads, false)}
-            ${mRow('TASK MAX THREADS', cfg.worker?.task_max_threads, false)}
-            ${mRow('STACK SIZE', formatBytes(cfg.worker?.stack_size), false)}
-            ${mRow('CONN LOW WATER', cfg.worker?.connection_low_water?.toLocaleString(), false)}
-            ${mRow('CONN HIGH WATER', cfg.worker?.connection_high_water?.toLocaleString(), false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Socket & Proxy</div>
-            ${mRow('TCP NODELAY', formatPrimitive(cfg.socket?.tcp_nodelay), true)}
-            ${mRow('REUSE ADDRESSES', formatPrimitive(cfg.socket?.reuse_addresses), false)}
-            ${mRow('BACKLOG', cfg.socket?.backlog, false)}
+            <div class="panel-section-title">HTTP & Limits</div>
+            ${mRow('HTTP/2 ENABLED', formatPrimitive(cfg.http?.enable_http2), true)}
+            ${mRow('ALWAYS KEEP-ALIVE', formatPrimitive(cfg.http?.always_set_keep_alive), false)}
+            ${mRow('PARSE TIMEOUT', cfg.http?.request_parse_timeout, false)}
             <div class="spacer-sm"></div>
-            ${mRow('PROXY MAX QUEUE', cfg.proxy?.max_queue_size, false)}
-            ${mRow('PROXY CONNS / THREAD', cfg.proxy?.connections_per_thread, false)}
+            ${mRow('MAX HEADER COUNT', cfg.limits?.max_header_count, false)}
+            ${mRow('MAX HEADER SIZE', formatConfigSize(cfg.limits?.max_header_size), false)}
+            ${mRow('MAX ENTITY SIZE', formatConfigSize(cfg.limits?.max_entity_size), false)}
+            ${mRow('MAX PARAMS', cfg.limits?.max_parameter_count?.toLocaleString(), false)}
+            ${mRow('MAX COOKIES', cfg.limits?.max_cookie_count?.toLocaleString(), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Proxy Pool</div>
+            ${mRow('CONNS / THREAD', cfg.proxy?.connections_per_thread?.toLocaleString(), true)}
+            ${mRow('MAX QUEUE SIZE', cfg.proxy?.max_queue_size?.toLocaleString(), false)}
+            ${mRow('MAX REQUEST TIME', cfg.proxy?.max_request_time, false)}
+            ${mRow('TTL', cfg.proxy?.ttl, false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Advanced & Socket</div>
+            ${mRow('I/O THREADS', cfg.advanced?.io_threads, true)}
+            ${mRow('TASK THREADS', cfg.advanced?.task_threads, false)}
+            ${mRow('CONN LOW WATER', cfg.advanced?.connection_low_water?.toLocaleString(), false)}
+            ${mRow('CONN HIGH WATER', cfg.advanced?.connection_high_water?.toLocaleString(), false)}
+            <div class="spacer-sm"></div>
+            ${mRow('TCP NODELAY', formatPrimitive(cfg.advanced?.tcp_no_delay), false)}
+            ${mRow('REUSE ADDRESSES', formatPrimitive(cfg.advanced?.reuse_addresses), false)}
+            ${mRow('SOCKET BACKLOG', cfg.advanced?.socket_backlog?.toLocaleString(), false)}
+            ${mRow('READ TIMEOUT', cfg.advanced?.socket_read_timeout, false)}
+            ${mRow('DIRECT BUFFERS', formatPrimitive(cfg.advanced?.direct_buffers), false)}
         </div>
 
         <div class="panel-section">
             <div class="panel-section-title">Journal Storage</div>
             ${mRow('WORK DIR', `<span class="text-dim text-truncate" style="max-width: 150px; display: inline-block; vertical-align: bottom;" title="${cfg.storage?.work_dir}">${cfg.storage?.work_dir}</span>`, true)}
             ${mRow('SHARD COUNT', cfg.storage?.shard_count, false)}
-            ${mRow('SHARD SIZE', formatBytes(cfg.storage?.shard_size), false)}
+            ${mRow('SHARD SIZE', formatConfigSize(cfg.storage?.shard_size), false)}
             ${mRow('PRE-FAULT', formatPrimitive(cfg.storage?.pre_fault), false)}
         </div>
 
