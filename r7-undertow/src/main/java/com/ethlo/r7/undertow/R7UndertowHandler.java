@@ -361,9 +361,8 @@ public final class R7UndertowHandler implements HttpHandler
 
                     if (healthCheck != null)
                     {
-                        final String healthPath = healthCheck.path();
-                        final PeriodicUpstreamHealthMonitor monitor = new PeriodicUpstreamHealthMonitor(targets, undertowAdapter, healthPath);
-                        monitor.start(this.scheduler, healthCheck.interval());
+                        final PeriodicUpstreamHealthMonitor monitor = new PeriodicUpstreamHealthMonitor(targets, undertowAdapter, healthCheck);
+                        monitor.start(this.scheduler);
                         return new RouteUpstreamContext(handler, monitor);
                     }
                     else
@@ -375,7 +374,21 @@ public final class R7UndertowHandler implements HttpHandler
                             undertowAdapter.onTargetUp(target);
                         }
 
-                        return new RouteUpstreamContext(handler, () -> true);
+                        return new RouteUpstreamContext(handler, new UpstreamHealthMonitor()
+                        {
+                            @Override
+                            public boolean hasAvailableTargets()
+                            {
+                                return true;
+                            }
+
+                            @Override
+                            public void stop()
+                            {
+                                // NOP
+                            }
+                        }
+                        );
                     }
                 }
         );
@@ -394,6 +407,22 @@ public final class R7UndertowHandler implements HttpHandler
         {
             errorHandler.handleError(gatewayExchange, e);
         }
+    }
+
+    /**
+     * Must be invoked by the configuration live-reload listener
+     * whenever routes.yaml changes.
+     */
+    public void evictProxyCache()
+    {
+        this.logger.info("Evicting route proxy cache for live reload");
+
+        for (final RouteUpstreamContext context : this.routeProxyCache.values())
+        {
+            context.stop();
+        }
+
+        this.routeProxyCache.clear();
     }
 
     private void executeFallback(final GatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
@@ -548,7 +577,12 @@ public final class R7UndertowHandler implements HttpHandler
          */
         public boolean hasAvailableTargets()
         {
-            return this.healthMonitor.hasAvailableTargets();
+            return healthMonitor.hasAvailableTargets();
+        }
+
+        public void stop()
+        {
+            healthMonitor.stop();
         }
     }
 }

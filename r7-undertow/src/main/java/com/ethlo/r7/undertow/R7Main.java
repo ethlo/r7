@@ -75,7 +75,7 @@ public final class R7Main
         ));
         final ConfigurationManager configurationManager = new ConfigurationManager(engineContext);
 
-        new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
+        final HotReloadService hotReloadService = new HotReloadService(scheduler, configFile, configurationManager, routeRegistry);
         logger.info("Watching config file {} for changes", configFile.toAbsolutePath());
 
         logger.info("Work directory is {} with {} free disk space", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
@@ -95,6 +95,7 @@ public final class R7Main
         final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
         final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler, scheduler);
+        hotReloadService.onReload(() -> r7UndertowHandler.evictProxyCache());
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
 
         final HttpHandler rootHandler = Handlers.path()

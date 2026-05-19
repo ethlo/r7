@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +21,7 @@ public final class HotReloadService
     private final Path configFilePath;
     private final ConfigurationManager configManager;
     private final RouteRegistry routeRegistry;
+    private final Set<Runnable> listeners = new LinkedHashSet<>();
     private long lastKnownModified;
 
     public HotReloadService(final GatewayScheduler scheduler, final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
@@ -72,11 +75,17 @@ public final class HotReloadService
             }
 
             this.configManager.load(routesConfig, this.routeRegistry);
+            listeners.forEach(Runnable::run);
             log.info("Configuration successfully loaded {} with version {}", this.configFilePath, routesConfig.version());
         }
         catch (final Exception e)
         {
             log.warn("Hot reload failed. Retaining current configuration: {}", e.getMessage());
         }
+    }
+
+    public void onReload(Runnable onReload)
+    {
+        this.listeners.add(onReload);
     }
 }

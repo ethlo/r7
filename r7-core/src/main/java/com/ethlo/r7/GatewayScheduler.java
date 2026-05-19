@@ -3,6 +3,7 @@ package com.ethlo.r7;
 import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -28,9 +29,10 @@ public final class GatewayScheduler
         );
     }
 
-    public void scheduleEvery(final Duration period, final Runnable task)
+    // In GatewayScheduler.java
+    public ScheduledFuture<?> scheduleEvery(final Duration period, final Runnable task)
     {
-        this.executor.scheduleAtFixedRate(() ->
+        return this.executor.scheduleAtFixedRate(() ->
                 {
                     try
                     {
