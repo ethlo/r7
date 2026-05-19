@@ -32,7 +32,7 @@ public record HealthCheckConfig(
     @Override
     public Integer fall()
     {
-        return Optional.ofNullable(rise).orElse(2);
+        return Optional.ofNullable(fall).orElse(2);
     }
 
     @Override

@@ -29,7 +29,6 @@ public final class GatewayScheduler
         );
     }
 
-    // In GatewayScheduler.java
     public ScheduledFuture<?> scheduleEvery(final Duration period, final Runnable task)
     {
         return this.executor.scheduleAtFixedRate(() ->
