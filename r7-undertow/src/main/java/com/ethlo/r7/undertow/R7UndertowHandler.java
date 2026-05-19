@@ -79,7 +79,7 @@ public final class R7UndertowHandler implements HttpHandler
     private static final CharSequence UPSTREAM_TARGET_KEY = "gateway.target";
     private static final CharSequence SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
     private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
-    private final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
+    private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
     private final Map<String, RouteUpstreamContext> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -555,7 +555,7 @@ public final class R7UndertowHandler implements HttpHandler
         });
     }
 
-    public static final class RouteUpstreamContext
+    static final class RouteUpstreamContext
     {
         private final HttpHandler proxyHandler;
         private final UpstreamHealthMonitor healthMonitor;
