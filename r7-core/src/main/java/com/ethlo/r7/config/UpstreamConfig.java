@@ -22,7 +22,7 @@ public record UpstreamConfig(
         // Ensure the targets list itself is defined and contains at least one node
         if (this.targets == null || this.targets.isEmpty())
         {
-            validator.invalid("targets", null, "Upstream configuration must contain at least one target target configuration");
+            validator.invalid("targets", null, "Upstream configuration must contain at least one target configuration");
         }
         else
         {
