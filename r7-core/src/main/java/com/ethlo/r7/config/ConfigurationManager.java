@@ -281,6 +281,11 @@ public final class ConfigurationManager
                     {
                         routeDefinition.match().validateTree(validationResult, predicateRegistry);
                     }
+                    else
+                    {
+                        new ValidatorUtils(validationResult).required("match", routeDefinition.match());
+                        validationResult.throwIfInvalid();
+                    }
 
                     final GatewayPredicate predicate;
                     try
