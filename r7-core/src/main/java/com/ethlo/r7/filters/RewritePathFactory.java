@@ -4,9 +4,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -41,8 +41,8 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
         public void validate(ValidationResult result)
         {
             final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required(FILTER_NAME, "regexp", regexp)
-                    .required(FILTER_NAME, "replacement", replacement);
+                    .required("regexp", regexp)
+                    .required("replacement", replacement);
 
             if (regexp != null)
             {
@@ -52,7 +52,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
                 }
                 catch (PatternSyntaxException e)
                 {
-                    validatorUtils.invalid(FILTER_NAME, "regexp", regexp, "Invalid regex pattern: " + e.getPattern());
+                    validatorUtils.invalid("regexp", regexp, "Invalid regex pattern: " + e.getPattern());
                 }
             }
         }

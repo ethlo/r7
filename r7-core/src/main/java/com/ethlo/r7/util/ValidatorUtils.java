@@ -1,8 +1,8 @@
 package com.ethlo.r7.util;
 
-import com.ethlo.r7.validation.ValidationResult;
-
 import java.util.List;
+
+import com.ethlo.r7.validation.ValidationResult;
 
 public class ValidatorUtils
 {
@@ -13,11 +13,11 @@ public class ValidatorUtils
         this.result = result;
     }
 
-    public ValidatorUtils required(String context, String property, Object value)
+    public ValidatorUtils required(String property, Object value)
     {
         if (value == null || value instanceof String s && s.isBlank())
         {
-            result.addError(context, "'" + property + "' is required");
+            result.addError(property, "'" + property + "' is required");
         }
         return this;
     }
@@ -27,16 +27,16 @@ public class ValidatorUtils
         return result;
     }
 
-    public void notEmpty(String context, String property, List<?> value)
+    public void notEmpty(String property, List<?> value)
     {
-        if (value == null ||value.isEmpty())
+        if (value == null || value.isEmpty())
         {
-            result.addError(context, "'" + property + "' cannot be an empty list");
+            result.addError(property, "'" + property + "' cannot be an empty list");
         }
     }
 
-    public void invalid(String context, String property, String value, String message)
+    public void invalid(String property, Object value, String message)
     {
-        result.addError(context, "Invalid value " + value + " for property " + property + ": " + message);
+        result.addError(property, "Invalid value " + value + " for property " + property + ": " + message);
     }
 }

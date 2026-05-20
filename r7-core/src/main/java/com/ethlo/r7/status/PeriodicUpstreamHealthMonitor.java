@@ -24,6 +24,7 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
     private final Map<URI, Integer> consecutiveFailures;
     private final Map<URI, TargetStateOverride> overrides;
     private java.util.concurrent.ScheduledFuture<?> scheduledTask;
+
     public PeriodicUpstreamHealthMonitor(final Set<URI> targets, final UpstreamTargetObserver targetObserver, final HealthCheckConfig config)
     {
         this.targetObserver = targetObserver;
@@ -77,7 +78,7 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
 
     private void pingAll()
     {
-        final String safePath = config.path().startsWith("/") ? config.path() : "/" + config.path();
+        final String safePath = config.path();
 
         for (final URI target : this.allTargets)
         {

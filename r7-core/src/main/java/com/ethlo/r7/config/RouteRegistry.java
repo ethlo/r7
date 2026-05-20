@@ -44,4 +44,9 @@ public class RouteRegistry
     {
         return version;
     }
+
+    public Optional<GatewayRoute> findRoute(String routeId)
+    {
+        return routes.get().stream().filter(route -> route.id().equals(routeId)).findFirst();
+    }
 }

@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +33,7 @@ public final class HotReloadService
         this.routeRegistry = routeRegistry;
         this.lastKnownModified = System.currentTimeMillis();
 
-        reloadPipeline();
+        reloadPipeline(true);
     }
 
     private void pollForChanges()
@@ -51,14 +52,15 @@ public final class HotReloadService
         {
             log.debug("Detected change in configuration file {}", configFilePath.toAbsolutePath());
             this.lastKnownModified = currentModified;
-            reloadPipeline();
+            reloadPipeline(false);
         }
     }
 
-    private void reloadPipeline()
+    private void reloadPipeline(boolean initial)
     {
         try
         {
+            log.info("Loading routes settings from {} (hot-reload supported)", configFilePath.toAbsolutePath());
             RoutesDefinition routesConfig = ConfigurationManager.load(this.configFilePath, RoutesDefinition.class);
 
             if (routesConfig == null)
@@ -70,17 +72,23 @@ public final class HotReloadService
             final ValidationResult validationResult = ConfigurationManager.validate(routesConfig);
             if (validationResult.hasErrors())
             {
-                log.warn("Hot reload failed validation. Retaining current configuration. Errors: {}", validationResult.getErrors());
-                return;
+                throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));
             }
 
             this.configManager.load(routesConfig, this.routeRegistry);
             listeners.forEach(Runnable::run);
-            log.info("Configuration successfully loaded {} with version {}", this.configFilePath, routesConfig.version());
+            log.info("Configuration {} successfully loaded {} routes from version {}", this.configFilePath, routesConfig.routes().size(), routesConfig.version());
         }
-        catch (final Exception e)
+        catch (final RuntimeException e)
         {
-            log.warn("Hot reload failed. Retaining current configuration: {}", e.getMessage());
+            if (!initial)
+            {
+                log.warn("Hot reload failed. Retaining current configuration: {}", e.getMessage());
+            }
+            else
+            {
+                throw e;
+            }
         }
     }
 

@@ -38,7 +38,7 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
         @Override
         public void validate(ValidationResult result)
         {
-            new ValidatorUtils(result).required(PREDICATE_NAME, "hosts", hosts);
+            new ValidatorUtils(result).required("hosts", hosts);
             if (hosts != null && hosts.isEmpty())
             {
                 throw new IllegalArgumentException(PREDICATE_NAME + " requires at least one host");

@@ -17,7 +17,7 @@ public record RoutesDefinition(
     {
         for (final RouteDefinition route : routes)
         {
-            route.validate(result);
+            route.validate(result.nested(route.id().toString()));
         }
     }
 

@@ -32,6 +32,7 @@ import tools.jackson.databind.deser.std.StdDeserializer;
 import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.dataformat.yaml.JacksonYAMLParseException;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 public final class ConfigurationManager
@@ -70,7 +71,7 @@ public final class ConfigurationManager
     public static ValidationResult validate(ValidatableConfig config)
     {
         final ValidationResult validationResult = new ValidationResult();
-        config.validate(validationResult);
+        config.validate(validationResult.nested("routes"));
         return validationResult;
     }
 
@@ -91,15 +92,55 @@ public final class ConfigurationManager
         {
             return mapper.readValue(interpolated, type);
         }
+        catch (JacksonYAMLParseException e)
+        {
+            throw new ConfigurationException(formatYamlSyntaxError(yamlFile, e));
+        }
         catch (UnrecognizedPropertyException e)
         {
-            throw new ConfigurationException(
-                    formatUnknownProperty(yamlFile, e));
+            throw new ConfigurationException(formatUnknownProperty(yamlFile, e));
         }
         catch (MismatchedInputException e)
         {
             throw new ConfigurationException(formatMappingError(yamlFile, e));
         }
+    }
+
+    private static String formatYamlSyntaxError(
+            final Path file,
+            final JacksonYAMLParseException e)
+    {
+        final TokenStreamLocation loc = e.getLocation();
+
+        // Extract the highly readable SnakeYAML explanation, cutting off Jackson's internal trace info
+        String cleanMessage = e.getMessage();
+        final int sourceTraceIndex = cleanMessage.indexOf("\n at [Source");
+        if (sourceTraceIndex != -1)
+        {
+            cleanMessage = cleanMessage.substring(0, sourceTraceIndex);
+        }
+
+        final StringBuilder sb = new StringBuilder();
+
+        sb.append("Invalid YAML syntax in configuration file: ")
+                .append(file)
+                .append(System.lineSeparator())
+                .append(System.lineSeparator());
+
+        sb.append(cleanMessage)
+                .append(System.lineSeparator())
+                .append(System.lineSeparator());
+
+        if (loc != null)
+        {
+            sb.append("Fix the structural error around line ")
+                    .append(loc.getLineNr())
+                    .append(", column ")
+                    .append(loc.getColumnNr())
+                    .append(".");
+        }
+
+        return sb.toString();
     }
 
     private static String formatMappingError(
@@ -147,7 +188,6 @@ public final class ConfigurationManager
             final UnrecognizedPropertyException e)
     {
         final TokenStreamLocation loc = e.getLocation();
-
         final StringBuilder sb = new StringBuilder();
 
         sb.append("Invalid configuration file: ")
@@ -159,22 +199,27 @@ public final class ConfigurationManager
                 .append(e.getPropertyName())
                 .append("'");
 
-        if (e.getPath().size() > 1)
+        if (!e.getPath().isEmpty())
         {
-            sb.append(" under ").append(e.getPath());
+            sb.append(" at [");
+            final StringBuilder pathBuilder = new StringBuilder();
 
-            for (JacksonException.Reference ref : e.getPath())
+            for (final JacksonException.Reference ref : e.getPath())
             {
                 if (ref.getPropertyName() != null)
                 {
-                    sb.append(ref.getPropertyName()).append(".");
+                    if (!pathBuilder.isEmpty() && pathBuilder.charAt(pathBuilder.length() - 1) != ']')
+                    {
+                        pathBuilder.append(".");
+                    }
+                    pathBuilder.append(ref.getPropertyName());
+                }
+                else if (ref.getIndex() >= 0)
+                {
+                    pathBuilder.append("[").append(ref.getIndex()).append("]");
                 }
             }
-
-            if (sb.charAt(sb.length() - 1) == '.')
-            {
-                sb.setLength(sb.length() - 1);
-            }
+            sb.append(pathBuilder).append("]");
         }
 
         sb.append(System.lineSeparator());
@@ -188,8 +233,17 @@ public final class ConfigurationManager
                     .append(System.lineSeparator());
         }
 
-        sb.append(System.lineSeparator())
-                .append("Remove the option or check for spelling mistakes.");
+        sb.append(System.lineSeparator());
+
+        if (e.getKnownPropertyIds() != null && !e.getKnownPropertyIds().isEmpty())
+        {
+            sb.append("Known properties are: ")
+                    .append(e.getKnownPropertyIds())
+                    .append(System.lineSeparator())
+                    .append(System.lineSeparator());
+        }
+
+        sb.append("Remove the option or check for spelling mistakes.");
 
         return sb.toString();
     }
@@ -228,11 +282,21 @@ public final class ConfigurationManager
                         routeDefinition.match().validateTree(validationResult, predicateRegistry);
                     }
 
-                    final GatewayPredicate predicate = routeDefinition.match().build(predicateRegistry);
+                    final GatewayPredicate predicate;
+                    try
+                    {
+                        predicate = routeDefinition.match().build(predicateRegistry);
+                    }
+                    catch (final ConfigurationException e)
+                    {
+                        // Grab the route ID for the breadcrumb, fallback to 'unknown' if not set yet
+                        final String routeId = routeDefinition.id().toString();
+                        throw new ConfigurationException(String.format("[routes.%s.match] %s", routeId, e.getMessage()));
+                    }
 
                     if (routeDefinition.upstream().targets() == null)
                     {
-                        new ValidatorUtils(validationResult).invalid(routeDefinition.id().toString(), "upstream.targets", null, "upstream targets required");
+                        new ValidatorUtils(validationResult).invalid("targets", null, "upstream targets required");
                         validationResult.throwIfInvalid();
                     }
 
@@ -241,7 +305,35 @@ public final class ConfigurationManager
                 })
                 .toList();
 
+        validateCrossRouteReferences(routes);
         routeRegistry.updateRoutes(config.version(), routes);
+    }
+
+    public void validateCrossRouteReferences(final List<GatewayRoute> routes)
+    {
+        for (final GatewayRoute r : routes)
+        {
+            final DefaultGatewayRoute route = (DefaultGatewayRoute) r;
+            if (route.routeDefinition() != null && route.routeDefinition().upstream() != null && route.routeDefinition().upstream().fallback() != null)
+            {
+                final FallbackConfig fallbackRoute = route.routeDefinition().upstream().fallback();
+                final String fallbackRouteId = fallbackRoute.routeId();
+                if (fallbackRouteId != null && !fallbackRouteId.isBlank())
+                {
+                    // Prevent infinite loops
+                    if (fallbackRouteId.equals(route.id().toString()))
+                    {
+                        throw new ConfigurationException("Configuration error: Route '" + route.id() + "' specifies itself as its fallback.route_id.");
+                    }
+
+                    // Ensure the fallback route actually exists in the registry
+                    if (routes.stream().noneMatch(e -> e.id().toString().equals(fallbackRouteId)))
+                    {
+                        throw new ConfigurationException("Configuration error: Route '" + route.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that does not exist.");
+                    }
+                }
+            }
+        }
     }
 
     private RouteJournalConfig createJournalConfig(JournalDefinition definition)
@@ -278,7 +370,7 @@ public final class ConfigurationManager
 
             if (!matcher.matches())
             {
-                throw new IllegalArgumentException("Invalid duration format: '" + text + "'. Supported formats: 10ms, 5s, 2m, 1h");
+                throw new ConfigurationException("Invalid duration format: '" + text + "'. Supported formats: 10ms, 5s, 2m, 1h");
             }
 
             final long amount = Long.parseLong(matcher.group(1));
@@ -290,7 +382,7 @@ public final class ConfigurationManager
                 case "s" -> Duration.ofSeconds(amount);
                 case "m" -> Duration.ofMinutes(amount);
                 case "h" -> Duration.ofHours(amount);
-                default -> throw new IllegalArgumentException("Unknown duration unit: " + unit);
+                default -> throw new ConfigurationException("Unknown duration unit: " + unit);
             };
 
         }
@@ -313,7 +405,7 @@ public final class ConfigurationManager
             final Matcher matcher = PATTERN.matcher(text);
             if (!matcher.matches())
             {
-                throw new IllegalArgumentException("Invalid data size format: '" + text + "'. Supported formats: 1024, 8kb, 200mb, 1gb");
+                throw new ConfigurationException("Invalid data size format: '" + text + "'. Supported formats: 1024, 8kb, 200mb, 1gb");
             }
 
             final long amount = Long.parseLong(matcher.group(1));
@@ -325,7 +417,7 @@ public final class ConfigurationManager
                 case "kb" -> DataSize.ofKilobytes(amount);
                 case "mb" -> DataSize.ofMegabytes(amount);
                 case "gb" -> DataSize.ofGigabytes(amount);
-                default -> throw new IllegalArgumentException("Unknown data size unit: " + unit);
+                default -> throw new ConfigurationException("Unknown data size unit: " + unit);
             };
         }
     }

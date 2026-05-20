@@ -37,11 +37,11 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required(FILTER_NAME, "status", this.status());
+                    .required("status", this.status());
 
             if (this.status() != null && (this.status() < 100 || this.status() > 599))
             {
-                validatorUtils.invalid(FILTER_NAME, "status", this.status().toString(), "Must be a valid HTTP status code (100-599)");
+                validatorUtils.invalid("status", this.status().toString(), "Must be a valid HTTP status code (100-599)");
             }
         }
     }

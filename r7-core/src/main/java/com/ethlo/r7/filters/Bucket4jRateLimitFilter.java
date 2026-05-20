@@ -12,9 +12,9 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.core.GatewayContextKeys;
-import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -76,9 +76,9 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required(FILTER_NAME, "capacity", capacity)
-                    .required(FILTER_NAME, "refill_tokens", refillTokens)
-                    .required(FILTER_NAME, "refill_period", refillPeriod);
+                    .required("capacity", capacity)
+                    .required("refill_tokens", refillTokens)
+                    .required("refill_period", refillPeriod);
         }
 
         @Override

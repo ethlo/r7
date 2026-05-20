@@ -18,6 +18,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.OptionMap;
+import org.xnio.Options;
 import org.xnio.Xnio;
 
 import com.ethlo.r7.GatewayScheduler;
@@ -30,15 +31,16 @@ import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
-import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.FallbackConfig;
 import com.ethlo.r7.config.HealthCheckConfig;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
+import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
@@ -54,7 +56,6 @@ import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
-import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -310,9 +311,9 @@ public final class R7UndertowHandler implements HttpHandler
 
     private void proxyCall(final DefaultGatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
     {
-        final ServerConfig.ProxyConfig pConfig = serverConfig.proxy();
+        final ServerConfig.ProxyConfig pConfig = this.serverConfig.proxy();
 
-        final RouteUpstreamContext upstreamContext = routeProxyCache.computeIfAbsent(route.id().toString(), uri ->
+        final RouteUpstreamContext upstreamContext = this.routeProxyCache.computeIfAbsent(route.id().toString(), uri ->
                 {
                     final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
                             .setConnectionsPerThread(pConfig.connectionsPerThread())
@@ -324,19 +325,29 @@ public final class R7UndertowHandler implements HttpHandler
                             .map(URI::create)
                             .collect(Collectors.toSet());
 
+                    // Safely extract timeouts, falling back to defaults if not specified in YAML
+                    final TimeoutConfig timeouts = Optional.ofNullable(route.routeDefinition().upstream().timeouts())
+                            .orElse(new TimeoutConfig(null));
+
+                    final OptionMap clientOptions = OptionMap.builder()
+                            .set(Options.READ_TIMEOUT, Math.toIntExact(timeouts.read().toMillis()))
+                            .getMap();
+
                     final UpstreamTargetObserver undertowAdapter = new UpstreamTargetObserver()
                     {
                         @Override
                         public void onTargetUp(final URI target)
                         {
                             logger.info("Target {} is reported as available", target);
+
+                            // Undertow addHost signature: (URI host, String bindAddress, XnioSsl ssl, OptionMap options)
                             if ("https".equalsIgnoreCase(target.getScheme()))
                             {
-                                rawClient.addHost(target, getXnioSsl());
+                                rawClient.addHost(target, null, getXnioSsl(), clientOptions);
                             }
                             else
                             {
-                                rawClient.addHost(target);
+                                rawClient.addHost(target, null, null, clientOptions);
                             }
                         }
 
@@ -348,7 +359,7 @@ public final class R7UndertowHandler implements HttpHandler
                         }
                     };
 
-                    final ProxyClient client = new DiagnosticProxyClient(rawClient, errorHandler);
+                    final ProxyClient client = new DiagnosticProxyClient(rawClient, this.errorHandler);
 
                     final HttpHandler handler = ProxyHandler.builder()
                             .setProxyClient(client)
@@ -405,7 +416,7 @@ public final class R7UndertowHandler implements HttpHandler
         }
         catch (final Exception e)
         {
-            errorHandler.handleError(gatewayExchange, e);
+            this.errorHandler.handleError(gatewayExchange, e);
         }
     }
 
@@ -425,16 +436,46 @@ public final class R7UndertowHandler implements HttpHandler
         this.routeProxyCache.clear();
     }
 
-    private void executeFallback(final GatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
+    private void executeFallback(final DefaultGatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
     {
-        exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);
-        exchange.getResponseSender().send(JsonUtil.writeValueAsString(Map.of("status", HttpStatuses.SERVICE_UNAVAILABLE, "message", "Upstream server is unavailable", "route", route.id().toString())));
+        final FallbackConfig fallbackConfig = route.routeDefinition().upstream().fallback();
 
-        // TODO: Make this configurable
-        // 1. Look up the fallback route ID from the `route` configuration
-        // 2. Fetch the filter chain for the fallback route
-        // 3. Execute it (e.g., returning the 503 Maintenance JSON)
+        if (fallbackConfig != null && fallbackConfig.routeId() != null && !fallbackConfig.routeId().isBlank())
+        {
+            final String fallbackRouteId = fallbackConfig.routeId();
+            final DefaultGatewayRoute fallbackRoute = (DefaultGatewayRoute) this.routeRegistry.findRoute(fallbackRouteId).orElseThrow();
+
+            logger.debug("Routing to fallback route: {}", fallbackRouteId);
+            gatewayExchange.attributes().set("gateway.fallback.id", fallbackRouteId);
+
+            // Execute the fallback route's request filter chain
+            for (final ClientRequestGatewayFilter filter : fallbackRoute.clientRequestFilters())
+            {
+                filter.onClientRequest(gatewayExchange);
+
+                if (gatewayExchange.isShortCircuited())
+                {
+                    exchange.putAttachment(REASON_FILTER_KEY, filter);
+
+                    for (final ClientResponseGatewayFilter responseFilter : fallbackRoute.beforeCommitGatewayFilters())
+                    {
+                        responseFilter.onClientResponse(gatewayExchange);
+                    }
+
+                    sendResponse(exchange, gatewayExchange);
+                    return;
+                }
+            }
+
+            // If no short-circuit, proxy to the fallback's upstream targets
+            proxyCall(fallbackRoute, exchange, gatewayExchange);
+            return;
+        }
+
+        // Baseline default if no fallback is configured or found
+        exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
+        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+        exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id().toString() + "'");
     }
 
     private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final boolean isWebSocket)

@@ -54,7 +54,7 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
         @Override
         public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result).required(FILTER_NAME, "allowedOrigins", this.allowedOrigins());
+            new ValidatorUtils(result).required("allowed_origins", this.allowedOrigins());
         }
     }
 

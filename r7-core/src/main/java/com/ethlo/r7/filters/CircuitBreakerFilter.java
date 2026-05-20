@@ -58,8 +58,8 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required(FILTER_NAME, "failure_threshold", failureThreshold)
-                    .required(FILTER_NAME, "cooldown_period", cooldownPeriod);
+                    .required("failure_threshold", failureThreshold)
+                    .required("cooldown_period", cooldownPeriod);
         }
 
         @Override

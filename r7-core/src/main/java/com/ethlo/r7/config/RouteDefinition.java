@@ -8,7 +8,9 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
-public record RouteDefinition(CharSequence id, UpstreamConfig upstream, ConditionDefinition match,
+public record RouteDefinition(CharSequence id,
+                              UpstreamConfig upstream,
+                              ConditionDefinition match,
                               JournalDefinition journal,
                               List<FilterDefinition> filters) implements ValidatableConfig
 {
@@ -16,7 +18,7 @@ public record RouteDefinition(CharSequence id, UpstreamConfig upstream, Conditio
     public void validate(final ValidationResult result)
     {
         final ValidatorUtils validator = new ValidatorUtils(result);
-        validator.required("route", "id", "Route ID must not be empty");
+        validator.required("id", "Route ID must not be empty");
 
         if (upstream != null)
         {

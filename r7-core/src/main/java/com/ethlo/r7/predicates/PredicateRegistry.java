@@ -5,10 +5,12 @@ import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 
 import com.ethlo.r7.api.GatewayPredicate;
+import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
 public class PredicateRegistry
 {
@@ -34,14 +36,27 @@ public class PredicateRegistry
 
     public GatewayPredicate create(String name, Object yamlValue)
     {
-        GatewayPredicateFactory<?> factory = factories.get(name);
+        final GatewayPredicateFactory<?> factory = factories.get(name);
         if (factory == null)
         {
-            throw new IllegalArgumentException("Unknown predicate: " + name);
+            throw new ConfigurationException("Unknown predicate: " + name);
         }
 
         // Load config and map to config class
-        ValidatableConfig config = mapper.convertValue(yamlValue, factory.configClass());
+        ValidatableConfig config;
+        try
+        {
+            config = mapper.convertValue(yamlValue, factory.configClass());
+        }
+        catch (UnrecognizedPropertyException e)
+        {
+            final String badProp = e.getPropertyName();
+            final String knownProps = e.getKnownPropertyIds() != null
+                    ? e.getKnownPropertyIds().toString()
+                    : "none";
+
+            throw new ConfigurationException(String.format("Unrecognized property '%s'. Known properties are: %s", badProp, knownProps));
+        }
 
         // Validate the configuration
         final ValidationResult result = new ValidationResult();

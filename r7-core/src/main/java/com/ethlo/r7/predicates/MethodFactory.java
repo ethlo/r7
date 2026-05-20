@@ -40,8 +40,8 @@ public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Conf
         public void validate(ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required(PREDICATE_NAME, "include", include)
-                    .notEmpty(PREDICATE_NAME, "include", include);
+                    .required("include", include)
+                    .notEmpty("include", include);
         }
     }
 

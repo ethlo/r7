@@ -47,8 +47,8 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required(FILTER_NAME, "source", this.source())
-                    .required(FILTER_NAME, "target", this.target());
+                    .required("source", this.source())
+                    .required("target", this.target());
 
             if (this.source() != null)
             {
@@ -58,7 +58,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 }
                 catch (final PatternSyntaxException e)
                 {
-                    validatorUtils.invalid(FILTER_NAME, "source", this.source(), "Invalid regex pattern: " + e.getPattern());
+                    validatorUtils.invalid("source", this.source(), "Invalid regex pattern: " + e.getPattern());
                 }
             }
         }
