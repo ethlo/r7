@@ -8,6 +8,8 @@ import com.ethlo.r7.config.JournalDirectionConfig;
 
 import com.ethlo.r7.config.JournalDirectionDefinition;
 
+import com.ethlo.r7.status.SparklineRingBuffer;
+
 import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
@@ -88,6 +90,8 @@ public final class R7ReflectionFeature implements Feature
 
         final Class<?>[] explicitClasses = new Class<?>[]{
 
+                com.ethlo.r7.status.dto.FilterNode.class,
+                com.ethlo.r7.status.dto.MemoryDto.class,
                 com.ethlo.r7.status.dto.RouteMetricsDto.class,
                 com.ethlo.r7.status.dto.RequestStatsDto.class,
                 com.ethlo.r7.status.dto.TrafficFlowDto.class,
@@ -100,6 +104,10 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.status.dto.MatchDto.class,
                 com.ethlo.r7.status.dto.ConnectorStatisticsDto.class,
                 com.ethlo.r7.status.dto.JournalDto.class,
+
+                SparklineRingBuffer.class,
+                SparklineRingBuffer.SparklineSnapshot.class,
+                SparklineRingBuffer.SparklineMetadata.class,
 
                 // Core Routing Config
                 JournalDefinition.class,
