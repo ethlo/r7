@@ -239,7 +239,8 @@ public final class R7Main
 
     private static InputStream getLoggerConfigStream()
     {
-        final Path configFilePath = Paths.get("config/logback.xml").toAbsolutePath();
+        final String logbackConfigPath = System.getenv().getOrDefault("R7_LOGBACK_CONFIG", "config/server.yaml");
+        final Path configFilePath = Paths.get(logbackConfigPath).toAbsolutePath();
         if (Files.exists(configFilePath) && Files.isRegularFile(configFilePath))
         {
             try
