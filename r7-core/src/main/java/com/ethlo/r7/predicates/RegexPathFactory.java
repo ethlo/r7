@@ -38,7 +38,7 @@ public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactor
         @Override
         public void validate(ValidationResult result)
         {
-            new ValidatorUtils(result).required(PREDICATE_NAME, "regexp", regexp);
+            new ValidatorUtils(result).required("regexp", regexp);
             if (regexp != null)
             {
                 try

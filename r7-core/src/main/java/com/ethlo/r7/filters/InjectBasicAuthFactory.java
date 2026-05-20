@@ -3,9 +3,9 @@ package com.ethlo.r7.filters;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -41,8 +41,8 @@ public final class InjectBasicAuthFactory implements GatewayFilterFactory<Inject
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required(FILTER_NAME, "username", this.username())
-                    .required(FILTER_NAME, "password", this.password());
+                    .required("username", this.username())
+                    .required("password", this.password());
         }
     }
 

@@ -15,9 +15,9 @@ public record RoutesDefinition(
     @Override
     public void validate(final ValidationResult result)
     {
-        for (final RouteDefinition route : routes)
+        for (final RouteDefinition route : routes())
         {
-            route.validate(result);
+            route.validate(result.nested(route.id() != null ? route.id().toString() : "?"));
         }
     }
 

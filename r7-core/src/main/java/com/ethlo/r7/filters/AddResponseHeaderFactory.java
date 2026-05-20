@@ -38,8 +38,8 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
         public void validate(ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required(FILTER_NAME, "name", name)
-                    .required(FILTER_NAME, "value", value);
+                    .required("name", name)
+                    .required("value", value);
         }
     }
 

@@ -36,7 +36,7 @@ public class PathStartsWithFactory implements GatewayPredicateFactory<PathStarts
         @Override
         public void validate(ValidationResult result)
         {
-            new ValidatorUtils(result).required(PREDICATE_NAME, "prefix", prefix);
+            new ValidatorUtils(result).required("prefix", prefix);
         }
     }
 

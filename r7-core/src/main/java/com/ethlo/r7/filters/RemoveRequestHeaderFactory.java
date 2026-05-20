@@ -36,7 +36,7 @@ public final class RemoveRequestHeaderFactory implements GatewayFilterFactory<Re
         @Override
         public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result).required(FILTER_NAME, "name", this.name());
+            new ValidatorUtils(result).required("name", this.name());
         }
     }
 

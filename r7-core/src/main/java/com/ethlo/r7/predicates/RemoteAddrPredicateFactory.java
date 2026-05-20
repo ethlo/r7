@@ -38,7 +38,7 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result).required(PREDICATE_NAME, "source", this.source());
+            final ValidatorUtils validator = new ValidatorUtils(result).required("source", this.source());
 
             if (this.source() != null)
             {
@@ -54,13 +54,13 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
                         final int mask = Integer.parseInt(parts[1]);
                         if (mask < 0 || mask > 128)
                         {
-                            validator.invalid(PREDICATE_NAME, "source", this.source(), "Subnet mask must be between 0 and 128");
+                            validator.invalid("source", this.source(), "Subnet mask must be between 0 and 128");
                         }
                     }
                 }
                 catch (final UnknownHostException | NumberFormatException e)
                 {
-                    validator.invalid(PREDICATE_NAME, "source", this.source(), "Invalid IP or CIDR notation");
+                    validator.invalid("source", this.source(), "Invalid IP or CIDR notation");
                 }
             }
         }

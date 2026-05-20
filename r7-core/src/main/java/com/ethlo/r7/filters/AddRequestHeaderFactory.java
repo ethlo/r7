@@ -1,9 +1,9 @@
 package com.ethlo.r7.filters;
 
 import com.ethlo.r7.RedactUtil;
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -38,8 +38,8 @@ public class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestH
         public void validate(ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required(FILTER_NAME, "name", name)
-                    .required(FILTER_NAME, "value", value);
+                    .required("name", name)
+                    .required("value", value);
         }
     }
 

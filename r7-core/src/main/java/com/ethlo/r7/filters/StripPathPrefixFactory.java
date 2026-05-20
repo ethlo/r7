@@ -1,8 +1,8 @@
 package com.ethlo.r7.filters;
 
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -37,11 +37,11 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         public void validate(ValidationResult result)
         {
             final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required(FILTER_NAME, "parts", parts);
+                    .required("parts", parts);
 
             if (parts != null && parts <= 0)
             {
-                validatorUtils.invalid(FILTER_NAME, "parts", parts.toString(), "'parts' must be greater than 0");
+                validatorUtils.invalid("parts", parts.toString(), "'parts' must be greater than 0");
             }
         }
     }

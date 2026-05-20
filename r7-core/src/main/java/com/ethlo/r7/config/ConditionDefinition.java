@@ -63,17 +63,37 @@ public final class ConditionDefinition
         return Collections.emptyList();
     }
 
-    public GatewayPredicate build(PredicateRegistry registry)
+    public GatewayPredicate build(final PredicateRegistry registry)
     {
         final List<GatewayPredicate> list = new ArrayList<>();
 
-        predicates.forEach((name, value) -> list.add(registry.create(name, value)));
-
-        if (and != null && !and.isEmpty())
+        this.predicates.forEach((name, value) ->
         {
-            final List<GatewayPredicate> andChildren = and.stream()
-                    .map(c -> c.build(registry))
-                    .toList();
+            try
+            {
+                list.add(registry.create(name, value));
+            }
+            catch (final ConfigurationException e)
+            {
+                // Inject the predicate name into the error path
+                throw new ConfigurationException(String.format("[%s] %s", name, e.getMessage()));
+            }
+        });
+
+        if (this.and != null && !this.and.isEmpty())
+        {
+            final List<GatewayPredicate> andChildren = new ArrayList<>(this.and.size());
+            for (int i = 0; i < this.and.size(); i++)
+            {
+                try
+                {
+                    andChildren.add(this.and.get(i).build(registry));
+                }
+                catch (final ConfigurationException e)
+                {
+                    throw new ConfigurationException(String.format("[and[%d]] %s", i, e.getMessage()));
+                }
+            }
 
             if (andChildren.size() == 1)
             {
@@ -85,34 +105,45 @@ public final class ConditionDefinition
             }
         }
 
-        if (or != null && !or.isEmpty())
+        if (this.or != null && !this.or.isEmpty())
         {
-            final List<GatewayPredicate> orChildren = or.stream()
-                    .map(c -> c.build(registry))
-                    .toList();
+            final List<GatewayPredicate> orChildren = new ArrayList<>(this.or.size());
+            for (int i = 0; i < this.or.size(); i++)
+            {
+                try
+                {
+                    orChildren.add(this.or.get(i).build(registry));
+                }
+                catch (final ConfigurationException e)
+                {
+                    throw new ConfigurationException(String.format("[or[%d]] %s", i, e.getMessage()));
+                }
+            }
             list.add(new OrPredicate(orChildren));
         }
 
-        if (not != null)
+        if (this.not != null)
         {
-            // Fully supported NotPredicate wrapper
-            list.add(new NotPredicate(not.build(registry)));
+            try
+            {
+                list.add(new NotPredicate(this.not.build(registry)));
+            }
+            catch (final ConfigurationException e)
+            {
+                throw new ConfigurationException(String.format("[not] %s", e.getMessage()));
+            }
         }
 
-        // 3. Optimize the evaluation tree
+        // Optimize the evaluation tree
         if (list.isEmpty())
         {
-            // If the match block is completely empty, it matches everything
             return TruePredicate.INSTANCE;
         }
         if (list.size() == 1)
         {
-            // Strip the unnecessary AND wrapper if there's only one root condition
             return list.getFirst();
         }
 
-        // At the root level of a YAML block, siblings are evaluated as an AND.
-        // e.g., match: { method: GET, pathStartsWith: /api } 
         return new AndPredicate(list);
     }
 

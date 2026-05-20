@@ -26,5 +26,8 @@
         </encoder>
     </appender>
 
+    <logger name="io.undertow" level="WARN" />
+    <logger name="org.xnio" level="WARN" />
+
     <logger name="r7.access" level="WARN"/>
 </configuration>

@@ -20,170 +20,119 @@ public record ServerConfig(
 {
     public static ServerConfig standard()
     {
-        return new ServerConfig(
-                null, null, null, null, null, null, null
-        );
+        return new ServerConfig(null, null, null, null, null, null, null);
     }
 
     @Override
     public ServerCoreConfig server()
     {
-        return Optional.ofNullable(server).orElse(new ServerCoreConfig(null, null));
+        return Optional.ofNullable(this.server).orElse(new ServerCoreConfig(null, null));
     }
 
     @Override
     public ManagementConfig management()
     {
-        return Optional.ofNullable(management).orElse(new ManagementConfig(null, null));
+        return Optional.ofNullable(this.management).orElse(new ManagementConfig(null, null));
     }
 
     @Override
     public HttpConfig http()
     {
-        return Optional.ofNullable(http).orElse(new HttpConfig(null, null, null));
+        return Optional.ofNullable(this.http).orElse(new HttpConfig(null, null, null));
     }
 
     @Override
     public ProxyConfig proxy()
     {
-        return Optional.ofNullable(proxy).orElse(new ProxyConfig(null, null, null, null));
+        return Optional.ofNullable(this.proxy).orElse(new ProxyConfig(null, null, null, null));
     }
 
     @Override
     public LimitsConfig limits()
     {
-        return Optional.ofNullable(limits).orElse(new LimitsConfig(null, null, null, null, null));
+        return Optional.ofNullable(this.limits).orElse(new LimitsConfig(null, null, null, null, null));
     }
 
     @Override
     public StorageConfig storage()
     {
-        return Optional.ofNullable(storage).orElse(new StorageConfig(null, null, null, null));
+        return Optional.ofNullable(this.storage).orElse(new StorageConfig(null, null, null, null));
     }
 
     @Override
     public AdvancedConfig advanced()
     {
-        return Optional.ofNullable(advanced).orElse(new AdvancedConfig(null, null, null, null, null, null, null, null, null, null, null, null));
+        return Optional.ofNullable(this.advanced).orElse(new AdvancedConfig(null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     @Override
     public void validate(final ValidationResult result)
     {
-        final ValidatorUtils v = new ValidatorUtils(result);
-        final String ctx = "ServerConfig";
-
-        // Core Server
-        final ServerCoreConfig srv = server();
-        v.required(ctx, "server.host", srv.host());
-        v.required(ctx, "server.port", srv.port());
-
-        if (srv.port() < 1 || srv.port() > 65535)
-        {
-            result.addError(ctx, "server.port must be 1-65535");
-        }
-
-        // Management
-        final ManagementConfig mgt = management();
-        if (mgt.port() < 1 || mgt.port() > 65535)
-        {
-            result.addError(ctx, "management.port must be 1-65535");
-        }
-
-        // HTTP
-        final HttpConfig httpConfig = http();
-        if (httpConfig.requestParseTimeout().toMillis() < -1)
-        {
-            result.addError(ctx, "http.request_parse_timeout must be >= -1");
-        }
-
-        // Limits
-        final LimitsConfig limitsConfig = limits();
-        if (limitsConfig.maxHeaderSize().toBytes() < 1024)
-        {
-            result.addError(ctx, "limits.max_header_size must be >= 1024");
-        }
-        if (limitsConfig.maxEntitySize().toBytes() < 1024)
-        {
-            result.addError(ctx, "limits.max_entity_size must be >= 1KB");
-        }
-        if (limitsConfig.maxHeaderCount() < 1)
-        {
-            result.addError(ctx, "limits.max_header_count must be >= 1");
-        }
-        if (limitsConfig.maxParameterCount() < 1)
-        {
-            result.addError(ctx, "limits.max_parameters must be >= 1");
-        }
-        if (limitsConfig.maxCookieCount() < 1)
-        {
-            result.addError(ctx, "limits.max_cookies must be >= 1");
-        }
-
-        // Proxy
-        final ProxyConfig proxyConfig = proxy();
-        if (proxyConfig.connectionsPerThread() < 1)
-        {
-            result.addError(ctx, "proxy.connections_per_thread must be >= 1");
-        }
-
-        // Storage
-        final StorageConfig storageConfig = storage();
-        v.required(ctx, "storage.work_dir", storageConfig.workDir());
-        if (storageConfig.shardCount() < 1)
-        {
-            result.addError(ctx, "storage.shard_count must be >= 1");
-        }
-
-        // Advanced
-        final AdvancedConfig adv = advanced();
-        if (adv.ioThreads() < 1)
-        {
-            result.addError(ctx, "advanced.io_threads must be >= 1");
-        }
-        if (adv.taskThreads() < 1)
-        {
-            result.addError(ctx, "advanced.task_threads must be >= 1");
-        }
-        if (adv.socketBacklog() < 1)
-        {
-            result.addError(ctx, "advanced.socket_backlog must be >= 1");
-        }
+        // Recursively pass validation down the tree, letting the nested path prefixes build automatically
+        this.server().validate(result.nested("server"));
+        this.management().validate(result.nested("management"));
+        this.http().validate(result.nested("http"));
+        this.proxy().validate(result.nested("proxy"));
+        this.limits().validate(result.nested("limits"));
+        this.storage().validate(result.nested("storage"));
+        this.advanced().validate(result.nested("advanced"));
     }
 
     // =========================================================
     // Core Server (Data Plane)
     // =========================================================
-    public record ServerCoreConfig(String host, Integer port)
+    public record ServerCoreConfig(String host, Integer port) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            final ValidatorUtils v = new ValidatorUtils(result);
+            v.required("host", this.host());
+            v.required("port", this.port());
+
+            if (this.port() < 1 || this.port() > 65535)
+            {
+                result.addError("port", "must be between 1 and 65535");
+            }
+        }
+
         @Override
         public String host()
         {
-            return Optional.ofNullable(host).orElse("0.0.0.0");
+            return Optional.ofNullable(this.host).orElse("0.0.0.0");
         }
 
         @Override
         public Integer port()
         {
-            return Optional.ofNullable(port).orElse(8888);
+            return Optional.ofNullable(this.port).orElse(8888);
         }
     }
 
     // =========================================================
     // Management (Control Plane)
     // =========================================================
-    public record ManagementConfig(String host, Integer port)
+    public record ManagementConfig(String host, Integer port) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            if (this.port() < 1 || this.port() > 65535)
+            {
+                result.addError("port", "must be between 1 and 65535");
+            }
+        }
+
         @Override
         public String host()
         {
-            return Optional.ofNullable(host).orElse("0.0.0.0");
+            return Optional.ofNullable(this.host).orElse("0.0.0.0");
         }
 
         @Override
         public Integer port()
         {
-            return Optional.ofNullable(port).orElse(18888);
+            return Optional.ofNullable(this.port).orElse(18888);
         }
     }
 
@@ -194,24 +143,33 @@ public record ServerConfig(
             Boolean enableHttp2,
             Duration requestParseTimeout,
             Boolean alwaysSetKeepAlive
-    )
+    ) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            if (this.requestParseTimeout().toMillis() < -1)
+            {
+                result.addError("request_parse_timeout", "must be >= -1");
+            }
+        }
+
         @Override
         public Boolean enableHttp2()
         {
-            return Optional.ofNullable(enableHttp2).orElse(true);
+            return Optional.ofNullable(this.enableHttp2).orElse(true);
         }
 
         @Override
         public Duration requestParseTimeout()
         {
-            return Optional.ofNullable(requestParseTimeout).orElse(Duration.ofSeconds(2));
+            return Optional.ofNullable(this.requestParseTimeout).orElse(Duration.ofSeconds(2));
         }
 
         @Override
         public Boolean alwaysSetKeepAlive()
         {
-            return Optional.ofNullable(alwaysSetKeepAlive).orElse(true);
+            return Optional.ofNullable(this.alwaysSetKeepAlive).orElse(true);
         }
     }
 
@@ -223,30 +181,39 @@ public record ServerConfig(
             Integer maxQueueSize,
             Duration maxRequestTime,
             Duration ttl
-    )
+    ) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            if (this.connectionsPerThread() < 1)
+            {
+                result.addError("connections_per_thread", "must be >= 1");
+            }
+        }
+
         @Override
         public Integer connectionsPerThread()
         {
-            return Optional.ofNullable(connectionsPerThread).orElse(512);
+            return Optional.ofNullable(this.connectionsPerThread).orElse(512);
         }
 
         @Override
         public Integer maxQueueSize()
         {
-            return Optional.ofNullable(maxQueueSize).orElse(1000);
+            return Optional.ofNullable(this.maxQueueSize).orElse(1000);
         }
 
         @Override
         public Duration maxRequestTime()
         {
-            return Optional.ofNullable(maxRequestTime).orElse(Duration.ofMinutes(1));
+            return Optional.ofNullable(this.maxRequestTime).orElse(Duration.ofMinutes(1));
         }
 
         @Override
         public Duration ttl()
         {
-            return Optional.ofNullable(ttl).orElse(Duration.ofSeconds(30));
+            return Optional.ofNullable(this.ttl).orElse(Duration.ofSeconds(30));
         }
     }
 
@@ -259,36 +226,61 @@ public record ServerConfig(
             DataSize maxEntitySize,
             Integer maxParameterCount,
             Integer maxCookieCount
-    )
+    ) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            if (this.maxHeaderSize().toBytes() < 1024)
+            {
+                result.addError("max_header_size", "must be >= 1024 bytes");
+            }
+            if (this.maxEntitySize().toBytes() < 1024)
+            {
+                result.addError("max_entity_size", "must be >= 1KB");
+            }
+            if (this.maxHeaderCount() < 1)
+            {
+                result.addError("max_header_count", "must be >= 1");
+            }
+            if (this.maxParameterCount() < 1)
+            {
+                result.addError("max_parameters", "must be >= 1");
+            }
+            if (this.maxCookieCount() < 1)
+            {
+                result.addError("max_cookies", "must be >= 1");
+            }
+        }
+
         @Override
         public DataSize maxHeaderSize()
         {
-            return Optional.ofNullable(maxHeaderSize).orElse(DataSize.ofKilobytes(8));
+            return Optional.ofNullable(this.maxHeaderSize).orElse(DataSize.ofKilobytes(8));
         }
 
         @Override
         public Integer maxHeaderCount()
         {
-            return Optional.ofNullable(maxHeaderCount).orElse(50);
+            return Optional.ofNullable(this.maxHeaderCount).orElse(50);
         }
 
         @Override
         public DataSize maxEntitySize()
         {
-            return Optional.ofNullable(maxEntitySize).orElse(DataSize.ofMegabytes(2));
+            return Optional.ofNullable(this.maxEntitySize).orElse(DataSize.ofMegabytes(2));
         }
 
         @Override
         public Integer maxParameterCount()
         {
-            return Optional.ofNullable(maxParameterCount).orElse(1000);
+            return Optional.ofNullable(this.maxParameterCount).orElse(1000);
         }
 
         @Override
         public Integer maxCookieCount()
         {
-            return Optional.ofNullable(maxCookieCount).orElse(200);
+            return Optional.ofNullable(this.maxCookieCount).orElse(200);
         }
     }
 
@@ -300,30 +292,42 @@ public record ServerConfig(
             Integer shardCount,
             DataSize shardSize,
             Boolean preFault
-    )
+    ) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            final ValidatorUtils v = new ValidatorUtils(result);
+            v.required("work_dir", this.workDir());
+
+            if (this.shardCount() < 1)
+            {
+                result.addError("shard_count", "must be >= 1");
+            }
+        }
+
         @Override
         public String workDir()
         {
-            return Optional.ofNullable(workDir).orElse("/tmp/r7/journal");
+            return Optional.ofNullable(this.workDir).orElse("/tmp/r7/journal");
         }
 
         @Override
         public Integer shardCount()
         {
-            return Optional.ofNullable(shardCount).orElse(1);
+            return Optional.ofNullable(this.shardCount).orElse(1);
         }
 
         @Override
         public DataSize shardSize()
         {
-            return Optional.ofNullable(shardSize).orElse(DataSize.ofMegabytes(200));
+            return Optional.ofNullable(this.shardSize).orElse(DataSize.ofMegabytes(200));
         }
 
         @Override
         public Boolean preFault()
         {
-            return Optional.ofNullable(preFault).orElse(false);
+            return Optional.ofNullable(this.preFault).orElse(false);
         }
     }
 
@@ -343,79 +347,96 @@ public record ServerConfig(
             Boolean recordRequestStartTime,
             Boolean enableStatistics,
             Boolean trackActiveRequests
-    )
+    ) implements ValidatableConfig
     {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            if (this.ioThreads() < 1)
+            {
+                result.addError("io_threads", "must be >= 1");
+            }
+            if (this.taskThreads() < 1)
+            {
+                result.addError("task_threads", "must be >= 1");
+            }
+            if (this.socketBacklog() < 1)
+            {
+                result.addError("socket_backlog", "must be >= 1");
+            }
+        }
+
         @Override
         public Integer ioThreads()
         {
-            return Optional.ofNullable(ioThreads)
+            return Optional.ofNullable(this.ioThreads)
                     .orElse(Math.max(2, Runtime.getRuntime().availableProcessors()));
         }
 
         @Override
         public Integer taskThreads()
         {
-            return Optional.ofNullable(taskThreads).orElse(ioThreads() * 8);
+            return Optional.ofNullable(this.taskThreads).orElse(this.ioThreads() * 8);
         }
 
         @Override
         public Integer connectionHighWater()
         {
-            return Optional.ofNullable(connectionHighWater).orElse(20000);
+            return Optional.ofNullable(this.connectionHighWater).orElse(20000);
         }
 
         @Override
         public Integer connectionLowWater()
         {
-            return Optional.ofNullable(connectionLowWater).orElse(10000);
+            return Optional.ofNullable(this.connectionLowWater).orElse(10000);
         }
 
         @Override
         public Boolean tcpNoDelay()
         {
-            return Optional.ofNullable(tcpNoDelay).orElse(true);
+            return Optional.ofNullable(this.tcpNoDelay).orElse(true);
         }
 
         @Override
         public Boolean reuseAddresses()
         {
-            return Optional.ofNullable(reuseAddresses).orElse(true);
+            return Optional.ofNullable(this.reuseAddresses).orElse(true);
         }
 
         @Override
         public Integer socketBacklog()
         {
-            return Optional.ofNullable(socketBacklog).orElse(1000);
+            return Optional.ofNullable(this.socketBacklog).orElse(1000);
         }
 
         @Override
         public Duration socketReadTimeout()
         {
-            return Optional.ofNullable(socketReadTimeout).orElse(Duration.ofSeconds(30));
+            return Optional.ofNullable(this.socketReadTimeout).orElse(Duration.ofSeconds(30));
         }
 
         @Override
         public Boolean directBuffers()
         {
-            return Optional.ofNullable(directBuffers).orElse(true);
+            return Optional.ofNullable(this.directBuffers).orElse(true);
         }
 
         @Override
         public Boolean recordRequestStartTime()
         {
-            return Optional.ofNullable(recordRequestStartTime).orElse(false);
+            return Optional.ofNullable(this.recordRequestStartTime).orElse(false);
         }
 
         @Override
         public Boolean enableStatistics()
         {
-            return Optional.ofNullable(enableStatistics).orElse(false);
+            return Optional.ofNullable(this.enableStatistics).orElse(false);
         }
 
         @Override
         public Boolean trackActiveRequests()
         {
-            return Optional.ofNullable(trackActiveRequests).orElse(false);
+            return Optional.ofNullable(this.trackActiveRequests).orElse(false);
         }
     }
 }
