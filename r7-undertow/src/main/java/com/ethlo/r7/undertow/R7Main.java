@@ -252,7 +252,13 @@ public final class R7Main
             }
         }
 
-        return R7Main.class.getResourceAsStream("/default-logback.xml");
+        final InputStream defaultConfig = R7Main.class.getResourceAsStream("/default-logback.xml");
+        if (defaultConfig == null)
+        {
+            throw new IllegalStateException("FATAL: Unable to load logback configuration from config/logback.xml or classpath:/default-logback.xml");
+        }
+
+        return defaultConfig;
     }
 
     private XnioWorker createSharedWorker(final ServerConfig config) throws IOException
