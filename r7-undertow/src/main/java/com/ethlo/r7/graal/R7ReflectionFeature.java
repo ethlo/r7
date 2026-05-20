@@ -2,11 +2,16 @@ package com.ethlo.r7.graal;
 
 import java.util.ServiceLoader;
 
+import com.ethlo.r7.config.JournalDefinition;
+
+import com.ethlo.r7.config.JournalDirectionConfig;
+
+import com.ethlo.r7.config.JournalDirectionDefinition;
+
 import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
 
-import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.undertow.config.ServerConfig;
@@ -16,6 +21,8 @@ public final class R7ReflectionFeature implements Feature
     @Override
     public void beforeAnalysis(final BeforeAnalysisAccess access)
     {
+        registerJBossLoggers();
+
         registerExplicitConfigClasses();
 
         final ServiceLoader<GatewayFilterFactory> filters = ServiceLoader.load(GatewayFilterFactory.class);
@@ -73,6 +80,12 @@ public final class R7ReflectionFeature implements Feature
 
     private void registerExplicitConfigClasses()
     {
+        // Allow GraalVM to introspect base Record classes
+        RuntimeReflection.register(java.lang.Record.class.getDeclaredMethods());
+
+        // Allow Jackson 3 to reflectively call getName() and getType() on RecordComponent
+        RuntimeReflection.register(java.lang.reflect.RecordComponent.class.getDeclaredMethods());
+
         final Class<?>[] explicitClasses = new Class<?>[]{
 
                 com.ethlo.r7.status.dto.RouteMetricsDto.class,
@@ -89,10 +102,14 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.status.dto.JournalDto.class,
 
                 // Core Routing Config
+                JournalDefinition.class,
+                JournalDirectionConfig.class,
+                JournalDirectionDefinition.class,
                 com.ethlo.r7.config.TargetConfig.class,
                 com.ethlo.r7.config.RouteJournalConfig.class,
                 com.ethlo.r7.config.JournalDirectionConfig.class,
-                RoutesDefinition.class,
+                com.ethlo.r7.config.RoutesDefinition.class,
+                com.ethlo.r7.config.FallbackConfig.class,
                 com.ethlo.r7.config.UpstreamConfig.class,
                 com.ethlo.r7.config.HealthCheckConfig.class,
                 com.ethlo.r7.config.TimeoutConfig.class,
@@ -124,9 +141,6 @@ public final class R7ReflectionFeature implements Feature
         {
             registerRecordForReflection(clazz);
         }
-
-        // Special case: java.lang.Record only needs its declared methods registered
-        RuntimeReflection.register(java.lang.Record.class.getDeclaredMethods());
     }
 
     private void registerRecordForReflection(final Class<?> clazz)
@@ -142,7 +156,42 @@ public final class R7ReflectionFeature implements Feature
 
             if (clazz.isRecord())
             {
+                // Register the record metadata
                 RuntimeReflection.registerAllRecordComponents(clazz);
+
+                // BRUTE FORCE: Explicitly register every accessor method.
+                // This prevents GraalVM from stripping the getters, which is
+                // what causes the UnsupportedFeatureError.
+                for (final java.lang.reflect.RecordComponent rc : clazz.getRecordComponents())
+                {
+                    RuntimeReflection.register(rc.getAccessor());
+                }
+            }
+        }
+    }
+
+    private void registerJBossLoggers()
+    {
+        // JBoss logging generates these classes at build-time.
+        // We must manually retain them for reflection so Undertow and XNIO don't crash.
+        final String[] jbossGeneratedClasses = new String[]{
+                "org.xnio._private.Messages_$logger",
+                "org.xnio.nio.Log_$logger",
+                "io.undertow.UndertowLogger_$logger",
+                "io.undertow.UndertowMessages_$bundle"
+        };
+
+        for (final String className : jbossGeneratedClasses)
+        {
+            try
+            {
+                final Class<?> clazz = Class.forName(className);
+                RuntimeReflection.register(clazz);
+                RuntimeReflection.register(clazz.getDeclaredConstructors());
+            }
+            catch (final ClassNotFoundException ignored)
+            {
+                // Safely ignore if a specific version of Undertow/XNIO drops one of these classes
             }
         }
     }
