@@ -211,10 +211,8 @@ public final class R7Main
 
     private static void setupLogging()
     {
-        final InputStream configStream = getLoggerConfigStream();
-
         final LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
-        try
+        try (final InputStream configStream = getLoggerConfigStream())
         {
             final JoranConfigurator configurator = new JoranConfigurator();
             configurator.setContext(context);
@@ -230,7 +228,7 @@ public final class R7Main
             appender.setContext(context);
             appender.start();
         }
-        catch (final JoranException je)
+        catch (final JoranException | IOException je)
         {
             System.err.println("FATAL: Logback failed to configure from XML: " + je.getMessage());
         } finally
@@ -254,7 +252,13 @@ public final class R7Main
             }
         }
 
-        return R7Main.class.getResourceAsStream("/default-logback.xml");
+        final InputStream defaultConfig = R7Main.class.getResourceAsStream("/default-logback.xml");
+        if (defaultConfig == null)
+        {
+            throw new IllegalStateException("FATAL: Unable to load logback configuration from config/logback.xml or classpath:/default-logback.xml");
+        }
+
+        return defaultConfig;
     }
 
     private XnioWorker createSharedWorker(final ServerConfig config) throws IOException

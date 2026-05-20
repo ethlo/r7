@@ -18,7 +18,7 @@ public record RouteDefinition(CharSequence id,
     public void validate(final ValidationResult result)
     {
         final ValidatorUtils validator = new ValidatorUtils(result);
-        validator.required("id", "Route ID must not be empty");
+        validator.required("id", this.id());
 
         if (upstream != null)
         {
