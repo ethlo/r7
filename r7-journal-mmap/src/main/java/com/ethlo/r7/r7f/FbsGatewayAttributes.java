@@ -1,6 +1,6 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
-import static com.ethlo.r7.vlf.JournalDecoder.asAscii;
+import static com.ethlo.r7.r7f.JournalDecoder.asAscii;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -11,8 +11,8 @@ import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 import com.ethlo.r7.util.CharSequenceUtil;
-import com.ethlo.r7.vlf.fbs.EndExchange;
-import com.ethlo.r7.vlf.fbs.Header;
+import com.ethlo.r7.r7f.fbs.EndExchange;
+import com.ethlo.r7.r7f.fbs.Header;
 
 /**
  * Zero-allocation projection of StartEvent headers

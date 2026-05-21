@@ -1,13 +1,12 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
-public final class VlfConstants
+public final class R7fConstants
 {
     // --- File Header / Preamble ---
     /**
-     * Magic bytes 'VLF1' for file identification
+     * Magic bytes 'R7F1' for file identification
      */
-    public static final int MAGIC = 0x564C4631;
-
+    public static final int MAGIC = 0x52374631;
     /**
      * The size of the self-describing preamble (1KB)
      */
@@ -18,11 +17,11 @@ public final class VlfConstants
      */
     public static final short VERSION_1 = 1;
 
-    public static final String VLF_FILE_EXTENSION = ".vlf";
+    public static final String R7F_FILE_EXTENSION = ".r7f";
     public static final String ACTIVE_FILE_EXTENSION = ".flux";
     public static final String COMPRESSED_FILE_EXTENSION = ".zst";
 
-    private VlfConstants()
+    private R7fConstants()
     {
     } // Prevent instantiation
 }

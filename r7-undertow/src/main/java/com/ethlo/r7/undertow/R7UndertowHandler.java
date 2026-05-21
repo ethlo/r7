@@ -59,7 +59,7 @@ import com.ethlo.r7.util.ImmutableGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
-import com.ethlo.r7.vlf.R7fJournal;
+import com.ethlo.r7.r7f.R7fJournal;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;

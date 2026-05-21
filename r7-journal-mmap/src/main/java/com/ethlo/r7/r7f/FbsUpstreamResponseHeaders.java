@@ -1,8 +1,7 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
-import com.ethlo.r7.vlf.fbs.Header;
-import com.ethlo.r7.vlf.fbs.UpstreamRequest;
-import com.ethlo.r7.vlf.fbs.UpstreamResponse;
+import com.ethlo.r7.r7f.fbs.Header;
+import com.ethlo.r7.r7f.fbs.UpstreamResponse;
 
 public class FbsUpstreamResponseHeaders extends AbstractFbsGatewayHeaders
 {

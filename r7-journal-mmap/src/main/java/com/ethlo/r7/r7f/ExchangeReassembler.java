@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
@@ -14,7 +14,7 @@ import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
-import com.ethlo.r7.vlf.util.CharSequenceExchangeMap;
+import com.ethlo.r7.r7f.util.CharSequenceExchangeMap;
 
 public class ExchangeReassembler implements JournalEventListener
 {

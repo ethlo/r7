@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
 import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 
@@ -24,17 +24,17 @@ import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
-import com.ethlo.r7.vlf.fbs.ClientRequest;
-import com.ethlo.r7.vlf.fbs.ClientResponse;
-import com.ethlo.r7.vlf.fbs.EndExchange;
-import com.ethlo.r7.vlf.fbs.EventPayload;
-import com.ethlo.r7.vlf.fbs.FbsJournalLevel;
-import com.ethlo.r7.vlf.fbs.Header;
-import com.ethlo.r7.vlf.fbs.JournalEvent;
-import com.ethlo.r7.vlf.fbs.RequestBody;
-import com.ethlo.r7.vlf.fbs.ResponseBody;
-import com.ethlo.r7.vlf.fbs.UpstreamRequest;
-import com.ethlo.r7.vlf.fbs.UpstreamResponse;
+import com.ethlo.r7.r7f.fbs.ClientRequest;
+import com.ethlo.r7.r7f.fbs.ClientResponse;
+import com.ethlo.r7.r7f.fbs.EndExchange;
+import com.ethlo.r7.r7f.fbs.EventPayload;
+import com.ethlo.r7.r7f.fbs.FbsJournalLevel;
+import com.ethlo.r7.r7f.fbs.Header;
+import com.ethlo.r7.r7f.fbs.JournalEvent;
+import com.ethlo.r7.r7f.fbs.RequestBody;
+import com.ethlo.r7.r7f.fbs.ResponseBody;
+import com.ethlo.r7.r7f.fbs.UpstreamRequest;
+import com.ethlo.r7.r7f.fbs.UpstreamResponse;
 import com.google.flatbuffers.FlatBufferBuilder;
 
 public final class R7fJournal implements Journal
@@ -49,7 +49,7 @@ public final class R7fJournal implements Journal
     private final int[] headerOffsetsScratch = new int[1024];
     private final int[] attributeOffsetsScratch = new int[100];
 
-    private final VlfJournalProvider provider;
+    private final R7fJournalProvider provider;
     private final Consumer<Path> finishedJournalFileSupplier;
 
     private final byte[] fbsJournalLevels = new byte[]{
@@ -68,14 +68,14 @@ public final class R7fJournal implements Journal
     private int currentAttributeCount;
     private boolean closed;
 
-    public R7fJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
+    public R7fJournal(R7fJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
         this.provider = provider;
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
         rotateSegment();
     }
 
-    public R7fJournal(VlfJournalProvider provider)
+    public R7fJournal(R7fJournalProvider provider)
     {
         this(provider, _ -> {
                 }
@@ -249,7 +249,7 @@ public final class R7fJournal implements Journal
         ensureCapacity(totalLen);
 
         // Header block
-        putInt(VlfConstants.MAGIC);
+        putInt(R7fConstants.MAGIC);
         putInt(payloadLen);
         putInt(fbLen);
         putInt(rawLen);
@@ -278,7 +278,7 @@ public final class R7fJournal implements Journal
         // Write CRC footer
         putInt((int) crc.getValue());
 
-        return totalLen; // Returning the total binary size of the VLF entry
+        return totalLen; // Returning the total binary size of the entry
     }
 
     private int buildHeadersVector(GatewayHeaders headers)
@@ -402,13 +402,13 @@ public final class R7fJournal implements Journal
         }
 
         // 3. Instant O(1) swap to the pre-faulted segment (still inside the synchronized monitor)
-        final VlfJournalProvider.WarmedSegment next = provider.getNextSegment();
+        final R7fJournalProvider.WarmedSegment next = provider.getNextSegment();
         this.segment = next.segment();
         this.activePath = next.path();
         this.arena = next.arena();
         // this.channel = next.channel(); // (Ensure channel is populated if it comes from the provider)
 
-        // Write the VLF Preamble directly
+        // Write the preamble directly
         writePreamble();
     }
 
@@ -435,14 +435,14 @@ public final class R7fJournal implements Journal
             oldChannel.close();
         }
 
-        if (finalPosition <= VlfConstants.PREAMBLE_SIZE)
+        if (finalPosition <= R7fConstants.PREAMBLE_SIZE)
         {
             Files.delete(oldPath);
             return null;
         }
         else
         {
-            final String newName = oldPath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+            final String newName = oldPath.getFileName().toString().replace(R7fConstants.ACTIVE_FILE_EXTENSION, R7fConstants.R7F_FILE_EXTENSION);
             final Path target = oldPath.resolveSibling(newName);
             Files.move(oldPath, target, StandardCopyOption.ATOMIC_MOVE);
             return target;
@@ -466,13 +466,13 @@ public final class R7fJournal implements Journal
         arena = null;
         channel = null;
 
-        if (position <= VlfConstants.PREAMBLE_SIZE)
+        if (position <= R7fConstants.PREAMBLE_SIZE)
         {
             Files.delete(activePath);
         }
         else
         {
-            String newName = activePath.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+            String newName = activePath.getFileName().toString().replace(R7fConstants.ACTIVE_FILE_EXTENSION, R7fConstants.R7F_FILE_EXTENSION);
             final Path target = activePath.resolveSibling(newName);
             Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
         }
@@ -513,10 +513,10 @@ public final class R7fJournal implements Journal
     {
         position = 0;
 
-        putInt(VlfConstants.MAGIC);
-        putShort(VlfConstants.VERSION_1);
+        putInt(R7fConstants.MAGIC);
+        putShort(R7fConstants.VERSION_1);
         putLong(System.currentTimeMillis());
-        position = VlfConstants.PREAMBLE_SIZE;
+        position = R7fConstants.PREAMBLE_SIZE;
     }
 
     private void putInt(int v)

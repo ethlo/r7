@@ -29,7 +29,7 @@ import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.core.StandardErrorHandler;
-import com.ethlo.r7.journal.compression.VlfCompressionEngine;
+import com.ethlo.r7.journal.compression.R7fCompressionEngine;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.status.FileTelemetryRepository;
 import com.ethlo.r7.status.MetricsRegistry;
@@ -40,10 +40,10 @@ import com.ethlo.r7.status.VersionProvider;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.validation.ValidationResult;
-import com.ethlo.r7.vlf.DiskSpaceUtils;
-import com.ethlo.r7.vlf.R7fJournal;
-import com.ethlo.r7.vlf.VlfJournalProvider;
-import com.ethlo.r7.vlf.VlfRecoveryManager;
+import com.ethlo.r7.r7f.DiskSpaceUtils;
+import com.ethlo.r7.r7f.R7fJournal;
+import com.ethlo.r7.r7f.R7fJournalProvider;
+import com.ethlo.r7.r7f.R7fRecoveryManager;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -53,7 +53,7 @@ import io.undertow.server.handlers.GracefulShutdownHandler;
 public final class R7Main
 {
     private static final Logger logger = LoggerFactory.getLogger(R7Main.class);
-    private final VlfCompressionEngine compressionEngine;
+    private final R7fCompressionEngine compressionEngine;
     private final GracefulShutdownHandler gracefulShutdownHandler;
 
     public R7Main(final Path configFile, final Path serverFile) throws IOException
@@ -81,13 +81,13 @@ public final class R7Main
 
         logger.info("Work directory is {} with {} free disk space", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
 
-        this.compressionEngine = new VlfCompressionEngine(3, 2);
-        final List<Path> paths = VlfRecoveryManager.cleanAndRecover(workDir);
+        this.compressionEngine = new R7fCompressionEngine(3, 2);
+        final List<Path> paths = R7fRecoveryManager.cleanAndRecover(workDir);
         paths.forEach(compressionEngine::submitForCompression);
 
         final ShardedJournalWriter<R7fJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
-            final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, storage.shardSize().toBytes(), storage.preFault());
+            final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().toBytes(), storage.preFault());
             return new R7fJournal(provider, compressionEngine::submitForCompression);
         }
         );

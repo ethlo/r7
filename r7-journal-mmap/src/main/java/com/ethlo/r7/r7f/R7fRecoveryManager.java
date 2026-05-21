@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -16,13 +16,13 @@ import java.util.zip.CRC32C;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class VlfRecoveryManager
+public final class R7fRecoveryManager
 {
-    private static final Logger logger = LoggerFactory.getLogger(VlfRecoveryManager.class);
+    private static final Logger logger = LoggerFactory.getLogger(R7fRecoveryManager.class);
 
     /**
      * Scans the given directory for .active files, truncates them at the last
-     * valid entry, and renames them to the finalized VLF extension.
+     * valid entry, and renames them to the finalized extension.
      */
     private static void recoverActiveSegments(Path journalDirectory) throws IOException
     {
@@ -36,16 +36,16 @@ public final class VlfRecoveryManager
         {
             final List<Path> activeFiles = stream
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(VlfConstants.ACTIVE_FILE_EXTENSION))
+                    .filter(p -> p.getFileName().toString().endsWith(R7fConstants.ACTIVE_FILE_EXTENSION))
                     .toList();
 
             if (activeFiles.isEmpty())
             {
-                logger.debug("Found 0 matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. No recovery needed.");
+                logger.debug("Found 0 matching " + R7fConstants.ACTIVE_FILE_EXTENSION + " files. No recovery needed.");
                 return;
             }
 
-            logger.debug("Found {} matching " + VlfConstants.ACTIVE_FILE_EXTENSION + " files. Starting recovery...", activeFiles.size());
+            logger.debug("Found {} matching " + R7fConstants.ACTIVE_FILE_EXTENSION + " files. Starting recovery...", activeFiles.size());
 
             long totalRecordsRecovered = 0;
             int successfulFiles = 0;
@@ -78,7 +78,7 @@ public final class VlfRecoveryManager
 
     private static long recoverFile(Path file) throws IOException
     {
-        long lastValidPosition = VlfConstants.PREAMBLE_SIZE; // 1024
+        long lastValidPosition = R7fConstants.PREAMBLE_SIZE; // 1024
         long recordCount = 0;
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE))
         {
@@ -86,7 +86,7 @@ public final class VlfRecoveryManager
             // Map the file read-only to scan the bounds and CRCs quickly
             final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, size);
             buffer.order(ByteOrder.BIG_ENDIAN);
-            buffer.position(VlfConstants.PREAMBLE_SIZE);
+            buffer.position(R7fConstants.PREAMBLE_SIZE);
 
             while (buffer.remaining() >= 16) // Minimum bytes needed for a header
             {
@@ -100,7 +100,7 @@ public final class VlfRecoveryManager
                 }
 
                 final int magic = buffer.getInt();
-                if (magic != VlfConstants.MAGIC)
+                if (magic != R7fConstants.MAGIC)
                 {
                     logger.warn("Corrupt header magic found at position {}, truncating file.", startPos);
                     break;
@@ -142,7 +142,7 @@ public final class VlfRecoveryManager
             }
         }
 
-        if (lastValidPosition == VlfConstants.PREAMBLE_SIZE && recordCount == 0)
+        if (lastValidPosition == R7fConstants.PREAMBLE_SIZE && recordCount == 0)
         {
             logger.debug("Removing empty file {}", file);
             Files.delete(file);
@@ -150,7 +150,7 @@ public final class VlfRecoveryManager
         else
         {
             // Rename the truncated file to the finalized extension
-            final String newName = file.getFileName().toString().replace(VlfConstants.ACTIVE_FILE_EXTENSION, VlfConstants.VLF_FILE_EXTENSION);
+            final String newName = file.getFileName().toString().replace(R7fConstants.ACTIVE_FILE_EXTENSION, R7fConstants.R7F_FILE_EXTENSION);
             final Path recoveredFile = file.resolveSibling(newName);
             Files.move(file, recoveredFile, StandardCopyOption.ATOMIC_MOVE);
         }
@@ -194,12 +194,12 @@ public final class VlfRecoveryManager
         recoverActiveSegments(journalDirectory);
 
 
-        // 3. Collect ALL .vlf files for the compression queue
+        // 3. Collect ALL uncompressed files for the compression queue
         try (Stream<Path> stream = Files.list(journalDirectory))
         {
             return stream
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(VlfConstants.VLF_FILE_EXTENSION))
+                    .filter(p -> p.getFileName().toString().endsWith(R7fConstants.R7F_FILE_EXTENSION))
                     .toList();
         }
     }

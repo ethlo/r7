@@ -1,6 +1,6 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
-import static com.ethlo.r7.vlf.VlfConstants.MAGIC;
+import static com.ethlo.r7.r7f.R7fConstants.MAGIC;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -12,16 +12,16 @@ import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.JournalLevel;
-import com.ethlo.r7.vlf.fbs.ClientRequest;
-import com.ethlo.r7.vlf.fbs.ClientResponse;
-import com.ethlo.r7.vlf.fbs.EndExchange;
-import com.ethlo.r7.vlf.fbs.EventPayload;
-import com.ethlo.r7.vlf.fbs.JournalEvent;
-import com.ethlo.r7.vlf.fbs.RequestBody;
-import com.ethlo.r7.vlf.fbs.ResponseBody;
-import com.ethlo.r7.vlf.fbs.UpstreamRequest;
-import com.ethlo.r7.vlf.fbs.UpstreamResponse;
-import com.ethlo.r7.vlf.model.ByteBufferAsciiFlyweight;
+import com.ethlo.r7.r7f.fbs.ClientRequest;
+import com.ethlo.r7.r7f.fbs.ClientResponse;
+import com.ethlo.r7.r7f.fbs.EndExchange;
+import com.ethlo.r7.r7f.fbs.EventPayload;
+import com.ethlo.r7.r7f.fbs.JournalEvent;
+import com.ethlo.r7.r7f.fbs.RequestBody;
+import com.ethlo.r7.r7f.fbs.ResponseBody;
+import com.ethlo.r7.r7f.fbs.UpstreamRequest;
+import com.ethlo.r7.r7f.fbs.UpstreamResponse;
+import com.ethlo.r7.r7f.model.ByteBufferAsciiFlyweight;
 
 public final class JournalDecoder
 {
@@ -35,7 +35,7 @@ public final class JournalDecoder
         // Skip preamble
         if (buffer.position() == 0)
         {
-            buffer.position(VlfConstants.PREAMBLE_SIZE);
+            buffer.position(R7fConstants.PREAMBLE_SIZE);
         }
 
         while (buffer.hasRemaining())

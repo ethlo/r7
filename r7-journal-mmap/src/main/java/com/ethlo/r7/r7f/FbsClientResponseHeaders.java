@@ -1,7 +1,7 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
-import com.ethlo.r7.vlf.fbs.ClientResponse;
-import com.ethlo.r7.vlf.fbs.Header;
+import com.ethlo.r7.r7f.fbs.ClientResponse;
+import com.ethlo.r7.r7f.fbs.Header;
 
 public class FbsClientResponseHeaders extends AbstractFbsGatewayHeaders
 {

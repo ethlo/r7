@@ -11,12 +11,12 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.r7.vlf.VlfConstants;
+import com.ethlo.r7.r7f.R7fConstants;
 import com.github.luben.zstd.Zstd;
 
-public class VlfCompressionEngine implements AutoCloseable
+public class R7fCompressionEngine implements AutoCloseable
 {
-    private static final Logger log = LoggerFactory.getLogger(VlfCompressionEngine.class);
+    private static final Logger log = LoggerFactory.getLogger(R7fCompressionEngine.class);
 
     // Upgraded to a single-threaded scheduled executor
     private final ScheduledExecutorService compressionScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory()
@@ -24,7 +24,7 @@ public class VlfCompressionEngine implements AutoCloseable
         @Override
         public Thread newThread(Runnable r)
         {
-            final Thread t = new Thread(r, "r7-vlf-compressor");
+            final Thread t = new Thread(r, "r7-journal-compressor");
             t.setDaemon(true);
             t.setPriority(Thread.MIN_PRIORITY);
             return t;
@@ -34,21 +34,21 @@ public class VlfCompressionEngine implements AutoCloseable
     private final int compressionLevel;
     private final long delaySeconds;
 
-    public VlfCompressionEngine(int compressionLevel, long delaySeconds)
+    public R7fCompressionEngine(int compressionLevel, long delaySeconds)
     {
         this.compressionLevel = compressionLevel;
         this.delaySeconds = delaySeconds;
     }
 
-    public void submitForCompression(Path finalizedVlfPath)
+    public void submitForCompression(Path finalizedPath)
     {
-        log.debug("⏱️ Queueing {} for compression in {} seconds", finalizedVlfPath.getFileName(), delaySeconds);
-        compressionScheduler.schedule(() -> compressAndDelete(finalizedVlfPath), delaySeconds, TimeUnit.SECONDS);
+        log.debug("⏱️ Queueing {} for compression in {} seconds", finalizedPath.getFileName(), delaySeconds);
+        compressionScheduler.schedule(() -> compressAndDelete(finalizedPath), delaySeconds, TimeUnit.SECONDS);
     }
 
     private void compressAndDelete(final Path source)
     {
-        final Path target = source.resolveSibling(source.getFileName() + VlfConstants.COMPRESSED_FILE_EXTENSION);
+        final Path target = source.resolveSibling(source.getFileName() + R7fConstants.COMPRESSED_FILE_EXTENSION);
         final Path tempTarget = source.resolveSibling(source.getFileName() + ".zst.tmp");
 
         final long start = System.nanoTime();

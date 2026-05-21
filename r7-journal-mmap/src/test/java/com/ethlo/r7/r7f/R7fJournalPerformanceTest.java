@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
 import static java.nio.ByteBuffer.wrap;
 
@@ -42,7 +42,7 @@ class R7fJournalPerformanceTest
 
         final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
 
-        final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
+        final R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
         final String id = "adasqwteyutqwet";
         try (final R7fJournal journal = new R7fJournal(provider))
         {
