@@ -1,0 +1,22 @@
+routes:
+  - id: route-v1
+    match:
+      - PathStartsWith:
+          prefix: /v1
+    filters:
+      - StripPathPrefix:
+          parts: 1
+    upstream:
+      targets:
+        - url: "http://host.testcontainers.internal:${WIREMOCK_PORT}/"
+
+  - id: route-v2
+    match:
+      - PathStartsWith:
+          prefix: /v2
+    filters:
+      - StripPathPrefix:
+          parts: 1
+    upstream:
+      targets:
+        - url: "http://host.testcontainers.internal:${WIREMOCK_PORT}/"

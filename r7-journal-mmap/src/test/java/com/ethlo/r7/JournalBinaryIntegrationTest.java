@@ -33,7 +33,7 @@ import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.vlf.JournalAnalyzer;
 import com.ethlo.r7.vlf.VlfConstants;
-import com.ethlo.r7.vlf.VlfJournal;
+import com.ethlo.r7.vlf.R7fJournal;
 import com.ethlo.r7.vlf.VlfJournalProvider;
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
@@ -53,10 +53,10 @@ class JournalBinaryIntegrationTest
         int segmentSize = 1024 * 64; // 64KB segments
 
         // Manual shard array to avoid dependency on ShardedJournalWriter in 'core'
-        VlfJournal[] journals = new VlfJournal[shardCount];
+        R7fJournal[] journals = new R7fJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new VlfJournal(new VlfJournalProvider(tempDir, i, segmentSize, true));
+            journals[i] = new R7fJournal(new VlfJournalProvider(tempDir, i, segmentSize, true));
         }
 
         int requestsPerThread = 50;
@@ -74,7 +74,7 @@ class JournalBinaryIntegrationTest
 
                     // Equivalent to your sharding logic
                     final int h = reqId.hashCode();
-                    VlfJournal journal = journals[(h ^ (h >>> 16)) & mask];
+                    R7fJournal journal = journals[(h ^ (h >>> 16)) & mask];
 
                     // 1. BEGIN
                     MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
@@ -111,7 +111,7 @@ class JournalBinaryIntegrationTest
         } finally
         {
             // Always close journals to flush .active to .vlf
-            for (VlfJournal j : journals)
+            for (R7fJournal j : journals)
             {
                 j.close();
             }
@@ -156,7 +156,7 @@ class JournalBinaryIntegrationTest
         final int segmentSize = 1024 * 1024;
         VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, segmentSize, true);
 
-        try (VlfJournal journal = new VlfJournal(provider))
+        try (R7fJournal journal = new R7fJournal(provider))
         {
             String id = "dual-123";
 

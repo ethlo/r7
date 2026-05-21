@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 
 import com.ethlo.r7.api.IpSource;
 
-import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.chronograph.Chronograph;
@@ -21,12 +21,12 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
-class VlfJournalTest
+class R7fJournalPerformanceTest
 {
     @TempDir
     private Path tempDir;
 
-    @RepeatedTest(5)
+    @Test
     void clientRequest() throws IOException
     {
         final int iterations = 2_000_000;
@@ -44,7 +44,7 @@ class VlfJournalTest
 
         final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
         final String id = "adasqwteyutqwet";
-        try (final VlfJournal journal = new VlfJournal(provider))
+        try (final R7fJournal journal = new R7fJournal(provider))
         {
             Chronograph chronograph = Chronograph.create();
             final String taskName = "client-request encoding (" + iterations + ")";

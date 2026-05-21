@@ -1,0 +1,47 @@
+version: 'integration-test-v1'
+
+global_filters:
+  - CorrelationIdHeader
+
+routes:
+  - id: core-stress-route
+    match:
+      - and:
+          - PathStartsWith:
+              prefix: /api/v1
+          - Method:
+              include:
+                - GET
+                - POST
+          - not:
+              RemoteAddr:
+                source: 192.168.100.0/24
+    filters:
+      - StripPathPrefix:
+          parts: 2
+      - RateLimiter:
+          capacity: 10
+          refill_tokens: 2
+          refill_period: 1s
+      - CircuitBreaker:
+          failure_threshold: 3
+          cooldown_period: 5s
+      - AddResponseHeader:
+          name: X-Powered-By
+          value: ethlo r7
+    upstream:
+      health_check:
+        interval: 2s
+        rise: 1
+        fall: 2
+        path: /healthz
+      targets:
+        - url: "http://host.testcontainers.internal:${WIREMOCK_PORT}"
+    journal:
+      request:
+        level: NONE
+        status_overrides:
+          429: METADATA
+          5xx: FULL
+      response:
+        level: NONE

@@ -37,9 +37,9 @@ import com.ethlo.r7.vlf.fbs.UpstreamRequest;
 import com.ethlo.r7.vlf.fbs.UpstreamResponse;
 import com.google.flatbuffers.FlatBufferBuilder;
 
-public final class VlfJournal implements Journal
+public final class R7fJournal implements Journal
 {
-    private static final Logger logger = LoggerFactory.getLogger(VlfJournal.class);
+    private static final Logger logger = LoggerFactory.getLogger(R7fJournal.class);
     private static final ValueLayout.OfInt INT_BE = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final int MAX_SCRATCH = 8192;
@@ -68,14 +68,14 @@ public final class VlfJournal implements Journal
     private int currentAttributeCount;
     private boolean closed;
 
-    public VlfJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
+    public R7fJournal(VlfJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
         this.provider = provider;
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
         rotateSegment();
     }
 
-    public VlfJournal(VlfJournalProvider provider)
+    public R7fJournal(VlfJournalProvider provider)
     {
         this(provider, _ -> {
                 }
@@ -293,7 +293,7 @@ public final class VlfJournal implements Journal
         return currentHeaderCount == 0 ? 0 : createOffsetVector(headerOffsetsScratch, currentHeaderCount);
     }
 
-    private void headerWrite(final VlfJournal self, final CharSequence name, final CharSequence value)
+    private void headerWrite(final R7fJournal self, final CharSequence name, final CharSequence value)
     {
         int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
         int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
