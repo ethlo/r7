@@ -18,7 +18,7 @@ import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.MediaTypes;
-import com.ethlo.r7.vlf.DiskSpaceUtils;
+import com.ethlo.r7.r7f.DiskSpaceUtils;
 import io.undertow.server.ConnectorStatistics;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;

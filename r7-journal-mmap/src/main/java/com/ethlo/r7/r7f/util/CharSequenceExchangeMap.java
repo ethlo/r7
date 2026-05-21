@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf.util;
+package com.ethlo.r7.r7f.util;
 
 import static com.ethlo.r7.util.CharSequenceUtil.hash;
 

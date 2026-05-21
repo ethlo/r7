@@ -16,4 +16,4 @@ The system utilizes a decoupled **Producer/Consumer** model:
 
 ## 2. Storage Format
 
-[VLF format](FORMAT.md)
+[R7F format](FORMAT.md)

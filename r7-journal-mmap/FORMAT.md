@@ -21,7 +21,7 @@ The r7f format is a **binary append-only file format** for storing serialized jo
 
 Event encoding is delegated to an external specification:
 
-> FlatBuffer schema: `com.ethlo.r7.vlf.fbs` (see r7fbs specification)
+> FlatBuffer schema: `com.ethlo.r7.r7f.fbs` (see r7fbs specification)
 
 This document MUST NOT be used to interpret event payload structure.
 
@@ -102,7 +102,7 @@ FBLen + RawLen + 8
 * MUST conform to external specification:
 
   ```
-  com.ethlo.r7.vlf.fbs
+  com.ethlo.r7.r7f.fbs
   ```
 * This RFC does NOT define or interpret its contents.
 

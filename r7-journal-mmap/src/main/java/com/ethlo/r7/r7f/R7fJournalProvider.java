@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -14,9 +14,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class VlfJournalProvider implements AutoCloseable
+public class R7fJournalProvider implements AutoCloseable
 {
-    private static final Logger log = LoggerFactory.getLogger(VlfJournalProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(R7fJournalProvider.class);
 
     private final Path tempDir;
     private final int shardId;
@@ -29,7 +29,7 @@ public class VlfJournalProvider implements AutoCloseable
     private final boolean preFault;
     private volatile boolean running = true;
 
-    public VlfJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)
+    public R7fJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)
     {
         this.tempDir = tempDir;
         this.shardId = shardId;
@@ -48,7 +48,7 @@ public class VlfJournalProvider implements AutoCloseable
         {
             try
             {
-                String name = String.format("shard-%d-%d-%d" + VlfConstants.ACTIVE_FILE_EXTENSION,
+                String name = String.format("shard-%d-%d-%d" + R7fConstants.ACTIVE_FILE_EXTENSION,
                         shardId, System.currentTimeMillis(), rotationCount.incrementAndGet()
                 );
                 Path nextPath = tempDir.resolve(name);

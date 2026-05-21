@@ -1,7 +1,7 @@
-package com.ethlo.r7.vlf;
+package com.ethlo.r7.r7f;
 
-import static com.ethlo.r7.vlf.VlfConstants.ACTIVE_FILE_EXTENSION;
-import static com.ethlo.r7.vlf.VlfConstants.VLF_FILE_EXTENSION;
+import static com.ethlo.r7.r7f.R7fConstants.ACTIVE_FILE_EXTENSION;
+import static com.ethlo.r7.r7f.R7fConstants.R7F_FILE_EXTENSION;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -62,7 +62,7 @@ public final class R7Tailer
         {
             s.filter(p -> {
                         final String name = p.getFileName().toString();
-                        return name.endsWith(VLF_FILE_EXTENSION) || // TODO: IMPORTANT: Avoid race-condition with compressed file!
+                        return name.endsWith(R7F_FILE_EXTENSION) || // TODO: IMPORTANT: Avoid race-condition with compressed file!
                                 name.endsWith(ACTIVE_FILE_EXTENSION) ||
                                 name.endsWith(COMPRESSED_EXTENSION);
                     })
@@ -205,7 +205,7 @@ public final class R7Tailer
         return path.getFileName().toString()
                 .replace(ACTIVE_FILE_EXTENSION, "")
                 .replace(COMPRESSED_EXTENSION, "")
-                .replace(VLF_FILE_EXTENSION, "");
+                .replace(R7F_FILE_EXTENSION, "");
     }
 
     private void loadCheckpoints()

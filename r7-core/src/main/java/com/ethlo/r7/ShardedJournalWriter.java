@@ -27,7 +27,6 @@ public final class ShardedJournalWriter<T extends Journal>
 
         for (int i = 0; i < shardCount; i++)
         {
-            // The factory handles implementation details (VLF, Mmap, etc.)
             shards[i] = shardFactory.apply(i);
         }
     }

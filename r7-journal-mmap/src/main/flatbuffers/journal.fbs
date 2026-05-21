@@ -1,4 +1,4 @@
-namespace com.ethlo.r7.vlf.fbs;
+namespace com.ethlo.r7.r7f.fbs;
 
 enum FbsJournalLevel : byte { NONE = 0, METADATA = 1, HEADERS = 2, FULL = 3 }
 

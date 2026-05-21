@@ -31,10 +31,10 @@ import com.ethlo.r7.util.FastGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.MediaTypes;
-import com.ethlo.r7.vlf.JournalAnalyzer;
-import com.ethlo.r7.vlf.VlfConstants;
-import com.ethlo.r7.vlf.R7fJournal;
-import com.ethlo.r7.vlf.VlfJournalProvider;
+import com.ethlo.r7.r7f.JournalAnalyzer;
+import com.ethlo.r7.r7f.R7fConstants;
+import com.ethlo.r7.r7f.R7fJournal;
+import com.ethlo.r7.r7f.R7fJournalProvider;
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class JournalBinaryIntegrationTest
@@ -56,7 +56,7 @@ class JournalBinaryIntegrationTest
         R7fJournal[] journals = new R7fJournal[shardCount];
         for (int i = 0; i < shardCount; i++)
         {
-            journals[i] = new R7fJournal(new VlfJournalProvider(tempDir, i, segmentSize, true));
+            journals[i] = new R7fJournal(new R7fJournalProvider(tempDir, i, segmentSize, true));
         }
 
         int requestsPerThread = 50;
@@ -110,7 +110,7 @@ class JournalBinaryIntegrationTest
             for (Future<Void> f : futures) f.get();
         } finally
         {
-            // Always close journals to flush .active to .vlf
+            // Always close journals
             for (R7fJournal j : journals)
             {
                 j.close();
@@ -154,7 +154,7 @@ class JournalBinaryIntegrationTest
     void testRequestResponseInterleaving() throws IOException
     {
         final int segmentSize = 1024 * 1024;
-        VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, segmentSize, true);
+        R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, segmentSize, true);
 
         try (R7fJournal journal = new R7fJournal(provider))
         {
@@ -187,11 +187,11 @@ class JournalBinaryIntegrationTest
         }
         catch (Throwable e)
         {
-            // Locate the .vlf file for debugging if it fails
+            // Locate the file for debugging if it fails
             try (Stream<Path> stream = Files.walk(tempDir))
             {
                 stream.filter(Files::isRegularFile)
-                        .filter(p -> p.toString().endsWith(VlfConstants.VLF_FILE_EXTENSION))
+                        .filter(p -> p.toString().endsWith(R7fConstants.R7F_FILE_EXTENSION))
                         .findFirst()
                         .ifPresent(p -> {
                             try

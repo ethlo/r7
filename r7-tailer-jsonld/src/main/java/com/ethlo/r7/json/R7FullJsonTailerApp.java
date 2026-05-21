@@ -8,7 +8,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 
-import com.ethlo.r7.vlf.R7Tailer;
+import com.ethlo.r7.r7f.R7Tailer;
 
 public class R7FullJsonTailerApp
 {

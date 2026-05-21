@@ -26,25 +26,25 @@ import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
-import com.ethlo.r7.vlf.R7Tailer;
-import com.ethlo.r7.vlf.R7fJournal;
-import com.ethlo.r7.vlf.VlfJournalProvider;
+import com.ethlo.r7.r7f.R7Tailer;
+import com.ethlo.r7.r7f.R7fJournal;
+import com.ethlo.r7.r7f.R7fJournalProvider;
 
-public final class VlfPerformanceBenchmarkTest
+public final class R7fPerformanceBenchmarkTest
 {
-    private static final Logger logger = LoggerFactory.getLogger(VlfPerformanceBenchmarkTest.class);
+    private static final Logger logger = LoggerFactory.getLogger(R7fPerformanceBenchmarkTest.class);
 
     @RepeatedTest(3)
     void testPerformance() throws IOException
     {
         final int iterations = 2_000_000;
-        final Path tempDir = Files.createTempDirectory("vlf-bench");
+        final Path tempDir = Files.createTempDirectory("r7f-bench");
 
         final InetAddress localhost = InetAddress.getLocalHost();
         try
         {
             logger.info("Setting up benchmark in {}", tempDir);
-            final VlfJournalProvider provider = new VlfJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
+            final R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
             final Chronograph chronograph = Chronograph.create();
 
             final MutableGatewayHeaders headers = new MutableFastGatewayHeaders();

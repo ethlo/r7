@@ -1,4 +1,4 @@
-package com.ethlo.r7.vlf.model;
+package com.ethlo.r7.r7f.model;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
