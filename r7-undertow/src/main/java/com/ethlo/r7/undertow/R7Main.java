@@ -41,7 +41,7 @@ import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.validation.ValidationResult;
 import com.ethlo.r7.vlf.DiskSpaceUtils;
-import com.ethlo.r7.vlf.VlfJournal;
+import com.ethlo.r7.vlf.R7fJournal;
 import com.ethlo.r7.vlf.VlfJournalProvider;
 import com.ethlo.r7.vlf.VlfRecoveryManager;
 import io.undertow.Handlers;
@@ -85,10 +85,10 @@ public final class R7Main
         final List<Path> paths = VlfRecoveryManager.cleanAndRecover(workDir);
         paths.forEach(compressionEngine::submitForCompression);
 
-        final ShardedJournalWriter<VlfJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
+        final ShardedJournalWriter<R7fJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
             final VlfJournalProvider provider = new VlfJournalProvider(workDir, shardIdx, storage.shardSize().toBytes(), storage.preFault());
-            return new VlfJournal(provider, compressionEngine::submitForCompression);
+            return new R7fJournal(provider, compressionEngine::submitForCompression);
         }
         );
 

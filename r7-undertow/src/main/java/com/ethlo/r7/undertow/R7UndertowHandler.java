@@ -59,7 +59,7 @@ import com.ethlo.r7.util.ImmutableGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
-import com.ethlo.r7.vlf.VlfJournal;
+import com.ethlo.r7.vlf.R7fJournal;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
@@ -86,12 +86,12 @@ public final class R7UndertowHandler implements HttpHandler
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final ServerConfig serverConfig;
     private final RouteRegistry routeRegistry;
-    private final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter;
+    private final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final GatewayScheduler scheduler;
     private UndertowXnioSsl xnioSsl;
 
-    public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<VlfJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
+    public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
     {
         this.serverConfig = serverConfig;
         this.routeRegistry = routeRegistry;
@@ -269,7 +269,7 @@ public final class R7UndertowHandler implements HttpHandler
         final boolean isWebSocket = exchange.getRequestHeaders().contains(io.undertow.util.Headers.UPGRADE) && "websocket".equalsIgnoreCase(exchange.getRequestHeaders().getFirst(io.undertow.util.Headers.UPGRADE));
         exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
 
-        final VlfJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
+        final R7fJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
         final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
 
@@ -426,7 +426,7 @@ public final class R7UndertowHandler implements HttpHandler
      */
     public void evictProxyCache()
     {
-        this.logger.info("Evicting route proxy cache for live reload");
+        logger.debug("Evicting route proxy cache for live reload");
 
         for (final RouteUpstreamContext context : this.routeProxyCache.values())
         {

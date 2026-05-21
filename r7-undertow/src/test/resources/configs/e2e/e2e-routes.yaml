@@ -1,0 +1,8 @@
+routes:
+  - id: e2e-passthrough
+    match:
+      - PathStartsWith:
+          prefix: /
+    upstream:
+      targets:
+        - url: "http://host.testcontainers.internal:${WIREMOCK_PORT}/"

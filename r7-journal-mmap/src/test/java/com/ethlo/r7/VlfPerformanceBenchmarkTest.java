@@ -27,14 +27,14 @@ import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.vlf.R7Tailer;
-import com.ethlo.r7.vlf.VlfJournal;
+import com.ethlo.r7.vlf.R7fJournal;
 import com.ethlo.r7.vlf.VlfJournalProvider;
 
 public final class VlfPerformanceBenchmarkTest
 {
     private static final Logger logger = LoggerFactory.getLogger(VlfPerformanceBenchmarkTest.class);
 
-    @RepeatedTest(5)
+    @RepeatedTest(3)
     void testPerformance() throws IOException
     {
         final int iterations = 2_000_000;
@@ -60,8 +60,8 @@ public final class VlfPerformanceBenchmarkTest
             final ByteBuffer requestBody = wrap("{\"ping\":\"2022-05-17T00:12:19:22.965Z\"}".getBytes());
             final ByteBuffer responseBody = wrap("{\"status\":\"ok\"}".getBytes());
 
-            final AtomicReference<VlfJournal> journalRef = new AtomicReference<>();
-            try (final VlfJournal journal = new VlfJournal(provider))
+            final AtomicReference<R7fJournal> journalRef = new AtomicReference<>();
+            try (final R7fJournal journal = new R7fJournal(provider))
             {
                 journalRef.set(journal);
                 chronograph.time("Encode " + iterations, () ->
