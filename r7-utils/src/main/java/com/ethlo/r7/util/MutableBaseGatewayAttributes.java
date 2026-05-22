@@ -1,7 +1,6 @@
 package com.ethlo.r7.util;
 
 import com.ethlo.r7.api.EntryConsumer;
-import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 
@@ -27,7 +26,7 @@ class MutableBaseGatewayAttributes extends BaseGatewayAttributes implements Muta
     public MutableGatewayHeaders set(String name, String value)
     {
         setInternal(name, value);
-        return null;
+        return this;
     }
 
     @Override
