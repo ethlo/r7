@@ -5,9 +5,13 @@ package com.ethlo.r7.api;
  */
 public interface GatewayResponse
 {
-    /** @return the response headers */
+    /**
+     * @return the response headers
+     */
     GatewayHeaders headers();
 
-    /** @return the HTTP status code */
+    /**
+     * @return the HTTP status code
+     */
     int status();
 }

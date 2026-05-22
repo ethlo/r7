@@ -41,13 +41,13 @@ public final class ImmutableHeaderSnapshot extends ArrayBackedPairStorage<HttpSt
     @Override
     public String getFirst(final String name)
     {
-        return getFirstInternal(new HttpString(name.toString()));
+        return getFirstInternal(new HttpString(name));
     }
 
     @Override
     public Iterable<String> getAll(final String name)
     {
-        return getAllInternal(new HttpString(name.toString()));
+        return getAllInternal(new HttpString(name));
     }
 
     @Override

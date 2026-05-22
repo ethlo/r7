@@ -79,7 +79,7 @@ public class R7NginxHttp2IsolationTest
         // Verify the payload made it through the proxy
         assertEquals(200, response.statusCode());
         assertEquals("HTTP/2 routing to NGINX successful!", response.body());
-        
+
         // Verify r7 actually maintained the HTTP/2 connection with the client
         assertEquals(HttpClient.Version.HTTP_2, response.version(), "Connection was unexpectedly downgraded to HTTP/1.1");
     }

@@ -24,8 +24,8 @@ public final class EngineContext
 
     public <T> T getRequired(final Class<T> type)
     {
-        return this.get(type).orElseThrow(() -> 
-            new IllegalStateException("Missing required gateway service: " + type.getName())
+        return this.get(type).orElseThrow(() ->
+                new IllegalStateException("Missing required gateway service: " + type.getName())
         );
     }
 }

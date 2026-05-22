@@ -84,6 +84,6 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/cookie-modify"))
                 .withCookie("added_c", equalTo("injected_cookie"))
                 .withCookie("kept_c", equalTo("should_remain")));
-                // TODO: //.withoutCookie("removed_c"));
+        // TODO: //.withoutCookie("removed_c"));
     }
 }

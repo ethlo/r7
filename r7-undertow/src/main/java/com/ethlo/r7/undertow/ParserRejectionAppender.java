@@ -2,6 +2,7 @@ package com.ethlo.r7.undertow;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
+
 import java.util.concurrent.atomic.LongAdder;
 
 public final class ParserRejectionAppender extends AppenderBase<ILoggingEvent>

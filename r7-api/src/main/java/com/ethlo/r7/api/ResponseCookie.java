@@ -3,15 +3,15 @@ package com.ethlo.r7.api;
 import java.time.Duration;
 
 public record ResponseCookie(
-    String name,
-    String value,
-    String domain,
-    String path,
-    Duration maxAge,
-    boolean secure,
-    boolean httpOnly,
-    String sameSite
-) 
+        String name,
+        String value,
+        String domain,
+        String path,
+        Duration maxAge,
+        boolean secure,
+        boolean httpOnly,
+        String sameSite
+)
 {
     public ResponseCookie
     {
