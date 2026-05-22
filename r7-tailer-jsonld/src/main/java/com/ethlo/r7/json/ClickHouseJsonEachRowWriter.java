@@ -97,7 +97,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         writeLevel("client_response_level", exchange.getClientResponseLevel());
     }
 
-    private void writeRequestSlice(CharSequence startLine, GatewayHeaders headers, String prefix) throws IOException
+    private void writeRequestSlice(String startLine, GatewayHeaders headers, String prefix) throws IOException
     {
         if (startLine != null)
         {
@@ -110,7 +110,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         writeString(prefix + "_user_agent", getHeader(headers, HttpHeaders.USER_AGENT));
     }
 
-    private void writeResponseSlice(CharSequence startLine, GatewayHeaders headers, String prefix) throws IOException
+    private void writeResponseSlice(String startLine, GatewayHeaders headers, String prefix) throws IOException
     {
         writeMap(prefix + "_response_headers", GatewayUtils.toMap(headers));
         writeString(prefix + "_content_type", getHeader(headers, HttpHeaders.CONTENT_TYPE));
@@ -164,6 +164,6 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
     private String getHeader(GatewayHeaders headers, String key)
     {
         if (headers == null) return null;
-        return Optional.ofNullable(headers.getFirst(key)).map(CharSequence::toString).orElse(null);
+        return Optional.ofNullable(headers.getFirst(key)).map(String::toString).orElse(null);
     }
 }

@@ -14,3 +14,9 @@ com.ethlo.r7.filters.RemoveResponseHeaderFactory
 com.ethlo.r7.filters.SetStatusFactory
 com.ethlo.r7.filters.StripPathPrefixFactory
 com.ethlo.r7.filters.RequestSizeFilterFactory
+com.ethlo.r7.filters.AddRequestCookieFactory
+com.ethlo.r7.filters.AddQueryParameterFactory
+com.ethlo.r7.filters.RemoveRequestCookieFactory
+com.ethlo.r7.filters.RemoveQueryParameterFactory
+com.ethlo.r7.filters.AddResponseCookieFactory
+com.ethlo.r7.filters.StaticContentGatewayFilter

@@ -1,5 +1,7 @@
 package com.ethlo.r7.validation;
 
+import com.ethlo.r7.config.ConfigurationException;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,7 +65,7 @@ public final class ValidationResult
         if (this.hasErrors())
         {
             final String report = String.join("\n - ", this.errors);
-            throw new IllegalStateException("Gateway configuration is invalid:\n - " + report);
+            throw new ConfigurationException("Gateway configuration is invalid:\n - " + report);
         }
     }
 

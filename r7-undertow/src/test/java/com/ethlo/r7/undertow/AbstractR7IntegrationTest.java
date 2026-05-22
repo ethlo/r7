@@ -68,6 +68,11 @@ public abstract class AbstractR7IntegrationTest
                         MountableFile.forClasspathResource(configClasspath),
                         "/app/config/routes.yaml"
                 )
+                // Injecting a test file for the static content route
+                .withCopyToContainer(
+                        Transferable.of("Static content served successfully!"),
+                        "/app/static/test.txt"
+                )
                 .withEnv("WIREMOCK_PORT", String.valueOf(UPSTREAM_SERVER.port()))
                 .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
                 .withLogConsumer(new Slf4jLogConsumer(logger).withPrefix("R7-GATEWAY"))

@@ -7,7 +7,6 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -52,9 +51,9 @@ public class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<R
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final CharSequence sig = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
+            final String sig = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
 
-            if (sig == null || !(CharSequenceUtil.startsWith(sig, "Bearer ") || CharSequenceUtil.startsWith(sig, "Basic ")))
+            if (sig == null || !(sig.startsWith("Bearer ") || sig.startsWith("Basic ")))
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(HttpStatuses.UNAUTHORIZED, MediaTypes.TEXT_PLAIN, UNAUTHORIZED_BODY.slice()));
             }

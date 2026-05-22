@@ -1,42 +1,40 @@
 package com.ethlo.r7.r7f.util;
 
-import static com.ethlo.r7.util.CharSequenceUtil.hash;
-
+import java.util.Objects;
 import java.util.function.Function;
 
 import com.ethlo.r7.journal.api.JournalExchange;
-import com.ethlo.r7.util.CharSequenceUtil;
 
 /**
- * A zero-allocation, open-addressed map optimized for CharSequence keys.
+ * A zero-allocation, open-addressed map optimized for String keys.
  * Eliminates Map.Entry allocations and maximizes CPU cache locality.
  */
-public class CharSequenceExchangeMap
+public class StringExchangeMap
 {
-    private CharSequence[] keys;
+    private String[] keys;
     private JournalExchange[] values;
     private int mask;
     private int size;
 
-    public CharSequenceExchangeMap(final int initialCapacity)
+    public StringExchangeMap(final int initialCapacity)
     {
         final int capacity = Math.max(2, Integer.highestOneBit(Math.max(0, initialCapacity - 1)) << 1);
-        this.keys = new CharSequence[capacity];
+        this.keys = new String[capacity];
         this.values = new JournalExchange[capacity];
         this.mask = capacity - 1;
     }
 
-    public void put(final CharSequence key, final JournalExchange value)
+    public void put(final String key, final JournalExchange value)
     {
         if (size * 2 > keys.length)
         {
             resize();
         }
 
-        int idx = hash(key) & mask;
+        int idx = key.hashCode() & mask;
         while (keys[idx] != null)
         {
-            if (CharSequenceUtil.equals(keys[idx], key))
+            if (Objects.equals(keys[idx], key))
             {
                 values[idx] = value;
                 return;
@@ -49,12 +47,12 @@ public class CharSequenceExchangeMap
         size++;
     }
 
-    public JournalExchange get(final CharSequence key)
+    public JournalExchange get(final String key)
     {
-        int idx = hash(key) & mask;
+        int idx = key.hashCode() & mask;
         while (keys[idx] != null)
         {
-            if (CharSequenceUtil.equals(keys[idx], key))
+            if (Objects.equals(keys[idx], key))
             {
                 return values[idx];
             }
@@ -63,12 +61,12 @@ public class CharSequenceExchangeMap
         return null;
     }
 
-    public JournalExchange remove(final CharSequence key)
+    public JournalExchange remove(final String key)
     {
-        int idx = hash(key) & mask;
+        int idx = key.hashCode() & mask;
         while (keys[idx] != null)
         {
-            if (CharSequenceUtil.equals(keys[idx], key))
+            if (Objects.equals(keys[idx], key))
             {
                 final JournalExchange removed = values[idx];
                 keys[idx] = null;
@@ -89,7 +87,7 @@ public class CharSequenceExchangeMap
 
         while (keys[idx] != null)
         {
-            final int slot = hash(keys[idx]) & mask;
+            final int slot = keys[idx].hashCode() & mask;
             final boolean isBetween = (idx >= last)
                     ? (last < slot && slot <= idx)
                     : (last < slot || slot <= idx);
@@ -108,11 +106,11 @@ public class CharSequenceExchangeMap
 
     private void resize()
     {
-        final CharSequence[] oldKeys = keys;
+        final String[] oldKeys = keys;
         final JournalExchange[] oldValues = values;
 
         final int newCap = oldKeys.length * 2;
-        this.keys = new CharSequence[newCap];
+        this.keys = new String[newCap];
         this.values = new JournalExchange[newCap];
         this.mask = newCap - 1;
         this.size = 0;
@@ -126,17 +124,17 @@ public class CharSequenceExchangeMap
         }
     }
 
-    public JournalExchange computeIfAbsent(final CharSequence key, final Function<? super CharSequence, ? extends JournalExchange> mappingFunction)
+    public JournalExchange computeIfAbsent(final String key, final Function<? super String, ? extends JournalExchange> mappingFunction)
     {
         if (size * 2 > keys.length)
         {
             resize();
         }
 
-        int idx = hash(key) & mask;
+        int idx = key.hashCode() & mask;
         while (keys[idx] != null)
         {
-            if (CharSequenceUtil.equals(keys[idx], key))
+            if (Objects.equals(keys[idx], key))
             {
                 return values[idx];
             }

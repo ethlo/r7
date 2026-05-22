@@ -7,21 +7,38 @@ import java.net.InetAddress;
  */
 public interface GatewayRequest
 {
-    /** @return the HTTP method (e.g., GET, POST) */
-    CharSequence method();
+    /**
+     * @return the HTTP method (e.g., GET, POST)
+     */
+    String method();
 
-    /** @return the full request URI */
-    CharSequence uri();
+    /**
+     * @return the full request URI
+     */
+    String uri();
 
-    /** @return the path component of the URI */
-    CharSequence path();
+    /**
+     * @return the path component of the URI
+     */
+    String path();
 
-    /** @return the raw query string, or null if none */
-    CharSequence queryParams();
+    /**
+     * @return the query strings
+     */
+    QueryParams queryParams();
 
-    /** @return the immutable headers received from the client */
+    /**
+     * @return the cookies
+     */
+    Cookies cookies();
+
+    /**
+     * @return the immutable headers received from the client
+     */
     GatewayHeaders headers();
 
-    /** @return the network address of the immediate client */
+    /**
+     * @return the network address of the immediate client
+     */
     InetAddress remoteAddress();
 }

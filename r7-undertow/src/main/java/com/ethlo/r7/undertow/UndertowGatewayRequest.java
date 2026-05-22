@@ -5,10 +5,12 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.api.MutableCookies;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
+import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.undertow.util.HttpStringUtil;
-import com.ethlo.r7.util.HttpStringCharSequence;
+import com.ethlo.r7.util.MutableBaseGatewayRequestParameters;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
@@ -62,7 +64,7 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
             }
         }
 
-        // 3. Fallback to Raw Socket Address (Zero allocations here)
+        // 3. Fallback to Raw Socket Address
         final InetSocketAddress sourceAddress = exchange.getSourceAddress();
         if (sourceAddress != null)
         {
@@ -77,28 +79,34 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     }
 
     @Override
-    public CharSequence method()
+    public String method()
     {
         final HttpString hs = exchange.getRequestMethod();
-        return new HttpStringCharSequence(hs, hs.hashCode(), HttpStringUtil.getBytes(hs));
+        return hs.toString();
     }
 
     @Override
-    public CharSequence uri()
+    public String uri()
     {
         return exchange.getRequestURI();
     }
 
     @Override
-    public CharSequence path()
+    public String path()
     {
         return exchange.getRequestPath();
     }
 
     @Override
-    public CharSequence queryParams()
+    public MutableQueryParams queryParams()
     {
-        return exchange.getDecodedQueryString();
+        return new UndertowMutableQueryParams(exchange);
+    }
+
+    @Override
+    public MutableCookies cookies()
+    {
+        return new UndertowMutableCookies(exchange);
     }
 
     @Override
@@ -114,7 +122,7 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     }
 
     @Override
-    public void path(final CharSequence path)
+    public void path(final String path)
     {
         final String newPath = path.toString();
         this.exchange.setRequestPath(newPath);     // The general path
@@ -123,19 +131,13 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     }
 
     @Override
-    public void queryParams(final CharSequence newQueryParams)
-    {
-        this.exchange.setQueryString(newQueryParams.toString());
-    }
-
-    @Override
-    public void uri(final CharSequence uri)
+    public void uri(final String uri)
     {
         this.exchange.setRequestURI(uri.toString());
     }
 
     @Override
-    public void method(final CharSequence method)
+    public void method(final String method)
     {
         this.exchange.setRequestMethod(HttpString.tryFromString(method.toString()));
     }

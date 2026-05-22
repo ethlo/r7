@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.CRC32C;
 
 import com.ethlo.r7.api.GatewayAttributes;
@@ -21,7 +22,6 @@ import com.ethlo.r7.r7f.fbs.RequestBody;
 import com.ethlo.r7.r7f.fbs.ResponseBody;
 import com.ethlo.r7.r7f.fbs.UpstreamRequest;
 import com.ethlo.r7.r7f.fbs.UpstreamResponse;
-import com.ethlo.r7.r7f.model.ByteBufferAsciiFlyweight;
 
 public final class JournalDecoder
 {
@@ -167,9 +167,9 @@ public final class JournalDecoder
             case EventPayload.ClientRequest ->
             {
                 final ClientRequest ev = (ClientRequest) journalEvent.event(new ClientRequest());
-                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final String reqId = asAscii(ev.reqIdAsByteBuffer());
                 final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final String startLine = asAscii(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsGatewayHeaders(ev);
                 final InetAddress remoteAddress = fromByteBuffer(ev.clientIpAsByteBuffer());
                 final IpSource ipSource = IpSource.valueOf(ev.clientIpSource());
@@ -179,9 +179,9 @@ public final class JournalDecoder
             case EventPayload.UpstreamRequest ->
             {
                 final UpstreamRequest ev = (UpstreamRequest) journalEvent.event(new UpstreamRequest());
-                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final String reqId = asAscii(ev.reqIdAsByteBuffer());
                 final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final String startLine = asAscii(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsUpstreamRequestHeaders(ev);
                 listener.onUpstreamRequest(reqId, level, startLine, headers);
             }
@@ -189,7 +189,7 @@ public final class JournalDecoder
             case EventPayload.RequestBody ->
             {
                 final RequestBody body = (RequestBody) journalEvent.event(new RequestBody());
-                final CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
+                final String reqId = asAscii(body.reqIdAsByteBuffer());
                 final int bodyLen = (int) body.length();
 
                 // Defensive check: only proceed if we have a valid buffer for the claimed length
@@ -203,9 +203,9 @@ public final class JournalDecoder
             case EventPayload.UpstreamResponse ->
             {
                 final UpstreamResponse ev = (UpstreamResponse) journalEvent.event(new UpstreamResponse());
-                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final String reqId = asAscii(ev.reqIdAsByteBuffer());
                 final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final String startLine = asAscii(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsUpstreamResponseHeaders(ev);
                 listener.onUpstreamResponse(reqId, level, startLine, headers);
             }
@@ -213,9 +213,9 @@ public final class JournalDecoder
             case EventPayload.ClientResponse ->
             {
                 final ClientResponse ev = (ClientResponse) journalEvent.event(new ClientResponse());
-                final CharSequence reqId = asAscii(ev.reqIdAsByteBuffer());
+                final String reqId = asAscii(ev.reqIdAsByteBuffer());
                 final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final CharSequence startLine = asAscii(ev.startLineAsByteBuffer());
+                final String startLine = asAscii(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsClientResponseHeaders(ev);
                 listener.onClientResponse(reqId, level, startLine, headers);
             }
@@ -223,7 +223,7 @@ public final class JournalDecoder
             case EventPayload.ResponseBody ->
             {
                 final ResponseBody body = (ResponseBody) journalEvent.event(new ResponseBody());
-                final CharSequence reqId = asAscii(body.reqIdAsByteBuffer());
+                final String reqId = asAscii(body.reqIdAsByteBuffer());
                 final int bodyLen = (int) body.length();
                 // Defensive check: only proceed if we have a valid buffer for the claimed length
                 if (bodyLen > 0 && buffer != null)
@@ -236,7 +236,7 @@ public final class JournalDecoder
             case EventPayload.EndExchange ->
             {
                 final EndExchange end = (EndExchange) journalEvent.event(new EndExchange());
-                final CharSequence reqId = asAscii(end.reqIdAsByteBuffer());
+                final String reqId = asAscii(end.reqIdAsByteBuffer());
                 final long clientStartTs = end.clientStart();
                 final long clientEndTs = end.clientEnd();
                 final long proxyStartTs = end.proxyStart();
@@ -268,12 +268,26 @@ public final class JournalDecoder
         return bodyChunk;
     }
 
-    public static CharSequence asAscii(ByteBuffer buf)
+
+    public static String asAscii(final ByteBuffer buf)
     {
         if (buf == null)
         {
             return null;
         }
-        return new ByteBufferAsciiFlyweight(buf, buf.position(), buf.remaining());
+
+        if (buf.hasArray())
+        {
+            // Zero-copy extraction of the backing array for heap buffers
+            return new String(buf.array(), buf.arrayOffset() + buf.position(), buf.remaining(), StandardCharsets.US_ASCII);
+        }
+
+        // Fallback for direct buffers
+        final byte[] bytes = new byte[buf.remaining()];
+
+        // Use duplicate() to avoid mutating the original buffer's position
+        buf.duplicate().get(bytes);
+
+        return new String(bytes, StandardCharsets.US_ASCII);
     }
 }

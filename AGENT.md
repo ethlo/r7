@@ -1,7 +1,6 @@
 # r7 Proxy: Agent Context & Rules
 
 ## Core Philosophy: Mechanical Sympathy
-- **Zero-Allocation**: Avoid `new` in the hot path. Use `CharSequence`, `ByteBuffer`, and reusable objects.
 - **Off-Heap Primary**: Use `MappedByteBuffer` for sharded journals to bypass the GC.
 - **Direct I/O**: Prioritize `DirectByteBuffer` for socket-to-journal transfers.
 

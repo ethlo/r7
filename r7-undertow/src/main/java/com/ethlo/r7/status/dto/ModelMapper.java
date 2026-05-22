@@ -33,10 +33,10 @@ public class ModelMapper
                 .toList() : Collections.emptyList();
 
         return new RouteConfigDto(
-                def.id().toString(),
+                def.id(),
                 toPredicateNode(route.predicate()),
                 journal,
-                def.upstream().targets().toString(),
+                def.upstream() != null ? def.upstream().targets().toString() : null,
                 filters,
                 PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]))
         );

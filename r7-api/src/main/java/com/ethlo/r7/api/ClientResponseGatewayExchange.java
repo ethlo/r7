@@ -6,16 +6,24 @@ package com.ethlo.r7.api;
  */
 public interface ClientResponseGatewayExchange extends GatewayExchange
 {
-    /** @return the original client request */
+    /**
+     * @return the original client request
+     */
     GatewayRequest clientRequest();
 
-    /** @return the request as sent to the upstream service */
+    /**
+     * @return the request as sent to the upstream service
+     */
     GatewayRequest upstreamRequest();
 
-    /** @return the response received from the upstream service */
+    /**
+     * @return the response received from the upstream service
+     */
     GatewayResponse upstreamResponse();
 
-    /** @return the mutable response intended for the client */
+    /**
+     * @return the mutable response intended for the client
+     */
     MutableGatewayResponse clientResponse();
 
     /**

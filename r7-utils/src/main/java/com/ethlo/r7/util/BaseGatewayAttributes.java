@@ -1,10 +1,12 @@
 package com.ethlo.r7.util;
 
+import java.util.Objects;
+
 import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 
-class BaseGatewayAttributes extends ArrayBackedPairStorage<CharSequence, CharSequence> implements GatewayHeaders
+class BaseGatewayAttributes extends ArrayBackedPairStorage<String, String> implements GatewayHeaders
 {
     protected BaseGatewayAttributes()
     {
@@ -17,13 +19,13 @@ class BaseGatewayAttributes extends ArrayBackedPairStorage<CharSequence, CharSeq
     }
 
     @Override
-    protected boolean keysEqual(CharSequence a, CharSequence b)
+    protected boolean keysEqual(String a, String b)
     {
-        return CharSequenceUtil.equals(a, b);
+        return Objects.equals(a, b);
     }
 
     @Override
-    public CharSequence getFirst(CharSequence name)
+    public String getFirst(String name)
     {
         return getFirstInternal(name);
     }
@@ -41,7 +43,7 @@ class BaseGatewayAttributes extends ArrayBackedPairStorage<CharSequence, CharSeq
     }
 
     @Override
-    public Iterable<CharSequence> getAll(CharSequence name)
+    public Iterable<String> getAll(String name)
     {
         return getAllInternal(name);
     }

@@ -12,14 +12,14 @@ public interface GatewayRoute
      *
      * @return the route ID
      */
-    CharSequence id();
+    String id();
 
     /**
      * The destination URIs where matching traffic should be proxied.
      *
      * @return the list of upstream destination URIs
      */
-    List<CharSequence> uri();
+    List<String> uri();
 
     /**
      * The logic used to determine if an incoming request matches this route.

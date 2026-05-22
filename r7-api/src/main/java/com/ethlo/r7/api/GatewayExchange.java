@@ -12,7 +12,7 @@ public interface GatewayExchange
      *
      * @return the unique request ID
      */
-    CharSequence requestId();
+    String requestId();
 
     /**
      * Metadata storage exclusively for telemetry, journaling, and logging.

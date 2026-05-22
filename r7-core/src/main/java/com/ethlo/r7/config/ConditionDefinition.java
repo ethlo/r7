@@ -190,7 +190,7 @@ public final class ConditionDefinition
 
         if (this.not != null)
         {
-            parts.add("NOT(" + this.not.toString() + ")");
+            parts.add("NOT(" + this.not + ")");
         }
 
         if (this.and != null && !this.and.isEmpty())

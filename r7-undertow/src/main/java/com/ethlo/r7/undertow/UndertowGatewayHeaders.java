@@ -3,11 +3,8 @@ package com.ethlo.r7.undertow;
 import java.util.Collections;
 
 import com.ethlo.r7.api.EntryConsumer;
-import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
-import com.ethlo.r7.undertow.util.HttpStringUtil;
-import com.ethlo.r7.util.HttpStringCharSequence;
 import io.undertow.util.HeaderMap;
 import io.undertow.util.HeaderValues;
 import io.undertow.util.HttpString;
@@ -22,47 +19,45 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
     }
 
     @Override
-    public CharSequence getFirst(final CharSequence name)
+    public String getFirst(final String name)
     {
-        // Undertow's getFirst(HttpString) is the fastest path
         return headerMap.getFirst(toHttpString(name));
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public Iterable<CharSequence> getAll(final CharSequence name)
+    public Iterable<String> getAll(final String name)
     {
         final HeaderValues values = headerMap.get(toHttpString(name));
-        return values != null ? (Iterable<CharSequence>) (Object) values : Collections.emptyList();
+        return values != null ? values : Collections.emptyList();
     }
 
     @Override
-    public void add(final CharSequence name, final CharSequence value)
+    public void add(final String name, final String value)
     {
-        headerMap.add(toHttpString(name), value.toString());
+        headerMap.add(toHttpString(name), value);
     }
 
     @Override
-    public MutableGatewayHeaders set(final CharSequence name, final CharSequence value)
+    public MutableGatewayHeaders set(final String name, final String value)
     {
-        headerMap.put(toHttpString(name), value.toString());
-        return null;
+        headerMap.put(toHttpString(name), value);
+        return this;
     }
 
     @Override
-    public void remove(final CharSequence name)
+    public void remove(final String name)
     {
         headerMap.remove(toHttpString(name));
     }
 
     @Override
-    public void set(final CharSequence name, final Iterable<CharSequence> values)
+    public void set(final String name, final Iterable<String> values)
     {
         final HttpString hs = toHttpString(name);
         headerMap.remove(hs);
-        for (CharSequence v : values)
+        for (String v : values)
         {
-            headerMap.add(hs, v.toString());
+            headerMap.add(hs, v);
         }
     }
 
@@ -72,13 +67,10 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
         int totalCount = 0;
         for (HeaderValues values : headerMap)
         {
-            // Wrap once per key group, not per value
             final HttpString hs = values.getHeaderName();
-            final HttpStringCharSequence wrappedName = new HttpStringCharSequence(hs, hs.hashCode(), HttpStringUtil.getBytes(hs));
-
             for (String value : values)
             {
-                consumer.accept(wrappedName, value);
+                consumer.accept(hs.toString(), value);
                 totalCount++;
             }
         }
@@ -88,14 +80,9 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
     /**
      * Minimizes HttpString allocations by checking if we already have one.
      */
-    private HttpString toHttpString(CharSequence name)
+    private HttpString toHttpString(String name)
     {
-        if (name instanceof HttpStringCharSequence wrapper)
-        {
-            return (HttpString) wrapper.getSource();
-        }
-        // Undertow's tryFromString is optimized for well-known headers
-        return HttpString.tryFromString(name.toString());
+        return HttpString.tryFromString(name);
     }
 
     @Override
@@ -105,7 +92,7 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
         for (HeaderValues headerValues : headerMap)
         {
             final HttpString hm = headerValues.getHeaderName();
-            final CharSequence name = HeaderNameCache.wrap(hm);
+            final String name = hm.toString();
             for (String value : headerValues)
             {
                 // Pass the state explicitly

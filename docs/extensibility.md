@@ -62,7 +62,7 @@ public final class HasHeaderFactory implements GatewayPredicateFactory<HasHeader
 
         @Override
         public boolean test(final GatewayRequest request) {
-            final CharSequence headerValue = request.headers().getFirst(this.headerName);
+            final String headerValue = request.headers().getFirst(this.headerName);
             if (headerValue != null) {
                 return true;
             }
@@ -162,7 +162,7 @@ public final class BlockTokenFilterFactory implements GatewayFilterFactory<Block
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange) {
-            final CharSequence incomingToken = exchange.clientRequest().headers().getFirst(this.tokenHeader);
+            final String incomingToken = exchange.clientRequest().headers().getFirst(this.tokenHeader);
 
             if (incomingToken != null) {
                 if (incomingToken.toString().equals(this.blockedToken)) {

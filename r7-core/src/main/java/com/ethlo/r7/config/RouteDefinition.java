@@ -8,7 +8,7 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
-public record RouteDefinition(CharSequence id,
+public record RouteDefinition(String id,
                               UpstreamConfig upstream,
                               ConditionDefinition match,
                               JournalDefinition journal,

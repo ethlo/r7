@@ -65,7 +65,7 @@ public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactor
         @Override
         public boolean test(GatewayRequest request)
         {
-            // Note: Matcher handles CharSequence natively, so no .toString() needed!
+            // Note: Matcher handles String natively, so no .toString() needed!
             return pattern.matcher(request.uri()).matches();
         }
 

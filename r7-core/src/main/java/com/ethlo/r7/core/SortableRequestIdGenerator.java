@@ -24,7 +24,7 @@ public class SortableRequestIdGenerator implements RequestIdGenerator
     }
 
     @Override
-    public CharSequence generate()
+    public String generate()
     {
         final char[] buffer = new char[TOTAL_LENGTH];
         final ThreadLocalRandom rng = ThreadLocalRandom.current();
@@ -47,7 +47,7 @@ public class SortableRequestIdGenerator implements RequestIdGenerator
             random /= 58;
         }
 
-        return new FastCharSequence(buffer);
+        return new String(buffer);
     }
 
     /**
@@ -56,7 +56,7 @@ public class SortableRequestIdGenerator implements RequestIdGenerator
      * @param id The 16-character Base58 ID
      * @return The epoch millisecond timestamp
      */
-    public long parseTimestamp(final CharSequence id)
+    public long parseTimestamp(final String id)
     {
         if (id == null || id.length() < TIMESTAMP_CHARS)
         {
@@ -75,50 +75,5 @@ public class SortableRequestIdGenerator implements RequestIdGenerator
             timestamp = (timestamp * 58) + value;
         }
         return timestamp;
-    }
-
-    private static class FastCharSequence implements CharSequence
-    {
-        private final char[] data;
-        private volatile String cachedString = null;
-
-        private FastCharSequence(final char[] data)
-        {
-            this.data = data;
-        }
-
-        @Override
-        public int length()
-        {
-            return data.length;
-        }
-
-        @Override
-        public char charAt(final int index)
-        {
-            return data[index];
-        }
-
-        @Override
-        public CharSequence subSequence(final int start, final int end)
-        {
-            return new String(data, start, end - start);
-        }
-
-        @Override
-        public String toString()
-        {
-            if (cachedString == null)
-            {
-                synchronized (this)
-                {
-                    if (cachedString == null)
-                    {
-                        cachedString = new String(data);
-                    }
-                }
-            }
-            return cachedString;
-        }
     }
 }

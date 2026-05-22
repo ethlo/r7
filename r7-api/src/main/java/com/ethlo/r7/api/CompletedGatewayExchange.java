@@ -8,7 +8,7 @@ public interface CompletedGatewayExchange extends GatewayExchange
     /**
      * @return the unique request ID
      */
-    CharSequence requestId();
+    String requestId();
 
     /**
      * @return the original client request

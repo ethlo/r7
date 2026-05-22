@@ -8,20 +8,20 @@ public interface MutableMultiAttributes
     /**
      * Replaces all existing values for the name with a single value
      */
-    MutableMultiAttributes set(CharSequence name, CharSequence value);
+    MutableMultiAttributes set(String name, String value);
 
     /**
      * Removes all values associated with the name
      */
-    void remove(CharSequence name);
+    void remove(String name);
 
     /**
      * Replaces all existing values with the provided collection
      */
-    void set(CharSequence name, Iterable<CharSequence> values);
+    void set(String name, Iterable<String> values);
 
     /**
      * Appends a value to the existing set for the name
      */
-    void add(CharSequence name, CharSequence value);
+    void add(String name, String value);
 }

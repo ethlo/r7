@@ -31,7 +31,7 @@ public final class ShardedJournalWriter<T extends Journal>
         }
     }
 
-    public T getJournal(CharSequence reqId)
+    public T getJournal(String reqId)
     {
         final int h = reqId.hashCode();
         final int shardIndex = (h ^ (h >>> 16)) & mask;

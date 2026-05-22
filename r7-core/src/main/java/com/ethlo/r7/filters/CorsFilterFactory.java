@@ -97,7 +97,7 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
             // Intercept Preflight OPTIONS requests
             if ("OPTIONS".equals(method))
             {
-                final CharSequence originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
+                final String originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
                 final String origin = originOpt != null ? originOpt.toString() : null;
                 if (origin != null)
                 {
@@ -142,7 +142,7 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
             // Decorate standard requests with the resulting CORS headers
-            final CharSequence originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
+            final String originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
             final String origin = originOpt != null ? originOpt.toString() : null;
 
             if (origin != null)
