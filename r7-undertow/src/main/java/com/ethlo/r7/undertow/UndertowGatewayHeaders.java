@@ -21,29 +21,27 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
     @Override
     public String getFirst(final String name)
     {
-        // Undertow's getFirst(HttpString) is the fastest path
         return headerMap.getFirst(toHttpString(name));
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public Iterable<String> getAll(final String name)
     {
         final HeaderValues values = headerMap.get(toHttpString(name));
-        return values != null ? (Iterable<String>) (Object) values : Collections.emptyList();
+        return values != null ? values : Collections.emptyList();
     }
 
     @Override
     public void add(final String name, final String value)
     {
-        headerMap.add(toHttpString(name), value.toString());
+        headerMap.add(toHttpString(name), value);
     }
 
     @Override
     public MutableGatewayHeaders set(final String name, final String value)
     {
-        headerMap.put(toHttpString(name), value.toString());
-        return null;
+        headerMap.put(toHttpString(name), value);
+        return this;
     }
 
     @Override
@@ -59,7 +57,7 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
         headerMap.remove(hs);
         for (String v : values)
         {
-            headerMap.add(hs, v.toString());
+            headerMap.add(hs, v);
         }
     }
 
