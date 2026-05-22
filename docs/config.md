@@ -482,7 +482,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          baseDirectory: /var/www/html/
+          base_directory: /var/www/html/
     upstream: null
 
   # Mock response serving (Short-circuits upstream phase)
