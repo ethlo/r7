@@ -2,6 +2,7 @@ package com.ethlo.r7.status.dto;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -27,17 +28,12 @@ public class ModelMapper
                 def.journal().response().statusOverrides()
         );
 
-        final List<FilterDto> filters = List.of();
-
-        // FIXME!
-        /*def.filters() != null ? def.filters().stream()
+        final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
                 .map(f -> new FilterDto(f.name(), f.args()))
                 .toList() : Collections.emptyList();
 
-         */
-
         return new RouteConfigDto(
-                def.id().toString(),
+                def.id(),
                 toPredicateNode(route.predicate()),
                 journal,
                 def.upstream() != null ? def.upstream().targets().toString() : null,
