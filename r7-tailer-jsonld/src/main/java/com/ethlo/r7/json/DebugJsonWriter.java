@@ -130,8 +130,8 @@ public class DebugJsonWriter implements ExchangeCompletionListener
     }
 
     private void writeExchangeNode(
-            JournalLevel reqLevel, CharSequence reqLine, GatewayHeaders reqHeaders,
-            JournalLevel resLevel, CharSequence resLine, GatewayHeaders resHeaders) throws IOException
+            JournalLevel reqLevel, String reqLine, GatewayHeaders reqHeaders,
+            JournalLevel resLevel, String resLine, GatewayHeaders resHeaders) throws IOException
     {
         generator.writeStartObject();
 
@@ -156,7 +156,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         generator.writeEndObject();
     }
 
-    private void writeRequestLine(final JsonGenerator generator, final CharSequence reqLine) throws IOException
+    private void writeRequestLine(final JsonGenerator generator, final String reqLine) throws IOException
     {
         if (reqLine == null)
         {
@@ -194,7 +194,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         generator.writeNumberProperty(name, value);
     }
 
-    private void writePart(final JsonGenerator generator, final int index, final CharSequence seq, final int start, final int end) throws IOException
+    private void writePart(final JsonGenerator generator, final int index, final String seq, final int start, final int end) throws IOException
     {
         final String fieldName = (index == 0) ? "method" : "path";
 
@@ -219,6 +219,6 @@ public class DebugJsonWriter implements ExchangeCompletionListener
     private String getHeader(GatewayHeaders headers, String key)
     {
         if (headers == null) return null;
-        return Optional.ofNullable(headers.getFirst(key)).map(CharSequence::toString).orElse(null);
+        return Optional.ofNullable(headers.getFirst(key)).map(String::toString).orElse(null);
     }
 }

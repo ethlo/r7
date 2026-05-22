@@ -15,27 +15,27 @@ import com.ethlo.r7.api.IpSource;
  */
 public final class JournalExchange
 {
-    private final CharSequence requestId;
+    private final String requestId;
     private final List<ByteBuffer> requestBodyFragments = new ArrayList<>(0);
     private final List<ByteBuffer> responseBodyFragments = new ArrayList<>(0);
 
     // --- Slice 1: Pristine Ingress ---
-    private CharSequence clientRequestStartLine;
+    private String clientRequestStartLine;
     private GatewayHeaders clientRequestHeaders;
     private JournalLevel clientRequestLevel;
 
     // --- Slice 2: Upstream Intent ---
-    private CharSequence upstreamRequestStartLine;
+    private String upstreamRequestStartLine;
     private GatewayHeaders upstreamRequestHeaders;
     private JournalLevel upstreamRequestLevel;
 
     // --- Slice 3: Raw Backend Return ---
-    private CharSequence upstreamResponseStartLine;
+    private String upstreamResponseStartLine;
     private GatewayHeaders upstreamResponseHeaders;
     private JournalLevel upstreamResponseLevel;
 
     // --- Slice 4: Final Client Egress ---
-    private CharSequence clientResponseStartLine;
+    private String clientResponseStartLine;
     private GatewayHeaders clientResponseHeaders;
     private JournalLevel clientResponseLevel;
 
@@ -56,12 +56,12 @@ public final class JournalExchange
     private InetAddress remoteAddress;
     private IpSource remoteAddressSource;
 
-    public JournalExchange(CharSequence requestId)
+    public JournalExchange(String requestId)
     {
         this.requestId = requestId;
     }
 
-    public void setClientRequest(CharSequence line, JournalLevel level, GatewayHeaders headers, InetAddress remoteAddress, final IpSource ipSource)
+    public void setClientRequest(String line, JournalLevel level, GatewayHeaders headers, InetAddress remoteAddress, final IpSource ipSource)
     {
         this.clientRequestStartLine = line;
         this.clientRequestLevel = level;
@@ -70,21 +70,21 @@ public final class JournalExchange
         this.remoteAddressSource = ipSource;
     }
 
-    public void setUpstreamRequest(CharSequence line, JournalLevel level, GatewayHeaders headers)
+    public void setUpstreamRequest(String line, JournalLevel level, GatewayHeaders headers)
     {
         this.upstreamRequestStartLine = line;
         this.upstreamRequestLevel = level;
         this.upstreamRequestHeaders = headers;
     }
 
-    public void setUpstreamResponse(CharSequence line, JournalLevel level, GatewayHeaders headers)
+    public void setUpstreamResponse(String line, JournalLevel level, GatewayHeaders headers)
     {
         this.upstreamResponseStartLine = line;
         this.upstreamResponseLevel = level;
         this.upstreamResponseHeaders = headers;
     }
 
-    public void setClientResponse(CharSequence line, JournalLevel level, GatewayHeaders headers)
+    public void setClientResponse(String line, JournalLevel level, GatewayHeaders headers)
     {
         this.clientResponseStartLine = line;
         this.clientResponseLevel = level;
@@ -116,12 +116,12 @@ public final class JournalExchange
         this.journaledResponseCrc32 = responseCrc32;
     }
 
-    public CharSequence getRequestId()
+    public String getRequestId()
     {
         return requestId;
     }
 
-    public CharSequence getClientRequestStartLine()
+    public String getClientRequestStartLine()
     {
         return clientRequestStartLine;
     }
@@ -136,7 +136,7 @@ public final class JournalExchange
         return clientRequestLevel;
     }
 
-    public CharSequence getUpstreamRequestStartLine()
+    public String getUpstreamRequestStartLine()
     {
         return upstreamRequestStartLine;
     }
@@ -151,7 +151,7 @@ public final class JournalExchange
         return upstreamRequestLevel;
     }
 
-    public CharSequence getUpstreamResponseStartLine()
+    public String getUpstreamResponseStartLine()
     {
         return upstreamResponseStartLine;
     }
@@ -166,7 +166,7 @@ public final class JournalExchange
         return upstreamResponseLevel;
     }
 
-    public CharSequence getClientResponseStartLine()
+    public String getClientResponseStartLine()
     {
         return clientResponseStartLine;
     }

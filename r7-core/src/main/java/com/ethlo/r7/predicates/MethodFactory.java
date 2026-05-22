@@ -2,12 +2,12 @@ package com.ethlo.r7.predicates;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -58,10 +58,13 @@ public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Conf
         @Override
         public boolean test(GatewayRequest request)
         {
-            final CharSequence requestMethod = request.method();
+            final String requestMethod = request.method();
             for (final String m : include)
             {
-                if (CharSequenceUtil.equals(m, requestMethod)) return true;
+                if (Objects.equals(m, requestMethod))
+                {
+                    return true;
+                }
             }
             return false;
         }

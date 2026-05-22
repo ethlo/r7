@@ -4,8 +4,10 @@ import java.net.InetAddress;
 import java.util.List;
 
 import com.ethlo.r7.api.EntryConsumer;
+import com.ethlo.r7.api.MutableCookies;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
+import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 
 /**
@@ -24,37 +26,37 @@ public final class UnproxiedUpstreamRequest implements MutableGatewayRequest
     MutableGatewayHeaders EMPTY_HEADERS = new MutableGatewayHeaders()
     {
         @Override
-        public MutableGatewayHeaders set(final CharSequence name, final CharSequence value)
+        public MutableGatewayHeaders set(final String name, final String value)
         {
             return this;
         }
 
         @Override
-        public void remove(final CharSequence name)
+        public void remove(final String name)
         {
 
         }
 
         @Override
-        public void set(final CharSequence name, final Iterable<CharSequence> values)
+        public void set(final String name, final Iterable<String> values)
         {
 
         }
 
         @Override
-        public void add(final CharSequence name, final CharSequence value)
+        public void add(final String name, final String value)
         {
 
         }
 
         @Override
-        public CharSequence getFirst(final CharSequence name)
+        public String getFirst(final String name)
         {
             return null;
         }
 
         @Override
-        public Iterable<CharSequence> getAll(final CharSequence name)
+        public Iterable<String> getAll(final String name)
         {
             return List.of();
         }
@@ -95,15 +97,21 @@ public final class UnproxiedUpstreamRequest implements MutableGatewayRequest
     }
 
     @Override
-    public CharSequence path()
+    public String path()
     {
         return "";
     }
 
     @Override
-    public CharSequence queryParams()
+    public MutableQueryParams queryParams()
     {
-        return "";
+        return null;
+    }
+
+    @Override
+    public MutableCookies cookies()
+    {
+        return null;
     }
 
     /**
@@ -119,22 +127,17 @@ public final class UnproxiedUpstreamRequest implements MutableGatewayRequest
      * No-op: Mutations are ignored on a non-existent upstream request
      */
     @Override
-    public void path(final CharSequence newPath)
+    public void path(final String newPath)
     {
     }
 
     @Override
-    public void queryParams(final CharSequence newQueryParams)
+    public void uri(final String uri)
     {
     }
 
     @Override
-    public void uri(final CharSequence uri)
-    {
-    }
-
-    @Override
-    public void method(final CharSequence method)
+    public void method(final String method)
     {
     }
 

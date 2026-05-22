@@ -18,20 +18,20 @@ class MutableBaseGatewayAttributes extends BaseGatewayAttributes implements Muta
     }
 
     @Override
-    public void add(CharSequence name, CharSequence value)
+    public void add(String name, String value)
     {
         addInternal(name, value);
     }
 
     @Override
-    public MutableGatewayHeaders set(CharSequence name, CharSequence value)
+    public MutableGatewayHeaders set(String name, String value)
     {
         setInternal(name, value);
         return null;
     }
 
     @Override
-    public void remove(CharSequence name)
+    public void remove(String name)
     {
         removeInternal(name);
     }
@@ -49,16 +49,16 @@ class MutableBaseGatewayAttributes extends BaseGatewayAttributes implements Muta
     }
 
     @Override
-    public Iterable<CharSequence> getAll(CharSequence name)
+    public Iterable<String> getAll(String name)
     {
         return getAllInternal(name);
     }
 
     @Override
-    public void set(CharSequence name, Iterable<CharSequence> values)
+    public void set(String name, Iterable<String> values)
     {
         removeInternal(name);
-        for (CharSequence v : values)
+        for (String v : values)
         {
             addInternal(name, v);
         }

@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 
+import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 
 public final class FilterRegistry
@@ -31,7 +32,7 @@ public final class FilterRegistry
         GatewayFilterFactory factory = factories.get(name);
         if (factory == null)
         {
-            throw new IllegalArgumentException("Unknown filter factory: " + name);
+            throw new ConfigurationException("Unknown filter: " + name);
         }
         return factory;
     }

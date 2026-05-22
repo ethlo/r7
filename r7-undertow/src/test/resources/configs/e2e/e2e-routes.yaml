@@ -5,4 +5,44 @@ routes:
           prefix: /
     upstream:
       targets:
-        - url: "http://host.testcontainers.internal:${WIREMOCK_PORT}/"
+        - url: http://host.testcontainers.internal:${WIREMOCK_PORT}/
+
+  - id: static-test
+    match:
+      - PathStartsWith:
+          prefix: /static/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /app/static/
+
+    upstream: null
+
+  - id: query-modify-test
+    match:
+      - PathStartsWith:
+          prefix: /query-modify
+    filters:
+      - AddQueryParameter:
+          name: added_q
+          value: injected_value
+      - RemoveQueryParameter:
+          name: removed_q
+    upstream:
+      targets:
+        - url: http://host.testcontainers.internal:${WIREMOCK_PORT}
+
+  - id: cookie-modify-test
+    match:
+      - PathStartsWith:
+          prefix: /cookie-modify
+    filters:
+      - AddRequestCookie:
+          name: added_c
+          value: injected_cookie
+      - RemoveRequestCookie:
+          name: removed_c
+    upstream:
+      targets:
+        - url: http://host.testcontainers.internal:${WIREMOCK_PORT}

@@ -14,8 +14,8 @@ import com.ethlo.r7.api.GatewayRoute;
 
 public class DefaultGatewayRoute implements GatewayRoute
 {
-    private final CharSequence id;
-    private final List<CharSequence> uri;
+    private final String id;
+    private final List<String> uri;
     private final GatewayPredicate predicate;
     private final List<GatewayFilter> filters;
     private final RouteJournalConfig journal;
@@ -25,7 +25,7 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final ClientResponseGatewayFilter[] beforeCommitGatewayFilters;
     private final UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters;
 
-    public DefaultGatewayRoute(final List<CharSequence> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
         this.id = routeDefinition.id();
         this.uri = uri;
@@ -59,13 +59,13 @@ public class DefaultGatewayRoute implements GatewayRoute
 
 
     @Override
-    public CharSequence id()
+    public String id()
     {
         return id;
     }
 
     @Override
-    public List<CharSequence> uri()
+    public List<String> uri()
     {
         return uri;
     }

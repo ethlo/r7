@@ -8,7 +8,7 @@ import io.undertow.util.HeaderMap;
 import io.undertow.util.HeaderValues;
 import io.undertow.util.HttpString;
 
-public final class ImmutableHeaderSnapshot extends ArrayBackedPairStorage<HttpString, CharSequence> implements GatewayHeaders
+public final class ImmutableHeaderSnapshot extends ArrayBackedPairStorage<HttpString, String> implements GatewayHeaders
 {
     public ImmutableHeaderSnapshot(final HeaderMap source)
     {
@@ -39,13 +39,13 @@ public final class ImmutableHeaderSnapshot extends ArrayBackedPairStorage<HttpSt
     }
 
     @Override
-    public CharSequence getFirst(final CharSequence name)
+    public String getFirst(final String name)
     {
         return getFirstInternal(new HttpString(name.toString()));
     }
 
     @Override
-    public Iterable<CharSequence> getAll(final CharSequence name)
+    public Iterable<String> getAll(final String name)
     {
         return getAllInternal(new HttpString(name.toString()));
     }
@@ -53,12 +53,12 @@ public final class ImmutableHeaderSnapshot extends ArrayBackedPairStorage<HttpSt
     @Override
     public int forEach(final EntryConsumer consumer)
     {
-        return forEachInternal(consumer, (c, k, v) -> c.accept(HeaderNameCache.wrap(k), v));
+        return forEachInternal(consumer, (c, k, v) -> c.accept(k.toString(), v));
     }
 
     @Override
     public <S> int forEach(final S state, final StatefulEntryConsumer<S> consumer)
     {
-        return forEachInternal(state, (s, k, v) -> consumer.accept(s, HeaderNameCache.wrap(k), v));
+        return forEachInternal(state, (s, k, v) -> consumer.accept(s, k.toString(), v));
     }
 }

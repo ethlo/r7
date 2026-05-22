@@ -2,6 +2,7 @@ package com.ethlo.r7.undertow;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.file.Paths;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
@@ -44,9 +45,11 @@ import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
+import com.ethlo.r7.filters.StaticContentGatewayFilter;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.status.PeriodicUpstreamHealthMonitor;
 import com.ethlo.r7.status.TrafficMetricsHandler;
 import com.ethlo.r7.status.UpstreamHealthMonitor;
@@ -59,13 +62,14 @@ import com.ethlo.r7.util.ImmutableGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
-import com.ethlo.r7.r7f.R7fJournal;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.proxy.LoadBalancingProxyClient;
 import io.undertow.server.handlers.proxy.ProxyClient;
 import io.undertow.server.handlers.proxy.ProxyHandler;
+import io.undertow.server.handlers.resource.PathResourceManager;
+import io.undertow.server.handlers.resource.ResourceHandler;
 import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
@@ -76,11 +80,12 @@ public final class R7UndertowHandler implements HttpHandler
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
     static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
-    private static final CharSequence ROUTE_ID_KEY = "gateway.route.id";
-    private static final CharSequence UPSTREAM_TARGET_KEY = "gateway.target";
-    private static final CharSequence SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
+    private static final String ROUTE_ID_KEY = "gateway.route.id";
+    private static final String UPSTREAM_TARGET_KEY = "gateway.target";
+    private static final String SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
     private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
     private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
+    private static final ConcurrentHashMap<String, ResourceHandler> staticHandlers = new ConcurrentHashMap<>();
     private final Map<String, RouteUpstreamContext> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -110,7 +115,7 @@ public final class R7UndertowHandler implements HttpHandler
         return -1;
     }
 
-    private static void handleCompleted(final StatefulJournal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final HttpServerExchange serverExchange)
+    private static void handleCompleted(final StatefulJournal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final String requestId, final HttpServerExchange serverExchange)
     {
         if (!gatewayExchange.wasProxied())
         {
@@ -178,6 +183,31 @@ public final class R7UndertowHandler implements HttpHandler
 
     private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
     {
+        // Check if the core filter requested a native static handoff
+        final String staticBasePath = gatewayExchange.attributes().getFirst(StaticContentGatewayFilter.STATIC_CONTENT_PATH_KEY);
+
+        if (staticBasePath != null)
+        {
+            try
+            {
+                // Retrieve or build the Undertow ResourceHandler for this directory
+                final ResourceHandler handler = staticHandlers.computeIfAbsent(staticBasePath.toString(), path ->
+                        new ResourceHandler(new PathResourceManager(Paths.get(path), 100))
+                                .setDirectoryListingEnabled(false)
+                );
+
+                // Let Undertow handle the file streaming, MIME types, and zero-copy IO
+                handler.handleRequest(exchange);
+                return;
+            }
+            catch (Exception e)
+            {
+                exchange.setStatusCode(HttpStatuses.INTERNAL_SERVER_ERROR);
+                exchange.getResponseSender().send("Error serving static content");
+                return;
+            }
+        }
+
         final ShortCircuitGatewayResponse terminationResponse = gatewayExchange.getShortCircuitGatewayResponse();
         gatewayExchange.clientResponse().status(terminationResponse.status());
         terminationResponse.headers().forEach(((name, value) -> gatewayExchange.clientResponse().headers().set(name, value)));
@@ -258,8 +288,17 @@ public final class R7UndertowHandler implements HttpHandler
 
     private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route)
     {
-        final CharSequence requestId = requestIdGenerator.generate();
-        final GatewayRequest requestCopy = new ImmutableGatewayRequest(new ImmutableHeaderSnapshot(exchange.getRequestHeaders()), exchange.getRequestPath(), exchange.getRequestURI(), exchange.getRequestMethod().toString(), exchange.getDecodedQueryString(), incomingRequest.remoteAddress(), incomingRequest.getRemoteAddressSource());
+        final String requestId = requestIdGenerator.generate();
+        final GatewayRequest requestCopy = new ImmutableGatewayRequest(
+                new ImmutableHeaderSnapshot(exchange.getRequestHeaders()),
+                exchange.getRequestPath(),
+                exchange.getRequestURI(),
+                exchange.getRequestMethod().toString(),
+                new UndertowQueryParams(exchange.getQueryParameters()),
+                new UndertowMutableCookies(exchange),
+                incomingRequest.remoteAddress(),
+                incomingRequest.getRemoteAddressSource()
+        );
         final MutableGatewayResponse clientResponse = new UndertowGatewayResponse(exchange);
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
@@ -281,6 +320,12 @@ public final class R7UndertowHandler implements HttpHandler
         for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())
         {
             filter.onUpstreamRequest(gatewayExchange);
+
+            if (gatewayExchange.isShortCircuited())
+            {
+                shortCircuit(filter, exchange, route, gatewayExchange, statefulJournal);
+                return;
+            }
         }
 
         exchange.addResponseCommitListener(ex ->
@@ -321,7 +366,7 @@ public final class R7UndertowHandler implements HttpHandler
                             .setTtl(Math.toIntExact(pConfig.ttl().toMillis()));
 
                     final Set<URI> targets = route.uri().stream()
-                            .map(CharSequence::toString)
+                            .map(String::toString)
                             .map(URI::create)
                             .collect(Collectors.toSet());
 
@@ -424,16 +469,17 @@ public final class R7UndertowHandler implements HttpHandler
      * Must be invoked by the configuration live-reload listener
      * whenever routes.yaml changes.
      */
-    public void evictProxyCache()
+    public void reloadState()
     {
         logger.debug("Evicting route proxy cache for live reload");
-
         for (final RouteUpstreamContext context : this.routeProxyCache.values())
         {
             context.stop();
         }
-
         this.routeProxyCache.clear();
+
+        logger.debug("Evicting static handlers");
+        staticHandlers.clear();
     }
 
     private void executeFallback(final DefaultGatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
@@ -478,7 +524,7 @@ public final class R7UndertowHandler implements HttpHandler
         exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id().toString() + "'");
     }
 
-    private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final CharSequence requestId, final boolean isWebSocket)
+    private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final String requestId, final boolean isWebSocket)
     {
         if (journalConfig == null)
         {
@@ -565,7 +611,7 @@ public final class R7UndertowHandler implements HttpHandler
         continueUpstream(exchange, route, gatewayExchange, statefulJournal);
     }
 
-    private void attachWebSocketLifecycleTracking(final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final Journal journal, final CharSequence requestId)
+    private void attachWebSocketLifecycleTracking(final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final Journal journal, final String requestId)
     {
         exchange.getConnection().addCloseListener(connection -> {
             final long requestEndTs = ClockSource.now();

@@ -63,7 +63,7 @@ public final class RequestSizeFilterFactory implements GatewayFilterFactory<Requ
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final CharSequence contentLengthOpt = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
+            final String contentLengthOpt = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
             final long contentLength = contentLengthOpt != null ? Long.parseLong(contentLengthOpt.toString()) : 0;
             if (contentLength > this.maxSize.toBytes())
             {

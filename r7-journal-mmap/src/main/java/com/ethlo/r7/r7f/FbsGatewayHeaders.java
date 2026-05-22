@@ -6,11 +6,11 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
-import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.r7f.fbs.ClientRequest;
 import com.ethlo.r7.r7f.fbs.Header;
 
@@ -27,12 +27,12 @@ public class FbsGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public CharSequence getFirst(CharSequence name)
+    public String getFirst(String name)
     {
         for (int i = 0; i < count; i++)
         {
             event.headers(reusableHeader, i);
-            if (CharSequenceUtil.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
+            if (Objects.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
             {
                 return decodeUtf8(reusableHeader.valueAsByteBuffer());
             }
@@ -41,12 +41,12 @@ public class FbsGatewayHeaders implements GatewayHeaders
     }
 
     @Override
-    public Iterable<CharSequence> getAll(CharSequence name)
+    public Iterable<String> getAll(String name)
     {
         return () -> new Iterator<>()
         {
             private int idx = 0;
-            private CharSequence nextVal = null;
+            private String nextVal = null;
 
             @Override
             public boolean hasNext()
@@ -59,7 +59,7 @@ public class FbsGatewayHeaders implements GatewayHeaders
                 while (idx < count)
                 {
                     event.headers(reusableHeader, idx++);
-                    if (CharSequenceUtil.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
+                    if (Objects.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
                     {
                         nextVal = decodeUtf8(reusableHeader.valueAsByteBuffer());
                         return true;
@@ -69,10 +69,10 @@ public class FbsGatewayHeaders implements GatewayHeaders
             }
 
             @Override
-            public CharSequence next()
+            public String next()
             {
                 if (!hasNext()) throw new NoSuchElementException();
-                CharSequence v = nextVal;
+                String v = nextVal;
                 nextVal = null;
                 return v;
             }

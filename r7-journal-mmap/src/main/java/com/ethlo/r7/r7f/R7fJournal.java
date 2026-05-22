@@ -83,7 +83,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int clientRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress inetAddress, IpSource ipSource)
+    public synchronized int clientRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress inetAddress, IpSource ipSource)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -102,7 +102,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int upstreamRequest(JournalLevel level, CharSequence reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -118,7 +118,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int upstreamResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int upstreamResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -135,7 +135,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int clientResponse(JournalLevel level, CharSequence reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public synchronized int clientResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -156,7 +156,7 @@ public final class R7fJournal implements Journal
        ============================================================ */
 
     @Override
-    public synchronized int requestBody(CharSequence reqId, ByteBuffer data)
+    public synchronized int requestBody(String reqId, ByteBuffer data)
     {
         if (!data.hasRemaining())
         {
@@ -171,7 +171,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int responseBody(CharSequence reqId, ByteBuffer data)
+    public synchronized int responseBody(String reqId, ByteBuffer data)
     {
         if (!data.hasRemaining())
         {
@@ -186,7 +186,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int endExchange(CharSequence reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
+    public synchronized int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -293,7 +293,7 @@ public final class R7fJournal implements Journal
         return currentHeaderCount == 0 ? 0 : createOffsetVector(headerOffsetsScratch, currentHeaderCount);
     }
 
-    private void headerWrite(final R7fJournal self, final CharSequence name, final CharSequence value)
+    private void headerWrite(final R7fJournal self, final String name, final String value)
     {
         int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
         int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
@@ -324,7 +324,7 @@ public final class R7fJournal implements Journal
     }
 
     @SuppressWarnings("deprecation")
-    private int copyToScratch(CharSequence s)
+    private int copyToScratch(String s)
     {
         final int len = s.length();
         if (s instanceof String str)
@@ -334,7 +334,7 @@ public final class R7fJournal implements Journal
             return len;
         }
 
-        // Fallback for other CharSequence types
+        // Fallback for other String types
         for (int i = 0; i < len; i++)
         {
             asciiScratch[i] = (byte) s.charAt(i);

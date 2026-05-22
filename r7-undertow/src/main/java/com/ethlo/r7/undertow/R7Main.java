@@ -96,7 +96,7 @@ public final class R7Main
         final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
         final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler, scheduler);
-        hotReloadService.onReload(r7UndertowHandler::evictProxyCache);
+        hotReloadService.onReload(r7UndertowHandler::reloadState);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
 
         final HttpHandler rootHandler = Handlers.path()

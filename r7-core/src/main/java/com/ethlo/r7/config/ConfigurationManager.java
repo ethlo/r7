@@ -299,13 +299,13 @@ public final class ConfigurationManager
                         throw new ConfigurationException(String.format("[routes.%s.match] %s", routeId, e.getMessage()));
                     }
 
-                    if (routeDefinition.upstream().targets() == null)
+                    if (routeDefinition.upstream() != null && routeDefinition.upstream().targets() == null)
                     {
                         new ValidatorUtils(validationResult).invalid("targets", null, "upstream targets required");
                         validationResult.throwIfInvalid();
                     }
 
-                    final List<CharSequence> urls = routeDefinition.upstream().targets().stream().map(TargetConfig::url).map(CharSequence.class::cast).toList();
+                    final List<String> urls = routeDefinition.upstream() != null ? routeDefinition.upstream().targets().stream().map(TargetConfig::url).map(String.class::cast).toList() : List.of();
                     return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, journalConfig, routeDefinition);
                 })
                 .toList();

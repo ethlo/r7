@@ -109,7 +109,7 @@ public class DiagnosticProxyClient implements ProxyClient
         );
     }
 
-    private CharSequence getTarget(HttpServerExchange exchange)
+    private String getTarget(HttpServerExchange exchange)
     {
         return exchange.getRequestURI();
     }

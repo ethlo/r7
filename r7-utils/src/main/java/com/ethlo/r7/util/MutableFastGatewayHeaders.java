@@ -16,20 +16,20 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     }
 
     @Override
-    public MutableGatewayHeaders set(final CharSequence name, final CharSequence value)
+    public MutableGatewayHeaders set(final String name, final String value)
     {
         setInternal(name, value);
         return this;
     }
 
     @Override
-    public void remove(final CharSequence name)
+    public void remove(final String name)
     {
         removeInternal(name);
     }
 
     @Override
-    public void set(final CharSequence name, final Iterable<CharSequence> values)
+    public void set(final String name, final Iterable<String> values)
     {
         // TODO: Implement me
         throw new UnsupportedOperationException();
@@ -37,7 +37,7 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     }
 
     @Override
-    public void add(final CharSequence name, final CharSequence value)
+    public void add(final String name, final String value)
     {
         addInternal(name, value);
     }

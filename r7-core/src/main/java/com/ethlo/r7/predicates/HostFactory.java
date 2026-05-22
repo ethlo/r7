@@ -6,7 +6,6 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.util.CharSequenceUtil;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -58,7 +57,7 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
         @Override
         public boolean test(GatewayRequest request)
         {
-            final CharSequence requestHost = request.headers().getFirst("host");
+            final String requestHost = request.headers().getFirst("host");
             if (requestHost == null) return false;
 
             int colonIndex = -1;
@@ -73,9 +72,9 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
 
             int hostLength = (colonIndex != -1) ? colonIndex : requestHost.length();
 
-            for (String host : hosts)
+            for (final String host : this.hosts)
             {
-                if (CharSequenceUtil.regionEquals(requestHost, 0, hostLength, host, 0, hostLength, true))
+                if (host.length() == hostLength && requestHost.regionMatches(true, 0, host, 0, hostLength))
                 {
                     return true;
                 }

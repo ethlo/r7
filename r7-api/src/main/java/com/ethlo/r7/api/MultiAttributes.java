@@ -3,24 +3,24 @@ package com.ethlo.r7.api;
 /**
  * A high-performance, read-only container for multi-valued keys.
  * <p>
- * Designed for low-allocation traversal using {@link CharSequence} keys and values.
+ * Designed for low-allocation traversal using {@link String} keys and values.
  */
 public interface MultiAttributes
 {
     /**
      * @return the first value associated with the name, or null if not found
      */
-    CharSequence getFirst(CharSequence name);
+    String getFirst(String name);
 
     /**
      * @return all values for a name; returns an empty iterable if not found
      */
-    Iterable<CharSequence> getAll(CharSequence name);
+    Iterable<String> getAll(String name);
 
     /**
      * @return true if the name exists
      */
-    default boolean contains(CharSequence name)
+    default boolean contains(String name)
     {
         return getFirst(name) != null;
     }

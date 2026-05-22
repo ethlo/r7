@@ -62,7 +62,7 @@ public final class StartLineBuilder
     /**
      * Efficiently puts a string into the buffer as ASCII/UTF-8 bytes
      */
-    private static void putAscii(ByteBuffer buffer, CharSequence s)
+    private static void putAscii(ByteBuffer buffer, String s)
     {
         final int len = s.length();
         for (int i = 0; i < len; i++)

@@ -27,7 +27,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     private static volatile AttachmentKey<?>[] KEY_REGISTRY = new AttachmentKey<?>[32];
 
     private final HttpServerExchange undertowExchange;
-    private final CharSequence requestId;
+    private final String requestId;
     private final GatewayRequest request;
     private final MutableGatewayResponse response;
     private final MutableGatewayAttributes attributes;
@@ -39,7 +39,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
 
     public UndertowGatewayExchange(
             HttpServerExchange undertowExchange,
-            CharSequence requestId,
+            String requestId,
             GatewayRequest request,
             MutableGatewayRequest upstreamRequest,
             MutableGatewayResponse response,
@@ -58,7 +58,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     }
 
     @Override
-    public CharSequence requestId()
+    public String requestId()
     {
         return requestId;
     }
@@ -105,7 +105,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         return new GatewayRouteInfo()
         {
             @Override
-            public CharSequence id()
+            public String id()
             {
                 return route.id();
             }

@@ -10,19 +10,19 @@ import com.ethlo.r7.journal.api.JournalLevel;
 
 public interface JournalEventListener
 {
-    void onClientRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource);
+    void onClientRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource);
 
-    void onUpstreamRequest(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
+    void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers);
 
-    void onRequestBody(CharSequence reqId, ByteBuffer bodyChunk);
+    void onRequestBody(String reqId, ByteBuffer bodyChunk);
 
-    void onResponseBody(CharSequence reqId, ByteBuffer bodyChunk);
+    void onResponseBody(String reqId, ByteBuffer bodyChunk);
 
-    void onUpstreamResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
+    void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers);
 
-    void onClientResponse(CharSequence reqId, JournalLevel level, CharSequence startLine, GatewayHeaders headers);
+    void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers);
 
-    void onEnd(CharSequence reqId, GatewayAttributes attributes,
+    void onEnd(String reqId, GatewayAttributes attributes,
                long clientStartTs, long clientEndTs,
                int status,
                long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,

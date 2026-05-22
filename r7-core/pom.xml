@@ -88,4 +88,44 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.github.victools</groupId>
+                <artifactId>jsonschema-maven-plugin</artifactId>
+                <version>4.35.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <classNames>
+                        <className>com.ethlo.r7.config.RoutesDefinition</className>
+                    </classNames>
+
+                    <schemaVersion>DRAFT_2020_12</schemaVersion>
+                    <schemaFilePath>target/classes/schema/routes.json</schemaFilePath>
+                    <schemaFileName>routes.json</schemaFileName>
+
+                    <modules>
+                        <module>
+                            <name>Jackson</name>
+                        </module>
+                    </modules>
+                </configuration>
+
+                <dependencies>
+                    <dependency>
+                        <groupId>com.github.victools</groupId>
+                        <artifactId>jsonschema-module-jackson</artifactId>
+                        <version>4.35.0</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
 </project>

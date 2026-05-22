@@ -60,12 +60,12 @@ public final class HotReloadService
     {
         try
         {
-            log.info("Loading routes settings from {} (hot-reload supported)", configFilePath.toAbsolutePath());
+            log.info("Loading routes from {}", configFilePath.toAbsolutePath());
             RoutesDefinition routesConfig = ConfigurationManager.load(this.configFilePath, RoutesDefinition.class);
 
             if (routesConfig == null)
             {
-                log.warn("No settings found in routes.yaml");
+                log.warn("No routes found");
                 routesConfig = new RoutesDefinition(null, List.of(), List.of());
             }
 

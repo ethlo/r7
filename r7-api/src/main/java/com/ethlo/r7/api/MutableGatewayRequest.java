@@ -11,20 +11,27 @@ public interface MutableGatewayRequest extends GatewayRequest
     /**
      * Updates the path component
      */
-    void path(CharSequence newPath);
+    void path(final String newPath);
 
     /**
-     * Updates the raw query string
+     * Returns a mutable view of the query parameters
      */
-    void queryParams(CharSequence newQueryParams);
+    @Override
+    MutableQueryParams queryParams();
+
+    /**
+     * Returns a mutable view of the cookies
+     */
+    @Override
+    MutableCookies cookies();
 
     /**
      * Updates the full target URI
      */
-    void uri(CharSequence uri);
+    void uri(final String uri);
 
     /**
      * Overrides the HTTP method
      */
-    void method(CharSequence method);
+    void method(final String method);
 }

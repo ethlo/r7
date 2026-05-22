@@ -61,11 +61,49 @@ public final class EnvInterpolator
             }
             else
             {
-                throw new IllegalArgumentException("Missing required environment variable '" + envName + "'");
+                final int[] pos = getLineAndColumn(matcher, input);
+                throw new ConfigurationException("Missing required environment variable '" + envName + "' for config on line " + pos[0] + ", column " + pos[1]);
             }
         }
 
         matcher.appendTail(sb);
         return sb.toString();
+    }
+
+    /**
+     * Calculates the 1-based line and column number of the current matcher position.
+     *
+     * @param matcher The matcher, which must have already found a match.
+     * @param text    The original multiline string.
+     * @return An int array where index 0 is the line and index 1 is the column.
+     */
+    public static int[] getLineAndColumn(final Matcher matcher, final String text)
+    {
+        final int matchStart = matcher.start();
+        int line = 1;
+        int lineStartIndex = 0;
+
+        for (int i = 0; i < matchStart; i++)
+        {
+            final char c = text.charAt(i);
+
+            if (c == '\r')
+            {
+                line++;
+                if ((i + 1) < matchStart && text.charAt(i + 1) == '\n')
+                {
+                    i++;
+                }
+                lineStartIndex = i + 1;
+            }
+            else if (c == '\n')
+            {
+                line++;
+                lineStartIndex = i + 1;
+            }
+        }
+
+        final int column = matchStart - lineStartIndex + 1;
+        return new int[]{line, column};
     }
 }

@@ -13,7 +13,7 @@ public final class PipelineVisualizer
     public static FilterNode buildNestedVisualization(final UpstreamConfig upstreamConfig, final GatewayFilter[] routeFilters)
     {
         // The innermost core of the onion
-        FilterNode currentNode = new FilterNode("upstream", upstreamConfig.toString(), false, false, false, false, null);
+        FilterNode currentNode = new FilterNode("upstream", upstreamConfig != null ? upstreamConfig.toString() : "None", false, false, false, false, null);
 
         // Iterate backward through the array, wrapping from the inside out
         for (int i = routeFilters.length - 1; i >= 0; i--)

@@ -27,7 +27,7 @@ public final class StatefulJournal implements Journal
     private final CRC32C responseChecksum = new CRC32C();
 
     private JournalLevel level;
-    private CharSequence requestId;
+    private String requestId;
     private boolean clientReqFlushed = false;
     private boolean upstreamReqFlushed = false;
     private boolean upstreamResFlushed = false;
@@ -56,7 +56,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int clientRequest(final JournalLevel level, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers, final InetAddress remoteAddress, IpSource ipSource)
+    public int clientRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers, final InetAddress remoteAddress, IpSource ipSource)
     {
         this.requestId = reqId;
         this.clientReqLine = cloneBuffer(startLine);
@@ -72,7 +72,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int upstreamRequest(final JournalLevel level, final CharSequence reqId, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int upstreamRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.upstreamReqLine = cloneBuffer(startLine);
         this.upstreamReqHeaders = headers;
@@ -85,7 +85,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int upstreamResponse(final JournalLevel level, final CharSequence reqId, final int upstreamStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int upstreamResponse(final JournalLevel level, final String reqId, final int upstreamStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.upstreamResLine = cloneBuffer(startLine);
         this.upstreamResHeaders = headers;
@@ -97,7 +97,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int clientResponse(final JournalLevel level, final CharSequence reqId, final int clientStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int clientResponse(final JournalLevel level, final String reqId, final int clientStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
     {
         this.clientStatusCode = clientStatusCode;
         this.clientResLine = cloneBuffer(startLine);
@@ -107,7 +107,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int requestBody(final CharSequence reqId, final ByteBuffer data)
+    public int requestBody(final String reqId, final ByteBuffer data)
     {
         if (config.request().level() == JournalLevel.FULL)
         {
@@ -120,7 +120,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int responseBody(final CharSequence reqId, final ByteBuffer data)
+    public int responseBody(final String reqId, final ByteBuffer data)
     {
         if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
@@ -133,7 +133,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int endExchange(final CharSequence reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
+    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
     {
         int written = checkAndFlushRequest();
         written += checkAndFlushResponse();
