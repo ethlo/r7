@@ -1571,18 +1571,15 @@
   
 
 
-<p>Here is the fully updated <strong>r7 Config Reference</strong>.</p>
-<p>I have seamlessly integrated the new <code>RequireQueryParameter</code>, <code>RequireMatchQueryParameter</code>, <code>RequireCookie</code>, and <code>RequireMatchCookie</code> filters into the <strong>Security &amp; Validation</strong> section, completing your enforcement matrix. I also ensured that <code>RateLimiter</code> is consistently used as the correct noun-based name throughout the document.</p>
-<hr />
 <h1 id="r7-config-reference">r7 Config Reference</h1>
 <h2 id="routing-configuration">Routing Configuration</h2>
 <p>The r7 gateway is configured using a declarative YAML file called <code>routes.yaml</code>. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.</p>
 <p>The configuration supports environment variable interpolation (e.g., <code>${ENV_VAR:default_value}</code>), allowing you to use a single configuration structure across multiple environments.</p>
 <h3 id="core-concepts">Core Concepts</h3>
 <ul>
-<li><strong>Global Filters:</strong> Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection.</li>
+<li><strong>Global Filters:</strong> Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection. Declared using the <code>global_filters</code> key at the root of the configuration.</li>
 <li><strong>Routes:</strong> The core mapping logic. Each route requires a unique <code>id</code>, a <code>match</code> condition (like path prefixes or HTTP methods), and an <code>upstream</code> target.</li>
-<li><strong>Route Filters:</strong> Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched.</li>
+<li><strong>Route Filters:</strong> Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched. Declared using the <code>filters</code> key inside a specific route block.</li>
 <li><strong>Short-Circuiting &amp; Static Serving:</strong> Routes can bypass the upstream proxy client entirely using filters like <code>ReturnResponse</code> or <code>StaticContent</code>. In these cases, the <code>upstream</code> block can be omitted or set to <code>null</code>.</li>
 <li><strong>Journaling:</strong> Granular control over what is logged. You can define base logging levels (e.g., <code>NONE</code>, <code>METADATA</code>, <code>HEADERS</code>, <code>FULL</code>) and override these levels based on specific HTTP status codes.</li>
 </ul>
@@ -2112,14 +2109,9 @@
 <td>Yes</td>
 <td>The IP address or CIDR notation (e.g., <code>192.168.1.5</code> or <code>10.0.0.0/24</code>) to match against the client's remote address.</td>
 </tr>
-<tr>
-<td>---</td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
 </tbody>
 </table>
+<hr />
 <h2 id="filters">Filters</h2>
 <p>Filters modify requests, shape traffic, or enforce security rules after a route is matched but before (or after) it reaches the upstream target.</p>
 <h3 id="mutation-headers-cookies-and-parameters">Mutation: Headers, Cookies, and Parameters</h3>
@@ -2874,20 +2866,15 @@
 <td>Yes</td>
 <td>The valid HTTP status code (100-599) to enforce on the response.</td>
 </tr>
-<tr>
-<td>---</td>
-<td></td>
-<td></td>
-<td></td>
-</tr>
 </tbody>
 </table>
+<hr />
 <h2 id="complete-example-configuration">Complete Example Configuration</h2>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;{{git.rev.abbr}}&#39;</span>
 </span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># Global filters applied to all routes</span>
-</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">global_filters</span><span class="p">:</span>
 </span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
 </span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
 </span><span id="True-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
