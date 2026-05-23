@@ -578,10 +578,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#filter-failure-semantics" class="md-nav__link">
+  <a href="#failure-boundaries-fail-closed" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Filter Failure Semantics
+        Failure Boundaries (Fail-Closed)
       </span>
     </span>
   </a>
@@ -628,10 +628,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#short-circuiting" class="md-nav__link">
+  <a href="#short-circuiting-flow" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Short-Circuiting
+        Short-Circuiting Flow
       </span>
     </span>
   </a>
@@ -1476,10 +1476,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#8-tls-security" class="md-nav__link">
+  <a href="#8-complete-example-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        8. TLS &amp; Security
+        8. Complete Example Configuration
       </span>
     </span>
   </a>
@@ -1487,26 +1487,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#9-complete-example-configuration" class="md-nav__link">
+  <a href="#9-server-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        9. Complete Example Configuration
+        9. Server Configuration
       </span>
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#10-server-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        10. Server Configuration
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="10. Server Configuration">
+    <nav class="md-nav" aria-label="9. Server Configuration">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1739,14 +1728,14 @@
 <li><strong>Execution:</strong> Filter execution order is strictly stable. No implicit parallel filter execution occurs.</li>
 <li><strong>Routing:</strong> Upstream target selection is strictly deterministic within the chosen load-balancing strategy.</li>
 </ul>
-<h3 id="filter-failure-semantics">Filter Failure Semantics</h3>
-<p>r7 is designed to <strong>fail-closed</strong>. If a filter encounters a runtime exception (e.g., a malformed header mutation, regex execution failure, or invalid template substitution), the pipeline immediately halts and returns a <code>500 Internal Server Error</code>. This prevents unsafe, partially mutated requests from bleeding into the upstream network.</p>
+<h3 id="failure-boundaries-fail-closed">Failure Boundaries (Fail-Closed)</h3>
+<p>r7 strictly separates intentional request termination from runtime failures. If a filter encounters a runtime exception (e.g., malformed template substitution or regex execution failure), r7 <strong>fails closed</strong>. The pipeline immediately halts, bypasses all remaining filters (including response filters), and returns a <code>500 Internal Server Error</code> to prevent unsafe, partially mutated requests from routing upstream.</p>
 <h3 id="hot-reloads-state">Hot Reloads &amp; State</h3>
 <p>r7 supports zero-downtime configuration reloads.</p>
 <ul>
 <li>Swapping the <code>routes.yaml</code> configuration is an <strong>atomic operation</strong>.</li>
 <li>In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.</li>
-<li>Stateful filter data (like <code>CircuitBreaker</code> tripping states and <code>RateLimiter</code> token buckets) is intentionally reset upon reload to guarantee immediate, strict adherence to the new configuration parameters.</li>
+<li>Stateful filter data (like <code>CircuitBreaker</code> tripping states and <code>RateLimiter</code> token buckets) is intentionally reset upon reload. This is <strong>by design and not configurable</strong>, guaranteeing immediate, strict adherence to the new configuration parameters.</li>
 </ul>
 <hr />
 <h2 id="3-execution-semantics">3. Execution Semantics</h2>
@@ -1759,15 +1748,16 @@
 <li><strong>Upstream Proxy Execution:</strong> The request is dispatched to the load-balanced target.</li>
 <li><strong>Route Response Filters:</strong> Post-upstream mutations execute.</li>
 <li><strong>Global Response Filters:</strong> Final global response mutations.</li>
-<li><strong>Async Journaling:</strong> The request/response pair is dispatched to the disk-backed storage.</li>
+<li><strong>Async Journaling:</strong> The request/response pair is dispatched to disk.</li>
 </ol>
 <h3 id="phase-aware-filters">Phase-Aware Filters</h3>
 <p>Filters are inherently phase-aware. Although they are declared in a single, unified list (either in <code>global_filters</code> or a route's <code>filters</code> block), they automatically participate only in the lifecycle phases relevant to their behavior.</p>
 <ul>
-<li><em>Example:</em> <code>AddRequestHeader</code> executes immediately during phase 4. However, response-mutating filters like <code>SetResponseHeader</code> are registered during phase 4 but their execution is <strong>deferred</strong> until phase 6 (after the upstream response is received).</li>
+<li><em>Example:</em> <code>AddRequestHeader</code> executes immediately during phase 4. However, response-mutating filters like <code>SetResponseHeader</code> are registered during phase 4 but their execution is <strong>deferred</strong> until phase 6 (after the upstream response is received or generated).</li>
 </ul>
-<h3 id="short-circuiting">Short-Circuiting</h3>
-<p>If any filter in the pipeline short-circuits execution (e.g., a <code>RequireAuthorizationHeader</code> fails, or a <code>ReturnResponse</code> executes), all subsequent request filters and the Upstream Proxy Execution are <strong>skipped</strong>. The pipeline immediately transitions to the response phase (phase 6), executing any deferred route response filters and global response filters against the generated response context.</p>
+<h3 id="short-circuiting-flow">Short-Circuiting Flow</h3>
+<p>Intentional short-circuits (such as a failed <code>Require*</code> validation or a <code>ReturnResponse</code> execution) are standard pipeline control flows, not runtime exceptions.</p>
+<p>If a filter short-circuits execution, phase 4 (remaining request filters) and phase 5 (Upstream Proxy Execution) are <strong>skipped</strong>. The pipeline immediately transitions to phase 6, executing any deferred <strong>Route Response Filters</strong> followed by <strong>Global Response Filters</strong> against the generated response context.</p>
 <hr />
 <h2 id="4-upstream-configuration">4. Upstream Configuration</h2>
 <p>The <code>upstream</code> block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency.</p>
@@ -2283,7 +2273,7 @@
 <li><strong><code>Add*</code> Semantics:</strong> Safely appends a non-destructive key/value pair.</li>
 <li><strong><code>Set*</code> Semantics:</strong> Destructively replaces existing keys with the new value.</li>
 <li><strong><code>Remove*</code> Semantics:</strong> Deletes the specified key entirely.</li>
-<li><strong><code>Require*</code> Semantics:</strong> Validates presence or format, terminating the request if validation fails.</li>
+<li><strong><code>Require*</code> Semantics:</strong> Validates presence or format, transitioning the request to the response phase if validation fails.</li>
 </ul>
 <h3 id="mutation-headers-cookies-and-parameters">Mutation: Headers, Cookies, and Parameters</h3>
 <h4 id="addrequestheader">AddRequestHeader</h4>
@@ -2699,7 +2689,7 @@
 <hr />
 <h3 id="security-validation">Security &amp; Validation</h3>
 <h4 id="requirerequestheader">RequireRequestHeader</h4>
-<p>Validates an HTTP header is present. Rejects the request if the header is missing.</p>
+<p>Validates an HTTP header is present. Short-circuits the request if the header is missing.</p>
 <table>
 <thead>
 <tr>
@@ -2873,7 +2863,7 @@
 </tbody>
 </table>
 <h4 id="requireauthorizationheader">RequireAuthorizationHeader</h4>
-<p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Rejects requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.
+<p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Short-circuits requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.
 <em>This filter requires no configuration parameters.</em></p>
 <h4 id="injectbasicauth">InjectBasicAuth</h4>
 <p>Generates a Base64 encoded Basic Authentication string and injects it into the <code>Authorization</code> header of the upstream request.</p>
@@ -3040,7 +3030,7 @@
 <hr />
 <h3 id="short-circuiting-overrides">Short-Circuiting &amp; Overrides</h3>
 <h4 id="returnresponse">ReturnResponse</h4>
-<p>Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to <code>text/plain</code> unless a <code>SetResponseHeader</code> is used alongside it to define <code>Content-Type</code>. <em>(Note: Response-phase filters declared after <code>ReturnResponse</code> in the configuration still execute against this generated response).</em></p>
+<p>Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to <code>text/plain</code> unless a <code>SetResponseHeader</code> is used alongside it to define <code>Content-Type</code>. <em>(Note: Deferred response filters declared after <code>ReturnResponse</code> in the configuration still execute against this generated response).</em></p>
 <table>
 <thead>
 <tr>
@@ -3109,7 +3099,7 @@
 <h2 id="7-journaling-storage">7. Journaling &amp; Storage</h2>
 <p>Request/response journaling is executed asynchronously to avoid blocking the hot path.</p>
 <h3 id="storage-configuration-serveryaml-storage">Storage Configuration (<code>server.yaml -&gt; storage</code>)</h3>
-<p>Storage utilizes memory-mapped files separated into shards. When all shards reach the <code>shard_size</code> limit, r7 utilizes a <strong>ring-buffer rollover policy</strong>, overwriting the oldest shard to guarantee disk limits are strictly respected without halting operations.</p>
+<p>Storage utilizes memory-mapped files separated into shards of a defined <code>shard_size</code> to minimize lock contention and manage disk IO.</p>
 <h3 id="logging-levels-routesyaml-journal">Logging Levels (<code>routes.yaml -&gt; journal</code>)</h3>
 <p>Verbosity can be set generically or overridden conditionally based on HTTP status codes.</p>
 <table>
@@ -3144,10 +3134,7 @@
 </tbody>
 </table>
 <hr />
-<h2 id="8-tls-security">8. TLS &amp; Security</h2>
-<p>r7 expects TLS termination to be handled by an edge load balancer (e.g., AWS ALB, Cloudflare) directly in front of it.</p>
-<hr />
-<h2 id="9-complete-example-configuration">9. Complete Example Configuration</h2>
+<h2 id="8-complete-example-configuration">8. Complete Example Configuration</h2>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;{{git.rev.abbr}}&#39;</span>
 </span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
@@ -3244,7 +3231,7 @@
 </span><span id="True-0-93"><a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 </span></code></pre></div>
 <hr />
-<h2 id="10-server-configuration">10. Server Configuration</h2>
+<h2 id="9-server-configuration">9. Server Configuration</h2>
 <p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
 <h3 id="server-configuration-server">Server Configuration (<code>server</code>)</h3>
 <p>Defines the primary listening interfaces and ports for the gateway.</p>
