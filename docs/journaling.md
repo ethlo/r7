@@ -2,11 +2,11 @@
 
 ethlo r7 is designed for absolute minimum latency. Instead of serializing logs to text or establishing network connections to logging databases on the request thread, r7 writes raw traffic data directly to memory-mapped binary files (journals) on disk.
 
-To ingest these logs into your observability stack (like Grafana, ELK, or ClickHouse), r7 uses **Tailers**. Tailers run as separate processes or sidecar containers, reading the binary journals asynchronously without impacting the proxy's performance.
+To ingest these logs into your observability stack (like Grafana, ELK, or ClickHouse), r7 uses **Tailers**. Tailers run as separate processes or sidecar containers, reading the binary journals asynchronously without impacting the gateway's performance.
 
 ## The Sidecar Deployment Pattern
 
-In containerized environments, the proxy and the tailer share a volume. The proxy writes the binary journals, and the tailer reads them.
+In containerized environments, the gateway and the tailer share a volume. The gateway writes the binary journals, and the tailer reads them.
 
 ```mermaid
 graph LR
@@ -97,5 +97,5 @@ volumes:
 
 Once your data is routed through a tailer:
 
-* **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your proxy traffic, extracting metrics dynamically from the JSON fields (like `duration`, `status`, or specific headers).
+* **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like `duration`, `status`, or specific headers).
 * **If using the ClickHouse Tailer:** Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the `r7_logs` table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.

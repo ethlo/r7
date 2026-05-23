@@ -8,7 +8,7 @@ The configuration supports environment variable interpolation (e.g., `${ENV_VAR:
 
 ### Core Concepts
 
-* **Global Filters:** Applied to every request passing through the proxy, ensuring baseline behaviors like metric collection or correlation ID injection.
+* **Global Filters:** Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection.
 * **Routes:** The core mapping logic. Each route requires a unique `id`, a `match` condition (like path prefixes or HTTP methods), and an `upstream` target.
 * **Route Filters:** Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched.
 * **Short-Circuiting & Static Serving:** Routes can bypass the upstream proxy client entirely using filters like `ReturnResponse` or `StaticContent`. In these cases, the `upstream` block can be omitted or set to `null`.
@@ -334,12 +334,12 @@ The `server.yaml` file controls the foundational infrastructure of the r7 gatewa
 
 ### Server Configuration (`server`)
 
-Defines the primary listening interfaces and ports for the proxy.
+Defines the primary listening interfaces and ports for the gateway.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `host` | String | The IP address or interface the primary proxy binds to (e.g., `0.0.0.0` for all interfaces). |
-| `port` | Integer | The primary port the proxy listens on for incoming traffic. |
+| `host` | String | The IP address or interface the primary gateway binds to (e.g., `0.0.0.0` for all interfaces). |
+| `port` | Integer | The primary port the gateway listens on for incoming traffic. |
 
 ### Management Configuration (`management`)
 

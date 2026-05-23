@@ -1,4 +1,4 @@
-# r7 Proxy: Agent Context & Rules
+# r7 Gateway: Agent Context & Rules
 
 ## Core Philosophy: Mechanical Sympathy
 - **Off-Heap Primary**: Use `MappedByteBuffer` for sharded journals to bypass the GC.
