@@ -1,6 +1,6 @@
 # Quickstart Guide
 
-This guide will get you up and running with the r7 proxy using Docker Compose. We will deploy the proxy alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.
+This guide will get you up and running with the r7 gateway using Docker Compose. We will deploy the proxy alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.
 
 ## Directory Structure
 
@@ -18,7 +18,7 @@ r7-quickstart/
 
 ## 1. Docker Compose Setup
 
-Create `docker-compose.yaml`. This includes the r7 proxy configured with ZGC and native memory access, alongside an `echo-server` acting as our dummy backend.
+Create `docker-compose.yaml`. This includes the r7 gateway configured with ZGC and native memory access, alongside an `echo-server` acting as our dummy backend.
 
 ```yaml
 services:

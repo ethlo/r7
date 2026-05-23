@@ -4,6 +4,8 @@ import java.util.List;
 
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.google.auto.service.AutoService;
 
 public record OrPredicate(List<GatewayPredicate> children) implements CompositePredicate
 {

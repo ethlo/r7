@@ -9,7 +9,10 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
 public class AddResponseHeaderFactory implements GatewayFilterFactory<AddResponseHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "AddResponseHeader";

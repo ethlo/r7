@@ -1,8 +1,5 @@
 package com.ethlo.r7.predicates;
 
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
@@ -10,7 +7,10 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
 public final class RequestHeaderFactory implements GatewayPredicateFactory<RequestHeaderFactory.Config>
 {
     private static final String PREDICATE_NAME = "RequestHeader";
@@ -33,36 +33,26 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
         return new GP(config);
     }
 
-    public record Config(String name, String regexp) implements ValidatableConfig
+    public record Config(String name, String value) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result).required("name", this.name());
-
-            if (this.regexp() != null)
-            {
-                try
-                {
-                    Pattern.compile(this.regexp());
-                }
-                catch (final PatternSyntaxException e)
-                {
-                    validator.invalid("regexp", this.regexp(), "Invalid regex format");
-                }
-            }
+            new ValidatorUtils(result)
+                    .required("name", this.name())
+                    .required("value", this.value());
         }
     }
 
     private static final class GP implements GatewayPredicate, ShortInfo
     {
         private final String headerName;
-        private final Pattern pattern;
+        private final String targetValue;
 
         public GP(final Config config)
         {
             this.headerName = config.name();
-            this.pattern = config.regexp() != null ? Pattern.compile(config.regexp()) : null;
+            this.targetValue = config.value();
         }
 
         @Override
@@ -75,12 +65,7 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
                 return false;
             }
 
-            if (this.pattern == null)
-            {
-                return true; // Presence check only
-            }
-
-            return this.pattern.matcher(headerValue).matches();
+            return this.targetValue.equals(headerValue);
         }
 
         @Override
@@ -92,14 +77,7 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
         @Override
         public String summary()
         {
-            if (this.pattern == null)
-            {
-                return PREDICATE_NAME + ": " + this.headerName;
-            }
-            else
-            {
-                return PREDICATE_NAME + ": " + this.headerName + " ~ " + this.pattern.pattern();
-            }
+            return PREDICATE_NAME + ": " + this.headerName + " == " + this.targetValue;
         }
     }
 }

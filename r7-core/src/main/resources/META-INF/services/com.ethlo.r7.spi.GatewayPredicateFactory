@@ -1,7 +1,0 @@
-com.ethlo.r7.predicates.HostFactory
-com.ethlo.r7.predicates.MethodFactory
-com.ethlo.r7.predicates.PathStartsWithFactory
-com.ethlo.r7.predicates.RegexPathFactory
-com.ethlo.r7.predicates.RemoteAddrPredicateFactory
-com.ethlo.r7.predicates.RequestHeaderFactory
-com.ethlo.r7.predicates.PathFactory

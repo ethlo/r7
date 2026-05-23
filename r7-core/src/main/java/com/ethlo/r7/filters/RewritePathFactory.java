@@ -12,8 +12,11 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class RewritePathFactory implements GatewayFilterFactory<RewritePathFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class RewritePathFactory implements GatewayFilterFactory<RewritePathFactory.Config>
 {
     private static final String FILTER_NAME = "RewritePath";
 
@@ -30,7 +33,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
+    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -38,32 +41,32 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
     public record Config(String regexp, String replacement) implements ValidatableConfig
     {
         @Override
-        public void validate(ValidationResult result)
+        public void validate(final ValidationResult result)
         {
             final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required("regexp", regexp)
-                    .required("replacement", replacement);
+                    .required("regexp", this.regexp())
+                    .required("replacement", this.replacement());
 
-            if (regexp != null)
+            if (this.regexp() != null)
             {
                 try
                 {
-                    Pattern.compile(regexp);
+                    Pattern.compile(this.regexp());
                 }
-                catch (PatternSyntaxException e)
+                catch (final PatternSyntaxException e)
                 {
-                    validatorUtils.invalid("regexp", regexp, "Invalid regex pattern: " + e.getPattern());
+                    validatorUtils.invalid("regexp", this.regexp(), "Invalid regex pattern: " + e.getPattern());
                 }
             }
         }
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         private final Pattern regexp;
         private final String replacement;
 
-        public GF(Config config)
+        public GF(final Config config)
         {
             this.regexp = Pattern.compile(config.regexp());
             this.replacement = config.replacement();
@@ -72,11 +75,11 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            final Matcher matcher = regexp.matcher(exchange.clientRequest().path());
+            final Matcher matcher = this.regexp.matcher(exchange.clientRequest().path());
 
             if (matcher.find())
             {
-                final String newPath = matcher.replaceAll(replacement);
+                final String newPath = matcher.replaceAll(this.replacement);
                 exchange.upstreamRequest().path(newPath);
             }
         }
@@ -90,7 +93,7 @@ public class RewritePathFactory implements GatewayFilterFactory<RewritePathFacto
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + regexp.pattern() + " -> " + replacement;
+            return FILTER_NAME + ": " + this.regexp.pattern() + " -> " + this.replacement;
         }
     }
 }

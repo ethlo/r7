@@ -6,19 +6,21 @@ import java.nio.charset.StandardCharsets;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
-import com.ethlo.r7.config.DataSize;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
-import com.ethlo.r7.util.constants.HttpHeaders;
+import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public final class RequestSizeFilterFactory implements GatewayFilterFactory<RequestSizeFilterFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class RequireRequestHeaderFactory implements GatewayFilterFactory<RequireRequestHeaderFactory.Config>
 {
-    private static final String FILTER_NAME = "RequestSize";
+    private static final String FILTER_NAME = "RequireRequestHeader";
 
     @Override
     public String name()
@@ -33,44 +35,49 @@ public final class RequestSizeFilterFactory implements GatewayFilterFactory<Requ
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
 
-    public record Config(DataSize maxSize) implements ValidatableConfig
+    public record Config(String name, Integer rejectStatusCode) implements ValidatableConfig
     {
+        public Config
+        {
+            if (rejectStatusCode == null)
+            {
+                rejectStatusCode = HttpStatuses.BAD_REQUEST;
+            }
+        }
+
         @Override
         public void validate(final ValidationResult result)
         {
-            if (this.maxSize() == null)
-            {
-                result.addError(FILTER_NAME, "max_size must be defined");
-            }
+            new ValidatorUtils(result).required("name", this.name());
         }
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
-        private static final byte[] REJECT_PAYLOAD = "Payload Too Large".getBytes(StandardCharsets.UTF_8);
-        private final DataSize maxSize;
+        private final Config config;
+        private final ByteBuffer errorBody;
 
         public GF(final Config config)
         {
-            this.maxSize = config.maxSize();
+            this.config = config;
+            final String msg = "Missing required header: " + config.name();
+            this.errorBody = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
         }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String contentLengthOpt = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
-            final long contentLength = contentLengthOpt != null ? Long.parseLong(contentLengthOpt.toString()) : 0;
-            if (contentLength > this.maxSize.toBytes())
+            if (exchange.clientRequest().headers().getFirst(this.config.name()) == null)
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        HttpStatuses.ENTITY_TOO_LARGE,
+                        this.config.rejectStatusCode(),
                         MediaTypes.TEXT_PLAIN,
-                        ByteBuffer.wrap(REJECT_PAYLOAD)
+                        this.errorBody.asReadOnlyBuffer()
                 ));
             }
         }
@@ -84,7 +91,7 @@ public final class RequestSizeFilterFactory implements GatewayFilterFactory<Requ
         @Override
         public String summary()
         {
-            return FILTER_NAME + " (" + this.maxSize + " bytes)";
+            return FILTER_NAME + ": " + this.config.name();
         }
     }
 }

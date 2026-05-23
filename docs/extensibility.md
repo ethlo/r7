@@ -1,6 +1,6 @@
 # Custom Filters and Predicates
 
-The r7 proxy is designed to be highly extensible. Because it utilizes Java's native `ServiceLoader` mechanism, you can write custom Predicates and Filters, compile them into a standard JAR file, and drop them into the proxy's classpath. The engine will automatically discover and register them for use in your YAML configuration.
+The r7 gateway is designed to be highly extensible. Because it utilizes Java's native `ServiceLoader` mechanism, you can write custom Predicates and Filters, compile them into a standard JAR file, and drop them into the proxy's classpath. The engine will automatically discover and register them for use in your YAML configuration.
 
 This guide outlines how to implement, expose, and deploy your custom extensions.
 

@@ -8,7 +8,10 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
 public final class RemoveResponseHeaderFactory implements GatewayFilterFactory<RemoveResponseHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "RemoveResponseHeader";
@@ -26,7 +29,7 @@ public final class RemoveResponseHeaderFactory implements GatewayFilterFactory<R
     }
 
     @Override
-    public ClientResponseGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientResponseGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

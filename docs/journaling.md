@@ -10,7 +10,7 @@ In containerized environments, the proxy and the tailer share a volume. The prox
 
 ```mermaid
 graph LR
-    Client -->|HTTP| R7[r7 Proxy Container]
+    Client -->|HTTP| R7[r7 gateway Container]
     R7 -->|Binary Write| Vol[(Shared Volume: /journals)]
     Vol -->|Binary Read| Tailer[r7 Tailer Container]
     Tailer -->|JSON / Batch Insert| Ops[Observability Stack]

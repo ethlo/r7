@@ -10,10 +10,13 @@ import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.google.auto.service.AutoService;
 
-public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class AddCorrelationIdFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
 {
-    private static final String FILTER_NAME = "CorrelationIdHeader";
+    private static final String FILTER_NAME = "AddCorrelationId";
 
     @Override
     public String name()
@@ -28,12 +31,12 @@ public class CorrelationIdHeaderFilterFactory implements GatewayFilterFactory<Ga
     }
 
     @Override
-    public GatewayFilter create(EmptyConfig config, FilterCreationContext filterCreationContext)
+    public GatewayFilter create(final EmptyConfig config, final FilterCreationContext filterCreationContext)
     {
         return new GF();
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)

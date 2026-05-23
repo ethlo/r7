@@ -9,6 +9,7 @@ import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
