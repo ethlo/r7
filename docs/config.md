@@ -14,6 +14,36 @@ The configuration supports environment variable interpolation (e.g., `${ENV_VAR:
 * **Short-Circuiting & Static Serving:** Routes can bypass the upstream proxy client entirely using filters like `ReturnResponse` or `StaticContent`. In these cases, the `upstream` block can be omitted or set to `null`.
 * **Journaling:** Granular control over what is logged. You can define base logging levels (e.g., `NONE`, `METADATA`, `HEADERS`, `FULL`) and override these levels based on specific HTTP status codes.
 
+### Route Matching
+
+Routes are evaluated in declaration order. The first route whose predicates fully match the incoming request is selected. If no route matches the request, r7 returns 
+404 Not Found.
+
+Predicate evaluation is sequential and short-circuiting:
+
+* and stops on first failure
+* or stops on first success
+* not evaluates exactly one child predicate
+
+### Filter Execution
+
+Filters execute sequentially in the order they are declared.
+
+A filter may:
+
+* mutate the request
+* mutate the response
+* short-circuit execution entirely
+* terminate processing with an immediate response
+
+### Upstream Execution
+
+If the route is not terminated by a filter, the request is forwarded to the configured upstream target.
+
+### Journaling
+
+Request and response journaling occurs asynchronously and does not block request processing.
+
 ---
 
 ## Upstream Configuration
@@ -268,7 +298,7 @@ routes:
         - url: http://localhost:1111
     filters:
       # Filters can be declared with specific configuration arguments (snake_case)
-      - RateLimit:
+      - RateLimiter:
           capacity: 5
           refill_tokens: 1
           refill_period: 2s
