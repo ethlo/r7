@@ -690,7 +690,7 @@
 
 
 <h1 id="quickstart-guide">Quickstart Guide</h1>
-<p>This guide will get you up and running with the r7 proxy using Docker Compose. We will deploy the proxy alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.</p>
+<p>This guide will get you up and running with the r7 gateway using Docker Compose. We will deploy the gateway alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.</p>
 <h2 id="directory-structure">Directory Structure</h2>
 <p>Create a new directory for your project and set up the following structure. The <code>config</code> directory will hold our YAML configurations, and the <code>journals</code> directory will be used for memory-mapped logging.</p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>r7-quickstart/
@@ -701,13 +701,13 @@
 </span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>└── journals/
 </span></code></pre></div>
 <h2 id="1-docker-compose-setup">1. Docker Compose Setup</h2>
-<p>Create <code>docker-compose.yaml</code>. This includes the r7 proxy configured with ZGC and native memory access, alongside an <code>echo-server</code> acting as our dummy backend.</p>
+<p>Create <code>docker-compose.yaml</code>. This includes the r7 gateway configured with ZGC and native memory access, alongside an <code>echo-server</code> acting as our dummy backend.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">services</span><span class="p">:</span>
 </span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
 </span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-jvm:latest</span>
 </span><span id="True-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ethlo-r7-gateway</span>
 </span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;9999:8888&quot;</span><span class="w">   </span><span class="c1"># Main proxy port</span>
+</span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;9999:8888&quot;</span><span class="w">   </span><span class="c1"># Main gateway port</span>
 </span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;19999:18888&quot;</span><span class="w"> </span><span class="c1"># Status and metrics port</span>
 </span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
 </span><span id="True-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
@@ -802,7 +802,7 @@
 <p>Start the stack using Docker Compose:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
 </span></code></pre></div>
-<p>Once the containers are healthy, test the proxy by sending a request to the mapped port (<code>9999</code>):</p>
+<p>Once the containers are healthy, test the gateway by sending a request to the mapped port (<code>9999</code>):</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-i<span class="w"> </span>http://localhost:9999/api/test
 </span></code></pre></div>
 <p><strong>Expected Output:</strong></p>

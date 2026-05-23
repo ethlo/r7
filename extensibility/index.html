@@ -696,7 +696,7 @@
 
 
 <h1 id="custom-filters-and-predicates">Custom Filters and Predicates</h1>
-<p>The r7 proxy is designed to be highly extensible. Because it utilizes Java's native <code>ServiceLoader</code> mechanism, you can write custom Predicates and Filters, compile them into a standard JAR file, and drop them into the proxy's classpath. The engine will automatically discover and register them for use in your YAML configuration.</p>
+<p>The r7 gateway is designed to be highly extensible. Because it utilizes Java's native <code>ServiceLoader</code> mechanism, you can write custom Predicates and Filters, compile them into a standard JAR file, and drop them into the gateway's classpath. The engine will automatically discover and register them for use in your YAML configuration.</p>
 <p>This guide outlines how to implement, expose, and deploy your custom extensions.</p>
 <hr />
 <h2 id="1-implementing-a-custom-predicate">1. Implementing a Custom Predicate</h2>
@@ -902,7 +902,7 @@ Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.Gat
 </span><span id="True-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="c1"># 2. Add the jar to the Java classpath</span>
 </span><span id="True-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JAVA_TOOL_OPTIONS=-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -cp &quot;/app/r7.jar:/app/plugins/my-custom-r7-extensions-1.0.jar&quot;</span>
 </span></code></pre></div>
-<p>The proxy will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
+<p>The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
 
 
 
