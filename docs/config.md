@@ -1,64 +1,61 @@
 # r7 Config Reference
 
-## Routing Configuration
+## 1. Core Architecture & Semantics
 
-The r7 gateway is configured using a declarative YAML file called `routes.yaml`. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.
+The r7 gateway is configured using a declarative YAML file called `routes.yaml`. This configuration defines how incoming requests are matched, mutated, routed to upstream targets, and logged.
 
-The configuration supports environment variable interpolation (e.g., `${ENV_VAR:default_value}`), allowing you to use a single configuration structure across multiple environments.
+### Configuration Validation
 
-### Core Concepts
+The r7 configuration engine is strictly validated at startup. The gateway will **fail-fast and refuse to start** if it detects:
 
-* **Global Filters:** Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection. Declared using the `global_filters` key at the root of the configuration.
-* **Routes:** The core mapping logic. Each route requires a unique `id`, a `match` condition (like path prefixes or HTTP methods), and an `upstream` target.
-* **Route Filters:** Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched. Declared using the `filters` key inside a specific route block.
-* **Short-Circuiting & Static Serving:** Routes can bypass the upstream proxy client entirely using filters like `ReturnResponse` or `StaticContent`. In these cases, the `upstream` block can be omitted or set to `null`.
-* **Journaling:** Granular control over what is logged. You can define base logging levels (e.g., `NONE`, `METADATA`, `HEADERS`, `FULL`) and override these levels based on specific HTTP status codes.
+* Unknown filters, predicates, or configuration keys.
+* Invalid regular expressions or malformed CIDR blocks.
+* Cyclic/recursive `fallback` routing loops.
+* Unresolvable environment variables without default values.
 
-### Route Matching
+### Environment Variable Interpolation
 
-Routes are evaluated in declaration order. The first route whose predicates fully match the incoming request is selected. If no route matches the request, r7 returns
-404 Not Found.
+Configuration values support environment variable injection using the `${VAR_NAME:default_value}` syntax.
 
-Predicate evaluation is sequential and short-circuiting:
+* Values are injected prior to type-casting.
+* If a variable is missing and no default is provided, configuration validation fails.
 
-* `and` stops on first failure
-* `or` stops on first success
-* `not` evaluates exactly one child predicate
+### Header Case Sensitivity
 
-### Filter Execution
-
-Filters execute sequentially in the order they are declared.
-
-A filter may:
-
-* mutate the request
-* mutate the response
-* short-circuit execution entirely
-* terminate processing with an immediate response
-
-### Upstream Execution
-
-If the route is not terminated by a filter, the request is forwarded to the configured upstream target.
-
-### Journaling
-
-Request and response journaling occurs asynchronously and does not block request processing.
+In strict accordance with RFC 7230, **all HTTP header evaluations in r7 are case-insensitive**. This applies to predicate matching (`RequestHeader`), filter mutations (`SetRequestHeader`), and CORS validations.
 
 ---
 
-## Upstream Configuration
+## 2. Execution Semantics
 
-The `upstream` block defines where r7 forwards matched requests. It manages load balancing, health monitoring, timeouts, and resilient fallback behaviors.
+Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
-### Core Properties
+1. **Global Request Filters:** Executed on every incoming request.
+2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
+3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once selected, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
+4. **Route Request Filters:** Pre-upstream mutations and enforcements execute in declaration order.
+5. **Upstream Proxy Execution:** The request is dispatched to the load-balanced target.
+6. **Route Response Filters:** Post-upstream mutations execute.
+7. **Global Response Filters:** Final global response mutations.
+8. **Async Journaling:** The request/response pair is dispatched to the disk-backed storage.
+
+### Short-Circuiting
+
+If any filter in the pipeline short-circuits execution (e.g., a `RequireAuthorizationHeader` fails, or a `ReturnResponse` executes), all subsequent filters and the Upstream Proxy Execution are **skipped**, and the pipeline immediately jumps to step 7 (Global Response Filters).
+
+---
+
+## 3. Upstream Configuration
+
+The `upstream` block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `strategy` | Enum | `ROUND_ROBIN` | The load balancing strategy applied across the defined targets. |
-| `targets` | List | Required | A list of downstream nodes capable of handling the request. |
-| `health_check` | Object | None | Configuration for active background health monitoring. |
-| `timeouts` | Object | None | Networking timeouts explicitly for this upstream group. |
-| `fallback` | Object | None | Defines alternate routing logic if all primary targets fail. |
+| `strategy` | Enum | `ROUND_ROBIN` | The load balancing strategy applied across the targets. |
+| `targets` | List | Required | A list of downstream nodes (`url`) capable of handling the request. |
+| `health_check` | Object | None | Active background health monitoring. |
+| `timeouts` | Object | None | Networking timeouts for this upstream. |
+| `fallback` | Object | None | Alternate routing logic if primary targets fail. |
 
 ### Targets
 
@@ -66,49 +63,49 @@ Defines the physical endpoints requests will be routed to. The upstream must con
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://` and include a valid host). |
+| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). |
 
 ### Health Check (`health_check`)
 
-Configures active background probes to automatically evict unhealthy nodes and restore them once recovered.
+Configures background probes to automatically evict and restore nodes.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `path` | String | `/health` | The URI path appended to the target URL for the ping request. Must start with `/`. |
-| `interval` | Duration | `10s` | The frequency of background HTTP probes. Must be positive. |
-| `rise` | Integer | `2` | Consecutive successful probes required to mark an offline node as healthy. |
-| `fall` | Integer | `2` | Consecutive failed probes required to evict a healthy node from the pool. |
-| `override` | Enum | `NONE` | Forces the target state (`NONE`, `FORCE_UP`, `FORCE_DOWN`). |
+| `path` | String | `/health` | The URI path appended to the target URL for the ping request. |
+| `interval` | Duration | `10s` | The frequency of background HTTP probes. |
+| `rise` | Integer | `2` | Consecutive successes required to mark an offline node healthy. |
+| `fall` | Integer | `2` | Consecutive failures required to evict a healthy node. |
+| `override` | Enum | `NONE` | **Warning:** `FORCE_DOWN` evicts the target regardless of probe success. `FORCE_UP` routes to the target regardless of probe failure. |
 
 ### Timeouts (`timeouts`)
 
-Granular limits for network interactions with the specific upstream group.
+*Currently, only response-read timeouts are configurable at the upstream level. Connect timeouts are handled globally by the proxy client.*
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. Must be positive. |
+| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. |
 
 ### Fallback (`fallback`)
 
-Configures the gateway's behavior if the upstream connection fails completely (e.g., all targets offline or connection refused).
+Configures behavior if the upstream connection fails completely. **Fallback recursion is not permitted; cyclic references are rejected at startup.**
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `route_id` | String | Yes | The `id` of another defined route to hand execution over to (such as a stubbed mock route). |
+| `route_id` | String | Yes | The `id` of another route to execute (e.g., a stubbed mock route). |
 
 ---
 
-## Predicates
+## 4. Predicates
 
-Predicates define the matching conditions that determine whether an incoming request should be routed to a specific upstream target. A route is only executed if its predicates evaluate to true.
+Predicates determine whether an incoming request matches a route.
+
+**Regex Semantics:** All regex predicates use standard Java Regex syntax. Matching is **partial by default** unless explicitly anchored (`^`, `$`). Matching is **case-sensitive** unless the inline flag `(?i)` is used.
 
 ### Logical Meta-Predicates
 
-Predicates can be nested and combined using logical operators. This allows for complex routing rules based on multiple conditions.
-
-* `and`: Evaluates to true only if **all** child predicates evaluate to true. Expects a list of predicates.
-* `or`: Evaluates to true if **at least one** child predicate evaluates to true. Expects a list of predicates.
-* `not`: Inverts the result of a **single** child predicate. Expects exactly one predicate object.
+* `and`: True if **all** child predicates are true. Short-circuits on first failure.
+* `or`: True if **at least one** child predicate is true. Short-circuits on first success.
+* `not`: Inverts the result of a **single** child predicate.
 
 ---
 
@@ -172,7 +169,7 @@ Matches if a specific HTTP header exists and its value matches a regular express
 
 ### Query Parameter Matching
 
-#### Query
+#### QueryParameter
 
 Matches if a specific query parameter exists in the URL and its value exactly matches the provided string.
 
@@ -181,7 +178,7 @@ Matches if a specific query parameter exists in the URL and its value exactly ma
 | `name` | String | Yes | The exact name of the query parameter. |
 | `value` | String | Yes | The exact value the query parameter must contain. |
 
-#### HasQuery
+#### HasQueryParameter
 
 Matches if a specific query parameter exists in the URL. This will match even if the parameter is used as a flag with no value (e.g., `?debug`).
 
@@ -189,7 +186,7 @@ Matches if a specific query parameter exists in the URL. This will match even if
 | --- | --- | --- | --- |
 | `name` | String | Yes | The exact name of the query parameter to check for. |
 
-#### MatchQuery
+#### MatchQueryParameter
 
 Matches if a specific query parameter exists and its value matches a regular expression.
 
@@ -250,43 +247,62 @@ Matches the HTTP method of the incoming request against a list of allowed method
 
 #### RemoteAddr
 
-Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6 network definitions.
+Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the physical TCP peer address**; it does not read `X-Forwarded-For` to prevent IP spoofing.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `source` | String | Yes | The IP address or CIDR notation (e.g., `192.168.1.5` or `10.0.0.0/24`) to match against the client's remote address. |
+| `source` | String | Yes | The IP address or CIDR notation (e.g., `192.168.1.5` or `10.0.0.0/24`). |
 
 ---
 
-## Filters
+## 5. Filters
 
-Filters modify requests, shape traffic, or enforce security rules after a route is matched but before (or after) it reaches the upstream target.
+Filters mutate requests, shape traffic, or enforce security rules after a route is matched.
+
+* **`Add*` Semantics:** Safely appends a new key/value pair without deleting existing ones.
+* **`Set*` Semantics:** Destructively overwrites existing keys with the new value.
 
 ### Mutation: Headers, Cookies, and Parameters
 
 #### AddRequestHeader
 
-Adds or overwrites an HTTP header before forwarding the request to the upstream target.
+Appends an HTTP header before forwarding the request to the upstream target.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the HTTP header. |
+| `value` | String | Yes | The value to append to the header. |
+
+#### SetRequestHeader
+
+Overwrites an existing HTTP header before forwarding the request upstream.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | String | Yes | The name of the HTTP header. |
 | `value` | String | Yes | The value to assign to the header. |
-| `override` | Boolean | No | If `true`, overwrites existing headers with the same name. If `false` or omitted, appends the value. |
 
 #### AddResponseHeader
 
-Adds or overwrites an HTTP header on the client response before it is returned to the client.
+Appends an HTTP header on the client response before it is returned to the client.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the HTTP header. |
+| `value` | String | Yes | The value to append to the header. |
+
+#### SetResponseHeader
+
+Overwrites an existing HTTP header on the client response.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | String | Yes | The name of the HTTP header. |
 | `value` | String | Yes | The value to assign to the header. |
-| `override` | Boolean | No | If `true`, overwrites existing headers with the same name. If `false` or omitted, appends the value. |
 
 #### RemoveRequestHeader
 
-Strips a specified HTTP header from the client request before it is forwarded to the upstream target.
+Strips a specified HTTP header from the client request before it is forwarded.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -294,24 +310,24 @@ Strips a specified HTTP header from the client request before it is forwarded to
 
 #### RemoveResponseHeader
 
-Strips a specified HTTP header from the upstream response before it is returned to the client.
+Strips a specified HTTP header from the upstream response before it is returned.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | String | Yes | The exact name of the header to remove. |
 
-#### AddRequestCookie
+#### SetRequestCookie
 
-Injects a new cookie directly into the `Cookie` header of the incoming request before it is routed upstream.
+Injects or overwrites a cookie directly in the `Cookie` header of the incoming request.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | String | Yes | The exact name of the cookie. |
 | `value` | String | Yes | The value of the cookie. |
 
-#### AddResponseCookie
+#### SetResponseCookie
 
-Injects a new `Set-Cookie` header into the response returned to the client, complete with necessary security metadata.
+Injects a new `Set-Cookie` header into the response returned to the client, overwriting the client's cookie state.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -322,7 +338,7 @@ Injects a new `Set-Cookie` header into the response returned to the client, comp
 | `max_age` | Duration | No | The time-to-live for the cookie. |
 | `secure` | Boolean | No | Requires HTTPS. Defaults to `true` if omitted. |
 | `http_only` | Boolean | No | Prevents client-side script access. Defaults to `true` if omitted. |
-| `same_site` | String | No | Cross-site request forgery protection (`Strict`, `Lax`, `None`). Defaults to `Lax`. |
+| `same_site` | Enum | No | Cross-site request forgery protection (`Strict`, `Lax`, `None`). Defaults to `Lax`. |
 
 #### RemoveRequestCookie
 
@@ -334,16 +350,25 @@ Strips a specific cookie from the `Cookie` header before the request is routed u
 
 #### AddQueryParameter
 
-Appends a new query parameter to the request URL before forwarding to the upstream target.
+Appends a new query parameter to the request URL. Multiple parameters with the same name are supported.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | String | Yes | The name of the query parameter to add. |
 | `value` | String | Yes | The value of the query parameter. |
 
+#### SetQueryParameter
+
+Overwrites any existing query parameter with the specified name.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the query parameter to set. |
+| `value` | String | Yes | The value of the query parameter. |
+
 #### RemoveQueryParameter
 
-Strips a specific query parameter from the URL before forwarding it to the upstream target.
+Strips a specific query parameter from the URL before forwarding.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -356,7 +381,7 @@ Automatically injects the gateway's internal request ID into both the upstream r
 
 #### RemoveCacheHeaders
 
-Strips cache validation headers (`If-Modified-Since`, `If-None-Match`) and injects strict no-cache directives (`Cache-Control: no-cache`, `Pragma: no-cache`) into the upstream request.
+Strips cache validation headers (`If-Modified-Since`, `If-None-Match`) and injects strict no-cache directives (`Cache-Control: no-cache`, `Pragma: no-cache`) upstream.
 *This filter requires no configuration parameters.*
 
 ---
@@ -365,7 +390,7 @@ Strips cache validation headers (`If-Modified-Since`, `If-None-Match`) and injec
 
 #### StripPathPrefix
 
-Removes a specified number of structural path segments from the beginning of the request path before it is routed upstream.
+Removes a specified number of structural path segments from the beginning of the request path.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -373,7 +398,7 @@ Removes a specified number of structural path segments from the beginning of the
 
 #### RewritePath
 
-Rewrites the upstream request path using regular expressions before forwarding it to the target.
+Rewrites the upstream request path using regular expressions. Uses standard Java Matcher replacement semantics (`$1`, `$2`).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -491,7 +516,7 @@ Handles Cross-Origin Resource Sharing (CORS). Intercepts `OPTIONS` preflight req
 
 #### RateLimiter
 
-Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers.
+Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the TCP peer IP address.**
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -503,7 +528,7 @@ Provides token-bucket rate limiting. Requests exceeding the limit are rejected w
 
 #### CircuitBreaker
 
-Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of `5xx` server errors is reached. Fast-fails with `503 Service Unavailable` while open.
+Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of `5xx` server errors is reached. **Failures are tracked per-route.** Fast-fails with `503 Service Unavailable` while open, and allows a single probe request through during half-open state.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -516,7 +541,7 @@ Monitors upstream responses and temporarily blocks routing to the target if a sp
 
 #### ReturnResponse
 
-Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client.
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -525,7 +550,7 @@ Short-circuits the routing pipeline, halting execution and immediately returning
 
 #### StaticContent
 
-Short-circuits the pipeline to serve static files directly from the disk using a high-performance native handler. *(Note: Typically requires `StripPathPrefix` to run first to correctly map the URI).*
+Short-circuits the pipeline to serve static files directly from the disk using a high-performance native handler. **Security:** Path traversal attempts (`../`) are automatically rejected.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -541,7 +566,34 @@ Overrides the HTTP response status code returned to the client, regardless of th
 
 ---
 
-## Complete Example Configuration
+## 6. Journaling & Storage
+
+Request/response journaling is executed asynchronously to avoid blocking the hot path.
+
+### Storage Configuration (`server.yaml -> storage`)
+
+Storage utilizes memory-mapped files separated into shards. When all shards reach the `shard_size` limit, r7 utilizes a **ring-buffer rollover policy**, overwriting the oldest shard to guarantee disk limits are strictly respected.
+
+### Logging Levels (`routes.yaml -> journal`)
+
+Verbosity can be set generically or overridden conditionally based on HTTP status codes.
+
+| Level | Captured Data | Notes |
+| --- | --- | --- |
+| `NONE` | None | Disables logging completely for the route/status. |
+| `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
+| `HEADERS` | Metadata + Headers | Captures both request and response headers. |
+| `FULL` | Headers + Bodies | Binary-safe. Payloads exceeding 1MB are automatically truncated to prevent runaway storage. |
+
+---
+
+## 7. TLS & Security
+
+Note: r7 expects TLS termination to be handled by an edge load balancer (e.g., AWS ALB, Cloudflare) directly in front of it.
+
+---
+
+## 8. Complete Example Configuration
 
 The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.
 
@@ -579,25 +631,21 @@ routes:
           base_directory: /var/www/html/
     upstream: null
 
-  # Mock response serving (Short-circuits upstream phase)
-  - id: stubbed-api
+  # Complex routing with nested logical predicates
+  - id: protected-admin-api
     match:
-      - PathPrefix:
-          prefix: /api/v1/beta/
-    filters:
-      - ReturnResponse:
-          status: 418
-          body: "Beta API offline"
-    upstream: null
-
-  # Full option upstream config with active health checking, limits, and strategy
-  - id: search-api
-    match:
-      - PathPrefix:
-          prefix: /search
-    filters:
-      - StripPathPrefix:
-          parts: 1
+      - and:
+          - PathPrefix:
+              prefix: /api/admin
+          - or:
+              - RemoteAddr:
+                  source: 10.0.0.0/8
+              - HasRequestHeader:
+                  name: X-Internal-VPN
+          - not:
+              - MatchQueryParameter:
+                  name: debug
+                  regexp: "true|1"
     upstream:
       strategy: ROUND_ROBIN
       health_check:
@@ -605,63 +653,47 @@ routes:
         rise: 2
         fall: 3
         path: /system/health
-        # override: FORCE_DOWN
       timeouts:
         read: 15s
       fallback:
-        route_id: stubbed-api
+        route_id: fallback-stub
       targets:
-        - url: https://search-1.example.com
-        - url: https://search-2.example.com
-
-  # Complex routing with method/query matching, configured filters, and conditional journaling
-  - id: my-service
-    match:
-      - PathPrefix:
-          prefix: /hello
-      - Method:
-          include:
-            - GET
-            - POST
-      - MatchQuery:
-          name: tenant_id
-          regexp: "^[A-Za-z0-9]+$"
-    upstream:
-      targets:
-        - url: http://localhost:1111
+        - url: https://admin-1.internal
+        - url: https://admin-2.internal
     filters:
-      # Filters can be declared with specific configuration arguments (snake_case)
-      - RateLimiter:
-          capacity: 5
-          refill_tokens: 1
-          refill_period: 2s
-      - CircuitBreaker:
-          failure_threshold: 10
-          cooldown_period: 12s
-      - AddResponseHeader:
-          name: X-Powered-By
-          value: ethlo r7
-      - RemoveRequestCookie:
-          name: JSESSIONID
-      # Filters requiring no arguments are declared by name only
-      - AddCorrelationId
       - RequireAuthorizationHeader
+      - RateLimiter:
+          capacity: 100
+          refill_tokens: 10
+          refill_period: 1s
+      - CircuitBreaker:
+          failure_threshold: 5
+          cooldown_period: 30s
     journal:
       request:
-        level: NONE
-        # Increase log verbosity dynamically based on the response status
+        level: METADATA
         status_overrides:
+          5xx: FULL
           401,403: HEADERS
-          429: METADATA
-          5xx: HEADERS
       response:
-        level: NONE
+        level: METADATA
+
+  - id: fallback-stub
+    match: [] # Empty match blocks are never hit naturally; used only via fallback
+    filters:
+      - ReturnResponse:
+          status: 503
+          body: '{"error": "Admin services currently offline"}'
+      - SetResponseHeader:
+          name: Content-Type
+          value: application/json
+    upstream: null
 
 ```
 
 ---
 
-## Server Configuration
+## 9. Server Configuration
 
 The `server.yaml` file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
 

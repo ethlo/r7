@@ -11,9 +11,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
-public final class QueryFactory implements GatewayPredicateFactory<QueryFactory.Config>
+public final class QueryParameterFactory implements GatewayPredicateFactory<QueryParameterFactory.Config>
 {
-    private static final String PREDICATE_NAME = "Query";
+    private static final String PREDICATE_NAME = "QueryParameter";
 
     @Override
     public String name()

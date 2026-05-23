@@ -14,7 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
-public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory<RemoteAddrPredicateFactory.Config>
+public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAddrFactory.Config>
 {
     private static final String PREDICATE_NAME = "RemoteAddr";
 
