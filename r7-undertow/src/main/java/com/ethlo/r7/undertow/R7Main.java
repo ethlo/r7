@@ -55,6 +55,8 @@ public final class R7Main
     private static final Logger logger = LoggerFactory.getLogger(R7Main.class);
     private final R7fCompressionEngine compressionEngine;
     private final GracefulShutdownHandler gracefulShutdownHandler;
+    private final Undertow server;
+    private final Undertow managementServer;
 
     public R7Main(final Path configFile, final Path serverFile) throws IOException
     {
@@ -107,11 +109,11 @@ public final class R7Main
         this.gracefulShutdownHandler = new GracefulShutdownHandler(rootHandler);
         builder.setHandler(gracefulShutdownHandler);
         configureServer(builder, serverConfig);
-        final Undertow server = builder.build();
+        this.server = builder.build();
 
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
 
-        final Undertow managementServer = setupStatusBackend(statusHandler, serverConfig.management().port(), serverConfig.management().host(), sharedWorker);
+        this.managementServer = setupStatusBackend(statusHandler, serverConfig.management().port(), serverConfig.management().host(), sharedWorker);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
@@ -321,5 +323,11 @@ public final class R7Main
 
                 // Memory Configuration
                 .setDirectBuffers(advanced.directBuffers());
+    }
+
+    public void stop()
+    {
+        server.stop();
+        managementServer.stop();
     }
 }

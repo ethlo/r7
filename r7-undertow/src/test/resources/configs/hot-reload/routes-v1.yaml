@@ -8,4 +8,4 @@ routes:
           parts: 1
     upstream:
       targets:
-        - url: "http://host.testcontainers.internal:${WIREMOCK_PORT}/"
+        - url: "http://${UPSTREAM_HOST}:${WIREMOCK_PORT}/"

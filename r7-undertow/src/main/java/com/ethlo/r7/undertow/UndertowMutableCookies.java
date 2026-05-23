@@ -32,12 +32,11 @@ public final class UndertowMutableCookies implements MutableCookies
     @Override
     public void remove(final String name)
     {
-        final Iterator<Cookie> iterator = this.exchange.requestCookies().iterator();
-        while (iterator.hasNext())
+        for (final Cookie cookie : this.exchange.requestCookies())
         {
-            if (iterator.next().getName().equals(name))
+            if (cookie.getName().equals(name))
             {
-                iterator.remove();
+                exchange.setRequestCookie(new CookieImpl(name, null));
                 break;
             }
         }

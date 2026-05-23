@@ -1,12 +1,4 @@
 routes:
-  - id: e2e-passthrough
-    match:
-      - PathStartsWith:
-          prefix: /
-    upstream:
-      targets:
-        - url: http://host.testcontainers.internal:${WIREMOCK_PORT}/
-
   - id: static-test
     match:
       - PathStartsWith:
@@ -15,8 +7,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /app/static/
-
+          base_directory: /tmp
     upstream: null
 
   - id: query-modify-test
@@ -31,7 +22,7 @@ routes:
           name: removed_q
     upstream:
       targets:
-        - url: http://host.testcontainers.internal:${WIREMOCK_PORT}
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
 
   - id: cookie-modify-test
     match:
@@ -45,4 +36,12 @@ routes:
           name: removed_c
     upstream:
       targets:
-        - url: http://host.testcontainers.internal:${WIREMOCK_PORT}
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  - id: e2e-passthrough
+    match:
+      - PathStartsWith:
+          prefix: /
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}/
