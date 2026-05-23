@@ -1,9 +1,9 @@
 package com.ethlo.r7.filters;
 
-import com.ethlo.r7.RedactUtil;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.core.SimpleCookie;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -13,9 +13,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestHeaderFactory.Config>
+public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRequestCookieFactory.Config>
 {
-    private static final String FILTER_NAME = "AddRequestHeader";
+    private static final String FILTER_NAME = "SetRequestCookie";
 
     @Override
     public String name()
@@ -48,19 +48,17 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
 
     private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
-        private final String name;
-        private final String value;
+        private final SimpleCookie cookie;
 
         public GF(final Config config)
         {
-            this.name = config.name();
-            this.value = config.value();
+            this.cookie = new SimpleCookie(config.name(), config.value());
         }
 
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            exchange.upstreamRequest().headers().add(this.name, this.value);
+            exchange.upstreamRequest().cookies().set(this.cookie);
         }
 
         @Override
@@ -72,7 +70,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.name + ": " + RedactUtil.fingerprint(this.value);
+            return FILTER_NAME + ": " + this.cookie.name() + "=" + this.cookie.value();
         }
     }
 }

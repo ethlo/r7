@@ -1,5 +1,9 @@
 package com.ethlo.r7.core;
 
+import com.ethlo.r7.util.FastTerminationGatewayResponse;
+
+import com.ethlo.r7.util.constants.MediaTypes;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,6 +13,9 @@ import com.ethlo.r7.core.proxy.NoAvailableTargetException;
 import com.ethlo.r7.core.proxy.ProxyConnectionException;
 import com.ethlo.r7.core.proxy.ProxyPoolExhaustedException;
 import com.ethlo.r7.util.constants.HttpStatuses;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 public final class StandardErrorHandler implements GatewayErrorHandler
 {
@@ -33,7 +40,7 @@ public final class StandardErrorHandler implements GatewayErrorHandler
             // Connection refused/DNS issues - this is a 502 (Gateway issue)
             status = HttpStatuses.BAD_GATEWAY;
             userMessage = "Upstream connection failed";
-            log.info("RequestID: {} URI: {} : Upstream Error - {}", exchange.requestId(), exchange.clientRequest().uri(), error.getMessage());
+            log.info("RequestID: {} URI: {} : Upstream error trying {}  - {}", exchange.requestId(), exchange.clientRequest().uri(), exchange.route(), error.getMessage());
         }
         else
         {

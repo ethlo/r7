@@ -29,7 +29,7 @@ routes:
       - PathPrefix:
           prefix: /cookie-modify
     filters:
-      - AddRequestCookie:
+      - SetRequestCookie:
           name: added_c
           value: injected_cookie
       - RemoveRequestCookie:

@@ -15,9 +15,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public class AddResponseCookieFactory implements GatewayFilterFactory<AddResponseCookieFactory.Config>
+public final class SetResponseCookieFactory implements GatewayFilterFactory<SetResponseCookieFactory.Config>
 {
-    private static final String FILTER_NAME = "AddResponseCookie";
+    private static final String FILTER_NAME = "SetResponseCookie";
 
     @Override
     public String name()
@@ -51,29 +51,28 @@ public class AddResponseCookieFactory implements GatewayFilterFactory<AddRespons
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result);
-            validator.required("name", this.name);
-            validator.required("value", this.value);
+            final ValidatorUtils validator = new ValidatorUtils(result)
+                    .required("name", this.name())
+                    .required("value", this.value());
 
-            if (this.sameSite != null)
+            if (this.sameSite() != null)
             {
-                if (!this.sameSite.equalsIgnoreCase("Strict") &&
-                        !this.sameSite.equalsIgnoreCase("Lax") &&
-                        !this.sameSite.equalsIgnoreCase("None"))
+                if (!this.sameSite().equalsIgnoreCase("Strict") &&
+                        !this.sameSite().equalsIgnoreCase("Lax") &&
+                        !this.sameSite().equalsIgnoreCase("None"))
                 {
-                    validator.invalid("sameSite", this.sameSite, "Must be Strict, Lax, or None");
+                    validator.invalid("sameSite", this.sameSite(), "Must be Strict, Lax, or None");
                 }
             }
         }
     }
 
-    private static class GF implements ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements ClientResponseGatewayFilter, ShortInfo
     {
         private final String cookieString;
 
         public GF(final Config config)
         {
-            // Pre-compute the exact Set-Cookie string once during route initialization
             this.cookieString = buildSetCookieString(config);
         }
 
@@ -92,7 +91,7 @@ public class AddResponseCookieFactory implements GatewayFilterFactory<AddRespons
             }
             if (config.maxAge() != null)
             {
-                builder.append("; Max-Age=").append(config.maxAge.toSeconds());
+                builder.append("; Max-Age=").append(config.maxAge().toSeconds());
             }
             if (config.secure() != null && config.secure())
             {
@@ -113,7 +112,8 @@ public class AddResponseCookieFactory implements GatewayFilterFactory<AddRespons
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            // Note: Use add(), not set(), because there can be multiple Set-Cookie headers
+            // We still use add() on the HTTP headers object because multiple Set-Cookie 
+            // headers are valid in a single HTTP response (one for each cookie).
             exchange.clientResponse().headers().add(HttpHeaders.SET_COOKIE, this.cookieString);
         }
 

@@ -1,9 +1,3 @@
-Here is the fully updated **r7 Config Reference**.
-
-I have seamlessly integrated the new `RequireQueryParameter`, `RequireMatchQueryParameter`, `RequireCookie`, and `RequireMatchCookie` filters into the **Security & Validation** section, completing your enforcement matrix. I also ensured that `RateLimiter` is consistently used as the correct noun-based name throughout the document.
-
----
-
 # r7 Config Reference
 
 ## Routing Configuration
@@ -14,9 +8,9 @@ The configuration supports environment variable interpolation (e.g., `${ENV_VAR:
 
 ### Core Concepts
 
-* **Global Filters:** Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection.
+* **Global Filters:** Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection. Declared using the `global_filters` key at the root of the configuration.
 * **Routes:** The core mapping logic. Each route requires a unique `id`, a `match` condition (like path prefixes or HTTP methods), and an `upstream` target.
-* **Route Filters:** Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched.
+* **Route Filters:** Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched. Declared using the `filters` key inside a specific route block.
 * **Short-Circuiting & Static Serving:** Routes can bypass the upstream proxy client entirely using filters like `ReturnResponse` or `StaticContent`. In these cases, the `upstream` block can be omitted or set to `null`.
 * **Journaling:** Granular control over what is logged. You can define base logging levels (e.g., `NONE`, `METADATA`, `HEADERS`, `FULL`) and override these levels based on specific HTTP status codes.
 
@@ -261,6 +255,7 @@ Matches the client's IP address against a specific IP or a CIDR subnet block. It
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `source` | String | Yes | The IP address or CIDR notation (e.g., `192.168.1.5` or `10.0.0.0/24`) to match against the client's remote address. |
+
 ---
 
 ## Filters
@@ -543,6 +538,7 @@ Overrides the HTTP response status code returned to the client, regardless of th
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `status` | Integer | Yes | The valid HTTP status code (100-599) to enforce on the response. |
+
 ---
 
 ## Complete Example Configuration
@@ -553,7 +549,7 @@ The following example demonstrates a standard r7 configuration, showcasing path 
 version: '{{git.rev.abbr}}'
 
 # Global filters applied to all routes
-filters:
+global_filters:
   - SimpleMetrics
   - AddCorrelationId
 
@@ -660,7 +656,6 @@ routes:
           5xx: HEADERS
       response:
         level: NONE
-
 
 ```
 

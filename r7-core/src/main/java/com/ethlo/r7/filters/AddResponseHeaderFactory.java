@@ -13,7 +13,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public class AddResponseHeaderFactory implements GatewayFilterFactory<AddResponseHeaderFactory.Config>
+public final class AddResponseHeaderFactory implements GatewayFilterFactory<AddResponseHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "AddResponseHeader";
 
@@ -30,46 +30,37 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
     }
 
     @Override
-    public ClientResponseGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
+    public ClientResponseGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
 
-    public record Config(String name, String value, Boolean override) implements ValidatableConfig
+    public record Config(String name, String value) implements ValidatableConfig
     {
         @Override
-        public void validate(ValidationResult result)
+        public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("name", name)
-                    .required("value", value);
+                    .required("name", this.name())
+                    .required("value", this.value());
         }
     }
 
-    private static class GF implements ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements ClientResponseGatewayFilter, ShortInfo
     {
-        private final boolean override;
         private final String name;
         private final String value;
 
-        public GF(Config config)
+        public GF(final Config config)
         {
-            override = config.override() != null && config.override();
-            name = config.name();
-            value = config.value();
+            this.name = config.name();
+            this.value = config.value();
         }
 
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            if (override)
-            {
-                exchange.clientResponse().headers().set(name, value);
-            }
-            else
-            {
-                exchange.clientResponse().headers().add(name, value);
-            }
+            exchange.clientResponse().headers().add(this.name, this.value);
         }
 
         @Override
@@ -81,7 +72,7 @@ public class AddResponseHeaderFactory implements GatewayFilterFactory<AddRespons
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + name + ": " + RedactUtil.fingerprint(value);
+            return FILTER_NAME + ": " + this.name + ": " + RedactUtil.fingerprint(this.value);
         }
     }
 }

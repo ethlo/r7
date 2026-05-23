@@ -11,11 +11,10 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
-@SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestHeaderFactory.Config>
+public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRequestHeaderFactory.Config>
 {
-    private static final String FILTER_NAME = "AddRequestHeader";
+    private static final String FILTER_NAME = "SetRequestHeader";
 
     @Override
     public String name()
@@ -60,7 +59,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            exchange.upstreamRequest().headers().add(this.name, this.value);
+            exchange.upstreamRequest().headers().set(this.name, this.value);
         }
 
         @Override

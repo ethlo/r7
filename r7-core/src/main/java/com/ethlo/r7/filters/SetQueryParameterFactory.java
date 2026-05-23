@@ -3,7 +3,6 @@ package com.ethlo.r7.filters;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.core.SimpleCookie;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -11,11 +10,10 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
-@SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public class AddRequestCookieFactory implements GatewayFilterFactory<AddRequestCookieFactory.Config>
+public final class SetQueryParameterFactory implements GatewayFilterFactory<SetQueryParameterFactory.Config>
 {
-    private static final String FILTER_NAME = "AddRequestCookie";
+    private static final String FILTER_NAME = "SetQueryParameter";
 
     @Override
     public String name()
@@ -40,26 +38,28 @@ public class AddRequestCookieFactory implements GatewayFilterFactory<AddRequestC
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result);
-            validator.required("name", this.name);
-            validator.required("value", this.value);
+            new ValidatorUtils(result)
+                    .required("name", this.name())
+                    .required("value", this.value());
         }
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
-        private final SimpleCookie cookie;
+        private final String paramName;
+        private final String paramValue;
 
         public GF(final Config config)
         {
-            // Instantiate the cookie once during configuration loading, not per-request
-            this.cookie = new SimpleCookie(config.name(), config.value());
+            this.paramName = config.name();
+            this.paramValue = config.value();
         }
 
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            exchange.upstreamRequest().cookies().set(this.cookie);
+            // .set() overwrites any existing parameter with the same name
+            exchange.upstreamRequest().queryParams().set(this.paramName, this.paramValue);
         }
 
         @Override
@@ -71,7 +71,7 @@ public class AddRequestCookieFactory implements GatewayFilterFactory<AddRequestC
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.cookie.name() + "=" + this.cookie.value();
+            return FILTER_NAME + ": " + this.paramName + "=" + this.paramValue;
         }
     }
 }

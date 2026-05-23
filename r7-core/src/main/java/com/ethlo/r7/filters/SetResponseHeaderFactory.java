@@ -1,9 +1,9 @@
 package com.ethlo.r7.filters;
 
 import com.ethlo.r7.RedactUtil;
+import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -11,11 +11,10 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
-@SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestHeaderFactory.Config>
+public final class SetResponseHeaderFactory implements GatewayFilterFactory<SetResponseHeaderFactory.Config>
 {
-    private static final String FILTER_NAME = "AddRequestHeader";
+    private static final String FILTER_NAME = "SetResponseHeader";
 
     @Override
     public String name()
@@ -30,7 +29,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
+    public ClientResponseGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -46,7 +45,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
         }
     }
 
-    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements ClientResponseGatewayFilter, ShortInfo
     {
         private final String name;
         private final String value;
@@ -58,9 +57,9 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
         }
 
         @Override
-        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
+        public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            exchange.upstreamRequest().headers().add(this.name, this.value);
+            exchange.clientResponse().headers().set(this.name, this.value);
         }
 
         @Override
