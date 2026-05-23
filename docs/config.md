@@ -37,9 +37,9 @@ As a deterministic request execution engine, r7 provides strict operational guar
 * **Execution:** Filter execution order is strictly stable. No implicit parallel filter execution occurs.
 * **Routing:** Upstream target selection is strictly deterministic within the chosen load-balancing strategy.
 
-### Filter Failure Semantics
+### Failure Boundaries (Fail-Closed)
 
-r7 is designed to **fail-closed**. If a filter encounters a runtime exception (e.g., a malformed header mutation, regex execution failure, or invalid template substitution), the pipeline immediately halts and returns a `500 Internal Server Error`. This prevents unsafe, partially mutated requests from bleeding into the upstream network.
+r7 strictly separates intentional request termination from runtime failures. If a filter encounters a runtime exception (e.g., malformed template substitution or regex execution failure), r7 **fails closed**. The pipeline immediately halts, bypasses all remaining filters (including response filters), and returns a `500 Internal Server Error` to prevent unsafe, partially mutated requests from routing upstream.
 
 ### Hot Reloads & State
 
@@ -47,7 +47,7 @@ r7 supports zero-downtime configuration reloads.
 
 * Swapping the `routes.yaml` configuration is an **atomic operation**.
 * In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.
-* Stateful filter data (like `CircuitBreaker` tripping states and `RateLimiter` token buckets) is intentionally reset upon reload to guarantee immediate, strict adherence to the new configuration parameters.
+* Stateful filter data (like `CircuitBreaker` tripping states and `RateLimiter` token buckets) is intentionally reset upon reload. This is **by design and not configurable**, guaranteeing immediate, strict adherence to the new configuration parameters.
 
 ---
 
@@ -62,17 +62,19 @@ Understanding the exact pipeline order is critical for operating r7. For a given
 5. **Upstream Proxy Execution:** The request is dispatched to the load-balanced target.
 6. **Route Response Filters:** Post-upstream mutations execute.
 7. **Global Response Filters:** Final global response mutations.
-8. **Async Journaling:** The request/response pair is dispatched to the disk-backed storage.
+8. **Async Journaling:** The request/response pair is dispatched to disk.
 
 ### Phase-Aware Filters
 
 Filters are inherently phase-aware. Although they are declared in a single, unified list (either in `global_filters` or a route's `filters` block), they automatically participate only in the lifecycle phases relevant to their behavior.
 
-* *Example:* `AddRequestHeader` executes immediately during phase 4. However, response-mutating filters like `SetResponseHeader` are registered during phase 4 but their execution is **deferred** until phase 6 (after the upstream response is received).
+* *Example:* `AddRequestHeader` executes immediately during phase 4. However, response-mutating filters like `SetResponseHeader` are registered during phase 4 but their execution is **deferred** until phase 6 (after the upstream response is received or generated).
 
-### Short-Circuiting
+### Short-Circuiting Flow
 
-If any filter in the pipeline short-circuits execution (e.g., a `RequireAuthorizationHeader` fails, or a `ReturnResponse` executes), all subsequent request filters and the Upstream Proxy Execution are **skipped**. The pipeline immediately transitions to the response phase (phase 6), executing any deferred route response filters and global response filters against the generated response context.
+Intentional short-circuits (such as a failed `Require*` validation or a `ReturnResponse` execution) are standard pipeline control flows, not runtime exceptions.
+
+If a filter short-circuits execution, phase 4 (remaining request filters) and phase 5 (Upstream Proxy Execution) are **skipped**. The pipeline immediately transitions to phase 6, executing any deferred **Route Response Filters** followed by **Global Response Filters** against the generated response context.
 
 ---
 
@@ -294,7 +296,7 @@ Filters mutate requests, shape traffic, or enforce security rules after a route 
 * **`Add*` Semantics:** Safely appends a non-destructive key/value pair.
 * **`Set*` Semantics:** Destructively replaces existing keys with the new value.
 * **`Remove*` Semantics:** Deletes the specified key entirely.
-* **`Require*` Semantics:** Validates presence or format, terminating the request if validation fails.
+* **`Require*` Semantics:** Validates presence or format, transitioning the request to the response phase if validation fails.
 
 ### Mutation: Headers, Cookies, and Parameters
 
@@ -455,7 +457,7 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 
 #### RequireRequestHeader
 
-Validates an HTTP header is present. Rejects the request if the header is missing.
+Validates an HTTP header is present. Short-circuits the request if the header is missing.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -512,7 +514,7 @@ Validates a cookie is present and its value matches a specified regular expressi
 
 #### RequireAuthorizationHeader
 
-Validates that incoming requests contain an `Authorization` header starting with either `Bearer ` or `Basic `. Rejects requests with a `401 Unauthorized` status if the header is missing or invalid.
+Validates that incoming requests contain an `Authorization` header starting with either `Bearer ` or `Basic `. Short-circuits requests with a `401 Unauthorized` status if the header is missing or invalid.
 *This filter requires no configuration parameters.*
 
 #### InjectBasicAuth
@@ -575,7 +577,7 @@ Monitors upstream responses and temporarily blocks routing **for the entire rout
 
 #### ReturnResponse
 
-Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Response-phase filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -606,7 +608,7 @@ Request/response journaling is executed asynchronously to avoid blocking the hot
 
 ### Storage Configuration (`server.yaml -> storage`)
 
-Storage utilizes memory-mapped files separated into shards. When all shards reach the `shard_size` limit, r7 utilizes a **ring-buffer rollover policy**, overwriting the oldest shard to guarantee disk limits are strictly respected without halting operations.
+Storage utilizes memory-mapped files separated into shards of a defined `shard_size` to minimize lock contention and manage disk IO.
 
 ### Logging Levels (`routes.yaml -> journal`)
 
@@ -621,13 +623,7 @@ Verbosity can be set generically or overridden conditionally based on HTTP statu
 
 ---
 
-## 8. TLS & Security
-
-r7 expects TLS termination to be handled by an edge load balancer (e.g., AWS ALB, Cloudflare) directly in front of it.
-
----
-
-## 9. Complete Example Configuration
+## 8. Complete Example Configuration
 
 The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.
 
@@ -730,7 +726,7 @@ routes:
 
 ---
 
-## 10. Server Configuration
+## 9. Server Configuration
 
 The `server.yaml` file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
 
