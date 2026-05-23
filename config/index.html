@@ -505,22 +505,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#routing-configuration" class="md-nav__link">
+  <a href="#1-core-architecture-semantics" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Routing Configuration
+        1. Core Architecture &amp; Semantics
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Routing Configuration">
+    <nav class="md-nav" aria-label="1. Core Architecture &amp; Semantics">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#core-concepts" class="md-nav__link">
+  <a href="#configuration-validation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Core Concepts
+        Configuration Validation
       </span>
     </span>
   </a>
@@ -528,10 +528,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#route-matching" class="md-nav__link">
+  <a href="#environment-variable-interpolation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Route Matching
+        Environment Variable Interpolation
       </span>
     </span>
   </a>
@@ -539,32 +539,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#filter-execution" class="md-nav__link">
+  <a href="#header-case-sensitivity" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Filter Execution
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#upstream-execution" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Upstream Execution
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#journaling" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Journaling
+        Header Case Sensitivity
       </span>
     </span>
   </a>
@@ -577,27 +555,44 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#upstream-configuration" class="md-nav__link">
+  <a href="#2-execution-semantics" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Upstream Configuration
+        2. Execution Semantics
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Upstream Configuration">
+    <nav class="md-nav" aria-label="2. Execution Semantics">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#core-properties" class="md-nav__link">
+  <a href="#short-circuiting" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Core Properties
+        Short-Circuiting
       </span>
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-upstream-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Upstream Configuration
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Upstream Configuration">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#targets" class="md-nav__link">
@@ -649,15 +644,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#predicates" class="md-nav__link">
+  <a href="#4-predicates" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Predicates
+        4. Predicates
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Predicates">
+    <nav class="md-nav" aria-label="4. Predicates">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -784,10 +779,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#query" class="md-nav__link">
+  <a href="#queryparameter" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Query
+        QueryParameter
       </span>
     </span>
   </a>
@@ -795,10 +790,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#hasquery" class="md-nav__link">
+  <a href="#hasqueryparameter" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        HasQuery
+        HasQueryParameter
       </span>
     </span>
   </a>
@@ -806,10 +801,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#matchquery" class="md-nav__link">
+  <a href="#matchqueryparameter" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        MatchQuery
+        MatchQueryParameter
       </span>
     </span>
   </a>
@@ -927,15 +922,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#filters" class="md-nav__link">
+  <a href="#5-filters" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Filters
+        5. Filters
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Filters">
+    <nav class="md-nav" aria-label="5. Filters">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -962,10 +957,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#setrequestheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        SetRequestHeader
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#addresponseheader" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
         AddResponseHeader
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setresponseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        SetResponseHeader
       </span>
     </span>
   </a>
@@ -995,10 +1012,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#addrequestcookie" class="md-nav__link">
+  <a href="#setrequestcookie" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        AddRequestCookie
+        SetRequestCookie
       </span>
     </span>
   </a>
@@ -1006,10 +1023,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#addresponsecookie" class="md-nav__link">
+  <a href="#setresponsecookie" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        AddResponseCookie
+        SetResponseCookie
       </span>
     </span>
   </a>
@@ -1032,6 +1049,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         AddQueryParameter
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setqueryparameter" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        SetQueryParameter
       </span>
     </span>
   </a>
@@ -1348,10 +1376,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#complete-example-configuration" class="md-nav__link">
+  <a href="#6-journaling-storage" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Complete Example Configuration
+        6. Journaling &amp; Storage
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Journaling &amp; Storage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#storage-configuration-serveryaml-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Storage Configuration (<code>server.yaml -&gt; storage</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logging-levels-routesyaml-journal" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Logging Levels (<code>routes.yaml -&gt; journal</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-tls-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        7. TLS &amp; Security
       </span>
     </span>
   </a>
@@ -1359,15 +1426,26 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#server-configuration" class="md-nav__link">
+  <a href="#8-complete-example-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Server Configuration
+        8. Complete Example Configuration
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Server Configuration">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-server-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        9. Server Configuration
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Server Configuration">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1572,43 +1650,42 @@
 
 
 <h1 id="r7-config-reference">r7 Config Reference</h1>
-<h2 id="routing-configuration">Routing Configuration</h2>
-<p>The r7 gateway is configured using a declarative YAML file called <code>routes.yaml</code>. This configuration defines how incoming requests are matched, modified by filters, routed to upstream targets, and logged by the journaling system.</p>
-<p>The configuration supports environment variable interpolation (e.g., <code>${ENV_VAR:default_value}</code>), allowing you to use a single configuration structure across multiple environments.</p>
-<h3 id="core-concepts">Core Concepts</h3>
+<h2 id="1-core-architecture-semantics">1. Core Architecture &amp; Semantics</h2>
+<p>The r7 gateway is configured using a declarative YAML file called <code>routes.yaml</code>. This configuration defines how incoming requests are matched, mutated, routed to upstream targets, and logged.</p>
+<h3 id="configuration-validation">Configuration Validation</h3>
+<p>The r7 configuration engine is strictly validated at startup. The gateway will <strong>fail-fast and refuse to start</strong> if it detects:</p>
 <ul>
-<li><strong>Global Filters:</strong> Applied to every request passing through the gateway, ensuring baseline behaviors like metric collection or correlation ID injection. Declared using the <code>global_filters</code> key at the root of the configuration.</li>
-<li><strong>Routes:</strong> The core mapping logic. Each route requires a unique <code>id</code>, a <code>match</code> condition (like path prefixes or HTTP methods), and an <code>upstream</code> target.</li>
-<li><strong>Route Filters:</strong> Specific mutations or traffic controls (like Rate Limiting, Circuit Breaking, or Header modification) applied only when a specific route is matched. Declared using the <code>filters</code> key inside a specific route block.</li>
-<li><strong>Short-Circuiting &amp; Static Serving:</strong> Routes can bypass the upstream proxy client entirely using filters like <code>ReturnResponse</code> or <code>StaticContent</code>. In these cases, the <code>upstream</code> block can be omitted or set to <code>null</code>.</li>
-<li><strong>Journaling:</strong> Granular control over what is logged. You can define base logging levels (e.g., <code>NONE</code>, <code>METADATA</code>, <code>HEADERS</code>, <code>FULL</code>) and override these levels based on specific HTTP status codes.</li>
+<li>Unknown filters, predicates, or configuration keys.</li>
+<li>Invalid regular expressions or malformed CIDR blocks.</li>
+<li>Cyclic/recursive <code>fallback</code> routing loops.</li>
+<li>Unresolvable environment variables without default values.</li>
 </ul>
-<h3 id="route-matching">Route Matching</h3>
-<p>Routes are evaluated in declaration order. The first route whose predicates fully match the incoming request is selected. If no route matches the request, r7 returns
-404 Not Found.</p>
-<p>Predicate evaluation is sequential and short-circuiting:</p>
+<h3 id="environment-variable-interpolation">Environment Variable Interpolation</h3>
+<p>Configuration values support environment variable injection using the <code>${VAR_NAME:default_value}</code> syntax.</p>
 <ul>
-<li><code>and</code> stops on first failure</li>
-<li><code>or</code> stops on first success</li>
-<li><code>not</code> evaluates exactly one child predicate</li>
+<li>Values are injected prior to type-casting.</li>
+<li>If a variable is missing and no default is provided, configuration validation fails.</li>
 </ul>
-<h3 id="filter-execution">Filter Execution</h3>
-<p>Filters execute sequentially in the order they are declared.</p>
-<p>A filter may:</p>
-<ul>
-<li>mutate the request</li>
-<li>mutate the response</li>
-<li>short-circuit execution entirely</li>
-<li>terminate processing with an immediate response</li>
-</ul>
-<h3 id="upstream-execution">Upstream Execution</h3>
-<p>If the route is not terminated by a filter, the request is forwarded to the configured upstream target.</p>
-<h3 id="journaling">Journaling</h3>
-<p>Request and response journaling occurs asynchronously and does not block request processing.</p>
+<h3 id="header-case-sensitivity">Header Case Sensitivity</h3>
+<p>In strict accordance with RFC 7230, <strong>all HTTP header evaluations in r7 are case-insensitive</strong>. This applies to predicate matching (<code>RequestHeader</code>), filter mutations (<code>SetRequestHeader</code>), and CORS validations.</p>
 <hr />
-<h2 id="upstream-configuration">Upstream Configuration</h2>
-<p>The <code>upstream</code> block defines where r7 forwards matched requests. It manages load balancing, health monitoring, timeouts, and resilient fallback behaviors.</p>
-<h3 id="core-properties">Core Properties</h3>
+<h2 id="2-execution-semantics">2. Execution Semantics</h2>
+<p>Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:</p>
+<ol>
+<li><strong>Global Request Filters:</strong> Executed on every incoming request.</li>
+<li><strong>Route Predicate Evaluation:</strong> Routes are evaluated in declaration order.</li>
+<li><strong>Route Match &amp; Halt:</strong> The <em>first</em> route whose predicates evaluate to <code>true</code> is selected. <strong>Once selected, no further routes are evaluated.</strong> If no route matches, a <code>404 Not Found</code> is returned.</li>
+<li><strong>Route Request Filters:</strong> Pre-upstream mutations and enforcements execute in declaration order.</li>
+<li><strong>Upstream Proxy Execution:</strong> The request is dispatched to the load-balanced target.</li>
+<li><strong>Route Response Filters:</strong> Post-upstream mutations execute.</li>
+<li><strong>Global Response Filters:</strong> Final global response mutations.</li>
+<li><strong>Async Journaling:</strong> The request/response pair is dispatched to the disk-backed storage.</li>
+</ol>
+<h3 id="short-circuiting">Short-Circuiting</h3>
+<p>If any filter in the pipeline short-circuits execution (e.g., a <code>RequireAuthorizationHeader</code> fails, or a <code>ReturnResponse</code> executes), all subsequent filters and the Upstream Proxy Execution are <strong>skipped</strong>, and the pipeline immediately jumps to step 7 (Global Response Filters).</p>
+<hr />
+<h2 id="3-upstream-configuration">3. Upstream Configuration</h2>
+<p>The <code>upstream</code> block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency.</p>
 <table>
 <thead>
 <tr>
@@ -1623,31 +1700,31 @@
 <td><code>strategy</code></td>
 <td>Enum</td>
 <td><code>ROUND_ROBIN</code></td>
-<td>The load balancing strategy applied across the defined targets.</td>
+<td>The load balancing strategy applied across the targets.</td>
 </tr>
 <tr>
 <td><code>targets</code></td>
 <td>List</td>
 <td>Required</td>
-<td>A list of downstream nodes capable of handling the request.</td>
+<td>A list of downstream nodes (<code>url</code>) capable of handling the request.</td>
 </tr>
 <tr>
 <td><code>health_check</code></td>
 <td>Object</td>
 <td>None</td>
-<td>Configuration for active background health monitoring.</td>
+<td>Active background health monitoring.</td>
 </tr>
 <tr>
 <td><code>timeouts</code></td>
 <td>Object</td>
 <td>None</td>
-<td>Networking timeouts explicitly for this upstream group.</td>
+<td>Networking timeouts for this upstream.</td>
 </tr>
 <tr>
 <td><code>fallback</code></td>
 <td>Object</td>
 <td>None</td>
-<td>Defines alternate routing logic if all primary targets fail.</td>
+<td>Alternate routing logic if primary targets fail.</td>
 </tr>
 </tbody>
 </table>
@@ -1667,12 +1744,12 @@
 <td><code>url</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The fully qualified URL (must begin with <code>http://</code> or <code>https://</code> and include a valid host).</td>
+<td>The fully qualified URL (must begin with <code>http://</code> or <code>https://</code>).</td>
 </tr>
 </tbody>
 </table>
 <h3 id="health-check-health_check">Health Check (<code>health_check</code>)</h3>
-<p>Configures active background probes to automatically evict unhealthy nodes and restore them once recovered.</p>
+<p>Configures background probes to automatically evict and restore nodes.</p>
 <table>
 <thead>
 <tr>
@@ -1687,36 +1764,36 @@
 <td><code>path</code></td>
 <td>String</td>
 <td><code>/health</code></td>
-<td>The URI path appended to the target URL for the ping request. Must start with <code>/</code>.</td>
+<td>The URI path appended to the target URL for the ping request.</td>
 </tr>
 <tr>
 <td><code>interval</code></td>
 <td>Duration</td>
 <td><code>10s</code></td>
-<td>The frequency of background HTTP probes. Must be positive.</td>
+<td>The frequency of background HTTP probes.</td>
 </tr>
 <tr>
 <td><code>rise</code></td>
 <td>Integer</td>
 <td><code>2</code></td>
-<td>Consecutive successful probes required to mark an offline node as healthy.</td>
+<td>Consecutive successes required to mark an offline node healthy.</td>
 </tr>
 <tr>
 <td><code>fall</code></td>
 <td>Integer</td>
 <td><code>2</code></td>
-<td>Consecutive failed probes required to evict a healthy node from the pool.</td>
+<td>Consecutive failures required to evict a healthy node.</td>
 </tr>
 <tr>
 <td><code>override</code></td>
 <td>Enum</td>
 <td><code>NONE</code></td>
-<td>Forces the target state (<code>NONE</code>, <code>FORCE_UP</code>, <code>FORCE_DOWN</code>).</td>
+<td><strong>Warning:</strong> <code>FORCE_DOWN</code> evicts the target regardless of probe success. <code>FORCE_UP</code> routes to the target regardless of probe failure.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="timeouts-timeouts">Timeouts (<code>timeouts</code>)</h3>
-<p>Granular limits for network interactions with the specific upstream group.</p>
+<p><em>Currently, only response-read timeouts are configurable at the upstream level. Connect timeouts are handled globally by the proxy client.</em></p>
 <table>
 <thead>
 <tr>
@@ -1731,12 +1808,12 @@
 <td><code>read</code></td>
 <td>Duration</td>
 <td><code>30s</code></td>
-<td>Maximum time to wait for a response after sending the request. Must be positive.</td>
+<td>Maximum time to wait for a response after sending the request.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="fallback-fallback">Fallback (<code>fallback</code>)</h3>
-<p>Configures the gateway's behavior if the upstream connection fails completely (e.g., all targets offline or connection refused).</p>
+<p>Configures behavior if the upstream connection fails completely. <strong>Fallback recursion is not permitted; cyclic references are rejected at startup.</strong></p>
 <table>
 <thead>
 <tr>
@@ -1751,19 +1828,19 @@
 <td><code>route_id</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The <code>id</code> of another defined route to hand execution over to (such as a stubbed mock route).</td>
+<td>The <code>id</code> of another route to execute (e.g., a stubbed mock route).</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="predicates">Predicates</h2>
-<p>Predicates define the matching conditions that determine whether an incoming request should be routed to a specific upstream target. A route is only executed if its predicates evaluate to true.</p>
+<h2 id="4-predicates">4. Predicates</h2>
+<p>Predicates determine whether an incoming request matches a route.</p>
+<p><strong>Regex Semantics:</strong> All regex predicates use standard Java Regex syntax. Matching is <strong>partial by default</strong> unless explicitly anchored (<code>^</code>, <code>$</code>). Matching is <strong>case-sensitive</strong> unless the inline flag <code>(?i)</code> is used.</p>
 <h3 id="logical-meta-predicates">Logical Meta-Predicates</h3>
-<p>Predicates can be nested and combined using logical operators. This allows for complex routing rules based on multiple conditions.</p>
 <ul>
-<li><code>and</code>: Evaluates to true only if <strong>all</strong> child predicates evaluate to true. Expects a list of predicates.</li>
-<li><code>or</code>: Evaluates to true if <strong>at least one</strong> child predicate evaluates to true. Expects a list of predicates.</li>
-<li><code>not</code>: Inverts the result of a <strong>single</strong> child predicate. Expects exactly one predicate object.</li>
+<li><code>and</code>: True if <strong>all</strong> child predicates are true. Short-circuits on first failure.</li>
+<li><code>or</code>: True if <strong>at least one</strong> child predicate is true. Short-circuits on first success.</li>
+<li><code>not</code>: Inverts the result of a <strong>single</strong> child predicate.</li>
 </ul>
 <hr />
 <h3 id="uri-path-matching">URI &amp; Path Matching</h3>
@@ -1903,7 +1980,7 @@
 </table>
 <hr />
 <h3 id="query-parameter-matching">Query Parameter Matching</h3>
-<h4 id="query">Query</h4>
+<h4 id="queryparameter">QueryParameter</h4>
 <p>Matches if a specific query parameter exists in the URL and its value exactly matches the provided string.</p>
 <table>
 <thead>
@@ -1929,7 +2006,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="hasquery">HasQuery</h4>
+<h4 id="hasqueryparameter">HasQueryParameter</h4>
 <p>Matches if a specific query parameter exists in the URL. This will match even if the parameter is used as a flag with no value (e.g., <code>?debug</code>).</p>
 <table>
 <thead>
@@ -1949,7 +2026,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="matchquery">MatchQuery</h4>
+<h4 id="matchqueryparameter">MatchQueryParameter</h4>
 <p>Matches if a specific query parameter exists and its value matches a regular expression.</p>
 <table>
 <thead>
@@ -2092,7 +2169,7 @@
 </tbody>
 </table>
 <h4 id="remoteaddr">RemoteAddr</h4>
-<p>Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6 network definitions.</p>
+<p>Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. <strong>Evaluates the physical TCP peer address</strong>; it does not read <code>X-Forwarded-For</code> to prevent IP spoofing.</p>
 <table>
 <thead>
 <tr>
@@ -2107,16 +2184,46 @@
 <td><code>source</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The IP address or CIDR notation (e.g., <code>192.168.1.5</code> or <code>10.0.0.0/24</code>) to match against the client's remote address.</td>
+<td>The IP address or CIDR notation (e.g., <code>192.168.1.5</code> or <code>10.0.0.0/24</code>).</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="filters">Filters</h2>
-<p>Filters modify requests, shape traffic, or enforce security rules after a route is matched but before (or after) it reaches the upstream target.</p>
+<h2 id="5-filters">5. Filters</h2>
+<p>Filters mutate requests, shape traffic, or enforce security rules after a route is matched.</p>
+<ul>
+<li><strong><code>Add*</code> Semantics:</strong> Safely appends a new key/value pair without deleting existing ones.</li>
+<li><strong><code>Set*</code> Semantics:</strong> Destructively overwrites existing keys with the new value.</li>
+</ul>
 <h3 id="mutation-headers-cookies-and-parameters">Mutation: Headers, Cookies, and Parameters</h3>
 <h4 id="addrequestheader">AddRequestHeader</h4>
-<p>Adds or overwrites an HTTP header before forwarding the request to the upstream target.</p>
+<p>Appends an HTTP header before forwarding the request to the upstream target.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the HTTP header.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value to append to the header.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="setrequestheader">SetRequestHeader</h4>
+<p>Overwrites an existing HTTP header before forwarding the request upstream.</p>
 <table>
 <thead>
 <tr>
@@ -2138,17 +2245,37 @@
 <td>String</td>
 <td>Yes</td>
 <td>The value to assign to the header.</td>
-</tr>
-<tr>
-<td><code>override</code></td>
-<td>Boolean</td>
-<td>No</td>
-<td>If <code>true</code>, overwrites existing headers with the same name. If <code>false</code> or omitted, appends the value.</td>
 </tr>
 </tbody>
 </table>
 <h4 id="addresponseheader">AddResponseHeader</h4>
-<p>Adds or overwrites an HTTP header on the client response before it is returned to the client.</p>
+<p>Appends an HTTP header on the client response before it is returned to the client.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the HTTP header.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value to append to the header.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="setresponseheader">SetResponseHeader</h4>
+<p>Overwrites an existing HTTP header on the client response.</p>
 <table>
 <thead>
 <tr>
@@ -2171,16 +2298,10 @@
 <td>Yes</td>
 <td>The value to assign to the header.</td>
 </tr>
-<tr>
-<td><code>override</code></td>
-<td>Boolean</td>
-<td>No</td>
-<td>If <code>true</code>, overwrites existing headers with the same name. If <code>false</code> or omitted, appends the value.</td>
-</tr>
 </tbody>
 </table>
 <h4 id="removerequestheader">RemoveRequestHeader</h4>
-<p>Strips a specified HTTP header from the client request before it is forwarded to the upstream target.</p>
+<p>Strips a specified HTTP header from the client request before it is forwarded.</p>
 <table>
 <thead>
 <tr>
@@ -2200,7 +2321,7 @@
 </tbody>
 </table>
 <h4 id="removeresponseheader">RemoveResponseHeader</h4>
-<p>Strips a specified HTTP header from the upstream response before it is returned to the client.</p>
+<p>Strips a specified HTTP header from the upstream response before it is returned.</p>
 <table>
 <thead>
 <tr>
@@ -2219,8 +2340,8 @@
 </tr>
 </tbody>
 </table>
-<h4 id="addrequestcookie">AddRequestCookie</h4>
-<p>Injects a new cookie directly into the <code>Cookie</code> header of the incoming request before it is routed upstream.</p>
+<h4 id="setrequestcookie">SetRequestCookie</h4>
+<p>Injects or overwrites a cookie directly in the <code>Cookie</code> header of the incoming request.</p>
 <table>
 <thead>
 <tr>
@@ -2245,8 +2366,8 @@
 </tr>
 </tbody>
 </table>
-<h4 id="addresponsecookie">AddResponseCookie</h4>
-<p>Injects a new <code>Set-Cookie</code> header into the response returned to the client, complete with necessary security metadata.</p>
+<h4 id="setresponsecookie">SetResponseCookie</h4>
+<p>Injects a new <code>Set-Cookie</code> header into the response returned to the client, overwriting the client's cookie state.</p>
 <table>
 <thead>
 <tr>
@@ -2301,7 +2422,7 @@
 </tr>
 <tr>
 <td><code>same_site</code></td>
-<td>String</td>
+<td>Enum</td>
 <td>No</td>
 <td>Cross-site request forgery protection (<code>Strict</code>, <code>Lax</code>, <code>None</code>). Defaults to <code>Lax</code>.</td>
 </tr>
@@ -2328,7 +2449,7 @@
 </tbody>
 </table>
 <h4 id="addqueryparameter">AddQueryParameter</h4>
-<p>Appends a new query parameter to the request URL before forwarding to the upstream target.</p>
+<p>Appends a new query parameter to the request URL. Multiple parameters with the same name are supported.</p>
 <table>
 <thead>
 <tr>
@@ -2353,8 +2474,34 @@
 </tr>
 </tbody>
 </table>
+<h4 id="setqueryparameter">SetQueryParameter</h4>
+<p>Overwrites any existing query parameter with the specified name.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The name of the query parameter to set.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The value of the query parameter.</td>
+</tr>
+</tbody>
+</table>
 <h4 id="removequeryparameter">RemoveQueryParameter</h4>
-<p>Strips a specific query parameter from the URL before forwarding it to the upstream target.</p>
+<p>Strips a specific query parameter from the URL before forwarding.</p>
 <table>
 <thead>
 <tr>
@@ -2377,12 +2524,12 @@
 <p>Automatically injects the gateway's internal request ID into both the upstream request and the client response using the <code>X-Correlation-Id</code> header.
 <em>This filter requires no configuration parameters.</em></p>
 <h4 id="removecacheheaders">RemoveCacheHeaders</h4>
-<p>Strips cache validation headers (<code>If-Modified-Since</code>, <code>If-None-Match</code>) and injects strict no-cache directives (<code>Cache-Control: no-cache</code>, <code>Pragma: no-cache</code>) into the upstream request.
+<p>Strips cache validation headers (<code>If-Modified-Since</code>, <code>If-None-Match</code>) and injects strict no-cache directives (<code>Cache-Control: no-cache</code>, <code>Pragma: no-cache</code>) upstream.
 <em>This filter requires no configuration parameters.</em></p>
 <hr />
 <h3 id="mutation-path-routing">Mutation: Path &amp; Routing</h3>
 <h4 id="strippathprefix">StripPathPrefix</h4>
-<p>Removes a specified number of structural path segments from the beginning of the request path before it is routed upstream.</p>
+<p>Removes a specified number of structural path segments from the beginning of the request path.</p>
 <table>
 <thead>
 <tr>
@@ -2402,7 +2549,7 @@
 </tbody>
 </table>
 <h4 id="rewritepath">RewritePath</h4>
-<p>Rewrites the upstream request path using regular expressions before forwarding it to the target.</p>
+<p>Rewrites the upstream request path using regular expressions. Uses standard Java Matcher replacement semantics (<code>$1</code>, <code>$2</code>).</p>
 <table>
 <thead>
 <tr>
@@ -2731,7 +2878,7 @@
 <hr />
 <h3 id="traffic-shaping-reliability">Traffic Shaping &amp; Reliability</h3>
 <h4 id="ratelimiter">RateLimiter</h4>
-<p>Provides token-bucket rate limiting. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Automatically injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers.</p>
+<p>Provides token-bucket rate limiting. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Automatically injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers. <strong>Buckets are keyed by the TCP peer IP address.</strong></p>
 <table>
 <thead>
 <tr>
@@ -2775,7 +2922,7 @@
 </tbody>
 </table>
 <h4 id="circuitbreaker">CircuitBreaker</h4>
-<p>Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of <code>5xx</code> server errors is reached. Fast-fails with <code>503 Service Unavailable</code> while open.</p>
+<p>Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of <code>5xx</code> server errors is reached. <strong>Failures are tracked per-route.</strong> Fast-fails with <code>503 Service Unavailable</code> while open, and allows a single probe request through during half-open state.</p>
 <table>
 <thead>
 <tr>
@@ -2803,7 +2950,7 @@
 <hr />
 <h3 id="short-circuiting-overrides">Short-Circuiting &amp; Overrides</h3>
 <h4 id="returnresponse">ReturnResponse</h4>
-<p>Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client.</p>
+<p>Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to <code>text/plain</code> unless a <code>SetResponseHeader</code> is used alongside it to define <code>Content-Type</code>.</p>
 <table>
 <thead>
 <tr>
@@ -2829,7 +2976,7 @@
 </tbody>
 </table>
 <h4 id="staticcontent">StaticContent</h4>
-<p>Short-circuits the pipeline to serve static files directly from the disk using a high-performance native handler. <em>(Note: Typically requires <code>StripPathPrefix</code> to run first to correctly map the URI).</em></p>
+<p>Short-circuits the pipeline to serve static files directly from the disk using a high-performance native handler. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected.</p>
 <table>
 <thead>
 <tr>
@@ -2869,7 +3016,48 @@
 </tbody>
 </table>
 <hr />
-<h2 id="complete-example-configuration">Complete Example Configuration</h2>
+<h2 id="6-journaling-storage">6. Journaling &amp; Storage</h2>
+<p>Request/response journaling is executed asynchronously to avoid blocking the hot path.</p>
+<h3 id="storage-configuration-serveryaml-storage">Storage Configuration (<code>server.yaml -&gt; storage</code>)</h3>
+<p>Storage utilizes memory-mapped files separated into shards. When all shards reach the <code>shard_size</code> limit, r7 utilizes a <strong>ring-buffer rollover policy</strong>, overwriting the oldest shard to guarantee disk limits are strictly respected.</p>
+<h3 id="logging-levels-routesyaml-journal">Logging Levels (<code>routes.yaml -&gt; journal</code>)</h3>
+<p>Verbosity can be set generically or overridden conditionally based on HTTP status codes.</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Captured Data</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NONE</code></td>
+<td>None</td>
+<td>Disables logging completely for the route/status.</td>
+</tr>
+<tr>
+<td><code>METADATA</code></td>
+<td>URI, Method, Status, Timing, IP</td>
+<td>Highly performant, minimal storage footprint.</td>
+</tr>
+<tr>
+<td><code>HEADERS</code></td>
+<td>Metadata + Headers</td>
+<td>Captures both request and response headers.</td>
+</tr>
+<tr>
+<td><code>FULL</code></td>
+<td>Headers + Bodies</td>
+<td>Binary-safe. Payloads exceeding 1MB are automatically truncated to prevent runaway storage.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-tls-security">7. TLS &amp; Security</h2>
+<p>Note: r7 expects TLS termination to be handled by an edge load balancer (e.g., AWS ALB, Cloudflare) directly in front of it.</p>
+<hr />
+<h2 id="8-complete-example-configuration">8. Complete Example Configuration</h2>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;{{git.rev.abbr}}&#39;</span>
 </span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
@@ -2904,86 +3092,66 @@
 </span><span id="True-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">          </span><span class="nt">base_directory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/var/www/html/</span>
 </span><span id="True-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 </span><span id="True-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>
-</span><span id="True-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">  </span><span class="c1"># Mock response serving (Short-circuits upstream phase)</span>
-</span><span id="True-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stubbed-api</span>
+</span><span id="True-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">  </span><span class="c1"># Complex routing with nested logical predicates</span>
+</span><span id="True-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">protected-admin-api</span>
 </span><span id="True-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
-</span><span id="True-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/api/v1/beta/</span>
-</span><span id="True-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ReturnResponse</span><span class="p">:</span>
-</span><span id="True-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">          </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">418</span>
-</span><span id="True-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">          </span><span class="nt">body</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Beta</span><span class="nv"> </span><span class="s">API</span><span class="nv"> </span><span class="s">offline&quot;</span>
-</span><span id="True-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
-</span><span id="True-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>
-</span><span id="True-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">  </span><span class="c1"># Full option upstream config with active health checking, limits, and strategy</span>
-</span><span id="True-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">search-api</span>
-</span><span id="True-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
-</span><span id="True-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/search</span>
-</span><span id="True-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StripPathPrefix</span><span class="p">:</span>
-</span><span id="True-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">          </span><span class="nt">parts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="True-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
-</span><span id="True-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">      </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ROUND_ROBIN</span>
-</span><span id="True-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">      </span><span class="nt">health_check</span><span class="p">:</span>
-</span><span id="True-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">        </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
-</span><span id="True-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">        </span><span class="nt">rise</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="True-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">        </span><span class="nt">fall</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="True-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/system/health</span>
-</span><span id="True-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">        </span><span class="c1"># override: FORCE_DOWN</span>
-</span><span id="True-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">      </span><span class="nt">timeouts</span><span class="p">:</span>
-</span><span id="True-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">        </span><span class="nt">read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
-</span><span id="True-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">      </span><span class="nt">fallback</span><span class="p">:</span>
-</span><span id="True-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">        </span><span class="nt">route_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stubbed-api</span>
-</span><span id="True-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
-</span><span id="True-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://search-1.example.com</span>
-</span><span id="True-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://search-2.example.com</span>
-</span><span id="True-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>
-</span><span id="True-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">  </span><span class="c1"># Complex routing with method/query matching, configured filters, and conditional journaling</span>
-</span><span id="True-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-service</span>
-</span><span id="True-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
-</span><span id="True-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/hello</span>
-</span><span id="True-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Method</span><span class="p">:</span>
-</span><span id="True-0-75"><a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a><span class="w">          </span><span class="nt">include</span><span class="p">:</span>
-</span><span id="True-0-76"><a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET</span>
-</span><span id="True-0-77"><a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
-</span><span id="True-0-78"><a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">MatchQuery</span><span class="p">:</span>
-</span><span id="True-0-79"><a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tenant_id</span>
-</span><span id="True-0-80"><a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a><span class="w">          </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;^[A-Za-z0-9]+$&quot;</span>
-</span><span id="True-0-81"><a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
-</span><span id="True-0-82"><a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
-</span><span id="True-0-83"><a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:1111</span>
-</span><span id="True-0-84"><a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-0-85"><a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a><span class="w">      </span><span class="c1"># Filters can be declared with specific configuration arguments (snake_case)</span>
-</span><span id="True-0-86"><a id="__codelineno-0-86" name="__codelineno-0-86" href="#__codelineno-0-86"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
-</span><span id="True-0-87"><a id="__codelineno-0-87" name="__codelineno-0-87" href="#__codelineno-0-87"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-</span><span id="True-0-88"><a id="__codelineno-0-88" name="__codelineno-0-88" href="#__codelineno-0-88"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="True-0-89"><a id="__codelineno-0-89" name="__codelineno-0-89" href="#__codelineno-0-89"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
-</span><span id="True-0-90"><a id="__codelineno-0-90" name="__codelineno-0-90" href="#__codelineno-0-90"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
-</span><span id="True-0-91"><a id="__codelineno-0-91" name="__codelineno-0-91" href="#__codelineno-0-91"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-</span><span id="True-0-92"><a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12s</span>
-</span><span id="True-0-93"><a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">AddResponseHeader</span><span class="p">:</span>
-</span><span id="True-0-94"><a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Powered-By</span>
-</span><span id="True-0-95"><a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ethlo r7</span>
-</span><span id="True-0-96"><a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RemoveRequestCookie</span><span class="p">:</span>
-</span><span id="True-0-97"><a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JSESSIONID</span>
-</span><span id="True-0-98"><a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a><span class="w">      </span><span class="c1"># Filters requiring no arguments are declared by name only</span>
-</span><span id="True-0-99"><a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
-</span><span id="True-0-100"><a id="__codelineno-0-100" name="__codelineno-0-100" href="#__codelineno-0-100"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
-</span><span id="True-0-101"><a id="__codelineno-0-101" name="__codelineno-0-101" href="#__codelineno-0-101"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-0-102"><a id="__codelineno-0-102" name="__codelineno-0-102" href="#__codelineno-0-102"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
-</span><span id="True-0-103"><a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span>
-</span><span id="True-0-104"><a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a><span class="w">        </span><span class="c1"># Increase log verbosity dynamically based on the response status</span>
-</span><span id="True-0-105"><a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-0-106"><a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">401,403</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-0-107"><a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a><span class="w">          </span><span class="nt">429</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-0-108"><a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-0-109"><a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
-</span><span id="True-0-110"><a id="__codelineno-0-110" name="__codelineno-0-110" href="#__codelineno-0-110"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span>
+</span><span id="True-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">and</span><span class="p">:</span>
+</span><span id="True-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
+</span><span id="True-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">              </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/api/admin</span>
+</span><span id="True-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">or</span><span class="p">:</span>
+</span><span id="True-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RemoteAddr</span><span class="p">:</span>
+</span><span id="True-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">                  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.0/8</span>
+</span><span id="True-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">HasRequestHeader</span><span class="p">:</span>
+</span><span id="True-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">                  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Internal-VPN</span>
+</span><span id="True-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">not</span><span class="p">:</span>
+</span><span id="True-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">MatchQueryParameter</span><span class="p">:</span>
+</span><span id="True-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">                  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">debug</span>
+</span><span id="True-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">                  </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true|1&quot;</span>
+</span><span id="True-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">      </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ROUND_ROBIN</span>
+</span><span id="True-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="nt">health_check</span><span class="p">:</span>
+</span><span id="True-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">        </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
+</span><span id="True-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">        </span><span class="nt">rise</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="True-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">        </span><span class="nt">fall</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="True-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/system/health</span>
+</span><span id="True-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">      </span><span class="nt">timeouts</span><span class="p">:</span>
+</span><span id="True-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">        </span><span class="nt">read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+</span><span id="True-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">      </span><span class="nt">fallback</span><span class="p">:</span>
+</span><span id="True-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">        </span><span class="nt">route_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
+</span><span id="True-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-1.internal</span>
+</span><span id="True-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-2.internal</span>
+</span><span id="True-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
+</span><span id="True-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
+</span><span id="True-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="True-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="True-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1s</span>
+</span><span id="True-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
+</span><span id="True-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="True-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
+</span><span id="True-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-0-75"><a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
+</span><span id="True-0-76"><a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span>
+</span><span id="True-0-77"><a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">401,403</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span><span id="True-0-78"><a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-0-79"><a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-0-80"><a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a>
+</span><span id="True-0-81"><a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
+</span><span id="True-0-82"><a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w"> </span><span class="c1"># Empty match blocks are never hit naturally; used only via fallback</span>
+</span><span id="True-0-83"><a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-0-84"><a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ReturnResponse</span><span class="p">:</span>
+</span><span id="True-0-85"><a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a><span class="w">          </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">503</span>
+</span><span id="True-0-86"><a id="__codelineno-0-86" name="__codelineno-0-86" href="#__codelineno-0-86"></a><span class="w">          </span><span class="nt">body</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;{&quot;error&quot;:</span><span class="nv"> </span><span class="s">&quot;Admin</span><span class="nv"> </span><span class="s">services</span><span class="nv"> </span><span class="s">currently</span><span class="nv"> </span><span class="s">offline&quot;}&#39;</span>
+</span><span id="True-0-87"><a id="__codelineno-0-87" name="__codelineno-0-87" href="#__codelineno-0-87"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
+</span><span id="True-0-88"><a id="__codelineno-0-88" name="__codelineno-0-88" href="#__codelineno-0-88"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Content-Type</span>
+</span><span id="True-0-89"><a id="__codelineno-0-89" name="__codelineno-0-89" href="#__codelineno-0-89"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">application/json</span>
+</span><span id="True-0-90"><a id="__codelineno-0-90" name="__codelineno-0-90" href="#__codelineno-0-90"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
 </span></code></pre></div>
 <hr />
-<h2 id="server-configuration">Server Configuration</h2>
+<h2 id="9-server-configuration">9. Server Configuration</h2>
 <p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
 <h3 id="server-configuration-server">Server Configuration (<code>server</code>)</h3>
 <p>Defines the primary listening interfaces and ports for the gateway.</p>
