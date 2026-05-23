@@ -1,7 +1,7 @@
 routes:
   - id: route-v1
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /v1
     filters:
       - StripPathPrefix:

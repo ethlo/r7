@@ -1,5 +1,6 @@
 package com.ethlo.r7.predicates;
 
+import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.stream.Collectors;
@@ -11,6 +12,8 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
+
+import static com.ethlo.r7.util.Levenshtein.findClosestMatch;
 
 public class PredicateRegistry
 {
@@ -34,12 +37,20 @@ public class PredicateRegistry
         return factories.containsKey(name);
     }
 
-    public GatewayPredicate create(String name, Object yamlValue)
+    public GatewayPredicate create(String predicateName, Object yamlValue)
     {
-        final GatewayPredicateFactory<?> factory = factories.get(name);
+        final GatewayPredicateFactory<?> factory = factories.get(predicateName);
         if (factory == null)
         {
-            throw new ConfigurationException("Unknown predicate: " + name);
+            final List<String> available = factories.keySet().stream().sorted().toList();
+            final String closestMatch = findClosestMatch(predicateName, available);
+
+            final String suggestion = closestMatch != null ? " Did you mean '" + closestMatch + "'?" : "";
+
+            throw new ConfigurationException(
+                    "Unknown predicate: '" + predicateName + "'." + suggestion +
+                            " Available predicates are: " + String.join(", ", available)
+            );
         }
 
         // Load config and map to config class

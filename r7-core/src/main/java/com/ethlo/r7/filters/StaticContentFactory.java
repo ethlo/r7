@@ -14,8 +14,11 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class StaticContentGatewayFilter implements GatewayFilterFactory<StaticContentGatewayFilter.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class StaticContentFactory implements GatewayFilterFactory<StaticContentFactory.Config>
 {
     public static final String STATIC_CONTENT_PATH_KEY = "gateway.internal.serve_static.path";
     private static final String FILTER_NAME = "StaticContent";
@@ -53,7 +56,7 @@ public class StaticContentGatewayFilter implements GatewayFilterFactory<StaticCo
         }
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         private final Config config;
 
@@ -77,10 +80,7 @@ public class StaticContentGatewayFilter implements GatewayFilterFactory<StaticCo
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            // Tell the native server layer WHICH folder to serve
             exchange.attributes().set(STATIC_CONTENT_PATH_KEY, this.config.baseDirectory());
-
-            // Because of the short-circuit check we never go upstream
             exchange.shortCircuit(new FastTerminationGatewayResponse(HttpStatuses.OK, null, null));
         }
     }

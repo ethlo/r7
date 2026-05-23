@@ -1,14 +1,16 @@
 package com.ethlo.r7.filters;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.Cookie;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
-import com.ethlo.r7.util.constants.HttpHeaders;
+import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -17,9 +19,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public final class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<RequireAuthorizationHeaderFactory.Config>
+public final class RequireCookieFactory implements GatewayFilterFactory<RequireCookieFactory.Config>
 {
-    private static final String FILTER_NAME = "RequireAuthorizationHeader";
+    private static final String FILTER_NAME = "RequireCookie";
 
     @Override
     public String name()
@@ -36,32 +38,49 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
     @Override
     public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF();
+        return new GF(config);
     }
 
-    public record Config() implements ValidatableConfig
+    public record Config(String name, Integer rejectStatusCode) implements ValidatableConfig
     {
+        public Config
+        {
+            if (rejectStatusCode == null)
+            {
+                rejectStatusCode = HttpStatuses.BAD_REQUEST;
+            }
+        }
+
         @Override
         public void validate(final ValidationResult result)
         {
+            new ValidatorUtils(result).required("name", this.name());
         }
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
-        private static final ByteBuffer UNAUTHORIZED_BODY = ByteBuffer.wrap("Unauthorized".getBytes());
+        private final Config config;
+        private final ByteBuffer errorBody;
+
+        public GF(final Config config)
+        {
+            this.config = config;
+            final String msg = "Missing required cookie: " + config.name();
+            this.errorBody = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
+        }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String sig = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
-
-            if (sig == null || !(sig.startsWith("Bearer ") || sig.startsWith("Basic ")))
+            final Cookie cookie = exchange.clientRequest().cookies().get(this.config.name());
+            
+            if (cookie == null)
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        HttpStatuses.UNAUTHORIZED, 
-                        MediaTypes.TEXT_PLAIN, 
-                        UNAUTHORIZED_BODY.slice()
+                        this.config.rejectStatusCode(),
+                        MediaTypes.TEXT_PLAIN,
+                        this.errorBody.asReadOnlyBuffer()
                 ));
             }
         }
@@ -75,7 +94,7 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": Basic, Bearer";
+            return FILTER_NAME + ": " + this.config.name();
         }
     }
 }

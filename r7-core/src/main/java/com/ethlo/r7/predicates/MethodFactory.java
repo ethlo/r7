@@ -11,7 +11,10 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
 public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Config>
 {
     private static final String PREDICATE_NAME = "Method";

@@ -1,10 +1,12 @@
 package com.ethlo.r7.filters;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.config.DataSize;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -17,9 +19,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public final class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<RequireAuthorizationHeaderFactory.Config>
+public final class RequestSizeLimitFactory implements GatewayFilterFactory<RequestSizeLimitFactory.Config>
 {
-    private static final String FILTER_NAME = "RequireAuthorizationHeader";
+    private static final String FILTER_NAME = "RequestSizeLimit";
 
     @Override
     public String name()
@@ -36,32 +38,43 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
     @Override
     public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF();
+        return new GF(config);
     }
 
-    public record Config() implements ValidatableConfig
+    public record Config(DataSize maxSize) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
         {
+            if (this.maxSize() == null)
+            {
+                result.addError(FILTER_NAME, "max_size must be defined");
+            }
         }
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
-        private static final ByteBuffer UNAUTHORIZED_BODY = ByteBuffer.wrap("Unauthorized".getBytes());
+        private static final byte[] REJECT_PAYLOAD = "Payload Too Large".getBytes(StandardCharsets.UTF_8);
+        private final DataSize maxSize;
+
+        public GF(final Config config)
+        {
+            this.maxSize = config.maxSize();
+        }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String sig = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
-
-            if (sig == null || !(sig.startsWith("Bearer ") || sig.startsWith("Basic ")))
+            final String contentLengthOpt = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
+            final long contentLength = contentLengthOpt != null ? Long.parseLong(contentLengthOpt) : 0;
+            
+            if (contentLength > this.maxSize.toBytes())
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        HttpStatuses.UNAUTHORIZED, 
-                        MediaTypes.TEXT_PLAIN, 
-                        UNAUTHORIZED_BODY.slice()
+                        HttpStatuses.ENTITY_TOO_LARGE,
+                        MediaTypes.TEXT_PLAIN,
+                        ByteBuffer.wrap(REJECT_PAYLOAD)
                 ));
             }
         }
@@ -75,7 +88,7 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": Basic, Bearer";
+            return FILTER_NAME + " (" + this.maxSize + " bytes)";
         }
     }
 }

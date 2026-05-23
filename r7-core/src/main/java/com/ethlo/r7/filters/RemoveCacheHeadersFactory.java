@@ -9,10 +9,13 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCacheHeadersFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class RemoveCacheHeadersFactory implements GatewayFilterFactory<RemoveCacheHeadersFactory.Config>
 {
-    private static final String FILTER_NAME = "StripCacheHeaders";
+    private static final String FILTER_NAME = "RemoveCacheHeaders";
 
     @Override
     public String name()
@@ -27,21 +30,20 @@ public class StripCacheHeadersFactory implements GatewayFilterFactory<StripCache
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
+    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF();
     }
 
-    // Empty record, no config args required
     public record Config() implements ValidatableConfig
     {
         @Override
-        public void validate(ValidationResult result)
+        public void validate(final ValidationResult result)
         {
         }
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)

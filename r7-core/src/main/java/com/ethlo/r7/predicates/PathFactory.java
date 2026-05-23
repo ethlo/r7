@@ -7,9 +7,12 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
 import java.util.Objects;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
 public final class PathFactory implements GatewayPredicateFactory<PathFactory.Config>
 {
     private static final String PREDICATE_NAME = "Path";

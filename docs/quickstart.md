@@ -1,6 +1,6 @@
 # Quickstart Guide
 
-This guide will get you up and running with the r7 proxy using Docker Compose. We will deploy the proxy alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.
+This guide will get you up and running with the r7 gateway using Docker Compose. We will deploy the gateway alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.
 
 ## Directory Structure
 
@@ -18,7 +18,7 @@ r7-quickstart/
 
 ## 1. Docker Compose Setup
 
-Create `docker-compose.yaml`. This includes the r7 proxy configured with ZGC and native memory access, alongside an `echo-server` acting as our dummy backend.
+Create `docker-compose.yaml`. This includes the r7 gateway configured with ZGC and native memory access, alongside an `echo-server` acting as our dummy backend.
 
 ```yaml
 services:
@@ -26,7 +26,7 @@ services:
     image: ghcr.io/ethlo/r7-jvm:latest
     container_name: ethlo-r7-gateway
     ports:
-      - "9999:8888"   # Main proxy port
+      - "9999:8888"   # Main gateway port
       - "19999:18888" # Status and metrics port
     volumes:
       - ./config:/app/config:ro
@@ -138,7 +138,7 @@ docker compose up -d
 
 ```
 
-Once the containers are healthy, test the proxy by sending a request to the mapped port (`9999`):
+Once the containers are healthy, test the gateway by sending a request to the mapped port (`9999`):
 
 ```bash
 curl -i http://localhost:9999/api/test

@@ -1,6 +1,5 @@
 package com.ethlo.r7.predicates;
 
-import com.ethlo.r7.api.Cookie;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
@@ -12,9 +11,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
-public final class CookieFactory implements GatewayPredicateFactory<CookieFactory.Config>
+public final class HasCookieFactory implements GatewayPredicateFactory<HasCookieFactory.Config>
 {
-    private static final String PREDICATE_NAME = "Cookie";
+    private static final String PREDICATE_NAME = "HasCookie";
 
     @Override
     public String name()
@@ -34,39 +33,28 @@ public final class CookieFactory implements GatewayPredicateFactory<CookieFactor
         return new GP(config);
     }
 
-    public record Config(String name, String value) implements ValidatableConfig
+    public record Config(String name) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result)
-                    .required("name", this.name())
-                    .required("value", this.value());
+            new ValidatorUtils(result).required("name", this.name());
         }
     }
 
     private static final class GP implements GatewayPredicate, ShortInfo
     {
         private final String cookieName;
-        private final String targetValue;
 
         public GP(final Config config)
         {
             this.cookieName = config.name();
-            this.targetValue = config.value();
         }
 
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final Cookie cookie = request.cookies().get(this.cookieName);
-
-            if (cookie == null)
-            {
-                return false;
-            }
-
-            return this.targetValue.equals(cookie.value());
+            return request.cookies().get(this.cookieName) != null;
         }
 
         @Override
@@ -78,7 +66,7 @@ public final class CookieFactory implements GatewayPredicateFactory<CookieFactor
         @Override
         public String summary()
         {
-            return PREDICATE_NAME + ": " + this.cookieName + " == " + this.targetValue;
+            return PREDICATE_NAME + ": " + this.cookieName;
         }
     }
 }

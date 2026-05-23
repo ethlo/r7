@@ -1,13 +1,13 @@
 version: 'integration-test-v1'
 
 global_filters:
-  - CorrelationIdHeader
+  - AddCorrelationId
 
 routes:
   - id: core-stress-route
     match:
       - and:
-          - PathStartsWith:
+          - PathPrefix:
               prefix: /api/v1
           - Method:
               include:

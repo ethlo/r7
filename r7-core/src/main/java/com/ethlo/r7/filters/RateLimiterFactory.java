@@ -26,11 +26,15 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.google.auto.service.AutoService;
+
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 
-public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucket4jRateLimitFilter.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class RateLimiterFactory implements GatewayFilterFactory<RateLimiterFactory.Config>
 {
     private static final byte[] REJECT_PAYLOAD = "Rate limit exceeded".getBytes(StandardCharsets.UTF_8);
     private static final String FILTER_NAME = "RateLimiter";
@@ -49,7 +53,7 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -76,9 +80,9 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("capacity", capacity)
-                    .required("refill_tokens", refillTokens)
-                    .required("refill_period", refillPeriod);
+                    .required("capacity", capacity())
+                    .required("refill_tokens", refillTokens())
+                    .required("refill_period", refillPeriod());
         }
 
         @Override
@@ -94,17 +98,17 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         }
     }
 
-    private static class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
         private final Cache<String, Bucket> buckets;
         private final Config config;
         private final String capacityString;
 
-        public GF(Config config)
+        public GF(final Config config)
         {
             this.config = config;
             this.capacityString = Long.toString(config.capacity());
-            buckets = Caffeine.newBuilder()
+            this.buckets = Caffeine.newBuilder()
                     .maximumSize(config.maxBuckets())
                     .expireAfterAccess(config.maxBucketTTL())
                     .build();
@@ -113,27 +117,21 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            // Check if a prior filter declared a specific rate-limit identity
             final String customKey = exchange.getAttachment(GatewayContextKeys.RATE_LIMIT_KEY);
-
-            // Fallback to physical IP address if no identity was provided
             final String key = (customKey != null) ? customKey : exchange.clientRequest().remoteAddress().getHostAddress();
 
-            // Find and set bucket
-            final Bucket bucket = buckets.get(key, this::createNewBucket);
+            final Bucket bucket = this.buckets.get(key, this::createNewBucket);
             final ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1L);
             exchange.setAttachment(REMAINING_TOKENS_KEY, probe.getRemainingTokens());
 
             if (!probe.isConsumed())
             {
-                // Calculate how long the client needs to wait for at least 1 token
                 final long waitNanos = probe.getNanosToWaitForRefill();
                 final long waitSeconds = TimeUnit.NANOSECONDS.toSeconds(waitNanos) + 1L;
 
-                // Standard rate limiting headers
                 final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(3)
                         .set(HttpHeaders.RETRY_AFTER, String.valueOf(waitSeconds))
-                        .set(HttpHeaders.X_RATELIMIT_LIMIT, capacityString)
+                        .set(HttpHeaders.X_RATELIMIT_LIMIT, this.capacityString)
                         .set(HttpHeaders.X_RATELIMIT_REMAINING, "0");
 
                 exchange.shortCircuit(new FastTerminationGatewayResponse(headers, HttpStatuses.TOO_MANY_REQUESTS, ByteBuffer.wrap(REJECT_PAYLOAD)));
@@ -143,8 +141,8 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         private Bucket createNewBucket(final String key)
         {
             final Bandwidth limit = Bandwidth.builder()
-                    .capacity(config.capacity())
-                    .refillGreedy(config.refillTokens(), config.refillPeriod())
+                    .capacity(this.config.capacity())
+                    .refillGreedy(this.config.refillTokens(), this.config.refillPeriod())
                     .build();
 
             return Bucket.builder()
@@ -172,10 +170,10 @@ public final class Bucket4jRateLimitFilter implements GatewayFilterFactory<Bucke
         @Override
         public String summary()
         {
-            return new StringJoiner(", ", "RateLimiter" + "[", "]")
-                    .add("capacity=" + config.capacity())
-                    .add("refill_tokens=" + config.refillTokens())
-                    .add("refill_period=" + config.refillPeriod())
+            return new StringJoiner(", ", FILTER_NAME + "[", "]")
+                    .add("capacity=" + this.config.capacity())
+                    .add("refill_tokens=" + this.config.refillTokens())
+                    .add("refill_period=" + this.config.refillPeriod())
                     .toString();
         }
     }

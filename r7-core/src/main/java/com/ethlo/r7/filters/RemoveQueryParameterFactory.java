@@ -8,8 +8,11 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class RemoveQueryParameterFactory implements GatewayFilterFactory<RemoveQueryParameterFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class RemoveQueryParameterFactory implements GatewayFilterFactory<RemoveQueryParameterFactory.Config>
 {
     private static final String FILTER_NAME = "RemoveQueryParameter";
 
@@ -37,11 +40,11 @@ public class RemoveQueryParameterFactory implements GatewayFilterFactory<RemoveQ
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result);
-            validator.required("name", this.name);
+            validator.required("name", this.name());
         }
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         private final String paramName;
 

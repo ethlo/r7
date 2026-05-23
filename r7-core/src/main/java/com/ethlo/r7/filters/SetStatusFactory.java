@@ -8,7 +8,10 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
 public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFactory.Config>
 {
     private static final String FILTER_NAME = "SetStatus";
@@ -26,7 +29,7 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
     }
 
     @Override
-    public ClientResponseGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientResponseGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

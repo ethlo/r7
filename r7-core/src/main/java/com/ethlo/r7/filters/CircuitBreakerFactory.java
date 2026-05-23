@@ -23,8 +23,11 @@ import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitBreakerFilter.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class CircuitBreakerFactory implements GatewayFilterFactory<CircuitBreakerFactory.Config>
 {
     private static final byte[] REJECT_PAYLOAD = "Service Unavailable - Circuit Open".getBytes(StandardCharsets.UTF_8);
     private static final String FILTER_NAME = "CircuitBreaker";
@@ -42,7 +45,7 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -58,8 +61,8 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("failure_threshold", failureThreshold)
-                    .required("cooldown_period", cooldownPeriod);
+                    .required("failure_threshold", failureThreshold())
+                    .required("cooldown_period", cooldownPeriod());
         }
 
         @Override
@@ -72,7 +75,7 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         }
     }
 
-    private static class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
         private final Config config;
         private final long cooldownMillis;
@@ -98,28 +101,24 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final State currentState = state.get();
+            final State currentState = this.state.get();
 
             if (currentState == State.OPEN)
             {
-                if (System.currentTimeMillis() - openTimestamp.get() >= cooldownMillis)
+                if (System.currentTimeMillis() - this.openTimestamp.get() >= this.cooldownMillis)
                 {
-                    if (state.compareAndSet(State.OPEN, State.HALF_OPEN))
+                    if (this.state.compareAndSet(State.OPEN, State.HALF_OPEN))
                     {
-                        // Allow this single request to proceed as a probe
                         return;
                     }
                 }
-
-                // Fast-fail in microseconds
-                rejectRequest(exchange);
+                this.rejectRequest(exchange);
                 return;
             }
 
             if (currentState == State.HALF_OPEN)
             {
-                // Another thread is already probing; reject subsequent requests
-                rejectRequest(exchange);
+                this.rejectRequest(exchange);
             }
         }
 
@@ -128,33 +127,31 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         {
             if (HttpStatuses.is5xx(exchange.clientResponse().status()))
             {
-                handleFailure();
+                this.handleFailure();
             }
             else
             {
-                handleSuccess();
+                this.handleSuccess();
             }
         }
 
         private void handleFailure()
         {
-            final State currentState = state.get();
+            final State currentState = this.state.get();
 
             if (currentState == State.HALF_OPEN)
             {
-                // The probe failed. Snap immediately back to OPEN and reset the cooldown clock.
-                openTimestamp.set(System.currentTimeMillis());
-                state.set(State.OPEN);
+                this.openTimestamp.set(System.currentTimeMillis());
+                this.state.set(State.OPEN);
             }
             else if (currentState == State.CLOSED)
             {
-                // Normal operation failed. Increment counter and trip if threshold is reached.
-                final int failures = consecutiveFailures.incrementAndGet();
-                if (failures >= failureThreshold)
+                final int failures = this.consecutiveFailures.incrementAndGet();
+                if (failures >= this.failureThreshold)
                 {
-                    if (state.compareAndSet(State.CLOSED, State.OPEN))
+                    if (this.state.compareAndSet(State.CLOSED, State.OPEN))
                     {
-                        openTimestamp.set(System.currentTimeMillis());
+                        this.openTimestamp.set(System.currentTimeMillis());
                     }
                 }
             }
@@ -162,18 +159,16 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
 
         private void handleSuccess()
         {
-            final State currentState = state.get();
+            final State currentState = this.state.get();
 
             if (currentState == State.HALF_OPEN)
             {
-                // The probe succeeded! The upstream is healthy again.
-                consecutiveFailures.set(0);
-                state.set(State.CLOSED);
+                this.consecutiveFailures.set(0);
+                this.state.set(State.CLOSED);
             }
             else if (currentState == State.CLOSED)
             {
-                // Reset consecutive failures on any success
-                consecutiveFailures.set(0);
+                this.consecutiveFailures.set(0);
             }
         }
 
@@ -188,10 +183,10 @@ public final class CircuitBreakerFilter implements GatewayFilterFactory<CircuitB
         @Override
         public String summary()
         {
-            return new StringJoiner(", ", "CircuitBreaker" + "[", "]")
-                    .add("failure_threshold=" + config.failureThreshold())
-                    .add("cool_down=" + config.cooldownPeriod())
-                    .add("state=" + state.get().name())
+            return new StringJoiner(", ", FILTER_NAME + "[", "]")
+                    .add("failure_threshold=" + this.config.failureThreshold())
+                    .add("cool_down=" + this.config.cooldownPeriod())
+                    .add("state=" + this.state.get().name())
                     .toString();
         }
     }
