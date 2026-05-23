@@ -12,6 +12,7 @@ The r7 configuration engine is strictly validated at startup. The gateway will *
 * Invalid regular expressions or malformed CIDR blocks.
 * Cyclic/recursive `fallback` routing loops.
 * Unresolvable environment variables without default values.
+* Duplicate Route IDs (Route IDs must be globally unique).
 
 ### Environment Variable Interpolation
 
@@ -26,26 +27,56 @@ In strict accordance with RFC 7230, **all HTTP header evaluations in r7 are case
 
 ---
 
-## 2. Execution Semantics
+## 2. Operational Guarantees
+
+As a deterministic request execution engine, r7 provides strict operational guarantees for infrastructure reliability.
+
+### Deterministic Behavior
+
+* **Evaluation:** Route evaluation order is strictly stable.
+* **Execution:** Filter execution order is strictly stable. No implicit parallel filter execution occurs.
+* **Routing:** Upstream target selection is strictly deterministic within the chosen load-balancing strategy.
+
+### Filter Failure Semantics
+
+r7 is designed to **fail-closed**. If a filter encounters a runtime exception (e.g., a malformed header mutation, regex execution failure, or invalid template substitution), the pipeline immediately halts and returns a `500 Internal Server Error`. This prevents unsafe, partially mutated requests from bleeding into the upstream network.
+
+### Hot Reloads & State
+
+r7 supports zero-downtime configuration reloads.
+
+* Swapping the `routes.yaml` configuration is an **atomic operation**.
+* In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.
+* Stateful filter data (like `CircuitBreaker` tripping states and `RateLimiter` token buckets) is intentionally reset upon reload to guarantee immediate, strict adherence to the new configuration parameters.
+
+---
+
+## 3. Execution Semantics
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
-3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once selected, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
+3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
 4. **Route Request Filters:** Pre-upstream mutations and enforcements execute in declaration order.
 5. **Upstream Proxy Execution:** The request is dispatched to the load-balanced target.
 6. **Route Response Filters:** Post-upstream mutations execute.
 7. **Global Response Filters:** Final global response mutations.
 8. **Async Journaling:** The request/response pair is dispatched to the disk-backed storage.
 
+### Phase-Aware Filters
+
+Filters are inherently phase-aware. Although they are declared in a single, unified list (either in `global_filters` or a route's `filters` block), they automatically participate only in the lifecycle phases relevant to their behavior.
+
+* *Example:* `AddRequestHeader` executes immediately during phase 4. However, response-mutating filters like `SetResponseHeader` are registered during phase 4 but their execution is **deferred** until phase 6 (after the upstream response is received).
+
 ### Short-Circuiting
 
-If any filter in the pipeline short-circuits execution (e.g., a `RequireAuthorizationHeader` fails, or a `ReturnResponse` executes), all subsequent filters and the Upstream Proxy Execution are **skipped**, and the pipeline immediately jumps to step 7 (Global Response Filters).
+If any filter in the pipeline short-circuits execution (e.g., a `RequireAuthorizationHeader` fails, or a `ReturnResponse` executes), all subsequent request filters and the Upstream Proxy Execution are **skipped**. The pipeline immediately transitions to the response phase (phase 6), executing any deferred route response filters and global response filters against the generated response context.
 
 ---
 
-## 3. Upstream Configuration
+## 4. Upstream Configuration
 
 The `upstream` block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency.
 
@@ -95,11 +126,12 @@ Configures behavior if the upstream connection fails completely. **Fallback recu
 
 ---
 
-## 4. Predicates
+## 5. Predicates
 
 Predicates determine whether an incoming request matches a route.
 
-**Regex Semantics:** All regex predicates use standard Java Regex syntax. Matching is **partial by default** unless explicitly anchored (`^`, `$`). Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Regex Semantics:** All regex predicates use standard Java Regex syntax. Matching is **partial by default** unless explicitly anchored (`^`, `$`). Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.
 
 ### Logical Meta-Predicates
 
@@ -129,7 +161,7 @@ Matches if the request path begins with a specific string prefix.
 
 #### MatchPath
 
-Matches the full request URI path against a regular expression pattern.
+Evaluates the request path against a regular expression pattern.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -247,7 +279,7 @@ Matches the HTTP method of the incoming request against a list of allowed method
 
 #### RemoteAddr
 
-Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the physical TCP peer address**; it does not read `X-Forwarded-For` to prevent IP spoofing.
+Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the physical TCP peer address**; it does not read `X-Forwarded-For` to prevent IP spoofing behind untrusted proxies.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -255,12 +287,14 @@ Matches the client's IP address against a specific IP or a CIDR subnet block. It
 
 ---
 
-## 5. Filters
+## 6. Filters
 
 Filters mutate requests, shape traffic, or enforce security rules after a route is matched.
 
-* **`Add*` Semantics:** Safely appends a new key/value pair without deleting existing ones.
-* **`Set*` Semantics:** Destructively overwrites existing keys with the new value.
+* **`Add*` Semantics:** Safely appends a non-destructive key/value pair.
+* **`Set*` Semantics:** Destructively replaces existing keys with the new value.
+* **`Remove*` Semantics:** Deletes the specified key entirely.
+* **`Require*` Semantics:** Validates presence or format, terminating the request if validation fails.
 
 ### Mutation: Headers, Cookies, and Parameters
 
@@ -275,7 +309,7 @@ Appends an HTTP header before forwarding the request to the upstream target.
 
 #### SetRequestHeader
 
-Overwrites an existing HTTP header before forwarding the request upstream.
+Replaces an existing HTTP header before forwarding the request upstream.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -293,7 +327,7 @@ Appends an HTTP header on the client response before it is returned to the clien
 
 #### SetResponseHeader
 
-Overwrites an existing HTTP header on the client response.
+Replaces an existing HTTP header on the client response.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -302,7 +336,7 @@ Overwrites an existing HTTP header on the client response.
 
 #### RemoveRequestHeader
 
-Strips a specified HTTP header from the client request before it is forwarded.
+Deletes a specified HTTP header from the client request before it is forwarded.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -310,7 +344,7 @@ Strips a specified HTTP header from the client request before it is forwarded.
 
 #### RemoveResponseHeader
 
-Strips a specified HTTP header from the upstream response before it is returned.
+Deletes a specified HTTP header from the upstream response before it is returned.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -318,7 +352,7 @@ Strips a specified HTTP header from the upstream response before it is returned.
 
 #### SetRequestCookie
 
-Injects or overwrites a cookie directly in the `Cookie` header of the incoming request.
+Injects or replaces a cookie directly in the `Cookie` header of the incoming request.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -327,7 +361,7 @@ Injects or overwrites a cookie directly in the `Cookie` header of the incoming r
 
 #### SetResponseCookie
 
-Injects a new `Set-Cookie` header into the response returned to the client, overwriting the client's cookie state.
+Injects a `Set-Cookie` response header instructing the client to create or overwrite the cookie.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -342,7 +376,7 @@ Injects a new `Set-Cookie` header into the response returned to the client, over
 
 #### RemoveRequestCookie
 
-Strips a specific cookie from the `Cookie` header before the request is routed upstream.
+Deletes a specific cookie from the `Cookie` header before the request is routed upstream.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -359,7 +393,7 @@ Appends a new query parameter to the request URL. Multiple parameters with the s
 
 #### SetQueryParameter
 
-Overwrites any existing query parameter with the specified name.
+Replaces any existing query parameter with the specified name.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -368,7 +402,7 @@ Overwrites any existing query parameter with the specified name.
 
 #### RemoveQueryParameter
 
-Strips a specific query parameter from the URL before forwarding.
+Deletes a specific query parameter from the URL before forwarding.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -381,7 +415,7 @@ Automatically injects the gateway's internal request ID into both the upstream r
 
 #### RemoveCacheHeaders
 
-Strips cache validation headers (`If-Modified-Since`, `If-None-Match`) and injects strict no-cache directives (`Cache-Control: no-cache`, `Pragma: no-cache`) upstream.
+Deletes cache validation headers (`If-Modified-Since`, `If-None-Match`) and injects strict no-cache directives (`Cache-Control: no-cache`, `Pragma: no-cache`) upstream.
 *This filter requires no configuration parameters.*
 
 ---
@@ -398,7 +432,7 @@ Removes a specified number of structural path segments from the beginning of the
 
 #### RewritePath
 
-Rewrites the upstream request path using regular expressions. Uses standard Java Matcher replacement semantics (`$1`, `$2`).
+Transforms the upstream request path using regular expressions. Uses standard Java Matcher replacement semantics (`$1`, `$2`).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -421,7 +455,7 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 
 #### RequireRequestHeader
 
-Ensures an HTTP header is present. Rejects the request if the header is missing.
+Validates an HTTP header is present. Rejects the request if the header is missing.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -430,7 +464,7 @@ Ensures an HTTP header is present. Rejects the request if the header is missing.
 
 #### RequireMatchRequestHeader
 
-Ensures an HTTP header is present and its value matches a specified regular expression.
+Validates an HTTP header is present and its value matches a specified regular expression.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -440,7 +474,7 @@ Ensures an HTTP header is present and its value matches a specified regular expr
 
 #### RequireQueryParameter
 
-Ensures a specific query parameter is present in the request URL.
+Validates a specific query parameter is present in the request URL.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -449,7 +483,7 @@ Ensures a specific query parameter is present in the request URL.
 
 #### RequireMatchQueryParameter
 
-Ensures a query parameter is present and its value matches a specified regular expression.
+Validates a query parameter is present and its value matches a specified regular expression.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -459,7 +493,7 @@ Ensures a query parameter is present and its value matches a specified regular e
 
 #### RequireCookie
 
-Ensures a specific cookie is present in the request.
+Validates a specific cookie is present in the request.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -468,7 +502,7 @@ Ensures a specific cookie is present in the request.
 
 #### RequireMatchCookie
 
-Ensures a cookie is present and its value matches a specified regular expression.
+Validates a cookie is present and its value matches a specified regular expression.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -492,7 +526,7 @@ Generates a Base64 encoded Basic Authentication string and injects it into the `
 
 #### RequestSizeLimit
 
-Evaluates the `Content-Length` header of incoming requests. Rejects payloads exceeding the configured limit with `413 Payload Too Large`.
+Evaluates the `Content-Length` header of incoming requests. If the header is missing or the request uses chunked transfer encoding, r7 actively monitors the streamed byte count. Terminates the connection immediately with `413 Payload Too Large` if the limit is exceeded.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -528,7 +562,7 @@ Provides token-bucket rate limiting. Requests exceeding the limit are rejected w
 
 #### CircuitBreaker
 
-Monitors upstream responses and temporarily blocks routing to the target if a specified threshold of `5xx` server errors is reached. **Failures are tracked per-route.** Fast-fails with `503 Service Unavailable` while open, and allows a single probe request through during half-open state.
+Monitors upstream responses and temporarily blocks routing **for the entire route** if a specified threshold of `5xx` server errors is reached. Fast-fails with `503 Service Unavailable` while open, and allows a single probe request through during half-open state.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -541,7 +575,7 @@ Monitors upstream responses and temporarily blocks routing to the target if a sp
 
 #### ReturnResponse
 
-Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`.
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Response-phase filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -566,13 +600,13 @@ Overrides the HTTP response status code returned to the client, regardless of th
 
 ---
 
-## 6. Journaling & Storage
+## 7. Journaling & Storage
 
 Request/response journaling is executed asynchronously to avoid blocking the hot path.
 
 ### Storage Configuration (`server.yaml -> storage`)
 
-Storage utilizes memory-mapped files separated into shards. When all shards reach the `shard_size` limit, r7 utilizes a **ring-buffer rollover policy**, overwriting the oldest shard to guarantee disk limits are strictly respected.
+Storage utilizes memory-mapped files separated into shards. When all shards reach the `shard_size` limit, r7 utilizes a **ring-buffer rollover policy**, overwriting the oldest shard to guarantee disk limits are strictly respected without halting operations.
 
 ### Logging Levels (`routes.yaml -> journal`)
 
@@ -583,17 +617,17 @@ Verbosity can be set generically or overridden conditionally based on HTTP statu
 | `NONE` | None | Disables logging completely for the route/status. |
 | `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
 | `HEADERS` | Metadata + Headers | Captures both request and response headers. |
-| `FULL` | Headers + Bodies | Binary-safe. Payloads exceeding 1MB are automatically truncated to prevent runaway storage. |
+| `FULL` | Headers + Bodies | Supports arbitrary binary payload capture. Payloads exceeding 1MB are automatically truncated to prevent runaway storage. |
 
 ---
 
-## 7. TLS & Security
+## 8. TLS & Security
 
-Note: r7 expects TLS termination to be handled by an edge load balancer (e.g., AWS ALB, Cloudflare) directly in front of it.
+r7 expects TLS termination to be handled by an edge load balancer (e.g., AWS ALB, Cloudflare) directly in front of it.
 
 ---
 
-## 8. Complete Example Configuration
+## 9. Complete Example Configuration
 
 The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.
 
@@ -627,6 +661,9 @@ routes:
     filters:
       - StripPathPrefix:
           parts: 1
+      - SetResponseHeader:
+          name: X-Content-Type-Options
+          value: nosniff
       - StaticContent:
           base_directory: /var/www/html/
     upstream: null
@@ -693,7 +730,7 @@ routes:
 
 ---
 
-## 9. Server Configuration
+## 10. Server Configuration
 
 The `server.yaml` file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
 
