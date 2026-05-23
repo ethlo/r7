@@ -7,10 +7,13 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class PathStartsWithFactory implements GatewayPredicateFactory<PathStartsWithFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
+public final class PathPrefixFactory implements GatewayPredicateFactory<PathPrefixFactory.Config>
 {
-    private static final String PREDICATE_NAME = "PathStartsWith";
+    private static final String PREDICATE_NAME = "PathPrefix";
 
     @Override
     public String name()
@@ -25,7 +28,7 @@ public class PathStartsWithFactory implements GatewayPredicateFactory<PathStarts
     }
 
     @Override
-    public GatewayPredicate create(Config config)
+    public GatewayPredicate create(final Config config)
     {
         return new GP(config);
     }
@@ -33,25 +36,25 @@ public class PathStartsWithFactory implements GatewayPredicateFactory<PathStarts
     public record Config(String prefix) implements ValidatableConfig
     {
         @Override
-        public void validate(ValidationResult result)
+        public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result).required("prefix", prefix);
+            new ValidatorUtils(result).required("prefix", this.prefix());
         }
     }
 
-    private static class GP implements GatewayPredicate, ShortInfo
+    private static final class GP implements GatewayPredicate, ShortInfo
     {
         private final String prefix;
 
-        public GP(Config config)
+        public GP(final Config config)
         {
             this.prefix = config.prefix();
         }
 
         @Override
-        public boolean test(GatewayRequest request)
+        public boolean test(final GatewayRequest request)
         {
-            return request.path().startsWith(prefix);
+            return request.path().startsWith(this.prefix);
         }
 
         @Override
@@ -63,7 +66,7 @@ public class PathStartsWithFactory implements GatewayPredicateFactory<PathStarts
         @Override
         public String summary()
         {
-            return PREDICATE_NAME + ": " + prefix;
+            return PREDICATE_NAME + ": " + this.prefix;
         }
     }
 }

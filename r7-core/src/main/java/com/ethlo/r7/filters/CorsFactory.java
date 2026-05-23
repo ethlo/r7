@@ -18,8 +18,11 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Config>
 {
     private static final String FILTER_NAME = "Cors";
 
@@ -43,7 +46,7 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -94,7 +97,6 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
         {
             final String method = exchange.clientRequest().method().toString();
 
-            // Intercept Preflight OPTIONS requests
             if ("OPTIONS".equals(method))
             {
                 final String originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
@@ -128,7 +130,6 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
                         headers.set(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
                     }
 
-                    // Short-circuit before routing to upstream
                     exchange.shortCircuit(new FastTerminationGatewayResponse(
                             headers,
                             HttpStatuses.NO_CONTENT,
@@ -141,7 +142,6 @@ public final class CorsFilterFactory implements GatewayFilterFactory<CorsFilterF
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            // Decorate standard requests with the resulting CORS headers
             final String originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
             final String origin = originOpt != null ? originOpt.toString() : null;
 

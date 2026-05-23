@@ -10,7 +10,10 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
 public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory<RemoteAddrPredicateFactory.Config>
 {
     private static final String PREDICATE_NAME = "RemoteAddr";
@@ -46,15 +49,16 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
                 {
                     final String[] parts = this.source().split("/");
 
-                    // Validates the IP part
-                    InetAddress.getByName(parts[0]);
+                    // Resolve the IP to determine if it is IPv4 (32 bits) or IPv6 (128 bits)
+                    final InetAddress address = InetAddress.getByName(parts[0]);
+                    final int maxMask = address.getAddress().length * 8;
 
                     if (parts.length > 1)
                     {
                         final int mask = Integer.parseInt(parts[1]);
-                        if (mask < 0 || mask > 128)
+                        if (mask < 0 || mask > maxMask)
                         {
-                            validator.invalid("source", this.source(), "Subnet mask must be between 0 and 128");
+                            validator.invalid("source", this.source(), "Subnet mask must be between 0 and " + maxMask + " for this IP type");
                         }
                     }
                 }
@@ -82,7 +86,6 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
                 final InetAddress address = InetAddress.getByName(parts[0]);
                 this.networkBytes = address.getAddress();
 
-                // If no mask is provided, use an exact match mask (32 for IPv4, 128 for IPv6)
                 final int prefixLength = parts.length > 1 ? Integer.parseInt(parts[1]) : (this.networkBytes.length * 8);
 
                 this.maskBytes = new byte[this.networkBytes.length];
@@ -101,6 +104,8 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
             }
             catch (final UnknownHostException e)
             {
+                // This is mathematically unreachable if the validation phase passed,
+                // but required by the compiler for the checked UnknownHostException.
                 throw new IllegalArgumentException("Invalid CIDR format during instantiation: " + this.cidr, e);
             }
         }
@@ -123,7 +128,6 @@ public final class RemoteAddrPredicateFactory implements GatewayPredicateFactory
                 return false;
             }
 
-            // Zero-allocation bitwise comparison
             for (int i = 0; i < this.networkBytes.length; i++)
             {
                 if ((clientBytes[i] & this.maskBytes[i]) != this.networkBytes[i])

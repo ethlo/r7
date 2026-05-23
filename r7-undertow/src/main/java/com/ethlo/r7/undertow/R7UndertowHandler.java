@@ -45,7 +45,7 @@ import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
-import com.ethlo.r7.filters.StaticContentGatewayFilter;
+import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -184,7 +184,7 @@ public final class R7UndertowHandler implements HttpHandler
     private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
     {
         // Check if the core filter requested a native static handoff
-        final String staticBasePath = gatewayExchange.attributes().getFirst(StaticContentGatewayFilter.STATIC_CONTENT_PATH_KEY);
+        final String staticBasePath = gatewayExchange.attributes().getFirst(StaticContentFactory.STATIC_CONTENT_PATH_KEY);
 
         if (staticBasePath != null)
         {

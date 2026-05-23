@@ -10,10 +10,13 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
+public final class MatchPathFactory implements GatewayPredicateFactory<MatchPathFactory.Config>
 {
-    private static final String PREDICATE_NAME = "RegexPath";
+    private static final String PREDICATE_NAME = "MatchPath";
 
     @Override
     public String name()
@@ -28,7 +31,7 @@ public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactor
     }
 
     @Override
-    public GatewayPredicate create(Config config)
+    public GatewayPredicate create(final Config config)
     {
         return new GP(config);
     }
@@ -36,37 +39,38 @@ public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactor
     public record Config(String regexp) implements ValidatableConfig
     {
         @Override
-        public void validate(ValidationResult result)
+        public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result).required("regexp", regexp);
-            if (regexp != null)
+            final ValidatorUtils validator = new ValidatorUtils(result).required("regexp", this.regexp());
+            
+            if (this.regexp() != null)
             {
                 try
                 {
-                    Pattern.compile(regexp);
+                    Pattern.compile(this.regexp());
                 }
-                catch (PatternSyntaxException e)
+                catch (final PatternSyntaxException e)
                 {
-                    throw new IllegalArgumentException(PREDICATE_NAME + ": Invalid regex - " + e.getMessage());
+                    validator.invalid("regexp", this.regexp(), "Invalid regex format: " + e.getDescription());
                 }
             }
         }
     }
 
-    private static class GP implements GatewayPredicate, ShortInfo
+    private static final class GP implements GatewayPredicate, ShortInfo
     {
         private final Pattern pattern;
 
-        public GP(Config config)
+        public GP(final Config config)
         {
             this.pattern = Pattern.compile(config.regexp());
         }
 
         @Override
-        public boolean test(GatewayRequest request)
+        public boolean test(final GatewayRequest request)
         {
-            // Note: Matcher handles String natively, so no .toString() needed!
-            return pattern.matcher(request.uri()).matches();
+            // Using .path() instead of .uri() ensures query parameters do not break the regex match
+            return this.pattern.matcher(request.path()).matches();
         }
 
         @Override
@@ -78,7 +82,7 @@ public class RegexPathFactory implements GatewayPredicateFactory<RegexPathFactor
         @Override
         public String summary()
         {
-            return PREDICATE_NAME + ": " + pattern.pattern();
+            return PREDICATE_NAME + ": " + this.pattern.pattern();
         }
     }
 }

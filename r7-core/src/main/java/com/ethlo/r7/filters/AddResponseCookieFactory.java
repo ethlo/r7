@@ -11,7 +11,10 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
 public class AddResponseCookieFactory implements GatewayFilterFactory<AddResponseCookieFactory.Config>
 {
     private static final String FILTER_NAME = "AddResponseCookie";

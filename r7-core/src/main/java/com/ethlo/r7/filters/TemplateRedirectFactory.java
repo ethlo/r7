@@ -17,7 +17,10 @@ import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
 public final class TemplateRedirectFactory implements GatewayFilterFactory<TemplateRedirectFactory.Config>
 {
     private static final String FILTER_NAME = "TemplateRedirect";
@@ -36,7 +39,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
     }
 
     @Override
-    public ClientRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -73,8 +76,6 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         public GF(final Config config)
         {
             this.sourcePattern = Pattern.compile(config.source());
-
-            // Convert the user-friendly {{1}}, {{var}} syntax to Java Matcher $1, ${var} syntax
             this.targetTemplate = config.target().replaceAll("\\{\\{(\\w+)\\}\\}", "\\$$1");
 
             if (config.status() != null)
@@ -83,7 +84,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             }
             else
             {
-                this.responseStatus = HttpStatuses.FOUND; // 302 default
+                this.responseStatus = HttpStatuses.FOUND; 
             }
         }
 

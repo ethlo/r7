@@ -8,8 +8,11 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
-public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPrefixFactory.Config>
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+public final class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPrefixFactory.Config>
 {
     private static final String FILTER_NAME = "StripPathPrefix";
 
@@ -26,7 +29,7 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(Config config, FilterCreationContext filterCreationContext)
+    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }
@@ -34,23 +37,23 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
     public record Config(Integer parts) implements ValidatableConfig
     {
         @Override
-        public void validate(ValidationResult result)
+        public void validate(final ValidationResult result)
         {
             final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required("parts", parts);
+                    .required("parts", this.parts());
 
-            if (parts != null && parts <= 0)
+            if (this.parts() != null && this.parts() <= 0)
             {
-                validatorUtils.invalid("parts", parts.toString(), "'parts' must be greater than 0");
+                validatorUtils.invalid("parts", this.parts().toString(), "'parts' must be greater than 0");
             }
         }
     }
 
-    private static class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         private final int parts;
 
-        public GF(Config config)
+        public GF(final Config config)
         {
             this.parts = config.parts();
         }
@@ -60,23 +63,18 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         {
             final String path = exchange.clientRequest().path().toString();
 
-            // The config validation guarantees parts > 0, so we can skip that check here
             int pos = 0;
-            for (int i = 0; i < parts; i++)
+            for (int i = 0; i < this.parts; i++)
             {
-                // Micro-optimization: Search for the char '/' instead of the String "/"
                 pos = path.indexOf('/', pos + 1);
                 if (pos == -1)
                 {
-                    // We've run out of slashes.
-                    // If we're at "/v1" and stripping 1, we should result in "/"
                     exchange.upstreamRequest().path("/");
                     return;
                 }
             }
 
             final String newPath = path.substring(pos);
-            // Ensure we don't return an empty string if the path ended exactly at the slash
             exchange.upstreamRequest().path(newPath.isEmpty() ? "/" : newPath);
         }
 
@@ -89,7 +87,7 @@ public class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPre
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + (parts == 1 ? "1 part" : parts + " parts");
+            return FILTER_NAME + ": " + (this.parts == 1 ? "1 part" : this.parts + " parts");
         }
     }
 }

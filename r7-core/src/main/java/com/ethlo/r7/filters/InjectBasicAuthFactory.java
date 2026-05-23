@@ -12,7 +12,10 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
 public final class InjectBasicAuthFactory implements GatewayFilterFactory<InjectBasicAuthFactory.Config>
 {
     private static final String FILTER_NAME = "InjectBasicAuth";

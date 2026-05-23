@@ -1,40 +1,44 @@
 version: v2026-03-14
+
+# Global filters applied to all routes
 global_filters:
   - SimpleMetrics:
       period: 5M
       interval: 2S
-  - RequestSize:
+  - RequestSizeLimit:
       max_size: 10MB
+
 routes:
   - id: dashboard
+    match:
+      - PathPrefix:
+          prefix: ${SECRET_URL:/status}
     upstream:
       targets:
         - url: http://localhost:18888
-    match:
-      - PathStartsWith:
-          prefix: ${SECRET_URL:/status}
+
   - id: reject-benchmark
+    match:
+      - PathPrefix:
+          prefix: /benchmark
     upstream:
       targets:
         - url: http://localhost:1111
-    match:
-      - PathStartsWith:
-          prefix: /benchmark
     filters:
       - RequireAuthorizationHeader
 
   - id: static-content
     match:
       - not:
-          - PathStartsWith:
-              prefix: /hello
+          PathPrefix:
+            prefix: /hello
       - or:
           - Method:
               include:
                 - GET
                 - POST
           - RemoteAddr:
-              source: 192.168.1/24
+              source: 192.168.1.0/24
     upstream:
       targets:
         - url: http://localhost:1111
@@ -47,7 +51,7 @@ routes:
       - CircuitBreaker:
           failure_threshold: 10
           cooldown_period: 15s
-      - CorrelationIdHeader
+      - AddCorrelationId
     journal:
       request:
         level: HEADERS
@@ -60,7 +64,7 @@ routes:
 
   - id: static-content-without-journal
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /hello
     upstream:
       targets:
@@ -74,15 +78,15 @@ routes:
           failure_threshold: 10
           cooldown_period: 15s
       #- RequireAuthorizationHeader
-      - CorrelationIdHeader
+      - AddCorrelationId
 
   - id: ws-chat
+    match:
+      - PathPrefix:
+          prefix: /ws
     upstream:
       targets:
         - url: http://127.0.0.1:8080
-    match:
-      PathStartsWith:
-        prefix: /ws
     journal:
       request:
         level: METADATA
@@ -94,12 +98,15 @@ routes:
           2xx: NONE
 
   - id: home-assistant
+    match:
+      - PathPrefix:
+          prefix: /ha
     upstream:
       targets:
         - url: http://192.168.50.103:8123
-    match:
-      - PathStartsWith:
-          prefix: /ha
+    filters:
+      - StripPathPrefix:
+          parts: 1
     journal:
       request:
         level: METADATA
@@ -107,6 +114,3 @@ routes:
           5xx: HEADERS
       response:
         level: HEADERS
-    filters:
-      - StripPathPrefix:
-          parts: 1

@@ -8,7 +8,9 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
 
+@AutoService(GatewayFilterFactory.class)
 public final class RemoveRequestHeaderFactory implements GatewayFilterFactory<RemoveRequestHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "RemoveRequestHeader";
@@ -26,7 +28,7 @@ public final class RemoveRequestHeaderFactory implements GatewayFilterFactory<Re
     }
 
     @Override
-    public UpstreamRequestGatewayFilter create(final Config config, FilterCreationContext filterCreationContext)
+    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         return new GF(config);
     }

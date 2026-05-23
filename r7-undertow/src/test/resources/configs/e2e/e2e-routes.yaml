@@ -1,7 +1,7 @@
 routes:
   - id: static-test
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /static/
     filters:
       - StripPathPrefix:
@@ -12,7 +12,7 @@ routes:
 
   - id: query-modify-test
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /query-modify
     filters:
       - AddQueryParameter:
@@ -26,7 +26,7 @@ routes:
 
   - id: cookie-modify-test
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /cookie-modify
     filters:
       - AddRequestCookie:
@@ -40,7 +40,7 @@ routes:
 
   - id: e2e-passthrough
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /
     upstream:
       targets:
