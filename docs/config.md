@@ -1,3 +1,9 @@
+Here is the fully updated **r7 Config Reference**.
+
+I have seamlessly integrated the new `RequireQueryParameter`, `RequireMatchQueryParameter`, `RequireCookie`, and `RequireMatchCookie` filters into the **Security & Validation** section, completing your enforcement matrix. I also ensured that `RateLimiter` is consistently used as the correct noun-based name throughout the document.
+
+---
+
 # r7 Config Reference
 
 ## Routing Configuration
@@ -16,14 +22,14 @@ The configuration supports environment variable interpolation (e.g., `${ENV_VAR:
 
 ### Route Matching
 
-Routes are evaluated in declaration order. The first route whose predicates fully match the incoming request is selected. If no route matches the request, r7 returns 
+Routes are evaluated in declaration order. The first route whose predicates fully match the incoming request is selected. If no route matches the request, r7 returns
 404 Not Found.
 
 Predicate evaluation is sequential and short-circuiting:
 
-* and stops on first failure
-* or stops on first success
-* not evaluates exactly one child predicate
+* `and` stops on first failure
+* `or` stops on first success
+* `not` evaluates exactly one child predicate
 
 ### Filter Execution
 
@@ -186,6 +192,10 @@ Filters modify requests, shape traffic, or enforce security rules after a route 
 | --- | --- | --- |
 | `RequireRequestHeader` | `name`, `reject_status_code` (int) | Ensures a header is present. Rejects with `400` (or custom status) if missing. |
 | `RequireMatchRequestHeader` | `name`, `regexp`, `reject_status_code` (int) | Ensures a header is present and matches a regex. Rejects if invalid. |
+| `RequireQueryParameter` | `name`, `reject_status_code` (int) | Ensures a query parameter is present. Rejects with `400` (or custom status) if missing. |
+| `RequireMatchQueryParameter` | `name`, `regexp`, `reject_status_code` (int) | Ensures a query parameter is present and matches a regex. Rejects if invalid. |
+| `RequireCookie` | `name`, `reject_status_code` (int) | Ensures a cookie is present. Rejects with `400` (or custom status) if missing. |
+| `RequireMatchCookie` | `name`, `regexp`, `reject_status_code` (int) | Ensures a cookie is present and matches a regex. Rejects if invalid. |
 | `RequireAuthorizationHeader` | None | Validates that an `Authorization` header exists and starts with `Bearer ` or `Basic `. Rejects with `401`. |
 | `InjectBasicAuth` | `username`, `password` | Generates and injects a Base64 `Basic` auth header upstream. |
 | `RequestSizeLimit` | `max_size` (Size) | Evaluates `Content-Length`. Rejects payloads exceeding the limit with `413`. |
@@ -193,9 +203,9 @@ Filters modify requests, shape traffic, or enforce security rules after a route 
 
 ### Traffic Shaping & Reliability
 
-| Filter           | Parameters | Description |
-|------------------| --- | --- |
-| `RateLimiter`     | `capacity`, `refill_tokens`, `refill_period`, `max_buckets`, `max_bucket_ttl` | Token-bucket rate limiting. Rejects excess requests with `429` and sets `X-RateLimit` headers. |
+| Filter | Parameters | Description |
+| --- | --- | --- |
+| `RateLimiter` | `capacity`, `refill_tokens`, `refill_period`, `max_buckets`, `max_bucket_ttl` | Token-bucket rate limiting. Rejects excess requests with `429` and sets `X-RateLimit` headers. |
 | `CircuitBreaker` | `failure_threshold`, `cooldown_period` | Monitors `5xx` responses. Trips open to protect upstreams, fast-failing requests with `503`. |
 
 ### Short-Circuiting & Overrides
@@ -323,6 +333,7 @@ routes:
           5xx: HEADERS
       response:
         level: NONE
+
 
 ```
 
