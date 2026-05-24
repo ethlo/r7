@@ -55,7 +55,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("name", this.name())
+                    .notBlank("name", this.name())
                     .requiredRegexp("regexp", this.regexp());
         }
     }

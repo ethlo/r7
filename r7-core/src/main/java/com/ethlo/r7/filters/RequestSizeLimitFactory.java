@@ -99,7 +99,7 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         private void rejectBadRequest(final ClientRequestGatewayExchange exchange)
         {
             exchange.shortCircuit(new FastTerminationGatewayResponse(
-                    400,
+                    HttpStatuses.BAD_REQUEST,
                     MediaTypes.TEXT_PLAIN,
                     ByteBuffer.wrap(BAD_REQUEST_PAYLOAD)
             ));
