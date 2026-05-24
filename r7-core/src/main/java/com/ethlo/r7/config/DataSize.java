@@ -1,5 +1,7 @@
 package com.ethlo.r7.config;
 
+import java.util.StringJoiner;
+
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public class DataSize
@@ -35,5 +37,13 @@ public class DataSize
     public long toBytes()
     {
         return bytes;
+    }
+
+    @Override
+    public String toString()
+    {
+        return new StringJoiner(", ", DataSize.class.getSimpleName() + "[", "]")
+                .add("bytes=" + bytes)
+                .toString();
     }
 }

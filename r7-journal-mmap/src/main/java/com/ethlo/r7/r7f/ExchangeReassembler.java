@@ -4,13 +4,12 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32C;
 
-import com.ethlo.r7.api.IpSource;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;

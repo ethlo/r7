@@ -1,9 +1,9 @@
 package com.ethlo.r7.validation;
 
-import com.ethlo.r7.config.ConfigurationException;
-
 import java.util.ArrayList;
 import java.util.List;
+
+import com.ethlo.r7.config.ConfigurationException;
 
 public final class ValidationResult
 {

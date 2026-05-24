@@ -74,7 +74,7 @@ public final class RequireCookieFactory implements GatewayFilterFactory<RequireC
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             final Cookie cookie = exchange.clientRequest().cookies().get(this.config.name());
-            
+
             if (cookie == null)
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(

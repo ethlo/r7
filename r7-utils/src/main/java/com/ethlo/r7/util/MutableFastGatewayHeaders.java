@@ -1,6 +1,5 @@
 package com.ethlo.r7.util;
 
-import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 
 public class MutableFastGatewayHeaders extends FastGatewayHeaders implements MutableGatewayHeaders

@@ -41,7 +41,7 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("name", this.name())
+                    .notBlank("name", this.name())
                     .required("value", this.value());
         }
     }

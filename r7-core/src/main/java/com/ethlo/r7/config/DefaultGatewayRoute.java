@@ -4,13 +4,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.StringJoiner;
 
-import com.ethlo.r7.api.ClientResponseGatewayFilter;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 
 public class DefaultGatewayRoute implements GatewayRoute
 {

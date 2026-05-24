@@ -2,7 +2,6 @@ package com.ethlo.r7.filters;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.regex.Pattern;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
@@ -11,7 +10,6 @@ import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
-import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -19,9 +17,9 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-public final class RequireMatchQueryParameterFactory implements GatewayFilterFactory<RequireMatchQueryParameterFactory.Config>
+public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnResponseFactory.Config>
 {
-    private static final String FILTER_NAME = "RequireMatchQueryParameter";
+    private static final String FILTER_NAME = "ReturnResponse";
 
     @Override
     public String name()
@@ -41,13 +39,13 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         return new GF(config);
     }
 
-    public record Config(String name, String regexp, Integer rejectStatusCode) implements ValidatableConfig
+    public record Config(Integer status, String contentType, String body) implements ValidatableConfig
     {
         public Config
         {
-            if (rejectStatusCode == null)
+            if (contentType == null)
             {
-                rejectStatusCode = HttpStatuses.BAD_REQUEST;
+                contentType = MediaTypes.TEXT_PLAIN;
             }
         }
 
@@ -55,39 +53,32 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("name", this.name())
-                    .requiredRegexp("regexp", this.regexp());
+                    .requirePositive("status", this.status())
+                    .required("body", this.body());
         }
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
-        private final Config config;
-        private final Pattern compiledPattern;
-        private final ByteBuffer errorBody;
+        private final int status;
+        private final String contentType;
+        private final ByteBuffer bodyBuffer;
 
         public GF(final Config config)
         {
-            this.config = config;
-            this.compiledPattern = Pattern.compile(config.regexp());
-
-            final String msg = "Invalid format for query parameter: " + config.name();
-            this.errorBody = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
+            this.status = config.status();
+            this.contentType = config.contentType();
+            this.bodyBuffer = ByteBuffer.wrap(config.body().getBytes(StandardCharsets.UTF_8));
         }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String paramValue = exchange.clientRequest().queryParams().getFirst(this.config.name());
-
-            if (paramValue == null || !this.compiledPattern.matcher(paramValue).matches())
-            {
-                exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        this.config.rejectStatusCode(),
-                        MediaTypes.TEXT_PLAIN,
-                        this.errorBody.asReadOnlyBuffer()
-                ));
-            }
+            exchange.shortCircuit(new FastTerminationGatewayResponse(
+                    this.status,
+                    this.contentType,
+                    this.bodyBuffer.asReadOnlyBuffer()
+            ));
         }
 
         @Override
@@ -99,7 +90,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.config.name() + " ~= " + this.config.regexp();
+            return FILTER_NAME + ": " + this.status + " [" + this.contentType + "]";
         }
     }
 }

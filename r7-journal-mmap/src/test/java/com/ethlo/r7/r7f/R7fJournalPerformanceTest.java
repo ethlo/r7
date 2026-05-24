@@ -11,12 +11,11 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.stream.Stream;
 
-import com.ethlo.r7.api.IpSource;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.chronograph.Chronograph;
+import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;

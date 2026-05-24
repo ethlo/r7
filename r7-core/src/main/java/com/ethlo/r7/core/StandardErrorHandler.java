@@ -1,21 +1,14 @@
 package com.ethlo.r7.core;
 
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
-
-import com.ethlo.r7.util.constants.MediaTypes;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.GatewayErrorHandler;
+import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.core.proxy.NoAvailableTargetException;
 import com.ethlo.r7.core.proxy.ProxyConnectionException;
 import com.ethlo.r7.core.proxy.ProxyPoolExhaustedException;
 import com.ethlo.r7.util.constants.HttpStatuses;
-
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 
 public final class StandardErrorHandler implements GatewayErrorHandler
 {

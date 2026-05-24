@@ -9,8 +9,6 @@ import com.ethlo.r7.api.MutableCookies;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableQueryParams;
-import com.ethlo.r7.undertow.util.HttpStringUtil;
-import com.ethlo.r7.util.MutableBaseGatewayRequestParameters;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;

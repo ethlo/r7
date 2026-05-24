@@ -3,7 +3,6 @@ package com.ethlo.r7.filters;
 import java.nio.ByteBuffer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
@@ -49,21 +48,10 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required("source", this.source())
-                    .required("target", this.target());
-
-            if (this.source() != null)
-            {
-                try
-                {
-                    Pattern.compile(this.source());
-                }
-                catch (final PatternSyntaxException e)
-                {
-                    validatorUtils.invalid("source", this.source(), "Invalid regex pattern: " + e.getPattern());
-                }
-            }
+            new ValidatorUtils(result)
+                    .requiredRegexp("source", this.source())
+                    .required("target", this.target())
+                    .validRegexReplacement("target", this.source(), this.target());
         }
     }
 
@@ -76,7 +64,9 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         public GF(final Config config)
         {
             this.sourcePattern = Pattern.compile(config.source());
-            this.targetTemplate = config.target().replaceAll("\\{\\{(\\w+)\\}\\}", "\\$$1");
+
+            final String convertedTemplate = config.target().replaceAll("\\{\\{(\\w+)\\}\\}", "\\$$1");
+            this.targetTemplate = Matcher.quoteReplacement(convertedTemplate);
 
             if (config.status() != null)
             {
@@ -84,7 +74,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             }
             else
             {
-                this.responseStatus = HttpStatuses.FOUND; 
+                this.responseStatus = HttpStatuses.FOUND;
             }
         }
 

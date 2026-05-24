@@ -1,7 +1,6 @@
 package com.ethlo.r7.predicates;
 
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
@@ -41,19 +40,7 @@ public final class MatchPathFactory implements GatewayPredicateFactory<MatchPath
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result).required("regexp", this.regexp());
-            
-            if (this.regexp() != null)
-            {
-                try
-                {
-                    Pattern.compile(this.regexp());
-                }
-                catch (final PatternSyntaxException e)
-                {
-                    validator.invalid("regexp", this.regexp(), "Invalid regex format: " + e.getDescription());
-                }
-            }
+            new ValidatorUtils(result).requiredRegexp("regexp", this.regexp());
         }
     }
 

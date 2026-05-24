@@ -59,8 +59,8 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
             if (sig == null || !(sig.startsWith("Bearer ") || sig.startsWith("Basic ")))
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        HttpStatuses.UNAUTHORIZED, 
-                        MediaTypes.TEXT_PLAIN, 
+                        HttpStatuses.UNAUTHORIZED,
+                        MediaTypes.TEXT_PLAIN,
                         UNAUTHORIZED_BODY.slice()
                 ));
             }

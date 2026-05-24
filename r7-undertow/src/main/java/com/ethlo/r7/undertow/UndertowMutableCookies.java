@@ -2,7 +2,6 @@ package com.ethlo.r7.undertow;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 
 import com.ethlo.r7.api.MutableCookies;

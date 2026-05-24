@@ -2,7 +2,6 @@ package com.ethlo.r7.filters;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
@@ -43,21 +42,10 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validatorUtils = new ValidatorUtils(result)
-                    .required("regexp", this.regexp())
-                    .required("replacement", this.replacement());
-
-            if (this.regexp() != null)
-            {
-                try
-                {
-                    Pattern.compile(this.regexp());
-                }
-                catch (final PatternSyntaxException e)
-                {
-                    validatorUtils.invalid("regexp", this.regexp(), "Invalid regex pattern: " + e.getPattern());
-                }
-            }
+            new ValidatorUtils(result)
+                    .requiredRegexp("regexp", this.regexp())
+                    .required("replacement", this.replacement())
+                    .validRegexReplacement("replacement", this.regexp(), this.replacement());
         }
     }
 

@@ -1,8 +1,8 @@
 package com.ethlo.r7.filters;
 
+import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -10,6 +10,7 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
 public final class RemoveRequestHeaderFactory implements GatewayFilterFactory<RemoveRequestHeaderFactory.Config>
 {
