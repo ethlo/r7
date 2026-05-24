@@ -29,6 +29,12 @@ public record RouteDefinition(String id,
         {
             journal.validate(result);
         }
+
+        // A route must have a purpose
+        if (this.match() == null && (this.filters() == null || this.filters().isEmpty()))
+        {
+            result.addError("id", "Route '" + this.id() + "' must define at least one match or one filter");
+        }
     }
 
     @Override

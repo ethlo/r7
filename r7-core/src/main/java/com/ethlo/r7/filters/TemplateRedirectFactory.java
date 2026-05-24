@@ -50,7 +50,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         {
             new ValidatorUtils(result)
                     .requiredRegexp("source", this.source())
-                    .required("target", this.target())
+                    .notBlank("target", this.target())
                     .validRegexReplacement("target", this.source(), this.target());
         }
     }
@@ -65,8 +65,8 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         {
             this.sourcePattern = Pattern.compile(config.source());
 
-            final String convertedTemplate = config.target().replaceAll("\\{\\{(\\w+)\\}\\}", "\\$$1");
-            this.targetTemplate = Matcher.quoteReplacement(convertedTemplate);
+            // Consume the standard regex string exactly as provided
+            this.targetTemplate = config.target();
 
             if (config.status() != null)
             {
@@ -81,7 +81,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String currentPath = exchange.clientRequest().path().toString();
+            final String currentPath = exchange.clientRequest().path();
             final Matcher matcher = this.sourcePattern.matcher(currentPath);
 
             if (matcher.find())

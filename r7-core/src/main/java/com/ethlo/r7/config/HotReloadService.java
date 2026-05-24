@@ -68,7 +68,9 @@ public final class HotReloadService
                 routesConfig = new RoutesDefinition(null, List.of(), List.of());
             }
 
-            final ValidationResult validationResult = ConfigurationManager.validate(routesConfig);
+
+            final ValidationResult validationResult = new ValidationResult();
+            routesConfig.validate(validationResult);
             if (validationResult.hasErrors())
             {
                 throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));

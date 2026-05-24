@@ -10,7 +10,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.predicates.AndPredicate;
 import com.ethlo.r7.predicates.NotPredicate;
 import com.ethlo.r7.predicates.OrPredicate;
-import com.ethlo.r7.predicates.PredicateRegistry;
+import com.ethlo.r7.util.PredicateRegistry;
 import com.ethlo.r7.validation.ValidationResult;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
@@ -63,7 +63,7 @@ public final class ConditionDefinition
         return Collections.emptyList();
     }
 
-    public GatewayPredicate build(final PredicateRegistry registry)
+    public GatewayPredicate build(final PredicateRegistry registry, final ValidationResult validationResult)
     {
         final List<GatewayPredicate> list = new ArrayList<>();
 
@@ -73,10 +73,12 @@ public final class ConditionDefinition
             {
                 list.add(registry.create(name, value));
             }
-            catch (final ConfigurationException e)
+            catch (final ConfigurationException | IllegalArgumentException e)
             {
-                // Inject the predicate name into the error path
-                throw new ConfigurationException(String.format("[%s] %s", name, e.getMessage()));
+                // 1. Report the error so the user sees it
+                validationResult.addError(name, e.getMessage());
+                // 2. Insert the Poison Pill so the tree remains structurally intact but fails-closed
+                list.add(FalsePredicate.INSTANCE);
             }
         });
 
@@ -85,14 +87,10 @@ public final class ConditionDefinition
             final List<GatewayPredicate> andChildren = new ArrayList<>(this.and.size());
             for (int i = 0; i < this.and.size(); i++)
             {
-                try
-                {
-                    andChildren.add(this.and.get(i).build(registry));
-                }
-                catch (final ConfigurationException e)
-                {
-                    throw new ConfigurationException(String.format("[and[%d]] %s", i, e.getMessage()));
-                }
+                final ValidationResult nestedResult = validationResult.nested("and[" + i + "]");
+                // We no longer need try-catch here because the child's build()
+                // method internally handles its own exceptions now.
+                andChildren.add(this.and.get(i).build(registry, nestedResult));
             }
 
             if (andChildren.size() == 1)
@@ -110,28 +108,16 @@ public final class ConditionDefinition
             final List<GatewayPredicate> orChildren = new ArrayList<>(this.or.size());
             for (int i = 0; i < this.or.size(); i++)
             {
-                try
-                {
-                    orChildren.add(this.or.get(i).build(registry));
-                }
-                catch (final ConfigurationException e)
-                {
-                    throw new ConfigurationException(String.format("[or[%d]] %s", i, e.getMessage()));
-                }
+                final ValidationResult nestedResult = validationResult.nested("or[" + i + "]");
+                orChildren.add(this.or.get(i).build(registry, nestedResult));
             }
             list.add(new OrPredicate(orChildren));
         }
 
         if (this.not != null)
         {
-            try
-            {
-                list.add(new NotPredicate(this.not.build(registry)));
-            }
-            catch (final ConfigurationException e)
-            {
-                throw new ConfigurationException(String.format("[not] %s", e.getMessage()));
-            }
+            final ValidationResult nestedResult = validationResult.nested("not");
+            list.add(new NotPredicate(this.not.build(registry, nestedResult)));
         }
 
         // Optimize the evaluation tree

@@ -6,18 +6,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.predicates.PredicateRegistry;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FilterRegistry;
+import com.ethlo.r7.util.PredicateRegistry;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -66,13 +68,6 @@ public final class ConfigurationManager
         this.engineContext = engineContext;
         this.filterRegistry = new FilterRegistry();
         this.predicateRegistry = new PredicateRegistry(mapper);
-    }
-
-    public static ValidationResult validate(ValidatableConfig config)
-    {
-        final ValidationResult validationResult = new ValidationResult();
-        config.validate(validationResult.nested("routes"));
-        return validationResult;
     }
 
     public static <T> T load(Path yamlFile, Class<T> type)
@@ -250,13 +245,21 @@ public final class ConfigurationManager
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
     {
-        final ValidationResult validationResult = validate(config);
-        validationResult.throwIfInvalid();
+        final ValidationResult validationResult = new ValidationResult();
 
+        // 1. Structural Syntax Pass - Validate every individual object
+        config.validate(validationResult.nested("routes"));
+
+        // 2. Semantic Analysis Pass - Check for collisions and dangling references
+        validateUniqueRouteIds(config.routes());
+        validateCrossRouteReferences(config.routes());
+        validationResult.throwIfInvalid(); // Fail before any instantiation
+
+        // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
         final List<GatewayRoute> routes = config.routes().stream()
                 .map(routeDefinition ->
                 {
-                    final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id().toString(), engineContext);
+                    final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id(), engineContext);
 
                     // Load global filters
                     final List<GatewayFilter> globalFilters = new ArrayList<>();
@@ -277,64 +280,69 @@ public final class ConfigurationManager
                     final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal());
 
                     // Validate the structure and the plugin names
+                    GatewayPredicate predicate = FalsePredicate.INSTANCE;
                     if (routeDefinition.match() != null)
                     {
                         routeDefinition.match().validateTree(validationResult, predicateRegistry);
-                    }
-                    else
-                    {
-                        new ValidatorUtils(validationResult).required("match", routeDefinition.match());
-                        validationResult.throwIfInvalid();
+
+                        try
+                        {
+                            predicate = routeDefinition.match().build(predicateRegistry, validationResult);
+                        }
+                        catch (final ConfigurationException e)
+                        {
+                            // Grab the route ID for the breadcrumb, fallback to 'unknown' if not set yet
+                            final String routeId = routeDefinition.id();
+                            throw new ConfigurationException(String.format("[routes.%s.match] %s", routeId, e.getMessage()));
+                        }
                     }
 
-                    final GatewayPredicate predicate;
-                    try
-                    {
-                        predicate = routeDefinition.match().build(predicateRegistry);
-                    }
-                    catch (final ConfigurationException e)
-                    {
-                        // Grab the route ID for the breadcrumb, fallback to 'unknown' if not set yet
-                        final String routeId = routeDefinition.id().toString();
-                        throw new ConfigurationException(String.format("[routes.%s.match] %s", routeId, e.getMessage()));
-                    }
-
-                    if (routeDefinition.upstream() != null && routeDefinition.upstream().targets() == null)
+                    final List<TargetConfig> upstreamTargets = routeDefinition.upstream() != null ? routeDefinition.upstream().targets() : List.of();
+                    if (routeDefinition.upstream() != null && upstreamTargets == null)
                     {
                         new ValidatorUtils(validationResult).invalid("targets", null, "upstream targets required");
                         validationResult.throwIfInvalid();
                     }
 
-                    final List<String> urls = routeDefinition.upstream() != null ? routeDefinition.upstream().targets().stream().map(TargetConfig::url).map(String.class::cast).toList() : List.of();
+                    final List<String> urls = upstreamTargets.stream().map(TargetConfig::url).toList();
                     return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, journalConfig, routeDefinition);
                 })
                 .toList();
 
-        validateCrossRouteReferences(routes);
         routeRegistry.updateRoutes(config.version(), routes);
     }
 
-    public void validateCrossRouteReferences(final List<GatewayRoute> routes)
+    private void validateUniqueRouteIds(List<RouteDefinition> routes)
     {
-        for (final GatewayRoute r : routes)
-        {
-            final DefaultGatewayRoute route = (DefaultGatewayRoute) r;
-            if (route.routeDefinition() != null && route.routeDefinition().upstream() != null && route.routeDefinition().upstream().fallback() != null)
+        final Set<String> seen = new HashSet<>();
+        routes.forEach(r -> {
+            if (!seen.add(r.id()))
             {
-                final FallbackConfig fallbackRoute = route.routeDefinition().upstream().fallback();
+                throw new ConfigurationException(String.format("[routes.%s] id is not unique", r.id()));
+            }
+        });
+    }
+
+    private void validateCrossRouteReferences(final List<RouteDefinition> routes)
+    {
+        for (final RouteDefinition r : routes)
+        {
+            if (r.upstream() != null && r.upstream().fallback() != null)
+            {
+                final FallbackConfig fallbackRoute = r.upstream().fallback();
                 final String fallbackRouteId = fallbackRoute.routeId();
                 if (fallbackRouteId != null && !fallbackRouteId.isBlank())
                 {
                     // Prevent infinite loops
-                    if (fallbackRouteId.equals(route.id().toString()))
+                    if (fallbackRouteId.equals(r.id()))
                     {
-                        throw new ConfigurationException("Configuration error: Route '" + route.id() + "' specifies itself as its fallback.route_id.");
+                        throw new ConfigurationException("Configuration error: Route '" + r.id() + "' specifies itself as its fallback.route_id.");
                     }
 
                     // Ensure the fallback route actually exists in the registry
-                    if (routes.stream().noneMatch(e -> e.id().toString().equals(fallbackRouteId)))
+                    if (routes.stream().noneMatch(e -> e.id().equals(fallbackRouteId)))
                     {
-                        throw new ConfigurationException("Configuration error: Route '" + route.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that does not exist.");
+                        throw new ConfigurationException("Configuration error: Route '" + r.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that does not exist.");
                     }
                 }
             }

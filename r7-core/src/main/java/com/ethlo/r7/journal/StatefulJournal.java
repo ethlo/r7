@@ -5,7 +5,7 @@ import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.zip.CRC32C;
 
-import com.ethlo.r7.RedactUtil;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;

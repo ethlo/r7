@@ -1,6 +1,6 @@
 package com.ethlo.r7.filters;
 
-import com.ethlo.r7.RedactUtil;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;

@@ -9,6 +9,25 @@ global_filters:
       max_size: 10MB
 
 routes:
+
+  - id: flaky-service
+    match:
+      - PathPrefix:
+          prefix: /down
+    upstream:
+      targets:
+        - url: http://localhost:22222
+      health_check:
+        path: /health
+      fallback:
+        route_id: denied
+
+  - id: down
+    filters:
+    - ReturnResponse:
+        status: 503
+        body: We'll be back soon!
+
   - id: dashboard
     match:
       - PathPrefix:
@@ -19,7 +38,7 @@ routes:
 
   - id: reject-benchmark
     match:
-      - PathPrefix:
+      - Pathrefix:
           prefix: /benchmark
     upstream:
       targets:

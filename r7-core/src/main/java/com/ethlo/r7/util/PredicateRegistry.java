@@ -1,4 +1,4 @@
-package com.ethlo.r7.predicates;
+package com.ethlo.r7.util;
 
 import static com.ethlo.r7.util.Levenshtein.findClosestMatch;
 

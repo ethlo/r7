@@ -1,4 +1,4 @@
-package com.ethlo.r7;
+package com.ethlo.r7.util;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
