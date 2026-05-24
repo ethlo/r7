@@ -578,14 +578,11 @@ public class UniversalFilterFuzzTest
                 return null;
             }
 
-            // If your Cookies.get() returns a String, we just return a fuzzed string:
             if (inv.getMethod().getReturnType().equals(String.class))
             {
                 return data.consumeString(50);
             }
 
-            // If your Cookies.get() returns a custom Cookie object, we return a deep stub
-            // so downstream calls like .value() or .domain() don't NPE.
             return Mockito.mock(inv.getMethod().getReturnType(), Mockito.RETURNS_DEEP_STUBS);
         });
 
