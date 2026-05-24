@@ -2,20 +2,16 @@ package com.ethlo.r7.graal;
 
 import java.util.ServiceLoader;
 
-import com.ethlo.r7.config.JournalDefinition;
-
-import com.ethlo.r7.config.JournalDirectionConfig;
-
-import com.ethlo.r7.config.JournalDirectionDefinition;
-
-import com.ethlo.r7.status.SparklineRingBuffer;
-
 import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
 
+import com.ethlo.r7.config.JournalDefinition;
+import com.ethlo.r7.config.JournalDirectionConfig;
+import com.ethlo.r7.config.JournalDirectionDefinition;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.status.SparklineRingBuffer;
 import com.ethlo.r7.undertow.config.ServerConfig;
 
 public final class R7ReflectionFeature implements Feature

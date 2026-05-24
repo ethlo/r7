@@ -2,7 +2,6 @@ package com.ethlo.r7.filters;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
@@ -41,18 +40,20 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         return new GF(config);
     }
 
-    public record Config(String baseDirectory) implements ValidatableConfig
+    public record Config(Path baseDirectory) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result);
-            final Path dirPath = Paths.get(this.baseDirectory());
-
-            if (!Files.isDirectory(dirPath))
-            {
-                validator.invalid("base_directory", this.baseDirectory(), "Directory " + dirPath.toAbsolutePath() + " not found");
-            }
+            validator.required("base_directory", baseDirectory)
+                    .ifValid(() ->
+                    {
+                        if (!Files.isDirectory(baseDirectory()))
+                        {
+                            validator.invalid("base_directory", this.baseDirectory(), "Directory " + baseDirectory().toAbsolutePath() + " not found");
+                        }
+                    });
         }
     }
 
@@ -80,7 +81,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            exchange.attributes().set(STATIC_CONTENT_PATH_KEY, this.config.baseDirectory());
+            exchange.attributes().set(STATIC_CONTENT_PATH_KEY, this.config.baseDirectory().toString());
             exchange.shortCircuit(new FastTerminationGatewayResponse(HttpStatuses.OK, null, null));
         }
     }

@@ -1,7 +1,8 @@
 package com.ethlo.r7.filters;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
@@ -10,6 +11,7 @@ import com.ethlo.r7.config.DataSize;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -46,16 +48,15 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         @Override
         public void validate(final ValidationResult result)
         {
-            if (this.maxSize() == null)
-            {
-                result.addError(FILTER_NAME, "max_size must be defined");
-            }
+            new ValidatorUtils(result).requirePositive("max_size", this.maxSize());
         }
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
-        private static final byte[] REJECT_PAYLOAD = "Payload Too Large".getBytes(StandardCharsets.UTF_8);
+        private static final byte[] REJECT_PAYLOAD = "Payload Too Large".getBytes(UTF_8);
+        private static final byte[] BAD_REQUEST_PAYLOAD = "Bad Request: Malformed Content-Length".getBytes(UTF_8);
+
         private final DataSize maxSize;
 
         public GF(final Config config)
@@ -66,17 +67,51 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String contentLengthOpt = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
-            final long contentLength = contentLengthOpt != null ? Long.parseLong(contentLengthOpt) : 0;
-            
+            final String contentLengthHeader = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
+
+            if (contentLengthHeader == null)
+            {
+                return;
+            }
+
+            final long contentLength;
+            try
+            {
+                contentLength = Long.parseLong(contentLengthHeader.trim());
+                if (contentLength < 0)
+                {
+                    this.rejectBadRequest(exchange);
+                    return;
+                }
+            }
+            catch (final NumberFormatException exception)
+            {
+                this.rejectBadRequest(exchange);
+                return;
+            }
+
             if (contentLength > this.maxSize.toBytes())
             {
-                exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        HttpStatuses.ENTITY_TOO_LARGE,
-                        MediaTypes.TEXT_PLAIN,
-                        ByteBuffer.wrap(REJECT_PAYLOAD)
-                ));
+                this.rejectPayloadTooLarge(exchange);
             }
+        }
+
+        private void rejectBadRequest(final ClientRequestGatewayExchange exchange)
+        {
+            exchange.shortCircuit(new FastTerminationGatewayResponse(
+                    HttpStatuses.BAD_REQUEST,
+                    MediaTypes.TEXT_PLAIN,
+                    ByteBuffer.wrap(BAD_REQUEST_PAYLOAD)
+            ));
+        }
+
+        private void rejectPayloadTooLarge(final ClientRequestGatewayExchange exchange)
+        {
+            exchange.shortCircuit(new FastTerminationGatewayResponse(
+                    HttpStatuses.ENTITY_TOO_LARGE,
+                    MediaTypes.TEXT_PLAIN,
+                    ByteBuffer.wrap(REJECT_PAYLOAD)
+            ));
         }
 
         @Override

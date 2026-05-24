@@ -1,5 +1,7 @@
 package com.ethlo.r7.predicates;
 
+import static com.ethlo.r7.util.Levenshtein.findClosestMatch;
+
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
@@ -12,8 +14,6 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
-
-import static com.ethlo.r7.util.Levenshtein.findClosestMatch;
 
 public class PredicateRegistry
 {

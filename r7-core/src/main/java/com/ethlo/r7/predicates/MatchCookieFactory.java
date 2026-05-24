@@ -54,7 +54,7 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
         {
             final Cookie cookie = request.cookies().get(this.cookieName);
 
-            if (cookie == null)
+            if (cookie == null || cookie.value() == null)
             {
                 return false;
             }

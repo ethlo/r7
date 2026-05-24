@@ -1,9 +1,9 @@
 package com.ethlo.r7.undertow.util;
 
-import io.undertow.util.HttpString;
-
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+
+import io.undertow.util.HttpString;
 
 public final class HttpStringUtil
 {

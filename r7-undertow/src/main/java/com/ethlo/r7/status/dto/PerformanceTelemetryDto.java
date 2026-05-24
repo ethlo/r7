@@ -1,8 +1,8 @@
 package com.ethlo.r7.status.dto;
 
-import java.time.Duration;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.time.Duration;
 
 public record PerformanceTelemetryDto(@JsonProperty("average_latency") Duration averageLatency)
 {

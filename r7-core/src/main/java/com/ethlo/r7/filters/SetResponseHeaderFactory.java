@@ -11,6 +11,7 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
+@SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
 public final class SetResponseHeaderFactory implements GatewayFilterFactory<SetResponseHeaderFactory.Config>
 {

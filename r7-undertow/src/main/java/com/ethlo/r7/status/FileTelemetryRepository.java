@@ -1,14 +1,14 @@
 package com.ethlo.r7.status;
 
+import com.ethlo.r7.status.dto.RouteMetricsDto;
+import com.ethlo.r7.util.JsonUtil;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
-
-import com.ethlo.r7.status.dto.RouteMetricsDto;
-import com.ethlo.r7.util.JsonUtil;
 
 public final class FileTelemetryRepository implements TelemetryRepository
 {

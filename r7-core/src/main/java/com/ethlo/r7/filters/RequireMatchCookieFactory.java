@@ -3,7 +3,6 @@ package com.ethlo.r7.filters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
@@ -56,21 +55,9 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result)
-                    .required("name", this.name())
-                    .required("regexp", this.regexp());
-
-            if (this.regexp() != null)
-            {
-                try
-                {
-                    Pattern.compile(this.regexp());
-                }
-                catch (final PatternSyntaxException e)
-                {
-                    validator.invalid("regexp", this.regexp(), "Invalid regex format: " + e.getDescription());
-                }
-            }
+            final ValidatorUtils validator = new ValidatorUtils(result);
+            validator.required("name", this.name())
+                    .requiredRegexp("regexp", regexp());
         }
     }
 
@@ -84,7 +71,7 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         {
             this.config = config;
             this.compiledPattern = Pattern.compile(config.regexp());
-            
+
             final String msg = "Invalid format for cookie: " + config.name();
             this.errorBody = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
         }
@@ -94,7 +81,7 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         {
             final Cookie cookie = exchange.clientRequest().cookies().get(this.config.name());
 
-            if (cookie == null || !this.compiledPattern.matcher(cookie.value()).matches())
+            if (cookie == null || cookie.value() == null || !this.compiledPattern.matcher(cookie.value()).matches())
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(
                         this.config.rejectStatusCode(),

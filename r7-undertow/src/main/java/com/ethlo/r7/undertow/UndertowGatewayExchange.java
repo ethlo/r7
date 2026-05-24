@@ -1,6 +1,6 @@
 package com.ethlo.r7.undertow;
 
-import com.ethlo.chronograph.internal.util.StringUtil;
+import com.ethlo.r7.UnproxiedUpstreamRequest;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayExchange;
@@ -13,7 +13,6 @@ import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.StateKey;
-import com.ethlo.r7.UnproxiedUpstreamRequest;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.status.TrafficMetricsHandler;
 import com.ethlo.r7.time.ClockSource;

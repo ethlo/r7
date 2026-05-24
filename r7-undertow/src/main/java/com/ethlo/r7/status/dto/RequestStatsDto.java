@@ -1,9 +1,9 @@
 package com.ethlo.r7.status.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import java.time.OffsetDateTime;
 import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record RequestStatsDto(
         long total,

@@ -27,7 +27,6 @@ import com.ethlo.r7.validation.ValidationResult;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.auto.service.AutoService;
-
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
@@ -67,7 +66,25 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         @Override
         public Duration maxBucketTTL()
         {
-            return Optional.ofNullable(maxBucketTTL).orElse(Duration.ofMillis(Math.max(refillPeriod.toMillis() * 10, MINIMUM_EXPIRY_TIME_MILLIS)));
+            if (this.maxBucketTTL != null)
+            {
+                return this.maxBucketTTL;
+            }
+
+            if (this.refillPeriod == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                final long scaledMillis = Math.multiplyExact(this.refillPeriod.toMillis(), 10L);
+                return Duration.ofMillis(Math.max(scaledMillis, MINIMUM_EXPIRY_TIME_MILLIS));
+            }
+            catch (final ArithmeticException e)
+            {
+                return null;
+            }
         }
 
         @Override
@@ -80,9 +97,41 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("capacity", capacity())
-                    .required("refill_tokens", refillTokens())
-                    .required("refill_period", refillPeriod());
+                    .requirePositive("capacity", capacity())
+                    .requirePositive("refill_tokens", refillTokens())
+                    .requirePositive("refill_period", refillPeriod())
+                    .requirePositive("max_buckets", maxBuckets())
+                    .requirePositive("max_bucket_ttl", maxBucketTTL())
+                    .ifValid(() ->
+                    {
+                        try
+                        {
+                            new GF(this).createNewBucket("_config_test");
+                        }
+                        catch (final ArithmeticException e)
+                        {
+                            result.addError(
+                                    "refill_tokens/refill_period",
+                                    "Tokens * Period product is too large, causing overflow. Reduce one or both values."
+                            );
+                        }
+                        catch (final IllegalArgumentException e)
+                        {
+                            // Strictly catch Bucket4j's 1 token/ns physical limit.
+                            // Rethrow anything else so we don't swallow unrelated bugs.
+                            if (e.getMessage() != null && e.getMessage().contains("highest supported rate"))
+                            {
+                                result.addError(
+                                        "refill_tokens/refill_period",
+                                        "Rate exceeds the maximum supported limit of 1 token per nanosecond."
+                                );
+                            }
+                            else
+                            {
+                                throw e;
+                            }
+                        }
+                    });
         }
 
         @Override
@@ -100,6 +149,7 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
 
     private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
+        private final Bandwidth limit; // Calculate this once
         private final Cache<String, Bucket> buckets;
         private final Config config;
         private final String capacityString;
@@ -111,6 +161,11 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
             this.buckets = Caffeine.newBuilder()
                     .maximumSize(config.maxBuckets())
                     .expireAfterAccess(config.maxBucketTTL())
+                    .build();
+
+            this.limit = Bandwidth.builder()
+                    .capacity(config.capacity())
+                    .refillGreedy(config.refillTokens(), config.refillPeriod())
                     .build();
         }
 
@@ -140,11 +195,6 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
 
         private Bucket createNewBucket(final String key)
         {
-            final Bandwidth limit = Bandwidth.builder()
-                    .capacity(this.config.capacity())
-                    .refillGreedy(this.config.refillTokens(), this.config.refillPeriod())
-                    .build();
-
             return Bucket.builder()
                     .addLimit(limit)
                     .build();

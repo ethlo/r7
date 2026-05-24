@@ -47,7 +47,7 @@ public class R7NginxHttp2IsolationTest
             routes:
               - id: h2c-route
                 match:
-                  - PathStartsWith:
+                  - PathPrefix:
                       prefix: /
                 upstream:
                   targets:

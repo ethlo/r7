@@ -26,15 +26,15 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.r7f.JournalAnalyzer;
+import com.ethlo.r7.r7f.R7fConstants;
+import com.ethlo.r7.r7f.R7fJournal;
+import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.FastGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.MediaTypes;
-import com.ethlo.r7.r7f.JournalAnalyzer;
-import com.ethlo.r7.r7f.R7fConstants;
-import com.ethlo.r7.r7f.R7fJournal;
-import com.ethlo.r7.r7f.R7fJournalProvider;
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class JournalBinaryIntegrationTest

@@ -14,21 +14,20 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import com.ethlo.r7.api.IpSource;
-
 import org.junit.jupiter.api.RepeatedTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.chronograph.Chronograph;
+import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalLevel;
-import com.ethlo.r7.util.FastGatewayAttributes;
-import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.r7f.R7Tailer;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.r7f.R7fJournalProvider;
+import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
 public final class R7fPerformanceBenchmarkTest
 {

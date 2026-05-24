@@ -3,7 +3,6 @@ package com.ethlo.r7.filters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
@@ -55,21 +54,9 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validator = new ValidatorUtils(result)
-                    .required("name", this.name())
-                    .required("regexp", this.regexp());
-
-            if (this.regexp() != null)
-            {
-                try
-                {
-                    Pattern.compile(this.regexp());
-                }
-                catch (final PatternSyntaxException e)
-                {
-                    validator.invalid("regexp", this.regexp(), "Invalid regex format: " + e.getDescription());
-                }
-            }
+            new ValidatorUtils(result)
+                    .notBlank("name", this.name())
+                    .requiredRegexp("regexp", this.regexp());
         }
     }
 
@@ -83,7 +70,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         {
             this.config = config;
             this.compiledPattern = Pattern.compile(config.regexp());
-            
+
             final String msg = "Invalid format for query parameter: " + config.name();
             this.errorBody = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
         }

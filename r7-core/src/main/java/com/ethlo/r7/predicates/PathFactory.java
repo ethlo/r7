@@ -1,5 +1,7 @@
 package com.ethlo.r7.predicates;
 
+import java.util.Objects;
+
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
@@ -8,8 +10,6 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
-
-import java.util.Objects;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
