@@ -19,8 +19,7 @@ $defs:
               - name
               - value
             additionalProperties: false
-            description: Injects a static query parameter into the upstream request
-              URL.
+            description: Injects a static query parameter into the upstream request URL.
           AddRequestHeader:
             type: object
             properties:
@@ -54,19 +53,15 @@ $defs:
             properties:
               cooldown_period:
                 type: string
-                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
-                })$'
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}'
-                description: "The duration the circuit remains open before attempting\
-                \ to close. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                \ ${...})"
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "The duration the circuit remains open before attempting to close. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
               failure_threshold:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The number of consecutive failures before the circuit opens.
             required:
               - failure_threshold
@@ -80,7 +75,7 @@ $defs:
                 anyOf:
                   - type: boolean
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: Whether credentials are allowed.
               allowed_headers:
                 type: string
@@ -101,8 +96,7 @@ $defs:
               - max_age
               - allow_credentials
             additionalProperties: false
-            description: Handles Cross-Origin Resource Sharing (CORS) preflight and
-              response headers.
+            description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
           InjectBasicAuth:
             type: object
             properties:
@@ -124,51 +118,40 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The maximum number of tokens the bucket can hold. This
-                  defines the absolute burst limit.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The maximum number of tokens the bucket can hold. This defines the absolute burst limit.
               max_bucket_ttl:
                 type: string
-                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
-                })$'
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}'
-                description: "How long a bucket remains in memory after its last access\
-                \ before being purged. (Format: <number><unit> (e.g., 2s, 5m, 100ms)\
-                \ or a placeholder ${...})"
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "How long a bucket remains in memory after its last access before being purged. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
                 default: 10m
               max_buckets:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The maximum number of distinct client buckets to track
-                  in memory. Limits memory consumption under heavy load.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The maximum number of distinct client buckets to track in memory. Limits memory consumption under heavy load.
                 default: 100000
               refill_period:
                 type: string
-                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
-                })$'
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}'
-                description: "The time interval between token refills (e.g., 1s, 500ms).\
-                \ (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "The time interval between token refills (e.g., 1s, 500ms). (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
               refill_tokens:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The number of tokens added to the bucket at the end of
-                  every refill period.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The number of tokens added to the bucket at the end of every refill period.
             required:
               - capacity
               - refill_tokens
               - refill_period
             additionalProperties: false
-            description: Local rate-limiter useful for avoiding overload by demanding
-              users
+            description: Local rate-limiter useful for avoiding overload by demanding users
           RemoveQueryParameter:
             type: object
             properties:
@@ -214,12 +197,10 @@ $defs:
             properties:
               max_size:
                 type: string
-                pattern: '^(?:[0-9]+\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\$\{.*\})$'
+                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder\
-                  \ ${...}'
-                description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format:\
-                \ <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
+                description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
             required:
               - max_size
             additionalProperties: false
@@ -234,7 +215,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The HTTP status code to return if the cookie is missing.
                 default: 400
             required:
@@ -254,16 +235,14 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The HTTP status code to return if the cookie is missing
-                  or invalid.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The HTTP status code to return if the cookie is missing or invalid.
                 default: 400
             required:
               - name
               - regexp
             additionalProperties: false
-            description: Ensures a required cookie exists and matches a specific regular
-              expression.
+            description: Ensures a required cookie exists and matches a specific regular expression.
           RequireMatchQueryParameter:
             type: object
             properties:
@@ -272,22 +251,19 @@ $defs:
                 description: The name of the query parameter.
               regexp:
                 type: string
-                description: The regular expression pattern the query parameter value
-                  must match.
+                description: The regular expression pattern the query parameter value must match.
               reject_status_code:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The HTTP status code to return if the parameter is missing
-                  or invalid.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The HTTP status code to return if the parameter is missing or invalid.
                 default: 400
             required:
               - name
               - regexp
             additionalProperties: false
-            description: Ensures a required query parameter exists and matches a specific
-              regular expression.
+            description: Ensures a required query parameter exists and matches a specific regular expression.
           RequireMatchRequestHeader:
             type: object
             properties:
@@ -301,16 +277,14 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The HTTP status code to return if the header is missing
-                  or invalid.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The HTTP status code to return if the header is missing or invalid.
                 default: 400
             required:
               - name
               - regexp
             additionalProperties: false
-            description: Ensures a required request header exists and matches a specific
-              regular expression.
+            description: Ensures a required request header exists and matches a specific regular expression.
           RequireQueryParameter:
             type: object
             properties:
@@ -321,7 +295,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The HTTP status code to return if the parameter is missing.
                 default: 400
             required:
@@ -338,7 +312,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The HTTP status code to return if the header is missing.
                 default: 400
             required:
@@ -359,14 +333,13 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The HTTP status code to return.
             required:
               - status
               - body
             additionalProperties: false
-            description: Immediately terminates the request chain and returns a custom
-              response.
+            description: Immediately terminates the request chain and returns a custom response.
           RewritePath:
             type: object
             properties:
@@ -375,8 +348,7 @@ $defs:
                 description: The regular expression to match against the path.
               replacement:
                 type: string
-                description: "The replacement string, supporting capture group references\
-                \ (e.g., $1)."
+                description: "The replacement string, supporting capture group references (e.g., $1)."
             required:
               - regexp
               - replacement
@@ -434,17 +406,14 @@ $defs:
                 anyOf:
                   - type: boolean
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: Whether the cookie is HttpOnly.
               max_age:
                 type: string
-                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
-                })$'
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}'
-                description: "The cookie max-age duration. (Format: <number><unit> (e.g.,\
-                \ 2s, 5m, 100ms) or a placeholder ${...})"
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "The cookie max-age duration. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
               name:
                 type: string
                 description: The cookie name.
@@ -458,7 +427,7 @@ $defs:
                 anyOf:
                   - type: boolean
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: Whether the cookie is secure.
               value:
                 type: string
@@ -489,7 +458,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The HTTP status code to set (100-599).
             required:
               - status
@@ -512,26 +481,23 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
-                description: The number of path segments to strip from the beginning
-                  of the path.
+                    pattern: "^\\$\\{.*\\}$"
+                description: The number of path segments to strip from the beginning of the path.
             required:
               - parts
             additionalProperties: false
-            description: Removes a specified number of leading path segments from the
-              request path before forwarding to the upstream service.
+            description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
           TemplateRedirect:
             type: object
             properties:
               source:
                 type: string
-                description: The regular expression pattern to match against the request
-                  path.
+                description: The regular expression pattern to match against the request path.
               status:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: '^\$\{.*\}$'
+                    pattern: "^\\$\\{.*\\}$"
                 description: The HTTP status code to return for the redirect.
                 default: 302
               target:
@@ -541,8 +507,7 @@ $defs:
               - source
               - target
             additionalProperties: false
-            description: Redirects requests based on a path pattern match using a template
-              for the target URL.
+            description: Redirects requests based on a path pattern match using a template for the target URL.
         additionalProperties: true
         minProperties: 1
         maxProperties: 1
@@ -570,8 +535,7 @@ $defs:
               - name
               - value
             additionalProperties: false
-            description: Matches if a request contains a specific cookie with an exact
-              value.
+            description: Matches if a request contains a specific cookie with an exact value.
           HasCookie:
             type: object
             properties:
@@ -581,8 +545,7 @@ $defs:
             required:
               - name
             additionalProperties: false
-            description: "Matches if a request contains the specified cookie, regardless\
-            \ of its value."
+            description: "Matches if a request contains the specified cookie, regardless of its value."
           HasQueryParameter:
             type: object
             properties:
@@ -592,8 +555,7 @@ $defs:
             required:
               - name
             additionalProperties: false
-            description: "Matches if a request contains the specified query parameter,\
-            \ regardless of its value."
+            description: "Matches if a request contains the specified query parameter, regardless of its value."
           HasRequestHeader:
             type: object
             properties:
@@ -603,8 +565,7 @@ $defs:
             required:
               - name
             additionalProperties: false
-            description: "Matches if a request contains the specified header, regardless\
-            \ of its value."
+            description: "Matches if a request contains the specified header, regardless of its value."
           Host:
             type: object
             properties:
@@ -616,8 +577,7 @@ $defs:
             required:
               - hosts
             additionalProperties: false
-            description: Matches if the request 'Host' header matches one of the provided
-              hostnames.
+            description: Matches if the request 'Host' header matches one of the provided hostnames.
           MatchCookie:
             type: object
             properties:
@@ -631,8 +591,7 @@ $defs:
               - name
               - regexp
             additionalProperties: false
-            description: Matches if a cookie exists and its value matches the provided
-              regular expression.
+            description: Matches if a cookie exists and its value matches the provided regular expression.
           MatchPath:
             type: object
             properties:
@@ -656,8 +615,7 @@ $defs:
               - name
               - regexp
             additionalProperties: false
-            description: Matches if a query parameter exists and its value matches the
-              provided regular expression.
+            description: Matches if a query parameter exists and its value matches the provided regular expression.
           MatchRequestHeader:
             type: object
             properties:
@@ -671,8 +629,7 @@ $defs:
               - name
               - regexp
             additionalProperties: false
-            description: Matches if a request header exists and its value matches the
-              provided regular expression.
+            description: Matches if a request header exists and its value matches the provided regular expression.
           Method:
             type: object
             properties:
@@ -690,9 +647,9 @@ $defs:
             properties:
               path:
                 type: string
-                pattern: '^(?:/.*|\$\{.*\})$'
+                pattern: "^(?:/.*|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Must match expected format or be a placeholder ${...}'
+                  pattern: "Must match expected format or be a placeholder ${...}"
                 description: The exact path to match.
             required:
               - path
@@ -703,9 +660,9 @@ $defs:
             properties:
               prefix:
                 type: string
-                pattern: '^(?:/.*|\$\{.*\})$'
+                pattern: "^(?:/.*|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: 'Must match expected format or be a placeholder ${...}'
+                  pattern: "Must match expected format or be a placeholder ${...}"
                 description: The path prefix to match.
             required:
               - prefix
@@ -724,8 +681,7 @@ $defs:
               - name
               - value
             additionalProperties: false
-            description: Matches if the request contains the specified query parameter
-              with an exact value.
+            description: Matches if the request contains the specified query parameter with an exact value.
           RemoteAddr:
             type: object
             properties:
@@ -735,8 +691,7 @@ $defs:
             required:
               - source
             additionalProperties: false
-            description: Matches if the remote IP address falls within the specified
-              CIDR range.
+            description: Matches if the remote IP address falls within the specified CIDR range.
           RequestHeader:
             type: object
             properties:
@@ -750,8 +705,7 @@ $defs:
               - name
               - value
             additionalProperties: false
-            description: Matches if the request contains the specified header with an
-              exact value.
+            description: Matches if the request contains the specified header with an exact value.
           and:
             type: array
             items:
@@ -774,24 +728,21 @@ $defs:
         type: array
         items:
           $ref: "#/$defs/filter"
-        description: "A list of processing steps applied to the request before forwarding,\
-          \ and to the response before returning."
+        description: "A list of processing steps applied to the request before forwarding, and to the response before returning."
       id:
         type: string
-        description: "A unique identifier for this route. Used for logging, metrics,\
-          \ and fallback references."
+        description: "A unique identifier for this route. Used for logging, metrics, and fallback references."
       journal:
         type: object
         properties:
-          response:
+          request:
             type: object
             properties:
               status_overrides:
                 type: object
                 additionalProperties:
                   type: string
-                description: "Overrides for the journal level based on specific HTTP\
-                  \ status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
               level:
                 type: string
                 enum:
@@ -802,15 +753,14 @@ $defs:
                 description: The base journaling verbosity level.
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
-          request:
+          response:
             type: object
             properties:
               status_overrides:
                 type: object
                 additionalProperties:
                   type: string
-                description: "Overrides for the journal level based on specific HTTP\
-                  \ status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
               level:
                 type: string
                 enum:
@@ -827,8 +777,7 @@ $defs:
         type: array
         items:
           $ref: "#/$defs/predicate"
-        description: "Conditions that must be met for this route to handle a request.\
-          \ If omitted, all requests match."
+        description: "Conditions that must be met for this route to handle a request. If omitted, all requests match."
       upstream:
         type: object
         properties:
@@ -837,13 +786,24 @@ $defs:
             properties:
               route_id:
                 type: string
-                description: The ID of another route to execute if this upstream becomes
-                  completely unavailable.
+                description: The ID of another route to execute if this upstream becomes completely unavailable.
             required:
               - route_id
             additionalProperties: false
-            description: Fallback routing behavior triggered when all upstream targets
-              fail.
+            description: Fallback routing behavior triggered when all upstream targets fail.
+          health_check:
+            type: object
+            properties:
+              path:
+                type: string
+                pattern: ^/.*$
+                errorMessage:
+                  pattern: Path must start with a forward slash (/)
+                description: "The URI path used to check the health of the target (e.g., /health)."
+            required:
+              - path
+            additionalProperties: false
+            description: Active health checking configuration for the backend targets.
           targets:
             type: array
             items:
@@ -860,20 +820,6 @@ $defs:
               additionalProperties: false
               description: An individual backend server.
             description: List of backend servers to forward traffic to.
-          health_check:
-            type: object
-            properties:
-              path:
-                type: string
-                pattern: ^/.*$
-                errorMessage:
-                  pattern: Path must start with a forward slash (/)
-                description: "The URI path used to check the health of the target\
-                  \ (e.g., /health)."
-            required:
-              - path
-            additionalProperties: false
-            description: Active health checking configuration for the backend targets.
         required:
           - targets
         additionalProperties: false
@@ -892,8 +838,7 @@ properties:
     type: array
     items:
       $ref: "#/$defs/filter"
-    description: A list of filters applied globally to every request passing through
-      the gateway.
+    description: A list of filters applied globally to every request passing through the gateway.
   routes:
     type: array
     items:
