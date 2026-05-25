@@ -29,7 +29,6 @@ jobs:
         run: |
           mkdir -p ./site/schemas
           cp -r docs/schemas/* ./site/schemas/
-          cp docs/editor.html ./site/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
