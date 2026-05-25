@@ -5,7 +5,6 @@ import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,7 +47,7 @@ public final class JsonSchemaGenerator
         defs.put("predicate", buildPredicateDefinition());
         defs.put("route", buildRouteDefinition());
 
-        final Map<String, SchemaNode> properties = new HashMap<>();
+        final Map<String, SchemaNode> properties = new TreeMap<>();
 
         properties.put("global_filters", new ArraySchema(
                         "array",
@@ -77,7 +76,7 @@ public final class JsonSchemaGenerator
 
     private SchemaNode buildRouteDefinition()
     {
-        final Map<String, SchemaNode> properties = new HashMap<>();
+        final Map<String, SchemaNode> properties = new TreeMap<>();
 
         properties.put("id", new PrimitiveSchema(
                         "string", null, null, null, null,
@@ -248,7 +247,7 @@ public final class JsonSchemaGenerator
 
     private SchemaNode buildPredicateDefinition()
     {
-        final Map<String, SchemaNode> logicalOperators = new HashMap<>();
+        final Map<String, SchemaNode> logicalOperators = new TreeMap<>();
 
         logicalOperators.put("not", new RefSchema("#/$defs/predicate", null, null));
 
@@ -271,7 +270,7 @@ public final class JsonSchemaGenerator
             final Function<T, Class<?>> configExtractor,
             final Map<String, SchemaNode> extraProperties)
     {
-        final Map<String, SchemaNode> properties = new HashMap<>(extraProperties);
+        final Map<String, SchemaNode> properties = new TreeMap<>(extraProperties);
         final List<String> parameterlessComponents = new ArrayList<>();
 
         ServiceLoader.load(spiClass).forEach(factory -> {
@@ -328,7 +327,7 @@ public final class JsonSchemaGenerator
 
     private SchemaNode buildInnerConfigSchema(final Class<?> recordClass)
     {
-        final Map<String, SchemaNode> properties = new HashMap<>();
+        final Map<String, SchemaNode> properties = new TreeMap<>();
         final List<String> requiredFields = new ArrayList<>();
 
         for (final RecordComponent component : recordClass.getRecordComponents())
