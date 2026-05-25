@@ -1,5 +1,3 @@
-# yaml-language-server: $schema=file:///home/morten/dev/ethlo/r7/r7-schema.yaml
-
 version: v2026-03-14
 
 # Global filters applied to all routes

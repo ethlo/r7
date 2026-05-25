@@ -1,15 +1,16 @@
 package com.ethlo.r7.schema;
 
 import java.io.File;
-import java.io.IOException;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.TreeMap;
 import java.util.function.Function;
 
 import com.ethlo.r7.doc.DefaultValue;
@@ -25,7 +26,7 @@ import tools.jackson.dataformat.yaml.YAMLWriteFeature;
 
 public final class JsonSchemaGenerator
 {
-    public static void main(final String[] args) throws IOException
+    public static void main(final String[] args)
     {
         final JsonSchemaGenerator generator = new JsonSchemaGenerator();
         final RootSchema schemaTree = generator.generateGatewaySchema();
@@ -42,7 +43,7 @@ public final class JsonSchemaGenerator
 
     public RootSchema generateGatewaySchema()
     {
-        final Map<String, SchemaNode> defs = new HashMap<>();
+        final Map<String, SchemaNode> defs = new TreeMap<>();
         defs.put("filter", buildFilterDefinition());
         defs.put("predicate", buildPredicateDefinition());
         defs.put("route", buildRouteDefinition());
@@ -318,6 +319,7 @@ public final class JsonSchemaGenerator
 
         if (!parameterlessComponents.isEmpty())
         {
+            Collections.sort(parameterlessComponents);
             oneOfList.add(new PrimitiveSchema("string", parameterlessComponents, null, null, null, null, null));
         }
 
@@ -412,6 +414,12 @@ public final class JsonSchemaGenerator
         {
             return new ArraySchema("array", new PrimitiveSchema("string", null, null, null, null, null, null), description, defaultValue);
         }
+        else if (java.nio.file.Path.class.isAssignableFrom(type) ||
+                java.net.URI.class.isAssignableFrom(type) ||
+                java.net.URL.class.isAssignableFrom(type))
+        {
+            return new PrimitiveSchema("string", null, null, null, null, description, defaultValue);
+        }
 
         return new ObjectSchema("object", null, null, new BoolProps(true), null, null, null, null, description, defaultValue);
     }
@@ -455,12 +463,13 @@ public final class JsonSchemaGenerator
 
         for (final java.lang.annotation.Annotation annotation : component.getAnnotations())
         {
-            if (annotation.annotationType().getSimpleName().equals("Nullable"))
+            final String simpleName = annotation.annotationType().getSimpleName();
+            // ADD the check for DefaultValue
+            if (simpleName.equals("Nullable") || simpleName.equals("DefaultValue"))
             {
                 return false;
             }
         }
-
         return true;
     }
 

@@ -60,7 +60,6 @@ public final class MatchPathFactory implements GatewayPredicateFactory<MatchPath
         @Override
         public boolean test(final GatewayRequest request)
         {
-            // Using .path() instead of .uri() ensures query parameters do not break the regex match
             return this.pattern.matcher(request.path()).matches();
         }
 

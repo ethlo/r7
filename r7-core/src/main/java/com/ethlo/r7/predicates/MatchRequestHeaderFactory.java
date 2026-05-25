@@ -43,13 +43,7 @@ public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<
             @Description("The regular expression the header value must match.")
             String regexp) implements GenericMatchConfig
     {
-        @Override
-        public void validate(final ValidationResult result)
-        {
-            new ValidatorUtils(result)
-                    .notBlank("name", name())
-                    .requiredRegexp("regexp", regexp());
-        }
+
     }
 
     private static final class GP implements GatewayPredicate, ShortInfo

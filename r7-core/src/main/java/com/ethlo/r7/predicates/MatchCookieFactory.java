@@ -8,8 +8,6 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.util.ValidatorUtils;
-import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -44,13 +42,7 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
             @Description("The regular expression the cookie value must match.")
             String regexp) implements GenericMatchConfig
     {
-        @Override
-        public void validate(final ValidationResult result)
-        {
-            new ValidatorUtils(result)
-                    .notBlank("name", name())
-                    .requiredRegexp("regexp", regexp());
-        }
+
     }
 
     private static final class GP implements GatewayPredicate, ShortInfo

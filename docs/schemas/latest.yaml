@@ -99,7 +99,6 @@ $defs:
             required:
               - name
               - regexp
-              - reject_status_code
             additionalProperties: false
             description: Ensures a required request header exists and matches a specific
               regular expression.
@@ -244,7 +243,6 @@ $defs:
             required:
               - name
               - regexp
-              - reject_status_code
             additionalProperties: false
             description: Ensures a required query parameter exists and matches a specific
               regular expression.
@@ -260,7 +258,6 @@ $defs:
                 description: The name of the required query parameter.
             required:
               - name
-              - reject_status_code
             additionalProperties: false
             description: Ensures a required query parameter is present in the request.
           SetResponseHeader:
@@ -289,7 +286,6 @@ $defs:
                 description: The name of the required cookie.
             required:
               - name
-              - reject_status_code
             additionalProperties: false
             description: Ensures a required cookie is present in the request.
           Cors:
@@ -388,7 +384,6 @@ $defs:
             required:
               - source
               - target
-              - status
             additionalProperties: false
             description: Redirects requests based on a path pattern match using a template
               for the target URL.
@@ -404,7 +399,6 @@ $defs:
                 description: The name of the required header.
             required:
               - name
-              - reject_status_code
             additionalProperties: false
             description: Ensures a required header is present in the request.
           RequireMatchCookie:
@@ -424,7 +418,6 @@ $defs:
             required:
               - name
               - regexp
-              - reject_status_code
             additionalProperties: false
             description: Ensures a required cookie exists and matches a specific regular
               expression.
@@ -432,8 +425,7 @@ $defs:
             type: object
             properties:
               base_directory:
-                type: object
-                additionalProperties: true
+                type: string
                 description: The absolute path to the directory containing static files.
             required:
               - base_directory
@@ -521,6 +513,9 @@ $defs:
             properties:
               path:
                 type: string
+                pattern: ^/.*$
+                errorMessage:
+                  pattern: "Must match pattern: ^/.*$"
                 description: The exact path to match.
             required:
               - path
@@ -695,6 +690,9 @@ $defs:
             properties:
               prefix:
                 type: string
+                pattern: ^/.*$
+                errorMessage:
+                  pattern: "Must match pattern: ^/.*$"
                 description: The path prefix to match.
             required:
               - prefix
@@ -709,18 +707,6 @@ $defs:
       upstream:
         type: object
         properties:
-          fallback:
-            type: object
-            properties:
-              route_id:
-                type: string
-                description: The ID of another route to execute if this upstream becomes
-                  completely unavailable.
-            required:
-              - route_id
-            additionalProperties: false
-            description: Fallback routing behavior triggered when all upstream targets
-              fail.
           targets:
             type: array
             items:
@@ -751,6 +737,18 @@ $defs:
               - path
             additionalProperties: false
             description: Active health checking configuration for the backend targets.
+          fallback:
+            type: object
+            properties:
+              route_id:
+                type: string
+                description: The ID of another route to execute if this upstream becomes
+                  completely unavailable.
+            required:
+              - route_id
+            additionalProperties: false
+            description: Fallback routing behavior triggered when all upstream targets
+              fail.
         required:
           - targets
         additionalProperties: false
@@ -758,34 +756,9 @@ $defs:
       journal:
         type: object
         properties:
-          request:
-            type: object
-            properties:
-              status_overrides:
-                type: object
-                additionalProperties:
-                  type: string
-                description: "Overrides for the journal level based on specific HTTP\
-                  \ status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
-              level:
-                type: string
-                enum:
-                  - NONE
-                  - HEADERS
-                  - METADATA
-                  - FULL
-                description: The base journaling verbosity level.
-            additionalProperties: false
-            description: Journal settings for this specific phase of the exchange.
           response:
             type: object
             properties:
-              status_overrides:
-                type: object
-                additionalProperties:
-                  type: string
-                description: "Overrides for the journal level based on specific HTTP\
-                  \ status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
               level:
                 type: string
                 enum:
@@ -794,6 +767,31 @@ $defs:
                   - METADATA
                   - FULL
                 description: The base journaling verbosity level.
+              status_overrides:
+                type: object
+                additionalProperties:
+                  type: string
+                description: "Overrides for the journal level based on specific HTTP\
+                  \ status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+            additionalProperties: false
+            description: Journal settings for this specific phase of the exchange.
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                description: The base journaling verbosity level.
+              status_overrides:
+                type: object
+                additionalProperties:
+                  type: string
+                description: "Overrides for the journal level based on specific HTTP\
+                  \ status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
         additionalProperties: false

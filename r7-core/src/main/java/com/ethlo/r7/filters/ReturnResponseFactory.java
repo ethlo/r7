@@ -8,6 +8,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -16,8 +17,6 @@ import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
-
-import javax.annotation.Nullable;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
