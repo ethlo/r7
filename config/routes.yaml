@@ -6,7 +6,7 @@ global_filters:
       period: 5M
       interval: 2S
   - RequestSizeLimit:
-      max_size: 10mb
+      max_size: 10MB
 
 routes:
 

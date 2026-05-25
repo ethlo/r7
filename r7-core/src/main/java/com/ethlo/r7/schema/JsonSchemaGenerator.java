@@ -362,25 +362,29 @@ public final class JsonSchemaGenerator
 
     private SchemaNode mapToSchemaNode(final Class<?> type, final String description, final String defaultValue, final String customPattern)
     {
+        final String placeholderRegex = "^\\$\\{.*\\}$";
+
         if (type == java.time.Duration.class)
         {
-            final String pattern = customPattern != null ? customPattern : "^[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)$";
-            final String friendlyHint = "Format: <number><unit> (e.g., 2s, 5m, 100ms)";
+            String basePattern = customPattern != null ? customPattern : "^[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)$";
+            String patternWithPlaceholder = "^(?:" + basePattern.replace("^", "").replace("$", "") + "|\\$\\{.*\\})$";
+            final String friendlyHint = "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}";
 
             return new PrimitiveSchema(
-                    "string", null, null, pattern,
-                    Map.of("pattern", friendlyHint), // Custom error map
-                    description != null ? description + " (" + friendlyHint + ")" : friendlyHint, // Pre-emptive hover docs
+                    "string", null, null, patternWithPlaceholder,
+                    Map.of("pattern", friendlyHint),
+                    description != null ? description + " (" + friendlyHint + ")" : friendlyHint,
                     defaultValue
             );
         }
         else if (type.getSimpleName().equals("DataSize"))
         {
-            final String pattern = customPattern != null ? customPattern : "^[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)$";
-            final String friendlyHint = "Format: <number><unit> (e.g., 10KB, 200MB)";
+            String basePattern = customPattern != null ? customPattern : "^[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)$";
+            String patternWithPlaceholder = "^(?:" + basePattern.replace("^", "").replace("$", "") + "|\\$\\{.*\\})$";
+            final String friendlyHint = "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}";
 
             return new PrimitiveSchema(
-                    "string", null, null, pattern,
+                    "string", null, null, patternWithPlaceholder,
                     Map.of("pattern", friendlyHint),
                     description != null ? description + " (" + friendlyHint + ")" : friendlyHint,
                     defaultValue
@@ -388,27 +392,69 @@ public final class JsonSchemaGenerator
         }
         else if (type == String.class)
         {
-            final Map<String, String> errors = customPattern != null ? Map.of("pattern", "Must match pattern: " + customPattern) : null;
-            return new PrimitiveSchema("string", null, null, customPattern, errors, description, defaultValue);
+            String effectivePattern = customPattern;
+            Map<String, String> errors = null;
+
+            if (customPattern != null)
+            {
+                // Strip boundary anchors to safely combine them
+                String stripped = customPattern.startsWith("^") ? customPattern.substring(1) : customPattern;
+                stripped = stripped.endsWith("$") ? stripped.substring(0, stripped.length() - 1) : stripped;
+
+                // Create a non-capturing group that allows the original pattern OR a placeholder
+                effectivePattern = "^(?:" + stripped + "|\\$\\{.*\\})$";
+                errors = Map.of("pattern", "Must match expected format or be a placeholder ${...}");
+            }
+
+            return new PrimitiveSchema("string", null, null, effectivePattern, errors, description, defaultValue);
         }
         else if (type == int.class || type == Integer.class || type == long.class || type == Long.class)
         {
-            return new PrimitiveSchema("integer", null, null, null, null, description, defaultValue);
+            return new AnyOfSchema(
+                    List.of(
+                            new PrimitiveSchema("integer", null, null, null, null, null, null),
+                            new PrimitiveSchema("string", null, null, placeholderRegex, null, null, null)
+                    ),
+                    description,
+                    defaultValue
+            );
         }
         else if (type == float.class || type == Float.class || type == double.class || type == Double.class)
         {
-            return new PrimitiveSchema("number", null, null, null, null, description, defaultValue);
+            return new AnyOfSchema(
+                    List.of(
+                            new PrimitiveSchema("number", null, null, null, null, null, null),
+                            new PrimitiveSchema("string", null, null, placeholderRegex, null, null, null)
+                    ),
+                    description,
+                    defaultValue
+            );
         }
         else if (type == boolean.class || type == Boolean.class)
         {
-            return new PrimitiveSchema("boolean", null, null, null, null, description, defaultValue);
+            return new AnyOfSchema(
+                    List.of(
+                            new PrimitiveSchema("boolean", null, null, null, null, null, null),
+                            new PrimitiveSchema("string", null, null, placeholderRegex, null, null, null)
+                    ),
+                    description,
+                    defaultValue
+            );
         }
         else if (type.isEnum())
         {
             final List<String> enums = Arrays.stream(type.getEnumConstants())
                     .map(Object::toString)
                     .toList();
-            return new PrimitiveSchema("string", enums, null, null, null, description, defaultValue);
+
+            return new AnyOfSchema(
+                    List.of(
+                            new PrimitiveSchema("string", enums, null, null, null, null, null),
+                            new PrimitiveSchema("string", null, null, placeholderRegex, null, null, null)
+                    ),
+                    description,
+                    defaultValue
+            );
         }
         else if (type.isRecord())
         {
