@@ -10,6 +10,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -22,6 +23,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.")
 public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Config>
 {
     private static final String FILTER_NAME = "Cors";
@@ -51,8 +53,21 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
         return new GF(config);
     }
 
-    public record Config(String allowedOrigins, String allowedMethods, String allowedHeaders, String maxAge,
-                         Boolean allowCredentials) implements ValidatableConfig
+    public record Config(
+            @Description("Comma-separated list of allowed origins.")
+            String allowedOrigins,
+
+            @Description("Comma-separated list of allowed methods.")
+            String allowedMethods,
+
+            @Description("Comma-separated list of allowed headers.")
+            String allowedHeaders,
+
+            @Description("The max age for preflight caching.")
+            String maxAge,
+
+            @Description("Whether credentials are allowed.")
+            Boolean allowCredentials) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

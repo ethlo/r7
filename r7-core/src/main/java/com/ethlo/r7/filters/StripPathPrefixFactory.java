@@ -3,6 +3,7 @@ package com.ethlo.r7.filters;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -12,6 +13,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Removes a specified number of leading path segments from the request path before forwarding to the upstream service.")
 public final class StripPathPrefixFactory implements GatewayFilterFactory<StripPathPrefixFactory.Config>
 {
     private static final String FILTER_NAME = "StripPathPrefix";
@@ -34,7 +36,8 @@ public final class StripPathPrefixFactory implements GatewayFilterFactory<StripP
         return new GF(config);
     }
 
-    public record Config(Integer parts) implements ValidatableConfig
+    public record Config(@Description("The number of path segments to strip from the beginning of the path.")
+                         Integer parts) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

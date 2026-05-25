@@ -5,6 +5,7 @@ import java.util.List;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -13,6 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if the request 'Host' header matches one of the provided hostnames.")
 public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
 {
     private static final String PREDICATE_NAME = "Host";
@@ -35,7 +37,9 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
         return new GP(config);
     }
 
-    public record Config(List<String> hosts) implements ValidatableConfig
+    public record Config(
+            @Description("List of hostnames to match against.")
+            List<String> hosts) implements ValidatableConfig
     {
         @Override
         public void validate(ValidationResult result)

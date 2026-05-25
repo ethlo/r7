@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=file:///home/morten/dev/ethlo/r7/r7-schema.yaml
+
 version: v2026-03-14
 
 # Global filters applied to all routes
@@ -6,7 +8,7 @@ global_filters:
       period: 5M
       interval: 2S
   - RequestSizeLimit:
-      max_size: 10MB
+      max_size: 10mb
 
 routes:
 
@@ -26,6 +28,7 @@ routes:
     filters:
     - ReturnResponse:
         status: 503
+        content_type: text/plain
         body: We'll be back soon!
 
   - id: dashboard
@@ -38,7 +41,7 @@ routes:
 
   - id: reject-benchmark
     match:
-      - Pathrefix:
+      - PathPrefix:
           prefix: /benchmark
     upstream:
       targets:
@@ -96,7 +99,7 @@ routes:
       - CircuitBreaker:
           failure_threshold: 10
           cooldown_period: 15s
-      #- RequireAuthorizationHeader
+      - RequireAuthorizationHeader
       - AddCorrelationId
 
   - id: ws-chat

@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -17,6 +18,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Ensures that the request contains a valid Authorization header (Bearer or Basic).")
 public final class RequireAuthorizationHeaderFactory implements GatewayFilterFactory<RequireAuthorizationHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "RequireAuthorizationHeader";
@@ -41,10 +43,6 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
 
     public record Config() implements ValidatableConfig
     {
-        @Override
-        public void validate(final ValidationResult result)
-        {
-        }
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo

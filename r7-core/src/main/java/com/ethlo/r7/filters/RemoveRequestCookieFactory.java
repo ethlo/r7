@@ -3,6 +3,7 @@ package com.ethlo.r7.filters;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -12,6 +13,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Removes a specific cookie from the upstream request.")
 public final class RemoveRequestCookieFactory implements GatewayFilterFactory<RemoveRequestCookieFactory.Config>
 {
     private static final String FILTER_NAME = "RemoveRequestCookie";
@@ -34,7 +36,9 @@ public final class RemoveRequestCookieFactory implements GatewayFilterFactory<Re
         return new GF(config);
     }
 
-    public record Config(String name) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the cookie to remove.")
+            String name) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

@@ -8,6 +8,7 @@ import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.config.DataSize;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -21,6 +22,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Rejects requests that exceed a specified payload size.")
 public final class RequestSizeLimitFactory implements GatewayFilterFactory<RequestSizeLimitFactory.Config>
 {
     private static final String FILTER_NAME = "RequestSizeLimit";
@@ -43,7 +45,9 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         return new GF(config);
     }
 
-    public record Config(DataSize maxSize) implements ValidatableConfig
+    public record Config(
+            @Description("The maximum allowed payload size (e.g., 10MB, 1GB).")
+            DataSize maxSize) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

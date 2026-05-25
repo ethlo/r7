@@ -4,6 +4,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -13,6 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Removes standard cache-control headers from the upstream request to force fresh fetches.")
 public final class RemoveCacheHeadersFactory implements GatewayFilterFactory<RemoveCacheHeadersFactory.Config>
 {
     private static final String FILTER_NAME = "RemoveCacheHeaders";

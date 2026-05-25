@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -17,6 +18,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Serves static files from a local directory.")
 public final class StaticContentFactory implements GatewayFilterFactory<StaticContentFactory.Config>
 {
     public static final String STATIC_CONTENT_PATH_KEY = "gateway.internal.serve_static.path";
@@ -40,7 +42,9 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         return new GF(config);
     }
 
-    public record Config(Path baseDirectory) implements ValidatableConfig
+    public record Config(
+            @Description("The absolute path to the directory containing static files.")
+            Path baseDirectory) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
@@ -51,7 +55,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
                     {
                         if (!Files.isDirectory(baseDirectory()))
                         {
-                            validator.invalid("base_directory", this.baseDirectory(), "Directory " + baseDirectory().toAbsolutePath() + " not found");
+                            validator.invalid("base_directory", this.baseDirectory().toString(), "Directory " + baseDirectory().toAbsolutePath() + " not found");
                         }
                     });
         }

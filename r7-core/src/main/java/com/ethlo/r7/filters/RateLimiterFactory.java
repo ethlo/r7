@@ -15,6 +15,9 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.core.GatewayContextKeys;
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -33,6 +36,8 @@ import io.github.bucket4j.ConsumptionProbe;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("""
+        Local rate-limiter useful for avoiding overload by demanding users""")
 public final class RateLimiterFactory implements GatewayFilterFactory<RateLimiterFactory.Config>
 {
     private static final byte[] REJECT_PAYLOAD = "Rate limit exceeded".getBytes(StandardCharsets.UTF_8);
@@ -57,7 +62,23 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         return new GF(config);
     }
 
-    public record Config(Long capacity, Long refillTokens, Duration refillPeriod, Long maxBuckets,
+    public record Config(@Description("The maximum number of tokens the bucket can hold. This defines the absolute burst limit.")
+                         Long capacity,
+
+                         @Description("The number of tokens added to the bucket at the end of every refill period.")
+                         Long refillTokens,
+
+                         @Description("The time interval between token refills (e.g., 1s, 500ms).")
+                         Duration refillPeriod,
+
+                         @Nullable
+                         @Description("The maximum number of distinct client buckets to track in memory. Limits memory consumption under heavy load.")
+                         @DefaultValue("100000")
+                         Long maxBuckets,
+
+                         @Nullable
+                         @Description("How long a bucket remains in memory after its last access before being purged.")
+                         @DefaultValue("10m")
                          Duration maxBucketTTL) implements ValidatableConfig
     {
         private static final long DEFAULT_MAX_BUCKETS = 10_000L;

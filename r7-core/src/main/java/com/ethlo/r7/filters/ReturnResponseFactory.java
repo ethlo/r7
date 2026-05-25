@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -15,8 +17,11 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
+import javax.annotation.Nullable;
+
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Immediately terminates the request chain and returns a custom response.")
 public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnResponseFactory.Config>
 {
     private static final String FILTER_NAME = "ReturnResponse";
@@ -39,7 +44,16 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
         return new GF(config);
     }
 
-    public record Config(Integer status, String contentType, String body) implements ValidatableConfig
+    public record Config(
+            @Description("The HTTP status code to return.")
+            Integer status,
+
+            @Description("The Content-Type of the response body.")
+            @DefaultValue("text/plain")
+            @Nullable String contentType,
+
+            @Description("The body content of the response.")
+            String body) implements ValidatableConfig
     {
         public Config
         {

@@ -7,6 +7,7 @@ import java.util.Objects;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -15,6 +16,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if the HTTP method is one of the allowed methods.")
 public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Config>
 {
     private static final String PREDICATE_NAME = "Method";
@@ -37,7 +39,9 @@ public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Conf
         return new GP(config);
     }
 
-    public record Config(List<String> include) implements ValidatableConfig
+    public record Config(
+            @Description("List of allowed HTTP methods (e.g., GET, POST).")
+            List<String> include) implements ValidatableConfig
     {
         @Override
         public void validate(ValidationResult result)
@@ -47,7 +51,6 @@ public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Conf
                     .notEmpty("include", include);
         }
     }
-
     private static class GP implements GatewayPredicate, ShortInfo
     {
         private final String[] include;

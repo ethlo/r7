@@ -7,6 +7,8 @@ import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.Cookie;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -19,6 +21,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Ensures a required cookie is present in the request.")
 public final class RequireCookieFactory implements GatewayFilterFactory<RequireCookieFactory.Config>
 {
     private static final String FILTER_NAME = "RequireCookie";
@@ -41,7 +44,13 @@ public final class RequireCookieFactory implements GatewayFilterFactory<RequireC
         return new GF(config);
     }
 
-    public record Config(String name, Integer rejectStatusCode) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the required cookie.")
+            String name,
+
+            @Description("The HTTP status code to return if the cookie is missing.")
+            @DefaultValue("400")
+            Integer rejectStatusCode) implements ValidatableConfig
     {
         public Config
         {

@@ -5,6 +5,8 @@ import java.util.Objects;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -13,6 +15,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if the request path matches exactly the provided path.")
 public final class PathFactory implements GatewayPredicateFactory<PathFactory.Config>
 {
     private static final String PREDICATE_NAME = "Path";
@@ -35,7 +38,10 @@ public final class PathFactory implements GatewayPredicateFactory<PathFactory.Co
         return new GP(config);
     }
 
-    public record Config(String path) implements ValidatableConfig
+    public record Config(
+            @Description("The exact path to match.")
+            @FormatPattern("^/.*$")
+            String path) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

@@ -4,6 +4,7 @@ import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.core.SimpleCookie;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -13,6 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Sets a cookie on the upstream request.")
 public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRequestCookieFactory.Config>
 {
     private static final String FILTER_NAME = "SetRequestCookie";
@@ -35,7 +37,12 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
         return new GF(config);
     }
 
-    public record Config(String name, String value) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the cookie.")
+            String name,
+
+            @Description("The value of the cookie.")
+            String value) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

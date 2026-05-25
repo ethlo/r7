@@ -5,6 +5,8 @@ import java.time.Duration;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -15,6 +17,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Sets a Set-Cookie header on the client response.")
 public final class SetResponseCookieFactory implements GatewayFilterFactory<SetResponseCookieFactory.Config>
 {
     private static final String FILTER_NAME = "SetResponseCookie";
@@ -38,13 +41,21 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
     }
 
     public record Config(
+            @Description("The cookie name.")
             String name,
+            @Description("The cookie value.")
             String value,
+            @Nullable @Description("The cookie domain.")
             String domain,
+            @Nullable @Description("The cookie path.")
             String path,
+            @Nullable @Description("The cookie max-age duration.")
             Duration maxAge,
+            @Nullable @Description("Whether the cookie is secure.")
             Boolean secure,
+            @Nullable @Description("Whether the cookie is HttpOnly.")
             Boolean httpOnly,
+            @Nullable @Description("The SameSite policy (Strict, Lax, None).")
             String sameSite
     ) implements ValidatableConfig
     {

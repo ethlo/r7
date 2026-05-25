@@ -3,6 +3,8 @@ package com.ethlo.r7.predicates;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -11,6 +13,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if the request path starts with the provided prefix.")
 public final class PathPrefixFactory implements GatewayPredicateFactory<PathPrefixFactory.Config>
 {
     private static final String PREDICATE_NAME = "PathPrefix";
@@ -33,7 +36,10 @@ public final class PathPrefixFactory implements GatewayPredicateFactory<PathPref
         return new GP(config);
     }
 
-    public record Config(String prefix) implements ValidatableConfig
+    public record Config(
+            @Description("The path prefix to match.")
+            @FormatPattern("^/.*$")
+            String prefix) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

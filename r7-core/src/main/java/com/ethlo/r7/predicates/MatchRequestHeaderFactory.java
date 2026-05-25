@@ -5,11 +5,15 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.util.ValidatorUtils;
+import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if a request header exists and its value matches the provided regular expression.")
 public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<MatchRequestHeaderFactory.Config>
 {
     private static final String PREDICATE_NAME = "MatchRequestHeader";
@@ -32,9 +36,20 @@ public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<
         return new GP(config);
     }
 
-    public record Config(String name, String regexp) implements GenericMatchConfig
-    {
+    public record Config(
+            @Description("The name of the header.")
+            String name,
 
+            @Description("The regular expression the header value must match.")
+            String regexp) implements GenericMatchConfig
+    {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            new ValidatorUtils(result)
+                    .notBlank("name", name())
+                    .requiredRegexp("regexp", regexp());
+        }
     }
 
     private static final class GP implements GatewayPredicate, ShortInfo

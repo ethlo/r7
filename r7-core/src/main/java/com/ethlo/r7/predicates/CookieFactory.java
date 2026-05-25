@@ -4,6 +4,7 @@ import com.ethlo.r7.api.Cookie;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -12,6 +13,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if a request contains a specific cookie with an exact value.")
 public final class CookieFactory implements GatewayPredicateFactory<CookieFactory.Config>
 {
     private static final String PREDICATE_NAME = "Cookie";
@@ -34,7 +36,12 @@ public final class CookieFactory implements GatewayPredicateFactory<CookieFactor
         return new GP(config);
     }
 
-    public record Config(String name, String value) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the cookie.")
+            String name,
+
+            @Description("The exact value the cookie must hold.")
+            String value) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

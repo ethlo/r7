@@ -3,6 +3,7 @@ package com.ethlo.r7.predicates;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -11,6 +12,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if a request contains the specified cookie, regardless of its value.")
 public final class HasCookieFactory implements GatewayPredicateFactory<HasCookieFactory.Config>
 {
     private static final String PREDICATE_NAME = "HasCookie";
@@ -33,7 +35,9 @@ public final class HasCookieFactory implements GatewayPredicateFactory<HasCookie
         return new GP(config);
     }
 
-    public record Config(String name) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the cookie to check for.")
+            String name) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
