@@ -6,6 +6,7 @@ import java.net.UnknownHostException;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -14,6 +15,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if the remote IP address falls within the specified CIDR range.")
 public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAddrFactory.Config>
 {
     private static final String PREDICATE_NAME = "RemoteAddr";
@@ -36,7 +38,7 @@ public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAd
         return new GP(config);
     }
 
-    public record Config(String source) implements ValidatableConfig
+    public record Config(@Description("The IP or CIDR range to match (e.g., 192.168.1.0/24).") String source) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

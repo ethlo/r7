@@ -5,11 +5,15 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.util.ValidatorUtils;
+import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches if a query parameter exists and its value matches the provided regular expression.")
 public final class MatchQueryParameterFactory implements GatewayPredicateFactory<MatchQueryParameterFactory.Config>
 {
     private static final String PREDICATE_NAME = "MatchQueryParameter";
@@ -32,9 +36,13 @@ public final class MatchQueryParameterFactory implements GatewayPredicateFactory
         return new GP(config);
     }
 
-    public record Config(String name, String regexp) implements GenericMatchConfig
-    {
+    public record Config(
+            @Description("The name of the query parameter.")
+            String name,
 
+            @Description("The regular expression the parameter value must match.")
+            String regexp) implements GenericMatchConfig
+    {
     }
 
     private static final class GP implements GatewayPredicate, ShortInfo

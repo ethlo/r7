@@ -1,5 +1,6 @@
 package com.ethlo.r7.filters;
 
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
@@ -13,6 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Sets (or overwrites) a header in the client response.")
 public final class SetResponseHeaderFactory implements GatewayFilterFactory<SetResponseHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "SetResponseHeader";
@@ -35,7 +37,12 @@ public final class SetResponseHeaderFactory implements GatewayFilterFactory<SetR
         return new GF(config);
     }
 
-    public record Config(String name, String value) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the header.")
+            String name,
+
+            @Description("The value to set.")
+            String value) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

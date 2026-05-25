@@ -8,12 +8,14 @@ import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Adds a unique correlation ID header to upstream requests and client responses for request tracing.")
 public final class AddCorrelationIdFactory implements GatewayFilterFactory<GatewayFilterFactory.EmptyConfig>
 {
     private static final String FILTER_NAME = "AddCorrelationId";

@@ -5,6 +5,7 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -13,6 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayPredicateFactory.class)
+@Description("Matches the request path against a regular expression.")
 public final class MatchPathFactory implements GatewayPredicateFactory<MatchPathFactory.Config>
 {
     private static final String PREDICATE_NAME = "MatchPath";
@@ -35,7 +37,9 @@ public final class MatchPathFactory implements GatewayPredicateFactory<MatchPath
         return new GP(config);
     }
 
-    public record Config(String regexp) implements ValidatableConfig
+    public record Config(
+            @Description("The regular expression to match against the request path.")
+            String regexp) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
@@ -56,7 +60,6 @@ public final class MatchPathFactory implements GatewayPredicateFactory<MatchPath
         @Override
         public boolean test(final GatewayRequest request)
         {
-            // Using .path() instead of .uri() ensures query parameters do not break the regex match
             return this.pattern.matcher(request.path()).matches();
         }
 

@@ -14,6 +14,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -27,6 +28,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Stops forwarding traffic to a failing upstream until it recovers.")
 public final class CircuitBreakerFactory implements GatewayFilterFactory<CircuitBreakerFactory.Config>
 {
     private static final byte[] REJECT_PAYLOAD = "Service Unavailable - Circuit Open".getBytes(StandardCharsets.UTF_8);
@@ -55,7 +57,12 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
         CLOSED, OPEN, HALF_OPEN
     }
 
-    public record Config(Integer failureThreshold, Duration cooldownPeriod) implements ValidatableConfig
+    public record Config(
+            @Description("The number of consecutive failures before the circuit opens.")
+            Integer failureThreshold,
+
+            @Description("The duration the circuit remains open before attempting to close.")
+            Duration cooldownPeriod) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

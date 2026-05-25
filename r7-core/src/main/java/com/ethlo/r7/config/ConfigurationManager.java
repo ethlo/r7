@@ -247,6 +247,11 @@ public final class ConfigurationManager
     {
         final ValidationResult validationResult = new ValidationResult();
 
+        if (config.routes() == null || config.routes().isEmpty())
+        {
+            throw new ConfigurationException("No routes defined");
+        }
+
         // 1. Structural Syntax Pass - Validate every individual object
         config.validate(validationResult.nested("routes"));
 

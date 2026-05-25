@@ -1,11 +1,12 @@
 package com.ethlo.r7.filters;
 
-import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -13,6 +14,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Sets (or overwrites) a header in the upstream request.")
 public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRequestHeaderFactory.Config>
 {
     private static final String FILTER_NAME = "SetRequestHeader";
@@ -35,7 +37,12 @@ public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRe
         return new GF(config);
     }
 
-    public record Config(String name, String value) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the header.")
+            String name,
+
+            @Description("The value to set.")
+            String value) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

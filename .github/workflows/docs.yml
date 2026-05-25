@@ -23,6 +23,13 @@ jobs:
 
       - name: Build Docs
         run: zensical build
+          
+      # Add this step to ensure your assets are in the publish directory
+      - name: Copy Static Assets
+        run: |
+          mkdir -p ./site/schemas
+          cp -r docs/schemas/* ./site/schemas/
+          cp docs/editor.html ./site/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

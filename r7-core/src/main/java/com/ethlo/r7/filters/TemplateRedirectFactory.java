@@ -7,6 +7,8 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FastTerminationGatewayResponse;
@@ -20,6 +22,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Redirects requests based on a path pattern match using a template for the target URL.")
 public final class TemplateRedirectFactory implements GatewayFilterFactory<TemplateRedirectFactory.Config>
 {
     private static final String FILTER_NAME = "TemplateRedirect";
@@ -43,7 +46,16 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         return new GF(config);
     }
 
-    public record Config(String source, String target, Integer status) implements ValidatableConfig
+    public record Config(
+            @Description("The regular expression pattern to match against the request path.")
+            String source,
+
+            @Description("The replacement template for the target URL (e.g., /new/$1).")
+            String target,
+
+            @Description("The HTTP status code to return for the redirect.")
+            @DefaultValue("302")
+            Integer status) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

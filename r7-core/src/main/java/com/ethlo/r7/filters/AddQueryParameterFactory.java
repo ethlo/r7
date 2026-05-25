@@ -3,6 +3,7 @@ package com.ethlo.r7.filters;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -12,6 +13,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Injects a static query parameter into the upstream request URL.")
 public final class AddQueryParameterFactory implements GatewayFilterFactory<AddQueryParameterFactory.Config>
 {
     private static final String FILTER_NAME = "AddQueryParameter";
@@ -34,7 +36,12 @@ public final class AddQueryParameterFactory implements GatewayFilterFactory<AddQ
         return new GF(config);
     }
 
-    public record Config(String name, String value) implements ValidatableConfig
+    public record Config(
+            @Description("The name of the query parameter.")
+            String name,
+
+            @Description("The value to assign to the query parameter.")
+            String value) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)

@@ -6,6 +6,7 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -15,6 +16,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
+@Description("Rewrites the request path using a regular expression replacement.")
 public final class RewritePathFactory implements GatewayFilterFactory<RewritePathFactory.Config>
 {
     private static final String FILTER_NAME = "RewritePath";
@@ -37,7 +39,12 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
         return new GF(config);
     }
 
-    public record Config(String regexp, String replacement) implements ValidatableConfig
+    public record Config(
+            @Description("The regular expression to match against the path.")
+            String regexp,
+
+            @Description("The replacement string, supporting capture group references (e.g., $1).")
+            String replacement) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
