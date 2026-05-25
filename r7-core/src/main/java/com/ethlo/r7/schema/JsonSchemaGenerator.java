@@ -309,20 +309,25 @@ public final class JsonSchemaGenerator
             }
         });
 
+        // Set additionalProperties to true to allow unknown configuration objects
         final SchemaNode objectSchema = new ObjectSchema(
-                "object", properties, null, new BoolProps(false), 1, 1, null, null, null, null
+                "object", properties, null, new BoolProps(true), 1, 1, null, null, null, null
         );
 
-        final List<SchemaNode> oneOfList = new ArrayList<>();
-        oneOfList.add(objectSchema);
+        final List<SchemaNode> anyOfList = new ArrayList<>();
+        anyOfList.add(objectSchema);
 
         if (!parameterlessComponents.isEmpty())
         {
             Collections.sort(parameterlessComponents);
-            oneOfList.add(new PrimitiveSchema("string", parameterlessComponents, null, null, null, null, null));
+            anyOfList.add(new PrimitiveSchema("string", parameterlessComponents, null, null, null, null, null));
         }
 
-        return new OneOfSchema(oneOfList, null, null);
+        // Add generic string fallback for unknown parameterless SPIs
+        anyOfList.add(new PrimitiveSchema("string", null, null, null, null, "Custom SPI implementation", null));
+
+        // Use AnyOfSchema so a custom string doesn't conflict with the specific enum strings
+        return new AnyOfSchema(anyOfList, null, null);
     }
 
     private SchemaNode buildInnerConfigSchema(final Class<?> recordClass)
@@ -507,8 +512,7 @@ public final class JsonSchemaGenerator
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public sealed interface SchemaNode permits
-            RootSchema, ObjectSchema, PrimitiveSchema, ArraySchema, RefSchema, OneOfSchema
+    public sealed interface SchemaNode permits AnyOfSchema, ArraySchema, ObjectSchema, OneOfSchema, PrimitiveSchema, RefSchema, RootSchema
     {
     }
 
@@ -586,6 +590,15 @@ public final class JsonSchemaGenerator
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record OneOfSchema(
             List<SchemaNode> oneOf,
+            String description,
+            @JsonProperty("default") String defaultValue
+    ) implements SchemaNode
+    {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record AnyOfSchema(
+            List<SchemaNode> anyOf,
             String description,
             @JsonProperty("default") String defaultValue
     ) implements SchemaNode
