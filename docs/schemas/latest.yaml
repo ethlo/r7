@@ -54,11 +54,11 @@ $defs:
             properties:
               cooldown_period:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\\
-                })$"
+                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
+                })$'
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}"
+                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
+                  \ ${...}'
                 description: "The duration the circuit remains open before attempting\
                 \ to close. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
                 \ ${...})"
@@ -66,7 +66,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The number of consecutive failures before the circuit opens.
             required:
               - failure_threshold
@@ -80,7 +80,7 @@ $defs:
                 anyOf:
                   - type: boolean
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: Whether credentials are allowed.
               allowed_headers:
                 type: string
@@ -124,16 +124,16 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The maximum number of tokens the bucket can hold. This
                   defines the absolute burst limit.
               max_bucket_ttl:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\\
-                })$"
+                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
+                })$'
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}"
+                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
+                  \ ${...}'
                 description: "How long a bucket remains in memory after its last access\
                 \ before being purged. (Format: <number><unit> (e.g., 2s, 5m, 100ms)\
                 \ or a placeholder ${...})"
@@ -142,24 +142,24 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The maximum number of distinct client buckets to track
                   in memory. Limits memory consumption under heavy load.
                 default: 100000
               refill_period:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\\
-                })$"
+                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
+                })$'
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}"
+                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
+                  \ ${...}'
                 description: "The time interval between token refills (e.g., 1s, 500ms).\
                 \ (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
               refill_tokens:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The number of tokens added to the bucket at the end of
                   every refill period.
             required:
@@ -214,10 +214,10 @@ $defs:
             properties:
               max_size:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: '^(?:[0-9]+\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\$\{.*\})$'
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder\
-                  \ ${...}"
+                  pattern: 'Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder\
+                  \ ${...}'
                 description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format:\
                 \ <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
             required:
@@ -234,7 +234,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return if the cookie is missing.
                 default: 400
             required:
@@ -254,7 +254,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return if the cookie is missing
                   or invalid.
                 default: 400
@@ -278,7 +278,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return if the parameter is missing
                   or invalid.
                 default: 400
@@ -301,7 +301,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return if the header is missing
                   or invalid.
                 default: 400
@@ -321,7 +321,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return if the parameter is missing.
                 default: 400
             required:
@@ -338,7 +338,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return if the header is missing.
                 default: 400
             required:
@@ -359,7 +359,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return.
             required:
               - status
@@ -434,15 +434,15 @@ $defs:
                 anyOf:
                   - type: boolean
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: Whether the cookie is HttpOnly.
               max_age:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\\
-                })$"
+                pattern: '^(?:[0-9]+\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\$\{.*\\
+                })$'
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
-                  \ ${...}"
+                  pattern: 'Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder\
+                  \ ${...}'
                 description: "The cookie max-age duration. (Format: <number><unit> (e.g.,\
                 \ 2s, 5m, 100ms) or a placeholder ${...})"
               name:
@@ -458,7 +458,7 @@ $defs:
                 anyOf:
                   - type: boolean
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: Whether the cookie is secure.
               value:
                 type: string
@@ -489,7 +489,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to set (100-599).
             required:
               - status
@@ -512,7 +512,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The number of path segments to strip from the beginning
                   of the path.
             required:
@@ -531,7 +531,7 @@ $defs:
                 anyOf:
                   - type: integer
                   - type: string
-                    pattern: "^\\$\\{.*\\}$"
+                    pattern: '^\$\{.*\}$'
                 description: The HTTP status code to return for the redirect.
                 default: 302
               target:
@@ -690,9 +690,9 @@ $defs:
             properties:
               path:
                 type: string
-                pattern: "^(?:/.*|\\$\\{.*\\})$"
+                pattern: '^(?:/.*|\$\{.*\})$'
                 errorMessage:
-                  pattern: "Must match expected format or be a placeholder ${...}"
+                  pattern: 'Must match expected format or be a placeholder ${...}'
                 description: The exact path to match.
             required:
               - path
@@ -703,9 +703,9 @@ $defs:
             properties:
               prefix:
                 type: string
-                pattern: "^(?:/.*|\\$\\{.*\\})$"
+                pattern: '^(?:/.*|\$\{.*\})$'
                 errorMessage:
-                  pattern: "Must match expected format or be a placeholder ${...}"
+                  pattern: 'Must match expected format or be a placeholder ${...}'
                 description: The path prefix to match.
             required:
               - prefix
@@ -783,7 +783,7 @@ $defs:
       journal:
         type: object
         properties:
-          request:
+          response:
             type: object
             properties:
               status_overrides:
@@ -802,7 +802,7 @@ $defs:
                 description: The base journaling verbosity level.
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
-          response:
+          request:
             type: object
             properties:
               status_overrides:
