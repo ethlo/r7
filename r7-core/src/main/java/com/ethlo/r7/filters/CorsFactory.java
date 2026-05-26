@@ -1,8 +1,7 @@
 package com.ethlo.r7.filters;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.List;
+import java.util.Set;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
@@ -54,14 +53,14 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
     }
 
     public record Config(
-            @Description("Comma-separated list of allowed origins.")
-            String allowedOrigins,
+            @Description("List of allowed origins.")
+            Set<String> allowedOrigins,
 
-            @Description("Comma-separated list of allowed methods.")
-            String allowedMethods,
+            @Description("List of allowed methods.")
+            Set<String> allowedMethods,
 
-            @Description("Comma-separated list of allowed headers.")
-            String allowedHeaders,
+            @Description("List of allowed headers.")
+            Set<String> allowedHeaders,
 
             @Description("The max age for preflight caching.")
             String maxAge,
@@ -80,42 +79,47 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
     {
         private static final ByteBuffer EMPTY_BODY = ByteBuffer.allocateDirect(0);
 
-        private final String allowedMethods;
-        private final String allowedHeaders;
+        private final String allowedMethodsString;
+        private final String allowedHeadersString;
         private final String maxAge;
         private final boolean allowCredentials;
         private final boolean isAnyOrigin;
-        private final List<String> specificOrigins;
+        private final Set<String> specificOrigins;
 
         public GF(final Config config)
         {
-            this.allowedMethods = config.allowedMethods();
-            this.allowedHeaders = config.allowedHeaders();
+            this.allowedMethodsString = config.allowedMethods() != null ? String.join(",", config.allowedMethods()) : null;
+            this.allowedHeadersString = config.allowedHeaders() != null ? String.join(",", config.allowedHeaders()) : null;
             this.maxAge = config.maxAge();
             this.allowCredentials = config.allowCredentials() != null && config.allowCredentials();
 
-            final String originsConfig = config.allowedOrigins();
-            this.isAnyOrigin = "*".equals(originsConfig);
+            final Set<String> originsConfig = config.allowedOrigins();
 
-            if (!this.isAnyOrigin && originsConfig != null)
+            if (originsConfig != null && originsConfig.size() == 1 && originsConfig.contains("*"))
             {
-                this.specificOrigins = Arrays.asList(originsConfig.split("\\s*,\\s*"));
+                this.isAnyOrigin = true;
+                this.specificOrigins = Set.of();
+            }
+            else if (originsConfig != null)
+            {
+                this.isAnyOrigin = false;
+                this.specificOrigins = Set.copyOf(originsConfig);
             }
             else
             {
-                this.specificOrigins = List.of();
+                this.isAnyOrigin = false;
+                this.specificOrigins = Set.of();
             }
         }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String method = exchange.clientRequest().method().toString();
+            final String method = exchange.clientRequest().method();
 
             if ("OPTIONS".equals(method))
             {
-                final String originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
-                final String origin = originOpt != null ? originOpt.toString() : null;
+                final String origin = exchange.clientRequest().headers().getFirst(ORIGIN);
                 if (origin != null)
                 {
                     final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(5);
@@ -128,13 +132,13 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
                         headers.set(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
                     }
 
-                    if (this.allowedMethods != null)
+                    if (this.allowedMethodsString != null)
                     {
-                        headers.set(ACCESS_CONTROL_ALLOW_METHODS, this.allowedMethods);
+                        headers.set(ACCESS_CONTROL_ALLOW_METHODS, this.allowedMethodsString);
                     }
-                    if (this.allowedHeaders != null)
+                    if (this.allowedHeadersString != null)
                     {
-                        headers.set(ACCESS_CONTROL_ALLOW_HEADERS, this.allowedHeaders);
+                        headers.set(ACCESS_CONTROL_ALLOW_HEADERS, this.allowedHeadersString);
                     }
                     if (this.maxAge != null)
                     {
@@ -157,8 +161,7 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            final String originOpt = exchange.clientRequest().headers().getFirst(ORIGIN);
-            final String origin = originOpt != null ? originOpt.toString() : null;
+            final String origin = exchange.clientRequest().headers().getFirst(ORIGIN);
 
             if (origin != null)
             {

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.lang.reflect.RecordComponent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -12,10 +13,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 
 import com.ethlo.r7.config.ConfigurationManager;
+import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
@@ -411,7 +414,7 @@ public final class JsonSchemaGenerator
     {
         final String placeholderRegex = "^\\$\\{.*\\}$";
 
-        if (type == java.time.Duration.class)
+        if (type == Duration.class)
         {
             final String basePattern = customPattern != null ? customPattern : "^[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)$";
             final String patternWithPlaceholder = "^(?:" + basePattern.replace("^", "").replace("$", "") + "|\\$\\{.*\\})$";
@@ -424,7 +427,7 @@ public final class JsonSchemaGenerator
                     defaultValue, null, null
             );
         }
-        else if (type.getSimpleName().equals("DataSize"))
+        else if (type == DataSize.class)
         {
             final String basePattern = customPattern != null ? customPattern : "^[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)$";
             final String patternWithPlaceholder = "^(?:" + basePattern.replace("^", "").replace("$", "") + "|\\$\\{.*\\})$";
@@ -453,7 +456,7 @@ public final class JsonSchemaGenerator
 
             return new PrimitiveSchema("string", null, null, effectivePattern, errors, description, defaultValue, null, null);
         }
-        else if (type.getSimpleName().equals("HttpStatus"))
+        else if (type == HttpStatus.class)
         {
             return new AnyOfSchema(
                     List.of(
@@ -516,7 +519,7 @@ public final class JsonSchemaGenerator
         {
             return buildInnerConfigSchema(type);
         }
-        else if (List.class.isAssignableFrom(type))
+        else if (List.class.isAssignableFrom(type) || Set.class.isAssignableFrom(type))
         {
             return new ArraySchema("array", new PrimitiveSchema("string", null, null, null, null, null, null, null, null), description, defaultValue);
         }
