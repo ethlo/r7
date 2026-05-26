@@ -102,14 +102,20 @@ $defs:
                 pattern: "^\\$\\{.*\\}$"
               description: Whether credentials are allowed.
             allowed_headers:
-              type: string
-              description: Comma-separated list of allowed headers.
+              type: array
+              items:
+                type: string
+              description: List of allowed headers.
             allowed_methods:
-              type: string
-              description: Comma-separated list of allowed methods.
+              type: array
+              items:
+                type: string
+              description: List of allowed methods.
             allowed_origins:
-              type: string
-              description: Comma-separated list of allowed origins.
+              type: array
+              items:
+                type: string
+              description: List of allowed origins.
             max_age:
               type: string
               description: The max age for preflight caching.
