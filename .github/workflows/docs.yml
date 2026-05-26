@@ -33,7 +33,7 @@ jobs:
 
       # 3. Build the Monaco Editor
       - name: Build r7 Editor
-        working-directory: ./docs/editor
+        working-directory: ./r7-editor
         run: |
           npm install
           npm run build
@@ -45,12 +45,9 @@ jobs:
           mkdir -p ./site/schemas
           cp -r docs/schemas/* ./site/schemas/
           
-          # Delete the raw source files Zensical copied
-          rm -rf ./site/editor
-          
-          # FIX: Inject the Vite app into a SEPARATE directory to prevent collision
+          # Inject ONLY the compiled production build into the live path
           mkdir -p ./site/editor-app
-          cp -r ./docs/editor/dist/* ./site/editor-app/
+          cp -r ./r7-editor/dist/* ./site/editor-app/
 
       # 5. Deploy the combined output
       - name: Deploy to GitHub Pages
