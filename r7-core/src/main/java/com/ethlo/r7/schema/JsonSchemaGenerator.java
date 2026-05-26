@@ -1,7 +1,9 @@
 package com.ethlo.r7.schema;
 
-import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.RecordComponent;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -20,24 +22,28 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonValue;
+import tools.jackson.dataformat.yaml.YAMLFactory;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 import tools.jackson.dataformat.yaml.YAMLWriteFeature;
 
 public final class JsonSchemaGenerator
 {
-    public static void main(final String[] args)
+    public static void main(final String[] args) throws IOException
     {
         final JsonSchemaGenerator generator = new JsonSchemaGenerator();
         final RootSchema schemaTree = generator.generateGatewaySchema();
 
-        final YAMLMapper yamlMapper = YAMLMapper.builder()
+        YAMLFactory yamlFactory = YAMLFactory.builder()
+                .disable(YAMLWriteFeature.SPLIT_LINES)
+                .build();
+
+        final YAMLMapper yamlMapper = YAMLMapper.builder(yamlFactory)
                 .disable(YAMLWriteFeature.WRITE_DOC_START_MARKER)
                 .enable(YAMLWriteFeature.MINIMIZE_QUOTES)
                 .build();
 
-        final File outputFile = new File("r7-schema.yaml");
-        yamlMapper.writeValue(outputFile, schemaTree);
-        System.out.println("Successfully generated schema at: " + outputFile.getAbsolutePath());
+        String yaml = yamlMapper.writeValueAsString(schemaTree);
+        Files.writeString(Path.of("r7-schema.yaml"), yaml);
     }
 
     public RootSchema generateGatewaySchema()

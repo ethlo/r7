@@ -2,7 +2,7 @@ name: Deploy Zensical Docs
 on:
   push:
     branches:
-      - main # Update if your default branch is named differently
+      - main
 
 jobs:
   deploy:
@@ -13,23 +13,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 1. Setup Environments
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # 2. Build Zensical Docs FIRST
       - name: Install Zensical
         run: pip install zensical
 
       - name: Build Docs
         run: zensical build
-          
-      # Add this step to ensure your assets are in the publish directory
-      - name: Copy Static Assets
+
+      # 3. Build the Monaco Editor
+      - name: Build r7 Editor
+        working-directory: ./docs/editor
         run: |
+          npm install
+          npm run build
+
+      # 4. Assemble the final site safely
+      - name: Copy Static Assets & Inject Editor
+        run: |
+          # Ensure schemas are in place
           mkdir -p ./site/schemas
           cp -r docs/schemas/* ./site/schemas/
+          
+          # TRAP PREVENTED: Delete the raw source files and node_modules 
+          # that Zensical blindly copied into the site folder
+          rm -rf ./site/editor
+          
+          # Inject ONLY the compiled production build into the live path
+          mkdir -p ./site/editor
+          cp -r ./docs/editor/dist/* ./site/editor/
 
+      # 5. Deploy the combined output
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:

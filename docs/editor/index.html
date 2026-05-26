@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>r7 Gateway Editor</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #1e1e1e; /* Default dark background */
+            color: #cccccc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Sleek, IDE-style top toolbar */
+        #toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #252526;
+            border-bottom: 1px solid #333333;
+            padding: 0 16px;
+            height: 40px;
+            flex-shrink: 0;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .title {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        /* Professional, understated form controls */
+        select, button {
+            background: transparent;
+            border: 1px solid transparent;
+            color: inherit;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+
+        select:hover, button:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        select:focus, button:focus {
+            outline: 1px solid #007fd4; /* VS Code subtle blue focus */
+        }
+
+        select option {
+            background: #252526;
+            color: #cccccc;
+        }
+
+        /* The editor container automatically fills the rest of the height */
+        #app {
+            flex: 1;
+            width: 100%;
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+<div id="toolbar">
+    <span class="title" id="app-title">r7 Configurator</span>
+    <div class="controls">
+        <select id="theme-selector" title="Editor Theme">
+            <option value="vs-dark">Dark</option>
+            <option value="vs">Light</option>
+            <option value="hc-black">High Contrast</option>
+        </select>
+        <button id="save-btn" title="Download Configuration">Save As...</button>
+    </div>
+</div>
+<div id="app"></div>
+<script type="module" src="/main.js"></script>
+</body>
+</html>

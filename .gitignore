@@ -14,3 +14,4 @@ target/
 
 ### Mac OS ###
 .DS_Store
+/docs/editor/node_modules/
