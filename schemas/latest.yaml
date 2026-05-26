@@ -100,7 +100,8 @@ $defs:
               - type: boolean
               - type: string
                 pattern: "^\\$\\{.*\\}$"
-              description: Whether credentials are allowed.
+              description: Whether credentials are allowed. Defaults to false.
+              default: "false"
             allowed_headers:
               type: array
               items:
@@ -118,13 +119,12 @@ $defs:
               description: List of allowed origins.
             max_age:
               type: string
-              description: The max age for preflight caching.
+              description: The max age for preflight caching. Defaults to 1800 seconds (30 minutes).
+              default: 30m
           required:
           - allowed_origins
           - allowed_methods
           - allowed_headers
-          - max_age
-          - allow_credentials
           additionalProperties: false
           description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
           defaultSnippets:
@@ -134,8 +134,6 @@ $defs:
               allowed_origins: $1
               allowed_methods: $2
               allowed_headers: $3
-              max_age: $4
-              allow_credentials: $5
         InjectBasicAuth:
           type: object
           properties:
