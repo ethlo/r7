@@ -9,6 +9,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -62,16 +63,40 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
             @Description("List of allowed headers.")
             Set<String> allowedHeaders,
 
-            @Description("The max age for preflight caching.")
+            @DefaultValue("30m")
+            @Description("The max age for preflight caching. Defaults to 1800 seconds (30 minutes).")
             String maxAge,
 
-            @Description("Whether credentials are allowed.")
+            @DefaultValue("false")
+            @Description("Whether credentials are allowed. Defaults to false.")
             Boolean allowCredentials) implements ValidatableConfig
     {
+        // Compact constructor to assign secure defaults
+        public Config
+        {
+            if (maxAge == null || maxAge.isBlank())
+            {
+                maxAge = "1800";
+            }
+            if (allowCredentials == null)
+            {
+                allowCredentials = false;
+            }
+        }
+
         @Override
         public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result).required("allowed_origins", this.allowedOrigins());
+            final ValidatorUtils validator = new ValidatorUtils(result);
+
+            validator.required("allowed_origins", this.allowedOrigins());
+            validator.required("allowed_methods", this.allowedMethods());
+
+            // Enforce CORS specification: Cannot use wildcards with credentials
+            if (Boolean.TRUE.equals(this.allowCredentials()) && this.allowedOrigins() != null && this.allowedOrigins().contains("*"))
+            {
+                result.addError("allowed_origins", "Cannot use wildcard '*' for origins when allow_credentials is true.");
+            }
         }
     }
 
