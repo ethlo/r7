@@ -1,3 +1,9 @@
+---
+hide:
+#- navigation
+  - toc
+---
+
 # r7 Gateway Configuration Editor
 
 Use the interactive editor below to draft and validate your routing rules against the latest schema.

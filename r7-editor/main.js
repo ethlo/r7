@@ -5,7 +5,6 @@ import { parse } from 'yaml';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import YamlWorker from 'monaco-yaml/yaml.worker?worker';
 
-// Vite magic: imports the file contents as a raw string
 import defaultTemplate from './default-config.yaml?raw';
 
 window.MonacoEnvironment = {
@@ -22,7 +21,6 @@ async function initializeEditor() {
     const schemaUrl = '/schemas/latest.yaml';
     const modelUri = monaco.Uri.parse('file://root/config.yaml');
 
-    // 1. Fetch and configure Schema
     try {
         const response = await fetch(schemaUrl);
         if (response.ok) {
@@ -42,15 +40,12 @@ async function initializeEditor() {
         console.error('Failed to load schema:', error);
     }
 
-    // 2. Load Draft & Theme from LocalStorage
-    // It now uses your imported file if localStorage is empty
     const initialConfig = localStorage.getItem(STORAGE_KEY) || defaultTemplate;
     const savedTheme = localStorage.getItem(THEME_KEY) || 'vs-dark';
 
     document.getElementById('theme-selector').value = savedTheme;
     updateToolbarStyling(savedTheme);
 
-    // 3. Create Editor
     const editor = monaco.editor.create(document.getElementById('app'), {
         model: monaco.editor.createModel(initialConfig, 'yaml', modelUri),
         theme: savedTheme,
@@ -59,12 +54,10 @@ async function initializeEditor() {
         fontFamily: "'Consolas', 'Courier New', monospace"
     });
 
-    // 4. Auto-save to LocalStorage
     editor.onDidChangeModelContent(() => {
         localStorage.setItem(STORAGE_KEY, editor.getValue());
     });
 
-    // 5. Wire up the Theme Switcher
     document.getElementById('theme-selector').addEventListener('change', (e) => {
         const newTheme = e.target.value;
         monaco.editor.setTheme(newTheme);
@@ -72,7 +65,6 @@ async function initializeEditor() {
         updateToolbarStyling(newTheme);
     });
 
-    // 6. Wire up the "Save As" Button
     document.getElementById('save-btn').addEventListener('click', () => {
         const content = editor.getValue();
         let filename = prompt("Enter a name for your config file:", "r7-config.yaml");
@@ -94,6 +86,22 @@ async function initializeEditor() {
 
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    });
+
+    // --- NEW BUTTON LOGIC ---
+
+    // Clear the editor completely
+    document.getElementById('clear-btn').addEventListener('click', () => {
+        if (confirm("Are you sure you want to clear the editor?")) {
+            editor.setValue('');
+        }
+    });
+
+    // Reload the default template
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        if (confirm("This will overwrite your current draft. Continue?")) {
+            editor.setValue(defaultTemplate);
+        }
     });
 }
 
