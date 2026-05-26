@@ -5,79 +5,100 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>r7 Gateway Editor</title>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background: #1e1e1e;
-            color: #cccccc;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
+        :root {
+            /* Default Dark Theme Variables */
+            --bg-main: #1e1e1e;
+            --bg-toolbar: #252526;
+            --border-color: #333333;
+            --text-main: #cccccc;
+            --btn-hover: rgba(255, 255, 255, 0.1);
+            --accent-blue: #007fd4;
+            --accent-blue-hover: #006eb8;
+            --danger-red: #da3633;
+            --danger-red-hover: #b82a27;
         }
 
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            background: var(--bg-main);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            display: flex; flex-direction: column;
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        /* --- TOOLBAR --- */
         #toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: #252526;
-            border-bottom: 1px solid #333333;
+            display: flex; align-items: center; justify-content: space-between;
+            background-color: var(--bg-toolbar);
+            border-bottom: 1px solid var(--border-color);
             padding: 0 16px;
-            height: 40px;
-            flex-shrink: 0;
+            height: 44px; flex-shrink: 0;
             transition: background-color 0.2s, border-color 0.2s;
         }
 
-        .title {
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-
-        .controls {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
+        .title { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+        .controls { display: flex; gap: 6px; align-items: center; }
 
         select, button {
-            background: transparent;
-            border: 1px solid transparent;
-            color: inherit;
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: background-color 0.15s ease;
+            background: transparent; border: 1px solid transparent; color: inherit;
+            font-size: 12px; padding: 6px 10px; border-radius: 4px;
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+            transition: all 0.15s ease;
         }
 
-        select:hover, button:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
+        select { border: 1px solid var(--border-color); }
+        select option { background: var(--bg-toolbar); color: var(--text-main); }
 
-        select:focus, button:focus {
-            outline: 1px solid #007fd4;
-        }
+        button:hover { background: var(--btn-hover); }
+        button:focus, select:focus { outline: 1px solid var(--accent-blue); }
+        button svg { width: 14px; height: 14px; fill: currentColor; }
 
-        select option {
-            background: #252526;
-            color: #cccccc;
-        }
+        #clear-btn:hover { background: rgba(218, 54, 51, 0.15); color: #ff6b6b; }
 
-        /* Differentiate the danger/destructive actions slightly */
-        #clear-btn:hover {
-            background: rgba(218, 54, 51, 0.2);
-            color: #ff6b6b;
-        }
+        #app { flex: 1; width: 100%; position: relative; }
 
-        #app {
-            flex: 1;
-            width: 100%;
-            position: relative;
+        /* --- CUSTOM MODAL --- */
+        #modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; opacity: 0; pointer-events: none;
+            transition: opacity 0.2s ease;
         }
+        #modal-overlay.active { opacity: 1; pointer-events: all; }
+
+        .modal-box {
+            background: var(--bg-toolbar);
+            border: 1px solid var(--border-color);
+            border-radius: 6px; padding: 20px; width: 340px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            transform: translateY(-10px); transition: transform 0.2s ease;
+        }
+        #modal-overlay.active .modal-box { transform: translateY(0); }
+
+        .modal-title { margin: 0 0 10px 0; font-size: 14px; font-weight: 600; }
+        .modal-message { margin: 0 0 16px 0; font-size: 13px; line-height: 1.5; opacity: 0.9; }
+
+        .modal-input {
+            width: 100%; box-sizing: border-box; padding: 8px; margin-bottom: 16px;
+            background: var(--bg-main); color: var(--text-main);
+            border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;
+        }
+        .modal-input:focus { outline: 1px solid var(--accent-blue); border-color: var(--accent-blue); }
+
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        /* Modal specific button overrides */
+        .modal-actions button { border: 1px solid var(--border-color); padding: 6px 14px; }
+        .modal-actions button.primary { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+        .modal-actions button.primary:hover { background: var(--accent-blue-hover); }
+        .modal-actions button.danger { background: var(--danger-red); color: #fff; border-color: var(--danger-red); }
+        .modal-actions button.danger:hover { background: var(--danger-red-hover); }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -89,14 +110,40 @@
             <option value="vs">Light</option>
             <option value="hc-black">High Contrast</option>
         </select>
-        <button id="fullscreen-btn" title="Toggle Fullscreen">⛶ Fullscreen</button>
 
-        <button id="clear-btn" title="Erase everything">Clear</button>
-        <button id="reset-btn" title="Load default configuration">Load Example</button>
-        <button id="save-btn" title="Download Configuration">Save As...</button>
+        <button id="fullscreen-btn" title="Toggle Fullscreen">
+            <svg viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zm5 14h-5v-2h3v-3h2v5zm-14 0v-5h2v3h3v2H5z"/></svg>
+            Fullscreen
+        </button>
+        <button id="clear-btn" title="Erase everything">
+            <svg viewBox="0 0 24 24"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/></svg>
+            Clear
+        </button>
+        <button id="reset-btn" title="Load default configuration">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+            Load Example
+        </button>
+        <button id="save-btn" title="Download Configuration">
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Save As...
+        </button>
     </div>
 </div>
+
 <div id="app"></div>
+
+<div id="modal-overlay">
+    <div class="modal-box">
+        <h3 class="modal-title" id="modal-title">Title</h3>
+        <p class="modal-message" id="modal-message">Message</p>
+        <input type="text" class="modal-input hidden" id="modal-input" spellcheck="false">
+        <div class="modal-actions">
+            <button id="modal-cancel">Cancel</button>
+            <button id="modal-confirm" class="primary">Confirm</button>
+        </div>
+    </div>
+</div>
+
 <script type="module" src="/main.js"></script>
 </body>
 </html>

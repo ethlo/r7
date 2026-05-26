@@ -17,23 +17,69 @@ window.MonacoEnvironment = {
 const STORAGE_KEY = 'r7_editor_draft';
 const THEME_KEY = 'r7_editor_theme';
 
+// --- CUSTOM MODAL SYSTEM ---
+function showModal({ title, message, type = 'confirm', inputValue = '', confirmText = 'OK', danger = false }) {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('modal-overlay');
+        const titleEl = document.getElementById('modal-title');
+        const msgEl = document.getElementById('modal-message');
+        const inputEl = document.getElementById('modal-input');
+        const btnCancel = document.getElementById('modal-cancel');
+        const btnConfirm = document.getElementById('modal-confirm');
+
+        titleEl.textContent = title;
+        msgEl.textContent = message;
+
+        btnConfirm.textContent = confirmText;
+        btnConfirm.className = danger ? 'danger' : 'primary';
+
+        if (type === 'prompt') {
+            inputEl.classList.remove('hidden');
+            inputEl.value = inputValue;
+        } else {
+            inputEl.classList.add('hidden');
+        }
+
+        overlay.classList.add('active');
+        if (type === 'prompt') inputEl.focus();
+        else btnConfirm.focus();
+
+        const cleanup = () => {
+            overlay.classList.remove('active');
+            btnCancel.removeEventListener('click', onCancel);
+            btnConfirm.removeEventListener('click', onConfirm);
+            inputEl.removeEventListener('keydown', onEnter);
+        };
+
+        const onCancel = () => { cleanup(); resolve(null); };
+        const onConfirm = () => {
+            cleanup();
+            resolve(type === 'prompt' ? inputEl.value : true);
+        };
+        const onEnter = (e) => { if (e.key === 'Enter') onConfirm(); };
+
+        btnCancel.addEventListener('click', onCancel);
+        btnConfirm.addEventListener('click', onConfirm);
+        inputEl.addEventListener('keydown', onEnter);
+    });
+}
+
 async function initializeEditor() {
     const schemaUrl = '/schemas/latest.yaml';
     const modelUri = monaco.Uri.parse('file://root/config.yaml');
 
     try {
-        const response = await fetch(schemaUrl);
+        const cacheBuster = Date.now();
+        const response = await fetch(`${schemaUrl}?v=${cacheBuster}`);
         if (response.ok) {
             const yamlString = await response.text();
             const parsedSchema = parse(yamlString);
+            const internalSchemaUri = `http://internal/r7-schema-${cacheBuster}.json`;
 
             configureMonacoYaml(monaco, {
                 enableSchemaRequest: false,
-                schemas: [{
-                    uri: 'http://internal/r7-schema.json',
-                    fileMatch: [modelUri.toString()],
-                    schema: parsedSchema
-                }]
+                validate: true, hover: true, completion: true,
+                schemas: [{ uri: internalSchemaUri, fileMatch: [modelUri.toString()], schema: parsedSchema }]
             });
         }
     } catch (error) {
@@ -44,100 +90,104 @@ async function initializeEditor() {
     const savedTheme = localStorage.getItem(THEME_KEY) || 'vs-dark';
 
     document.getElementById('theme-selector').value = savedTheme;
-    updateToolbarStyling(savedTheme);
+    updateThemeVariables(savedTheme);
 
-    // 3. Create Editor
     const editor = monaco.editor.create(document.getElementById('app'), {
         model: monaco.editor.createModel(initialConfig, 'yaml', modelUri),
-        theme: savedTheme,
-        automaticLayout: true,
-        minimap: { enabled: false },
-        fontFamily: "'Consolas', 'Courier New', monospace",
-        wordBasedSuggestions: 'off',
-        suggest: {
-            showSnippets: true,
-            showInlineDetails: true
-        }
+        theme: savedTheme, automaticLayout: true, minimap: { enabled: false },
+        fontFamily: "'Consolas', 'Courier New', monospace", wordBasedSuggestions: 'off',
+        suggest: { showSnippets: true, showInlineDetails: true }
     });
 
-    editor.onDidChangeModelContent(() => {
-        localStorage.setItem(STORAGE_KEY, editor.getValue());
-    });
+    editor.onDidChangeModelContent(() => localStorage.setItem(STORAGE_KEY, editor.getValue()));
 
     document.getElementById('theme-selector').addEventListener('change', (e) => {
         const newTheme = e.target.value;
         monaco.editor.setTheme(newTheme);
         localStorage.setItem(THEME_KEY, newTheme);
-        updateToolbarStyling(newTheme);
+        updateThemeVariables(newTheme);
+    });
+
+    // --- REFACTORED BUTTON LOGIC WITH PROMISES ---
+
+    document.getElementById('save-btn').addEventListener('click', async () => {
+        let filename = await showModal({
+            type: 'prompt',
+            title: 'Save Configuration',
+            message: 'Enter a name for your config file:',
+            inputValue: 'r7-config.yaml',
+            confirmText: 'Save'
+        });
+
+        if (!filename) return;
+        if (!filename.endsWith('.yaml') && !filename.endsWith('.yml')) filename += '.yaml';
+
+        const blob = new Blob([editor.getValue()], { type: 'text/yaml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', async () => {
+        const confirmed = await showModal({
+            title: 'Clear Editor',
+            message: 'Are you sure you want to permanently erase the current configuration?',
+            confirmText: 'Clear',
+            danger: true
+        });
+        if (confirmed) editor.setValue('');
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', async () => {
+        const confirmed = await showModal({
+            title: 'Load Example',
+            message: 'This will overwrite your current draft with the default example. Continue?',
+            confirmText: 'Overwrite',
+            danger: true
+        });
+        if (confirmed) editor.setValue(defaultTemplate);
     });
 
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
-        // If we are not currently in fullscreen mode
         if (!document.fullscreenElement) {
-            // Request the entire iframe document to go fullscreen
-            document.documentElement.requestFullscreen().catch((err) => {
-                console.error(`Error attempting to enable fullscreen: ${err.message}`);
-            });
-            document.getElementById('fullscreen-btn').innerText = '🗗 Exit Fullscreen';
+            document.documentElement.requestFullscreen().catch(err => console.error(err));
         } else {
-            // If we are in fullscreen, exit it
             document.exitFullscreen();
-            document.getElementById('fullscreen-btn').innerText = '⛶ Fullscreen';
         }
     });
 
-    document.getElementById('save-btn').addEventListener('click', () => {
-        const content = editor.getValue();
-        let filename = prompt("Enter a name for your config file:", "r7-config.yaml");
-
-        if (!filename) return;
-
-        if (!filename.endsWith('.yaml') && !filename.endsWith('.yml')) {
-            filename += '.yaml';
-        }
-
-        const blob = new Blob([content], { type: 'text/yaml' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
-
-    // Clear the editor completely
-    document.getElementById('clear-btn').addEventListener('click', () => {
-        if (confirm("Are you sure you want to clear the editor?")) {
-            editor.setValue('');
-        }
-    });
-
-    // Reload the default template
-    document.getElementById('reset-btn').addEventListener('click', () => {
-        if (confirm("This will overwrite your current draft. Continue?")) {
-            editor.setValue(defaultTemplate);
+    document.addEventListener('fullscreenchange', () => {
+        const btn = document.getElementById('fullscreen-btn');
+        if (document.fullscreenElement) {
+            btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg> Exit Fullscreen`;
+        } else {
+            btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zm5 14h-5v-2h3v-3h2v5zm-14 0v-5h2v3h3v2H5z"/></svg> Fullscreen`;
         }
     });
 }
 
-function updateToolbarStyling(theme) {
-    const toolbar = document.getElementById('toolbar');
-    const title = document.getElementById('app-title');
-
+function updateThemeVariables(theme) {
+    const root = document.documentElement;
     if (theme === 'vs') {
-        document.body.style.backgroundColor = '#fffffe';
-        toolbar.style.backgroundColor = '#f3f3f3';
-        toolbar.style.borderBottomColor = '#cccccc';
-        document.body.style.color = '#333333';
-    } else {
-        document.body.style.backgroundColor = theme === 'hc-black' ? '#000000' : '#1e1e1e';
-        toolbar.style.backgroundColor = theme === 'hc-black' ? '#000000' : '#252526';
-        toolbar.style.borderBottomColor = theme === 'hc-black' ? '#6fc3df' : '#333333';
-        document.body.style.color = '#cccccc';
+        root.style.setProperty('--bg-main', '#fffffe');
+        root.style.setProperty('--bg-toolbar', '#f3f3f3');
+        root.style.setProperty('--border-color', '#cccccc');
+        root.style.setProperty('--text-main', '#333333');
+        root.style.setProperty('--btn-hover', 'rgba(0, 0, 0, 0.05)');
+    } else if (theme === 'hc-black') {
+        root.style.setProperty('--bg-main', '#000000');
+        root.style.setProperty('--bg-toolbar', '#000000');
+        root.style.setProperty('--border-color', '#6fc3df');
+        root.style.setProperty('--text-main', '#ffffff');
+        root.style.setProperty('--btn-hover', 'rgba(111, 195, 223, 0.2)');
+    } else { // vs-dark
+        root.style.setProperty('--bg-main', '#1e1e1e');
+        root.style.setProperty('--bg-toolbar', '#252526');
+        root.style.setProperty('--border-color', '#333333');
+        root.style.setProperty('--text-main', '#cccccc');
+        root.style.setProperty('--btn-hover', 'rgba(255, 255, 255, 0.1)');
     }
 }
 
