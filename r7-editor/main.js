@@ -46,12 +46,23 @@ async function initializeEditor() {
     document.getElementById('theme-selector').value = savedTheme;
     updateToolbarStyling(savedTheme);
 
+    // 3. Create Editor
     const editor = monaco.editor.create(document.getElementById('app'), {
         model: monaco.editor.createModel(initialConfig, 'yaml', modelUri),
         theme: savedTheme,
         automaticLayout: true,
         minimap: { enabled: false },
-        fontFamily: "'Consolas', 'Courier New', monospace"
+        fontFamily: "'Consolas', 'Courier New', monospace",
+
+        // --- THE AUTOCOMPLETE FIX ---
+
+        // 1. Disable text-based suggestions to prevent collision with schema offsets
+        wordBasedSuggestions: 'off',
+
+        // 2. Ensure Monaco processes the schema's $1 placeholders as actual cursor tab-stops
+        suggest: {
+            showSnippets: true,
+        }
     });
 
     editor.onDidChangeModelContent(() => {
@@ -87,8 +98,6 @@ async function initializeEditor() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     });
-
-    // --- NEW BUTTON LOGIC ---
 
     // Clear the editor completely
     document.getElementById('clear-btn').addEventListener('click', () => {
