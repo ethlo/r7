@@ -45,13 +45,12 @@ jobs:
           mkdir -p ./site/schemas
           cp -r docs/schemas/* ./site/schemas/
           
-          # TRAP PREVENTED: Delete the raw source files and node_modules 
-          # that Zensical blindly copied into the site folder
+          # Delete the raw source files Zensical copied
           rm -rf ./site/editor
           
-          # Inject ONLY the compiled production build into the live path
-          mkdir -p ./site/editor
-          cp -r ./docs/editor/dist/* ./site/editor/
+          # FIX: Inject the Vite app into a SEPARATE directory to prevent collision
+          mkdir -p ./site/editor-app
+          cp -r ./docs/editor/dist/* ./site/editor-app/
 
       # 5. Deploy the combined output
       - name: Deploy to GitHub Pages

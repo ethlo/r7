@@ -1,0 +1,28 @@
+version: v2026-0-14
+
+# Global filters applied to all routes
+global_filters:
+  - SimpleMetrics:
+      period: 5M
+      interval: 2S
+  - RequestSizeLimit:
+      max_size: 10MB
+
+routes:
+  - id: flaky-service
+    match:
+      - PathPrefix:
+          prefix: /down
+    upstream:
+      targets:
+        - url: http://localhost:8090
+      health_check:
+        path: /health
+      fallback:
+        route_id: down
+  - id: down
+    filters:
+      - ReturnResponse:
+          status: 503
+          content_type: text/plain
+          body: We'll be back soon!

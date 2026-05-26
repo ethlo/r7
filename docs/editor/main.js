@@ -5,6 +5,9 @@ import { parse } from 'yaml';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import YamlWorker from 'monaco-yaml/yaml.worker?worker';
 
+// Vite magic: imports the file contents as a raw string
+import defaultTemplate from './default-config.yaml?raw';
+
 window.MonacoEnvironment = {
     getWorker(moduleId, label) {
         if (label === 'yaml') return new YamlWorker();
@@ -40,23 +43,10 @@ async function initializeEditor() {
     }
 
     // 2. Load Draft & Theme from LocalStorage
-    const defaultTemplate = [
-        'gateway:',
-        '  port: 8080',
-        '  routes:',
-        '    - id: "example-route"',
-        '      match:',
-        '        - Path:',
-        '            path: "/api"',
-        '      upstream:',
-        '        targets:',
-        '          - url: "http://upstream-service:8081"'
-    ].join('\n');
-
+    // It now uses your imported file if localStorage is empty
     const initialConfig = localStorage.getItem(STORAGE_KEY) || defaultTemplate;
     const savedTheme = localStorage.getItem(THEME_KEY) || 'vs-dark';
 
-    // Sync the UI dropdown with the saved theme
     document.getElementById('theme-selector').value = savedTheme;
     updateToolbarStyling(savedTheme);
 
@@ -107,19 +97,16 @@ async function initializeEditor() {
     });
 }
 
-// Helper to make the toolbar match the editor's light/dark mode
 function updateToolbarStyling(theme) {
     const toolbar = document.getElementById('toolbar');
     const title = document.getElementById('app-title');
 
     if (theme === 'vs') {
-        // Light mode
         document.body.style.backgroundColor = '#fffffe';
         toolbar.style.backgroundColor = '#f3f3f3';
         toolbar.style.borderBottomColor = '#cccccc';
         document.body.style.color = '#333333';
     } else {
-        // Dark & High Contrast mode
         document.body.style.backgroundColor = theme === 'hc-black' ? '#000000' : '#1e1e1e';
         toolbar.style.backgroundColor = theme === 'hc-black' ? '#000000' : '#252526';
         toolbar.style.borderBottomColor = theme === 'hc-black' ? '#6fc3df' : '#333333';
