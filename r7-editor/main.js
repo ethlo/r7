@@ -62,6 +62,7 @@ async function initializeEditor() {
         // 2. Ensure Monaco processes the schema's $1 placeholders as actual cursor tab-stops
         suggest: {
             showSnippets: true,
+            showInlineDetails: true
         }
     });
 
