@@ -66,7 +66,7 @@ function showModal({ title, message, type = 'confirm', inputValue = '', confirmT
 
 async function initializeEditor() {
     const schemaUrl = '/schemas/latest.yaml';
-    const modelUri = monaco.Uri.parse('file://root/config.yaml');
+    const modelUri = monaco.Uri.parse('file:///config.yaml');
 
     try {
         const cacheBuster = Date.now();
@@ -78,8 +78,14 @@ async function initializeEditor() {
 
             configureMonacoYaml(monaco, {
                 enableSchemaRequest: false,
-                validate: true, hover: true, completion: true,
-                schemas: [{ uri: internalSchemaUri, fileMatch: [modelUri.toString()], schema: parsedSchema }]
+                validate: true,
+                hover: true,
+                completion: true,
+                schemas: [{
+                    uri: internalSchemaUri,
+                    fileMatch: ['*'],
+                    schema: parsedSchema
+                }]
             });
         }
     } catch (error) {
