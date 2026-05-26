@@ -1,7 +1,7 @@
-$schema: https://json-schema.org/draft/2020-12/schema
+$schema: http://json-schema.org/draft-07/schema#
 type: object
 title: r7 Gateway Configuration
-$defs:
+definitions:
   filter:
     anyOf:
       - type: object
@@ -709,13 +709,13 @@ $defs:
           and:
             type: array
             items:
-              $ref: "#/$defs/predicate"
+              $ref: "#/definitions/predicate"
           not:
-            $ref: "#/$defs/predicate"
+            $ref: "#/definitions/predicate"
           or:
             type: array
             items:
-              $ref: "#/$defs/predicate"
+              $ref: "#/definitions/predicate"
         additionalProperties: true
         minProperties: 1
         maxProperties: 1
@@ -727,7 +727,7 @@ $defs:
       filters:
         type: array
         items:
-          $ref: "#/$defs/filter"
+          $ref: "#/definitions/filter"
         description: "A list of processing steps applied to the request before forwarding, and to the response before returning."
       id:
         type: string
@@ -776,7 +776,7 @@ $defs:
       match:
         type: array
         items:
-          $ref: "#/$defs/predicate"
+          $ref: "#/definitions/predicate"
         description: "Conditions that must be met for this route to handle a request. If omitted, all requests match."
       upstream:
         type: object
@@ -837,10 +837,10 @@ properties:
   global_filters:
     type: array
     items:
-      $ref: "#/$defs/filter"
+      $ref: "#/definitions/filter"
     description: A list of filters applied globally to every request passing through the gateway.
   routes:
     type: array
     items:
-      $ref: "#/$defs/route"
+      $ref: "#/definitions/route"
     description: The routing table defining how incoming traffic is matched and forwarded.
