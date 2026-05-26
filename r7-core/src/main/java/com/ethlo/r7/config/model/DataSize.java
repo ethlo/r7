@@ -1,18 +1,9 @@
-package com.ethlo.r7.config;
+package com.ethlo.r7.config.model;
 
 import java.util.StringJoiner;
 
-import com.fasterxml.jackson.annotation.JsonValue;
-
-public class DataSize
+public record DataSize(long bytes)
 {
-    private final long bytes;
-
-    public DataSize(final long bytes)
-    {
-        this.bytes = bytes;
-    }
-
     public static DataSize ofMegabytes(long amount)
     {
         return ofKilobytes(amount * 1024L);
@@ -31,12 +22,6 @@ public class DataSize
     public static DataSize ofGigabytes(long amount)
     {
         return ofMegabytes(amount * 1024L);
-    }
-
-    @JsonValue
-    public long toBytes()
-    {
-        return bytes;
     }
 
     @Override

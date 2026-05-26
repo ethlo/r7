@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
@@ -53,13 +54,13 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
 
             @Description("The HTTP status code to return if the parameter is missing or invalid.")
             @DefaultValue("400")
-            Integer rejectStatusCode) implements ValidatableConfig
+            HttpStatus rejectStatusCode) implements ValidatableConfig
     {
         public Config
         {
             if (rejectStatusCode == null)
             {
-                rejectStatusCode = HttpStatuses.BAD_REQUEST;
+                rejectStatusCode = new HttpStatus(HttpStatuses.BAD_REQUEST);
             }
         }
 
@@ -95,7 +96,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
             if (paramValue == null || !this.compiledPattern.matcher(paramValue).matches())
             {
                 exchange.shortCircuit(new FastTerminationGatewayResponse(
-                        this.config.rejectStatusCode(),
+                        this.config.rejectStatusCode().code(),
                         MediaTypes.TEXT_PLAIN,
                         this.errorBody.asReadOnlyBuffer()
                 ));

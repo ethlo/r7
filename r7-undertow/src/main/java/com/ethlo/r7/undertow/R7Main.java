@@ -89,7 +89,7 @@ public final class R7Main
 
         final ShardedJournalWriter<R7fJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
-            final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().toBytes(), storage.preFault());
+            final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault());
             return new R7fJournal(provider, compressionEngine::submitForCompression);
         }
         );
@@ -306,9 +306,9 @@ public final class R7Main
                 .setSocketOption(Options.READ_TIMEOUT, (int) advanced.socketReadTimeout().toMillis())
 
                 // HTTP Protocol
-                .setServerOption(UndertowOptions.MAX_HEADER_SIZE, (int) limits.maxHeaderSize().toBytes())
+                .setServerOption(UndertowOptions.MAX_HEADER_SIZE, (int) limits.maxHeaderSize().bytes())
                 .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, (int) http.requestParseTimeout().toMillis())
-                .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, limits.maxEntitySize().toBytes())
+                .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, limits.maxEntitySize().bytes())
                 .setServerOption(UndertowOptions.ENABLE_HTTP2, http.enableHttp2())
                 .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, http.alwaysSetKeepAlive())
 

@@ -20,7 +20,7 @@ routes:
       health_check:
         path: /health
       fallback:
-        route_id: denied
+        route_id: down
 
   - id: down
     filters:

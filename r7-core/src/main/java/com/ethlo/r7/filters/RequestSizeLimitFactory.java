@@ -7,7 +7,7 @@ import java.nio.ByteBuffer;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
-import com.ethlo.r7.config.DataSize;
+import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -94,7 +94,7 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
                 return;
             }
 
-            if (contentLength > this.maxSize.toBytes())
+            if (contentLength > this.maxSize.bytes())
             {
                 this.rejectPayloadTooLarge(exchange);
             }

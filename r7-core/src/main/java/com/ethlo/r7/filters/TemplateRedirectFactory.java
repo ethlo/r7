@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
@@ -55,7 +56,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
             @Description("The HTTP status code to return for the redirect.")
             @DefaultValue("302")
-            Integer status) implements ValidatableConfig
+            HttpStatus status) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
@@ -82,7 +83,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
             if (config.status() != null)
             {
-                this.responseStatus = config.status();
+                this.responseStatus = config.status().code();
             }
             else
             {

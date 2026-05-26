@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
@@ -45,7 +46,7 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
 
     public record Config(
             @Description("The HTTP status code to return.")
-            Integer status,
+            HttpStatus status,
 
             @Description("The Content-Type of the response body.")
             @DefaultValue("text/plain")
@@ -66,8 +67,13 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .requirePositive("status", this.status())
+                    .required("status", this.status())
                     .required("body", this.body());
+
+            if (status != null)
+            {
+                status.validate(result);
+            }
         }
     }
 
@@ -79,7 +85,7 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
 
         public GF(final Config config)
         {
-            this.status = config.status();
+            this.status = config.status().code();
             this.contentType = config.contentType();
             this.bodyBuffer = ByteBuffer.wrap(config.body().getBytes(StandardCharsets.UTF_8));
         }

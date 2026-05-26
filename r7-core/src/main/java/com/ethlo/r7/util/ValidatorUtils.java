@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-import com.ethlo.r7.config.DataSize;
+import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.validation.ValidationResult;
 
 public class ValidatorUtils
@@ -115,7 +115,7 @@ public class ValidatorUtils
 
     public ValidatorUtils requirePositive(String property, DataSize value)
     {
-        if (value == null || value.toBytes() <= 0)
+        if (value == null || value.bytes() <= 0)
         {
             result.addError(property, "'" + property + "' must be a positive data size, got: " + value);
         }

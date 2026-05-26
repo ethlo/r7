@@ -3,6 +3,7 @@ package com.ethlo.r7.filters;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -38,18 +39,14 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
 
     public record Config(
             @Description("The HTTP status code to set (100-599).")
-            Integer status) implements ValidatableConfig
+            HttpStatus status) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
         {
-            final ValidatorUtils validatorUtils = new ValidatorUtils(result)
+            new ValidatorUtils(result)
                     .required("status", this.status());
-
-            if (this.status() != null && (this.status() < 100 || this.status() > 599))
-            {
-                validatorUtils.invalid("status", this.status().toString(), "Must be a valid HTTP status code (100-599)");
-            }
+            status.validate(result);
         }
     }
 
@@ -59,7 +56,7 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
 
         public GF(final Config config)
         {
-            this.status = config.status();
+            this.status = config.status().code();
         }
 
         @Override

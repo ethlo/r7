@@ -3,7 +3,7 @@ package com.ethlo.r7.undertow.config;
 import java.time.Duration;
 import java.util.Optional;
 
-import com.ethlo.r7.config.DataSize;
+import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -231,11 +231,11 @@ public record ServerConfig(
         @Override
         public void validate(final ValidationResult result)
         {
-            if (this.maxHeaderSize().toBytes() < 1024)
+            if (this.maxHeaderSize().bytes() < 1024)
             {
                 result.addError("max_header_size", "must be >= 1024 bytes");
             }
-            if (this.maxEntitySize().toBytes() < 1024)
+            if (this.maxEntitySize().bytes() < 1024)
             {
                 result.addError("max_entity_size", "must be >= 1KB");
             }

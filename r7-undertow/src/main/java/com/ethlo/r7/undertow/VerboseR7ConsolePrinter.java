@@ -105,16 +105,16 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
         // Security & Limits
         logLine("");
         logLine("   " + CSS_HEADER + "Security & Limits" + RESET);
-        logLine("   " + TREE_BRANCH + "Max Header Size:   " + (config.limits().maxHeaderSize().toBytes() / 1024) + " KB");
+        logLine("   " + TREE_BRANCH + "Max Header Size:   " + (config.limits().maxHeaderSize().bytes() / 1024) + " KB");
         logLine("   " + TREE_BRANCH + "Max Header Count:  " + config.limits().maxHeaderCount());
-        logLine("   " + TREE_LAST + "Max Entity Size:   " + (config.limits().maxEntitySize().toBytes() / 1024 / 1024) + " MB");
+        logLine("   " + TREE_LAST + "Max Entity Size:   " + (config.limits().maxEntitySize().bytes() / 1024 / 1024) + " MB");
 
         // Storage
         logLine("");
         logLine("   " + CSS_HEADER + "Journaling & Storage" + RESET);
         logLine("   " + TREE_BRANCH + "Directory:         " + config.storage().workDir());
         logLine("   " + TREE_BRANCH + "Shard Count:       " + config.storage().shardCount());
-        logLine("   " + TREE_BRANCH + "Shard Size:        " + (config.storage().shardSize().toBytes() / 1024 / 1024) + " MB");
+        logLine("   " + TREE_BRANCH + "Shard Size:        " + (config.storage().shardSize().bytes() / 1024 / 1024) + " MB");
         logLine("   " + TREE_LAST + "Pre-fault:         " + config.storage().preFault());
 
         // Advanced Tuning

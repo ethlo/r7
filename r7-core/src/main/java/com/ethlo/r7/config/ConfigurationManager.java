@@ -15,6 +15,8 @@ import java.util.regex.Pattern;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.config.model.DataSize;
+import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -31,6 +33,7 @@ import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.deser.std.StdDeserializer;
+import tools.jackson.databind.exc.InvalidFormatException;
 import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 import tools.jackson.databind.module.SimpleModule;
@@ -46,12 +49,13 @@ public final class ConfigurationManager
         final SimpleModule r7Module = new SimpleModule();
         r7Module.addDeserializer(Duration.class, new HumanDurationDeserializer());
         r7Module.addDeserializer(DataSize.class, new HumanDataSizeDeserializer());
+        r7Module.addDeserializer(HttpStatus.class, new HttpStatusDeserializer());
 
         mapper = YAMLMapper.builder()
                 .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
                 .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                .addModule(r7Module) // Inject the custom parsers here
+                .addModule(r7Module)
                 .build();
     }
 
@@ -95,7 +99,7 @@ public final class ConfigurationManager
         {
             throw new ConfigurationException(formatUnknownProperty(yamlFile, e));
         }
-        catch (MismatchedInputException e)
+        catch (InvalidFormatException e)
         {
             throw new ConfigurationException(formatMappingError(yamlFile, e));
         }
@@ -365,10 +369,26 @@ public final class ConfigurationManager
     private void instantiateFilters(final FilterCreationContext filterCreationContext, final ValidationResult validationResult, final List<GatewayFilter> instantiatedFilters, final FilterDefinition filterDef)
     {
         final GatewayFilterFactory<ValidatableConfig> typedFactory = filterRegistry.get(filterDef.name());
-        final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
-        c.validate(validationResult);
-        validationResult.throwIfInvalid();
-        instantiatedFilters.add(typedFactory.create(c, filterCreationContext));
+
+        try
+        {
+            final ValidatableConfig c = typedFactory.configClass() != null ? mapper.convertValue(filterDef.args(), typedFactory.configClass()) : new GatewayFilterFactory.EmptyConfig();
+            c.validate(validationResult);
+            validationResult.throwIfInvalid();
+            instantiatedFilters.add(typedFactory.create(c, filterCreationContext));
+        }
+        catch (JacksonYAMLParseException e)
+        {
+            throw new ConfigurationException(formatYamlSyntaxError(null, e));
+        }
+        catch (UnrecognizedPropertyException e)
+        {
+            throw new ConfigurationException(formatUnknownProperty(null, e));
+        }
+        catch (InvalidFormatException e)
+        {
+            throw new ConfigurationException(formatMappingError(null, e));
+        }
     }
 
     public static final class HumanDurationDeserializer extends StdDeserializer<Duration>
@@ -437,6 +457,43 @@ public final class ConfigurationManager
                 case "gb" -> DataSize.ofGigabytes(amount);
                 default -> throw new ConfigurationException("Unknown data size unit: " + unit);
             };
+        }
+    }
+
+    public static final class HttpStatusDeserializer extends StdDeserializer<HttpStatus>
+    {
+        public HttpStatusDeserializer()
+        {
+            super(HttpStatus.class);
+        }
+
+        @Override
+        public HttpStatus deserialize(final JsonParser p, final DeserializationContext ctxt)
+        {
+            final String text = p.getString();
+
+            if (text == null || text.isBlank())
+            {
+                throw ctxt.weirdStringException(text, HttpStatus.class, "HTTP status code cannot be empty.");
+            }
+
+            final int code;
+            try
+            {
+                // Strictly parse the string to prevent silent 0 defaults
+                code = Integer.parseInt(text.trim());
+            }
+            catch (final NumberFormatException e)
+            {
+                throw ctxt.weirdStringException(text, HttpStatus.class, "HTTP status code must be a valid integer, received: '" + text + "'");
+            }
+
+            if (code < 100 || code > 599)
+            {
+                throw ctxt.weirdNumberException(code, HttpStatus.class, "Invalid HTTP status code: " + code + ". Must be between 100 and 599.");
+            }
+
+            return new HttpStatus(code);
         }
     }
 }
