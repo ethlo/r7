@@ -10,13 +10,13 @@ Create a new directory for your project and set up the following structure. The 
 r7-quickstart/
 ├── docker-compose.yaml
 ├── config/
-│   ├── server.yaml
+│   ├── server.yaml # optional
 │   └── routes.yaml
 └── journals/
 
 ```
 
-## 1. Docker Compose Setup
+## Docker Compose Setup
 
 Create `docker-compose.yaml`. This includes the r7 gateway configured with ZGC and native memory access, alongside an `echo-server` acting as our dummy backend.
 
@@ -60,55 +60,14 @@ services:
 
 ```
 
-## 2. Server Configuration
-
-Create `config/server.yaml`. This provides sane, moderate defaults suitable for local testing without overwhelming your development machine.
-
-```yaml
-host: 0.0.0.0
-port: 8888
-
-status_host: 0.0.0.0
-status_port: 18888
-
-worker:
-  io_threads: 2
-  task_core_threads: 4
-  task_max_threads: 4
-  stack_size: 262144
-  connection_low_water: 100
-  connection_high_water: 500
-
-options:
-  buffer_size: 8192
-  direct_buffers: true
-  tcp_nodelay: true
-  enable_http2: true
-  always_set_keep_alive: true
-  max_header_size: 8192
-
-proxy:
-  ttl: 30000
-  max_request_time: 30000
-  connections_per_thread: 100
-  max_queue_size: 500
-
-storage:
-  work_dir: /journals
-  shard_count: 2
-  shard_size: 50000000 # ~50MB per shard for local testing
-  pre_fault: false
-
-```
-
-## 3. Routes Configuration
+## Routes Configuration
 
 Create `config/routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.
 
 ```yaml
 filters:
   - CorrelationIdHeader
-
+  - SimpleMetrics
 routes:
   - id: quickstart-echo-route
     upstream:
