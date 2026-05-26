@@ -4,6 +4,10 @@ title: r7 Gateway Configuration
 definitions:
   filter:
     properties:
+      AddCorrelationId:
+        type: object
+        additionalProperties: false
+        description: Adds a unique correlation ID header to upstream requests and client responses for request tracing.
       AddQueryParameter:
         type: object
         properties:
@@ -200,6 +204,10 @@ definitions:
             capacity: $1
             refill_tokens: $2
             refill_period: $3
+      RemoveCacheHeaders:
+        type: object
+        additionalProperties: false
+        description: Removes standard cache-control headers from the upstream request to force fresh fetches.
       RemoveQueryParameter:
         type: object
         properties:
@@ -278,6 +286,10 @@ definitions:
           description: Rejects requests that exceed a specified payload size.
           body:
             max_size: $1
+      RequireAuthorizationHeader:
+        type: object
+        additionalProperties: false
+        description: Ensures that the request contains a valid Authorization header (Bearer or Basic).
       RequireCookie:
         type: object
         properties:
@@ -695,11 +707,11 @@ definitions:
           body:
             source: $1
             target: $2
+    additionalProperties: true
+    minProperties: 1
+    maxProperties: 1
     anyOf:
     - type: object
-      additionalProperties: true
-      minProperties: 1
-      maxProperties: 1
     - type: string
       enum:
       - AddCorrelationId
@@ -984,11 +996,11 @@ definitions:
         type: array
         items:
           $ref: "#/definitions/predicate"
+    additionalProperties: true
+    minProperties: 1
+    maxProperties: 1
     anyOf:
     - type: object
-      additionalProperties: true
-      minProperties: 1
-      maxProperties: 1
     - type: string
       description: Custom SPI implementation
   route:
