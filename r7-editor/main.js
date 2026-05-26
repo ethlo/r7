@@ -53,13 +53,7 @@ async function initializeEditor() {
         automaticLayout: true,
         minimap: { enabled: false },
         fontFamily: "'Consolas', 'Courier New', monospace",
-
-        // --- THE AUTOCOMPLETE FIX ---
-
-        // 1. Disable text-based suggestions to prevent collision with schema offsets
         wordBasedSuggestions: 'off',
-
-        // 2. Ensure Monaco processes the schema's $1 placeholders as actual cursor tab-stops
         suggest: {
             showSnippets: true,
             showInlineDetails: true
@@ -75,6 +69,21 @@ async function initializeEditor() {
         monaco.editor.setTheme(newTheme);
         localStorage.setItem(THEME_KEY, newTheme);
         updateToolbarStyling(newTheme);
+    });
+
+    document.getElementById('fullscreen-btn').addEventListener('click', () => {
+        // If we are not currently in fullscreen mode
+        if (!document.fullscreenElement) {
+            // Request the entire iframe document to go fullscreen
+            document.documentElement.requestFullscreen().catch((err) => {
+                console.error(`Error attempting to enable fullscreen: ${err.message}`);
+            });
+            document.getElementById('fullscreen-btn').innerText = '🗗 Exit Fullscreen';
+        } else {
+            // If we are in fullscreen, exit it
+            document.exitFullscreen();
+            document.getElementById('fullscreen-btn').innerText = '⛶ Fullscreen';
+        }
     });
 
     document.getElementById('save-btn').addEventListener('click', () => {
