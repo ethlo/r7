@@ -10,7 +10,7 @@
             padding: 0;
             width: 100%;
             height: 100%;
-            background: #1e1e1e; /* Default dark background */
+            background: #1e1e1e;
             color: #cccccc;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             overflow: hidden;
@@ -18,7 +18,6 @@
             flex-direction: column;
         }
 
-        /* Sleek, IDE-style top toolbar */
         #toolbar {
             display: flex;
             align-items: center;
@@ -44,7 +43,6 @@
             align-items: center;
         }
 
-        /* Professional, understated form controls */
         select, button {
             background: transparent;
             border: 1px solid transparent;
@@ -61,7 +59,7 @@
         }
 
         select:focus, button:focus {
-            outline: 1px solid #007fd4; /* VS Code subtle blue focus */
+            outline: 1px solid #007fd4;
         }
 
         select option {
@@ -69,14 +67,19 @@
             color: #cccccc;
         }
 
-        /* The editor container automatically fills the rest of the height */
+        /* Differentiate the danger/destructive actions slightly */
+        #clear-btn:hover {
+            background: rgba(218, 54, 51, 0.2);
+            color: #ff6b6b;
+        }
+
         #app {
             flex: 1;
             width: 100%;
             position: relative;
         }
     </style>
-  <script type="module" crossorigin src="./assets/index-BIncCu18.js"></script>
+  <script type="module" crossorigin src="./assets/index-0HeD1FBz.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-DsjRZPLb.css">
 </head>
 <body>
@@ -88,6 +91,8 @@
             <option value="vs">Light</option>
             <option value="hc-black">High Contrast</option>
         </select>
+        <button id="clear-btn" title="Erase everything">Clear</button>
+        <button id="reset-btn" title="Load default configuration">Load Example</button>
         <button id="save-btn" title="Download Configuration">Save As...</button>
     </div>
 </div>
