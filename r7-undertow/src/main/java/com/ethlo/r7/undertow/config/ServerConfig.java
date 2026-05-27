@@ -62,7 +62,7 @@ public record ServerConfig(
     @Override
     public AdvancedConfig advanced()
     {
-        return Optional.ofNullable(this.advanced).orElse(new AdvancedConfig(null, null, null, null, null, null, null, null, null, null, null, null));
+        return Optional.ofNullable(this.advanced).orElse(new AdvancedConfig(null, null, null, null, null, null, null, null));
     }
 
     @Override
@@ -342,11 +342,7 @@ public record ServerConfig(
             Boolean tcpNoDelay,
             Boolean reuseAddresses,
             Integer socketBacklog,
-            Duration socketReadTimeout,
-            Boolean directBuffers,
-            Boolean recordRequestStartTime,
-            Boolean enableStatistics,
-            Boolean trackActiveRequests
+            Duration socketReadTimeout
     ) implements ValidatableConfig
     {
         @Override
@@ -413,30 +409,6 @@ public record ServerConfig(
         public Duration socketReadTimeout()
         {
             return Optional.ofNullable(this.socketReadTimeout).orElse(Duration.ofSeconds(30));
-        }
-
-        @Override
-        public Boolean directBuffers()
-        {
-            return Optional.ofNullable(this.directBuffers).orElse(true);
-        }
-
-        @Override
-        public Boolean recordRequestStartTime()
-        {
-            return Optional.ofNullable(this.recordRequestStartTime).orElse(false);
-        }
-
-        @Override
-        public Boolean enableStatistics()
-        {
-            return Optional.ofNullable(this.enableStatistics).orElse(false);
-        }
-
-        @Override
-        public Boolean trackActiveRequests()
-        {
-            return Optional.ofNullable(this.trackActiveRequests).orElse(false);
         }
     }
 }

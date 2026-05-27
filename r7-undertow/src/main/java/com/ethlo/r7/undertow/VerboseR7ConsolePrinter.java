@@ -123,7 +123,6 @@ public class VerboseR7ConsolePrinter implements R7ConsolePrinter
         logLine("   " + TREE_BRANCH + "IO/Task Threads:   " + config.advanced().ioThreads() + " / " + config.advanced().taskThreads());
         logLine("   " + TREE_BRANCH + "Socket Backlog:    " + config.advanced().socketBacklog());
         logLine("   " + TREE_BRANCH + "TCP No-Delay:      " + config.advanced().tcpNoDelay());
-        logLine("   " + TREE_LAST + "Buffer Pool:       " + (config.advanced().directBuffers() ? "Direct" : "Heap"));
 
         final MemoryMXBean memBean = ManagementFactory.getMemoryMXBean();
         final MemoryUsage heap = memBean.getHeapMemoryUsage();

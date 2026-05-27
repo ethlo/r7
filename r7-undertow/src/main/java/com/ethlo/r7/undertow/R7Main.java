@@ -318,11 +318,11 @@ public final class R7Main
                 .setServerOption(UndertowOptions.MAX_COOKIES, limits.maxCookieCount())
 
                 // Options
-                .setServerOption(UndertowOptions.ENABLE_STATISTICS, advanced.enableStatistics())
-                .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, advanced.recordRequestStartTime())
+                .setServerOption(UndertowOptions.ENABLE_STATISTICS, true)
+                .setServerOption(UndertowOptions.RECORD_REQUEST_START_TIME, true)
 
                 // Memory Configuration
-                .setDirectBuffers(advanced.directBuffers());
+                .setDirectBuffers(true);
     }
 
     public void stop()
