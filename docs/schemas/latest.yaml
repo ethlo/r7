@@ -1114,7 +1114,17 @@ $defs:
           targets:
             type: array
             items:
-              type: string
+              type: object
+              properties:
+                url:
+                  type: string
+                  pattern: "^(?:https?://.*|\\$\\{.*\\})$"
+                  errorMessage:
+                    pattern: "Must match expected format or be a placeholder ${...}"
+                  description: The target URL (Must start with http:// or https://).
+              required:
+              - url
+              additionalProperties: false
             description: List of backend servers to forward traffic to.
           timeouts:
             type: object

@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,7 +18,6 @@ import java.util.function.Function;
 
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.UpstreamConfig;
-import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
@@ -344,10 +342,13 @@ public final class JsonSchemaGenerator
             final String defaultStr = getDefaultValue(component);
             final String customPattern = getPattern(component);
 
-            // Convert raw annotation string to typed Object
             final Object defaultValue = parseDefaultValue(component.getType(), defaultStr);
 
-            final SchemaNode propertyNode = mapToSchemaNode(component.getType(), description, defaultValue, customPattern);
+            // EXTRACT GENERIC TYPE HERE
+            final java.lang.reflect.Type genericType = component.getGenericType();
+
+            // Pass genericType into the mapper
+            final SchemaNode propertyNode = mapToSchemaNode(component.getType(), genericType, description, defaultValue, customPattern);
             properties.put(propertyName, propertyNode);
 
             if (isRequired(component))
@@ -365,7 +366,8 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private SchemaNode mapToSchemaNode(final Class<?> type, final String description, final Object defaultValue, final String customPattern)
+    // Added genericType to the signature
+    private SchemaNode mapToSchemaNode(final Class<?> type, final java.lang.reflect.Type genericType, final String description, final Object defaultValue, final String customPattern)
     {
         final String placeholderRegex = "^\\$\\{.*\\}$";
 
@@ -382,7 +384,7 @@ public final class JsonSchemaGenerator
                     defaultValue, null, null
             );
         }
-        else if (type == DataSize.class)
+        else if (type == com.ethlo.r7.config.model.DataSize.class)
         {
             final String basePattern = customPattern != null ? customPattern : "^[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)$";
             final String patternWithPlaceholder = "^(?:" + basePattern.replace("^", "").replace("$", "") + "|\\$\\{.*\\})$";
@@ -411,7 +413,7 @@ public final class JsonSchemaGenerator
 
             return new PrimitiveSchema("string", null, null, effectivePattern, errors, description, defaultValue, null, null);
         }
-        else if (type == HttpStatus.class)
+        else if (type == com.ethlo.r7.config.model.HttpStatus.class)
         {
             return new AnyOfSchema(
                     List.of(
@@ -457,7 +459,7 @@ public final class JsonSchemaGenerator
         }
         else if (type.isEnum())
         {
-            final List<String> enums = Arrays.stream(type.getEnumConstants())
+            final List<String> enums = java.util.Arrays.stream(type.getEnumConstants())
                     .map(Object::toString)
                     .toList();
 
@@ -476,7 +478,21 @@ public final class JsonSchemaGenerator
         }
         else if (List.class.isAssignableFrom(type) || Set.class.isAssignableFrom(type))
         {
-            return new ArraySchema("array", new PrimitiveSchema("string", null, null, null, null, null, null, null, null), description, defaultValue);
+            // NEW LIST HANDLING LOGIC
+            SchemaNode itemsSchema = new PrimitiveSchema("string", null, null, null, null, null, null, null, null); // Default fallback
+
+            if (genericType instanceof java.lang.reflect.ParameterizedType pt)
+            {
+                final java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+                if (typeArgs.length > 0 && typeArgs[0] instanceof Class<?> itemClass)
+                {
+                    // Recursively map the generic type (e.g., TargetConfig.class).
+                    // Pass nulls for descriptions/defaults since those belong to the array wrapper, not the items.
+                    itemsSchema = mapToSchemaNode(itemClass, null, null, null, null);
+                }
+            }
+
+            return new ArraySchema("array", itemsSchema, description, defaultValue);
         }
         else if (java.nio.file.Path.class.isAssignableFrom(type) ||
                 java.net.URI.class.isAssignableFrom(type) ||
