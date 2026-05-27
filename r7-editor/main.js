@@ -83,22 +83,33 @@ async function initializeEditor() {
             const parsedSchema = parse(yamlString);
 
             if (parsedSchema.$defs) {
-                // Loop through both 'filter' and 'predicate' definitions
                 ['filter', 'predicate'].forEach(category => {
                     const def = parsedSchema.$defs[category];
 
                     if (def && def.anyOf) {
-                        // Find the specific node inside anyOf that actually contains the 'properties' map
                         const objectDefinition = def.anyOf.find(node => node.properties);
 
                         if (objectDefinition && objectDefinition.properties) {
-                            // Extract the metadata for each component (e.g., AddQueryParameter)
                             for (const [componentName, schemaNode] of Object.entries(objectDefinition.properties)) {
                                 if (schemaNode.description) {
-                                    hoverMetadata[componentName] = {
+
+                                    // 1. Grab the component metadata
+                                    const meta = {
                                         description: schemaNode.description,
-                                        required: schemaNode.required ? schemaNode.required.map(r => `\`${r}\``).join(', ') : 'None'
+                                        required: schemaNode.required ? schemaNode.required.map(r => `\`${r}\``).join(', ') : 'None',
+                                        parameters: {} // New!
                                     };
+
+                                    // 2. Loop through its properties and grab those descriptions too
+                                    if (schemaNode.properties) {
+                                        for (const [paramName, paramNode] of Object.entries(schemaNode.properties)) {
+                                            if (paramNode.description) {
+                                                meta.parameters[paramName] = paramNode.description;
+                                            }
+                                        }
+                                    }
+
+                                    hoverMetadata[componentName] = meta;
                                 }
                             }
                         }
@@ -142,23 +153,60 @@ async function initializeEditor() {
             const word = model.getWordAtPosition(position);
             if (!word) return null;
 
-            // Lookup the word in our extracted dictionary
-            const meta = hoverMetadata[word.word];
-            if (meta) {
+            // Scenario 1: Is the user hovering directly over a root component? (e.g. AddQueryParameter)
+            const componentMeta = hoverMetadata[word.word];
+            if (componentMeta) {
                 return {
-                    range: new monaco.Range(
-                        position.lineNumber,
-                        word.startColumn,
-                        position.lineNumber,
-                        word.endColumn
-                    ),
+                    range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
                     contents: [
-                        {value: `**${word.word}**`},
-                        {value: meta.description},
-                        {value: `**Required:** ${meta.required}`}
+                        { value: `**${word.word}**` },
+                        { value: componentMeta.description },
+                        { value: `**Required:** ${componentMeta.required}` }
                     ]
                 };
             }
+
+            // Scenario 2: The user is hovering over a parameter. We need to find its parent.
+            const currentLine = model.getLineContent(position.lineNumber);
+
+            // Only attempt this if we are hovering over a key (word before a colon)
+            if (!currentLine.includes(':') || currentLine.indexOf(':') < word.startColumn) {
+                return null;
+            }
+
+            const currentIndent = currentLine.search(/\S|$/); // Find indentation level
+            let parentKey = null;
+
+            // Scan upward line-by-line
+            for (let i = position.lineNumber - 1; i >= 1; i--) {
+                const scanLine = model.getLineContent(i);
+                if (scanLine.trim() === '') continue; // Skip empty lines
+
+                const scanIndent = scanLine.search(/\S|$/);
+
+                // If we hit a line that is less indented, it's the parent!
+                if (scanIndent < currentIndent) {
+                    // Extract the key name, ignoring YAML list dashes (e.g., "- AddQueryParameter:")
+                    const match = scanLine.match(/(?:-\s*)?([a-zA-Z0-9_]+)\s*:/);
+                    if (match) {
+                        parentKey = match[1];
+                    }
+                    break;
+                }
+            }
+
+            // If we found a parent, check if our dictionary has a description for this specific parameter
+            if (parentKey && hoverMetadata[parentKey] && hoverMetadata[parentKey].parameters[word.word]) {
+                const paramDescription = hoverMetadata[parentKey].parameters[word.word];
+                return {
+                    range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+                    contents: [
+                        { value: `**${parentKey}** > \`${word.word}\`` },
+                        { value: paramDescription }
+                    ]
+                };
+            }
+
             return null;
         }
     });
