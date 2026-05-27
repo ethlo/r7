@@ -3,700 +3,67 @@ type: object
 title: r7 Gateway Configuration
 $defs:
   filter:
-    anyOf:
+    oneOf:
     - type: object
       properties:
         AddQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter.
-            value:
-              type: string
-              description: The value to assign to the query parameter.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Injects a static query parameter into the upstream request URL.
-          defaultSnippets:
-          - label: Insert AddQueryParameter
-            description: Injects a static query parameter into the upstream request URL.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_AddQueryParameter"
         AddRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-            value:
-              type: string
-              description: The value of the header.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Adds a custom header to the upstream request.
-          defaultSnippets:
-          - label: Insert AddRequestHeader
-            description: Adds a custom header to the upstream request.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_AddRequestHeader"
         AddResponseHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-            value:
-              type: string
-              description: The value of the header.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Adds a custom header to the client response.
-          defaultSnippets:
-          - label: Insert AddResponseHeader
-            description: Adds a custom header to the client response.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_AddResponseHeader"
         CircuitBreaker:
-          type: object
-          properties:
-            cooldown_period:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-              description: "The duration the circuit remains open before attempting to close. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
-            failure_threshold:
-              anyOf:
-              - type: integer
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The number of consecutive failures before the circuit opens.
-          required:
-          - failure_threshold
-          - cooldown_period
-          additionalProperties: false
-          description: Stops forwarding traffic to a failing upstream until it recovers.
-          defaultSnippets:
-          - label: Insert CircuitBreaker
-            description: Stops forwarding traffic to a failing upstream until it recovers.
-            body:
-              failure_threshold: $1
-              cooldown_period: $2
+          $ref: "#/$defs/filter_CircuitBreaker"
         Cors:
-          type: object
-          properties:
-            allow_credentials:
-              anyOf:
-              - type: boolean
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: Whether credentials are allowed. Defaults to false.
-              default: "false"
-            allowed_headers:
-              type: array
-              items:
-                type: string
-              description: List of allowed headers.
-            allowed_methods:
-              type: array
-              items:
-                type: string
-              description: List of allowed methods.
-            allowed_origins:
-              type: array
-              items:
-                type: string
-              description: List of allowed origins.
-            max_age:
-              type: string
-              description: The max age for preflight caching. Defaults to 1800 seconds (30 minutes).
-              default: 30m
-          required:
-          - allowed_origins
-          - allowed_methods
-          - allowed_headers
-          additionalProperties: false
-          description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
-          defaultSnippets:
-          - label: Insert Cors
-            description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
-            body:
-              allowed_origins: $1
-              allowed_methods: $2
-              allowed_headers: $3
+          $ref: "#/$defs/filter_Cors"
         InjectBasicAuth:
-          type: object
-          properties:
-            password:
-              type: string
-              description: The password for Basic Auth.
-            username:
-              type: string
-              description: The username for Basic Auth.
-          required:
-          - username
-          - password
-          additionalProperties: false
-          description: Injects a Basic Authentication header into the upstream request.
-          defaultSnippets:
-          - label: Insert InjectBasicAuth
-            description: Injects a Basic Authentication header into the upstream request.
-            body:
-              username: $1
-              password: $2
+          $ref: "#/$defs/filter_InjectBasicAuth"
         RateLimiter:
-          type: object
-          properties:
-            capacity:
-              anyOf:
-              - type: integer
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The maximum number of tokens the bucket can hold. This defines the absolute burst limit.
-            max_bucket_ttl:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-              description: "How long a bucket remains in memory after its last access before being purged. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
-              default: 10m
-            max_buckets:
-              anyOf:
-              - type: integer
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The maximum number of distinct client buckets to track in memory. Limits memory consumption under heavy load.
-              default: 100000
-            refill_period:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-              description: "The time interval between token refills (e.g., 1s, 500ms). (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
-            refill_tokens:
-              anyOf:
-              - type: integer
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The number of tokens added to the bucket at the end of every refill period.
-          required:
-          - capacity
-          - refill_tokens
-          - refill_period
-          additionalProperties: false
-          description: Local rate-limiter useful for avoiding overload by demanding users
-          defaultSnippets:
-          - label: Insert RateLimiter
-            description: Local rate-limiter useful for avoiding overload by demanding users
-            body:
-              capacity: $1
-              refill_tokens: $2
-              refill_period: $3
+          $ref: "#/$defs/filter_RateLimiter"
         RemoveQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter to remove.
-          required:
-          - name
-          additionalProperties: false
-          description: Removes a specific query parameter from the upstream request.
-          defaultSnippets:
-          - label: Insert RemoveQueryParameter
-            description: Removes a specific query parameter from the upstream request.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RemoveQueryParameter"
         RemoveRequestCookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the cookie to remove.
-          required:
-          - name
-          additionalProperties: false
-          description: Removes a specific cookie from the upstream request.
-          defaultSnippets:
-          - label: Insert RemoveRequestCookie
-            description: Removes a specific cookie from the upstream request.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RemoveRequestCookie"
         RemoveRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header to remove.
-          required:
-          - name
-          additionalProperties: false
-          description: Removes a specific header from the upstream request.
-          defaultSnippets:
-          - label: Insert RemoveRequestHeader
-            description: Removes a specific header from the upstream request.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RemoveRequestHeader"
         RemoveResponseHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header to remove.
-          required:
-          - name
-          additionalProperties: false
-          description: Removes a specific header from the client response.
-          defaultSnippets:
-          - label: Insert RemoveResponseHeader
-            description: Removes a specific header from the client response.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RemoveResponseHeader"
         RequestSizeLimit:
-          type: object
-          properties:
-            max_size:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-              description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
-          required:
-          - max_size
-          additionalProperties: false
-          description: Rejects requests that exceed a specified payload size.
-          defaultSnippets:
-          - label: Insert RequestSizeLimit
-            description: Rejects requests that exceed a specified payload size.
-            body:
-              max_size: $1
+          $ref: "#/$defs/filter_RequestSizeLimit"
         RequireCookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the required cookie.
-            reject_status_code:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return if the cookie is missing.
-              default: 400
-          required:
-          - name
-          additionalProperties: false
-          description: Ensures a required cookie is present in the request.
-          defaultSnippets:
-          - label: Insert RequireCookie
-            description: Ensures a required cookie is present in the request.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RequireCookie"
         RequireMatchCookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the cookie.
-            regexp:
-              type: string
-              description: The regular expression pattern the cookie value must match.
-            reject_status_code:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return if the cookie is missing or invalid.
-              default: 400
-          required:
-          - name
-          - regexp
-          additionalProperties: false
-          description: Ensures a required cookie exists and matches a specific regular expression.
-          defaultSnippets:
-          - label: Insert RequireMatchCookie
-            description: Ensures a required cookie exists and matches a specific regular expression.
-            body:
-              name: $1
-              regexp: $2
+          $ref: "#/$defs/filter_RequireMatchCookie"
         RequireMatchQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter.
-            regexp:
-              type: string
-              description: The regular expression pattern the query parameter value must match.
-            reject_status_code:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return if the parameter is missing or invalid.
-              default: 400
-          required:
-          - name
-          - regexp
-          additionalProperties: false
-          description: Ensures a required query parameter exists and matches a specific regular expression.
-          defaultSnippets:
-          - label: Insert RequireMatchQueryParameter
-            description: Ensures a required query parameter exists and matches a specific regular expression.
-            body:
-              name: $1
-              regexp: $2
+          $ref: "#/$defs/filter_RequireMatchQueryParameter"
         RequireMatchRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-            regexp:
-              type: string
-              description: The regular expression pattern the header value must match.
-            reject_status_code:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return if the header is missing or invalid.
-              default: 400
-          required:
-          - name
-          - regexp
-          additionalProperties: false
-          description: Ensures a required request header exists and matches a specific regular expression.
-          defaultSnippets:
-          - label: Insert RequireMatchRequestHeader
-            description: Ensures a required request header exists and matches a specific regular expression.
-            body:
-              name: $1
-              regexp: $2
+          $ref: "#/$defs/filter_RequireMatchRequestHeader"
         RequireQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the required query parameter.
-            reject_status_code:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return if the parameter is missing.
-              default: 400
-          required:
-          - name
-          additionalProperties: false
-          description: Ensures a required query parameter is present in the request.
-          defaultSnippets:
-          - label: Insert RequireQueryParameter
-            description: Ensures a required query parameter is present in the request.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RequireQueryParameter"
         RequireRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the required header.
-            reject_status_code:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return if the header is missing.
-              default: 400
-          required:
-          - name
-          additionalProperties: false
-          description: Ensures a required header is present in the request.
-          defaultSnippets:
-          - label: Insert RequireRequestHeader
-            description: Ensures a required header is present in the request.
-            body:
-              name: $1
+          $ref: "#/$defs/filter_RequireRequestHeader"
         ReturnResponse:
-          type: object
-          properties:
-            body:
-              type: string
-              description: The body content of the response.
-            content_type:
-              type: string
-              description: The Content-Type of the response body.
-              default: text/plain
-            status:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return.
-          required:
-          - status
-          - body
-          additionalProperties: false
-          description: Immediately terminates the request chain and returns a custom response.
-          defaultSnippets:
-          - label: Insert ReturnResponse
-            description: Immediately terminates the request chain and returns a custom response.
-            body:
-              status: $1
-              body: $2
+          $ref: "#/$defs/filter_ReturnResponse"
         RewritePath:
-          type: object
-          properties:
-            regexp:
-              type: string
-              description: The regular expression to match against the path.
-            replacement:
-              type: string
-              description: "The replacement string, supporting capture group references (e.g., $1)."
-          required:
-          - regexp
-          - replacement
-          additionalProperties: false
-          description: Rewrites the request path using a regular expression replacement.
-          defaultSnippets:
-          - label: Insert RewritePath
-            description: Rewrites the request path using a regular expression replacement.
-            body:
-              regexp: $1
-              replacement: $2
+          $ref: "#/$defs/filter_RewritePath"
         SetQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter.
-            value:
-              type: string
-              description: The value to set.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Sets (or overwrites) a query parameter in the upstream request.
-          defaultSnippets:
-          - label: Insert SetQueryParameter
-            description: Sets (or overwrites) a query parameter in the upstream request.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_SetQueryParameter"
         SetRequestCookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the cookie.
-            value:
-              type: string
-              description: The value of the cookie.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Sets a cookie on the upstream request.
-          defaultSnippets:
-          - label: Insert SetRequestCookie
-            description: Sets a cookie on the upstream request.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_SetRequestCookie"
         SetRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-            value:
-              type: string
-              description: The value to set.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Sets (or overwrites) a header in the upstream request.
-          defaultSnippets:
-          - label: Insert SetRequestHeader
-            description: Sets (or overwrites) a header in the upstream request.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_SetRequestHeader"
         SetResponseCookie:
-          type: object
-          properties:
-            domain:
-              type: string
-              description: The cookie domain.
-            http_only:
-              anyOf:
-              - type: boolean
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: Whether the cookie is HttpOnly.
-            max_age:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-              description: "The cookie max-age duration. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
-            name:
-              type: string
-              description: The cookie name.
-            path:
-              type: string
-              description: The cookie path.
-            same_site:
-              type: string
-              description: "The SameSite policy (Strict, Lax, None)."
-            secure:
-              anyOf:
-              - type: boolean
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: Whether the cookie is secure.
-            value:
-              type: string
-              description: The cookie value.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Sets a Set-Cookie header on the client response.
-          defaultSnippets:
-          - label: Insert SetResponseCookie
-            description: Sets a Set-Cookie header on the client response.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_SetResponseCookie"
         SetResponseHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-            value:
-              type: string
-              description: The value to set.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Sets (or overwrites) a header in the client response.
-          defaultSnippets:
-          - label: Insert SetResponseHeader
-            description: Sets (or overwrites) a header in the client response.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/filter_SetResponseHeader"
         SetStatus:
-          type: object
-          properties:
-            status:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to set (100-599).
-          required:
-          - status
-          additionalProperties: false
-          description: Overwrites the HTTP status code of the client response.
-          defaultSnippets:
-          - label: Insert SetStatus
-            description: Overwrites the HTTP status code of the client response.
-            body:
-              status: $1
+          $ref: "#/$defs/filter_SetStatus"
         StaticContent:
-          type: object
-          properties:
-            base_directory:
-              type: string
-              description: The absolute path to the directory containing static files.
-          required:
-          - base_directory
-          additionalProperties: false
-          description: Serves static files from a local directory.
-          defaultSnippets:
-          - label: Insert StaticContent
-            description: Serves static files from a local directory.
-            body:
-              base_directory: $1
+          $ref: "#/$defs/filter_StaticContent"
         StripPathPrefix:
-          type: object
-          properties:
-            parts:
-              anyOf:
-              - type: integer
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The number of path segments to strip from the beginning of the path.
-          required:
-          - parts
-          additionalProperties: false
-          description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
-          defaultSnippets:
-          - label: Insert StripPathPrefix
-            description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
-            body:
-              parts: $1
+          $ref: "#/$defs/filter_StripPathPrefix"
         TemplateRedirect:
-          type: object
-          properties:
-            source:
-              type: string
-              description: The regular expression pattern to match against the request path.
-            status:
-              anyOf:
-              - type: integer
-                minimum: 100
-                maximum: 599
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return for the redirect.
-              default: 302
-            target:
-              type: string
-              description: "The replacement template for the target URL (e.g., /new/$1)."
-          required:
-          - source
-          - target
-          additionalProperties: false
-          description: Redirects requests based on a path pattern match using a template for the target URL.
-          defaultSnippets:
-          - label: Insert TemplateRedirect
-            description: Redirects requests based on a path pattern match using a template for the target URL.
-            body:
-              source: $1
-              target: $2
+          $ref: "#/$defs/filter_TemplateRedirect"
       additionalProperties: true
       minProperties: 1
       maxProperties: 1
@@ -707,275 +74,731 @@ $defs:
       - RequireAuthorizationHeader
     - type: string
       description: Custom SPI implementation
+  filter_AddQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter.
+      value:
+        type: string
+        description: The value to assign to the query parameter.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Injects a static query parameter into the upstream request URL.
+    defaultSnippets:
+    - label: Insert AddQueryParameter
+      description: Injects a static query parameter into the upstream request URL.
+      body:
+        name: $1
+        value: $2
+  filter_AddRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+      value:
+        type: string
+        description: The value of the header.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Adds a custom header to the upstream request.
+    defaultSnippets:
+    - label: Insert AddRequestHeader
+      description: Adds a custom header to the upstream request.
+      body:
+        name: $1
+        value: $2
+  filter_AddResponseHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+      value:
+        type: string
+        description: The value of the header.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Adds a custom header to the client response.
+    defaultSnippets:
+    - label: Insert AddResponseHeader
+      description: Adds a custom header to the client response.
+      body:
+        name: $1
+        value: $2
+  filter_CircuitBreaker:
+    type: object
+    properties:
+      cooldown_period:
+        type: string
+        pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+        description: "The duration the circuit remains open before attempting to close. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+      failure_threshold:
+        anyOf:
+        - type: integer
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The number of consecutive failures before the circuit opens.
+    required:
+    - failure_threshold
+    - cooldown_period
+    additionalProperties: false
+    description: Stops forwarding traffic to a failing upstream until it recovers.
+    defaultSnippets:
+    - label: Insert CircuitBreaker
+      description: Stops forwarding traffic to a failing upstream until it recovers.
+      body:
+        failure_threshold: $1
+        cooldown_period: $2
+  filter_Cors:
+    type: object
+    properties:
+      allow_credentials:
+        anyOf:
+        - type: boolean
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: Whether credentials are allowed. Defaults to false.
+        default: "false"
+      allowed_headers:
+        type: array
+        items:
+          type: string
+        description: List of allowed headers.
+      allowed_methods:
+        type: array
+        items:
+          type: string
+        description: List of allowed methods.
+      allowed_origins:
+        type: array
+        items:
+          type: string
+        description: List of allowed origins.
+      max_age:
+        type: string
+        description: The max age for preflight caching. Defaults to 1800 seconds (30 minutes).
+        default: 30m
+    required:
+    - allowed_origins
+    - allowed_methods
+    - allowed_headers
+    additionalProperties: false
+    description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
+    defaultSnippets:
+    - label: Insert Cors
+      description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
+      body:
+        allowed_origins: $1
+        allowed_methods: $2
+        allowed_headers: $3
+  filter_InjectBasicAuth:
+    type: object
+    properties:
+      password:
+        type: string
+        description: The password for Basic Auth.
+      username:
+        type: string
+        description: The username for Basic Auth.
+    required:
+    - username
+    - password
+    additionalProperties: false
+    description: Injects a Basic Authentication header into the upstream request.
+    defaultSnippets:
+    - label: Insert InjectBasicAuth
+      description: Injects a Basic Authentication header into the upstream request.
+      body:
+        username: $1
+        password: $2
+  filter_RateLimiter:
+    type: object
+    properties:
+      capacity:
+        anyOf:
+        - type: integer
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The maximum number of tokens the bucket can hold. This defines the absolute burst limit.
+      max_bucket_ttl:
+        type: string
+        pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+        description: "How long a bucket remains in memory after its last access before being purged. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+        default: 10m
+      max_buckets:
+        anyOf:
+        - type: integer
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The maximum number of distinct client buckets to track in memory. Limits memory consumption under heavy load.
+        default: 100000
+      refill_period:
+        type: string
+        pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+        description: "The time interval between token refills (e.g., 1s, 500ms). (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+      refill_tokens:
+        anyOf:
+        - type: integer
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The number of tokens added to the bucket at the end of every refill period.
+    required:
+    - capacity
+    - refill_tokens
+    - refill_period
+    additionalProperties: false
+    description: Local rate-limiter useful for avoiding overload by demanding users
+    defaultSnippets:
+    - label: Insert RateLimiter
+      description: Local rate-limiter useful for avoiding overload by demanding users
+      body:
+        capacity: $1
+        refill_tokens: $2
+        refill_period: $3
+  filter_RemoveQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter to remove.
+    required:
+    - name
+    additionalProperties: false
+    description: Removes a specific query parameter from the upstream request.
+    defaultSnippets:
+    - label: Insert RemoveQueryParameter
+      description: Removes a specific query parameter from the upstream request.
+      body:
+        name: $1
+  filter_RemoveRequestCookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the cookie to remove.
+    required:
+    - name
+    additionalProperties: false
+    description: Removes a specific cookie from the upstream request.
+    defaultSnippets:
+    - label: Insert RemoveRequestCookie
+      description: Removes a specific cookie from the upstream request.
+      body:
+        name: $1
+  filter_RemoveRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header to remove.
+    required:
+    - name
+    additionalProperties: false
+    description: Removes a specific header from the upstream request.
+    defaultSnippets:
+    - label: Insert RemoveRequestHeader
+      description: Removes a specific header from the upstream request.
+      body:
+        name: $1
+  filter_RemoveResponseHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header to remove.
+    required:
+    - name
+    additionalProperties: false
+    description: Removes a specific header from the client response.
+    defaultSnippets:
+    - label: Insert RemoveResponseHeader
+      description: Removes a specific header from the client response.
+      body:
+        name: $1
+  filter_RequestSizeLimit:
+    type: object
+    properties:
+      max_size:
+        type: string
+        pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
+        description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+    required:
+    - max_size
+    additionalProperties: false
+    description: Rejects requests that exceed a specified payload size.
+    defaultSnippets:
+    - label: Insert RequestSizeLimit
+      description: Rejects requests that exceed a specified payload size.
+      body:
+        max_size: $1
+  filter_RequireCookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the required cookie.
+      reject_status_code:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return if the cookie is missing.
+        default: 400
+    required:
+    - name
+    additionalProperties: false
+    description: Ensures a required cookie is present in the request.
+    defaultSnippets:
+    - label: Insert RequireCookie
+      description: Ensures a required cookie is present in the request.
+      body:
+        name: $1
+  filter_RequireMatchCookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the cookie.
+      regexp:
+        type: string
+        description: The regular expression pattern the cookie value must match.
+      reject_status_code:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return if the cookie is missing or invalid.
+        default: 400
+    required:
+    - name
+    - regexp
+    additionalProperties: false
+    description: Ensures a required cookie exists and matches a specific regular expression.
+    defaultSnippets:
+    - label: Insert RequireMatchCookie
+      description: Ensures a required cookie exists and matches a specific regular expression.
+      body:
+        name: $1
+        regexp: $2
+  filter_RequireMatchQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter.
+      regexp:
+        type: string
+        description: The regular expression pattern the query parameter value must match.
+      reject_status_code:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return if the parameter is missing or invalid.
+        default: 400
+    required:
+    - name
+    - regexp
+    additionalProperties: false
+    description: Ensures a required query parameter exists and matches a specific regular expression.
+    defaultSnippets:
+    - label: Insert RequireMatchQueryParameter
+      description: Ensures a required query parameter exists and matches a specific regular expression.
+      body:
+        name: $1
+        regexp: $2
+  filter_RequireMatchRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+      regexp:
+        type: string
+        description: The regular expression pattern the header value must match.
+      reject_status_code:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return if the header is missing or invalid.
+        default: 400
+    required:
+    - name
+    - regexp
+    additionalProperties: false
+    description: Ensures a required request header exists and matches a specific regular expression.
+    defaultSnippets:
+    - label: Insert RequireMatchRequestHeader
+      description: Ensures a required request header exists and matches a specific regular expression.
+      body:
+        name: $1
+        regexp: $2
+  filter_RequireQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the required query parameter.
+      reject_status_code:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return if the parameter is missing.
+        default: 400
+    required:
+    - name
+    additionalProperties: false
+    description: Ensures a required query parameter is present in the request.
+    defaultSnippets:
+    - label: Insert RequireQueryParameter
+      description: Ensures a required query parameter is present in the request.
+      body:
+        name: $1
+  filter_RequireRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the required header.
+      reject_status_code:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return if the header is missing.
+        default: 400
+    required:
+    - name
+    additionalProperties: false
+    description: Ensures a required header is present in the request.
+    defaultSnippets:
+    - label: Insert RequireRequestHeader
+      description: Ensures a required header is present in the request.
+      body:
+        name: $1
+  filter_ReturnResponse:
+    type: object
+    properties:
+      body:
+        type: string
+        description: The body content of the response.
+      content_type:
+        type: string
+        description: The Content-Type of the response body.
+        default: text/plain
+      status:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return.
+    required:
+    - status
+    - body
+    additionalProperties: false
+    description: Immediately terminates the request chain and returns a custom response.
+    defaultSnippets:
+    - label: Insert ReturnResponse
+      description: Immediately terminates the request chain and returns a custom response.
+      body:
+        status: $1
+        body: $2
+  filter_RewritePath:
+    type: object
+    properties:
+      regexp:
+        type: string
+        description: The regular expression to match against the path.
+      replacement:
+        type: string
+        description: "The replacement string, supporting capture group references (e.g., $1)."
+    required:
+    - regexp
+    - replacement
+    additionalProperties: false
+    description: Rewrites the request path using a regular expression replacement.
+    defaultSnippets:
+    - label: Insert RewritePath
+      description: Rewrites the request path using a regular expression replacement.
+      body:
+        regexp: $1
+        replacement: $2
+  filter_SetQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter.
+      value:
+        type: string
+        description: The value to set.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Sets (or overwrites) a query parameter in the upstream request.
+    defaultSnippets:
+    - label: Insert SetQueryParameter
+      description: Sets (or overwrites) a query parameter in the upstream request.
+      body:
+        name: $1
+        value: $2
+  filter_SetRequestCookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the cookie.
+      value:
+        type: string
+        description: The value of the cookie.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Sets a cookie on the upstream request.
+    defaultSnippets:
+    - label: Insert SetRequestCookie
+      description: Sets a cookie on the upstream request.
+      body:
+        name: $1
+        value: $2
+  filter_SetRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+      value:
+        type: string
+        description: The value to set.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Sets (or overwrites) a header in the upstream request.
+    defaultSnippets:
+    - label: Insert SetRequestHeader
+      description: Sets (or overwrites) a header in the upstream request.
+      body:
+        name: $1
+        value: $2
+  filter_SetResponseCookie:
+    type: object
+    properties:
+      domain:
+        type: string
+        description: The cookie domain.
+      http_only:
+        anyOf:
+        - type: boolean
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: Whether the cookie is HttpOnly.
+      max_age:
+        type: string
+        pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+        description: "The cookie max-age duration. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+      name:
+        type: string
+        description: The cookie name.
+      path:
+        type: string
+        description: The cookie path.
+      same_site:
+        type: string
+        description: "The SameSite policy (Strict, Lax, None)."
+      secure:
+        anyOf:
+        - type: boolean
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: Whether the cookie is secure.
+      value:
+        type: string
+        description: The cookie value.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Sets a Set-Cookie header on the client response.
+    defaultSnippets:
+    - label: Insert SetResponseCookie
+      description: Sets a Set-Cookie header on the client response.
+      body:
+        name: $1
+        value: $2
+  filter_SetResponseHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+      value:
+        type: string
+        description: The value to set.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Sets (or overwrites) a header in the client response.
+    defaultSnippets:
+    - label: Insert SetResponseHeader
+      description: Sets (or overwrites) a header in the client response.
+      body:
+        name: $1
+        value: $2
+  filter_SetStatus:
+    type: object
+    properties:
+      status:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to set (100-599).
+    required:
+    - status
+    additionalProperties: false
+    description: Overwrites the HTTP status code of the client response.
+    defaultSnippets:
+    - label: Insert SetStatus
+      description: Overwrites the HTTP status code of the client response.
+      body:
+        status: $1
+  filter_StaticContent:
+    type: object
+    properties:
+      base_directory:
+        type: string
+        description: The absolute path to the directory containing static files.
+    required:
+    - base_directory
+    additionalProperties: false
+    description: Serves static files from a local directory.
+    defaultSnippets:
+    - label: Insert StaticContent
+      description: Serves static files from a local directory.
+      body:
+        base_directory: $1
+  filter_StripPathPrefix:
+    type: object
+    properties:
+      parts:
+        anyOf:
+        - type: integer
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The number of path segments to strip from the beginning of the path.
+    required:
+    - parts
+    additionalProperties: false
+    description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
+    defaultSnippets:
+    - label: Insert StripPathPrefix
+      description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
+      body:
+        parts: $1
+  filter_TemplateRedirect:
+    type: object
+    properties:
+      source:
+        type: string
+        description: The regular expression pattern to match against the request path.
+      status:
+        anyOf:
+        - type: integer
+          minimum: 100
+          maximum: 599
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: The HTTP status code to return for the redirect.
+        default: 302
+      target:
+        type: string
+        description: "The replacement template for the target URL (e.g., /new/$1)."
+    required:
+    - source
+    - target
+    additionalProperties: false
+    description: Redirects requests based on a path pattern match using a template for the target URL.
+    defaultSnippets:
+    - label: Insert TemplateRedirect
+      description: Redirects requests based on a path pattern match using a template for the target URL.
+      body:
+        source: $1
+        target: $2
   predicate:
-    anyOf:
+    oneOf:
     - type: object
       properties:
         Cookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the cookie.
-            value:
-              type: string
-              description: The exact value the cookie must hold.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Matches if a request contains a specific cookie with an exact value.
-          defaultSnippets:
-          - label: Insert Cookie
-            description: Matches if a request contains a specific cookie with an exact value.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/predicate_Cookie"
         HasCookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the cookie to check for.
-          required:
-          - name
-          additionalProperties: false
-          description: "Matches if a request contains the specified cookie, regardless of its value."
-          defaultSnippets:
-          - label: Insert HasCookie
-            description: "Matches if a request contains the specified cookie, regardless of its value."
-            body:
-              name: $1
+          $ref: "#/$defs/predicate_HasCookie"
         HasQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter.
-          required:
-          - name
-          additionalProperties: false
-          description: "Matches if a request contains the specified query parameter, regardless of its value."
-          defaultSnippets:
-          - label: Insert HasQueryParameter
-            description: "Matches if a request contains the specified query parameter, regardless of its value."
-            body:
-              name: $1
+          $ref: "#/$defs/predicate_HasQueryParameter"
         HasRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-          required:
-          - name
-          additionalProperties: false
-          description: "Matches if a request contains the specified header, regardless of its value."
-          defaultSnippets:
-          - label: Insert HasRequestHeader
-            description: "Matches if a request contains the specified header, regardless of its value."
-            body:
-              name: $1
+          $ref: "#/$defs/predicate_HasRequestHeader"
         Host:
-          type: object
-          properties:
-            hosts:
-              type: array
-              items:
-                type: string
-              description: List of hostnames to match against.
-          required:
-          - hosts
-          additionalProperties: false
-          description: Matches if the request 'Host' header matches one of the provided hostnames.
-          defaultSnippets:
-          - label: Insert Host
-            description: Matches if the request 'Host' header matches one of the provided hostnames.
-            body:
-              hosts: $1
+          $ref: "#/$defs/predicate_Host"
         MatchCookie:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the cookie.
-            regexp:
-              type: string
-              description: The regular expression the cookie value must match.
-          required:
-          - name
-          - regexp
-          additionalProperties: false
-          description: Matches if a cookie exists and its value matches the provided regular expression.
-          defaultSnippets:
-          - label: Insert MatchCookie
-            description: Matches if a cookie exists and its value matches the provided regular expression.
-            body:
-              name: $1
-              regexp: $2
+          $ref: "#/$defs/predicate_MatchCookie"
         MatchPath:
-          type: object
-          properties:
-            regexp:
-              type: string
-              description: The regular expression to match against the request path.
-          required:
-          - regexp
-          additionalProperties: false
-          description: Matches the request path against a regular expression.
-          defaultSnippets:
-          - label: Insert MatchPath
-            description: Matches the request path against a regular expression.
-            body:
-              regexp: $1
+          $ref: "#/$defs/predicate_MatchPath"
         MatchQueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter.
-            regexp:
-              type: string
-              description: The regular expression the parameter value must match.
-          required:
-          - name
-          - regexp
-          additionalProperties: false
-          description: Matches if a query parameter exists and its value matches the provided regular expression.
-          defaultSnippets:
-          - label: Insert MatchQueryParameter
-            description: Matches if a query parameter exists and its value matches the provided regular expression.
-            body:
-              name: $1
-              regexp: $2
+          $ref: "#/$defs/predicate_MatchQueryParameter"
         MatchRequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the header.
-            regexp:
-              type: string
-              description: The regular expression the header value must match.
-          required:
-          - name
-          - regexp
-          additionalProperties: false
-          description: Matches if a request header exists and its value matches the provided regular expression.
-          defaultSnippets:
-          - label: Insert MatchRequestHeader
-            description: Matches if a request header exists and its value matches the provided regular expression.
-            body:
-              name: $1
-              regexp: $2
+          $ref: "#/$defs/predicate_MatchRequestHeader"
         Method:
-          type: object
-          properties:
-            include:
-              type: array
-              items:
-                type: string
-              description: "List of allowed HTTP methods (e.g., GET, POST)."
-          required:
-          - include
-          additionalProperties: false
-          description: Matches if the HTTP method is one of the allowed methods.
-          defaultSnippets:
-          - label: Insert Method
-            description: Matches if the HTTP method is one of the allowed methods.
-            body:
-              include: $1
+          $ref: "#/$defs/predicate_Method"
         Path:
-          type: object
-          properties:
-            path:
-              type: string
-              pattern: "^(?:/.*|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Must match expected format or be a placeholder ${...}"
-              description: The exact path to match.
-          required:
-          - path
-          additionalProperties: false
-          description: Matches if the request path matches exactly the provided path.
-          defaultSnippets:
-          - label: Insert Path
-            description: Matches if the request path matches exactly the provided path.
-            body:
-              path: $1
+          $ref: "#/$defs/predicate_Path"
         PathPrefix:
-          type: object
-          properties:
-            prefix:
-              type: string
-              pattern: "^(?:/.*|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Must match expected format or be a placeholder ${...}"
-              description: The path prefix to match.
-          required:
-          - prefix
-          additionalProperties: false
-          description: Matches if the request path starts with the provided prefix.
-          defaultSnippets:
-          - label: Insert PathPrefix
-            description: Matches if the request path starts with the provided prefix.
-            body:
-              prefix: $1
+          $ref: "#/$defs/predicate_PathPrefix"
         QueryParameter:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the query parameter.
-            value:
-              type: string
-              description: The exact value the query parameter must hold.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Matches if the request contains the specified query parameter with an exact value.
-          defaultSnippets:
-          - label: Insert QueryParameter
-            description: Matches if the request contains the specified query parameter with an exact value.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/predicate_QueryParameter"
         RemoteAddr:
-          type: object
-          properties:
-            source:
-              type: string
-              description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
-          required:
-          - source
-          additionalProperties: false
-          description: Matches if the remote IP address falls within the specified CIDR range.
-          defaultSnippets:
-          - label: Insert RemoteAddr
-            description: Matches if the remote IP address falls within the specified CIDR range.
-            body:
-              source: $1
+          $ref: "#/$defs/predicate_RemoteAddr"
         RequestHeader:
-          type: object
-          properties:
-            name:
-              type: string
-              description: The name of the request header.
-            value:
-              type: string
-              description: The exact value the header must hold.
-          required:
-          - name
-          - value
-          additionalProperties: false
-          description: Matches if the request contains the specified header with an exact value.
-          defaultSnippets:
-          - label: Insert RequestHeader
-            description: Matches if the request contains the specified header with an exact value.
-            body:
-              name: $1
-              value: $2
+          $ref: "#/$defs/predicate_RequestHeader"
         and:
           type: array
           items:
@@ -991,6 +814,271 @@ $defs:
       maxProperties: 1
     - type: string
       description: Custom SPI implementation
+  predicate_Cookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the cookie.
+      value:
+        type: string
+        description: The exact value the cookie must hold.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Matches if a request contains a specific cookie with an exact value.
+    defaultSnippets:
+    - label: Insert Cookie
+      description: Matches if a request contains a specific cookie with an exact value.
+      body:
+        name: $1
+        value: $2
+  predicate_HasCookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the cookie to check for.
+    required:
+    - name
+    additionalProperties: false
+    description: "Matches if a request contains the specified cookie, regardless of its value."
+    defaultSnippets:
+    - label: Insert HasCookie
+      description: "Matches if a request contains the specified cookie, regardless of its value."
+      body:
+        name: $1
+  predicate_HasQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter.
+    required:
+    - name
+    additionalProperties: false
+    description: "Matches if a request contains the specified query parameter, regardless of its value."
+    defaultSnippets:
+    - label: Insert HasQueryParameter
+      description: "Matches if a request contains the specified query parameter, regardless of its value."
+      body:
+        name: $1
+  predicate_HasRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+    required:
+    - name
+    additionalProperties: false
+    description: "Matches if a request contains the specified header, regardless of its value."
+    defaultSnippets:
+    - label: Insert HasRequestHeader
+      description: "Matches if a request contains the specified header, regardless of its value."
+      body:
+        name: $1
+  predicate_Host:
+    type: object
+    properties:
+      hosts:
+        type: array
+        items:
+          type: string
+        description: List of hostnames to match against.
+    required:
+    - hosts
+    additionalProperties: false
+    description: Matches if the request 'Host' header matches one of the provided hostnames.
+    defaultSnippets:
+    - label: Insert Host
+      description: Matches if the request 'Host' header matches one of the provided hostnames.
+      body:
+        hosts: $1
+  predicate_MatchCookie:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the cookie.
+      regexp:
+        type: string
+        description: The regular expression the cookie value must match.
+    required:
+    - name
+    - regexp
+    additionalProperties: false
+    description: Matches if a cookie exists and its value matches the provided regular expression.
+    defaultSnippets:
+    - label: Insert MatchCookie
+      description: Matches if a cookie exists and its value matches the provided regular expression.
+      body:
+        name: $1
+        regexp: $2
+  predicate_MatchPath:
+    type: object
+    properties:
+      regexp:
+        type: string
+        description: The regular expression to match against the request path.
+    required:
+    - regexp
+    additionalProperties: false
+    description: Matches the request path against a regular expression.
+    defaultSnippets:
+    - label: Insert MatchPath
+      description: Matches the request path against a regular expression.
+      body:
+        regexp: $1
+  predicate_MatchQueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter.
+      regexp:
+        type: string
+        description: The regular expression the parameter value must match.
+    required:
+    - name
+    - regexp
+    additionalProperties: false
+    description: Matches if a query parameter exists and its value matches the provided regular expression.
+    defaultSnippets:
+    - label: Insert MatchQueryParameter
+      description: Matches if a query parameter exists and its value matches the provided regular expression.
+      body:
+        name: $1
+        regexp: $2
+  predicate_MatchRequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the header.
+      regexp:
+        type: string
+        description: The regular expression the header value must match.
+    required:
+    - name
+    - regexp
+    additionalProperties: false
+    description: Matches if a request header exists and its value matches the provided regular expression.
+    defaultSnippets:
+    - label: Insert MatchRequestHeader
+      description: Matches if a request header exists and its value matches the provided regular expression.
+      body:
+        name: $1
+        regexp: $2
+  predicate_Method:
+    type: object
+    properties:
+      include:
+        type: array
+        items:
+          type: string
+        description: "List of allowed HTTP methods (e.g., GET, POST)."
+    required:
+    - include
+    additionalProperties: false
+    description: Matches if the HTTP method is one of the allowed methods.
+    defaultSnippets:
+    - label: Insert Method
+      description: Matches if the HTTP method is one of the allowed methods.
+      body:
+        include: $1
+  predicate_Path:
+    type: object
+    properties:
+      path:
+        type: string
+        pattern: "^(?:/.*|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Must match expected format or be a placeholder ${...}"
+        description: The exact path to match.
+    required:
+    - path
+    additionalProperties: false
+    description: Matches if the request path matches exactly the provided path.
+    defaultSnippets:
+    - label: Insert Path
+      description: Matches if the request path matches exactly the provided path.
+      body:
+        path: $1
+  predicate_PathPrefix:
+    type: object
+    properties:
+      prefix:
+        type: string
+        pattern: "^(?:/.*|\\$\\{.*\\})$"
+        errorMessage:
+          pattern: "Must match expected format or be a placeholder ${...}"
+        description: The path prefix to match.
+    required:
+    - prefix
+    additionalProperties: false
+    description: Matches if the request path starts with the provided prefix.
+    defaultSnippets:
+    - label: Insert PathPrefix
+      description: Matches if the request path starts with the provided prefix.
+      body:
+        prefix: $1
+  predicate_QueryParameter:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the query parameter.
+      value:
+        type: string
+        description: The exact value the query parameter must hold.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Matches if the request contains the specified query parameter with an exact value.
+    defaultSnippets:
+    - label: Insert QueryParameter
+      description: Matches if the request contains the specified query parameter with an exact value.
+      body:
+        name: $1
+        value: $2
+  predicate_RemoteAddr:
+    type: object
+    properties:
+      source:
+        type: string
+        description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
+    required:
+    - source
+    additionalProperties: false
+    description: Matches if the remote IP address falls within the specified CIDR range.
+    defaultSnippets:
+    - label: Insert RemoteAddr
+      description: Matches if the remote IP address falls within the specified CIDR range.
+      body:
+        source: $1
+  predicate_RequestHeader:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The name of the request header.
+      value:
+        type: string
+        description: The exact value the header must hold.
+    required:
+    - name
+    - value
+    additionalProperties: false
+    description: Matches if the request contains the specified header with an exact value.
+    defaultSnippets:
+    - label: Insert RequestHeader
+      description: Matches if the request contains the specified header with an exact value.
+      body:
+        name: $1
+        value: $2
   route:
     type: object
     properties:
