@@ -101,7 +101,7 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: Whether credentials are allowed. Defaults to false.
-              default: "false"
+              default: false
             allowed_headers:
               type: array
               items:
@@ -1047,7 +1047,7 @@ $defs:
         type: array
         items:
           $ref: "#/$defs/predicate"
-        description: "Conditions that must be met for this route to handle a request. If omitted, all requests match."
+        description: "Conditions that must be met for this route to handle a request. If omitted, no requests match."
       upstream:
         type: object
         properties:
@@ -1060,40 +1060,78 @@ $defs:
             required:
             - route_id
             additionalProperties: false
-            description: Fallback routing behavior triggered when all upstream targets fail.
           health_check:
             type: object
             properties:
+              fall:
+                anyOf:
+                - type: integer
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Number of consecutive failures required to mark target down
+                default: 2
+              interval:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Interval between health checks (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 10s
+              override:
+                anyOf:
+                - type: string
+                  enum:
+                  - NONE
+                  - FORCE_UP
+                  - FORCE_DOWN
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Force state override for targets
+                default: NONE
               path:
                 type: string
-                pattern: ^/.*$
+                pattern: "^(?:/.*|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: Path must start with a forward slash (/)
+                  pattern: "Must match expected format or be a placeholder ${...}"
                 description: "The URI path used to check the health of the target (e.g., /health)."
-            required:
-            - path
+                default: /health
+              rise:
+                anyOf:
+                - type: integer
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Number of consecutive successes required to mark target up
+                default: 2
             additionalProperties: false
-            description: Active health checking configuration for the backend targets.
+          strategy:
+            anyOf:
+            - type: string
+              enum:
+              - ROUND_ROBIN
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            default: ROUND_ROBIN
           targets:
             type: array
             items:
-              type: object
-              properties:
-                url:
-                  type: string
-                  pattern: ^https?://.*$
-                  errorMessage:
-                    pattern: URL must start with http:// or https://
-                  description: The target URL (Must start with http:// or https://).
-              required:
-              - url
-              additionalProperties: false
-              description: An individual backend server.
+              type: string
             description: List of backend servers to forward traffic to.
+          timeouts:
+            type: object
+            properties:
+              read:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+            required:
+            - read
+            additionalProperties: false
         required:
         - targets
+        - fallback
         additionalProperties: false
-        description: Configuration for routing traffic to backend services.
     required:
     - id
     additionalProperties: false
