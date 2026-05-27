@@ -1,28 +1,66 @@
 version: v2026-0-14
 
-# Global filters applied to all routes
+# Global filters applied to every request
 global_filters:
   - SimpleMetrics:
-      period: 5M
-      interval: 2S
+      period: 5m
+      interval: 2s
   - RequestSizeLimit:
       max_size: 10MB
+  - Cors:
+      allowed_headers:
+        - Accept
+      allowed_origins:
+        - https://app.ethlo.com
+      allowed_methods:
+        - GET
+        - POST
 
 routes:
-  - id: flaky-service
+  - id: core-api
     match:
       - PathPrefix:
-          prefix: /down
+          prefix: /api/v1
+      - Method:
+          include:
+            - GET
+            - POST
     upstream:
       targets:
-        - url: http://localhost:8090
+        - url: http://api-node-01:8090
+        - url: http://api-node-02:8090
       health_check:
         path: /health
+        interval: 5s
+      timeouts:
+        read: 15s
       fallback:
-        route_id: down
-  - id: down
+        route_id: maintenance-mode
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: HEADERS
+    filters:
+      - StripPathPrefix:
+          parts: 2
+      - AddRequestHeader:
+          name: X-Gateway-Routed
+          value: "true"
+
+  - id: maintenance-mode
     filters:
       - ReturnResponse:
           status: 503
-          content_type: text/plain
-          body: We'll be back soon!
+          content_type: application/json
+          body: '{"error": "Service temporarily degraded. We are on it!"}'
+
+  - id: static-frontend
+    match:
+      - PathPrefix:
+          prefix: /app
+      - StripPrefix:
+          parts: 1
+    filters:
+      - StaticContent:
+          base_directory: /var/www/frontend
