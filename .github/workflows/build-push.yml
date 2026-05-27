@@ -26,16 +26,16 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      # Install flatc natively on the GitHub runner (no emulation)
+      # Install flatc natively on the GitHub runner
       - name: Install flatc
         run: |
           curl -L -o flatc.zip "https://github.com/google/flatbuffers/releases/download/v25.2.10/Linux.flatc.binary.clang++-18.zip"
           sudo unzip flatc.zip -d /usr/local/bin/
           sudo chmod +x /usr/local/bin/flatc
 
-      # Compile natively on the runner
-      - name: Build JVM Jar
-        run: ./mvnw clean package -DskipTests -pl r7-undertow -am
+      # Compile BOTH the gateway and the tailer in a single pass
+      - name: Build JVM Jars
+        run: ./mvnw clean package -DskipTests -pl r7-undertow,r7-tailer-jsonld -am
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -50,8 +50,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Buildx packages the identically compiled JAR into both architecture bases instantly
-      - name: Build and push multi-arch JVM image
+      # 1. Build and push the main gateway image
+      - name: Build and push Server image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -59,3 +59,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository }}-jvm:latest
+
+      # 2. Build and push the tailer sidecar image
+      - name: Build and push Tailer image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.tailer.jvm
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}-tailer-jvm:latest

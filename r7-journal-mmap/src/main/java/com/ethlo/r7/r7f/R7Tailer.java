@@ -36,6 +36,7 @@ public final class R7Tailer
     public static final String COMPRESSED_EXTENSION = ".zst";
     private static final Logger logger = LoggerFactory.getLogger(R7Tailer.class);
     private static final String CHECKPOINT_FILE = ".r7_checkpoints";
+
     private final Map<String, Long> checkpoints = new HashMap<>();
     private final Path logDir;
     private final Duration minAge;
@@ -43,6 +44,9 @@ public final class R7Tailer
     private final Path checkpointPath;
 
     private long totalBytesRead = 0;
+
+    // Reusable off-heap buffer
+    private ByteBuffer decompressionBuffer = ByteBuffer.allocateDirect(10 * 1024 * 1024);
 
     public R7Tailer(final Path logDir, final Duration minAge, final ExchangeCompletionListener output)
     {
@@ -60,12 +64,28 @@ public final class R7Tailer
 
         try (final Stream<Path> s = Files.list(logDir))
         {
+            // Collect and deduplicate files by their stable key to prevent compression race conditions
+            final Map<String, Path> resolvedFiles = new HashMap<>();
+
             s.filter(p -> {
                         final String name = p.getFileName().toString();
-                        return name.endsWith(R7F_FILE_EXTENSION) || // TODO: IMPORTANT: Avoid race-condition with compressed file!
+                        return name.endsWith(R7F_FILE_EXTENSION) ||
                                 name.endsWith(ACTIVE_FILE_EXTENSION) ||
                                 name.endsWith(COMPRESSED_EXTENSION);
                     })
+                    .forEach(path -> {
+                        final String key = getStableKey(path);
+                        final Path existing = resolvedFiles.get(key);
+
+                        // Priority: .zst > .r7f > .active
+                        if (existing == null || isHigherPriority(path, existing))
+                        {
+                            resolvedFiles.put(key, path);
+                        }
+                    });
+
+            // Sort the resolved files and process them sequentially
+            resolvedFiles.values().stream()
                     .sorted((p1, p2) -> {
                         final FileMeta m1 = parseMeta(p1);
                         final FileMeta m2 = parseMeta(p2);
@@ -89,7 +109,7 @@ public final class R7Tailer
                             }
                             checkDelete(path, fullyProcessedKeys);
                         }
-                        catch (IOException e)
+                        catch (final IOException e)
                         {
                             throw new UncheckedIOException(e);
                         }
@@ -99,6 +119,18 @@ public final class R7Tailer
         logStats();
         saveCheckpoints();
         return totalBytesRead;
+    }
+
+    private boolean isHigherPriority(final Path newPath, final Path existingPath)
+    {
+        final String newStr = newPath.toString();
+        final String existingStr = existingPath.toString();
+
+        if (newStr.endsWith(COMPRESSED_EXTENSION))
+        {
+            return true;
+        }
+        return newStr.endsWith(R7F_FILE_EXTENSION) && existingStr.endsWith(ACTIVE_FILE_EXTENSION);
     }
 
     private boolean processFile(final Path path) throws IOException
@@ -113,7 +145,7 @@ public final class R7Tailer
         {
             fileSize = Files.size(path);
         }
-        catch (NoSuchFileException e)
+        catch (final NoSuchFileException e)
         {
             return false;
         }
@@ -134,8 +166,15 @@ public final class R7Tailer
                     return true;
                 }
 
-                processingBuffer = ByteBuffer.allocateDirect((int) decompressedSize);
-                processingBuffer.order(ByteOrder.BIG_ENDIAN);
+                // Expand reusable buffer only if necessary to avoid GC churn and OOM
+                if (decompressionBuffer.capacity() < decompressedSize)
+                {
+                    decompressionBuffer = ByteBuffer.allocateDirect((int) decompressedSize);
+                }
+
+                processingBuffer = decompressionBuffer.slice(0, (int) decompressedSize);
+                processingBuffer.order(ByteOrder.LITTLE_ENDIAN); // FlatBuffers constraint
+
                 Zstd.decompress(processingBuffer, mappedBuffer);
                 processingBuffer.position((int) offset);
             }
@@ -194,7 +233,7 @@ public final class R7Tailer
             final String[] parts = name.split("[-.]");
             return new FileMeta(Integer.parseInt(parts[1]), Long.parseLong(parts[2]), Integer.parseInt(parts[3]));
         }
-        catch (Exception e)
+        catch (final Exception e)
         {
             return new FileMeta(0, 0, 0);
         }
@@ -222,7 +261,7 @@ public final class R7Tailer
             props.forEach((k, v) -> checkpoints.put((String) k, Long.parseLong((String) v)));
             logger.info("Restored {} stable checkpoints", checkpoints.size());
         }
-        catch (IOException e)
+        catch (final IOException e)
         {
             logger.error("Load failed: {}", e.getMessage());
         }
@@ -247,7 +286,7 @@ public final class R7Tailer
             }
             Files.move(tempFile, checkpointPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         }
-        catch (IOException e)
+        catch (final IOException e)
         {
             logger.error("Save failed: {}", e.getMessage());
         }

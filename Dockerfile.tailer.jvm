@@ -1,0 +1,14 @@
+# Dockerfile.tailer.jvm
+FROM gcr.io/distroless/java25-debian13:nonroot
+WORKDIR /app
+
+# Copy the tailer fat JAR
+COPY r7-tailer-jsonld/target/r7-tailer-jsonld-*.jar /app/tailer.jar
+
+# Ensure the tailer has read-write access to the shared journal mount
+# Both the gateway container and tailer container must mount the same volume to this path
+VOLUME ["/var/log/r7"]
+
+USER 65532:65532
+
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/tailer.jar"]
