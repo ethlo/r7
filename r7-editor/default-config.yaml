@@ -1,4 +1,4 @@
-version: v2026-0-14
+version: my-version-42
 
 # Global filters applied to every request
 global_filters:
