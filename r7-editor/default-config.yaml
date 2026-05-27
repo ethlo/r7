@@ -59,8 +59,8 @@ routes:
     match:
       - PathPrefix:
           prefix: /app
+    filters:
       - StripPrefix:
           parts: 1
-    filters:
       - StaticContent:
           base_directory: /var/www/frontend
