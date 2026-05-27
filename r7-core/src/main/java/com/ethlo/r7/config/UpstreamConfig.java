@@ -2,16 +2,20 @@ package com.ethlo.r7.config;
 
 import java.util.List;
 
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
+@Description("Configuration for routing traffic to backend services.")
 public record UpstreamConfig(
-        Strategy strategy,
-        HealthCheckConfig healthCheck,
-        TimeoutConfig timeouts,
+        @DefaultValue("ROUND_ROBIN") Strategy strategy,
+        @DefaultValue("{}") HealthCheckConfig healthCheck,
+        @DefaultValue("{}") TimeoutConfig timeouts,
+        @Description("List of backend servers to forward traffic to.")
         List<TargetConfig> targets,
-        FallbackConfig fallback
+        @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback
 ) implements ValidatableConfig
 {
     @Override

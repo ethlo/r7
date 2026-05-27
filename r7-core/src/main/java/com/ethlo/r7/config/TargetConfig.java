@@ -3,11 +3,16 @@ package com.ethlo.r7.config;
 import java.net.URI;
 import java.util.StringJoiner;
 
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
-public record TargetConfig(String url) implements ValidatableConfig
+@Description("An individual backend server.")
+public record TargetConfig(
+        @Description("The target URL (Must start with http:// or https://).")
+        @FormatPattern("^https?://.*$") String url) implements ValidatableConfig
 {
     @Override
     public void validate(final ValidationResult result)

@@ -70,6 +70,20 @@ function showModal({title, message, type = 'confirm', inputValue = '', confirmTe
 }
 
 const hoverMetadata = {};
+let isHoverEnabled = true;
+
+// Holds static descriptions for the root configuration keys
+const rootPropertyDocs = {
+    "global_filters": "A list of filters applied globally to every request passing through the gateway.",
+    "routes": "The routing table defining how incoming traffic is matched and forwarded.",
+    "id": "A unique identifier for this route. Used for logging, metrics, and fallback references.",
+    "match": "Conditions that must be met for this route to handle a request. If omitted, all requests match.",
+    "filters": "A list of processing steps applied to the request before forwarding, and to the response before returning.",
+    "upstream": "Configuration for routing traffic to backend services.",
+    "health_check": "Active health checking configuration for the backend targets.",
+    "fallback": "Fallback routing behavior triggered when all upstream targets fail.",
+    "journal": "Observability and logging configuration for this specific route."
+};
 
 async function initializeEditor() {
     const schemaUrl = '/schemas/latest.yaml';
@@ -150,43 +164,56 @@ async function initializeEditor() {
     // --- THE CUSTOM HOVER PROVIDER ---
     monaco.languages.registerHoverProvider('yaml', {
         provideHover: function (model, position) {
+
+            // THE KILL SWITCH
+            if (!isHoverEnabled) return null;
+            
             const word = model.getWordAtPosition(position);
             if (!word) return null;
 
-            // Scenario 1: Is the user hovering directly over a root component? (e.g. AddQueryParameter)
+            // Scenario 1: Is it a static root property? (e.g. upstream, journal)
+            if (rootPropertyDocs[word.word]) {
+                return {
+                    range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+                    contents: [
+                        { value: `**${word.word}**` },
+                        { value: rootPropertyDocs[word.word] }
+                    ]
+                };
+            }
+
+            // Scenario 2: Is it a root component? (e.g. AddQueryParameter)
             const componentMeta = hoverMetadata[word.word];
             if (componentMeta) {
+                // Dynamically build the lowercase anchor link
+                const docLink = `https://r7.ethlo.com/config/#${word.word.toLowerCase()}`;
+
                 return {
                     range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
                     contents: [
                         { value: `**${word.word}**` },
                         { value: componentMeta.description },
-                        { value: `**Required:** ${componentMeta.required}` }
+                        { value: `**Required:** ${componentMeta.required}` },
+                        { value: `[Read the documentation \u2197](${docLink})` } // Markdown link!
                     ]
                 };
             }
 
-            // Scenario 2: The user is hovering over a parameter. We need to find its parent.
+            // Scenario 3: Is it a nested parameter?
             const currentLine = model.getLineContent(position.lineNumber);
-
-            // Only attempt this if we are hovering over a key (word before a colon)
             if (!currentLine.includes(':') || currentLine.indexOf(':') < word.startColumn) {
                 return null;
             }
 
-            const currentIndent = currentLine.search(/\S|$/); // Find indentation level
+            const currentIndent = currentLine.search(/\S|$/);
             let parentKey = null;
 
-            // Scan upward line-by-line
             for (let i = position.lineNumber - 1; i >= 1; i--) {
                 const scanLine = model.getLineContent(i);
-                if (scanLine.trim() === '') continue; // Skip empty lines
+                if (scanLine.trim() === '') continue;
 
                 const scanIndent = scanLine.search(/\S|$/);
-
-                // If we hit a line that is less indented, it's the parent!
                 if (scanIndent < currentIndent) {
-                    // Extract the key name, ignoring YAML list dashes (e.g., "- AddQueryParameter:")
                     const match = scanLine.match(/(?:-\s*)?([a-zA-Z0-9_]+)\s*:/);
                     if (match) {
                         parentKey = match[1];
@@ -195,14 +222,18 @@ async function initializeEditor() {
                 }
             }
 
-            // If we found a parent, check if our dictionary has a description for this specific parameter
             if (parentKey && hoverMetadata[parentKey] && hoverMetadata[parentKey].parameters[word.word]) {
                 const paramDescription = hoverMetadata[parentKey].parameters[word.word];
+
+                // Build the link for the parent component here too!
+                const docLink = `https://r7.ethlo.com/config/#${parentKey.toLowerCase()}`;
+
                 return {
                     range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
                     contents: [
                         { value: `**${parentKey}** > \`${word.word}\`` },
-                        { value: paramDescription }
+                        { value: paramDescription },
+                        { value: `[View ${parentKey} documentation \u2197](${docLink})` }
                     ]
                 };
             }
@@ -210,6 +241,7 @@ async function initializeEditor() {
             return null;
         }
     });
+    // ---------------------------------
 
     document.getElementById('save-btn').addEventListener('click', async () => {
         let filename = await showModal({
@@ -242,6 +274,11 @@ async function initializeEditor() {
             danger: true
         });
         if (confirmed) editor.setValue('');
+    });
+
+    // Toggle hover state
+    document.getElementById('hover-toggle').addEventListener('change', (e) => {
+        isHoverEnabled = e.target.checked;
     });
 
     document.getElementById('reset-btn').addEventListener('click', async () => {

@@ -3,6 +3,9 @@ package com.ethlo.r7.config;
 import java.time.Duration;
 import java.util.Optional;
 
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -10,16 +13,31 @@ import com.ethlo.r7.validation.ValidationResult;
 /**
  * Configuration for background health probes
  */
+@Description("Active health checking configuration for the backend targets.")
 public record HealthCheckConfig(
+
+        @Description("The URI path used to check the health of the target (e.g., /health).")
+        @FormatPattern("^/.*$")
+        @DefaultValue("/health")
         String path,
+
+        @Description("Interval between health checks")
+        @DefaultValue("10s")
         Duration interval,
+
+        @Description("Number of consecutive failures required to mark target down")
+        @DefaultValue("2")
         Integer fall,
+
+        @Description("Number of consecutive successes required to mark target up")
+        @DefaultValue("2")
         Integer rise,
+
+        @Description("Force state override for targets")
+        @DefaultValue("NONE")
         TargetStateOverride override
 ) implements ValidatableConfig
 {
-    private static final String CONFIG_NAME = "health_check";
-
     @Override
     public void validate(final ValidationResult result)
     {

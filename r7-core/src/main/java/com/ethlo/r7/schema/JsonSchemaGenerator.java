@@ -18,6 +18,7 @@ import java.util.TreeMap;
 import java.util.function.Function;
 
 import com.ethlo.r7.config.ConfigurationManager;
+import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
@@ -39,20 +40,6 @@ import tools.jackson.dataformat.yaml.YAMLWriteFeature;
 
 public final class JsonSchemaGenerator
 {
-    public static final class HttpStatusSerializer extends StdSerializer<HttpStatus>
-    {
-        public HttpStatusSerializer()
-        {
-            super(HttpStatus.class);
-        }
-
-        @Override
-        public void serialize(final HttpStatus value, final JsonGenerator gen, final SerializationContext provider) throws JacksonException
-        {
-            gen.writeNumber(value.code());
-        }
-    }
-
     public static void main(final String[] args) throws IOException
     {
         final JsonSchemaGenerator generator = new JsonSchemaGenerator();
@@ -110,6 +97,41 @@ public final class JsonSchemaGenerator
         );
     }
 
+    private Object parseDefaultValue(final Class<?> type, final String defaultValue)
+    {
+        if (defaultValue == null)
+        {
+            return null;
+        }
+
+        if (type == boolean.class || type == Boolean.class)
+        {
+            return Boolean.valueOf(defaultValue);
+        }
+
+        if (type == int.class || type == Integer.class || type == long.class || type == Long.class)
+        {
+            try
+            {
+                return Integer.valueOf(defaultValue.trim());
+            }
+            catch (final NumberFormatException e)
+            {
+                return defaultValue;
+            }
+        }
+
+        if (type.isRecord())
+        {
+            if (defaultValue.isBlank() || "{}".equals(defaultValue))
+            {
+                return Map.of();
+            }
+        }
+
+        return defaultValue;
+    }
+
     private SchemaNode buildRouteDefinition()
     {
         final Map<String, SchemaNode> properties = new TreeMap<>();
@@ -124,7 +146,7 @@ public final class JsonSchemaGenerator
         properties.put("match", new ArraySchema(
                         "array",
                         new RefSchema("#/$defs/predicate", null, null),
-                        "Conditions that must be met for this route to handle a request. If omitted, all requests match.",
+                        "Conditions that must be met for this route to handle a request. If omitted, no requests match.",
                         null
                 )
         );
@@ -159,77 +181,7 @@ public final class JsonSchemaGenerator
 
     private SchemaNode buildUpstreamSchema()
     {
-        final SchemaNode urlSchema = new PrimitiveSchema(
-                "string", null, null,
-                "^https?://.*$",
-                Map.of("pattern", "URL must start with http:// or https://"),
-                "The target URL (Must start with http:// or https://).",
-                null, null, null
-        );
-
-        final SchemaNode targetItem = new ObjectSchema(
-                "object",
-                Map.of("url", urlSchema),
-                List.of("url"),
-                new BoolProps(false),
-                null, null, null, null,
-                "An individual backend server.",
-                null,
-                null
-        );
-
-        final SchemaNode pathSchema = new PrimitiveSchema(
-                "string", null, null,
-                "^/.*$",
-                Map.of("pattern", "Path must start with a forward slash (/)"),
-                "The URI path used to check the health of the target (e.g., /health).",
-                null, null, null
-        );
-
-        final SchemaNode health = new ObjectSchema(
-                "object",
-                Map.of("path", pathSchema),
-                List.of("path"),
-                new BoolProps(false),
-                null, null, null, null,
-                "Active health checking configuration for the backend targets.",
-                null,
-                null
-        );
-
-        final SchemaNode routeIdSchema = new PrimitiveSchema(
-                "string", null, null, null, null,
-                "The ID of another route to execute if this upstream becomes completely unavailable.",
-                null, null, null
-        );
-
-        final SchemaNode fallback = new ObjectSchema(
-                "object",
-                Map.of("route_id", routeIdSchema),
-                List.of("route_id"),
-                new BoolProps(false),
-                null, null, null, null,
-                "Fallback routing behavior triggered when all upstream targets fail.",
-                null,
-                null
-        );
-
-        final Map<String, SchemaNode> props = new TreeMap<>(Map.of(
-                "targets", new ArraySchema("array", targetItem, "List of backend servers to forward traffic to.", null),
-                "health_check", health,
-                "fallback", fallback
-        ));
-
-        return new ObjectSchema(
-                "object",
-                props,
-                List.of("targets"),
-                new BoolProps(false),
-                null, null, null, null,
-                "Configuration for routing traffic to backend services.",
-                null,
-                null
-        );
+        return buildInnerConfigSchema(UpstreamConfig.class);
     }
 
     private SchemaNode buildJournalSchema()
@@ -389,8 +341,11 @@ public final class JsonSchemaGenerator
         {
             final String propertyName = toSnakeCase(component.getName());
             final String description = getDescription(component);
-            final String defaultValue = getDefaultValue(component);
+            final String defaultStr = getDefaultValue(component);
             final String customPattern = getPattern(component);
+
+            // Convert raw annotation string to typed Object
+            final Object defaultValue = parseDefaultValue(component.getType(), defaultStr);
 
             final SchemaNode propertyNode = mapToSchemaNode(component.getType(), description, defaultValue, customPattern);
             properties.put(propertyName, propertyNode);
@@ -410,7 +365,7 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private SchemaNode mapToSchemaNode(final Class<?> type, final String description, final String defaultValue, final String customPattern)
+    private SchemaNode mapToSchemaNode(final Class<?> type, final String description, final Object defaultValue, final String customPattern)
     {
         final String placeholderRegex = "^\\$\\{.*\\}$";
 
@@ -624,6 +579,20 @@ public final class JsonSchemaGenerator
     {
     }
 
+    public static final class HttpStatusSerializer extends StdSerializer<HttpStatus>
+    {
+        public HttpStatusSerializer()
+        {
+            super(HttpStatus.class);
+        }
+
+        @Override
+        public void serialize(final HttpStatus value, final JsonGenerator gen, final SerializationContext provider) throws JacksonException
+        {
+            gen.writeNumber(value.code());
+        }
+    }
+
     public record BoolProps(@JsonValue boolean value) implements AdditionalProperties
     {
     }
@@ -659,7 +628,7 @@ public final class JsonSchemaGenerator
             List<SchemaNode> anyOf,
             List<SchemaNode> oneOf,
             String description,
-            @JsonProperty("default") String defaultValue,
+            @JsonProperty("default") Object defaultValue,
             List<Snippet> defaultSnippets
     ) implements SchemaNode
     {
@@ -673,7 +642,7 @@ public final class JsonSchemaGenerator
             String pattern,
             Map<String, String> errorMessage,
             String description,
-            @JsonProperty("default") String defaultValue,
+            @JsonProperty("default") Object defaultValue,
             Integer minimum,
             Integer maximum
     ) implements SchemaNode
@@ -685,7 +654,7 @@ public final class JsonSchemaGenerator
             String type,
             SchemaNode items,
             String description,
-            @JsonProperty("default") String defaultValue
+            @JsonProperty("default") Object defaultValue
     ) implements SchemaNode
     {
     }
@@ -694,7 +663,7 @@ public final class JsonSchemaGenerator
     public record RefSchema(
             @JsonProperty("$ref") String ref,
             String description,
-            @JsonProperty("default") String defaultValue
+            @JsonProperty("default") Object defaultValue
     ) implements SchemaNode
     {
     }
@@ -703,7 +672,7 @@ public final class JsonSchemaGenerator
     public record OneOfSchema(
             List<SchemaNode> oneOf,
             String description,
-            @JsonProperty("default") String defaultValue
+            @JsonProperty("default") Object defaultValue
     ) implements SchemaNode
     {
     }
@@ -712,7 +681,7 @@ public final class JsonSchemaGenerator
     public record AnyOfSchema(
             List<SchemaNode> anyOf,
             String description,
-            @JsonProperty("default") String defaultValue
+            @JsonProperty("default") Object defaultValue
     ) implements SchemaNode
     {
     }
