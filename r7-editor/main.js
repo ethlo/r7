@@ -1,6 +1,6 @@
 import * as monaco from 'monaco-editor';
-import { configureMonacoYaml } from 'monaco-yaml';
-import { parse } from 'yaml';
+import {configureMonacoYaml} from 'monaco-yaml';
+import {parse} from 'yaml';
 
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import YamlWorker from 'monaco-yaml/yaml.worker?worker';
@@ -18,7 +18,7 @@ const STORAGE_KEY = 'r7_editor_draft';
 const THEME_KEY = 'r7_editor_theme';
 
 // --- CUSTOM MODAL SYSTEM ---
-function showModal({ title, message, type = 'confirm', inputValue = '', confirmText = 'OK', danger = false }) {
+function showModal({title, message, type = 'confirm', inputValue = '', confirmText = 'OK', danger = false}) {
     return new Promise((resolve) => {
         const overlay = document.getElementById('modal-overlay');
         const titleEl = document.getElementById('modal-title');
@@ -51,12 +51,17 @@ function showModal({ title, message, type = 'confirm', inputValue = '', confirmT
             inputEl.removeEventListener('keydown', onEnter);
         };
 
-        const onCancel = () => { cleanup(); resolve(null); };
+        const onCancel = () => {
+            cleanup();
+            resolve(null);
+        };
         const onConfirm = () => {
             cleanup();
             resolve(type === 'prompt' ? inputEl.value : true);
         };
-        const onEnter = (e) => { if (e.key === 'Enter') onConfirm(); };
+        const onEnter = (e) => {
+            if (e.key === 'Enter') onConfirm();
+        };
 
         btnCancel.addEventListener('click', onCancel);
         btnConfirm.addEventListener('click', onConfirm);
@@ -64,9 +69,11 @@ function showModal({ title, message, type = 'confirm', inputValue = '', confirmT
     });
 }
 
+const hoverMetadata = {};
+
 async function initializeEditor() {
     const schemaUrl = '/schemas/latest.yaml';
-    const modelUri = monaco.Uri.parse('file:///config.yaml');
+    const modelUri = monaco.Uri.parse('file:///config.yaml'); // Use 3 slashes
 
     try {
         const cacheBuster = Date.now();
@@ -74,18 +81,40 @@ async function initializeEditor() {
         if (response.ok) {
             const yamlString = await response.text();
             const parsedSchema = parse(yamlString);
+
+            if (parsedSchema.$defs) {
+                // Loop through both 'filter' and 'predicate' definitions
+                ['filter', 'predicate'].forEach(category => {
+                    const def = parsedSchema.$defs[category];
+
+                    if (def && def.anyOf) {
+                        // Find the specific node inside anyOf that actually contains the 'properties' map
+                        const objectDefinition = def.anyOf.find(node => node.properties);
+
+                        if (objectDefinition && objectDefinition.properties) {
+                            // Extract the metadata for each component (e.g., AddQueryParameter)
+                            for (const [componentName, schemaNode] of Object.entries(objectDefinition.properties)) {
+                                if (schemaNode.description) {
+                                    hoverMetadata[componentName] = {
+                                        description: schemaNode.description,
+                                        required: schemaNode.required ? schemaNode.required.map(r => `\`${r}\``).join(', ') : 'None'
+                                    };
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             const internalSchemaUri = `http://internal/r7-schema-${cacheBuster}.json`;
 
             configureMonacoYaml(monaco, {
                 enableSchemaRequest: false,
                 validate: true,
-                hover: true,
+                // CRITICAL: Disable native hover so it doesn't block our custom provider
+                hover: false,
                 completion: true,
-                schemas: [{
-                    uri: internalSchemaUri,
-                    fileMatch: ['*'],
-                    schema: parsedSchema
-                }]
+                schemas: [{uri: internalSchemaUri, fileMatch: ['*'], schema: parsedSchema}]
             });
         }
     } catch (error) {
@@ -100,21 +129,39 @@ async function initializeEditor() {
 
     const editor = monaco.editor.create(document.getElementById('app'), {
         model: monaco.editor.createModel(initialConfig, 'yaml', modelUri),
-        theme: savedTheme, automaticLayout: true, minimap: { enabled: false },
+        theme: savedTheme, automaticLayout: true, minimap: {enabled: false},
         fontFamily: "'Consolas', 'Courier New', monospace", wordBasedSuggestions: 'off',
-        suggest: { showSnippets: true, showInlineDetails: true }
+        suggest: {showSnippets: true, showInlineDetails: true}
     });
 
     editor.onDidChangeModelContent(() => localStorage.setItem(STORAGE_KEY, editor.getValue()));
 
-    document.getElementById('theme-selector').addEventListener('change', (e) => {
-        const newTheme = e.target.value;
-        monaco.editor.setTheme(newTheme);
-        localStorage.setItem(THEME_KEY, newTheme);
-        updateThemeVariables(newTheme);
-    });
+    // --- THE CUSTOM HOVER PROVIDER ---
+    monaco.languages.registerHoverProvider('yaml', {
+        provideHover: function (model, position) {
+            const word = model.getWordAtPosition(position);
+            if (!word) return null;
 
-    // --- REFACTORED BUTTON LOGIC WITH PROMISES ---
+            // Lookup the word in our extracted dictionary
+            const meta = hoverMetadata[word.word];
+            if (meta) {
+                return {
+                    range: new monaco.Range(
+                        position.lineNumber,
+                        word.startColumn,
+                        position.lineNumber,
+                        word.endColumn
+                    ),
+                    contents: [
+                        {value: `**${word.word}**`},
+                        {value: meta.description},
+                        {value: `**Required:** ${meta.required}`}
+                    ]
+                };
+            }
+            return null;
+        }
+    });
 
     document.getElementById('save-btn').addEventListener('click', async () => {
         let filename = await showModal({
@@ -128,12 +175,15 @@ async function initializeEditor() {
         if (!filename) return;
         if (!filename.endsWith('.yaml') && !filename.endsWith('.yml')) filename += '.yaml';
 
-        const blob = new Blob([editor.getValue()], { type: 'text/yaml' });
+        const blob = new Blob([editor.getValue()], {type: 'text/yaml'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = filename;
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a); URL.revokeObjectURL(url);
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     });
 
     document.getElementById('clear-btn').addEventListener('click', async () => {
