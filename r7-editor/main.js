@@ -77,7 +77,7 @@ const rootPropertyDocs = {
     "global_filters": "A list of filters applied globally to every request passing through the gateway.",
     "routes": "The routing table defining how incoming traffic is matched and forwarded.",
     "id": "A unique identifier for this route. Used for logging, metrics, and fallback references.",
-    "match": "Conditions that must be met for this route to handle a request. If omitted, all requests match.",
+    "match": "Conditions that must be met for this route to handle a request. If omitted, NO requests match.",
     "filters": "A list of processing steps applied to the request before forwarding, and to the response before returning.",
     "upstream": "Configuration for routing traffic to backend services.",
     "health_check": "Active health checking configuration for the backend targets.",
@@ -167,7 +167,7 @@ async function initializeEditor() {
 
             // THE KILL SWITCH
             if (!isHoverEnabled) return null;
-            
+
             const word = model.getWordAtPosition(position);
             if (!word) return null;
 
