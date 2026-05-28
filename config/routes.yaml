@@ -1,136 +1,66 @@
-version: v2026-03-14
+version: my-version-42
 
-# Global filters applied to all routes
+# Global filters applied to every request
 global_filters:
   - SimpleMetrics:
-      period: 5M
-      interval: 2S
+      period: 5m
+      interval: 2s
   - RequestSizeLimit:
       max_size: 10MB
+  - Cors:
+      allowed_headers:
+        - Accept
+      allowed_origins:
+        - https://app.ethlo.com
+      allowed_methods:
+        - GET
+        - POST
 
 routes:
-
-  - id: flaky-service
+  - id: core-api
     match:
       - PathPrefix:
-          prefix: /down
+          prefix: /api/v1
+      - Method:
+          include:
+            - GET
+            - POST
     upstream:
       targets:
-        - url: http://localhost:22222
+        - url: http://api-node-01:8090
+        - url: http://api-node-02:8090
       health_check:
         path: /health
+        interval: 5s
+      timeouts:
+        read: 15s
       fallback:
-        route_id: down
-
-  - id: down
-    filters:
-    - ReturnResponse:
-        status: 503
-        content_type: text/plain
-        body: We'll be back soon!
-
-  - id: dashboard
-    match:
-      - PathPrefix:
-          prefix: ${SECRET_URL:/status}
-    upstream:
-      targets:
-        - url: http://localhost:18888
-
-  - id: reject-benchmark
-    match:
-      - PathPrefix:
-          prefix: /benchmark
-    upstream:
-      targets:
-        - url: http://localhost:1111
-    filters:
-      - RequireAuthorizationHeader
-
-  - id: static-content
-    match:
-      - not:
-          PathPrefix:
-            prefix: /hello
-      - or:
-          - Method:
-              include:
-                - GET
-                - POST
-          - RemoteAddr:
-              source: 192.168.1.0/24
-    upstream:
-      targets:
-        - url: http://localhost:1111
-    filters:
-      - RequireAuthorizationHeader
-      - RateLimiter:
-          capacity: 200000
-          refill_tokens: 100000
-          refill_period: 1s
-      - CircuitBreaker:
-          failure_threshold: 10
-          cooldown_period: 15s
-      - AddCorrelationId
+        route_id: maintenance-mode
     journal:
       request:
         level: HEADERS
-        status_overrides:
-          401,403: HEADERS
-          429: METADATA
-          5xx: HEADERS
-      response:
-        level: FULL
-
-  - id: static-content-without-journal
-    match:
-      - PathPrefix:
-          prefix: /hello
-    upstream:
-      targets:
-        - url: http://localhost:1111
-    filters:
-      - RateLimiter:
-          capacity: 50000
-          refill_tokens: 12000
-          refill_period: 1s
-      - CircuitBreaker:
-          failure_threshold: 10
-          cooldown_period: 15s
-      - RequireAuthorizationHeader
-      - AddCorrelationId
-
-  - id: ws-chat
-    match:
-      - PathPrefix:
-          prefix: /ws
-    upstream:
-      targets:
-        - url: http://127.0.0.1:8080
-    journal:
-      request:
-        level: METADATA
-        status_overrides:
-          5xx: HEADERS
       response:
         level: HEADERS
-        status_overrides:
-          2xx: NONE
-
-  - id: home-assistant
-    match:
-      - PathPrefix:
-          prefix: /ha
-    upstream:
-      targets:
-        - url: http://192.168.50.103:8123
     filters:
       - StripPathPrefix:
+          parts: 2
+      - AddRequestHeader:
+          name: X-Gateway-Routed
+          value: "true"
+
+  - id: maintenance-mode
+    filters:
+      - ReturnResponse:
+          status: 503
+          content_type: application/json
+          body: '{"error": "Service temporarily degraded. We are on it!"}'
+
+  - id: static-frontend
+    match:
+      - PathPrefix:
+          prefix: /app
+    filters:
+      - StripPrefix:
           parts: 1
-    journal:
-      request:
-        level: METADATA
-        status_overrides:
-          5xx: HEADERS
-      response:
-        level: HEADERS
+      - StaticContent:
+          base_directory: /var/www/frontend

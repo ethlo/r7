@@ -12,10 +12,53 @@
             --border-color: #333333;
             --text-main: #cccccc;
             --btn-hover: rgba(255, 255, 255, 0.1);
-            --accent-blue: #007fd4;
-            --accent-blue-hover: #006eb8;
+
+            --accent-blue: #555555;
+            --accent-blue-hover: #777777;
+
             --danger-red: #da3633;
             --danger-red-hover: #b82a27;
+        }
+
+        input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background-color: var(--bg-main);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            margin: 0;
+            cursor: pointer;
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s ease;
+        }
+
+        /* 2. Style the background when checked (using your new muted accent variable) */
+        input[type="checkbox"]:checked {
+            background-color: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        /* 3. Draw the checkmark manually using a pseudo-element */
+        input[type="checkbox"]:checked::after {
+            content: "";
+            width: 3px;
+            height: 7px;
+            border: solid #ffffff; /* Bright white checkmark for contrast */
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            position: absolute;
+            top: 1px;
+        }
+
+        /* 4. Keep accessibility focus states clean */
+        input[type="checkbox"]:focus-visible {
+            outline: 1px solid var(--text-main);
+            outline-offset: 2px;
         }
 
         body, html {
@@ -37,6 +80,7 @@
             padding: 0 16px;
             height: 44px; flex-shrink: 0;
             transition: background-color 0.2s, border-color 0.2s;
+            position: relative; /* For dropdown positioning */
         }
 
         .title { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -54,9 +98,45 @@
 
         button:hover { background: var(--btn-hover); }
         button:focus, select:focus { outline: 1px solid var(--accent-blue); }
-        button svg { width: 14px; height: 14px; fill: currentColor; }
+
+        /* Modern icon styling */
+        button svg {
+            width: 16px; height: 16px;
+            fill: none; stroke: currentColor;
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
 
         #clear-btn:hover { background: rgba(218, 54, 51, 0.15); color: #ff6b6b; }
+
+        /* Mobile Menu Button */
+        #menu-toggle {
+            display: none;
+            padding: 6px;
+        }
+
+        /* --- RESPONSIVE LAYOUT --- */
+        @media (max-width: 800px) {
+            #menu-toggle { display: flex; }
+            .controls {
+                display: none; /* Hidden by default on mobile */
+                flex-direction: column;
+                position: absolute;
+                top: 44px; right: 0;
+                background: var(--bg-toolbar);
+                border-left: 1px solid var(--border-color);
+                border-bottom: 1px solid var(--border-color);
+                padding: 12px;
+                z-index: 1000;
+                align-items: stretch;
+                box-shadow: -4px 4px 12px rgba(0,0,0,0.3);
+                border-radius: 0 0 0 6px;
+            }
+            .controls.open { display: flex; }
+            .controls button, .controls select, .controls label {
+                justify-content: flex-start;
+                padding: 8px 10px;
+            }
+        }
 
         #app { flex: 1; width: 100%; position: relative; }
 
@@ -103,33 +183,39 @@
 </head>
 <body>
 <div id="toolbar">
-    <span class="title" id="app-title">r7 Configurator</span>
-    <div class="controls">
+    <span class="title" id="app-title">r7 Configurator 2</span>
+
+    <button id="menu-toggle" title="Toggle Menu">
+        <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+
+    <div class="controls" id="toolbar-controls">
         <select id="theme-selector" title="Editor Theme">
             <option value="vs-dark">Dark</option>
             <option value="vs">Light</option>
             <option value="hc-black">High Contrast</option>
         </select>
 
-        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-            <input type="checkbox" id="hover-toggle" checked>
+        <button id="reset-btn" title="Load sample configuration">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            Load Example
+        </button>
+
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px;">
+            <input type="checkbox" id="hover-toggle" checked style="margin: 0;">
             Hover info
         </label>
 
         <button id="fullscreen-btn" title="Toggle Fullscreen">
-            <svg viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zm5 14h-5v-2h3v-3h2v5zm-14 0v-5h2v3h3v2H5z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
             Fullscreen
         </button>
         <button id="clear-btn" title="Erase everything">
-            <svg viewBox="0 0 24 24"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-6 5v6m4-6v6"/></svg>
             Clear
         </button>
-        <button id="reset-btn" title="Load default configuration">
-            <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-            Load Example
-        </button>
         <button id="save-btn" title="Download Configuration">
-            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Save As...
         </button>
     </div>
@@ -149,6 +235,11 @@
     </div>
 </div>
 
+<script>
+    document.getElementById('menu-toggle').addEventListener('click', function() {
+        document.getElementById('toolbar-controls').classList.toggle('open');
+    });
+</script>
 <script type="module" src="/main.js"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ import {parse} from 'yaml';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import YamlWorker from 'monaco-yaml/yaml.worker?worker';
 
-import defaultTemplate from './default-config.yaml?raw';
+import defaultTemplate from './example-config.yaml?raw';
 
 window.MonacoEnvironment = {
     getWorker(moduleId, label) {
