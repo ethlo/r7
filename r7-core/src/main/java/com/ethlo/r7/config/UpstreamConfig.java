@@ -15,6 +15,7 @@ public record UpstreamConfig(
         @DefaultValue("{}") TimeoutConfig timeouts,
         @Description("List of backend servers to forward traffic to.")
         List<TargetConfig> targets,
+        @DefaultValue("{}")
         @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback
 ) implements ValidatableConfig
 {
