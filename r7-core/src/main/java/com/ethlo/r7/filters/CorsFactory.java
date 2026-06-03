@@ -13,7 +13,7 @@ import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -174,7 +174,7 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
                         headers.set(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
                     }
 
-                    exchange.shortCircuit(new FastTerminationGatewayResponse(
+                    exchange.shortCircuit(new ShortCircuitGatewayResponse(
                             headers,
                             HttpStatuses.NO_CONTENT,
                             EMPTY_BODY.slice()

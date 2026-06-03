@@ -149,4 +149,10 @@ public final class UnproxiedUpstreamRequest implements MutableGatewayRequest
     {
         return null;
     }
+
+    @Override
+    public String protocol()
+    {
+        return "";
+    }
 }

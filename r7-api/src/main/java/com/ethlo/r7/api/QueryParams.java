@@ -10,4 +10,9 @@ public interface QueryParams
     {
         return getFirst(name) != null;
     }
+
+    /**
+     * @return the formatted query string, or an empty string if there are no parameters
+     */
+    String toQueryString();
 }

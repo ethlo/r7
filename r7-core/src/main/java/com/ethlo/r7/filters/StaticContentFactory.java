@@ -9,7 +9,7 @@ import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -86,7 +86,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             exchange.attributes().set(STATIC_CONTENT_PATH_KEY, this.config.baseDirectory().toString());
-            exchange.shortCircuit(new FastTerminationGatewayResponse(HttpStatuses.OK, null, null));
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.OK, null, null));
         }
     }
 }

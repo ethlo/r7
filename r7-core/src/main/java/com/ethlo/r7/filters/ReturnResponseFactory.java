@@ -12,7 +12,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -93,7 +93,7 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            exchange.shortCircuit(new FastTerminationGatewayResponse(
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(
                     this.status,
                     this.contentType,
                     this.bodyBuffer.asReadOnlyBuffer()

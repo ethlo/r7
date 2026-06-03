@@ -17,7 +17,7 @@ import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -184,7 +184,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(1)
                     .set(HttpHeaders.CONTENT_TYPE, "text/plain");
 
-            exchange.shortCircuit(new FastTerminationGatewayResponse(headers, HttpStatuses.SERVICE_UNAVAILABLE, ByteBuffer.wrap(REJECT_PAYLOAD)));
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(headers, HttpStatuses.SERVICE_UNAVAILABLE, ByteBuffer.wrap(REJECT_PAYLOAD)));
         }
 
         @Override

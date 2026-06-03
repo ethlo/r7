@@ -10,9 +10,11 @@ import com.ethlo.r7.api.QueryParams;
 public final class UndertowQueryParams implements QueryParams
 {
     private final Map<String, Deque<String>> parameters;
+    private final String queryString;
 
-    public UndertowQueryParams(final Map<String, Deque<String>> parameters)
+    public UndertowQueryParams(String queryString, final Map<String, Deque<String>> parameters)
     {
+        this.queryString = queryString;
         this.parameters = parameters;
     }
 
@@ -42,5 +44,11 @@ public final class UndertowQueryParams implements QueryParams
     public boolean contains(final String name)
     {
         return this.parameters.containsKey(name);
+    }
+
+    @Override
+    public String toQueryString()
+    {
+        return queryString;
     }
 }

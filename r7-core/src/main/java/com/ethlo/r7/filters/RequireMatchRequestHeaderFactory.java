@@ -12,7 +12,7 @@ import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -95,7 +95,7 @@ public final class RequireMatchRequestHeaderFactory implements GatewayFilterFact
 
             if (headerValue == null || !this.compiledPattern.matcher(headerValue).matches())
             {
-                exchange.shortCircuit(new FastTerminationGatewayResponse(
+                exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),
                         MediaTypes.TEXT_PLAIN,
                         this.errorBody.asReadOnlyBuffer()

@@ -3,21 +3,20 @@ package com.ethlo.r7.util;
 import java.nio.ByteBuffer;
 
 import com.ethlo.r7.api.GatewayHeaders;
-import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 
-public class FastTerminationGatewayResponse implements ShortCircuitGatewayResponse
+public class ShortCircuitGatewayResponse implements com.ethlo.r7.api.ShortCircuitGatewayResponse
 {
     private final ByteBuffer body;
     private final GatewayHeaders headers;
     private final int status;
 
-    public FastTerminationGatewayResponse(final int status, final String contentType, final ByteBuffer body)
+    public ShortCircuitGatewayResponse(final int status, final String contentType, final ByteBuffer body)
     {
         this(contentTypeHeaders(contentType), status, body);
     }
 
-    public FastTerminationGatewayResponse(final GatewayHeaders headers, final int status, final ByteBuffer body)
+    public ShortCircuitGatewayResponse(final GatewayHeaders headers, final int status, final ByteBuffer body)
     {
         this.body = body;
         this.headers = headers;

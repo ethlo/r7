@@ -11,7 +11,7 @@ import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -102,7 +102,7 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
 
         private void rejectBadRequest(final ClientRequestGatewayExchange exchange)
         {
-            exchange.shortCircuit(new FastTerminationGatewayResponse(
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(
                     HttpStatuses.BAD_REQUEST,
                     MediaTypes.TEXT_PLAIN,
                     ByteBuffer.wrap(BAD_REQUEST_PAYLOAD)
@@ -111,7 +111,7 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
 
         private void rejectPayloadTooLarge(final ClientRequestGatewayExchange exchange)
         {
-            exchange.shortCircuit(new FastTerminationGatewayResponse(
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(
                     HttpStatuses.ENTITY_TOO_LARGE,
                     MediaTypes.TEXT_PLAIN,
                     ByteBuffer.wrap(REJECT_PAYLOAD)

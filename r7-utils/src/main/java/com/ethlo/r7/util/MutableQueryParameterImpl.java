@@ -2,14 +2,14 @@ package com.ethlo.r7.util;
 
 import com.ethlo.r7.api.MutableQueryParams;
 
-public class MutableBaseGatewayRequestParameters extends BaseGatewayAttributes implements MutableQueryParams
+public class MutableQueryParameterImpl extends BaseGatewayAttributes implements MutableQueryParams
 {
-    protected MutableBaseGatewayRequestParameters()
+    protected MutableQueryParameterImpl()
     {
         this(16);
     }
 
-    protected MutableBaseGatewayRequestParameters(int initialCapacity)
+    protected MutableQueryParameterImpl(int initialCapacity)
     {
         super(initialCapacity);
     }
@@ -36,5 +36,11 @@ public class MutableBaseGatewayRequestParameters extends BaseGatewayAttributes i
     public boolean contains(final String name)
     {
         return getFirst(name) != null;
+    }
+
+    @Override
+    public String toQueryString()
+    {
+        return "";
     }
 }

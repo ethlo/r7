@@ -120,6 +120,12 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     }
 
     @Override
+    public String protocol()
+    {
+        return exchange.getProtocol().toString();
+    }
+
+    @Override
     public void path(final String path)
     {
         final String newPath = path.toString();

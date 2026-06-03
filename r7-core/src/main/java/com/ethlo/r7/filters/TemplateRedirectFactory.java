@@ -12,7 +12,7 @@ import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -104,7 +104,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders(1);
                 headers.set(HttpHeaders.LOCATION, location);
 
-                exchange.shortCircuit(new FastTerminationGatewayResponse(
+                exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.responseStatus,
                         null,
                         EMPTY_BODY.slice()

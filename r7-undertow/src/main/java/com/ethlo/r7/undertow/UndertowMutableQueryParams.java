@@ -70,6 +70,12 @@ public final class UndertowMutableQueryParams implements MutableQueryParams
         return this.exchange.getQueryParameters().containsKey(name);
     }
 
+    @Override
+    public String toQueryString()
+    {
+        return this.exchange.getQueryString();
+    }
+
     private void syncQueryString()
     {
         final StringBuilder sb = new StringBuilder();

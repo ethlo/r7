@@ -41,4 +41,9 @@ public interface GatewayRequest
      * @return the network address of the immediate client
      */
     InetAddress remoteAddress();
+
+    /**
+     * @return the protocol version used by the client (e.g., "HTTP/1.1", "HTTP/2.0")
+     */
+    String protocol();
 }

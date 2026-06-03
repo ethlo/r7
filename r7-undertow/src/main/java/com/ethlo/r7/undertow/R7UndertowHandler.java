@@ -126,10 +126,10 @@ public final class R7UndertowHandler implements HttpHandler
         if (gatewayExchange.wasProxied())
         {
             journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
-            journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
+            journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(exchange.getProtocol().toString(), gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
         }
 
-        journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
+        journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(exchange.getProtocol().toString(), gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
 
         final boolean isWebSocket = Boolean.TRUE.equals(exchange.getAttachment(IS_WEBSOCKET_KEY));
         if (isWebSocket)
@@ -191,7 +191,7 @@ public final class R7UndertowHandler implements HttpHandler
             try
             {
                 // Retrieve or build the Undertow ResourceHandler for this directory
-                final ResourceHandler handler = staticHandlers.computeIfAbsent(staticBasePath.toString(), path ->
+                final ResourceHandler handler = staticHandlers.computeIfAbsent(staticBasePath, path ->
                         new ResourceHandler(new PathResourceManager(Paths.get(path), 100))
                                 .setDirectoryListingEnabled(false)
                 );
@@ -289,12 +289,12 @@ public final class R7UndertowHandler implements HttpHandler
     private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route)
     {
         final String requestId = requestIdGenerator.generate();
-        final GatewayRequest requestCopy = new ImmutableGatewayRequest(
+        final GatewayRequest requestCopy = new ImmutableGatewayRequest(exchange.getProtocol().toString(),
                 new ImmutableHeaderSnapshot(exchange.getRequestHeaders()),
                 exchange.getRequestPath(),
                 exchange.getRequestURI(),
                 exchange.getRequestMethod().toString(),
-                new UndertowQueryParams(exchange.getQueryParameters()),
+                new UndertowQueryParams(exchange.getQueryString(), exchange.getQueryParameters()),
                 new UndertowMutableCookies(exchange),
                 incomingRequest.remoteAddress(),
                 incomingRequest.getRemoteAddressSource()
@@ -332,7 +332,7 @@ public final class R7UndertowHandler implements HttpHandler
         {
             if (gatewayExchange.wasProxied())
             {
-                gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
+                gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(exchange.getProtocol().toString(), new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
             }
 
             final ClientResponseGatewayFilter[] beforeCommitFilters = route.beforeCommitGatewayFilters();
@@ -358,7 +358,7 @@ public final class R7UndertowHandler implements HttpHandler
     {
         final ServerConfig.ProxyConfig pConfig = this.serverConfig.proxy();
 
-        final RouteUpstreamContext upstreamContext = this.routeProxyCache.computeIfAbsent(route.id().toString(), uri ->
+        final RouteUpstreamContext upstreamContext = this.routeProxyCache.computeIfAbsent(route.id(), uri ->
                 {
                     final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
                             .setConnectionsPerThread(pConfig.connectionsPerThread())
@@ -521,7 +521,7 @@ public final class R7UndertowHandler implements HttpHandler
         // Baseline default if no fallback is configured or found
         exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-        exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id().toString() + "'");
+        exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id() + "'");
     }
 
     private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final String requestId, final boolean isWebSocket)

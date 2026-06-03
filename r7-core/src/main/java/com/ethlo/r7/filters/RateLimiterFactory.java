@@ -20,7 +20,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -210,7 +210,7 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
                         .set(HttpHeaders.X_RATELIMIT_LIMIT, this.capacityString)
                         .set(HttpHeaders.X_RATELIMIT_REMAINING, "0");
 
-                exchange.shortCircuit(new FastTerminationGatewayResponse(headers, HttpStatuses.TOO_MANY_REQUESTS, ByteBuffer.wrap(REJECT_PAYLOAD)));
+                exchange.shortCircuit(new ShortCircuitGatewayResponse(headers, HttpStatuses.TOO_MANY_REQUESTS, ByteBuffer.wrap(REJECT_PAYLOAD)));
             }
         }
 

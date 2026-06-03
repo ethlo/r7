@@ -8,12 +8,11 @@ import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
-import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -56,7 +55,7 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
 
             if (sig == null || !(sig.startsWith("Bearer ") || sig.startsWith("Basic ")))
             {
-                exchange.shortCircuit(new FastTerminationGatewayResponse(
+                exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         HttpStatuses.UNAUTHORIZED,
                         MediaTypes.TEXT_PLAIN,
                         UNAUTHORIZED_BODY.slice()
