@@ -64,7 +64,8 @@ public final class R7Tailer
 
         try (final Stream<Path> s = Files.list(logDir))
         {
-            // Collect and deduplicate files by their stable key to prevent compression race conditions
+            // Collect and deduplicate files by their stable prefix key
+            // This safely resolves an .active file rotating to a time-bounded .zst file
             final Map<String, Path> resolvedFiles = new HashMap<>();
 
             s.filter(p -> {
@@ -93,11 +94,7 @@ public final class R7Tailer
                         {
                             return Integer.compare(m1.shardId(), m2.shardId());
                         }
-                        if (m1.timestamp() != m2.timestamp())
-                        {
-                            return Long.compare(m1.timestamp(), m2.timestamp());
-                        }
-                        return Integer.compare(m1.rotationCount(), m2.rotationCount());
+                        return Long.compare(m1.firstEventNanos(), m2.firstEventNanos());
                     })
                     .forEach(path -> {
                         try
@@ -137,8 +134,18 @@ public final class R7Tailer
     {
         final String key = getStableKey(path);
         final long offset = checkpoints.getOrDefault(key, 0L);
+
+        // Sentinel check: File is completely read, do not waste CPU decompressing it
+        if (offset == -1L)
+        {
+            return true;
+        }
+
         final boolean isCompressed = path.toString().endsWith(COMPRESSED_EXTENSION);
         final boolean isActive = path.toString().endsWith(ACTIVE_FILE_EXTENSION);
+
+        // Enforce the preamble boundary so FlatBuffers never sees the manual binary header
+        final long startOffset = Math.max(offset, R7fConstants.PREAMBLE_SIZE);
 
         final long fileSize;
         try
@@ -161,38 +168,49 @@ public final class R7Tailer
             if (isCompressed)
             {
                 final long decompressedSize = Zstd.getDirectByteBufferFrameContentSize(mappedBuffer, 0, (int) fileSize);
-                if (decompressedSize <= 0 || decompressedSize <= offset)
+                if (decompressedSize <= 0 || decompressedSize <= startOffset)
                 {
                     return true;
                 }
 
-                // Expand reusable buffer only if necessary to avoid GC churn and OOM
+                // Expand reusable buffer only if necessary
                 if (decompressionBuffer.capacity() < decompressedSize)
                 {
                     decompressionBuffer = ByteBuffer.allocateDirect((int) decompressedSize);
                 }
 
                 processingBuffer = decompressionBuffer.slice(0, (int) decompressedSize);
-                processingBuffer.order(ByteOrder.LITTLE_ENDIAN); // FlatBuffers constraint
+                processingBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
                 Zstd.decompress(processingBuffer, mappedBuffer);
-                processingBuffer.position((int) offset);
+                processingBuffer.position((int) startOffset);
             }
             else
             {
-                if (fileSize <= offset)
+                if (fileSize <= startOffset)
                 {
                     return !isActive;
                 }
                 processingBuffer = mappedBuffer;
-                processingBuffer.position((int) offset);
+                processingBuffer.position((int) startOffset);
             }
 
             final long before = processingBuffer.remaining();
             JournalDecoder.decode(processingBuffer, reassembler);
             totalBytesRead += before - processingBuffer.remaining();
-            checkpoints.put(key, (long) processingBuffer.position());
-            return processingBuffer.remaining() == 0 && !isActive;
+
+            final boolean isFinished = processingBuffer.remaining() == 0 && !isActive;
+
+            if (isFinished)
+            {
+                checkpoints.put(key, -1L);
+            }
+            else
+            {
+                checkpoints.put(key, (long) processingBuffer.position());
+            }
+
+            return isFinished;
         }
     }
 
@@ -227,24 +245,31 @@ public final class R7Tailer
 
     private FileMeta parseMeta(final Path path)
     {
-        final String name = path.getFileName().toString();
+        final String name = path.getFileName().toString()
+                .replace(ACTIVE_FILE_EXTENSION, "")
+                .replace(COMPRESSED_EXTENSION, "")
+                .replace(R7F_FILE_EXTENSION, "");
         try
         {
-            final String[] parts = name.split("[-.]");
-            return new FileMeta(Integer.parseInt(parts[1]), Long.parseLong(parts[2]), Integer.parseInt(parts[3]));
+            final String[] parts = name.split("-");
+            final int shardId = Integer.parseInt(parts[1]);
+            final long firstEventNanos = Long.parseLong(parts[2]);
+            final long lastEventNanos = parts.length > 3 ? Long.parseLong(parts[3]) : -1L;
+
+            return new FileMeta(shardId, firstEventNanos, lastEventNanos);
         }
         catch (final Exception e)
         {
-            return new FileMeta(0, 0, 0);
+            return new FileMeta(0, 0L, -1L);
         }
     }
 
     private String getStableKey(final Path path)
     {
-        return path.getFileName().toString()
-                .replace(ACTIVE_FILE_EXTENSION, "")
-                .replace(COMPRESSED_EXTENSION, "")
-                .replace(R7F_FILE_EXTENSION, "");
+        final FileMeta meta = parseMeta(path);
+        // By excluding the lastEventNanos from the key, the tailer maintains the
+        // same checkpoint when an active file is sealed and renamed with its upper bound.
+        return "journal-" + meta.shardId() + "-" + meta.firstEventNanos();
     }
 
     private void loadCheckpoints()
@@ -292,7 +317,7 @@ public final class R7Tailer
         }
     }
 
-    private record FileMeta(int shardId, long timestamp, int rotationCount)
+    private record FileMeta(int shardId, long firstEventNanos, long lastEventNanos)
     {
     }
 }

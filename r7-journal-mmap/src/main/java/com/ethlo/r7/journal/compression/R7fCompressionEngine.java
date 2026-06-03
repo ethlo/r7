@@ -1,11 +1,14 @@
 package com.ethlo.r7.journal.compression;
 
+import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -17,22 +20,16 @@ import com.github.luben.zstd.Zstd;
 public class R7fCompressionEngine implements AutoCloseable
 {
     private static final Logger log = LoggerFactory.getLogger(R7fCompressionEngine.class);
-
     // Upgraded to a single-threaded scheduled executor
-    private final ScheduledExecutorService compressionScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory()
-    {
-        @Override
-        public Thread newThread(Runnable r)
-        {
-            final Thread t = new Thread(r, "r7-journal-compressor");
-            t.setDaemon(true);
-            t.setPriority(Thread.MIN_PRIORITY);
-            return t;
-        }
+    private final ScheduledExecutorService compressionScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        final Thread t = new Thread(r, "r7-journal-compressor");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY);
+        return t;
     });
-
     private final int compressionLevel;
     private final long delaySeconds;
+    private ByteBuffer compressionBuffer = ByteBuffer.allocateDirect(10 * 1024 * 1024);
 
     public R7fCompressionEngine(int compressionLevel, long delaySeconds)
     {
@@ -52,17 +49,35 @@ public class R7fCompressionEngine implements AutoCloseable
         final Path tempTarget = source.resolveSibling(source.getFileName() + ".zst.tmp");
 
         final long start = System.nanoTime();
-        try
+
+        try (final FileChannel srcChannel = FileChannel.open(source, StandardOpenOption.READ);
+             final FileChannel destChannel = FileChannel.open(tempTarget, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING))
         {
-            // Read the entire source file into memory
-            final byte[] srcData = Files.readAllBytes(source);
+            final long fileSize = srcChannel.size();
 
-            // Zstd.compress includes the Content Size header by default when given a byte array
-            final byte[] compressedData = Zstd.compress(srcData, compressionLevel);
+            // Zstd requires knowing the maximum possible compressed size to prevent buffer overflows
+            final long maxCompressedSize = Zstd.compressBound(fileSize);
 
-            // Write the compressed result to the temp file
-            Files.write(tempTarget, compressedData);
+            // Expand reusable off-heap buffer ONLY if necessary to avoid direct memory churn
+            if (compressionBuffer.capacity() < maxCompressedSize)
+            {
+                compressionBuffer = ByteBuffer.allocateDirect((int) maxCompressedSize);
+            }
 
+            compressionBuffer.clear();
+            compressionBuffer.limit((int) maxCompressedSize);
+
+            final MappedByteBuffer srcMapped = srcChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
+
+            // Compress natively. Because we pass discrete buffers rather than streams,
+            // Zstd calculates the source size and natively writes it into the frame header.
+            Zstd.compress(compressionBuffer, srcMapped, compressionLevel);
+
+            // Prepare the buffer for writing to the file
+            compressionBuffer.flip();
+            destChannel.write(compressionBuffer);
+
+            // Safely hand over to the tailer
             Files.move(tempTarget, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             Files.deleteIfExists(source);
 

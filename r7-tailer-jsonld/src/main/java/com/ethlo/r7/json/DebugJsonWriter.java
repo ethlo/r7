@@ -58,7 +58,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             generator.writeStartObject();
 
             // --- Metadata ---
-            generator.writeStringProperty("gateway_request_id", exchange.getRequestId().toString());
+            generator.writeStringProperty("gateway_request_id", exchange.getRequestId());
             generator.writeStringProperty("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
             generator.writeStringProperty("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
             generator.writeStringProperty("start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientStartTs())));
@@ -130,22 +130,27 @@ public class DebugJsonWriter implements ExchangeCompletionListener
     }
 
     private void writeExchangeNode(
-            JournalLevel reqLevel, String reqLine, GatewayHeaders reqHeaders,
-            JournalLevel resLevel, String resLine, GatewayHeaders resHeaders) throws IOException
+            final JournalLevel reqLevel, final String reqLine, final GatewayHeaders reqHeaders,
+            final JournalLevel resLevel, final String resLine, final GatewayHeaders resHeaders) throws IOException
     {
         generator.writeStartObject();
 
         // Request half
         generator.writeStringProperty("request_journal_level", reqLevel != null ? reqLevel.name() : "NONE");
+
         if (reqLine != null)
         {
             writeRequestLine(generator, reqLine);
         }
         else
         {
+            // Maintain strict JSON schema consistency for columnar databases
             generator.writeNullProperty("method");
             generator.writeNullProperty("path");
+            generator.writeNullProperty("query_string");
+            generator.writeNullProperty("protocol");
         }
+
         generator.writePOJOProperty("request_headers", GatewayUtils.toMap(reqHeaders));
 
         // Response half
@@ -153,39 +158,96 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         generator.writePOJOProperty("response_headers", GatewayUtils.toMap(resHeaders));
         generator.writeStringProperty("content_type", getHeader(resHeaders, HttpHeaders.CONTENT_TYPE));
 
+        writeResponseLine(generator, resLine);
+
         generator.writeEndObject();
     }
 
-    private void writeRequestLine(final JsonGenerator generator, final String reqLine) throws IOException
+    private void writeResponseLine(final JsonGenerator generator, final String resLine)
     {
-        if (reqLine == null)
+        // Expected format: "{PROTOCOL} {CODE} {REASON}"
+        // Example: "HTTP/1.1 503 Service Unavailable"
+        if (resLine == null)
         {
+            generator.writeNullProperty("response_protocol");
+            generator.writeNullProperty("response_status_code");
+            generator.writeNullProperty("response_reason");
             return;
         }
 
-        final int len = reqLine.length();
-        int start = 0;
-        int partIndex = 0;
+        final int firstSpace = resLine.indexOf(' ');
 
-        for (int i = 0; i < len; i++)
+        if (firstSpace != -1)
         {
-            if (reqLine.charAt(i) == ' ')
+            // 1. Protocol (e.g., "HTTP/1.1")
+            generator.writeStringProperty("response_protocol", resLine.substring(0, firstSpace));
+
+            // Find the space separating the Code and the Reason phrase
+            final int secondSpace = resLine.indexOf(' ', firstSpace + 1);
+
+            if (secondSpace != -1)
             {
-                writePart(generator, partIndex, reqLine, start, i);
-                start = i + 1;
-                partIndex++;
-                if (partIndex > 1)
-                {
-                    // We have method and path, we can stop if we don't care about protocol
-                    return;
-                }
+                // 2. Status Code
+                generator.writeStringProperty("response_status_code", resLine.substring(firstSpace + 1, secondSpace));
+
+                // 3. Reason Phrase (everything after the second space)
+                generator.writeStringProperty("response_reason", resLine.substring(secondSpace + 1));
+            }
+            else
+            {
+                // Fallback if there is no reason phrase
+                generator.writeStringProperty("response_status_code", resLine.substring(firstSpace + 1));
+                generator.writeNullProperty("response_reason");
             }
         }
-
-        // Handle the last part if no trailing space
-        if (start < len)
+        else
         {
-            writePart(generator, partIndex, reqLine, start, len);
+            // Graceful fallback for completely malformed lines
+            generator.writeNullProperty("response_protocol");
+            generator.writeStringProperty("response_status_code", resLine);
+            generator.writeNullProperty("response_reason");
+        }
+    }
+
+    private void writeRequestLine(final JsonGenerator generator, final String reqLine)
+    {
+        // Expected format: "{METHOD} {URI}{?QUERY} {PROTOCOL}"
+        // Example: "GET /api/v1/foo?tenant=123 HTTP/2.0"
+        final int firstSpace = reqLine.indexOf(' ');
+        final int lastSpace = reqLine.lastIndexOf(' ');
+
+        if (firstSpace != -1 && lastSpace != -1 && firstSpace != lastSpace)
+        {
+            // 1. Method
+            generator.writeStringProperty("method", reqLine.substring(0, firstSpace));
+
+            // 2. Protocol
+            generator.writeStringProperty("protocol", reqLine.substring(lastSpace + 1));
+
+            // 3. Path & Query String
+            final String fullUri = reqLine.substring(firstSpace + 1, lastSpace);
+            final int questionMark = fullUri.indexOf('?');
+
+            if (questionMark != -1)
+            {
+                final String path = fullUri.substring(0, questionMark);
+                final String query = fullUri.substring(questionMark + 1);
+                generator.writeStringProperty("path", path);
+                generator.writeStringProperty("query_string", query);
+            }
+            else
+            {
+                generator.writeStringProperty("path", fullUri);
+                generator.writeNullProperty("query_string");
+            }
+        }
+        else
+        {
+            // Graceful fallback for completely malformed start lines
+            generator.writeNullProperty("method");
+            generator.writeStringProperty("path", reqLine);
+            generator.writeNullProperty("query_string");
+            generator.writeNullProperty("protocol");
         }
     }
 
@@ -198,7 +260,6 @@ public class DebugJsonWriter implements ExchangeCompletionListener
     {
         final String fieldName = (index == 0) ? "method" : "path";
 
-        // For TRUE zero-allocation, use generator.writeRawValue or a custom Serializer.
         generator.writeStringProperty(fieldName, seq.subSequence(start, end).toString());
     }
 
@@ -207,7 +268,6 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         if (fragments != null && !fragments.isEmpty())
         {
             generator.writeName(fieldName);
-            // In debug mode, binary is Base64 encoded by Jackson
             generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
         }
         else
@@ -218,7 +278,10 @@ public class DebugJsonWriter implements ExchangeCompletionListener
 
     private String getHeader(GatewayHeaders headers, String key)
     {
-        if (headers == null) return null;
+        if (headers == null)
+        {
+            return null;
+        }
         return Optional.ofNullable(headers.getFirst(key)).map(String::toString).orElse(null);
     }
 }

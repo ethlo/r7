@@ -13,12 +13,11 @@ public final class StartLineBuilder
     private static final ThreadLocal<ByteBuffer> BUFFER = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(2048));
 
     private static final byte[] SPACE = " ".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] HTTP_1_1 = " HTTP/1.1".getBytes(StandardCharsets.US_ASCII);
 
     /**
-     * Reconstructs the Request Start-Line: {METHOD} {URI}{QUERY} HTTP/1.1
+     * Reconstructs the Request Start-Line: {METHOD} {URI}{?QUERY} {PROTOCOL}
      */
-    public static ByteBuffer buildRequestLine(GatewayRequest request)
+    public static ByteBuffer buildRequestLine(final GatewayRequest request)
     {
         final ByteBuffer buffer = BUFFER.get();
         buffer.clear();
@@ -27,26 +26,36 @@ public final class StartLineBuilder
         putAscii(buffer, request.method());
         buffer.put(SPACE);
 
-        // 2. URI
+        // 2. URI and Query String
         putAscii(buffer, request.uri());
 
+        final String queryString = request.queryParams().toQueryString();
+        if (queryString != null && !queryString.isEmpty())
+        {
+            buffer.put((byte) '?');
+            putAscii(buffer, queryString);
+        }
+
+        buffer.put(SPACE);
+
         // 3. Protocol
-        buffer.put(HTTP_1_1);
+        putAscii(buffer, request.protocol());
 
         buffer.flip();
         return buffer;
     }
 
     /**
-     * Reconstructs the Response Status-Line: HTTP/1.1 {CODE} {REASON}
+     * Reconstructs the Response Status-Line: {PROTOCOL} {CODE} {REASON}
      */
-    public static ByteBuffer buildResponseLine(GatewayResponse response)
+    public static ByteBuffer buildResponseLine(final String protocol, final GatewayResponse response)
     {
         final ByteBuffer buffer = BUFFER.get();
         buffer.clear();
 
         // 1. Protocol
-        putAscii(buffer, "HTTP/1.1 ");
+        putAscii(buffer, protocol);
+        buffer.put(SPACE);
 
         // 2. Status Code
         putAscii(buffer, Integer.toString(response.status()));
@@ -62,8 +71,13 @@ public final class StartLineBuilder
     /**
      * Efficiently puts a string into the buffer as ASCII/UTF-8 bytes
      */
-    private static void putAscii(ByteBuffer buffer, String s)
+    private static void putAscii(final ByteBuffer buffer, final String s)
     {
+        if (s == null)
+        {
+            return;
+        }
+
         final int len = s.length();
         for (int i = 0; i < len; i++)
         {

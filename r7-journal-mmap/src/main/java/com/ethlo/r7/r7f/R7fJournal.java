@@ -66,7 +66,7 @@ public final class R7fJournal implements Journal
     private FileChannel channel;
     private int currentHeaderCount;
     private int currentAttributeCount;
-    private boolean closed;
+    private long segmentStartTs;
 
     public R7fJournal(R7fJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
@@ -324,21 +324,10 @@ public final class R7fJournal implements Journal
     }
 
     @SuppressWarnings("deprecation")
-    private int copyToScratch(String s)
+    private int copyToScratch(String str)
     {
-        final int len = s.length();
-        if (s instanceof String str)
-        {
-            // Use the JVM's optimized, SIMD-enabled intrinsic
-            str.getBytes(0, len, asciiScratch, 0);
-            return len;
-        }
-
-        // Fallback for other String types
-        for (int i = 0; i < len; i++)
-        {
-            asciiScratch[i] = (byte) s.charAt(i);
-        }
+        final int len = str.length();
+        str.getBytes(0, len, asciiScratch, 0);
         return len;
     }
 
@@ -353,7 +342,6 @@ public final class R7fJournal implements Journal
     @Override
     public synchronized void close() throws IOException
     {
-        this.closed = true;
         if (segment != null)
         {
             finalizeActiveSegment();
@@ -362,7 +350,6 @@ public final class R7fJournal implements Journal
 
     private void rotateSegment()
     {
-        // 1. Capture the retiring segment state BEFORE offloading
         if (segment != null)
         {
             final MemorySegment retiringSegment = this.segment;
@@ -371,26 +358,30 @@ public final class R7fJournal implements Journal
             final Path retiringPath = this.activePath;
             final long finalPosition = this.position;
 
-            // Clear the instance references immediately
+            // Capture the bounds for the filename before resetting
+            final long firstTs = this.segmentStartTs;
+            final long lastTs = System.currentTimeMillis();
+
             this.segment = null;
             this.arena = null;
             this.channel = null;
 
-            // 2. Offload the blocking disk I/O to a Virtual Thread
             Thread.startVirtualThread(() -> {
                 try
                 {
+                    // Pass the timestamps into the async finalizer
                     final Path finalizedPath = finalizeSegmentAsync(
                             retiringSegment,
                             retiringArena,
                             retiringChannel,
                             retiringPath,
-                            finalPosition
+                            finalPosition,
+                            firstTs,
+                            lastTs
                     );
 
                     if (finalizedPath != null)
                     {
-                        // Trigger the delayed compression queue
                         finishedJournalFileSupplier.accept(finalizedPath);
                     }
                 }
@@ -401,36 +392,27 @@ public final class R7fJournal implements Journal
             });
         }
 
-        // 3. Instant O(1) swap to the pre-faulted segment (still inside the synchronized monitor)
         final R7fJournalProvider.WarmedSegment next = provider.getNextSegment();
         this.segment = next.segment();
         this.activePath = next.path();
         this.arena = next.arena();
-        // this.channel = next.channel(); // (Ensure channel is populated if it comes from the provider)
 
-        // Write the preamble directly
         writePreamble();
     }
 
-    /**
-     * This method now takes explicit parameters instead of reading instance variables,
-     * making it completely thread-safe to run asynchronously.
-     */
     private Path finalizeSegmentAsync(
             final MemorySegment oldSegment,
             final Arena oldArena,
             final FileChannel oldChannel,
             final Path oldPath,
-            final long finalPosition) throws IOException
+            final long finalPosition,
+            final long firstTs,
+            final long lastTs) throws IOException
     {
-        // REMOVED: oldSegment.force();
-        // Let the Linux Kernel Page Cache manage the flush to physical media.
-
-        oldArena.close(); // Unmap BEFORE truncating
+        oldArena.close();
 
         if (oldChannel != null && oldChannel.isOpen())
         {
-            // Shrink the file to remove the trailing pre-faulted zeros
             oldChannel.truncate(finalPosition);
             oldChannel.close();
         }
@@ -442,8 +424,16 @@ public final class R7fJournal implements Journal
         }
         else
         {
-            final String newName = oldPath.getFileName().toString().replace(R7fConstants.ACTIVE_FILE_EXTENSION, R7fConstants.R7F_FILE_EXTENSION);
-            final Path target = oldPath.resolveSibling(newName);
+            // Strip the .active extension to get the base prefix (e.g., "journal-1")
+            final String baseName = oldPath.getFileName().toString()
+                    .replace(R7fConstants.ACTIVE_FILE_EXTENSION, "");
+
+            // Construct the Time-Bounded Filename: journal-1-171684000-171684360.r7f
+            final String timeBoundedName = String.format("%s-%d-%d%s",
+                    baseName, firstTs, lastTs, R7fConstants.R7F_FILE_EXTENSION
+            );
+
+            final Path target = oldPath.resolveSibling(timeBoundedName);
             Files.move(oldPath, target, StandardCopyOption.ATOMIC_MOVE);
             return target;
         }
@@ -452,16 +442,17 @@ public final class R7fJournal implements Journal
     private void finalizeActiveSegment() throws IOException
     {
         segment.force();
-        arena.close(); // Unmap BEFORE truncating
+        arena.close();
 
         if (channel != null && channel.isOpen())
         {
-            // Shrink the file to remove the trailing pre-faulted zeros
             channel.truncate(position);
             channel.close();
         }
 
-        // Clear references to prevent accidental use of closed resources
+        final long firstTs = this.segmentStartTs;
+        final long lastTs = System.currentTimeMillis();
+
         segment = null;
         arena = null;
         channel = null;
@@ -472,8 +463,14 @@ public final class R7fJournal implements Journal
         }
         else
         {
-            String newName = activePath.getFileName().toString().replace(R7fConstants.ACTIVE_FILE_EXTENSION, R7fConstants.R7F_FILE_EXTENSION);
-            final Path target = activePath.resolveSibling(newName);
+            final String baseName = activePath.getFileName().toString()
+                    .replace(R7fConstants.ACTIVE_FILE_EXTENSION, "");
+
+            final String timeBoundedName = String.format("%s-%d-%d%s",
+                    baseName, firstTs, lastTs, R7fConstants.R7F_FILE_EXTENSION
+            );
+
+            final Path target = activePath.resolveSibling(timeBoundedName);
             Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
         }
     }
@@ -512,7 +509,7 @@ public final class R7fJournal implements Journal
     private void writePreamble()
     {
         position = 0;
-
+        segmentStartTs = System.currentTimeMillis();
         putInt(R7fConstants.MAGIC);
         putShort(R7fConstants.VERSION_1);
         putLong(System.currentTimeMillis());
