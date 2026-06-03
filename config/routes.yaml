@@ -60,7 +60,7 @@ routes:
       - PathPrefix:
           prefix: /app
     filters:
-      - StripPrefix:
+      - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /var/www/frontend
+          base_directory: /tmp
