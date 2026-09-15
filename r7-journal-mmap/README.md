@@ -277,6 +277,151 @@ This architecture explicitly does NOT provide:
 
 ---
 
-# 11. Design Statement
+---
+
+# 11. Reassembly Tuning
+
+The reader that rebuilds exchanges (`ExchangeReassembler`) holds each exchange in memory
+from its first event until its `EndExchange` arrives. Exchanges whose end never arrives
+would accumulate without bound, so the reader ages them out. `ReassemblyOptions` controls
+that, and every setting has consequences in both directions.
+
+Defaults: `maxAge` 5 minutes, `maxInFlight` 250 000, `sweepIntervalEvents` 8192.
+
+## 11.1 maxAge
+
+**What it actually measures.** `maxAge` is *reader-side retention*, not request duration.
+The clock starts when the reader first sees an event for an exchange, not when the request
+began. This distinction matters:
+
+* When **tailing a live stream**, the two are close, because events are read shortly after
+  they are written. The relevant bound is not just how long the request takes, but how long
+  until the reader sees the segment containing the end:
+
+  ```
+  maxAge > max request duration
+         + segment rotation period
+         + compression delay
+         + tailer tick interval
+  ```
+
+  An exchange that starts near the end of one segment and ends in the next is held for the
+  whole of that gap.
+
+* When **replaying archived segments**, wall-clock age is nearly meaningless: a reader
+  consumes hours of journal in seconds, so almost nothing ages out and `maxAge` stops being
+  a memory bound. `maxInFlight` is the effective limit during replay.
+
+**Set too low.** Long-running but legitimate exchanges are abandoned while still in flight.
+Each one then produces *two* misleading signals: an `onAbandoned` with no status, no end
+timestamp and no traffic counters, followed later by an `onOrphanedEnd` when the real end
+arrives. Body fragments arriving in between are reported as orphaned bodies. Slow uploads,
+large downloads, long-polling and server-sent event streams are the usual victims. If a
+deployment carries any of these, `maxAge` must exceed the gateway's longest permitted
+request duration with margin, or the journal will systematically misreport its own
+longest-lived traffic.
+
+**Set too high.** Two costs:
+
+* *Memory.* An in-flight exchange retains every body fragment journaled for it. On a live
+  stream the steady-state cost is roughly `arrival rate x maxAge x journaled bytes per
+  exchange`. At journal level FULL with large bodies this dominates the reader's heap.
+* *Detection latency.* Exchanges that are genuinely lost — their end was in a segment that
+  did not survive — are only reported after `maxAge`. Raising it directly delays the
+  "entries missing" signal that makes loss visible.
+
+## 11.2 maxInFlight
+
+A backstop against heap exhaustion, not a tuning knob. When the tracked set reaches this
+ceiling after an age sweep has already run, the reader evicts **everything currently
+tracked**, including exchanges seconds old that would have completed normally. Those are
+reported as `CAPACITY_EVICTED` and are indistinguishable, downstream, from genuine loss.
+
+Reaching the ceiling should be treated as a misconfiguration rather than normal operation:
+it means `maxAge` is too high for the arrival rate, or `maxInFlight` is too low for the
+peak concurrency. Size it above peak concurrent in-flight exchanges with a healthy margin,
+and alert on the log line rather than tuning it down to suppress it.
+
+## 11.3 sweepIntervalEvents
+
+Eviction is amortised over incoming events rather than performed per event, because the
+sweep is a linear scan of the tracking table. Two consequences:
+
+* An exchange can exceed `maxAge` by up to one sweep interval before it is evicted, so
+  `maxAge` is a lower bound on retention, not an exact deadline.
+* On a **quiet stream the sweep does not advance at all**, since it is driven by event
+  arrival. `R7Tailer` therefore calls `sweep()` explicitly at the end of every tick, so the
+  age limit is honoured even when no events were read. A consumer driving
+  `ExchangeReassembler` directly must do the same, or abandoned exchanges will be held —
+  and left unreported — until traffic resumes.
+
+## 11.4 What the consumer sees
+
+The two incomplete outcomes are reported separately because they carry different
+information, and a logger should treat them differently:
+
+| Callback            | End event seen | Exchange state                                            |
+| ------------------- | -------------- | --------------------------------------------------------- |
+| `onIncompleteEnd`   | yes            | status, timing, traffic counters and checksums all applied |
+| `onAbandoned`       | no             | no status, no end timestamp, no counters; body truncated   |
+
+An `onIncompleteEnd` record is terminal and complete as far as the journal goes — it can be
+logged as a partial record. An `onAbandoned` record has absent fields that are *unknown*,
+not zero, and a logger that writes them as zeros will produce an audit trail that quietly
+lies about response status and duration.
+
+---
+
+# 12. Text Encoding
+
+## 12.1 The stored encoding
+
+Header names, header values, attribute names, attribute values and start lines are stored
+as **ISO-8859-1 (latin-1) bytes**, and read back the same way.
+
+This matches the wire: HTTP/1.1 header field values are latin-1 by definition, so values
+arriving from a client round-trip byte-for-byte. It also keeps the write path free of
+encoding work — the writer copies each character's low byte directly into its scratch
+buffer with no intermediate allocation.
+
+Readers MUST decode these fields as ISO-8859-1. Decoding as UTF-8 or US-ASCII maps every
+byte above 127 to U+FFFD, which silently rewrites the record rather than reproducing it.
+
+## 12.2 The constraint this places on filters
+
+A character outside latin-1 cannot be represented. The writer truncates each character to
+its low byte, so `U+2013` (en dash) is stored as `0x13`, and the original value is
+unrecoverable.
+
+This cannot arise from client traffic. It can only arise when a filter or plugin sets a
+header or attribute from an arbitrary Java string — a translated message, a name from a
+database, a JSON field.
+
+Therefore **values set programmatically are validated at the point of modification**.
+`MutableGatewayHeaders` and the mutable attribute containers reject an out-of-range value
+on `set` and `add`, throwing `InvalidTextValueException` with the field name and the index
+of the offending character. A `null` name or value is refused the same way, reporting
+`TextValues.ABSENT` as the index — a null would otherwise reach the journal writer and
+fail there, far from the filter that set it. See `com.ethlo.r7.api.TextValues`.
+
+Multi-value `set(name, Iterable)` validates every value into a local list before mutating
+anything, so a rejected value leaves the container exactly as it was and a single-pass
+source is iterated only once. An empty iterable removes the entry.
+
+Rejecting there rather than at journal-write time is deliberate: the error names the
+filter that produced the value instead of surfacing much later as mojibake in an audit
+record, it keeps the check out of the journal write path, and it is consistent with the
+gateway being fail-closed — a request whose metadata cannot be recorded faithfully is not
+quietly recorded wrongly. The cost is a scan of each value a filter sets, on the request
+path; header values are short and the scan allocates nothing.
+
+Callers needing to carry arbitrary Unicode through an attribute should encode it
+explicitly — percent-encoding or base64 — and decode it in the consumer. The journal
+layer does not do this for them, because a silent re-encoding is indistinguishable from a
+corrupted record when someone comes to read the audit trail.
+
+---
+
+# 13. Design Statement
 
 The r7 journal mmap architecture is a single-node, append-only, OS-buffered log system where durability is delegated to the kernel and correctness is enforced via deterministic structural validation (CRC + framing), not synchronous persistence.

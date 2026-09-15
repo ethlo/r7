@@ -1,6 +1,6 @@
 package com.ethlo.r7.r7f;
 
-import static com.ethlo.r7.r7f.JournalDecoder.asAscii;
+import static com.ethlo.r7.r7f.JournalDecoder.asLatin1;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -32,9 +32,9 @@ public class FbsGatewayHeaders implements GatewayHeaders
         for (int i = 0; i < count; i++)
         {
             event.headers(reusableHeader, i);
-            if (Objects.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
+            if (Objects.equals(name, asLatin1(reusableHeader.nameAsByteBuffer())))
             {
-                return decodeUtf8(reusableHeader.valueAsByteBuffer());
+                return decodeValue(reusableHeader.valueAsByteBuffer());
             }
         }
         return null;
@@ -59,9 +59,9 @@ public class FbsGatewayHeaders implements GatewayHeaders
                 while (idx < count)
                 {
                     event.headers(reusableHeader, idx++);
-                    if (Objects.equals(name, asAscii(reusableHeader.nameAsByteBuffer())))
+                    if (Objects.equals(name, asLatin1(reusableHeader.nameAsByteBuffer())))
                     {
-                        nextVal = decodeUtf8(reusableHeader.valueAsByteBuffer());
+                        nextVal = decodeValue(reusableHeader.valueAsByteBuffer());
                         return true;
                     }
                 }
@@ -86,8 +86,8 @@ public class FbsGatewayHeaders implements GatewayHeaders
         {
             event.headers(reusableHeader, i);
             consumer.accept(
-                    asAscii(reusableHeader.nameAsByteBuffer()),
-                    decodeUtf8(reusableHeader.valueAsByteBuffer())
+                    asLatin1(reusableHeader.nameAsByteBuffer()),
+                    decodeValue(reusableHeader.valueAsByteBuffer())
             );
         }
         return count;
@@ -101,20 +101,25 @@ public class FbsGatewayHeaders implements GatewayHeaders
             event.headers(reusableHeader, i);
             consumer.accept(
                     state,
-                    asAscii(reusableHeader.nameAsByteBuffer()),
-                    decodeUtf8(reusableHeader.valueAsByteBuffer())
+                    asLatin1(reusableHeader.nameAsByteBuffer()),
+                    decodeValue(reusableHeader.valueAsByteBuffer())
             );
         }
         return count;
     }
 
-    private String decodeUtf8(ByteBuffer buf)
+    /**
+     * Header and attribute values are stored as the latin-1 bytes the writer produced, so
+     * they are decoded the same way. Decoding as UTF-8 turns every byte above 127 into
+     * U+FFFD, which silently rewrites the record rather than reproducing it.
+     */
+    private String decodeValue(ByteBuffer buf)
     {
         if (buf == null)
         {
             return null;
         }
         ByteBuffer tmp = buf.duplicate();
-        return StandardCharsets.UTF_8.decode(tmp).toString();
+        return StandardCharsets.ISO_8859_1.decode(tmp).toString();
     }
 }

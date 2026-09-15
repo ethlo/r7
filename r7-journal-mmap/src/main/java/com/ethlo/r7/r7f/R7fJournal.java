@@ -13,6 +13,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
@@ -42,12 +43,25 @@ public final class R7fJournal implements Journal
     private static final Logger logger = LoggerFactory.getLogger(R7fJournal.class);
     private static final ValueLayout.OfInt INT_BE = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
-    private static final int MAX_SCRATCH = 8192;
+
+    /**
+     * Initial size of the reusable ASCII scratch buffer. Sized for the common case; it
+     * grows on demand rather than throwing, because dropping an audit record because a
+     * cookie was large is the wrong trade.
+     */
+    private static final int INITIAL_SCRATCH = 8192;
+
+    /**
+     * Hard ceiling for a single string (header name, header value or start line). Beyond
+     * this we refuse rather than let one pathological request drive an unbounded
+     * allocation.
+     */
+    private static final int MAX_SCRATCH = 1 << 20;
+
+    private static final int INITIAL_HEADER_SLOTS = 1024;
+    private static final int INITIAL_ATTRIBUTE_SLOTS = 128;
 
     private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
-    private final byte[] asciiScratch = new byte[MAX_SCRATCH];
-    private final int[] headerOffsetsScratch = new int[1024];
-    private final int[] attributeOffsetsScratch = new int[100];
 
     private final R7fJournalProvider provider;
     private final Consumer<Path> finishedJournalFileSupplier;
@@ -59,23 +73,47 @@ public final class R7fJournal implements Journal
             FbsJournalLevel.FULL,
     };
     private final CRC32C crc = new CRC32C();
+
+    private byte[] asciiScratch = new byte[INITIAL_SCRATCH];
+    private int[] headerOffsetsScratch = new int[INITIAL_HEADER_SLOTS];
+    private int[] attributeOffsetsScratch = new int[INITIAL_ATTRIBUTE_SLOTS];
+
     private MemorySegment segment;
     private Arena arena;
     private Path activePath;
     private long position;
-    private FileChannel channel;
     private int currentHeaderCount;
     private int currentAttributeCount;
-    private long segmentStartTs;
+    private boolean closed;
 
-    public R7fJournal(R7fJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
+    /**
+     * Sequence number of the next entry written to the current segment. Reset on every
+     * rotation; persisted per entry so that a reader can tell missing data from
+     * end-of-data.
+     */
+    private int nextSequence = R7fConstants.FIRST_ENTRY_SEQUENCE;
+
+    /**
+     * Wall-clock creation time of the active segment. Used for the file name, where it
+     * has to mean something to a human and has to survive a restart — which rules out
+     * {@link System#nanoTime()}, whose origin is arbitrary and per-JVM.
+     */
+    private long segmentStartEpochMillis;
+
+    /**
+     * Monotonic companion to {@link #segmentStartEpochMillis}, used for measuring segment
+     * lifetime without exposure to wall-clock steps (NTP, VM migration, manual changes).
+     */
+    private long segmentStartNanos;
+
+    public R7fJournal(final R7fJournalProvider provider, final Consumer<Path> finishedJournalFileSupplier)
     {
         this.provider = provider;
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
         rotateSegment();
     }
 
-    public R7fJournal(R7fJournalProvider provider)
+    public R7fJournal(final R7fJournalProvider provider)
     {
         this(provider, _ -> {
                 }
@@ -230,32 +268,31 @@ public final class R7fJournal implements Journal
 
     private int writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
     {
-        if (segment == null || segment.byteSize() == 0)
-        {
-            throw new IllegalStateException("Segment not initialized");
-        }
-
         final ByteBuffer fbBuf = fbBuilder.dataBuffer();
         final int fbLen = fbBuf.remaining();
         final MemorySegment fbSource = MemorySegment.ofBuffer(fbBuf);
 
         final int rawLen = (rawData != null) ? rawData.remaining() : 0;
 
-        // payloadLen: fbLen + rawLen + 2 ints for metadata
+        // payloadLen: fbLen + rawLen + 2 ints for the length metadata
         final int payloadLen = Integer.BYTES + Integer.BYTES + fbLen + rawLen;
-        // totalLen: MAGIC + payloadLen field + payload + CRC footer
-        final int totalLen = Integer.BYTES + Integer.BYTES + payloadLen + Integer.BYTES;
+        // totalLen: header (magic, sequence, payloadLen, fbLen, rawLen) + payload + CRC footer
+        final int totalLen = R7fConstants.ENTRY_HEADER_SIZE + payloadLen + Integer.BYTES;
 
         ensureCapacity(totalLen);
 
+        final int sequence = nextSequence;
+
         // Header block
         putInt(R7fConstants.MAGIC);
+        putInt(sequence);
         putInt(payloadLen);
         putInt(fbLen);
         putInt(rawLen);
 
-        // CRC Calculation
+        // CRC covers everything but the magic: the sequence, the three lengths and the payload.
         crc.reset();
+        updateInt(crc, sequence);
         updateInt(crc, payloadLen);
         updateInt(crc, fbLen);
         updateInt(crc, rawLen);
@@ -278,6 +315,8 @@ public final class R7fJournal implements Journal
         // Write CRC footer
         putInt((int) crc.getValue());
 
+        nextSequence++;
+
         return totalLen; // Returning the total binary size of the entry
     }
 
@@ -286,6 +325,7 @@ public final class R7fJournal implements Journal
         this.currentHeaderCount = 0;
         headers.forEach(this, (self, name, value) ->
                 {
+                    self.headerOffsetsScratch = ensureSlot(self.headerOffsetsScratch, self.currentHeaderCount);
                     headerWrite(self, name, value);
                     self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
                 }
@@ -308,12 +348,29 @@ public final class R7fJournal implements Journal
         if (attributes != null)
         {
             attributes.forEach(this, (self, name, value) -> {
+                        self.attributeOffsetsScratch = ensureSlot(self.attributeOffsetsScratch, self.currentAttributeCount);
                         headerWrite(self, name, value);
                         self.attributeOffsetsScratch[self.currentAttributeCount++] = Header.endHeader(self.fbb);
                     }
             );
         }
         return currentAttributeCount == 0 ? 0 : createOffsetVector(attributeOffsetsScratch, currentAttributeCount);
+    }
+
+    /**
+     * Grows an offset scratch array when a request carries more headers or attributes
+     * than the current array holds. Doubling means this is amortised away after the first
+     * few requests, and the steady state stays allocation-free.
+     */
+    private static int[] ensureSlot(final int[] current, final int index)
+    {
+        if (index < current.length)
+        {
+            return current;
+        }
+        final int[] grown = new int[current.length * 2];
+        System.arraycopy(current, 0, grown, 0, current.length);
+        return grown;
     }
 
     private int createOffsetVector(int[] offsets, int count)
@@ -323,10 +380,31 @@ public final class R7fJournal implements Journal
         return fbb.endVector();
     }
 
+    /**
+     * Copies the latin-1 bytes of the given string into the reusable scratch buffer.
+     * <p>
+     * The deprecated {@code String.getBytes(int, int, byte[], int)} is used deliberately:
+     * it truncates each char to its low byte with no intermediate allocation, which is
+     * exactly the ISO-8859-1 encoding HTTP header values arrive in. The decoder reads
+     * them back as ISO-8859-1, so the bytes round-trip unchanged.
+     */
     @SuppressWarnings("deprecation")
     private int copyToScratch(String str)
     {
         final int len = str.length();
+        if (len > MAX_SCRATCH)
+        {
+            throw new IllegalArgumentException("Journal value exceeds the maximum of " + MAX_SCRATCH + " bytes: " + len);
+        }
+        if (len > asciiScratch.length)
+        {
+            int capacity = asciiScratch.length;
+            while (capacity < len)
+            {
+                capacity <<= 1;
+            }
+            asciiScratch = new byte[capacity];
+        }
         str.getBytes(0, len, asciiScratch, 0);
         return len;
     }
@@ -342,6 +420,11 @@ public final class R7fJournal implements Journal
     @Override
     public synchronized void close() throws IOException
     {
+        if (closed)
+        {
+            return;
+        }
+        closed = true;
         if (segment != null)
         {
             finalizeActiveSegment();
@@ -354,17 +437,23 @@ public final class R7fJournal implements Journal
         {
             final MemorySegment retiringSegment = this.segment;
             final Arena retiringArena = this.arena;
-            final FileChannel retiringChannel = this.channel;
             final Path retiringPath = this.activePath;
             final long finalPosition = this.position;
 
             // Capture the bounds for the filename before resetting
-            final long firstTs = this.segmentStartTs;
+            final long firstTs = this.segmentStartEpochMillis;
             final long lastTs = System.currentTimeMillis();
+
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("Rotating {} after {} entries and {} ms",
+                        retiringPath.getFileName(),
+                        nextSequence - R7fConstants.FIRST_ENTRY_SEQUENCE,
+                        (System.nanoTime() - segmentStartNanos) / 1_000_000L);
+            }
 
             this.segment = null;
             this.arena = null;
-            this.channel = null;
 
             Thread.startVirtualThread(() -> {
                 try
@@ -373,7 +462,6 @@ public final class R7fJournal implements Journal
                     final Path finalizedPath = finalizeSegmentAsync(
                             retiringSegment,
                             retiringArena,
-                            retiringChannel,
                             retiringPath,
                             finalPosition,
                             firstTs,
@@ -397,46 +485,37 @@ public final class R7fJournal implements Journal
         this.activePath = next.path();
         this.arena = next.arena();
 
-        writePreamble();
+        writePreamble(next.segmentSequence());
     }
 
+    @SuppressWarnings("unused")
     private Path finalizeSegmentAsync(
             final MemorySegment oldSegment,
             final Arena oldArena,
-            final FileChannel oldChannel,
             final Path oldPath,
             final long finalPosition,
             final long firstTs,
             final long lastTs) throws IOException
     {
+        // 1. Unmap the memory. The OS flushes any remaining dirty pages to disk.
         oldArena.close();
 
-        if (oldChannel != null && oldChannel.isOpen())
+        // 2. Open a transient channel strictly to truncate the file
+        try (FileChannel fc = FileChannel.open(oldPath, StandardOpenOption.WRITE))
         {
-            oldChannel.truncate(finalPosition);
-            oldChannel.close();
+            fc.truncate(finalPosition);
         }
 
+        // 3. Delete or Rename
         if (finalPosition <= R7fConstants.PREAMBLE_SIZE)
         {
             Files.delete(oldPath);
             return null;
         }
-        else
-        {
-            // Strip the .active extension to get the base prefix (e.g., "journal-1")
-            final String baseName = oldPath.getFileName().toString()
-                    .replace(R7fConstants.ACTIVE_FILE_EXTENSION, "");
 
-            // Construct the Time-Bounded Filename: journal-1-171684000-171684360.r7f
-            final String timeBoundedName = String.format("%s-%d-%d%s",
-                    baseName, firstTs, lastTs, R7fConstants.R7F_FILE_EXTENSION
-            );
-
-            final Path target = oldPath.resolveSibling(timeBoundedName);
-            Files.move(oldPath, target, StandardCopyOption.ATOMIC_MOVE);
-            return target;
-        }
+        final Path target = oldPath.resolveSibling(sealedName(oldPath, firstTs, lastTs));
+        Files.move(oldPath, target, StandardCopyOption.ATOMIC_MOVE);
+        return target;
     }
 
     private void finalizeActiveSegment() throws IOException
@@ -444,18 +523,11 @@ public final class R7fJournal implements Journal
         segment.force();
         arena.close();
 
-        if (channel != null && channel.isOpen())
-        {
-            channel.truncate(position);
-            channel.close();
-        }
-
-        final long firstTs = this.segmentStartTs;
+        final long firstTs = this.segmentStartEpochMillis;
         final long lastTs = System.currentTimeMillis();
 
         segment = null;
         arena = null;
-        channel = null;
 
         if (position <= R7fConstants.PREAMBLE_SIZE)
         {
@@ -463,41 +535,40 @@ public final class R7fJournal implements Journal
         }
         else
         {
-            final String baseName = activePath.getFileName().toString()
-                    .replace(R7fConstants.ACTIVE_FILE_EXTENSION, "");
-
-            final String timeBoundedName = String.format("%s-%d-%d%s",
-                    baseName, firstTs, lastTs, R7fConstants.R7F_FILE_EXTENSION
-            );
-
-            final Path target = activePath.resolveSibling(timeBoundedName);
+            final Path target = activePath.resolveSibling(sealedName(activePath, firstTs, lastTs));
             Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
         }
     }
 
-    private void ensureCapacity(long needed)
+    private static String sealedName(final Path activePath, final long firstTs, final long lastTs)
     {
-        if (segment == null)
-        {
-            rotateSegment();
-        }
+        final String baseName = activePath.getFileName().toString()
+                .replace(R7fConstants.ACTIVE_FILE_EXTENSION, "");
 
-        if (position + needed > segment.byteSize())
-        {
-            rotateSegment();
-        }
-
-        if (position + needed > segment.byteSize())
-        {
-            throw new IllegalStateException(
-                    "Entry too large for segment. needed=" + needed +
-                            " remaining=" + remaining());
-        }
+        return String.format("%s-%d-%d%s", baseName, firstTs, lastTs, R7fConstants.R7F_FILE_EXTENSION);
     }
 
-    private long remaining()
+    private void ensureCapacity(long needed)
     {
-        return segment.byteSize() - position;
+        if (closed)
+        {
+            throw new IllegalStateException("Journal is closed");
+        }
+
+        if (needed > provider.getSegmentSizeBytes() - R7fConstants.PREAMBLE_SIZE)
+        {
+            // Rotating would not help: no segment can ever hold this entry. Fail before
+            // burning a freshly warmed segment on it.
+            throw new IllegalStateException(
+                    "Entry of " + needed + " bytes can never fit a segment of "
+                            + provider.getSegmentSizeBytes() + " bytes (minus a "
+                            + R7fConstants.PREAMBLE_SIZE + " byte preamble)");
+        }
+
+        if (segment == null || position + needed > segment.byteSize())
+        {
+            rotateSegment();
+        }
     }
 
     private void putLong(long v)
@@ -506,13 +577,23 @@ public final class R7fJournal implements Journal
         position += Long.BYTES;
     }
 
-    private void writePreamble()
+    /**
+     * Writes the 1KB preamble. The remainder is left as the zero fill of the freshly
+     * allocated file, which is what marks "no entry was ever written here" for readers.
+     *
+     * @param segmentSequence monotonic per-shard segment counter
+     */
+    private void writePreamble(final long segmentSequence)
     {
         position = 0;
-        segmentStartTs = System.currentTimeMillis();
+        segmentStartEpochMillis = System.currentTimeMillis();
+        segmentStartNanos = System.nanoTime();
+        nextSequence = R7fConstants.FIRST_ENTRY_SEQUENCE;
+
         putInt(R7fConstants.MAGIC);
-        putShort(R7fConstants.VERSION_1);
-        putLong(System.currentTimeMillis());
+        putShort(R7fConstants.CURRENT_VERSION);
+        putLong(segmentSequence);
+        putLong(segmentStartEpochMillis);
         position = R7fConstants.PREAMBLE_SIZE;
     }
 
@@ -536,5 +617,13 @@ public final class R7fJournal implements Journal
     public long getOffset()
     {
         return position;
+    }
+
+    /**
+     * Sequence number that the next entry written to the active segment will carry.
+     */
+    public synchronized int getNextSequence()
+    {
+        return nextSequence;
     }
 }
