@@ -495,7 +495,7 @@ public final class JournalDecoder
                 final long responseBodyBytes = end.responseBodyBytes();
                 final GatewayAttributes attributes = new FbsGatewayAttributes(end);
 
-                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd, (int) end.requestCrc32c(), (int) end.responseCrc32c());
+                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd, end.requestCrc32c(), end.responseCrc32c());
             }
 
             default -> throw new CorruptEntryException("Unknown event type: " + journalEvent.eventType());

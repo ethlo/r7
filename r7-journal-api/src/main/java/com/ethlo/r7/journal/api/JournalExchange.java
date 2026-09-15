@@ -22,7 +22,11 @@ public final class JournalExchange
      * Value a writer records when it did not compute a body checksum.
      * <p>
      * A checksum cannot signal its own absence — every 32-bit value, zero included, is a
-     * legitimate CRC32C of some input — so the writer has to say so explicitly.
+     * legitimate CRC32C of some input — so the writer has to say so explicitly, and the
+     * sentinel has to live outside the value domain. That is why checksums are carried as
+     * {@code long} holding the unsigned 32-bit value: as an {@code int}, {@code -1} is the
+     * perfectly ordinary checksum {@code 0xFFFFFFFF}, and one body in four billion would
+     * have had its verification skipped by the very mechanism meant to guarantee it.
      * <p>
      * The gateway records this per direction, not per exchange: it checksums exactly the
      * bytes it hands to the journal, so a direction that journaled no body (no body on the
@@ -31,7 +35,21 @@ public final class JournalExchange
      * must skip verification for such a direction rather than treat {@code -1} as a
      * checksum that failed to match.
      */
-    public static final int CHECKSUM_NOT_RECORDED = -1;
+    public static final long CHECKSUM_NOT_RECORDED = -1L;
+
+    /**
+     * The value to record for a body checksum: the accumulated CRC32C as an unsigned 32-bit
+     * number, or {@link #CHECKSUM_NOT_RECORDED} when nothing was checksummed.
+     * <p>
+     * Use this rather than reading the accumulator directly. {@code (int) crc.getValue()}
+     * is the trap: narrowing and re-widening sign-extends every checksum with the high bit
+     * set into a negative number that can never equal what a reader computes, and exactly
+     * one value in four billion lands on the sentinel and skips verification entirely.
+     */
+    public static long checksumOf(final CRC32C accumulator)
+    {
+        return accumulator == null ? CHECKSUM_NOT_RECORDED : accumulator.getValue();
+    }
 
     private final String requestId;
     private final List<ByteBuffer> requestBodyFragments = new ArrayList<>(0);
@@ -170,18 +188,18 @@ public final class JournalExchange
      * CRC32C of the request body fragments seen by this reader, or {@code null} if no
      * request body was journaled.
      */
-    public Integer getObservedRequestCrc32()
+    public Long getObservedRequestCrc32()
     {
-        return observedRequestCrc == null ? null : (int) observedRequestCrc.getValue();
+        return observedRequestCrc == null ? null : observedRequestCrc.getValue();
     }
 
     /**
      * CRC32C of the response body fragments seen by this reader, or {@code null} if no
      * response body was journaled.
      */
-    public Integer getObservedResponseCrc32()
+    public Long getObservedResponseCrc32()
     {
-        return observedResponseCrc == null ? null : (int) observedResponseCrc.getValue();
+        return observedResponseCrc == null ? null : observedResponseCrc.getValue();
     }
 
     public void setTiming(final long clientStartTs, final long clientEndTs, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs)

@@ -82,7 +82,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
     }
 
     @Override
-    public void onChecksumMismatch(JournalExchange exchange, BodyKind kind, int journaled, int observed)
+    public void onChecksumMismatch(JournalExchange exchange, BodyKind kind, long journaled, long observed)
     {
         stats.checksumMismatches++;
         stats.problems.add("checksum mismatch " + exchange.getRequestId() + " " + kind

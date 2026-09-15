@@ -22,7 +22,7 @@ public interface Journal extends AutoCloseable
 
     int responseBody(String reqId, ByteBuffer data);
 
-    int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestChecksumValue, final int responseChecksumValue);
+    int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long requestChecksumValue, final long responseChecksumValue);
 
     @Override
     void close() throws IOException;

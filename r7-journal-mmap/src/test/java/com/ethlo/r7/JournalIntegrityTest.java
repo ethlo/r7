@@ -474,6 +474,77 @@ class JournalIntegrityTest
     }
 
     /**
+     * {@code 0xFFFFFFFF} is an ordinary CRC32C, not a sentinel.
+     * <p>
+     * While checksums travelled as {@code int}, that value <em>was</em> {@code -1}, so a
+     * body hashing to all ones had its verification skipped by the mechanism that exists to
+     * guarantee it — about one body in four billion, silently, and only ever on the bodies
+     * unlucky enough to hash that way. Carrying them as {@code long} is what puts the
+     * sentinel outside the value domain.
+     */
+    @Test
+    void aChecksumOfAllOnesIsNotMistakenForAnAbsentOne() throws IOException
+    {
+        final String reqId = "req-all-ones";
+        final byte[] body = "not the body that hashes to all ones".getBytes(StandardCharsets.ISO_8859_1);
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId,
+                    ByteBuffer.wrap("POST /x HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            journal.requestBody(reqId, ByteBuffer.wrap(body));
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                    0xFFFFFFFFL, JournalExchange.CHECKSUM_NOT_RECORDED);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches)
+                .as("a recorded checksum of 0xFFFFFFFF must be verified like any other")
+                .containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * Entries lost from the <em>start</em> of a segment must be reported.
+     * <p>
+     * Sequences restart at 1 in every segment, so a reader opening a segment it has never
+     * seen knows exactly what the first entry must be. Starting with no expectation instead
+     * — adopting whichever sequence turns up first — makes a segment that lost its opening
+     * entries read back as a shorter but perfectly consistent one. That is the only point
+     * in the file where the loss is detectable at all, since there is no earlier entry to
+     * compare against.
+     */
+    @Test
+    void entriesLostAtTheStartOfASegmentAreReported() throws IOException
+    {
+        writeExchanges(1);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        assertThat(entries).hasSizeGreaterThan(1);
+        assertThat(entries.get(0).sequence()).isEqualTo(R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        // The segment now opens at #5: entries 1 through 4 were written and never reached
+        // the device. The framing and CRC stay valid, so the sequence is the only evidence
+        // and the reader's expectation is the only thing it can be checked against.
+        rewriteSequence(segment, entries.get(0), 5);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("a fresh segment must expect #%d, so opening at #5 is four entries lost. sink: %s",
+                        R7fConstants.FIRST_ENTRY_SEQUENCE, sink)
+                .isEqualTo(4L);
+
+        // The entries after it still carry their original numbering, which now steps
+        // backwards. That is reported and decoding stops, per FORMAT.md 6 - incidental
+        // here, but asserted so the test fails loudly if that behaviour changes.
+        assertThat(sink.sequenceRegressions).hasSize(1);
+    }
+
+    /**
      * The reader must not consume an active segment's pre-allocated tail when it finds an
      * entry it cannot parse.
      * <p>

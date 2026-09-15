@@ -92,7 +92,7 @@ public interface ExchangeCompletionListener
      * @param journaled the CRC32C the gateway wrote into the EndExchange event
      * @param observed  the CRC32C of the body fragments actually read back
      */
-    default void onChecksumMismatch(JournalExchange exchange, BodyKind kind, int journaled, int observed)
+    default void onChecksumMismatch(JournalExchange exchange, BodyKind kind, long journaled, long observed)
     {
     }
 

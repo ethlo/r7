@@ -14,6 +14,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.journal.api.Journal;
+import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -23,8 +24,17 @@ public final class StatefulJournal implements Journal
     private final Journal delegate;
     private final RouteJournalConfig config;
     private final CompletedGatewayExchange exchange;
-    private final CRC32C requestChecksum = new CRC32C();
-    private final CRC32C responseChecksum = new CRC32C();
+    /**
+     * Checksums of the body bytes this journal actually passed to the delegate, created on
+     * the first fragment of that direction.
+     * <p>
+     * Lazy is the whole point. Eagerly created accumulators cannot distinguish "no body was
+     * journaled" from "a body was journaled and it hashes to the CRC32C of nothing", and
+     * they answer 0 for both. The reader has to know which, because verifying a checksum
+     * against a body that was never stored reports a mismatch on a perfectly intact record.
+     */
+    private CRC32C requestChecksum;
+    private CRC32C responseChecksum;
 
     private JournalLevel level;
     private String requestId;
@@ -111,6 +121,10 @@ public final class StatefulJournal implements Journal
     {
         if (config.request().level() == JournalLevel.FULL)
         {
+            if (requestChecksum == null)
+            {
+                requestChecksum = new CRC32C();
+            }
             requestChecksum.update(data.duplicate());
             final int written = delegate.requestBody(reqId, data);
             this.bytesWritten += written;
@@ -124,6 +138,10 @@ public final class StatefulJournal implements Journal
     {
         if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
+            if (responseChecksum == null)
+            {
+                responseChecksum = new CRC32C();
+            }
             responseChecksum.update(data.duplicate());
             final int written = delegate.responseBody(reqId, data);
             this.bytesWritten += written;
@@ -132,13 +150,23 @@ public final class StatefulJournal implements Journal
         return 0;
     }
 
+    /**
+     * The two checksum arguments are deliberately <em>not</em> forwarded.
+     * <p>
+     * This class decides what actually reaches the delegate — it gates every body fragment
+     * on the effective journal level — so it is the only layer that can state a checksum
+     * over the bytes that were really stored. A caller upstream sees the bytes on the wire,
+     * which is a different set whenever the level is below FULL. Recording the caller's
+     * value would produce a checksum of bytes the journal does not contain, and the reader
+     * would report a mismatch on an intact record.
+     */
     @Override
-    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
+    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long ignoredRequestChecksum, final long ignoredResponseChecksum)
     {
         int written = checkAndFlushRequest();
         written += checkAndFlushResponse();
 
-        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int) requestChecksum.getValue(), (int) responseChecksum.getValue());
+        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, JournalExchange.checksumOf(requestChecksum), JournalExchange.checksumOf(responseChecksum));
         this.bytesWritten += endBytes;
         return written + endBytes;
     }

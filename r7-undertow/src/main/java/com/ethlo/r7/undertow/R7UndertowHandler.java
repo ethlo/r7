@@ -152,12 +152,12 @@ public final class R7UndertowHandler implements HttpHandler
 
             final long proxyFirstBytesTs = -1;
 
-            // CHECKSUM_NOT_RECORDED when this exchange journaled no body in that
-            // direction, the real CRC32C of the journaled bytes otherwise. The reader
-            // compares it against what it reads back, which is what makes "the stored
-            // record is the one that crossed the wire" checkable rather than assumed.
-            final int requestBodyCrc32 = gatewayExchange.requestBodyChecksum();
-            final int responseBodyCrc32 = gatewayExchange.responseBodyChecksum();
+            // Body checksums are supplied by StatefulJournal, which is the only layer
+            // that knows which fragments actually reached the journal — it gates them on
+            // the effective level. Anything computed here would describe the bytes on the
+            // wire instead, and would not match what a reader reads back.
+            final long requestBodyCrc32 = JournalExchange.CHECKSUM_NOT_RECORDED;
+            final long responseBodyCrc32 = JournalExchange.CHECKSUM_NOT_RECORDED;
             final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
 
             tagExchangeAttributes(exchange, gatewayExchange);
@@ -556,22 +556,13 @@ public final class R7UndertowHandler implements HttpHandler
         if (journalConfig.request().level() == JournalLevel.FULL)
         {
             exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer ->
-            {
-                // Checksum first: the journal consumes the slice it is given.
-                gatewayExchange.updateRequestBodyChecksum(buffer);
-                journal.requestBody(requestId, buffer);
-            }));
+                    journal.requestBody(requestId, buffer)));
         }
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
             exchange.addResponseWrapper((factory, ex) ->
-                    new TeeingStreamSinkConduit(factory.create(), buffer ->
-                    {
-                        // Checksum first: the journal consumes the slice it is given.
-                        gatewayExchange.updateResponseBodyChecksum(buffer);
-                        journal.responseBody(requestId, buffer);
-                    }
-                    ));
+                    new TeeingStreamSinkConduit(factory.create(),
+                            buffer -> journal.responseBody(requestId, buffer)));
         }
     }
 

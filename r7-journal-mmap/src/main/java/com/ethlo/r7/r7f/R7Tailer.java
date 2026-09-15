@@ -595,7 +595,19 @@ public final class R7Tailer
      */
     private record Checkpoint(long offset, int nextSequence)
     {
-        static final Checkpoint START = new Checkpoint(0L, JournalDecoder.UNKNOWN_SEQUENCE);
+        /**
+         * A segment nobody has read yet, starting at offset 0 — so the first entry it
+         * yields must be {@link R7fConstants#FIRST_ENTRY_SEQUENCE}, because entry
+         * sequences restart at 1 in every segment.
+         * <p>
+         * Using UNKNOWN_SEQUENCE here defeated the detection it was supposed to support:
+         * with no expectation, the first entry that survives becomes the baseline, so a
+         * segment whose opening entries never reached the device reads back as a shorter
+         * but perfectly consistent segment and nothing is reported missing. The loss is at
+         * the start of the file, which is exactly where a reader has the information to
+         * catch it and nowhere else to get it from.
+         */
+        static final Checkpoint START = new Checkpoint(0L, R7fConstants.FIRST_ENTRY_SEQUENCE);
 
         static Checkpoint parse(final String value)
         {
@@ -604,6 +616,10 @@ public final class R7Tailer
                 final int sep = value.indexOf(':');
                 if (sep < 0)
                 {
+                    // A bare offset, written before sequences were tracked. It may point
+                    // anywhere inside the segment, so there is no sequence to expect —
+                    // unlike START, which is known to begin at the first entry. This is
+                    // the one place UNKNOWN_SEQUENCE is still the right answer.
                     return new Checkpoint(Long.parseLong(value.trim()), JournalDecoder.UNKNOWN_SEQUENCE);
                 }
                 return new Checkpoint(

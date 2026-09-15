@@ -116,7 +116,7 @@ public class ExchangeReassembler implements JournalEventListener
                       int status,
                       long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                       long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
-                      final int requestCrc32, final int responseCrc32c)
+                      final long requestCrc32, final long responseCrc32c)
     {
         final JournalExchange exchange = inFlight.remove(reqId);
 
@@ -164,7 +164,7 @@ public class ExchangeReassembler implements JournalEventListener
      * means the body bytes in the journal are not the bytes that crossed the wire, which
      * is exactly what an audit trail exists to rule out.
      */
-    private void verifyChecksums(final JournalExchange exchange, final int journaledRequestCrc, final int journaledResponseCrc)
+    private void verifyChecksums(final JournalExchange exchange, final long journaledRequestCrc, final long journaledResponseCrc)
     {
         // Whether a body should be there is decided by the journal level and the byte
         // count, never by the checksum value: CRC32C of a non-empty body is legitimately
@@ -172,14 +172,15 @@ public class ExchangeReassembler implements JournalEventListener
         // the exchanges whose bodies hash that way.
         //
         // Whether a checksum was *recorded* is a separate question, and one the writer has
-        // to answer explicitly for the same reason — see CHECKSUM_NOT_RECORDED. The
-        // gateway records that value for every exchange today, so this comparison is
-        // dormant in production until it computes checksums.
+        // to answer explicitly for the same reason — see CHECKSUM_NOT_RECORDED. Both values
+        // are unsigned 32-bit checksums widened to long, which is what leaves -1 free to
+        // mean "absent"; comparing them as int would make 0xFFFFFFFF indistinguishable from
+        // the sentinel.
         if (journaledRequestCrc != JournalExchange.CHECKSUM_NOT_RECORDED
                 && bodyWasJournaled(exchange.getClientRequestLevel(), exchange.getRequestBodyBytes()))
         {
-            final Integer observed = exchange.getObservedRequestCrc32();
-            if (observed == null || observed.intValue() != journaledRequestCrc)
+            final Long observed = exchange.getObservedRequestCrc32();
+            if (observed == null || observed.longValue() != journaledRequestCrc)
             {
                 reportMismatch(exchange, BodyKind.REQUEST, journaledRequestCrc, observed);
             }
@@ -188,8 +189,8 @@ public class ExchangeReassembler implements JournalEventListener
         if (journaledResponseCrc != JournalExchange.CHECKSUM_NOT_RECORDED
                 && bodyWasJournaled(exchange.getClientResponseLevel(), exchange.getResponseBodyBytes()))
         {
-            final Integer observed = exchange.getObservedResponseCrc32();
-            if (observed == null || observed.intValue() != journaledResponseCrc)
+            final Long observed = exchange.getObservedResponseCrc32();
+            if (observed == null || observed.longValue() != journaledResponseCrc)
             {
                 reportMismatch(exchange, BodyKind.RESPONSE, journaledResponseCrc, observed);
             }
@@ -204,10 +205,14 @@ public class ExchangeReassembler implements JournalEventListener
      * the rest of the log under hundreds of thousands of identical lines and tells an
      * operator nothing the first line did not.
      */
-    private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final int journaled, final Integer observed)
+    private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final long journaled, final Long observed)
     {
         final long total = checksumMismatches.incrementAndGet();
-        output.onChecksumMismatch(exchange, kind, journaled, observed == null ? 0 : observed);
+        // No body observed is reported as the same sentinel the writer would have used, so
+        // a listener never has to read "observed 0" and guess whether that means the empty
+        // checksum or nothing at all.
+        output.onChecksumMismatch(exchange, kind, journaled,
+                observed == null ? JournalExchange.CHECKSUM_NOT_RECORDED : observed);
 
         if (total == 1)
         {

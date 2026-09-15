@@ -61,7 +61,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     }
 
     @Override
-    public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind, final int journaled, final int observed)
+    public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind, final long journaled, final long observed)
     {
         checksumMismatches.add(exchange.getRequestId() + ":" + kind);
     }

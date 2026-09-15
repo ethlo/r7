@@ -373,12 +373,18 @@ class JournalLifecycleTest
      * record a real one: the reader verifies whenever a body was journaled, and compares
      * the full 32 bits, because CRC32C of a non-empty body is legitimately zero for some
      * inputs and cannot be used as a "no body" sentinel.
+     * <p>
+     * Returned as the unsigned 32-bit value in a {@code long}, never narrowed to
+     * {@code int}. Narrowing and re-widening sign-extends every checksum with the high bit
+     * set into a negative number that cannot equal what the reader computes — and one value
+     * in four billion would land exactly on {@link JournalExchange#CHECKSUM_NOT_RECORDED}
+     * and skip verification altogether.
      */
-    private static int crc32c(final byte[] data)
+    private static long crc32c(final byte[] data)
     {
         final CRC32C crc = new CRC32C();
         crc.update(data, 0, data.length);
-        return (int) crc.getValue();
+        return crc.getValue();
     }
 
     private static ByteBuffer wrap(final String s)

@@ -27,5 +27,5 @@ public interface JournalEventListener
                int status,
                long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
-               final int requestCrc32, final int responseCrc32c);
+               final long requestCrc32, final long responseCrc32c);
 }

@@ -224,7 +224,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int requestCheckSumValue, final int responseChecksumValue)
+    public synchronized int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long requestCheckSumValue, final long responseChecksumValue)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
