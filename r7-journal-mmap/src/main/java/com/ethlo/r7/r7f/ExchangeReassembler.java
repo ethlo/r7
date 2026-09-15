@@ -18,6 +18,8 @@ import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.util.StringExchangeMap;
+import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
 /**
  * Rebuilds whole exchanges from the interleaved event stream.
@@ -65,25 +67,25 @@ public class ExchangeReassembler implements JournalEventListener
     @Override
     public void onClientRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource)
     {
-        getOrCreate(reqId).setClientRequest(startLine, level, headers, remoteAddress, ipSource);
+        getOrCreate(reqId).setClientRequest(startLine, level, copyOf(headers), remoteAddress, ipSource);
     }
 
     @Override
     public void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        getOrCreate(reqId).setUpstreamRequest(startLine, level, headers);
+        getOrCreate(reqId).setUpstreamRequest(startLine, level, copyOf(headers));
     }
 
     @Override
     public void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        getOrCreate(reqId).setUpstreamResponse(startLine, level, headers);
+        getOrCreate(reqId).setUpstreamResponse(startLine, level, copyOf(headers));
     }
 
     @Override
     public void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        getOrCreate(reqId).setClientResponse(startLine, level, headers);
+        getOrCreate(reqId).setClientResponse(startLine, level, copyOf(headers));
     }
 
     @Override
@@ -133,7 +135,7 @@ public class ExchangeReassembler implements JournalEventListener
         // Apply final metrics and forensic checksums
         exchange.setTiming(clientStartTs, clientEndTs, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs);
         exchange.setTraffic(requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes);
-        exchange.setAttributes(attributes);
+        exchange.setAttributes(copyOf(attributes));
         exchange.setStatus(status);
         exchange.setJournalChecksums(requestCrc32, responseCrc32c);
 
@@ -164,27 +166,70 @@ public class ExchangeReassembler implements JournalEventListener
      */
     private void verifyChecksums(final JournalExchange exchange, final int journaledRequestCrc, final int journaledResponseCrc)
     {
-        // A non-zero journaled checksum means the gateway saw a body. If none was read
-        // back, every body entry for this exchange is missing — which is a worse failure
-        // than a corrupted one, and skipping the check because there is nothing to compare
-        // would let the exchange through as complete with its body silently absent.
-        final Integer observedRequest = exchange.getObservedRequestCrc32();
-        if (journaledRequestCrc != 0 && (observedRequest == null || observedRequest != journaledRequestCrc))
+        // Whether a body should be there is decided by the journal level and the byte
+        // count, never by the checksum value: CRC32C of a non-empty body is legitimately
+        // zero for some inputs, so treating zero as "no body" would wave through exactly
+        // the exchanges whose bodies hash that way.
+        //
+        // Whether a checksum was *recorded* is a separate question, and one the writer has
+        // to answer explicitly for the same reason — see CHECKSUM_NOT_RECORDED. The
+        // gateway records that value for every exchange today, so this comparison is
+        // dormant in production until it computes checksums.
+        if (journaledRequestCrc != JournalExchange.CHECKSUM_NOT_RECORDED
+                && bodyWasJournaled(exchange.getClientRequestLevel(), exchange.getRequestBodyBytes()))
         {
-            checksumMismatches.incrementAndGet();
-            output.onChecksumMismatch(exchange, BodyKind.REQUEST, journaledRequestCrc, observedRequest == null ? 0 : observedRequest);
-            logger.error("Request body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}",
-                    exchange.getRequestId(), journaledRequestCrc, observedRequest == null ? "nothing at all" : observedRequest);
+            final Integer observed = exchange.getObservedRequestCrc32();
+            if (observed == null || observed.intValue() != journaledRequestCrc)
+            {
+                reportMismatch(exchange, BodyKind.REQUEST, journaledRequestCrc, observed);
+            }
         }
 
-        final Integer observedResponse = exchange.getObservedResponseCrc32();
-        if (journaledResponseCrc != 0 && (observedResponse == null || observedResponse != journaledResponseCrc))
+        if (journaledResponseCrc != JournalExchange.CHECKSUM_NOT_RECORDED
+                && bodyWasJournaled(exchange.getClientResponseLevel(), exchange.getResponseBodyBytes()))
         {
-            checksumMismatches.incrementAndGet();
-            output.onChecksumMismatch(exchange, BodyKind.RESPONSE, journaledResponseCrc, observedResponse == null ? 0 : observedResponse);
-            logger.error("Response body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}",
-                    exchange.getRequestId(), journaledResponseCrc, observedResponse == null ? "nothing at all" : observedResponse);
+            final Integer observed = exchange.getObservedResponseCrc32();
+            if (observed == null || observed.intValue() != journaledResponseCrc)
+            {
+                reportMismatch(exchange, BodyKind.RESPONSE, journaledResponseCrc, observed);
+            }
         }
+    }
+
+    /**
+     * Reports a mismatch once in full and then by count.
+     * <p>
+     * A mismatch is usually systemic rather than isolated — a writer that records the
+     * wrong thing produces one per exchange — so logging every occurrence at ERROR buries
+     * the rest of the log under hundreds of thousands of identical lines and tells an
+     * operator nothing the first line did not.
+     */
+    private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final int journaled, final Integer observed)
+    {
+        final long total = checksumMismatches.incrementAndGet();
+        output.onChecksumMismatch(exchange, kind, journaled, observed == null ? 0 : observed);
+
+        if (total == 1)
+        {
+            logger.error("{} body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}. "
+                            + "Further mismatches are counted, not logged; see getChecksumMismatchCount().",
+                    kind, exchange.getRequestId(), journaled, observed == null ? "nothing at all" : observed);
+        }
+        else if (logger.isDebugEnabled())
+        {
+            logger.debug("{} body checksum mismatch for {} (mismatch #{})", kind, exchange.getRequestId(), total);
+        }
+    }
+
+    /**
+     * Whether the journal should hold a body for this half of the exchange: bodies are
+     * only written at {@link JournalLevel#FULL}, and only when there were any bytes.
+     * A null level means the corresponding start event was never seen, so there is
+     * nothing to check against.
+     */
+    private static boolean bodyWasJournaled(final JournalLevel level, final long bodyBytes)
+    {
+        return level == JournalLevel.FULL && bodyBytes > 0;
     }
 
     private void maybeSweep()
@@ -237,6 +282,56 @@ public class ExchangeReassembler implements JournalEventListener
         {
             logger.debug("Abandoned incomplete exchange {}: {}", exchange.getRequestId(), reason);
         }
+    }
+
+    /**
+     * Copies header metadata out of the reader's buffers.
+     * <p>
+     * The decoder hands over lazy FlatBuffer views, and for a compressed segment those
+     * point into the tailer's reusable decompression buffer. An exchange outlives that —
+     * it is held until its end event, which can be in a later segment, and a consumer may
+     * hold a completed one for longer still. Keeping the view would let the headers
+     * silently change contents when the next file is decompressed, which is the same
+     * defect the body fragments already had.
+     * <p>
+     * Like the body copy, this allocates on the reader side only; the gateway write path
+     * is untouched.
+     */
+    private static GatewayHeaders copyOf(final GatewayHeaders headers)
+    {
+        if (headers == null)
+        {
+            return null;
+        }
+
+        final MutableFastGatewayHeaders copy = new MutableFastGatewayHeaders();
+        headers.forEach((name, value) -> {
+            if (name != null && value != null)
+            {
+                copy.add(name, value);
+            }
+        });
+        return copy;
+    }
+
+    /**
+     * As {@link #copyOf(GatewayHeaders)}, for the attribute view on the end event.
+     */
+    private static GatewayAttributes copyOf(final GatewayAttributes attributes)
+    {
+        if (attributes == null)
+        {
+            return null;
+        }
+
+        final FastGatewayAttributes copy = new FastGatewayAttributes();
+        attributes.forEach((name, value) -> {
+            if (name != null && value != null)
+            {
+                copy.add(name, value);
+            }
+        });
+        return copy;
     }
 
     private JournalExchange getOrCreate(String id)

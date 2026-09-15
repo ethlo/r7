@@ -18,6 +18,21 @@ import com.ethlo.r7.api.IpSource;
  */
 public final class JournalExchange
 {
+    /**
+     * Value a writer records when it did not compute a body checksum.
+     * <p>
+     * A checksum cannot signal its own absence — every 32-bit value, zero included, is a
+     * legitimate CRC32C of some input — so the writer has to say so explicitly.
+     * <p>
+     * The gateway records this per direction, not per exchange: it checksums exactly the
+     * bytes it hands to the journal, so a direction that journaled no body (no body on the
+     * wire, a journal level below {@code FULL}, or a protocol such as WebSocket that never
+     * installs the body tees) has nothing to checksum and records this instead. A reader
+     * must skip verification for such a direction rather than treat {@code -1} as a
+     * checksum that failed to match.
+     */
+    public static final int CHECKSUM_NOT_RECORDED = -1;
+
     private final String requestId;
     private final List<ByteBuffer> requestBodyFragments = new ArrayList<>(0);
     private final List<ByteBuffer> responseBodyFragments = new ArrayList<>(0);

@@ -168,6 +168,32 @@ public final class JournalDecoder
                 final int resyncPos = findNextEntry(buffer, startPos + 1, preAllocatedTail);
                 if (resyncPos < 0)
                 {
+                    if (preAllocatedTail)
+                    {
+                        // An active segment, and the writer may be part-way through
+                        // publishing this very entry: FORMAT.md §5 has it stamp the magic
+                        // first and the CRC last, so a half-written entry is byte-for-byte
+                        // indistinguishable from a damaged one until it is complete. The
+                        // resync scan then finds nothing, because everything past the write
+                        // frontier is still zero.
+                        //
+                        // Consuming the remainder here would checkpoint the entire
+                        // pre-allocation and skip every entry appended afterwards — for the
+                        // life of the segment, silently. So leave the position on the entry
+                        // and come back next tick. This does not weaken invariant 4: for an
+                        // active segment "the writer may still write here" *is* proof that
+                        // the end of the data has not been reached, which is exactly what
+                        // the invariant asks for.
+                        //
+                        // An entry that really is damaged stalls the tailer at this offset
+                        // until the segment is sealed — bounded, and reported in full by the
+                        // branch below once sealing makes the file final.
+                        logger.debug("Incomplete or corrupt entry at offset {} in active segment {} ({}); "
+                                + "retrying next tick.", startPos, sourceName, e.getMessage());
+                        buffer.position(startPos);
+                        break;
+                    }
+
                     final long skipped = buffer.limit() - startPos;
                     logger.warn("Corrupt entry at offset {} ({}); no further entries found, stopping.", startPos, e.getMessage());
                     buffer.position(buffer.limit());
@@ -206,7 +232,11 @@ public final class JournalDecoder
                     integrity.onSequenceRegression(sourceName, startPos, expectedSequence, entry.sequence());
                     logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
                             sourceName, startPos, expectedSequence, entry.sequence());
-                    buffer.position(startPos);
+                    // A sealed segment will never change, so leaving the position on the
+                    // offending entry would have a caller that checkpoints by offset read
+                    // and report it again on every tick. Consume the rest. An active
+                    // segment is still being written, so there the position stays put.
+                    buffer.position(preAllocatedTail ? startPos : buffer.limit());
                     break;
                 }
             }

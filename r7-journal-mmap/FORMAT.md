@@ -46,6 +46,12 @@ A r7f file MUST have the following layout:
 [1024-byte preamble][entry][entry]...[entry]
 ```
 
+A journal directory MAY also hold files that are not segments and carry no journal data.
+A writer keeps its per-shard segment-sequence high-water mark in `shard-<shardId>.seq`,
+so that the counter does not restart when retention has deleted every segment for that
+shard; readers MUST ignore any file that is not a segment. These files are an
+implementation's own bookkeeping and are not part of this format.
+
 ---
 
 ## 3.2 Preamble
@@ -196,6 +202,19 @@ discontinuity:
   reader MUST NOT treat this as end of data, and MUST report the count of missing entries.
 * A **backward step** in Sequence means the file is not a valid append-only segment and the
   reader MUST stop.
+* An entry that **fails to parse** — bad framing, or a CRC that does not match — in a
+  segment that still carries its pre-allocation MAY simply be an entry the writer has not
+  finished publishing. A writer stamps the Magic before the payload and the CRC32C last
+  (§4), so an entry caught mid-write is byte-for-byte indistinguishable from a damaged one.
+  A reader MUST NOT consume the remainder of such a segment on that basis: it MUST leave
+  its position at the start of that entry and re-read from there. The entry is either
+  complete by the next read, or still incomplete when the segment is sealed — at which
+  point it is final, §7 applies, and the damage MUST be reported as for any sealed segment.
+
+  This is a requirement about progress, not about tolerance: consuming to the end of a
+  pre-allocated segment tells a reader that checkpoints by offset that it has read the
+  whole file, and every entry the writer appends afterwards is then skipped without a
+  word.
 
 Replay semantics of `JournalEvent` are defined in the FlatBuffer specification, not here.
 

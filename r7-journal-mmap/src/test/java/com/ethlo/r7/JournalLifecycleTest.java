@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.zip.CRC32C;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,7 @@ class JournalLifecycleTest
                     clientStart, clientEnd, 201,
                     111L, requestBody.length, 222L, responseBody.length,
                     proxyStart, proxyFirstByte, proxyEnd,
-                    0, 0);
+                    crc32c(requestBody), crc32c(responseBody));
         }
 
         final CollectingSink sink = tail();
@@ -367,6 +368,19 @@ class JournalLifecycleTest
         return sink;
     }
 
+    /**
+     * The checksum the gateway records for a body. Tests that journal a body at FULL must
+     * record a real one: the reader verifies whenever a body was journaled, and compares
+     * the full 32 bits, because CRC32C of a non-empty body is legitimately zero for some
+     * inputs and cannot be used as a "no body" sentinel.
+     */
+    private static int crc32c(final byte[] data)
+    {
+        final CRC32C crc = new CRC32C();
+        crc.update(data, 0, data.length);
+        return (int) crc.getValue();
+    }
+
     private static ByteBuffer wrap(final String s)
     {
         return ByteBuffer.wrap(s.getBytes(StandardCharsets.ISO_8859_1));
@@ -377,7 +391,8 @@ class JournalLifecycleTest
         journal.endExchange(reqId, new FastGatewayAttributes(),
                 1_700_000_000_000L, 1_700_000_000_123L, status,
                 0L, 0L, 0L, 0L,
-                0L, 0L, 0L, 0, 0);
+                0L, 0L, 0L,
+                JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
     }
 
     private List<Path> sealedSegments() throws IOException

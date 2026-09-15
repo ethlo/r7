@@ -7,6 +7,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.SynchronousQueue;
@@ -25,6 +26,12 @@ public class R7fJournalProvider implements AutoCloseable
      */
     private static final long MIN_SEGMENT_SIZE = 64L * 1024L;
 
+    /**
+     * Extension of the per-shard sequence high-water marker. Deliberately not one of the
+     * journal extensions, so the tailer's file filter passes over it.
+     */
+    private static final String SEQUENCE_MARKER_EXTENSION = ".seq";
+
     private final Path tempDir;
     private final int shardId;
     private final long segmentSizeBytes;
@@ -37,6 +44,21 @@ public class R7fJournalProvider implements AutoCloseable
      * silently read only one of them.
      */
     private final AtomicLong segmentSequence;
+
+    /**
+     * Where the high-water mark for {@link #segmentSequence} is kept.
+     * <p>
+     * Seeding from the segments on disk is not enough on its own: retention deletes them
+     * once the tailer has read them, and a shard drained to empty would then start over at
+     * one. The tailer keys segments by (shard, sequence) and keeps checkpoints under that
+     * key, so a reused sequence can have a brand-new segment resumed at a dead one's
+     * offset. This file is what makes the counter monotonic across a restart that finds no
+     * segments at all.
+     * <p>
+     * It is not fsynced, in keeping with the rest of the design. Losing it degrades to
+     * seeding from the segments on disk, which is exactly the behaviour without it.
+     */
+    private final Path sequenceMarkerPath;
 
     // Hands a mapped file straight from the warmer thread to the writer
     private final BlockingQueue<WarmedSegment> pool = new SynchronousQueue<>();
@@ -62,7 +84,12 @@ public class R7fJournalProvider implements AutoCloseable
         this.tempDir = tempDir;
         this.shardId = shardId;
         this.segmentSizeBytes = segmentSizeBytes;
-        this.segmentSequence = new AtomicLong(highestExistingSequence(tempDir, shardId));
+        this.sequenceMarkerPath = tempDir == null ? null : tempDir.resolve("shard-" + shardId + SEQUENCE_MARKER_EXTENSION);
+        // Whichever is higher: the marker can lag if a write of it failed, and the segments
+        // can outlive a marker that was lost. Neither source may lower the counter.
+        this.segmentSequence = new AtomicLong(Math.max(
+                highestExistingSequence(tempDir, shardId),
+                readPersistedSequence()));
 
         this.warmerThread = new Thread(this::warmupLoop, "r7-warmer-shard-" + shardId);
         this.preFault = preFault;
@@ -145,6 +172,60 @@ public class R7fJournalProvider implements AutoCloseable
         }
     }
 
+    /**
+     * The persisted high-water mark, or 0 when there is none or it cannot be read. Zero is
+     * safe here only because the caller takes the maximum of this and the sequences found
+     * on disk.
+     */
+    private long readPersistedSequence()
+    {
+        if (sequenceMarkerPath == null || !Files.isRegularFile(sequenceMarkerPath))
+        {
+            return 0L;
+        }
+
+        try
+        {
+            return Long.parseLong(Files.readString(sequenceMarkerPath).trim());
+        }
+        catch (final IOException | NumberFormatException e)
+        {
+            log.warn("Unreadable segment sequence marker {} ({}); falling back to the highest sequence on disk",
+                    sequenceMarkerPath, e.toString());
+            return 0L;
+        }
+    }
+
+    /**
+     * Records the high-water mark, before the segment that claims it is created. A crash
+     * between the two leaves the counter ahead of the segments on disk, which costs a
+     * skipped sequence number and nothing else; the opposite order could hand the same key
+     * to two different segments.
+     */
+    private void persistSequence(final long sequence)
+    {
+        if (sequenceMarkerPath == null)
+        {
+            return;
+        }
+
+        final Path tmp = sequenceMarkerPath.resolveSibling(sequenceMarkerPath.getFileName() + ".tmp");
+        try
+        {
+            Files.writeString(tmp, Long.toString(sequence),
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            Files.move(tmp, sequenceMarkerPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        }
+        catch (final IOException e)
+        {
+            // Not fatal: the segments on disk still bound the counter for as long as they
+            // are retained. Taking the gateway down over a marker file would trade a
+            // narrow, restart-only risk for an outage.
+            log.warn("Could not record the segment sequence high-water mark in {} ({}); "
+                    + "a restart after full retention could reuse sequence numbers", sequenceMarkerPath, e.toString());
+        }
+    }
+
     private static long sequenceOf(final String fileName)
     {
         final String[] parts = fileName.split("-");
@@ -166,6 +247,7 @@ public class R7fJournalProvider implements AutoCloseable
     private WarmedSegment createSegment() throws IOException
     {
         final long sequence = segmentSequence.incrementAndGet();
+        persistSequence(sequence);
         final String name = String.format("shard-%d-%d-%d%s",
                 shardId, System.currentTimeMillis(), sequence, R7fConstants.ACTIVE_FILE_EXTENSION
         );

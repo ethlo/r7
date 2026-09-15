@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
@@ -45,6 +46,9 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 class JournalIntegrityTest
 {
     private static final int SEGMENT_SIZE = 256 * 1024;
+
+    /** Mirrors {@code R7Tailer.CHECKPOINT_FILE}, which is private to the tailer. */
+    private static final String CHECKPOINT_FILE = ".r7_checkpoints";
 
     @TempDir
     Path journalDir;
@@ -186,7 +190,7 @@ class JournalIntegrityTest
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                    0x0BADC0DE, 0);
+                    0x0BADC0DE, JournalExchange.CHECKSUM_NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -305,7 +309,8 @@ class JournalIntegrityTest
                         ByteBuffer.wrap("GET / HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
                         new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
                 journal.endExchange(reqId, new FastGatewayAttributes(),
-                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0, 0);
+                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                        JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
             }
         }
 
@@ -371,7 +376,35 @@ class JournalIntegrityTest
             // No requestBody entry at all, but the end event says a body was seen.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, 4096L, 0L, 0L, 0L, 0L, 0L,
-                    0x12345678, 0);
+                    0x12345678, JournalExchange.CHECKSUM_NOT_RECORDED);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches).as("sink: %s", sink).containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * A journaled checksum of zero must still be verified. CRC32C evaluates to zero for
+     * some non-empty inputs, so treating zero as "there was no body" would wave through
+     * exactly the exchanges whose bodies hash that way — including ones whose stored body
+     * was lost entirely, as here.
+     */
+    @Test
+    void zeroChecksumIsStillVerified() throws IOException
+    {
+        final String reqId = "req-zero-crc";
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId,
+                    ByteBuffer.wrap("POST /x HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            // A body was seen on the wire but none was journaled, and the recorded
+            // checksum happens to be zero.
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, 128L, 0L, 0L, 0L, 0L, 0L,
+                    0, JournalExchange.CHECKSUM_NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -440,6 +473,113 @@ class JournalIntegrityTest
         assertThat(quarantinedFiles()).isEmpty();
     }
 
+    /**
+     * The reader must not consume an active segment's pre-allocated tail when it finds an
+     * entry it cannot parse.
+     * <p>
+     * The writer stamps the magic first and the CRC last, so an entry caught mid-publish is
+     * byte-for-byte a corrupt entry: header present, payload short, checksum wrong. The
+     * resync scan then finds nothing after it, because everything past the write frontier
+     * is still zero. Treating that as "no further entries, stop" and jumping to the end of
+     * the buffer checkpoints the whole pre-allocation — and every entry appended afterwards
+     * is skipped, silently, for the life of the segment.
+     * <p>
+     * This is not a rare corruption path. It is what tailing a live writer looks like
+     * whenever a tick lands between the magic and the checksum.
+     */
+    @Test
+    void partialTrailingEntryInAnActiveSegmentIsRetriedNotConsumed() throws IOException
+    {
+        writeExchanges(6);
+        final Path sealed = onlySealedSegment();
+        final byte[] complete = Files.readAllBytes(sealed);
+        final List<EntryRef> entries = entriesOf(sealed);
+        final EntryRef last = entries.get(entries.size() - 1);
+
+        // Rebuild it as the writer would have had it a moment earlier: an active segment is
+        // the full pre-allocation, and the final entry has its header but not its payload.
+        final byte[] active = new byte[SEGMENT_SIZE];
+        final int partialBytes = last.offset() + R7fConstants.ENTRY_HEADER_SIZE + 1;
+        System.arraycopy(complete, 0, active, 0, partialBytes);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        // One tailer across both ticks: the reassembler holds the half-seen exchange, which
+        // is exactly how this runs in production.
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, Duration.ofHours(1), sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+        assertThat(sink.completed)
+                .as("the exchange whose final entry is still being written cannot be complete yet")
+                .hasSize(5);
+
+        // The writer finishes the entry.
+        System.arraycopy(complete, partialBytes, active, partialBytes, complete.length - partialBytes);
+        Files.write(activePath, active);
+
+        tailer.runTick();
+        assertThat(sink.completed)
+                .as("the entry that was mid-write on the first tick must be picked up on the second")
+                .hasSize(6);
+        assertThat(sink.missingEntries).as("nothing was lost, so nothing may be reported missing").isZero();
+        assertThat(sink.sequenceRegressions).isEmpty();
+    }
+
+    /**
+     * Invariant 3 says (shard, sequence) is unique and increasing <em>for ever</em>. Seeding
+     * the counter from the segments on disk only delivers that while at least one segment is
+     * retained: retention deletes them once they have been read, and a shard drained to
+     * empty would otherwise start over at one. The tailer keys its checkpoints by that pair,
+     * so a reused sequence can have a brand-new segment resumed at a dead one's offset — and,
+     * if that offset is past its data, deleted unread.
+     */
+    @Test
+    void segmentSequenceDoesNotRestartAfterEverySegmentIsDeleted() throws IOException
+    {
+        writeExchanges(2);
+        final long firstSequence = sequenceOfOnlySegment();
+
+        // Retention, having read everything, removes every segment for this shard.
+        for (final Path segment : filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+        {
+            Files.delete(segment);
+        }
+        assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION)).isEmpty();
+
+        writeExchanges(2);
+
+        assertThat(sequenceOfOnlySegment())
+                .as("a restart that finds no segments must still not reuse a sequence number")
+                .isGreaterThan(firstSequence);
+    }
+
+    /**
+     * The other half of the same problem: pruning a checkpoint when its segment is deleted
+     * does nothing if emptying the map skips the save entirely and leaves the previous file
+     * in place. A restart then loads checkpoints for segments that no longer exist.
+     */
+    @Test
+    void checkpointFileIsRemovedOnceEverySegmentHasBeenReadAndDeleted() throws IOException
+    {
+        writeExchanges(3);
+
+        final CollectingSink sink = new CollectingSink();
+        // No minimum age: a segment is deleted as soon as it has been fully read.
+        new R7Tailer(journalDir, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.completed).hasSize(3);
+        assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+                .as("a fully read segment is deleted").isEmpty();
+        assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
+                .as("no segments left means no checkpoints to keep")
+                .isFalse();
+    }
+
     /* ---------- journal writing ---------- */
 
     private void writeExchanges(final int count) throws IOException
@@ -454,7 +594,8 @@ class JournalIntegrityTest
                         new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
                 journal.requestBody(reqId, ByteBuffer.wrap(("body-" + i).getBytes(StandardCharsets.ISO_8859_1)));
                 journal.endExchange(reqId, new FastGatewayAttributes(),
-                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0, 0);
+                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                        JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
             }
         }
     }
@@ -552,6 +693,26 @@ class JournalIntegrityTest
         final byte[] bytes = Files.readAllBytes(file);
         System.arraycopy(replacement, 0, bytes, offset, Math.min(replacement.length, bytes.length - offset));
         Files.write(file, bytes);
+    }
+
+    /**
+     * The active name a sealed segment was rotated from: the first four fields are the ones
+     * sealing preserves, and the two timestamps are what it appends.
+     */
+    private static String activeNameFor(final Path sealedSegment)
+    {
+        final String[] parts = sealedSegment.getFileName().toString()
+                .replace(R7fConstants.R7F_FILE_EXTENSION, "")
+                .split("-");
+        return String.join("-", parts[0], parts[1], parts[2], parts[3]) + R7fConstants.ACTIVE_FILE_EXTENSION;
+    }
+
+    private long sequenceOfOnlySegment() throws IOException
+    {
+        final String[] parts = onlySealedSegment().getFileName().toString()
+                .replace(R7fConstants.R7F_FILE_EXTENSION, "")
+                .split("-");
+        return Long.parseLong(parts[3]);
     }
 
     private Path onlySealedSegment() throws IOException

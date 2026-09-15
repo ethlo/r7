@@ -1,5 +1,8 @@
 package com.ethlo.r7.undertow;
 
+import java.nio.ByteBuffer;
+import java.util.zip.CRC32C;
+
 import com.ethlo.r7.UnproxiedUpstreamRequest;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
@@ -14,6 +17,7 @@ import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.status.TrafficMetricsHandler;
 import com.ethlo.r7.time.ClockSource;
 import io.undertow.server.HttpServerExchange;
@@ -36,6 +40,19 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     private ShortCircuitGatewayResponse shortCircuitGatewayResponse;
     private long journalBytes;
 
+    /**
+     * Checksums of the body bytes actually journaled, accumulated as the teeing conduits
+     * hand each slice over. Created lazily, so an exchange with no body of that direction
+     * reports {@link JournalExchange#CHECKSUM_NOT_RECORDED} rather than the checksum of
+     * nothing — the reader needs to tell "no body" from "a body that hashes to this".
+     * <p>
+     * Each direction is touched only by its own conduit, on the connection's IO thread,
+     * and read once the exchange has completed. That is the same publication the traffic
+     * counters alongside them rely on.
+     */
+    private CRC32C requestBodyCrc;
+    private CRC32C responseBodyCrc;
+
     public UndertowGatewayExchange(
             HttpServerExchange undertowExchange,
             String requestId,
@@ -54,6 +71,51 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         this.upstreamResponse = upstreamResponse;
         this.attributes = attributes;
         this.route = route;
+    }
+
+    /**
+     * Folds a journaled request-body slice into the checksum. Must be called before the
+     * slice is handed to the journal, which consumes it.
+     */
+    public void updateRequestBodyChecksum(final ByteBuffer slice)
+    {
+        if (requestBodyCrc == null)
+        {
+            requestBodyCrc = new CRC32C();
+        }
+        requestBodyCrc.update(slice.duplicate());
+    }
+
+    /**
+     * Folds a journaled response-body slice into the checksum. Must be called before the
+     * slice is handed to the journal, which consumes it.
+     */
+    public void updateResponseBodyChecksum(final ByteBuffer slice)
+    {
+        if (responseBodyCrc == null)
+        {
+            responseBodyCrc = new CRC32C();
+        }
+        responseBodyCrc.update(slice.duplicate());
+    }
+
+    /**
+     * CRC32C of the journaled request body, or {@link JournalExchange#CHECKSUM_NOT_RECORDED}
+     * when there was no body to journal — because the request had none, or because the
+     * journal level for this route does not store bodies.
+     */
+    public int requestBodyChecksum()
+    {
+        return requestBodyCrc == null ? JournalExchange.CHECKSUM_NOT_RECORDED : (int) requestBodyCrc.getValue();
+    }
+
+    /**
+     * CRC32C of the journaled response body, or {@link JournalExchange#CHECKSUM_NOT_RECORDED}
+     * when there was none.
+     */
+    public int responseBodyChecksum()
+    {
+        return responseBodyCrc == null ? JournalExchange.CHECKSUM_NOT_RECORDED : (int) responseBodyCrc.getValue();
     }
 
     @Override

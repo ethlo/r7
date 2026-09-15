@@ -45,6 +45,12 @@ public final class R7Tailer
     private static final long FULLY_READ = -1L;
 
     private final Map<String, Checkpoint> checkpoints = new HashMap<>();
+
+    /**
+     * File-name metadata, memoised for the duration of one tick and cleared at the start of
+     * the next. Single-threaded: {@code runTick} is the only caller.
+     */
+    private final Map<Path, FileMeta> metaCache = new HashMap<>();
     private final Path logDir;
     private final Duration minAge;
     private final ExchangeReassembler reassembler;
@@ -98,6 +104,7 @@ public final class R7Tailer
         totalBytesRead = 0;
         totalMissingEntries = 0;
         totalCorruptEntries = 0;
+        metaCache.clear();
         final Set<String> fullyProcessedKeys = new HashSet<>();
 
         try (final Stream<Path> s = Files.list(logDir))
@@ -451,6 +458,14 @@ public final class R7Tailer
      */
     private FileMeta parseMeta(final Path path)
     {
+        // Every tick parses each name several times over — once per comparison in the sort,
+        // once per stable key, once per delete check. The result cannot change while a tick
+        // runs, because a rename produces a different Path.
+        return metaCache.computeIfAbsent(path, this::parseMetaUncached);
+    }
+
+    private FileMeta parseMetaUncached(final Path path)
+    {
         final String name = path.getFileName().toString()
                 .replace(COMPRESSED_EXTENSION, "")
                 .replace(ACTIVE_FILE_EXTENSION, "")
@@ -468,10 +483,20 @@ public final class R7Tailer
         }
         catch (final RuntimeException e)
         {
-            logger.warn("Unrecognized journal file name: {}", path.getFileName());
-            return new FileMeta(0, 0L, 0L, -1L, -1L);
+            // Not warn: the file is not being ignored. It still goes through preamble
+            // validation and quarantine like any other, and a name this parser cannot read
+            // would otherwise log on every tick, for ever.
+            logger.debug("Unrecognized journal file name: {}", path.getFileName());
+            return UNPARSED;
         }
     }
+
+    /**
+     * Stands in for a name this parser could not read. The negative shard and sequence are
+     * what {@link #getStableKey} keys off: an unparsed file has no (shard, sequence)
+     * identity, and must not be given one that another file could also hold.
+     */
+    private static final FileMeta UNPARSED = new FileMeta(-1, 0L, -1L, -1L, -1L);
 
     /**
      * Identifies a segment across its whole life: active, sealed and compressed. The
@@ -481,6 +506,16 @@ public final class R7Tailer
     private String getStableKey(final Path path)
     {
         final FileMeta meta = parseMeta(path);
+        if (meta.segmentSequence() < 0)
+        {
+            // No identity could be read from the name, so the name is the identity. Handing
+            // every unparsed file the same key would collapse them in the dedup map above:
+            // only one would ever be examined, and checkDelete would then be free to remove
+            // a file whose contents were never read. Keying by file name keeps them
+            // distinct; it does not survive a rename, but an unparsed name has no rename to
+            // survive — sealing only renames files this parser can read.
+            return "unparsed-" + path.getFileName();
+        }
         return "journal-" + meta.shardId() + "-" + meta.segmentSequence();
     }
 
@@ -518,6 +553,20 @@ public final class R7Tailer
     {
         if (checkpoints.isEmpty())
         {
+            // Returning here would leave the previous file on disk with every entry it had
+            // — which is precisely the state that makes a reused segment sequence
+            // dangerous. Once the last segment has been read and deleted there is nothing
+            // left to resume, and a stale "journal-0-1 → offset 60000000" would be applied
+            // to whatever new segment takes that key next, skipping it or, if the offset is
+            // past its data, marking it fully read and deleting it unread.
+            try
+            {
+                Files.deleteIfExists(checkpointPath);
+            }
+            catch (final IOException e)
+            {
+                logger.error("Could not remove the obsolete checkpoint file {}: {}", checkpointPath, e.getMessage());
+            }
             return;
         }
 

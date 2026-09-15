@@ -48,6 +48,7 @@ import com.ethlo.r7.core.helpers.StartLineBuilder;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.Journal;
+import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.status.PeriodicUpstreamHealthMonitor;
@@ -150,8 +151,13 @@ public final class R7UndertowHandler implements HttpHandler
             proxyEndTs = Objects.requireNonNullElseGet(tmpProxyEndTs, ClockSource::now);
 
             final long proxyFirstBytesTs = -1;
-            final int requestBodyCrc32 = -1;
-            final int responseBodyCrc32 = -1;
+
+            // CHECKSUM_NOT_RECORDED when this exchange journaled no body in that
+            // direction, the real CRC32C of the journaled bytes otherwise. The reader
+            // compares it against what it reads back, which is what makes "the stored
+            // record is the one that crossed the wire" checkable rather than assumed.
+            final int requestBodyCrc32 = gatewayExchange.requestBodyChecksum();
+            final int responseBodyCrc32 = gatewayExchange.responseBodyChecksum();
             final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
 
             tagExchangeAttributes(exchange, gatewayExchange);
@@ -549,13 +555,20 @@ public final class R7UndertowHandler implements HttpHandler
 
         if (journalConfig.request().level() == JournalLevel.FULL)
         {
-            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer -> journal.requestBody(requestId, buffer)));
+            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer ->
+            {
+                // Checksum first: the journal consumes the slice it is given.
+                gatewayExchange.updateRequestBodyChecksum(buffer);
+                journal.requestBody(requestId, buffer);
+            }));
         }
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
             exchange.addResponseWrapper((factory, ex) ->
                     new TeeingStreamSinkConduit(factory.create(), buffer ->
                     {
+                        // Checksum first: the journal consumes the slice it is given.
+                        gatewayExchange.updateResponseBodyChecksum(buffer);
                         journal.responseBody(requestId, buffer);
                     }
                     ));
@@ -636,8 +649,10 @@ public final class R7UndertowHandler implements HttpHandler
                     proxyStartTs,
                     -1,
                     proxyEndTs,
-                    -1,
-                    -1
+                    // Websocket exchanges return before the teeing conduits are installed,
+                    // so no body is ever journaled for them.
+                    JournalExchange.CHECKSUM_NOT_RECORDED,
+                    JournalExchange.CHECKSUM_NOT_RECORDED
             );
         });
     }
