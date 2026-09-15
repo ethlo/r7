@@ -213,8 +213,19 @@ public final class R7Tailer
 
             if (isCompressed)
             {
-                final long decompressedSize = Zstd.getDirectByteBufferFrameContentSize(mappedBuffer, 0, (int) fileSize);
-                if (decompressedSize <= 0 || decompressedSize <= startOffset)
+                final long decompressedSize = frameContentSize(mappedBuffer, fileSize);
+
+                // A frame we cannot size is not a segment we can read. Treating it as
+                // "fully processed" would mark it done and let checkDelete remove an audit
+                // segment with nothing reported.
+                if (decompressedSize <= 0 || decompressedSize > Integer.MAX_VALUE)
+                {
+                    quarantine(path, "unusable compressed frame size: " + decompressedSize);
+                    checkpoints.remove(key);
+                    return false;
+                }
+
+                if (decompressedSize <= startOffset)
                 {
                     return true;
                 }
@@ -228,7 +239,17 @@ public final class R7Tailer
                 processingBuffer = decompressionBuffer.slice(0, (int) decompressedSize);
                 processingBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
-                Zstd.decompress(processingBuffer, mappedBuffer);
+                try
+                {
+                    Zstd.decompress(processingBuffer, mappedBuffer);
+                }
+                catch (final RuntimeException e)
+                {
+                    quarantine(path, "decompression failed: " + e.getMessage());
+                    checkpoints.remove(key);
+                    return false;
+                }
+
                 processingBuffer.position((int) startOffset);
             }
             else
@@ -301,6 +322,27 @@ public final class R7Tailer
             }
 
             return isFinished;
+        }
+    }
+
+    /**
+     * Declared uncompressed size of a zstd frame, or -1 when the frame cannot be read.
+     * Zstd reports unknown or invalid sizes through sentinel values and can also throw,
+     * so both are funnelled into one "cannot size this" answer.
+     */
+    private static long frameContentSize(final ByteBuffer compressed, final long fileSize)
+    {
+        if (fileSize <= 0 || fileSize > Integer.MAX_VALUE)
+        {
+            return -1L;
+        }
+        try
+        {
+            return Zstd.getDirectByteBufferFrameContentSize(compressed, 0, (int) fileSize);
+        }
+        catch (final RuntimeException e)
+        {
+            return -1L;
         }
     }
 

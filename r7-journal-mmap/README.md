@@ -398,9 +398,12 @@ header or attribute from an arbitrary Java string — a translated message, a na
 database, a JSON field.
 
 Therefore **values set programmatically are validated at the point of modification**.
-`MutableGatewayHeaders` and the mutable attribute containers reject an out-of-range value
-on `set` and `add`, throwing `InvalidTextValueException` with the field name and the index
-of the offending character. A `null` name or value is refused the same way, reporting
+Every `MutableGatewayHeaders` implementation rejects an out-of-range value on `set` and
+`add`, throwing `InvalidTextValueException` with the field name and the index of the
+offending character — including `UndertowGatewayHeaders`, which is the view filters
+actually mutate at runtime. Validating only the standalone containers would leave the
+guarantee true in tests and false in production. The mutable attribute containers are
+covered the same way. A `null` name or value is refused the same way, reporting
 `TextValues.ABSENT` as the index — a null would otherwise reach the journal writer and
 fail there, far from the filter that set it. See `com.ethlo.r7.api.TextValues`.
 

@@ -164,22 +164,26 @@ public class ExchangeReassembler implements JournalEventListener
      */
     private void verifyChecksums(final JournalExchange exchange, final int journaledRequestCrc, final int journaledResponseCrc)
     {
+        // A non-zero journaled checksum means the gateway saw a body. If none was read
+        // back, every body entry for this exchange is missing — which is a worse failure
+        // than a corrupted one, and skipping the check because there is nothing to compare
+        // would let the exchange through as complete with its body silently absent.
         final Integer observedRequest = exchange.getObservedRequestCrc32();
-        if (observedRequest != null && journaledRequestCrc != 0 && observedRequest != journaledRequestCrc)
+        if (journaledRequestCrc != 0 && (observedRequest == null || observedRequest != journaledRequestCrc))
         {
             checksumMismatches.incrementAndGet();
-            output.onChecksumMismatch(exchange, BodyKind.REQUEST, journaledRequestCrc, observedRequest);
+            output.onChecksumMismatch(exchange, BodyKind.REQUEST, journaledRequestCrc, observedRequest == null ? 0 : observedRequest);
             logger.error("Request body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}",
-                    exchange.getRequestId(), journaledRequestCrc, observedRequest);
+                    exchange.getRequestId(), journaledRequestCrc, observedRequest == null ? "nothing at all" : observedRequest);
         }
 
         final Integer observedResponse = exchange.getObservedResponseCrc32();
-        if (observedResponse != null && journaledResponseCrc != 0 && observedResponse != journaledResponseCrc)
+        if (journaledResponseCrc != 0 && (observedResponse == null || observedResponse != journaledResponseCrc))
         {
             checksumMismatches.incrementAndGet();
-            output.onChecksumMismatch(exchange, BodyKind.RESPONSE, journaledResponseCrc, observedResponse);
+            output.onChecksumMismatch(exchange, BodyKind.RESPONSE, journaledResponseCrc, observedResponse == null ? 0 : observedResponse);
             logger.error("Response body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}",
-                    exchange.getRequestId(), journaledResponseCrc, observedResponse);
+                    exchange.getRequestId(), journaledResponseCrc, observedResponse == null ? "nothing at all" : observedResponse);
         }
     }
 

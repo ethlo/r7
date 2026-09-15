@@ -133,6 +133,17 @@ public final class JournalDecoder
                 final int afterHole = findNextEntry(buffer, startPos + 1, false);
                 if (afterHole < 0)
                 {
+                    // Nothing recognisable follows. Report it and consume the remainder:
+                    // leaving the position where it is would let a caller that checkpoints
+                    // by offset come back to the same bytes on every tick, for ever, while
+                    // the damage stayed invisible.
+                    final long trailing = buffer.limit() - (long) startPos;
+                    logger.error("Sealed segment {} ends in {} unwritten bytes at offset {}.",
+                            sourceName, trailing, startPos);
+                    bytesSkipped += trailing;
+                    corruptEntriesSkipped++;
+                    integrity.onCorruptRegion(sourceName, startPos, trailing, "unwritten region at the end of a sealed segment");
+                    buffer.position(buffer.limit());
                     break;
                 }
 
@@ -299,7 +310,12 @@ public final class JournalDecoder
     private static int findNextEntry(final ByteBuffer buffer, final int from, final boolean stopAtZero)
     {
         final int limit = buffer.limit();
-        final int end = (int) Math.min(limit - (long) R7fConstants.MIN_ENTRY_SIZE, from + (long) MAX_RESYNC_SCAN);
+        // A sealed segment is an audit record: scan it to the end rather than abandon a
+        // suffix whose framing and CRC may be perfectly intact, as FORMAT.md §6 requires.
+        // The cap applies only where the scan would otherwise run into a pre-allocated
+        // tail, which the caller already stops at.
+        final long lastStart = limit - (long) R7fConstants.MIN_ENTRY_SIZE;
+        final int end = (int) (stopAtZero ? Math.min(lastStart, from + (long) MAX_RESYNC_SCAN) : lastStart);
         final byte firstMagicByte = (byte) (MAGIC >>> 24);
 
         for (int pos = from; pos <= end; pos++)

@@ -527,19 +527,29 @@ public final class R7fJournal implements Journal
 
         final long firstTs = this.segmentStartEpochMillis;
         final long lastTs = System.currentTimeMillis();
+        final long finalPosition = this.position;
 
         segment = null;
         arena = null;
 
-        if (position <= R7fConstants.PREAMBLE_SIZE)
+        if (finalPosition <= R7fConstants.PREAMBLE_SIZE)
         {
             Files.delete(activePath);
+            return;
         }
-        else
+
+        // Cut the pre-allocated tail, exactly as the asynchronous rotation path does.
+        // FORMAT.md §7 requires a sealed segment to be its exact size, and §6 relies on
+        // it: a reader treats zeroes inside a sealed segment as a region that never
+        // reached the device. Leaving the tail here would make every cleanly closed
+        // segment look damaged.
+        try (FileChannel fc = FileChannel.open(activePath, StandardOpenOption.WRITE))
         {
-            final Path target = activePath.resolveSibling(sealedName(activePath, firstTs, lastTs));
-            Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
+            fc.truncate(finalPosition);
         }
+
+        final Path target = activePath.resolveSibling(sealedName(activePath, firstTs, lastTs));
+        Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
     }
 
     private static String sealedName(final Path activePath, final long firstTs, final long lastTs)

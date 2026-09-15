@@ -43,6 +43,7 @@ public final class R7fRecoveryManager
     private static final Logger logger = LoggerFactory.getLogger(R7fRecoveryManager.class);
     private static final ValueLayout.OfInt INT_BE = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+    private static final ValueLayout.OfLong LONG_BE = ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
     private R7fRecoveryManager()
     {
@@ -145,14 +146,28 @@ public final class R7fRecoveryManager
 
             final MemorySegment segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, originalSize, arena);
 
-            if (isUninitialised(segment))
+            if (hasUnwrittenPreamble(segment))
             {
-                // A segment the warmer pre-allocated but the writer never took. Every
-                // unclean stop leaves one, because the warmer keeps the next segment
-                // mapped and ready. It is not damage, and reporting it as such would
-                // train operators to ignore the integrity signal.
-                uninitialised = true;
-                scanResult = null;
+                // A zero preamble usually means the warmer pre-allocated this segment and
+                // the writer never took it. Every unclean stop leaves one, and reporting
+                // it as damage would train operators to ignore the integrity signal.
+                //
+                // But a segment whose preamble page was lost while later pages survived
+                // looks identical from those six bytes, and that is exactly what the
+                // out-of-order writeback this format documents can produce. Deleting on
+                // that evidence would destroy recoverable records, so the whole file has
+                // to be zero before we believe it was never used.
+                if (isEntirelyZero(segment, originalSize))
+                {
+                    uninitialised = true;
+                    scanResult = null;
+                }
+                else
+                {
+                    throw new UnreadableSegmentException(
+                            "preamble is unwritten but the file is not empty — its header was lost "
+                                    + "while later data survived");
+                }
             }
             else
             {
@@ -197,15 +212,41 @@ public final class R7fRecoveryManager
     }
 
     /**
-     * True when the preamble was never written, which means the writer never took this
-     * segment from the warmer. Distinguishable from damage because a written preamble
-     * always starts with the file magic, and a damaged one starts with something else —
-     * all zeroes only ever means "untouched".
+     * True when the preamble's magic and version are both zero, so it was never stamped.
+     * On its own this does not say whether the segment was unused or merely lost its
+     * header — see {@link #isEntirelyZero}.
      */
-    private static boolean isUninitialised(final MemorySegment segment)
+    private static boolean hasUnwrittenPreamble(final MemorySegment segment)
     {
         return segment.get(INT_BE, R7fConstants.PREAMBLE_OFF_MAGIC) == 0
                 && segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_VERSION) == 0;
+    }
+
+    /**
+     * Whether the file contains nothing but zeroes, which is the only safe basis for
+     * deleting it as an unused pre-allocation. Read eight bytes at a time; this runs once
+     * per unwritten-looking segment at startup.
+     */
+    private static boolean isEntirelyZero(final MemorySegment segment, final long size)
+    {
+        long position = 0;
+        final long wordEnd = size - (size % Long.BYTES);
+
+        for (; position < wordEnd; position += Long.BYTES)
+        {
+            if (segment.get(LONG_BE, position) != 0L)
+            {
+                return false;
+            }
+        }
+        for (; position < size; position++)
+        {
+            if (segment.get(ValueLayout.JAVA_BYTE, position) != 0)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void validatePreamble(final MemorySegment segment)

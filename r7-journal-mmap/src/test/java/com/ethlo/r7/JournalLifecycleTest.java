@@ -237,6 +237,41 @@ class JournalLifecycleTest
     }
 
     /**
+     * Closing the journal must seal the segment at its exact size, just as rotation does.
+     * <p>
+     * This is the invariant the reader is built on: FORMAT.md §6 has it treat zeroes inside
+     * a sealed segment as a region that never reached the device, which is only sound if
+     * §7's "truncate on seal" actually holds everywhere. Leaving the pre-allocated tail on
+     * the clean-close path made every normal shutdown produce a segment that looks damaged.
+     */
+    @Test
+    void cleanCloseSealsSegmentAtExactSize() throws IOException
+    {
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                final String reqId = "sealed-" + i;
+                journal.clientRequest(JournalLevel.METADATA, reqId, wrap("GET /s/" + i + " HTTP/1.1"),
+                        new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+                endOf(journal, reqId, 200);
+            }
+        }
+
+        final List<Path> sealed = sealedSegments();
+        assertThat(sealed).hasSize(1);
+        assertThat(Files.size(sealed.get(0)))
+                .as("a sealed segment carries no pre-allocated tail")
+                .isLessThan(SEGMENT_SIZE);
+        assertThat(Files.size(sealed.get(0))).isGreaterThan(R7fConstants.PREAMBLE_SIZE);
+
+        // With the tail gone there is nothing for the reader to mistake for a hole.
+        final CollectingSink sink = tail();
+        assertThat(sink.isClean()).as("sink: %s", sink).isTrue();
+        assertThat(sink.completed).hasSize(5);
+    }
+
+    /**
      * A journal abandoned without close leaves an active segment behind. Recovery must
      * seal it, cut it back to the last intact entry, and lose nothing that was written.
      */
@@ -317,6 +352,12 @@ class JournalLifecycleTest
 
     private CollectingSink tail() throws IOException
     {
+        // Checked on every tail in this suite rather than in one dedicated test: the bugs
+        // that got through were invariant breaks that each individual outcome assertion
+        // was happy to ignore.
+        JournalInvariants.assertSealedSegmentsAreExact(journalDir);
+        JournalInvariants.assertSegmentKeysAreUnique(journalDir);
+
         final CollectingSink sink = new CollectingSink();
         // A large minAge keeps the tailer from deleting segments once it has read them,
         // so assertions can still inspect the files. A null minAge would delete them

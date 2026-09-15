@@ -135,11 +135,13 @@ public class R7fJournalProvider implements AutoCloseable
         }
         catch (final IOException e)
         {
-            // Starting from zero risks colliding with retained segments, so say so rather
-            // than let the tailer quietly drop files later.
-            log.error("Could not determine the highest existing segment sequence in {}; "
-                    + "starting from 0, which may collide with retained segments.", dir, e);
-            return 0L;
+            // Starting from zero could reuse a retained segment's (shard, sequence) key,
+            // and the tailer deduplicates on that key — one of the two segments would
+            // simply never be read. For an audit log, refusing to start is the right
+            // failure: there is no safe sequence to continue from.
+            throw new UncheckedIOException(
+                    "Cannot determine the highest existing segment sequence in " + dir
+                            + "; refusing to start rather than risk reusing a segment key", e);
         }
     }
 

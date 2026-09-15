@@ -328,6 +328,118 @@ class JournalIntegrityTest
                 .hasSameSizeAs(keys);
     }
 
+    /**
+     * A hole far larger than one page. The reader used to abandon the rest of the file
+     * after a megabyte of scanning, which contradicted FORMAT.md §6 and discarded entries
+     * whose framing and CRC were perfectly intact.
+     */
+    @Test
+    void largeHoleIsCrossedAndReported() throws IOException
+    {
+        writeExchanges(200);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef from = entries.get(entries.size() / 3);
+        final long available = Files.size(segment) - from.offset();
+        final int holeBytes = (int) Math.min(16 * 1024L, available / 2);
+
+        overwrite(segment, from.offset(), new byte[holeBytes]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries).as("sink: %s", sink).isGreaterThan(0);
+        assertThat(sink.completed).as("entries before the hole").containsKey("req-0");
+        assertThat(sink.completed).as("entries after the hole").containsKey("req-199");
+    }
+
+    /**
+     * If every body entry for an exchange is lost, there is nothing to compare against the
+     * checksum the gateway recorded — which is exactly when saying nothing is worst. The
+     * exchange would otherwise be emitted as complete with its body silently absent.
+     */
+    @Test
+    void absentBodyWithAJournaledChecksumIsReported() throws IOException
+    {
+        final String reqId = "req-no-body";
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId,
+                    ByteBuffer.wrap("POST /upload HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            // No requestBody entry at all, but the end event says a body was seen.
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, 4096L, 0L, 0L, 0L, 0L, 0L,
+                    0x12345678, 0);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches).as("sink: %s", sink).containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * A compressed segment whose frame cannot be read must be set aside, not marked
+     * processed — which would let the tailer's own clean-up delete it.
+     */
+    @Test
+    void unreadableCompressedSegmentIsQuarantined() throws IOException
+    {
+        final Path compressed = journalDir.resolve(
+                "shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION + R7fConstants.COMPRESSED_FILE_EXTENSION);
+        final byte[] notZstd = new byte[512];
+        java.util.Arrays.fill(notZstd, (byte) 'Q');
+        Files.write(compressed, notZstd);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(Files.exists(compressed)).as("an audit segment must not be deleted unread").isFalse();
+        assertThat(quarantinedFiles()).hasSize(1);
+    }
+
+    /**
+     * A segment whose preamble page was lost but whose later pages survived looks, from
+     * its first six bytes, exactly like a spare the writer never took. Deleting it on that
+     * evidence would destroy recoverable records under the very failure mode this format
+     * documents.
+     */
+    @Test
+    void segmentWithLostPreambleButSurvivingDataIsQuarantined() throws IOException
+    {
+        final Path active = journalDir.resolve("shard-0-1700000000000-1" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        final byte[] content = new byte[R7fConstants.PREAMBLE_SIZE + 512];
+        // Preamble lost to zeroes, data after it intact.
+        java.util.Arrays.fill(content, R7fConstants.PREAMBLE_SIZE, content.length, (byte) 'D');
+        Files.write(active, content);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(quarantinedFiles()).hasSize(1);
+    }
+
+    /**
+     * The companion case: a genuinely untouched pre-allocation is deleted quietly, because
+     * every unclean stop leaves one and reporting it would train operators to ignore the
+     * integrity signal.
+     */
+    @Test
+    void entirelyEmptyPreAllocationIsDeletedQuietly() throws IOException
+    {
+        final Path spare = journalDir.resolve("shard-0-1700000000000-2" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        Files.write(spare, new byte[R7fConstants.PREAMBLE_SIZE + 512]);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).as("sink: %s", sink).isEmpty();
+        assertThat(Files.exists(spare)).isFalse();
+        assertThat(quarantinedFiles()).isEmpty();
+    }
+
     /* ---------- journal writing ---------- */
 
     private void writeExchanges(final int count) throws IOException
