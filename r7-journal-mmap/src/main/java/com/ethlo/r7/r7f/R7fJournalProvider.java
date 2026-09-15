@@ -11,6 +11,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,9 +30,13 @@ public class R7fJournalProvider implements AutoCloseable
     private final long segmentSizeBytes;
 
     /**
-     * Monotonic per-shard segment counter, written into each segment's preamble.
+     * Monotonic per-shard segment counter, written into each segment's preamble and into
+     * the file name. Seeded from the highest sequence already on disk, because the tailer
+     * keys segments by shard and sequence: a counter that restarted at zero on every boot
+     * would give a new segment the same key as a retained one, and the tailer would
+     * silently read only one of them.
      */
-    private final AtomicLong segmentSequence = new AtomicLong(0);
+    private final AtomicLong segmentSequence;
 
     // Hands a mapped file straight from the warmer thread to the writer
     private final BlockingQueue<WarmedSegment> pool = new SynchronousQueue<>();
@@ -57,6 +62,7 @@ public class R7fJournalProvider implements AutoCloseable
         this.tempDir = tempDir;
         this.shardId = shardId;
         this.segmentSizeBytes = segmentSizeBytes;
+        this.segmentSequence = new AtomicLong(highestExistingSequence(tempDir, shardId));
 
         this.warmerThread = new Thread(this::warmupLoop, "r7-warmer-shard-" + shardId);
         this.preFault = preFault;
@@ -104,6 +110,55 @@ public class R7fJournalProvider implements AutoCloseable
 
         // Drain anything a taker never collected.
         discard(pool.poll());
+    }
+
+    /**
+     * Highest segment sequence already present for this shard, or 0 when the directory is
+     * empty or unreadable. Names are {@code shard-<id>-<createdMs>-<sequence>} with an
+     * optional {@code -<firstTs>-<lastTs>} once sealed, and any extension.
+     */
+    private static long highestExistingSequence(final Path dir, final int shardId)
+    {
+        if (dir == null || !Files.isDirectory(dir))
+        {
+            return 0L;
+        }
+
+        final String prefix = "shard-" + shardId + "-";
+        try (Stream<Path> files = Files.list(dir))
+        {
+            return files.map(p -> p.getFileName().toString())
+                    .filter(n -> n.startsWith(prefix))
+                    .mapToLong(R7fJournalProvider::sequenceOf)
+                    .max()
+                    .orElse(0L);
+        }
+        catch (final IOException e)
+        {
+            // Starting from zero risks colliding with retained segments, so say so rather
+            // than let the tailer quietly drop files later.
+            log.error("Could not determine the highest existing segment sequence in {}; "
+                    + "starting from 0, which may collide with retained segments.", dir, e);
+            return 0L;
+        }
+    }
+
+    private static long sequenceOf(final String fileName)
+    {
+        final String[] parts = fileName.split("-");
+        if (parts.length < 4)
+        {
+            return 0L;
+        }
+        final String field = parts[3].split("\\.")[0];
+        try
+        {
+            return Long.parseLong(field);
+        }
+        catch (final NumberFormatException e)
+        {
+            return 0L;
+        }
     }
 
     private WarmedSegment createSegment() throws IOException

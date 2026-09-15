@@ -225,14 +225,18 @@ public final class R7fRecoveryManager
     }
 
     /**
-     * Walks entries from the end of the preamble, stopping at the first entry that is
-     * incomplete, structurally inconsistent or fails its CRC. Everything before that
-     * point is intact and is kept.
+     * Walks entries from the end of the preamble to the end of the file.
      * <p>
-     * Sequence numbers are checked as we go. A forward jump means entries that were
-     * written are not on disk, which the append-only design cannot produce on its own —
-     * it means writeback did not complete in order. Those entries are gone, but we can at
-     * least say how many and where.
+     * Damage does not end the scan. An unclean stop leaves a torn entry at the tail, but a
+     * power loss can leave a gap anywhere, with perfectly good entries after it — stopping
+     * at the first anomaly and truncating there would destroy those entries before anyone
+     * could see that they were separated from the rest by a hole. So the scan resynchronises
+     * on the next entry magic, reports what it skipped, and keeps going. The file is later
+     * truncated to the end of the <em>last</em> valid entry found, not the first anomaly.
+     * <p>
+     * Sequence numbers make the difference visible: a forward jump means entries that were
+     * written are not on disk, which append-only writing cannot produce on its own. Those
+     * entries are gone, but we can say how many and where.
      */
     private static ScanResult scan(final MemorySegment segment, final long size, final Path file, final JournalIntegrityListener integrity)
     {
@@ -242,61 +246,39 @@ public final class R7fRecoveryManager
         long missingRecords = 0;
         int expectedSequence = R7fConstants.FIRST_ENTRY_SEQUENCE;
 
+        final String name = file.getFileName().toString();
         final CRC32C crc = new CRC32C();
 
         while (size - position >= R7fConstants.MIN_ENTRY_SIZE)
         {
-            // The pre-allocated tail is zero-filled, so a zero here means no entry was
-            // ever written at this offset.
-            if (segment.get(ValueLayout.JAVA_BYTE, position) == 0)
-            {
-                break;
-            }
+            final String problem = validateEntryAt(segment, size, position, crc);
 
-            final int magic = segment.get(INT_BE, position);
-            if (magic != R7fConstants.MAGIC)
+            if (problem != null)
             {
-                logger.warn("Corrupt entry magic at offset {} in {}, truncating there", position, file.getFileName());
-                break;
+                // Look for a later entry before concluding that this is the end. If none
+                // follows, this is the ordinary torn tail and the scan is done.
+                final long resume = findNextEntry(segment, size, position + 1);
+                if (resume < 0)
+                {
+                    if (recordCount > 0 || segment.get(ValueLayout.JAVA_BYTE, position) != 0)
+                    {
+                        logger.debug("{} ends at offset {} ({})", name, position, problem);
+                    }
+                    break;
+                }
+
+                final long skipped = resume - position;
+                logger.error("Damaged region in {} at offset {} ({} bytes, {}); valid entries follow, "
+                        + "resuming at {}.", name, position, skipped, problem, resume);
+                integrity.onCorruptRegion(name, position, skipped, problem);
+                position = resume;
+                continue;
             }
 
             final int sequence = segment.get(INT_BE, position + 4L);
-            final int payloadLen = segment.get(INT_BE, position + 8L);
             final int fbLen = segment.get(INT_BE, position + 12L);
             final int rawLen = segment.get(INT_BE, position + 16L);
-
-            if (fbLen < 0 || rawLen < 0 || payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
-            {
-                logger.warn("Inconsistent entry lengths at offset {} in {} (payloadLen={}, fbLen={}, rawLen={}), truncating there",
-                        position, file.getFileName(), payloadLen, fbLen, rawLen);
-                break;
-            }
-
-            final long dataLen = (long) fbLen + rawLen;
-            final long entryEnd = position + R7fConstants.ENTRY_HEADER_SIZE + dataLen + Integer.BYTES;
-            if (entryEnd > size)
-            {
-                logger.warn("Entry at offset {} in {} extends past end of file, truncating there", position, file.getFileName());
-                break;
-            }
-
-            crc.reset();
-            updateInt(crc, sequence);
-            updateInt(crc, payloadLen);
-            updateInt(crc, fbLen);
-            updateInt(crc, rawLen);
-            if (dataLen > 0)
-            {
-                crc.update(segment.asSlice(position + R7fConstants.ENTRY_HEADER_SIZE, dataLen).asByteBuffer());
-            }
-
-            final int storedCrc = segment.get(INT_BE, position + R7fConstants.ENTRY_HEADER_SIZE + dataLen);
-            if ((int) crc.getValue() != storedCrc)
-            {
-                logger.warn("Checksum mismatch at offset {} in {} — the stop interrupted this entry. Truncating there.",
-                        position, file.getFileName());
-                break;
-            }
+            final long entryEnd = position + R7fConstants.ENTRY_HEADER_SIZE + (long) fbLen + rawLen + Integer.BYTES;
 
             if (sequence != expectedSequence)
             {
@@ -304,15 +286,15 @@ public final class R7fRecoveryManager
                 {
                     final int lost = sequence - expectedSequence;
                     missingRecords += lost;
-                    integrity.onEntriesMissing(file.getFileName().toString(), position, expectedSequence, sequence, lost);
+                    integrity.onEntriesMissing(name, position, expectedSequence, sequence, lost);
                     logger.error("Sequence gap in {} at offset {}: expected #{} but found #{} — {} entries are missing from this segment.",
-                            file.getFileName(), position, expectedSequence, sequence, lost);
+                            name, position, expectedSequence, sequence, lost);
                 }
                 else
                 {
-                    integrity.onSequenceRegression(file.getFileName().toString(), position, expectedSequence, sequence);
-                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Truncating there.",
-                            file.getFileName(), position, expectedSequence, sequence);
+                    integrity.onSequenceRegression(name, position, expectedSequence, sequence);
+                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
+                            name, position, expectedSequence, sequence);
                     break;
                 }
             }
@@ -324,6 +306,84 @@ public final class R7fRecoveryManager
         }
 
         return new ScanResult(lastValidPosition, recordCount, missingRecords);
+    }
+
+    /**
+     * Checks the entry at {@code position}.
+     *
+     * @return null when the entry is structurally sound and its CRC matches, otherwise a
+     * short description of what is wrong with it
+     */
+    private static String validateEntryAt(final MemorySegment segment, final long size, final long position, final CRC32C crc)
+    {
+        if (segment.get(ValueLayout.JAVA_BYTE, position) == 0)
+        {
+            return "unwritten region";
+        }
+
+        if (segment.get(INT_BE, position) != R7fConstants.MAGIC)
+        {
+            return "bad entry magic";
+        }
+
+        final int sequence = segment.get(INT_BE, position + 4L);
+        final int payloadLen = segment.get(INT_BE, position + 8L);
+        final int fbLen = segment.get(INT_BE, position + 12L);
+        final int rawLen = segment.get(INT_BE, position + 16L);
+
+        if (fbLen < 0 || rawLen < 0 || payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
+        {
+            return "inconsistent entry lengths (payloadLen=" + payloadLen + ", fbLen=" + fbLen + ", rawLen=" + rawLen + ")";
+        }
+
+        final long dataLen = (long) fbLen + rawLen;
+        if (position + R7fConstants.ENTRY_HEADER_SIZE + dataLen + Integer.BYTES > size)
+        {
+            return "entry extends past end of file";
+        }
+
+        crc.reset();
+        updateInt(crc, sequence);
+        updateInt(crc, payloadLen);
+        updateInt(crc, fbLen);
+        updateInt(crc, rawLen);
+        if (dataLen > 0)
+        {
+            crc.update(segment.asSlice(position + R7fConstants.ENTRY_HEADER_SIZE, dataLen).asByteBuffer());
+        }
+
+        if ((int) crc.getValue() != segment.get(INT_BE, position + R7fConstants.ENTRY_HEADER_SIZE + dataLen))
+        {
+            return "checksum mismatch";
+        }
+
+        return null;
+    }
+
+    /**
+     * Scans forward for the next entry magic, crossing zeroes rather than stopping at them.
+     * <p>
+     * The zero-filled tail of a pre-allocated segment and a hole left by incomplete
+     * writeback look identical from one byte, so the only way to tell them apart is to look
+     * for what comes after. The first-byte test keeps the common case — scanning a long
+     * zero tail to the end of the file — down to one comparison per position.
+     *
+     * @return the offset of the next entry magic, or -1 if none remains
+     */
+    private static long findNextEntry(final MemorySegment segment, final long size, final long from)
+    {
+        final byte firstMagicByte = (byte) (R7fConstants.MAGIC >>> 24);
+        final long end = size - R7fConstants.MIN_ENTRY_SIZE;
+
+        for (long pos = from; pos <= end; pos++)
+        {
+            if (segment.get(ValueLayout.JAVA_BYTE, pos) == firstMagicByte
+                    && segment.get(INT_BE, pos) == R7fConstants.MAGIC)
+            {
+                return pos;
+            }
+        }
+        return -1;
     }
 
     private static void quarantine(final Path file, final String reason, final JournalIntegrityListener integrity)

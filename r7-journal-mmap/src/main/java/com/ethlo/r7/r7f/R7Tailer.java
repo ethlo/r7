@@ -241,6 +241,28 @@ public final class R7Tailer
                 processingBuffer.position((int) startOffset);
             }
 
+            final String preambleProblem = preambleProblem(processingBuffer);
+            if (preambleProblem != null)
+            {
+                if (isActive)
+                {
+                    // An active file belongs to the writer. The warmer pre-allocates the
+                    // next segment and the writer stamps its preamble only when it claims
+                    // it, so an all-zero header here is normal and momentary. More to the
+                    // point, renaming a file the writer has mapped would leave rotation
+                    // unable to seal it. Leave it be; recovery handles it at next boot.
+                    logger.debug("Skipping active segment {} for now: {}", path.getFileName(), preambleProblem);
+                    return false;
+                }
+
+                // A sealed or compressed file is nobody's to write any more. Without this
+                // check it would be decoded as whatever its bytes happened to look like,
+                // and then deleted as "processed".
+                quarantine(path, preambleProblem);
+                checkpoints.remove(key);
+                return false;
+            }
+
             final long before = processingBuffer.remaining();
 
             // Carry the sequence across ticks: resuming mid-segment without it would let
@@ -250,7 +272,8 @@ public final class R7Tailer
                     reassembler,
                     checkpoint.nextSequence(),
                     path.getFileName().toString(),
-                    integrity);
+                    integrity,
+                    isActive);
 
             totalBytesRead += before - processingBuffer.remaining();
             totalMissingEntries += stats.missingEntries();
@@ -278,6 +301,56 @@ public final class R7Tailer
             }
 
             return isFinished;
+        }
+    }
+
+    /**
+     * Checks the preamble of a segment the tailer is about to read.
+     *
+     * @return null when the preamble is a supported r7f header, otherwise what is wrong
+     */
+    private static String preambleProblem(final ByteBuffer buffer)
+    {
+        if (buffer.limit() < R7fConstants.PREAMBLE_SIZE)
+        {
+            return "shorter than the preamble (" + buffer.limit() + " bytes)";
+        }
+
+        // The tailer reads the rest of the buffer little-endian for FlatBuffers; the
+        // preamble is big-endian like the rest of the framing.
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+
+        final int magic = header.getInt(R7fConstants.PREAMBLE_OFF_MAGIC);
+        if (magic != R7fConstants.MAGIC)
+        {
+            return String.format("bad file magic 0x%08X (expected 0x%08X)", magic, R7fConstants.MAGIC);
+        }
+
+        final short version = header.getShort(R7fConstants.PREAMBLE_OFF_VERSION);
+        if (version != R7fConstants.CURRENT_VERSION)
+        {
+            return "unsupported format version " + version;
+        }
+
+        return null;
+    }
+
+    /**
+     * Sets aside a file the tailer cannot read, rather than decoding its bytes as whatever
+     * they resemble and then deleting it.
+     */
+    private void quarantine(final Path path, final String reason)
+    {
+        final Path target = path.resolveSibling(path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION);
+        try
+        {
+            Files.move(path, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            integrity.onSegmentQuarantined(path.getFileName().toString(), reason);
+            logger.error("Quarantined unreadable segment {} as {}: {}", path.getFileName(), target.getFileName(), reason);
+        }
+        catch (final IOException e)
+        {
+            logger.error("Unable to quarantine unreadable segment {}", path.getFileName(), e);
         }
     }
 

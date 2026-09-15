@@ -183,7 +183,15 @@ A compliant reader MUST additionally track the Sequence field and MUST report an
 discontinuity:
 
 * A **zero byte** where a Magic is expected means no entry was ever written at that
-  offset. This is the normal end of data in a pre-allocated segment.
+  offset. What that implies depends on the segment:
+  * In a segment that still carries its pre-allocation — the active one being written —
+    this is the normal end of data and the reader stops.
+  * In a **sealed** segment, which MUST be truncated to its exact size (§7), it is not a
+    tail but a region that never reached the device. The reader MUST scan past it for a
+    later entry, and MUST report the region and the resulting Sequence gap. Stopping here
+    is what makes power-loss holes invisible, because an unwritten page in a pre-allocated
+    file reads back as zeroes and is indistinguishable from an unused tail by inspection
+    of that byte alone.
 * A **forward jump** in Sequence means entries that were written are not present. The
   reader MUST NOT treat this as end of data, and MUST report the count of missing entries.
 * A **backward step** in Sequence means the file is not a valid append-only segment and the
@@ -201,6 +209,8 @@ Implementations:
 * MUST NOT modify existing entries
 * MUST append only
 * SHOULD rely on OS page cache for writeback
+* MUST truncate a segment to its exact size when sealing it, so that a reader can tell an
+  unwritten tail from a hole (§6)
 
 ---
 

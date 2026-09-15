@@ -77,21 +77,29 @@ public final class JournalDecoder
      */
     public static DecodeStats decode(ByteBuffer buffer, JournalEventListener listener, int expectedSequence)
     {
-        return decode(buffer, listener, expectedSequence, "<unnamed>", JournalIntegrityListener.NOOP);
+        return decode(buffer, listener, expectedSequence, "<unnamed>", JournalIntegrityListener.NOOP, true);
     }
 
     /**
      * As {@link #decode(ByteBuffer, JournalEventListener, int)}, additionally reporting
      * damage and loss to an integrity listener as it is found.
      *
-     * @param sourceName name of the segment being read, for the integrity events
-     * @param integrity  receives gap, corruption and regression events
+     * @param sourceName        name of the segment being read, for the integrity events
+     * @param integrity         receives gap, corruption and regression events
+     * @param preAllocatedTail  whether this source still carries the zero-filled remainder
+     *                          of its pre-allocation. True for an active segment, where a
+     *                          run of zeroes is the legitimate end of data. False for a
+     *                          sealed segment, which recovery or rotation truncated to its
+     *                          exact size — there, zeroes are not a tail but a region that
+     *                          never reached the device, and the reader must look past them
+     *                          for later entries rather than stop.
      */
     public static DecodeStats decode(ByteBuffer buffer,
                                      JournalEventListener listener,
                                      int expectedSequence,
                                      String sourceName,
-                                     JournalIntegrityListener integrity)
+                                     JournalIntegrityListener integrity,
+                                     boolean preAllocatedTail)
     {
         // Skip preamble
         if (buffer.position() == 0)
@@ -109,11 +117,33 @@ public final class JournalDecoder
         {
             final int startPos = buffer.position();
 
-            // A zero where an entry magic should be means the zero-filled tail of a
-            // pre-allocated segment: no entry was ever written here.
             if (buffer.get(startPos) == 0)
             {
-                break;
+                if (preAllocatedTail)
+                {
+                    // The zero-filled remainder of the pre-allocation: no entry was ever
+                    // written from here on.
+                    break;
+                }
+
+                // A sealed segment is exactly the size of its data, so zeroes inside it are
+                // not a tail — they are pages that never reached the device. Stopping here
+                // is what made power-loss holes silent: the entries after the hole are
+                // present and valid, and their sequence numbers are what prove the loss.
+                final int afterHole = findNextEntry(buffer, startPos + 1, false);
+                if (afterHole < 0)
+                {
+                    break;
+                }
+
+                final long holeBytes = afterHole - (long) startPos;
+                logger.error("Unwritten region in sealed segment {} at offset {} ({} bytes); "
+                        + "resuming at {}.", sourceName, startPos, holeBytes, afterHole);
+                bytesSkipped += holeBytes;
+                corruptEntriesSkipped++;
+                integrity.onCorruptRegion(sourceName, startPos, holeBytes, "unwritten region in a sealed segment");
+                buffer.position(afterHole);
+                continue;
             }
 
             final Entry entry;
@@ -124,7 +154,7 @@ public final class JournalDecoder
             catch (final CorruptEntryException | IllegalArgumentException | IndexOutOfBoundsException e)
             {
                 buffer.position(startPos);
-                final int resyncPos = findNextEntry(buffer, startPos + 1);
+                final int resyncPos = findNextEntry(buffer, startPos + 1, preAllocatedTail);
                 if (resyncPos < 0)
                 {
                     final long skipped = buffer.limit() - startPos;
@@ -159,9 +189,14 @@ public final class JournalDecoder
                 }
                 else
                 {
+                    // FORMAT.md §6: a backward step means this is not a valid append-only
+                    // segment. Continuing would replay duplicate or out-of-order events
+                    // into the reassembler and build exchanges that never happened.
                     integrity.onSequenceRegression(sourceName, startPos, expectedSequence, entry.sequence());
-                    logger.error("Sequence went backwards at offset {}: expected #{} but found #{}.",
-                            startPos, expectedSequence, entry.sequence());
+                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
+                            sourceName, startPos, expectedSequence, entry.sequence());
+                    buffer.position(startPos);
+                    break;
                 }
             }
             expectedSequence = entry.sequence() + 1;
@@ -256,21 +291,27 @@ public final class JournalDecoder
     /**
      * Scans forward for the next plausible entry magic.
      *
+     * @param stopAtZero give up on reaching zero bytes, because in a source with a
+     *                   pre-allocated tail they mean nothing was written from there on.
+     *                   False for a sealed segment, where the scan must cross the hole.
      * @return the absolute position of the next entry, or -1 if none was found
      */
-    private static int findNextEntry(final ByteBuffer buffer, final int from)
+    private static int findNextEntry(final ByteBuffer buffer, final int from, final boolean stopAtZero)
     {
         final int limit = buffer.limit();
-        final int end = (int) Math.min(limit - (long) Integer.BYTES, from + (long) MAX_RESYNC_SCAN);
+        final int end = (int) Math.min(limit - (long) R7fConstants.MIN_ENTRY_SIZE, from + (long) MAX_RESYNC_SCAN);
+        final byte firstMagicByte = (byte) (MAGIC >>> 24);
 
         for (int pos = from; pos <= end; pos++)
         {
-            if (buffer.get(pos) == 0)
+            final byte b = buffer.get(pos);
+            if (b == 0 && stopAtZero)
             {
-                // Zero fill: nothing was written from here on.
                 return -1;
             }
-            if (buffer.getInt(pos) == MAGIC)
+            // Cheap first-byte test before the unaligned int read, so scanning a long
+            // stretch of zeroes costs one byte comparison per position.
+            if (b == firstMagicByte && buffer.getInt(pos) == MAGIC)
             {
                 return pos;
             }

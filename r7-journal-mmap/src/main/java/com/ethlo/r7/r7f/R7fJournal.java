@@ -274,10 +274,12 @@ public final class R7fJournal implements Journal
 
         final int rawLen = (rawData != null) ? rawData.remaining() : 0;
 
-        // payloadLen: fbLen + rawLen + 2 ints for the length metadata
+        // payloadLen as the format defines it: the two length fields plus the payload.
         final int payloadLen = Integer.BYTES + Integer.BYTES + fbLen + rawLen;
-        // totalLen: header (magic, sequence, payloadLen, fbLen, rawLen) + payload + CRC footer
-        final int totalLen = R7fConstants.ENTRY_HEADER_SIZE + payloadLen + Integer.BYTES;
+        // Physical size on disk: the fixed header (which already contains those two length
+        // fields), the payload itself, and the CRC footer. Adding payloadLen here would
+        // count the length fields twice.
+        final int totalLen = R7fConstants.ENTRY_HEADER_SIZE + fbLen + rawLen + Integer.BYTES;
 
         ensureCapacity(totalLen);
 

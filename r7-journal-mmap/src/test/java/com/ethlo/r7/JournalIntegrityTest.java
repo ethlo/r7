@@ -12,7 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.zip.CRC32C;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -192,6 +194,140 @@ class JournalIntegrityTest
         assertThat(sink.checksumMismatches).containsExactly(reqId + ":REQUEST");
     }
 
+    /**
+     * The realistic power-loss hole: a page that never reached the device reads back as
+     * zeroes, because the segment was pre-allocated zero-filled.
+     * <p>
+     * This is the case that made the sequence numbers worth adding, and the case a reader
+     * that stops at the first zero byte cannot see — it looks exactly like the unwritten
+     * tail. A sealed segment is truncated to its exact size, so zeroes inside one are a
+     * hole by definition and the reader must look past them.
+     */
+    @Test
+    void holeOfZeroesInSealedSegmentIsDetected() throws IOException
+    {
+        writeExchanges(8);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef victim = entries.get(entries.size() / 2);
+
+        overwrite(segment, victim.offset(), new byte[victim.totalLength()]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("zeroes in a sealed segment are a hole, not an end; sink: %s", sink)
+                .isGreaterThan(0);
+        assertThat(sink.completed)
+                .as("entries after the hole must still be read")
+                .isNotEmpty();
+    }
+
+    /**
+     * A backward sequence means the file is not a valid append-only segment. Continuing
+     * would replay duplicate or out-of-order events into the reassembler and build
+     * exchanges that never happened, so FORMAT.md §6 requires the reader to stop.
+     */
+    @Test
+    void sequenceRegressionStopsDecoding() throws IOException
+    {
+        writeExchanges(9);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final int victimIndex = entries.size() / 2;
+        rewriteSequence(segment, entries.get(victimIndex), 1);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).isNotEmpty();
+        assertThat(sink.completed.size())
+                .as("decoding must stop at the regression, not carry on")
+                .isLessThan(9);
+    }
+
+    /**
+     * Only active files pass through recovery. A sealed or compressed file that is not a
+     * supported segment must not be decoded as whatever its bytes resemble and then
+     * deleted as processed.
+     */
+    @Test
+    void unsupportedVersionIsQuarantinedByTheTailer() throws IOException
+    {
+        final Path sealed = journalDir.resolve("shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION);
+        final ByteBuffer content = ByteBuffer.allocate(R7fConstants.PREAMBLE_SIZE + 64).order(ByteOrder.BIG_ENDIAN);
+        content.putInt(R7fConstants.PREAMBLE_OFF_MAGIC, R7fConstants.MAGIC);
+        content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
+        Files.write(sealed, content.array());
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(Files.exists(sealed)).as("must not be left in place to be rescanned").isFalse();
+        assertThat(quarantinedFiles()).hasSize(1);
+    }
+
+    /**
+     * An active segment belongs to the writer. The warmer pre-allocates the next one with
+     * an all-zero header, and the writer stamps its preamble only when it claims it, so
+     * the tailer must leave an unrecognised active file alone rather than rename it out
+     * from under a live mapping.
+     */
+    @Test
+    void activeSegmentsAreNeverQuarantinedByTheTailer() throws IOException
+    {
+        final Path spare = journalDir.resolve("shard-0-1700000000000-1" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        Files.write(spare, new byte[R7fConstants.PREAMBLE_SIZE + 64]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).isEmpty();
+        assertThat(Files.exists(spare)).as("the writer's file must be left where it is").isTrue();
+        assertThat(quarantinedFiles()).isEmpty();
+    }
+
+    /**
+     * The tailer keys segments by shard and sequence, so the sequence has to keep
+     * increasing across a restart. A counter that began again at zero would give a new
+     * segment the same key as a retained one, and the tailer would silently read only one
+     * of the two.
+     */
+    @Test
+    void segmentSequencesDoNotCollideAcrossRestart() throws IOException
+    {
+        for (int run = 0; run < 3; run++)
+        {
+            try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+            {
+                final String reqId = "restart-" + run;
+                journal.clientRequest(JournalLevel.METADATA, reqId,
+                        ByteBuffer.wrap("GET / HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                        new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+                journal.endExchange(reqId, new FastGatewayAttributes(),
+                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0, 0);
+            }
+        }
+
+        final List<String> keys = new ArrayList<>();
+        try (Stream<Path> files = Files.list(journalDir))
+        {
+            for (final Path p : files.toList())
+            {
+                final String[] parts = p.getFileName().toString().split("-");
+                if (parts.length >= 4 && parts[0].equals("shard"))
+                {
+                    keys.add(parts[1] + "-" + parts[3].split("\\.")[0]);
+                }
+            }
+        }
+
+        assertThat(keys).as("every segment needs its own shard+sequence key").isNotEmpty();
+        assertThat(new HashSet<>(keys))
+                .as("duplicate keys mean the tailer would drop a segment: %s", keys)
+                .hasSameSizeAs(keys);
+    }
+
     /* ---------- journal writing ---------- */
 
     private void writeExchanges(final int count) throws IOException
@@ -258,6 +394,38 @@ class JournalIntegrityTest
             pos += entry.totalLength();
         }
         return entries;
+    }
+
+    /**
+     * Rewrites an entry's sequence number and repairs its CRC, so the entry stays
+     * structurally valid and only the sequence is wrong. Mirrors the writer's CRC
+     * coverage: sequence, the three lengths, then the payload.
+     */
+    private static void rewriteSequence(final Path file, final EntryRef entry, final int newSequence) throws IOException
+    {
+        final byte[] bytes = Files.readAllBytes(file);
+        final ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+
+        buffer.putInt(entry.offset() + 4, newSequence);
+
+        final CRC32C crc = new CRC32C();
+        for (int field = 0; field < 4; field++)
+        {
+            final int value = buffer.getInt(entry.offset() + 4 + (field * Integer.BYTES));
+            crc.update((value >>> 24) & 0xFF);
+            crc.update((value >>> 16) & 0xFF);
+            crc.update((value >>> 8) & 0xFF);
+            crc.update(value & 0xFF);
+        }
+
+        final int dataLen = entry.fbLen() + entry.rawLen();
+        if (dataLen > 0)
+        {
+            crc.update(bytes, entry.payloadOffset(), dataLen);
+        }
+
+        buffer.putInt(entry.payloadOffset() + dataLen, (int) crc.getValue());
+        Files.write(file, bytes);
     }
 
     private static void flipByte(final Path file, final int offset) throws IOException
