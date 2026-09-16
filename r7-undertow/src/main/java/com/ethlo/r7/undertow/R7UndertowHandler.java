@@ -47,6 +47,7 @@ import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.journal.StatefulJournal;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.R7fJournal;
@@ -150,12 +151,17 @@ public final class R7UndertowHandler implements HttpHandler
             proxyEndTs = Objects.requireNonNullElseGet(tmpProxyEndTs, ClockSource::now);
 
             final long proxyFirstBytesTs = -1;
-            final int requestBodyCrc32 = -1;
-            final int responseBodyCrc32 = -1;
+
+            // Body checksums are supplied by StatefulJournal, which is the only layer
+            // that knows which fragments actually reached the journal — it gates them on
+            // the effective level. Anything computed here would describe the bytes on the
+            // wire instead, and would not match what a reader reads back.
+            final BodyChecksum requestBodyChecksum = BodyChecksum.NOT_RECORDED;
+            final BodyChecksum responseBodyChecksum = BodyChecksum.NOT_RECORDED;
             final TrafficMetricsHandler.TrafficMetrics trafficMetrics = gatewayExchange.getTrafficMetrics();
 
             tagExchangeAttributes(exchange, gatewayExchange);
-            journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, serverExchange.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyCrc32, responseBodyCrc32);
+            journal.endExchange(requestId, gatewayExchange.attributes(), requestStartTs, requestEndTs, serverExchange.getStatusCode(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyChecksum, responseBodyChecksum);
             final long journalBytes = journal.getBytesWritten();
             gatewayExchange.setJournalBytes(journalBytes);
         }
@@ -549,16 +555,14 @@ public final class R7UndertowHandler implements HttpHandler
 
         if (journalConfig.request().level() == JournalLevel.FULL)
         {
-            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer -> journal.requestBody(requestId, buffer)));
+            exchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), buffer ->
+                    journal.requestBody(requestId, buffer)));
         }
         if (journalConfig.response().level() == JournalLevel.FULL)
         {
             exchange.addResponseWrapper((factory, ex) ->
-                    new TeeingStreamSinkConduit(factory.create(), buffer ->
-                    {
-                        journal.responseBody(requestId, buffer);
-                    }
-                    ));
+                    new TeeingStreamSinkConduit(factory.create(),
+                            buffer -> journal.responseBody(requestId, buffer)));
         }
     }
 
@@ -636,8 +640,10 @@ public final class R7UndertowHandler implements HttpHandler
                     proxyStartTs,
                     -1,
                     proxyEndTs,
-                    -1,
-                    -1
+                    // Websocket exchanges return before the teeing conduits are installed,
+                    // so no body is ever journaled for them.
+                    BodyChecksum.NOT_RECORDED,
+                    BodyChecksum.NOT_RECORDED
             );
         });
     }

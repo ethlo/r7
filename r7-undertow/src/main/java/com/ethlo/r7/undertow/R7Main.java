@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -29,7 +28,6 @@ import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.core.StandardErrorHandler;
-import com.ethlo.r7.journal.compression.R7fCompressionEngine;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.r7f.R7fJournalProvider;
@@ -53,7 +51,6 @@ import io.undertow.server.handlers.GracefulShutdownHandler;
 public final class R7Main
 {
     private static final Logger logger = LoggerFactory.getLogger(R7Main.class);
-    private final R7fCompressionEngine compressionEngine;
     private final GracefulShutdownHandler gracefulShutdownHandler;
     private final Undertow server;
     private final Undertow managementServer;
@@ -83,14 +80,15 @@ public final class R7Main
 
         logger.info("Work directory is {} with {} free disk space", workDir, DiskSpaceUtils.formatBytes(DiskSpaceUtils.getSafeUsableSpace(workDir)));
 
-        this.compressionEngine = new R7fCompressionEngine(3, 2);
-        final List<Path> paths = R7fRecoveryManager.cleanAndRecover(workDir);
-        paths.forEach(compressionEngine::submitForCompression);
+        // Recovery seals whatever the last run left behind. Nothing else happens to a
+        // segment here: compression is a consumer's concern, not the gateway's, so the
+        // gateway's whole job for a segment is write, seal, rename.
+        R7fRecoveryManager.cleanAndRecover(workDir);
 
         final ShardedJournalWriter<R7fJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
             final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault());
-            return new R7fJournal(provider, compressionEngine::submitForCompression);
+            return new R7fJournal(provider);
         }
         );
 
@@ -133,9 +131,6 @@ public final class R7Main
 
             logger.info("Stopping Undertow server...");
             server.stop();
-
-            logger.info("Closing compression engine...");
-            this.compressionEngine.close();
 
             logger.info("Shutting down journal writer...");
             journalWriter.shutdown();

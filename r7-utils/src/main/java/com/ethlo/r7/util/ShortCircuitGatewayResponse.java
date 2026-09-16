@@ -23,10 +23,22 @@ public class ShortCircuitGatewayResponse implements com.ethlo.r7.api.ShortCircui
         this.status = status;
     }
 
+    /**
+     * Builds the header set for a short-circuit response.
+     * <p>
+     * A {@code null} content type means the response does not declare one — for example a
+     * static-content short circuit, where the type is decided later from the file being
+     * served. That must produce <em>no</em> Content-Type header, not a header whose value
+     * is null: a null value has no valid representation on the wire and none in the
+     * journal either.
+     */
     private static MutableFastGatewayHeaders contentTypeHeaders(String contentType)
     {
         final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders(1);
-        headers.set(HttpHeaders.CONTENT_TYPE, contentType);
+        if (contentType != null)
+        {
+            headers.set(HttpHeaders.CONTENT_TYPE, contentType);
+        }
         return headers;
     }
 

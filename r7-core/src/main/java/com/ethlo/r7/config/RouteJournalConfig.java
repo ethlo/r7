@@ -20,11 +20,11 @@ public record RouteJournalConfig(JournalDirectionConfig request,
     @Override
     public void validate(final ValidationResult result)
     {
-        this.validateDirection(this.request, result.nested("request"));
-        this.validateDirection(this.response, result.nested("response"));
+        this.validateDirection(this.request, result.nested("request"), true);
+        this.validateDirection(this.response, result.nested("response"), false);
     }
 
-    private void validateDirection(final JournalDirectionConfig config, final ValidationResult result)
+    private void validateDirection(final JournalDirectionConfig config, final ValidationResult result, final boolean isRequest)
     {
         if (config.statusOverrides() != null)
         {
@@ -46,6 +46,28 @@ public record RouteJournalConfig(JournalDirectionConfig request,
                     {
                         result.addError("status_overrides",
                                 "Cannot elevate a status override to FULL unless the base level is already FULL. A zero-buffering proxy cannot retroactively capture streamed bodies."
+                        );
+                    }
+
+                    // The same impossibility in the other direction, and only on the request
+                    // side. Request bodies stream into the journal while the request is being
+                    // read, which is before any status exists to resolve against — so by the
+                    // time a 404 is known, the body has already been written and cannot be
+                    // un-written. Silently honouring the override would be a lie; silently
+                    // ignoring it would disclose what the operator asked not to keep. Refusing
+                    // the configuration is the only honest option.
+                    //
+                    // The response side has no such problem: the status is known before any
+                    // response body is journaled, so a downgrade there is applied correctly.
+                    if (isRequest
+                            && config.level() == JournalLevel.FULL
+                            && override.ordinal() < JournalLevel.FULL.ordinal())
+                    {
+                        result.addError("status_overrides",
+                                "Cannot lower a request status override below FULL when the base request level is FULL"
+                                        + " (status " + i + " maps to " + override + "). Request bodies are streamed to the"
+                                        + " journal before the response status is known, so the override could not be"
+                                        + " honoured. Lower the base request level, or drop the override."
                         );
                     }
                 }

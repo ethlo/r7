@@ -1,5 +1,7 @@
 package com.ethlo.r7.r7f.util;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -122,6 +124,56 @@ public class StringExchangeMap
                 put(oldKeys[i], oldValues[i]);
             }
         }
+    }
+
+    public int size()
+    {
+        return size;
+    }
+
+    /**
+     * Removes every entry created before the given monotonic deadline.
+     * <p>
+     * Entries are collected first and removed afterwards, because {@link #remove(String)}
+     * compacts the open-addressed table and would otherwise move entries past the scan
+     * cursor.
+     *
+     * @param createdBeforeNanos deadline, in {@link System#nanoTime()} terms
+     * @param evicted            receives each evicted exchange, may be {@code null}
+     * @return the number of entries removed
+     */
+    public int evictOlderThan(final long createdBeforeNanos, final java.util.function.Consumer<JournalExchange> evicted)
+    {
+        List<String> doomed = null;
+
+        for (int i = 0; i < keys.length; i++)
+        {
+            final JournalExchange value = values[i];
+            if (keys[i] != null && value != null && value.getCreatedAtNanos() - createdBeforeNanos < 0)
+            {
+                if (doomed == null)
+                {
+                    doomed = new ArrayList<>();
+                }
+                doomed.add(keys[i]);
+            }
+        }
+
+        if (doomed == null)
+        {
+            return 0;
+        }
+
+        for (final String key : doomed)
+        {
+            final JournalExchange removed = remove(key);
+            if (removed != null && evicted != null)
+            {
+                evicted.accept(removed);
+            }
+        }
+
+        return doomed.size();
     }
 
     public JournalExchange computeIfAbsent(final String key, final Function<? super String, ? extends JournalExchange> mappingFunction)

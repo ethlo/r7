@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.CRC32C;
 
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
@@ -11,7 +12,9 @@ import com.ethlo.r7.api.IpSource;
 
 /**
  * Stateful container for a single request/response lifecycle.
- * Maintains zero-copy integrity by storing body fragments as a list of slices.
+ * <p>
+ * Body fragments are copied out of the reader's buffers on arrival — see
+ * {@link #retain(ByteBuffer)} for why the zero-copy slice cannot be kept.
  */
 public final class JournalExchange
 {
@@ -42,8 +45,8 @@ public final class JournalExchange
     // Metrics & Forensic Metadata
     private int status;
     private GatewayAttributes attributes;
-    private long journaledRequestCrc32;
-    private long journaledResponseCrc32;
+    private BodyChecksum journaledRequestChecksum = BodyChecksum.NOT_RECORDED;
+    private BodyChecksum journaledResponseChecksum = BodyChecksum.NOT_RECORDED;
     private long clientStartTs;
     private long clientEndTs;
     private long proxyStartTs;
@@ -56,9 +59,26 @@ public final class JournalExchange
     private InetAddress remoteAddress;
     private IpSource remoteAddressSource;
 
+    /**
+     * Monotonic creation stamp, used to age out exchanges whose EndExchange never
+     * arrived. {@link System#nanoTime()} rather than wall-clock, so that an NTP step
+     * cannot make an entry look arbitrarily old or young.
+     */
+    private final long createdAtNanos = System.nanoTime();
+
+    // Checksums computed over the body fragments actually observed, per exchange, for
+    // comparison against the values the gateway recorded in the EndExchange event.
+    private CRC32C observedRequestCrc;
+    private CRC32C observedResponseCrc;
+
     public JournalExchange(String requestId)
     {
         this.requestId = requestId;
+    }
+
+    public long getCreatedAtNanos()
+    {
+        return createdAtNanos;
     }
 
     public void setClientRequest(String line, JournalLevel level, GatewayHeaders headers, InetAddress remoteAddress, final IpSource ipSource)
@@ -93,12 +113,60 @@ public final class JournalExchange
 
     public void appendRequestBody(ByteBuffer fragment)
     {
-        requestBodyFragments.add(fragment);
+        if (observedRequestCrc == null)
+        {
+            observedRequestCrc = new CRC32C();
+        }
+        observedRequestCrc.update(fragment.duplicate());
+        requestBodyFragments.add(retain(fragment));
     }
 
     public void appendResponseBody(ByteBuffer fragment)
     {
-        responseBodyFragments.add(fragment);
+        if (observedResponseCrc == null)
+        {
+            observedResponseCrc = new CRC32C();
+        }
+        observedResponseCrc.update(fragment.duplicate());
+        responseBodyFragments.add(retain(fragment));
+    }
+
+    /**
+     * Copies a body fragment out of the reader's buffer.
+     * <p>
+     * Fragments arrive as slices of whatever the reader is currently looking at: a mapped
+     * segment, or a reusable decompression buffer. An exchange outlives that — it is held
+     * until its EndExchange arrives, which can be in a later segment entirely, by which
+     * point the mapping is closed and the decompression buffer has been overwritten by the
+     * next file. Keeping the slice would mean the body silently changes contents under the
+     * consumer, which is precisely the failure an audit log cannot have.
+     * <p>
+     * This is the one place the reader deliberately allocates. It is on the reader side,
+     * not the gateway write path, so it costs nothing in the hot path.
+     */
+    private static ByteBuffer retain(final ByteBuffer fragment)
+    {
+        final ByteBuffer copy = ByteBuffer.allocate(fragment.remaining());
+        copy.put(fragment.duplicate());
+        return copy.flip();
+    }
+
+    /**
+     * CRC32C of the request body fragments seen by this reader, or
+     * {@link BodyChecksum#NOT_RECORDED} if no request body was read back.
+     */
+    public BodyChecksum getObservedRequestChecksum()
+    {
+        return BodyChecksum.of(observedRequestCrc);
+    }
+
+    /**
+     * CRC32C of the response body fragments seen by this reader, or
+     * {@link BodyChecksum#NOT_RECORDED} if no response body was read back.
+     */
+    public BodyChecksum getObservedResponseChecksum()
+    {
+        return BodyChecksum.of(observedResponseCrc);
     }
 
     public void setTiming(final long clientStartTs, final long clientEndTs, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs)
@@ -110,10 +178,10 @@ public final class JournalExchange
         this.proxyEndTs = proxyEndTs;
     }
 
-    public void setJournalChecksums(long requestCrc32, long responseCrc32)
+    public void setJournalChecksums(BodyChecksum requestChecksum, BodyChecksum responseChecksum)
     {
-        this.journaledRequestCrc32 = requestCrc32;
-        this.journaledResponseCrc32 = responseCrc32;
+        this.journaledRequestChecksum = requestChecksum;
+        this.journaledResponseChecksum = responseChecksum;
     }
 
     public String getRequestId()
@@ -216,14 +284,22 @@ public final class JournalExchange
         this.attributes = attributes;
     }
 
-    public long getJournaledRequestCrc32()
+    /**
+     * What the gateway recorded for the request body, which may be
+     * {@link BodyChecksum#NOT_RECORDED}.
+     */
+    public BodyChecksum getJournaledRequestChecksum()
     {
-        return journaledRequestCrc32;
+        return journaledRequestChecksum;
     }
 
-    public long getJournaledResponseCrc32()
+    /**
+     * What the gateway recorded for the response body, which may be
+     * {@link BodyChecksum#NOT_RECORDED}.
+     */
+    public BodyChecksum getJournaledResponseChecksum()
     {
-        return journaledResponseCrc32;
+        return journaledResponseChecksum;
     }
 
     public long getClientStartTs()

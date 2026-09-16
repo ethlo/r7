@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalLevel;
 
 public interface JournalEventListener
@@ -27,5 +28,5 @@ public interface JournalEventListener
                int status,
                long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
-               final int requestCrc32, final int responseCrc32c);
+               final BodyChecksum requestChecksum, final BodyChecksum responseChecksum);
 }

@@ -13,6 +13,7 @@ import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 import com.ethlo.r7.config.RouteJournalConfig;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayHeaders;
@@ -23,8 +24,17 @@ public final class StatefulJournal implements Journal
     private final Journal delegate;
     private final RouteJournalConfig config;
     private final CompletedGatewayExchange exchange;
-    private final CRC32C requestChecksum = new CRC32C();
-    private final CRC32C responseChecksum = new CRC32C();
+    /**
+     * Checksums of the body bytes this journal actually passed to the delegate, created on
+     * the first fragment of that direction.
+     * <p>
+     * Lazy is the whole point. Eagerly created accumulators cannot distinguish "no body was
+     * journaled" from "a body was journaled and it hashes to the CRC32C of nothing", and
+     * they answer 0 for both. The reader has to know which, because verifying a checksum
+     * against a body that was never stored reports a mismatch on a perfectly intact record.
+     */
+    private CRC32C requestChecksum;
+    private CRC32C responseChecksum;
 
     private JournalLevel level;
     private String requestId;
@@ -111,10 +121,28 @@ public final class StatefulJournal implements Journal
     {
         if (config.request().level() == JournalLevel.FULL)
         {
+            // Anchor the body before writing it: a body entry the reader cannot attach to a
+            // request is discarded as an orphan, and its recorded checksum is then compared
+            // against a body that was thrown away — a mismatch on a record that is exactly
+            // what this writer intended.
+            //
+            // This resolves the level rather than forcing FULL. Forcing it would override an
+            // operator's status-based downgrade and journal headers they asked not to keep,
+            // and no reported mismatch is worth that. RouteJournalConfig rejects the
+            // configuration that would make the two disagree — a request-side override below
+            // FULL when the base is FULL — so by the time we are here, resolving cannot
+            // return anything lower. If that validation is ever relaxed, this degrades to the
+            // orphaned-body problem rather than to disclosure.
+            final int anchored = checkAndFlushRequest();
+
+            if (requestChecksum == null)
+            {
+                requestChecksum = new CRC32C();
+            }
             requestChecksum.update(data.duplicate());
-            final int written = delegate.requestBody(reqId, data);
-            this.bytesWritten += written;
-            return written;
+            final int bodyBytes = delegate.requestBody(reqId, data);
+            this.bytesWritten += bodyBytes;
+            return anchored + bodyBytes;
         }
         return 0;
     }
@@ -124,6 +152,10 @@ public final class StatefulJournal implements Journal
     {
         if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
+            if (responseChecksum == null)
+            {
+                responseChecksum = new CRC32C();
+            }
             responseChecksum.update(data.duplicate());
             final int written = delegate.responseBody(reqId, data);
             this.bytesWritten += written;
@@ -132,13 +164,29 @@ public final class StatefulJournal implements Journal
         return 0;
     }
 
+    /**
+     * The two checksum arguments are deliberately <em>not</em> forwarded.
+     * <p>
+     * This class decides what actually reaches the delegate — it gates every body fragment
+     * on the effective journal level — so it is the only layer that can state a checksum
+     * over the bytes that were really stored. A caller upstream sees the bytes on the wire,
+     * which is a different set whenever the level is below FULL. Recording the caller's
+     * value would produce a checksum of bytes the journal does not contain, and the reader
+     * would report a mismatch on an intact record.
+     * <p>
+     * The accumulators are created on the first fragment of their direction, so a direction
+     * that journaled nothing has a null one, and {@link BodyChecksum#of(java.util.zip.CRC32C)}
+     * turns that into {@link BodyChecksum#NOT_RECORDED} — the difference between "hashes to
+     * the CRC32C of nothing" and "there was nothing to hash", which is the difference the
+     * reader needs to decide whether to verify at all.
+     */
     @Override
-    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final int value, final int responseChecksumValue)
+    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum ignoredRequestChecksum, final BodyChecksum ignoredResponseChecksum)
     {
         int written = checkAndFlushRequest();
         written += checkAndFlushResponse();
 
-        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, (int) requestChecksum.getValue(), (int) responseChecksum.getValue());
+        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, BodyChecksum.of(requestChecksum), BodyChecksum.of(responseChecksum));
         this.bytesWritten += endBytes;
         return written + endBytes;
     }

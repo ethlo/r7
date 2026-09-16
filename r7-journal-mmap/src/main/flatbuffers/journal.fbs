@@ -61,8 +61,14 @@ table EndExchange {
   client_start: long;
   client_end: long;
   status: uint16;
-  request_crc32c: uint32;
-  response_crc32c: uint32;
+  // CRC32C of each journaled body, as an unsigned 32-bit value widened to int64, or -1
+  // when the writer did not compute one. The width is what makes -1 mean that: every
+  // 32-bit value is a legitimate CRC32C of some input, 0xFFFFFFFF included, so a uint32
+  // field has no room left to say "absent". FlatBuffers omits a field equal to its
+  // default, so "not recorded" — the common case, since most exchanges carry no request
+  // body — costs nothing on disk.
+  request_crc32c: long = -1;
+  response_crc32c: long = -1;
   proxy_start: int64;
   proxy_first_byte_received: int64;
   proxy_end: int64;

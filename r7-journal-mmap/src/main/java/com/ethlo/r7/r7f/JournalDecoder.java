@@ -6,12 +6,18 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.CRC32C;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
+import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.fbs.ClientRequest;
 import com.ethlo.r7.r7f.fbs.ClientResponse;
@@ -27,105 +33,472 @@ public final class JournalDecoder
 {
     public static final JournalLevel[] JOURNAL_LEVELS = JournalLevel.values();
 
+    private static final Logger logger = LoggerFactory.getLogger(JournalDecoder.class);
+
+    /**
+     * Cap on how much we are willing to scan looking for the next entry after hitting
+     * damage, so a pathological file cannot turn a tail into a long linear scan.
+     */
+    private static final int MAX_RESYNC_SCAN = 1 << 20;
+
+    /**
+     * Passed as the expected sequence when the caller has no prior position in the
+     * segment, so the first entry seen defines the starting point.
+     */
+    public static final int UNKNOWN_SEQUENCE = -1;
+
+    private JournalDecoder()
+    {
+    }
+
     /**
      * Decodes the hybrid FlatBuffer + raw stream.
+     * <p>
+     * Damaged entries do not abort the file. Per FORMAT.md §6 the reader skips them,
+     * resynchronising on the next entry magic, and reports what it skipped. Sequence
+     * numbers are checked as we go, so a gap — entries that were written but never
+     * reached the device — is reported rather than silently swallowed.
+     *
+     * @return what was decoded, skipped and found missing
      */
-    public static void decode(ByteBuffer buffer, JournalEventListener listener)
+    public static DecodeStats decode(ByteBuffer buffer, JournalEventListener listener)
     {
+        // A caller with nothing to resume from is reading a segment from the beginning, and
+        // the first entry of every segment is #1. Defaulting to UNKNOWN_SEQUENCE here handed
+        // that caller the one thing the sequence numbers exist to prevent: entries lost from
+        // the start of a segment become invisible, because the first survivor sets the
+        // baseline and there is no earlier entry to contradict it.
+        return decode(buffer, listener, R7fConstants.FIRST_ENTRY_SEQUENCE);
+    }
+
+    /**
+     * As {@link #decode(ByteBuffer, JournalEventListener)}, but continuing a sequence that
+     * started in an earlier call.
+     * <p>
+     * A reader that resumes mid-file — the tailer does, on every tick — would otherwise
+     * adopt whatever sequence it happens to land on and never notice that entries went
+     * missing across the resume boundary.
+     *
+     * @param expectedSequence the sequence number the first entry should carry, or
+     *                         {@link #UNKNOWN_SEQUENCE} to adopt whatever is found first
+     */
+    public static DecodeStats decode(ByteBuffer buffer, JournalEventListener listener, int expectedSequence)
+    {
+        // activeSegment is true because it is the safe assumption when the caller has not
+        // said: treating an active segment as sealed consumes the bytes the writer is about
+        // to fill and skips every entry appended afterwards, whereas treating a sealed
+        // segment as active only stops early at a hole. Readers that know the file is final
+        // — the tailer does — must call the full overload and pass false, or holes will not
+        // be crossed.
+        return decode(buffer, listener, expectedSequence, "<unnamed>", JournalIntegrityListener.NOOP, true);
+    }
+
+    /**
+     * As {@link #decode(ByteBuffer, JournalEventListener, int)}, additionally reporting
+     * damage and loss to an integrity listener as it is found.
+     *
+     * @param sourceName        name of the segment being read, for the integrity events
+     * @param integrity         receives gap, corruption and regression events
+     * @param activeSegment     whether the writer may still append to this source.
+     *                          <p>
+     *                          True for an active segment: a run of zeroes is the write
+     *                          frontier, not damage, and the remainder is not the reader's
+     *                          to consume or report. False for a sealed one, which the
+     *                          caller has bounded at the Data End its seal record declares
+     *                          — within that bound zeroes are a region that never reached
+     *                          the device, and the reader must look past them for later
+     *                          entries rather than stop.
+     *                          <p>
+     *                          This used to be called {@code preAllocatedTail}, which stopped
+     *                          being the distinction when sealing stopped truncating: a
+     *                          sealed segment carries a pre-allocated tail too. What matters
+     *                          is who owns the bytes ahead, not whether they exist.
+     */
+    public static DecodeStats decode(ByteBuffer buffer,
+                                     JournalEventListener listener,
+                                     int expectedSequence,
+                                     String sourceName,
+                                     JournalIntegrityListener integrity,
+                                     boolean activeSegment)
+    {
+        // The framing is big-endian; only the FlatBuffers payload is little-endian, and
+        // parseEntry sets that on the slice it hands out. The caller maps the file
+        // little-endian for FlatBuffers' benefit, so the order has to be established here
+        // rather than inherited — parseEntry used to be the only thing that set it, which
+        // left every absolute read before the first parseEntry call reading the wrong way
+        // round.
+        buffer.order(ByteOrder.BIG_ENDIAN);
+
         // Skip preamble
         if (buffer.position() == 0)
         {
             buffer.position(R7fConstants.PREAMBLE_SIZE);
         }
 
-        while (buffer.hasRemaining())
+        // Everything the consumer throws comes back wrapped, so that a consumer failure and
+        // an undecodable payload — which are otherwise indistinguishable, because FlatBuffers
+        // decodes lazily and the field access happens inside the listener call — are handled
+        // by different branches below.
+        final JournalEventListener guarded = new DeliveryGuard(listener);
+
+        long entries = 0;
+        long corruptEntriesSkipped = 0;
+        long bytesSkipped = 0;
+        long missingEntries = 0;
+        long undeliveredBytes = 0;
+        int lastSequence = -1;
+
+        while (buffer.remaining() >= R7fConstants.MIN_ENTRY_SIZE)
         {
             final int startPos = buffer.position();
 
-            // Peek at the byte WITHOUT advancing the position
-            final byte marker = buffer.get(startPos);
-
-            // If we hit a 0, we've reached the unwritten zero-padded tail of the segment
-            if (marker == 0)
+            if (buffer.get(startPos) == 0)
             {
+                if (activeSegment)
+                {
+                    // No committed entry here. Either nothing was ever written from this
+                    // point, or the writer is assembling an entry and has not stamped its
+                    // magic yet — the two are the same thing to a reader, which is the
+                    // whole point of stamping the magic last. Stop; come back next tick.
+                    break;
+                }
+
+                // The caller bounded this buffer at the segment's declared Data End, so a
+                // zero inside it is not a tail — it is a page that never reached the device.
+                // Stopping here is what made power-loss holes silent: the entries after the
+                // hole are present and valid, and their sequence numbers prove the loss.
+                final int afterHole = findNextEntry(buffer, startPos + 1, false);
+                if (afterHole < 0)
+                {
+                    // Nothing recognisable follows. Report it and consume the remainder:
+                    // leaving the position where it is would let a caller that checkpoints
+                    // by offset come back to the same bytes on every tick, for ever, while
+                    // the damage stayed invisible.
+                    final long trailing = buffer.limit() - (long) startPos;
+                    logger.error("Sealed segment {} ends in {} unwritten bytes at offset {}.",
+                            sourceName, trailing, startPos);
+                    bytesSkipped += trailing;
+                    corruptEntriesSkipped++;
+                    integrity.onCorruptRegion(sourceName, startPos, trailing, "unwritten region at the end of a sealed segment");
+                    buffer.position(buffer.limit());
+                    break;
+                }
+
+                final long holeBytes = afterHole - (long) startPos;
+                logger.error("Unwritten region in sealed segment {} at offset {} ({} bytes); "
+                        + "resuming at {}.", sourceName, startPos, holeBytes, afterHole);
+                bytesSkipped += holeBytes;
+                corruptEntriesSkipped++;
+                integrity.onCorruptRegion(sourceName, startPos, holeBytes, "unwritten region in a sealed segment");
+                buffer.position(afterHole);
+                continue;
+            }
+
+            final Entry entry;
+            try
+            {
+                entry = parseEntry(buffer);
+            }
+            catch (final CorruptEntryException | IllegalArgumentException | IndexOutOfBoundsException e)
+            {
+                buffer.position(startPos);
+                final int resyncPos = findNextEntry(buffer, startPos + 1, activeSegment);
+                if (resyncPos < 0)
+                {
+                    if (activeSegment)
+                    {
+                        // A magic is present but the entry behind it does not parse. Since
+                        // the writer stamps the magic last (FORMAT.md 5), this is not an
+                        // entry caught mid-publish — an unpublished entry has a zero here and
+                        // was handled above. So this is real damage in a file the writer
+                        // still owns.
+                        //
+                        // Stop without consuming anyway. The remainder of an active segment
+                        // is not ours to write off: consuming it would checkpoint the whole
+                        // pre-allocation and skip every entry appended afterwards. Sealing
+                        // makes the file final, and the branch below reports it then.
+                        logger.warn("Corrupt entry at offset {} in active segment {} ({}); "
+                                + "leaving it until the segment is sealed.", startPos, sourceName, e.getMessage());
+                        buffer.position(startPos);
+                        break;
+                    }
+
+                    final long skipped = buffer.limit() - startPos;
+                    logger.warn("Corrupt entry at offset {} ({}); no further entries found, stopping.", startPos, e.getMessage());
+                    buffer.position(buffer.limit());
+                    bytesSkipped += skipped;
+                    corruptEntriesSkipped++;
+                    integrity.onCorruptRegion(sourceName, startPos, skipped, e.getMessage());
+                    break;
+                }
+
+                logger.warn("Corrupt entry at offset {} ({}); skipping {} bytes and resuming at {}.",
+                        startPos, e.getMessage(), resyncPos - startPos, resyncPos);
+                bytesSkipped += resyncPos - startPos;
+                corruptEntriesSkipped++;
+                integrity.onCorruptRegion(sourceName, startPos, resyncPos - startPos, e.getMessage());
+                buffer.position(resyncPos);
+                // Any entries inside the skipped region are unknown; the sequence check
+                // on the next successful entry accounts for them.
+                continue;
+            }
+
+            if (expectedSequence != UNKNOWN_SEQUENCE && entry.sequence() != expectedSequence)
+            {
+                if (entry.sequence() > expectedSequence)
+                {
+                    final int lost = entry.sequence() - expectedSequence;
+                    missingEntries += lost;
+                    integrity.onEntriesMissing(sourceName, startPos, expectedSequence, entry.sequence(), lost);
+                    logger.error("Sequence gap at offset {}: expected #{} but found #{} — {} entries missing.",
+                            startPos, expectedSequence, entry.sequence(), lost);
+                }
+                else
+                {
+                    // FORMAT.md §6: a backward step means this is not a valid append-only
+                    // segment. Continuing would replay duplicate or out-of-order events
+                    // into the reassembler and build exchanges that never happened.
+                    integrity.onSequenceRegression(sourceName, startPos, expectedSequence, entry.sequence());
+                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
+                            sourceName, startPos, expectedSequence, entry.sequence());
+                    // A sealed segment will never change, so leaving the position on the
+                    // offending entry would have a caller that checkpoints by offset read
+                    // and report it again on every tick. Consume the rest. An active
+                    // segment is still being written, so there the position stays put.
+                    if (!activeSegment)
+                    {
+                        // Account for what is being given up. This is the one branch that
+                        // consumes bytes it could still have read, so silence here made the
+                        // stats say the read was clean — and the tailer deletes a segment it
+                        // believes it read in full. The remainder is abandoned, not absent,
+                        // and has to be counted as such.
+                        final long abandoned = buffer.limit() - (long) startPos;
+                        bytesSkipped += abandoned;
+                        undeliveredBytes += abandoned;
+                        corruptEntriesSkipped++;
+                        integrity.onCorruptRegion(sourceName, startPos, abandoned,
+                                "abandoned after a sequence regression");
+                        buffer.position(buffer.limit());
+                    }
+                    else
+                    {
+                        buffer.position(startPos);
+                    }
+                    break;
+                }
+            }
+
+            try
+            {
+                final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(entry.fbSlice());
+                dispatch(journalEvent, entry.rawSlice(), guarded);
+                entries++;
+            }
+            catch (final ListenerFailureException e)
+            {
+                // The consumer refused this entry. Skipping it would consume it: the caller
+                // checkpoints past it, the segment eventually reads as fully processed, and
+                // the tailer deletes it — so a sink that was unavailable for one tick costs a
+                // valid exchange, permanently. That is exactly the loss this journal exists
+                // to make impossible.
+                //
+                // So the reader stops here and gives up nothing. Position goes back to the
+                // start of the entry, the sequence expectation is not advanced, and the next
+                // pass offers the same entry again. Nothing later in this segment is read
+                // until it is accepted, which is head-of-line blocking on purpose: an audit
+                // log may stall loudly, but it may not skip.
+                //
+                // Note the one ambiguity this cannot resolve. FlatBuffers decodes lazily, so
+                // a consumer that touches a header or attribute pulls bytes at that moment;
+                // an undecodable payload can therefore surface as a listener failure and
+                // stall a segment that will never decode. That is the safe direction of the
+                // error — a stall names the segment, offset and sequence on every tick and
+                // destroys nothing, whereas the opposite mistake is silent and permanent.
+                buffer.position(startPos);
+                logger.error("Entry #{} at offset {} in {} was refused by the consumer; the segment "
+                                + "stops here and will be offered again. Nothing after it is read until "
+                                + "it is accepted.",
+                        entry.sequence(), startPos, sourceName, e.getCause());
+                integrity.onDeliveryStalled(sourceName, startPos, entry.sequence(), e.getCause());
                 break;
             }
+            catch (final RuntimeException e)
+            {
+                // The framing and CRC were valid, so the bytes are what the writer wrote, but
+                // they are not something this build can decode — an event type it does not
+                // know, or a payload whose internal offsets do not hold up. The consumer is
+                // not implicated: everything it threw arrived as ListenerFailureException
+                // above.
+                //
+                // Skip it and continue. Letting it out would leave this segment's progress
+                // unrecorded and have every tick re-dispatch the same entries for ever, and
+                // unlike a refusal there is nothing a later attempt would do differently.
+                logger.warn("Entry #{} at offset {} holds a payload this build cannot decode: {}",
+                        entry.sequence(), startPos, e.toString());
+                corruptEntriesSkipped++;
+                integrity.onCorruptRegion(sourceName, startPos, 0L, "undecodable payload: " + e);
+            }
 
-            parseEntryAndDispatch(buffer, listener);
+            // After delivery, not before. A refusal above leaves the entry unread, and the
+            // caller checkpoints the sequence alongside the offset — advancing it here would
+            // record "next expected #8" against an offset pointing at #8, and the retry would
+            // then read #8 as a sequence regression and abandon the rest of the segment.
+            expectedSequence = entry.sequence() + 1;
+            lastSequence = entry.sequence();
         }
+
+        // The loop stops when fewer than MIN_ENTRY_SIZE bytes remain, and those bytes were
+        // never examined by anything above. In a sealed segment that suffix is an entry cut
+        // short — a stop partway through a write, or bytes lost after sealing — and leaving it
+        // is the same failure every early exit in this method is written to avoid: the
+        // tailer sees remaining() != 0, so the segment is never finished, and it checkpoints
+        // the identical offset on every tick for ever while nothing is reported.
+        //
+        // An active segment keeps it: the writer may still be about to fill it, which is the
+        // one case where standing still is progress (see the resync branch above).
+        //
+        // The size test is what restricts this to the loop's own exit, and it is load-bearing
+        // rather than decorative. Everything that breaks out of the loop above either consumes
+        // to the limit or leaves an active segment alone — except a delivery stall, which
+        // deliberately rewinds to the start of an entry it means to offer again. Reaching here
+        // on `hasRemaining()` alone turned that rewind into a consume: the segment was declared
+        // read in full and deleted, with the refused entry and every entry after it in it. That
+        // is the exact loss the stall exists to prevent, reintroduced three lines further down
+        // by the block that was supposed to stop segments being left unread.
+        //
+        // A rewound entry is at least MIN_ENTRY_SIZE long, so the two cases cannot overlap:
+        // what remains below that bound is only ever what the loop condition refused to look at.
+        if (!activeSegment && buffer.hasRemaining() && buffer.remaining() < R7fConstants.MIN_ENTRY_SIZE)
+        {
+            final int trailingStart = buffer.position();
+            final long trailing = buffer.remaining();
+            logger.error("Sealed segment {} ends in {} bytes too short to hold an entry at offset {}.",
+                    sourceName, trailing, trailingStart);
+            bytesSkipped += trailing;
+            corruptEntriesSkipped++;
+            integrity.onCorruptRegion(sourceName, trailingStart, trailing,
+                    "truncated entry at the end of a sealed segment");
+            buffer.position(buffer.limit());
+        }
+
+        return new DecodeStats(entries, corruptEntriesSkipped, bytesSkipped, missingEntries, undeliveredBytes, lastSequence);
     }
 
-    private static void parseEntryAndDispatch(ByteBuffer buffer, JournalEventListener listener)
+    /**
+     * Parses one entry, leaving the buffer positioned immediately after it on success and
+     * in an unspecified position on failure (the caller restores it).
+     */
+    private static Entry parseEntry(final ByteBuffer buffer)
     {
-        final int startPos = buffer.position();
-        ByteBuffer fbSlice;
+        buffer.order(ByteOrder.BIG_ENDIAN);
+
+        if (buffer.remaining() < R7fConstants.ENTRY_HEADER_SIZE)
+        {
+            throw new CorruptEntryException("incomplete header");
+        }
+
+        final int magic = buffer.getInt();
+        if (magic != MAGIC)
+        {
+            throw new CorruptEntryException("bad magic");
+        }
+
+        // The writer stamps the magic last, behind a release fence (FORMAT.md 5). Pairing
+        // an acquire here is what makes the rest of the entry guaranteed visible to this
+        // reader — which, in production, is a different process sharing the mapping.
+        VarHandle.acquireFence();
+
+        final int sequence = buffer.getInt();
+        final int payloadLen = buffer.getInt();
+        final int fbLen = buffer.getInt();
+        final int rawLen = buffer.getInt();
+
+        if (fbLen < 0 || rawLen < 0 || payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
+        {
+            throw new CorruptEntryException("corrupt payload length");
+        }
+
+        if (buffer.remaining() < (long) fbLen + rawLen + Integer.BYTES)
+        {
+            throw new CorruptEntryException("truncated entry");
+        }
+
+        final CRC32C crc = new CRC32C();
+        updateInt(crc, sequence);
+        updateInt(crc, payloadLen);
+        updateInt(crc, fbLen);
+        updateInt(crc, rawLen);
+
+        // ---- FlatBuffer slice (zero copy) ----
+        final ByteBuffer fbSlice = buffer.slice();
+        fbSlice.limit(fbLen);
+        fbSlice.order(ByteOrder.LITTLE_ENDIAN);
+        crc.update(fbSlice.duplicate());
+        buffer.position(buffer.position() + fbLen);
+
+        // ---- Raw slice ----
         ByteBuffer rawSlice = null;
-        try
+        if (rawLen > 0)
         {
-            buffer.order(ByteOrder.BIG_ENDIAN);
-
-            if (buffer.remaining() < 4 * Integer.BYTES)
-            {
-                throw new IllegalStateException("Incomplete header");
-            }
-
-            int magic = buffer.getInt();
-            if (magic != MAGIC)
-            {
-                throw new IllegalStateException("Bad magic");
-            }
-
-            int payloadLen = buffer.getInt();
-            int fbLen = buffer.getInt();
-            int rawLen = buffer.getInt();
-
-            if (payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
-            {
-                throw new IllegalStateException("Corrupt payload length");
-            }
-
-            if (buffer.remaining() < fbLen + rawLen + Integer.BYTES)
-            {
-                throw new IllegalStateException("Truncated entry");
-            }
-
-            CRC32C crc = new CRC32C();
-            updateInt(crc, payloadLen);
-            updateInt(crc, fbLen);
-            updateInt(crc, rawLen);
-
-            // ---- FlatBuffer slice (zero copy) ----
-            fbSlice = buffer.slice();
-            fbSlice.limit(fbLen);
-            fbSlice.order(ByteOrder.LITTLE_ENDIAN);
-
-            crc.update(fbSlice.duplicate());
-
-            buffer.position(buffer.position() + fbLen);
-
-            // ---- Raw slice ----
-            if (rawLen > 0)
-            {
-                rawSlice = buffer.slice();
-                rawSlice.limit(rawLen);
-                crc.update(rawSlice.duplicate());
-                buffer.position(buffer.position() + rawLen);
-            }
-
-            int storedCrc = buffer.getInt();
-            if ((int) crc.getValue() != storedCrc)
-            {
-                throw new IllegalStateException("CRC mismatch");
-            }
-        }
-        catch (IllegalArgumentException exc)
-        {
-            throw new IllegalStateException("Corrupt journal entry found at position " + startPos, exc);
+            rawSlice = buffer.slice();
+            rawSlice.limit(rawLen);
+            crc.update(rawSlice.duplicate());
+            buffer.position(buffer.position() + rawLen);
         }
 
-        final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(fbSlice);
+        final int storedCrc = buffer.getInt();
+        if ((int) crc.getValue() != storedCrc)
+        {
+            throw new CorruptEntryException("CRC mismatch");
+        }
 
-        dispatch(journalEvent, rawSlice, listener);
+        return new Entry(sequence, fbSlice, rawSlice);
+    }
+
+    /**
+     * Scans forward for the next plausible entry magic.
+     *
+     * @param stopAtZero give up on reaching zero bytes, because in a segment the writer may
+     *                   still append to they mean nothing has been written from there on.
+     *                   False for a sealed segment, where the scan must cross the hole.
+     * @return the absolute position of the next entry, or -1 if none was found
+     */
+    private static int findNextEntry(final ByteBuffer buffer, final int from, final boolean stopAtZero)
+    {
+        final int limit = buffer.limit();
+        // A sealed segment is an audit record: scan it to the end rather than abandon a
+        // suffix whose framing and CRC may be perfectly intact, as FORMAT.md §6 requires.
+        // The cap applies only where the scan would otherwise run into a pre-allocated
+        // tail, which the caller already stops at.
+        final long lastStart = limit - (long) R7fConstants.MIN_ENTRY_SIZE;
+        final int end = (int) (stopAtZero ? Math.min(lastStart, from + (long) MAX_RESYNC_SCAN) : lastStart);
+        final byte firstMagicByte = (byte) (MAGIC >>> 24);
+
+        for (int pos = from; pos <= end; pos++)
+        {
+            final byte b = buffer.get(pos);
+            if (b == 0 && stopAtZero)
+            {
+                return -1;
+            }
+            // Cheap first-byte test before the rest, so scanning a long stretch of zeroes
+            // costs one byte comparison per position.
+            //
+            // The remaining three bytes are compared individually rather than with getInt:
+            // this is the method that finds the way back after damage, and it must not
+            // depend on the buffer's current byte order to do it. It silently found nothing
+            // on a little-endian buffer, which turned "resynchronise past the hole" into
+            // "this segment ends here" — and the caller then consumed and deleted a sealed
+            // segment whose surviving entries had never been read.
+            if (b == firstMagicByte
+                    && buffer.get(pos + 1) == (byte) (MAGIC >>> 16)
+                    && buffer.get(pos + 2) == (byte) (MAGIC >>> 8)
+                    && buffer.get(pos + 3) == (byte) MAGIC)
+            {
+                return pos;
+            }
+        }
+        return -1;
     }
 
     private static void updateInt(CRC32C crc, int value)
@@ -160,6 +533,41 @@ public final class JournalDecoder
         }
     }
 
+    /**
+     * Decodes a stored body checksum field.
+     * <p>
+     * A value that is neither the sentinel nor a possible CRC32C is a damaged payload, and
+     * is treated as one: the throw lands in {@code decode}'s undecodable-payload branch,
+     * which skips the entry and reports it, exactly as an out-of-range journal level does
+     * in {@link #level(int)}. The two alternatives both fail: mapping it to
+     * {@code NOT_RECORDED} skips verification on precisely the record that already looks
+     * wrong, and taking it at face value stores a number no writer could have produced.
+     */
+    private static BodyChecksum storedChecksum(final long storedValue)
+    {
+        if (storedValue == R7fConstants.CHECKSUM_ABSENT)
+        {
+            return BodyChecksum.NOT_RECORDED;
+        }
+        try
+        {
+            return BodyChecksum.ofUnsigned32(storedValue);
+        }
+        catch (final IllegalArgumentException e)
+        {
+            throw new CorruptEntryException("body checksum field out of range: " + storedValue);
+        }
+    }
+
+    private static JournalLevel level(final int ordinal)
+    {
+        if (ordinal < 0 || ordinal >= JOURNAL_LEVELS.length)
+        {
+            throw new CorruptEntryException("journal level out of range: " + ordinal);
+        }
+        return JOURNAL_LEVELS[ordinal];
+    }
+
     private static void dispatch(final JournalEvent journalEvent, ByteBuffer buffer, JournalEventListener listener)
     {
         switch (journalEvent.eventType())
@@ -167,9 +575,9 @@ public final class JournalDecoder
             case EventPayload.ClientRequest ->
             {
                 final ClientRequest ev = (ClientRequest) journalEvent.event(new ClientRequest());
-                final String reqId = asAscii(ev.reqIdAsByteBuffer());
-                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final String startLine = asAscii(ev.startLineAsByteBuffer());
+                final String reqId = asLatin1(ev.reqIdAsByteBuffer());
+                final JournalLevel level = level(ev.journalLevel());
+                final String startLine = asLatin1(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsGatewayHeaders(ev);
                 final InetAddress remoteAddress = fromByteBuffer(ev.clientIpAsByteBuffer());
                 final IpSource ipSource = IpSource.valueOf(ev.clientIpSource());
@@ -179,9 +587,9 @@ public final class JournalDecoder
             case EventPayload.UpstreamRequest ->
             {
                 final UpstreamRequest ev = (UpstreamRequest) journalEvent.event(new UpstreamRequest());
-                final String reqId = asAscii(ev.reqIdAsByteBuffer());
-                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final String startLine = asAscii(ev.startLineAsByteBuffer());
+                final String reqId = asLatin1(ev.reqIdAsByteBuffer());
+                final JournalLevel level = level(ev.journalLevel());
+                final String startLine = asLatin1(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsUpstreamRequestHeaders(ev);
                 listener.onUpstreamRequest(reqId, level, startLine, headers);
             }
@@ -189,7 +597,7 @@ public final class JournalDecoder
             case EventPayload.RequestBody ->
             {
                 final RequestBody body = (RequestBody) journalEvent.event(new RequestBody());
-                final String reqId = asAscii(body.reqIdAsByteBuffer());
+                final String reqId = asLatin1(body.reqIdAsByteBuffer());
                 final int bodyLen = (int) body.length();
 
                 // Defensive check: only proceed if we have a valid buffer for the claimed length
@@ -203,9 +611,9 @@ public final class JournalDecoder
             case EventPayload.UpstreamResponse ->
             {
                 final UpstreamResponse ev = (UpstreamResponse) journalEvent.event(new UpstreamResponse());
-                final String reqId = asAscii(ev.reqIdAsByteBuffer());
-                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final String startLine = asAscii(ev.startLineAsByteBuffer());
+                final String reqId = asLatin1(ev.reqIdAsByteBuffer());
+                final JournalLevel level = level(ev.journalLevel());
+                final String startLine = asLatin1(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsUpstreamResponseHeaders(ev);
                 listener.onUpstreamResponse(reqId, level, startLine, headers);
             }
@@ -213,9 +621,9 @@ public final class JournalDecoder
             case EventPayload.ClientResponse ->
             {
                 final ClientResponse ev = (ClientResponse) journalEvent.event(new ClientResponse());
-                final String reqId = asAscii(ev.reqIdAsByteBuffer());
-                final JournalLevel level = JOURNAL_LEVELS[ev.journalLevel()];
-                final String startLine = asAscii(ev.startLineAsByteBuffer());
+                final String reqId = asLatin1(ev.reqIdAsByteBuffer());
+                final JournalLevel level = level(ev.journalLevel());
+                final String startLine = asLatin1(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsClientResponseHeaders(ev);
                 listener.onClientResponse(reqId, level, startLine, headers);
             }
@@ -223,7 +631,7 @@ public final class JournalDecoder
             case EventPayload.ResponseBody ->
             {
                 final ResponseBody body = (ResponseBody) journalEvent.event(new ResponseBody());
-                final String reqId = asAscii(body.reqIdAsByteBuffer());
+                final String reqId = asLatin1(body.reqIdAsByteBuffer());
                 final int bodyLen = (int) body.length();
                 // Defensive check: only proceed if we have a valid buffer for the claimed length
                 if (bodyLen > 0 && buffer != null)
@@ -236,7 +644,7 @@ public final class JournalDecoder
             case EventPayload.EndExchange ->
             {
                 final EndExchange end = (EndExchange) journalEvent.event(new EndExchange());
-                final String reqId = asAscii(end.reqIdAsByteBuffer());
+                final String reqId = asLatin1(end.reqIdAsByteBuffer());
                 final long clientStartTs = end.clientStart();
                 final long clientEndTs = end.clientEnd();
                 final long proxyStartTs = end.proxyStart();
@@ -249,10 +657,14 @@ public final class JournalDecoder
                 final long responseBodyBytes = end.responseBodyBytes();
                 final GatewayAttributes attributes = new FbsGatewayAttributes(end);
 
-                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd, (int) end.requestCrc32c(), (int) end.responseCrc32c());
+                // The other place the sentinel exists; see R7fJournal.endExchange. From here
+                // on the distinction is carried by the type rather than by a value a caller
+                // has to remember not to compare against.
+                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd,
+                        storedChecksum(end.requestCrc32c()), storedChecksum(end.responseCrc32c()));
             }
 
-            default -> throw new IllegalStateException("Unknown event type: " + journalEvent.eventType());
+            default -> throw new CorruptEntryException("Unknown event type: " + journalEvent.eventType());
         }
     }
 
@@ -260,7 +672,7 @@ public final class JournalDecoder
     {
         if (buffer.remaining() < bodyLen)
         {
-            throw new IllegalStateException("Body length exceeds remaining buffer: " + bodyLen);
+            throw new CorruptEntryException("Body length exceeds remaining buffer: " + bodyLen);
         }
         final ByteBuffer bodyChunk = buffer.slice();
         bodyChunk.limit(bodyLen);
@@ -268,8 +680,12 @@ public final class JournalDecoder
         return bodyChunk;
     }
 
-
-    public static String asAscii(final ByteBuffer buf)
+    /**
+     * Decodes as ISO-8859-1, which is the encoding HTTP header values and start lines are
+     * carried in and the one the writer preserves byte-for-byte. Decoding as US-ASCII
+     * here would map every byte above 127 to U+FFFD and silently corrupt the record.
+     */
+    public static String asLatin1(final ByteBuffer buf)
     {
         if (buf == null)
         {
@@ -279,7 +695,7 @@ public final class JournalDecoder
         if (buf.hasArray())
         {
             // Zero-copy extraction of the backing array for heap buffers
-            return new String(buf.array(), buf.arrayOffset() + buf.position(), buf.remaining(), StandardCharsets.US_ASCII);
+            return new String(buf.array(), buf.arrayOffset() + buf.position(), buf.remaining(), StandardCharsets.ISO_8859_1);
         }
 
         // Fallback for direct buffers
@@ -288,6 +704,193 @@ public final class JournalDecoder
         // Use duplicate() to avoid mutating the original buffer's position
         buf.duplicate().get(bytes);
 
-        return new String(bytes, StandardCharsets.US_ASCII);
+        return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
+    /**
+     * @deprecated header values are latin-1, not ASCII; use {@link #asLatin1(ByteBuffer)}.
+     */
+    @Deprecated(forRemoval = true)
+    public static String asAscii(final ByteBuffer buf)
+    {
+        return asLatin1(buf);
+    }
+
+    private record Entry(int sequence, ByteBuffer fbSlice, ByteBuffer rawSlice)
+    {
+    }
+
+    /**
+     * @param entries               entries successfully decoded and dispatched
+     * @param corruptEntriesSkipped damaged regions skipped over
+     * @param bytesSkipped          total bytes skipped while resynchronising
+     * @param missingEntries        entries the sequence numbers prove are absent
+     * @param lastSequence          sequence number of the last decoded entry, or -1
+     */
+    /**
+     * @param bytesSkipped   everything the reader passed over, damaged or abandoned
+     * @param undeliveredBytes the part of {@code bytesSkipped} that was <em>readable</em> and
+     *                       deliberately not delivered — today only the remainder after a
+     *                       sequence regression, where the reader stops because the segment
+     *                       is no longer a valid append-only log. Damage is different in
+     *                       kind: those bytes are gone whatever anyone does, whereas these
+     *                       are still there and still decodable, so destroying the segment
+     *                       would destroy deliverable records.
+     *                       <p>
+     *                       Not to be confused with {@code ExchangeCompletionListener.onAbandoned},
+     *                       which is about an exchange aged out of the reassembler. This is
+     *                       about bytes in a segment, and the two are unrelated — which is
+     *                       why this is not called "abandoned".
+     */
+    public record DecodeStats(long entries, long corruptEntriesSkipped, long bytesSkipped, long missingEntries, long undeliveredBytes, int lastSequence)
+    {
+        public boolean isClean()
+        {
+            return corruptEntriesSkipped == 0 && missingEntries == 0;
+        }
+
+        /**
+         * The sequence a caller resuming after this batch should expect, or
+         * {@link #UNKNOWN_SEQUENCE} if nothing was decoded.
+         */
+        public int nextExpectedSequence()
+        {
+            return lastSequence == UNKNOWN_SEQUENCE ? UNKNOWN_SEQUENCE : lastSequence + 1;
+        }
+    }
+
+    static final class CorruptEntryException extends RuntimeException
+    {
+        CorruptEntryException(final String message)
+        {
+            super(message);
+        }
+    }
+
+    /**
+     * Marks a throw that came out of the consumer rather than out of this decoder.
+     */
+    static final class ListenerFailureException extends RuntimeException
+    {
+        ListenerFailureException(final Throwable cause)
+        {
+            // No stack trace of its own: this carries a cause and nothing else, and the
+            // cause has the trace that matters.
+            super(null, cause, false, false);
+        }
+    }
+
+    /**
+     * Wraps a consumer so that anything it throws is identifiable as its own.
+     * <p>
+     * Without the wrapper the decoder sees one {@code RuntimeException} out of
+     * {@code dispatch} and cannot tell a payload it failed to decode from a sink that was
+     * briefly unavailable — and the two want opposite handling. An undecodable entry has to
+     * be skipped, because no later attempt would do better. A refused entry must not be,
+     * because skipping it lets the caller checkpoint past a record it never received.
+     * <p>
+     * Seven methods of delegation buys that distinction. There is no cheaper seam: the
+     * listener is called from inside {@code dispatch}, in the middle of the lazy FlatBuffers
+     * field access that is the other thing that can throw there.
+     */
+    private record DeliveryGuard(JournalEventListener delegate) implements JournalEventListener
+    {
+        @Override
+        public void onClientRequest(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers, final InetAddress remoteAddress, final IpSource ipSource)
+        {
+            try
+            {
+                delegate.onClientRequest(reqId, level, startLine, headers, remoteAddress, ipSource);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onUpstreamRequest(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        {
+            try
+            {
+                delegate.onUpstreamRequest(reqId, level, startLine, headers);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onRequestBody(final String reqId, final ByteBuffer bodyChunk)
+        {
+            try
+            {
+                delegate.onRequestBody(reqId, bodyChunk);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onResponseBody(final String reqId, final ByteBuffer bodyChunk)
+        {
+            try
+            {
+                delegate.onResponseBody(reqId, bodyChunk);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onUpstreamResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        {
+            try
+            {
+                delegate.onUpstreamResponse(reqId, level, startLine, headers);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onClientResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        {
+            try
+            {
+                delegate.onClientResponse(reqId, level, startLine, headers);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onEnd(final String reqId, final GatewayAttributes attributes,
+                          final long clientStartTs, final long clientEndTs,
+                          final int status,
+                          final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes,
+                          final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs,
+                          final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+        {
+            try
+            {
+                delegate.onEnd(reqId, attributes, clientStartTs, clientEndTs, status,
+                        requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes,
+                        proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, requestChecksum, responseChecksum);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
     }
 }

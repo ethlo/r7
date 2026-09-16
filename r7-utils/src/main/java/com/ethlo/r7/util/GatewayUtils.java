@@ -19,12 +19,12 @@ public class GatewayUtils
         final Map<String, List<String>> map = new HashMap<>();
         attributes.forEach((name, value) ->
                 {
-                    map.compute(name.toString(), (k, values) -> {
+                    map.compute(name, (k, values) -> {
                                 if (values == null)
                                 {
                                     values = new ArrayList<>(1);
                                 }
-                                values.add(value.toString());
+                                values.add(value);
                                 return values;
                             }
                     );

@@ -46,7 +46,15 @@ public final class SetStatusFactory implements GatewayFilterFactory<SetStatusFac
         {
             new ValidatorUtils(result)
                     .required("status", this.status());
-            status.validate(result);
+
+            // required() records the error but does not stop the chain, so the dependent
+            // check has to guard for itself. Without this a missing status turns config
+            // validation into an NPE, which reports a stack trace instead of the
+            // actionable "'status' is required" the operator needs.
+            if (this.status() != null)
+            {
+                this.status().validate(result);
+            }
         }
     }
 

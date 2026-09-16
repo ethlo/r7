@@ -67,8 +67,8 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             writeNumber("response_header_bytes", exchange.getRequestHeaderBytes());
             writeNumber("response_body_bytes", exchange.getRequestBodyBytes());
 
-            writeNumber("request_crc32", exchange.getJournaledRequestCrc32());
-            writeNumber("response_crc32", exchange.getJournaledResponseCrc32());
+            writeNumber("request_crc32", exchange.getJournaledRequestChecksum().isRecorded() ? exchange.getJournaledRequestChecksum().value() : null);
+            writeNumber("response_crc32", exchange.getJournaledResponseChecksum().isRecorded() ? exchange.getJournaledResponseChecksum().value() : null);
 
             // --- Payloads ---
             writeBody("request_body", exchange.getRequestBodyFragments());
@@ -136,11 +136,15 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         }
     }
 
-    private void writeNumber(String name, long value) throws IOException
+    private void writeNumber(String name, Long value) throws IOException
     {
-        if (value != 0)
+        if (value != null)
         {
             generator.writeNumberProperty(name, value);
+        }
+        else
+        {
+generator.writeNullProperty(name);
         }
     }
 
