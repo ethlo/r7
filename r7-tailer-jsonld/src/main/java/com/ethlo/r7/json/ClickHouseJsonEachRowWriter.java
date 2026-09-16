@@ -144,7 +144,7 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
         }
         else
         {
-            generator.writeNull();
+generator.writeNullProperty(name);
         }
     }
 
