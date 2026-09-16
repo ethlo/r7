@@ -129,9 +129,13 @@ public class ExchangeReassembler implements JournalEventListener
 
         if (exchange == null)
         {
-            // Expected during shard boundaries or tailer startup
-            orphanedEnds.incrementAndGet();
+            // Expected during shard boundaries or tailer startup.
+            //
+            // Counted after the call, like every other consumer callback here: a refusal
+            // gets the entry offered again, and a counter bumped per attempt measures
+            // delivery attempts rather than orphaned ends.
             output.onOrphanedEnd(reqId);
+            orphanedEnds.incrementAndGet();
             if (logger.isDebugEnabled())
             {
                 logger.debug("Received END for {} but no metadata exists. Skipping orphan.", reqId);
@@ -420,14 +424,14 @@ public class ExchangeReassembler implements JournalEventListener
 
     private JournalExchange getOrCreate(String id)
     {
-        maybeSweep();
-
         final JournalExchange existing = inFlight.get(id);
         if (existing != null)
         {
+            maybeSweep();
             return existing;
         }
 
+        maybeSweep();
         makeRoomForNewExchange();
         return inFlight.computeIfAbsent(id, JournalExchange::new);
     }
@@ -436,9 +440,12 @@ public class ExchangeReassembler implements JournalEventListener
     {
         if (exchange == null)
         {
-            // If we have body data but no metadata slice, we have a protocol/ordering violation
-            orphanedBodies.incrementAndGet();
+            // If we have body data but no metadata slice, we have a protocol/ordering
+            // violation. Counted after the call, for the same reason as the orphaned end
+            // above — this one is a body entry, and a consumer that keeps refusing it would
+            // otherwise grow getOrphanedBodyCount() without bound on a single event.
             output.onOrphanedBody(id, kind);
+            orphanedBodies.incrementAndGet();
             logger.warn("Protocol Violation: Received {} body for ID {} but no Start event was recorded.", kind, id);
             return false;
         }

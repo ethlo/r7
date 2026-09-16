@@ -456,9 +456,25 @@ public final class R7fJournal implements Journal
             return;
         }
         closed = true;
-        if (segment != null)
+        try
         {
-            finalizeActiveSegment();
+            if (segment != null)
+            {
+                finalizeActiveSegment();
+            }
+        }
+        finally
+        {
+            // The provider is this journal's to close. Its warmer thread spends its life
+            // blocked in put() holding a mapped, pre-allocated .flux, and nothing else holds
+            // a reference to it — the gateway constructs one per shard and keeps only the
+            // journal. Leaving it running meant a clean shutdown released the active segment
+            // and abandoned the warmed one, mapping and all, so the next boot found a
+            // pre-allocation to recover that no crash had produced.
+            //
+            // In a finally because sealing the active segment is the part that can fail, and
+            // a failure there is exactly when an orphaned mapping is least welcome.
+            provider.close();
         }
     }
 
@@ -539,9 +555,9 @@ public final class R7fJournal implements Journal
 
         // Deliberately not truncated. Rotation only happens when a segment is full, so the
         // tail here is at most one entry's worth — and the seal record already says where
-        // the data ends, so nothing infers it from the file's size. The same rule applies to
-        // clean close and recovery, where retaining the larger unused tail also avoids
-        // shrinking a file that another process may already have mapped.
+        // the data ends, so nothing infers it from the file's size. Truncation is kept for
+        // clean close and recovery, where a segment can be sealed with most of its
+        // pre-allocation unused.
 
         // Delete or rename
         if (finalPosition <= R7fConstants.PREAMBLE_SIZE)

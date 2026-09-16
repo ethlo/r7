@@ -13,8 +13,8 @@ import com.ethlo.r7.api.InvalidTextValueException;
 import io.undertow.util.HeaderMap;
 
 /**
- * The header view filters actually mutate at runtime enforces the same text contract as
- * the standalone containers.
+ * The header view that filters actually mutate at runtime enforces the same text contract
+ * as the standalone containers.
  * <p>
  * This test exists because validating only the containers in {@code r7-utils} left the
  * guarantee true in the unit tests and false in production: filters mutate this class,

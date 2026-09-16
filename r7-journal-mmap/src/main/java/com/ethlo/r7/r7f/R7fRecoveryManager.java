@@ -260,10 +260,27 @@ public final class R7fRecoveryManager
         // by the scan, through onSequenceRegression.
         final long discarded = scanResult.stoppedOnRegression() ? 0L : trailingContentBytes;
 
-        integrity.onSegmentRecovered(newName,
-                scanResult.lastValidPosition(),
-                discarded,
-                scanResult.recordCount());
+        // Isolated, not merely moved. Putting the call after the rename stopped a listener
+        // failure from turning a fully recovered segment into a .corrupt file — but the
+        // caller still catches whatever comes out of here and classifies it as a segment
+        // that could not be recovered. So the failure was reported as a quarantine of a path
+        // that no longer exists: an "unable to quarantine" error, a quarantined count that
+        // counted a success, and the listener's own exception swallowed.
+        //
+        // The recovery is finished and correct at this point. A consumer that cannot accept
+        // the news does not change that, and must not be allowed to describe it.
+        try
+        {
+            integrity.onSegmentRecovered(newName,
+                    scanResult.lastValidPosition(),
+                    discarded,
+                    scanResult.recordCount());
+        }
+        catch (final RuntimeException e)
+        {
+            logger.error("Recovered {} successfully, but the integrity listener rejected the report. "
+                    + "The segment is sealed and intact; only the notification was lost.", newName, e);
+        }
 
         return new RecoveryResult(scanResult.recordCount(), scanResult.missingRecords());
     }
