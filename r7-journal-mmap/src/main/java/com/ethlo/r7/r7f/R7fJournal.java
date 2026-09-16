@@ -539,9 +539,9 @@ public final class R7fJournal implements Journal
 
         // Deliberately not truncated. Rotation only happens when a segment is full, so the
         // tail here is at most one entry's worth — and the seal record already says where
-        // the data ends, so nothing infers it from the file's size. Truncation is kept for
-        // clean close and recovery, where a segment can be sealed with most of its
-        // pre-allocation unused.
+        // the data ends, so nothing infers it from the file's size. The same rule applies to
+        // clean close and recovery, where retaining the larger unused tail also avoids
+        // shrinking a file that another process may already have mapped.
 
         // Delete or rename
         if (finalPosition <= R7fConstants.PREAMBLE_SIZE)
