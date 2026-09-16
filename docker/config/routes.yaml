@@ -1,28 +1,28 @@
-version: '{{git.rev.abbr}}'
+version: my-version-4.1
 global_filters:
   - SimpleMetrics
-  - CorrelationIdHeader
+  - AddCorrelationId
 routes:
   - id: forward-status
     upstream:
       targets:
         - url: http://localhost:18888
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: ${SECRET_URL:/status}
   - id: reject-benchmark
     upstream:
       targets:
         - url: http://localhost:1111
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /benchmark
     filters:
       - RequireAuthorizationHeader
 
   - id: undertow-internal-backend
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /hello
       - Method:
           include:
@@ -35,14 +35,14 @@ routes:
       - RateLimiter:
           capacity: 5
           refill_tokens: 1
-          refill_period: PT2s
+          refill_period: 2s
       - CircuitBreaker:
           failure_threshold: 10
-          cooldown_period: PT12s
+          cooldown_period: 12s
       - AddResponseHeader:
           name: X-Powered-By
           value: Ethlo R7
-      - CorrelationIdHeader
+      - AddCorrelationId
       - RequireAuthorizationHeader
     journal:
       request:
@@ -56,11 +56,11 @@ routes:
 
   - id: ws-test
     upstream:
-     targets:
-       - url: http://127.0.0.1:8080
+      targets:
+        - url: http://127.0.0.1:8080
     match:
-       PathStartsWith:
-         prefix: /ws
+      - PathPrefix:
+          prefix: /ws
     journal:
       request:
         level: METADATA
@@ -76,7 +76,7 @@ routes:
       targets:
         - url: http://192.168.50.103:8123
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /ha
     journal:
       request:

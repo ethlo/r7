@@ -1,5 +1,5 @@
 services:
-  r7-api:
+  r7-gateway:
     image: ghcr.io/ethlo/r7-jvm:latest #ethlo-r7:latest
     container_name: ethlo-r7-gateway
     ports:
