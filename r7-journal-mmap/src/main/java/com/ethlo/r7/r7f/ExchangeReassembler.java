@@ -420,14 +420,14 @@ public class ExchangeReassembler implements JournalEventListener
 
     private JournalExchange getOrCreate(String id)
     {
+        maybeSweep();
+
         final JournalExchange existing = inFlight.get(id);
         if (existing != null)
         {
-            maybeSweep();
             return existing;
         }
 
-        maybeSweep();
         makeRoomForNewExchange();
         return inFlight.computeIfAbsent(id, JournalExchange::new);
     }
