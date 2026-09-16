@@ -6,14 +6,13 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.VarHandle;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
@@ -43,6 +42,7 @@ public final class R7fJournal implements Journal
     private static final Logger logger = LoggerFactory.getLogger(R7fJournal.class);
     private static final ValueLayout.OfInt INT_BE = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
     private static final ValueLayout.OfShort SHORT_BE = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
+    private static final ValueLayout.OfLong LONG_BE = JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
     /**
      * Initial size of the reusable ASCII scratch buffer. Sized for the common case; it
@@ -285,8 +285,17 @@ public final class R7fJournal implements Journal
 
         final int sequence = nextSequence;
 
-        // Header block
-        putInt(R7fConstants.MAGIC);
+        // The magic is reserved now and stamped last, once the whole entry is in place.
+        // FORMAT.md 5 requires this order, and it is the difference between a reader having
+        // to guess whether a half-written entry is damaged and simply not seeing it yet:
+        // the magic is the commit. The slot is zero until then, because segments are
+        // pre-allocated zero-filled and never reused, and a zero where a magic belongs is
+        // already the reader's end-of-data signal.
+        //
+        // ensureCapacity may have rotated to a new segment, so the slot is taken after it.
+        final long magicPosition = position;
+        position += Integer.BYTES;
+
         putInt(sequence);
         putInt(payloadLen);
         putInt(fbLen);
@@ -316,6 +325,12 @@ public final class R7fJournal implements Journal
 
         // Write CRC footer
         putInt((int) crc.getValue());
+
+        // Publish. The fence keeps every store above from being reordered after the magic,
+        // so a reader — in this process or, as in production, in the tailer process sharing
+        // this mapping — never sees a magic without the entry behind it.
+        VarHandle.releaseFence();
+        segment.set(INT_BE, magicPosition, R7fConstants.MAGIC);
 
         nextSequence++;
 
@@ -442,6 +457,12 @@ public final class R7fJournal implements Journal
             final Path retiringPath = this.activePath;
             final long finalPosition = this.position;
 
+            // Stamp the seal record now, while the mapping is still open and this thread
+            // still knows what it wrote. A reader can then check its own decode against the
+            // segment's own account of itself, rather than inferring completeness from not
+            // having hit anything unusual.
+            stampSealRecord(retiringSegment, nextSequence, finalPosition);
+
             // Capture the bounds for the filename before resetting
             final long firstTs = this.segmentStartEpochMillis;
             final long lastTs = System.currentTimeMillis();
@@ -502,13 +523,13 @@ public final class R7fJournal implements Journal
         // 1. Unmap the memory. The OS flushes any remaining dirty pages to disk.
         oldArena.close();
 
-        // 2. Open a transient channel strictly to truncate the file
-        try (FileChannel fc = FileChannel.open(oldPath, StandardOpenOption.WRITE))
-        {
-            fc.truncate(finalPosition);
-        }
+        // Deliberately not truncated. Rotation only happens when a segment is full, so the
+        // tail here is at most one entry's worth — and the seal record already says where
+        // the data ends, so nothing infers it from the file's size. Truncation is kept for
+        // clean close and recovery, where a segment can be sealed with most of its
+        // pre-allocation unused.
 
-        // 3. Delete or Rename
+        // Delete or rename
         if (finalPosition <= R7fConstants.PREAMBLE_SIZE)
         {
             Files.delete(oldPath);
@@ -522,12 +543,13 @@ public final class R7fJournal implements Journal
 
     private void finalizeActiveSegment() throws IOException
     {
+        final long finalPosition = this.position;
+        stampSealRecord(segment, nextSequence, finalPosition);
         segment.force();
         arena.close();
 
         final long firstTs = this.segmentStartEpochMillis;
         final long lastTs = System.currentTimeMillis();
-        final long finalPosition = this.position;
 
         segment = null;
         arena = null;
@@ -538,18 +560,33 @@ public final class R7fJournal implements Journal
             return;
         }
 
-        // Cut the pre-allocated tail, exactly as the asynchronous rotation path does.
-        // FORMAT.md §7 requires a sealed segment to be its exact size, and §6 relies on
-        // it: a reader treats zeroes inside a sealed segment as a region that never
-        // reached the device. Leaving the tail here would make every cleanly closed
-        // segment look damaged.
-        try (FileChannel fc = FileChannel.open(activePath, StandardOpenOption.WRITE))
-        {
-            fc.truncate(finalPosition);
-        }
-
+        // The pre-allocated tail stays. Nothing infers where the data ends from the file's
+        // size any more — the seal record says so — and shrinking a file another process may
+        // have mapped is the one remaining way this writer could take the tailer down with a
+        // SIGBUS. A sealed segment is read and deleted within a tick or two, so the unused
+        // remainder is transient.
         final Path target = activePath.resolveSibling(sealedName(activePath, firstTs, lastTs));
         Files.move(activePath, target, StandardCopyOption.ATOMIC_MOVE);
+    }
+
+    /**
+     * Records what this segment contains, in the segment itself.
+     * <p>
+     * The count and the last sequence are written first, then the seal magic behind a fence.
+     * A reader that finds the magic can trust the two facts behind it; one that does not
+     * knows the segment was never properly sealed, which is otherwise invisible because
+     * "sealed" is normally carried only by the file's extension.
+     * <p>
+     * Written once per segment, at seal, so it costs nothing on the write path.
+     */
+    private static void stampSealRecord(final MemorySegment target, final int nextSequenceAfterLast, final long dataEnd)
+    {
+        final long entryCount = nextSequenceAfterLast - (long) R7fConstants.FIRST_ENTRY_SEQUENCE;
+        target.set(LONG_BE, R7fConstants.PREAMBLE_OFF_ENTRY_COUNT, entryCount);
+        target.set(INT_BE, R7fConstants.PREAMBLE_OFF_LAST_SEQUENCE, nextSequenceAfterLast - 1);
+        target.set(LONG_BE, R7fConstants.PREAMBLE_OFF_DATA_END, dataEnd);
+        VarHandle.releaseFence();
+        target.set(INT_BE, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC, R7fConstants.SEAL_MAGIC);
     }
 
     private static String sealedName(final Path activePath, final long firstTs, final long lastTs)
@@ -585,7 +622,7 @@ public final class R7fJournal implements Journal
 
     private void putLong(long v)
     {
-        segment.set(JAVA_LONG_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN), position, v);
+        segment.set(LONG_BE, position, v);
         position += Long.BYTES;
     }
 

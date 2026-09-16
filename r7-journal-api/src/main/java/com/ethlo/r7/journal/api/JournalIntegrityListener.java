@@ -61,12 +61,18 @@ public interface JournalIntegrityListener
     }
 
     /**
-     * Recovery sealed a segment by cutting it back to its last intact entry.
+     * Recovery sealed a segment at its last intact entry, after an unclean stop.
+     * <p>
+     * Nothing was cut from the file: the segment keeps its pre-allocated tail, and
+     * {@code dataEnd} is what a reader bounds itself by. This event says the writer did not
+     * get to finish, not that anything was removed.
      *
-     * @param validBytes     size the segment was truncated to
-     * @param discardedBytes bytes beyond that point, including the pre-allocated tail
+     * @param dataEnd        offset one past the last intact entry, recorded in the seal record
+     * @param discardedBytes content past {@code dataEnd} that could not be read — zero for
+     *                       the ordinary case, where everything past it is the untouched
+     *                       remainder of the pre-allocation
      */
-    default void onSegmentTruncated(String segment, long validBytes, long discardedBytes, long recordsRecovered)
+    default void onSegmentRecovered(String segment, long dataEnd, long discardedBytes, long recordsRecovered)
     {
     }
 }

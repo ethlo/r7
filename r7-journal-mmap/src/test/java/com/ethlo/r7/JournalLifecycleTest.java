@@ -238,15 +238,17 @@ class JournalLifecycleTest
     }
 
     /**
-     * Closing the journal must seal the segment at its exact size, just as rotation does.
+     * Closing the journal must seal the segment at its Data End, just as rotation does.
      * <p>
-     * This is the invariant the reader is built on: FORMAT.md §6 has it treat zeroes inside
-     * a sealed segment as a region that never reached the device, which is only sound if
-     * §7's "truncate on seal" actually holds everywhere. Leaving the pre-allocated tail on
-     * the clean-close path made every normal shutdown produce a segment that looks damaged.
+     * The pre-allocated tail stays: nothing shrinks a file another process may have mapped,
+     * and since the seal record says where the entries stop, nothing needs the file's size
+     * to agree. What the reader must not do is mistake that tail for a hole — FORMAT.md §6
+     * has it treat zeroes inside a sealed segment as pages that never reached the device,
+     * and Data End is the only thing keeping the two apart. So the assertion that matters
+     * here is the last one: the reader sees an intact segment, not a damaged one.
      */
     @Test
-    void cleanCloseSealsSegmentAtExactSize() throws IOException
+    void cleanCloseSealsSegmentAtItsDataEnd() throws IOException
     {
         try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
         {
@@ -261,12 +263,25 @@ class JournalLifecycleTest
 
         final List<Path> sealed = sealedSegments();
         assertThat(sealed).hasSize(1);
-        assertThat(Files.size(sealed.get(0)))
-                .as("a sealed segment carries no pre-allocated tail")
-                .isLessThan(SEGMENT_SIZE);
-        assertThat(Files.size(sealed.get(0))).isGreaterThan(R7fConstants.PREAMBLE_SIZE);
 
-        // With the tail gone there is nothing for the reader to mistake for a hole.
+        final ByteBuffer header = ByteBuffer.wrap(Files.readAllBytes(sealed.get(0)))
+                .order(java.nio.ByteOrder.BIG_ENDIAN);
+
+        assertThat(header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC))
+                .as("clean close must stamp the seal record, not only rename the file")
+                .isEqualTo(R7fConstants.SEAL_MAGIC);
+
+        final long dataEnd = header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END);
+        assertThat(dataEnd).isGreaterThan(R7fConstants.PREAMBLE_SIZE);
+        assertThat(dataEnd)
+                .as("the data must stop well before the end of the pre-allocation")
+                .isLessThan(SEGMENT_SIZE);
+        assertThat(Files.size(sealed.get(0)))
+                .as("and the tail must be left in place rather than truncated out from under a reader")
+                .isEqualTo(SEGMENT_SIZE);
+
+        // The point of all of the above: the reader bounds itself at Data End, so the tail
+        // is neither data nor a hole.
         final CollectingSink sink = tail();
         assertThat(sink.isClean()).as("sink: %s", sink).isTrue();
         assertThat(sink.completed).hasSize(5);
@@ -309,14 +324,26 @@ class JournalLifecycleTest
                 .as("an untouched pre-allocated spare is not damage and must not be quarantined")
                 .isEmpty();
         assertThat(sink.quarantined).isEmpty();
-        assertThat(sink.truncatedSegments).hasSize(1);
+        assertThat(sink.recoveredSegments).hasSize(1);
 
         final List<Path> sealed = sealedSegments();
         assertThat(sealed).hasSize(1);
-        assertThat(Files.size(sealed.get(0)))
-                .as("recovery must cut the pre-allocated tail, not leave it in place")
+
+        final ByteBuffer recovered = ByteBuffer.wrap(Files.readAllBytes(sealed.get(0)))
+                .order(java.nio.ByteOrder.BIG_ENDIAN);
+
+        assertThat(recovered.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC))
+                .as("recovery seals the segment, so it must stamp the seal record too")
+                .isEqualTo(R7fConstants.SEAL_MAGIC);
+
+        final long dataEnd = recovered.getLong(R7fConstants.PREAMBLE_OFF_DATA_END);
+        assertThat(dataEnd).isGreaterThan(R7fConstants.PREAMBLE_SIZE);
+        assertThat(dataEnd)
+                .as("recovery must mark where the entries stop, well short of the pre-allocation")
                 .isLessThan(SEGMENT_SIZE);
-        assertThat(Files.size(sealed.get(0))).isGreaterThan(R7fConstants.PREAMBLE_SIZE);
+        assertThat(Files.size(sealed.get(0)))
+                .as("and must not shrink a file the tailer may have mapped in another process")
+                .isEqualTo(SEGMENT_SIZE);
 
         final CollectingSink tailed = tail();
         assertThat(tailed.isClean()).as("sink: %s", tailed).isTrue();
@@ -346,7 +373,7 @@ class JournalLifecycleTest
         R7fRecoveryManager.cleanAndRecover(journalDir, second);
 
         assertThat(segmentSizes()).isEqualTo(afterFirst);
-        assertThat(second.truncatedSegments).as("nothing left to recover on the second pass").isEmpty();
+        assertThat(second.recoveredSegments).as("nothing left to recover on the second pass").isEmpty();
     }
 
     /* ---------- helpers ---------- */
@@ -356,8 +383,9 @@ class JournalLifecycleTest
         // Checked on every tail in this suite rather than in one dedicated test: the bugs
         // that got through were invariant breaks that each individual outcome assertion
         // was happy to ignore.
-        JournalInvariants.assertSealedSegmentsAreExact(journalDir);
+        JournalInvariants.assertSealedSegmentsEndWhereTheySay(journalDir);
         JournalInvariants.assertSegmentKeysAreUnique(journalDir);
+        JournalInvariants.assertSealedSegmentsDescribeThemselves(journalDir);
 
         final CollectingSink sink = new CollectingSink();
         // A large minAge keeps the tailer from deleting segments once it has read them,

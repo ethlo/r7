@@ -121,16 +121,45 @@ public final class StatefulJournal implements Journal
     {
         if (config.request().level() == JournalLevel.FULL)
         {
+            // Anchor the body before writing it.
+            //
+            // Every other request-side decision resolves the level against the response
+            // status, but the status is not known yet when body fragments arrive, so this
+            // one cannot. When the two disagree — a base level of FULL that resolves to NONE
+            // at the not-yet-known status — checkAndFlushRequest returns without emitting
+            // anything, and the body entries land in the journal ahead of the ClientRequest
+            // entry that anchors them.
+            //
+            // The reader then has nowhere to put those fragments, discards them as orphaned
+            // bodies, and afterwards compares the recorded checksum against a body it threw
+            // away: a mismatch reported on a record that is exactly what this writer
+            // intended. If we are going to journal the body, the request goes first.
+            final int anchored = flushRequestAtFull();
+
             if (requestChecksum == null)
             {
                 requestChecksum = new CRC32C();
             }
             requestChecksum.update(data.duplicate());
-            final int written = delegate.requestBody(reqId, data);
-            this.bytesWritten += written;
-            return written;
+            final int bodyBytes = delegate.requestBody(reqId, data);
+            this.bytesWritten += bodyBytes;
+            return anchored + bodyBytes;
         }
         return 0;
+    }
+
+    /**
+     * Emits the request entries at FULL if they have not gone out yet.
+     * <p>
+     * Deliberately not status-resolved: this is called because a body is about to be
+     * journaled, which already commits us to a FULL record. Recording the request at a lower
+     * level, or not at all, would leave the body without the entry that gives it meaning.
+     * The flushed flags make it a no-op once the request has been written.
+     */
+    private int flushRequestAtFull()
+    {
+        // Both handlers add their own output to bytesWritten, so this must not.
+        return handleClientRequest(JournalLevel.FULL) + handleUpstreamRequest(JournalLevel.FULL);
     }
 
     @Override

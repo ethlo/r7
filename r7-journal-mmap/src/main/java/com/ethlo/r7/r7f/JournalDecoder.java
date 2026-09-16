@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.CRC32C;
 
@@ -61,7 +62,12 @@ public final class JournalDecoder
      */
     public static DecodeStats decode(ByteBuffer buffer, JournalEventListener listener)
     {
-        return decode(buffer, listener, UNKNOWN_SEQUENCE);
+        // A caller with nothing to resume from is reading a segment from the beginning, and
+        // the first entry of every segment is #1. Defaulting to UNKNOWN_SEQUENCE here handed
+        // that caller the one thing the sequence numbers exist to prevent: entries lost from
+        // the start of a segment become invisible, because the first survivor sets the
+        // baseline and there is no earlier entry to contradict it.
+        return decode(buffer, listener, R7fConstants.FIRST_ENTRY_SEQUENCE);
     }
 
     /**
@@ -77,6 +83,12 @@ public final class JournalDecoder
      */
     public static DecodeStats decode(ByteBuffer buffer, JournalEventListener listener, int expectedSequence)
     {
+        // activeSegment is true because it is the safe assumption when the caller has not
+        // said: treating an active segment as sealed consumes the bytes the writer is about
+        // to fill and skips every entry appended afterwards, whereas treating a sealed
+        // segment as active only stops early at a hole. Readers that know the file is final
+        // — the tailer does — must call the full overload and pass false, or holes will not
+        // be crossed.
         return decode(buffer, listener, expectedSequence, "<unnamed>", JournalIntegrityListener.NOOP, true);
     }
 
@@ -86,21 +98,36 @@ public final class JournalDecoder
      *
      * @param sourceName        name of the segment being read, for the integrity events
      * @param integrity         receives gap, corruption and regression events
-     * @param preAllocatedTail  whether this source still carries the zero-filled remainder
-     *                          of its pre-allocation. True for an active segment, where a
-     *                          run of zeroes is the legitimate end of data. False for a
-     *                          sealed segment, which recovery or rotation truncated to its
-     *                          exact size — there, zeroes are not a tail but a region that
-     *                          never reached the device, and the reader must look past them
-     *                          for later entries rather than stop.
+     * @param activeSegment     whether the writer may still append to this source.
+     *                          <p>
+     *                          True for an active segment: a run of zeroes is the write
+     *                          frontier, not damage, and the remainder is not the reader's
+     *                          to consume or report. False for a sealed one, which the
+     *                          caller has bounded at the Data End its seal record declares
+     *                          — within that bound zeroes are a region that never reached
+     *                          the device, and the reader must look past them for later
+     *                          entries rather than stop.
+     *                          <p>
+     *                          This used to be called {@code preAllocatedTail}, which stopped
+     *                          being the distinction when sealing stopped truncating: a
+     *                          sealed segment carries a pre-allocated tail too. What matters
+     *                          is who owns the bytes ahead, not whether they exist.
      */
     public static DecodeStats decode(ByteBuffer buffer,
                                      JournalEventListener listener,
                                      int expectedSequence,
                                      String sourceName,
                                      JournalIntegrityListener integrity,
-                                     boolean preAllocatedTail)
+                                     boolean activeSegment)
     {
+        // The framing is big-endian; only the FlatBuffers payload is little-endian, and
+        // parseEntry sets that on the slice it hands out. The caller maps the file
+        // little-endian for FlatBuffers' benefit, so the order has to be established here
+        // rather than inherited — parseEntry used to be the only thing that set it, which
+        // left every absolute read before the first parseEntry call reading the wrong way
+        // round.
+        buffer.order(ByteOrder.BIG_ENDIAN);
+
         // Skip preamble
         if (buffer.position() == 0)
         {
@@ -111,6 +138,7 @@ public final class JournalDecoder
         long corruptEntriesSkipped = 0;
         long bytesSkipped = 0;
         long missingEntries = 0;
+        long undeliveredBytes = 0;
         int lastSequence = -1;
 
         while (buffer.remaining() >= R7fConstants.MIN_ENTRY_SIZE)
@@ -119,17 +147,19 @@ public final class JournalDecoder
 
             if (buffer.get(startPos) == 0)
             {
-                if (preAllocatedTail)
+                if (activeSegment)
                 {
-                    // The zero-filled remainder of the pre-allocation: no entry was ever
-                    // written from here on.
+                    // No committed entry here. Either nothing was ever written from this
+                    // point, or the writer is assembling an entry and has not stamped its
+                    // magic yet — the two are the same thing to a reader, which is the
+                    // whole point of stamping the magic last. Stop; come back next tick.
                     break;
                 }
 
-                // A sealed segment is exactly the size of its data, so zeroes inside it are
-                // not a tail — they are pages that never reached the device. Stopping here
-                // is what made power-loss holes silent: the entries after the hole are
-                // present and valid, and their sequence numbers are what prove the loss.
+                // The caller bounded this buffer at the segment's declared Data End, so a
+                // zero inside it is not a tail — it is a page that never reached the device.
+                // Stopping here is what made power-loss holes silent: the entries after the
+                // hole are present and valid, and their sequence numbers prove the loss.
                 final int afterHole = findNextEntry(buffer, startPos + 1, false);
                 if (afterHole < 0)
                 {
@@ -165,31 +195,23 @@ public final class JournalDecoder
             catch (final CorruptEntryException | IllegalArgumentException | IndexOutOfBoundsException e)
             {
                 buffer.position(startPos);
-                final int resyncPos = findNextEntry(buffer, startPos + 1, preAllocatedTail);
+                final int resyncPos = findNextEntry(buffer, startPos + 1, activeSegment);
                 if (resyncPos < 0)
                 {
-                    if (preAllocatedTail)
+                    if (activeSegment)
                     {
-                        // An active segment, and the writer may be part-way through
-                        // publishing this very entry: FORMAT.md §5 has it stamp the magic
-                        // first and the CRC last, so a half-written entry is byte-for-byte
-                        // indistinguishable from a damaged one until it is complete. The
-                        // resync scan then finds nothing, because everything past the write
-                        // frontier is still zero.
+                        // A magic is present but the entry behind it does not parse. Since
+                        // the writer stamps the magic last (FORMAT.md 5), this is not an
+                        // entry caught mid-publish — an unpublished entry has a zero here and
+                        // was handled above. So this is real damage in a file the writer
+                        // still owns.
                         //
-                        // Consuming the remainder here would checkpoint the entire
-                        // pre-allocation and skip every entry appended afterwards — for the
-                        // life of the segment, silently. So leave the position on the entry
-                        // and come back next tick. This does not weaken invariant 4: for an
-                        // active segment "the writer may still write here" *is* proof that
-                        // the end of the data has not been reached, which is exactly what
-                        // the invariant asks for.
-                        //
-                        // An entry that really is damaged stalls the tailer at this offset
-                        // until the segment is sealed — bounded, and reported in full by the
-                        // branch below once sealing makes the file final.
-                        logger.debug("Incomplete or corrupt entry at offset {} in active segment {} ({}); "
-                                + "retrying next tick.", startPos, sourceName, e.getMessage());
+                        // Stop without consuming anyway. The remainder of an active segment
+                        // is not ours to write off: consuming it would checkpoint the whole
+                        // pre-allocation and skip every entry appended afterwards. Sealing
+                        // makes the file final, and the branch below reports it then.
+                        logger.warn("Corrupt entry at offset {} in active segment {} ({}); "
+                                + "leaving it until the segment is sealed.", startPos, sourceName, e.getMessage());
                         buffer.position(startPos);
                         break;
                     }
@@ -236,7 +258,25 @@ public final class JournalDecoder
                     // offending entry would have a caller that checkpoints by offset read
                     // and report it again on every tick. Consume the rest. An active
                     // segment is still being written, so there the position stays put.
-                    buffer.position(preAllocatedTail ? startPos : buffer.limit());
+                    if (!activeSegment)
+                    {
+                        // Account for what is being given up. This is the one branch that
+                        // consumes bytes it could still have read, so silence here made the
+                        // stats say the read was clean — and the tailer deletes a segment it
+                        // believes it read in full. The remainder is abandoned, not absent,
+                        // and has to be counted as such.
+                        final long abandoned = buffer.limit() - (long) startPos;
+                        bytesSkipped += abandoned;
+                        undeliveredBytes += abandoned;
+                        corruptEntriesSkipped++;
+                        integrity.onCorruptRegion(sourceName, startPos, abandoned,
+                                "abandoned after a sequence regression");
+                        buffer.position(buffer.limit());
+                    }
+                    else
+                    {
+                        buffer.position(startPos);
+                    }
                     break;
                 }
             }
@@ -249,18 +289,51 @@ public final class JournalDecoder
                 dispatch(journalEvent, entry.rawSlice(), listener);
                 entries++;
             }
-            catch (final CorruptEntryException | IllegalArgumentException | IndexOutOfBoundsException e)
+            catch (final RuntimeException e)
             {
-                // The framing and CRC were valid, so the bytes are what the writer wrote;
-                // the payload itself is not something this build understands. Skip the
-                // entry rather than abandon the rest of the file.
-                logger.warn("Undecodable payload in entry #{} at offset {}: {}", entry.sequence(), startPos, e.getMessage());
+                // The framing and CRC were valid, so the bytes are what the writer wrote.
+                // Past that point two different things can throw and they cannot be told
+                // apart from here: the payload may not be something this build understands,
+                // or the listener may have rejected it. FlatBuffers decodes lazily, so field
+                // access happens inside dispatch, in the same call as the listener — there is
+                // no seam between them to catch on.
+                //
+                // So the message says both, rather than asserting corruption on what may be
+                // a bug in consumer code. What is not in doubt is that the entry must be
+                // skipped and the read must continue: letting it out would leave this
+                // segment's progress unrecorded and have every tick re-dispatch the same
+                // entries for ever.
+                logger.warn("Entry #{} at offset {} could not be delivered — the payload is "
+                        + "undecodable or the listener rejected it: {}", entry.sequence(), startPos, e.toString());
                 corruptEntriesSkipped++;
-                integrity.onCorruptRegion(sourceName, startPos, 0L, "undecodable payload: " + e.getMessage());
+                integrity.onCorruptRegion(sourceName, startPos, 0L,
+                        "entry not delivered (undecodable payload or listener failure): " + e);
             }
         }
 
-        return new DecodeStats(entries, corruptEntriesSkipped, bytesSkipped, missingEntries, lastSequence);
+        // The loop stops when fewer than MIN_ENTRY_SIZE bytes remain, and those bytes were
+        // never examined by anything above. In a sealed segment that suffix is an entry cut
+        // short — a stop partway through a write, or bytes lost after sealing — and leaving it
+        // is the same failure every early exit in this method is written to avoid: the
+        // tailer sees remaining() != 0, so the segment is never finished, and it checkpoints
+        // the identical offset on every tick for ever while nothing is reported.
+        //
+        // An active segment keeps it: the writer may still be about to fill it, which is the
+        // one case where standing still is progress (see the resync branch above).
+        if (!activeSegment && buffer.hasRemaining())
+        {
+            final int trailingStart = buffer.position();
+            final long trailing = buffer.remaining();
+            logger.error("Sealed segment {} ends in {} bytes too short to hold an entry at offset {}.",
+                    sourceName, trailing, trailingStart);
+            bytesSkipped += trailing;
+            corruptEntriesSkipped++;
+            integrity.onCorruptRegion(sourceName, trailingStart, trailing,
+                    "truncated entry at the end of a sealed segment");
+            buffer.position(buffer.limit());
+        }
+
+        return new DecodeStats(entries, corruptEntriesSkipped, bytesSkipped, missingEntries, undeliveredBytes, lastSequence);
     }
 
     /**
@@ -281,6 +354,11 @@ public final class JournalDecoder
         {
             throw new CorruptEntryException("bad magic");
         }
+
+        // The writer stamps the magic last, behind a release fence (FORMAT.md 5). Pairing
+        // an acquire here is what makes the rest of the entry guaranteed visible to this
+        // reader — which, in production, is a different process sharing the mapping.
+        VarHandle.acquireFence();
 
         final int sequence = buffer.getInt();
         final int payloadLen = buffer.getInt();
@@ -332,8 +410,8 @@ public final class JournalDecoder
     /**
      * Scans forward for the next plausible entry magic.
      *
-     * @param stopAtZero give up on reaching zero bytes, because in a source with a
-     *                   pre-allocated tail they mean nothing was written from there on.
+     * @param stopAtZero give up on reaching zero bytes, because in a segment the writer may
+     *                   still append to they mean nothing has been written from there on.
      *                   False for a sealed segment, where the scan must cross the hole.
      * @return the absolute position of the next entry, or -1 if none was found
      */
@@ -355,9 +433,19 @@ public final class JournalDecoder
             {
                 return -1;
             }
-            // Cheap first-byte test before the unaligned int read, so scanning a long
-            // stretch of zeroes costs one byte comparison per position.
-            if (b == firstMagicByte && buffer.getInt(pos) == MAGIC)
+            // Cheap first-byte test before the rest, so scanning a long stretch of zeroes
+            // costs one byte comparison per position.
+            //
+            // The remaining three bytes are compared individually rather than with getInt:
+            // this is the method that finds the way back after damage, and it must not
+            // depend on the buffer's current byte order to do it. It silently found nothing
+            // on a little-endian buffer, which turned "resynchronise past the hole" into
+            // "this segment ends here" — and the caller then consumed and deleted a sealed
+            // segment whose surviving entries had never been read.
+            if (b == firstMagicByte
+                    && buffer.get(pos + 1) == (byte) (MAGIC >>> 16)
+                    && buffer.get(pos + 2) == (byte) (MAGIC >>> 8)
+                    && buffer.get(pos + 3) == (byte) MAGIC)
             {
                 return pos;
             }
@@ -561,7 +649,22 @@ public final class JournalDecoder
      * @param missingEntries        entries the sequence numbers prove are absent
      * @param lastSequence          sequence number of the last decoded entry, or -1
      */
-    public record DecodeStats(long entries, long corruptEntriesSkipped, long bytesSkipped, long missingEntries, int lastSequence)
+    /**
+     * @param bytesSkipped   everything the reader passed over, damaged or abandoned
+     * @param undeliveredBytes the part of {@code bytesSkipped} that was <em>readable</em> and
+     *                       deliberately not delivered — today only the remainder after a
+     *                       sequence regression, where the reader stops because the segment
+     *                       is no longer a valid append-only log. Damage is different in
+     *                       kind: those bytes are gone whatever anyone does, whereas these
+     *                       are still there and still decodable, so destroying the segment
+     *                       would destroy deliverable records.
+     *                       <p>
+     *                       Not to be confused with {@code ExchangeCompletionListener.onAbandoned},
+     *                       which is about an exchange aged out of the reassembler. This is
+     *                       about bytes in a segment, and the two are unrelated — which is
+     *                       why this is not called "abandoned".
+     */
+    public record DecodeStats(long entries, long corruptEntriesSkipped, long bytesSkipped, long missingEntries, long undeliveredBytes, int lastSequence)
     {
         public boolean isClean()
         {

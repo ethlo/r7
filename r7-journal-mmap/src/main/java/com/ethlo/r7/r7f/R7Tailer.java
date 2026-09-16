@@ -31,11 +31,9 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
-import com.github.luben.zstd.Zstd;
 
 public final class R7Tailer
 {
-    public static final String COMPRESSED_EXTENSION = R7fConstants.COMPRESSED_FILE_EXTENSION;
     private static final Logger logger = LoggerFactory.getLogger(R7Tailer.class);
     private static final String CHECKPOINT_FILE = ".r7_checkpoints";
 
@@ -43,6 +41,18 @@ public final class R7Tailer
      * Sentinel offset meaning "this segment has been read to the end".
      */
     private static final long FULLY_READ = -1L;
+
+    /**
+     * Read to the end, but the reader gave up on entries it could still have decoded — a
+     * sequence regression, where the segment stops being a valid append-only log partway
+     * through. Such a segment is never re-read and never deleted.
+     * <p>
+     * Damage is deleted; abandonment is kept. Bytes lost to a hole or a bad CRC are gone
+     * whoever looks at them, so keeping the file preserves nothing but forensics. Bytes
+     * after a regression are still there and still decodable — deleting the segment is the
+     * only thing that would actually destroy them.
+     */
+    private static final long FULLY_READ_UNDELIVERED = -2L;
 
     private final Map<String, Checkpoint> checkpoints = new HashMap<>();
 
@@ -60,9 +70,6 @@ public final class R7Tailer
     private long totalBytesRead = 0;
     private long totalMissingEntries = 0;
     private long totalCorruptEntries = 0;
-
-    // Reusable off-heap buffer
-    private ByteBuffer decompressionBuffer = ByteBuffer.allocateDirect(10 * 1024 * 1024);
 
     public R7Tailer(final Path logDir, final Duration minAge, final ExchangeCompletionListener output)
     {
@@ -107,23 +114,45 @@ public final class R7Tailer
         metaCache.clear();
         final Set<String> fullyProcessedKeys = new HashSet<>();
 
+        try
+        {
+            runTickBody(fullyProcessedKeys);
+        }
+        finally
+        {
+            // Whatever happened above, work that was already dispatched must not be left
+            // un-checkpointed: the next tick would re-read those bytes and emit every
+            // exchange in them a second time. One I/O error on one file used to discard the
+            // progress of every file processed before it in the same tick.
+            // The reassembler's age sweep is amortised over incoming events, so on a quiet
+            // stream it would never run and abandoned exchanges would go unreported until
+            // traffic resumed. A tick boundary is a natural pause.
+            reassembler.sweep();
+            logStats();
+            saveCheckpoints();
+        }
+
+        return totalBytesRead;
+    }
+
+    private void runTickBody(final Set<String> fullyProcessedKeys) throws IOException
+    {
         try (final Stream<Path> s = Files.list(logDir))
         {
-            // Collect and deduplicate files by their stable key
-            // This safely resolves an active file rotating to a sealed, then compressed, file
+            // Collect and deduplicate files by their stable key, which resolves an active
+            // file and the sealed file it rotates into to the same segment.
             final Map<String, Path> resolvedFiles = new HashMap<>();
 
             s.filter(p -> {
                         final String name = p.getFileName().toString();
                         return name.endsWith(R7F_FILE_EXTENSION) ||
-                                name.endsWith(ACTIVE_FILE_EXTENSION) ||
-                                name.endsWith(COMPRESSED_EXTENSION);
+                                name.endsWith(ACTIVE_FILE_EXTENSION);
                     })
                     .forEach(path -> {
                         final String key = getStableKey(path);
                         final Path existing = resolvedFiles.get(key);
 
-                        // Priority: .zst > .r7f > .flux
+                        // Priority: .r7f > .flux
                         if (existing == null || isHigherPriority(path, existing))
                         {
                             resolvedFiles.put(key, path);
@@ -159,28 +188,35 @@ public final class R7Tailer
                             throw new UncheckedIOException(e);
                         }
                     });
+
+            // Only here, where the listing completed and every file in it was processed, do
+            // we know which segments still exist. Rotation, clean close and recovery all
+            // delete segments the tailer may hold a checkpoint for — an empty segment, an
+            // unused pre-allocation — and nothing else would ever remove those entries. They
+            // are not merely a leak: a checkpoint outliving its segment is what lets a reused
+            // (shard, sequence) resume a brand-new segment at a dead one's offset.
+            forgetCheckpointsWithoutSegments(resolvedFiles.keySet());
         }
+    }
 
-        // The reassembler's age sweep is amortised over incoming events, so on a quiet
-        // stream it would never run and abandoned exchanges would be held — and go
-        // unreported — until traffic resumed. A tick boundary is a natural pause.
-        reassembler.sweep();
-
-        logStats();
-        saveCheckpoints();
-        return totalBytesRead;
+    /**
+     * Drops checkpoints for segments that are no longer on disk.
+     */
+    private void forgetCheckpointsWithoutSegments(final Set<String> keysOnDisk)
+    {
+        final int before = checkpoints.size();
+        checkpoints.keySet().retainAll(keysOnDisk);
+        final int dropped = before - checkpoints.size();
+        if (dropped > 0)
+        {
+            logger.debug("Dropped {} checkpoint(s) whose segment no longer exists", dropped);
+        }
     }
 
     private boolean isHigherPriority(final Path newPath, final Path existingPath)
     {
-        final String newStr = newPath.toString();
-        final String existingStr = existingPath.toString();
-
-        if (newStr.endsWith(COMPRESSED_EXTENSION))
-        {
-            return true;
-        }
-        return newStr.endsWith(R7F_FILE_EXTENSION) && existingStr.endsWith(ACTIVE_FILE_EXTENSION);
+        return newPath.toString().endsWith(R7F_FILE_EXTENSION)
+                && existingPath.toString().endsWith(ACTIVE_FILE_EXTENSION);
     }
 
     private boolean processFile(final Path path) throws IOException
@@ -188,13 +224,19 @@ public final class R7Tailer
         final String key = getStableKey(path);
         final Checkpoint checkpoint = checkpoints.getOrDefault(key, Checkpoint.START);
 
-        // Sentinel check: File is completely read, do not waste CPU decompressing it
+        // Sentinel check: the file has been read to the end, so do not map it again.
         if (checkpoint.offset() == FULLY_READ)
         {
             return true;
         }
+        if (checkpoint.offset() == FULLY_READ_UNDELIVERED)
+        {
+            // Finished, but holding entries this reader declined to deliver. Reporting it
+            // "not finished" is what keeps checkDelete away from it, for as long as it is
+            // here — deliberately, until someone decides what to do with it.
+            return false;
+        }
 
-        final boolean isCompressed = path.toString().endsWith(COMPRESSED_EXTENSION);
         final boolean isActive = path.toString().endsWith(ACTIVE_FILE_EXTENSION);
 
         // Enforce the preamble boundary so FlatBuffers never sees the manual binary header
@@ -216,58 +258,25 @@ public final class R7Tailer
             final MappedByteBuffer mappedBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
             mappedBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
-            final ByteBuffer processingBuffer;
-
-            if (isCompressed)
+            if (fileSize <= startOffset)
             {
-                final long decompressedSize = frameContentSize(mappedBuffer, fileSize);
-
-                // A frame we cannot size is not a segment we can read. Treating it as
-                // "fully processed" would mark it done and let checkDelete remove an audit
-                // segment with nothing reported.
-                if (decompressedSize <= 0 || decompressedSize > Integer.MAX_VALUE)
-                {
-                    quarantine(path, "unusable compressed frame size: " + decompressedSize);
-                    checkpoints.remove(key);
-                    return false;
-                }
-
-                if (decompressedSize <= startOffset)
-                {
-                    return true;
-                }
-
-                // Expand reusable buffer only if necessary
-                if (decompressionBuffer.capacity() < decompressedSize)
-                {
-                    decompressionBuffer = ByteBuffer.allocateDirect((int) decompressedSize);
-                }
-
-                processingBuffer = decompressionBuffer.slice(0, (int) decompressedSize);
-                processingBuffer.order(ByteOrder.LITTLE_ENDIAN);
-
-                try
-                {
-                    Zstd.decompress(processingBuffer, mappedBuffer);
-                }
-                catch (final RuntimeException e)
-                {
-                    quarantine(path, "decompression failed: " + e.getMessage());
-                    checkpoints.remove(key);
-                    return false;
-                }
-
-                processingBuffer.position((int) startOffset);
-            }
-            else
-            {
-                if (fileSize <= startOffset)
+                // Nothing to read at this offset. For an active segment that is simply
+                // "not yet" and the writer will extend it.
+                //
+                // For a sealed one it is a claim that the file has been read in full, and
+                // runTick turns that into a delete. A sealed file smaller than the preamble
+                // has certainly not been read in full — it cannot even be validated — so it
+                // must not take that exit. Falling through puts it through the preamble
+                // check below, which quarantines it instead of destroying it on the
+                // strength of a size comparison.
+                if (isActive || fileSize > R7fConstants.PREAMBLE_SIZE)
                 {
                     return !isActive;
                 }
-                processingBuffer = mappedBuffer;
-                processingBuffer.position((int) startOffset);
             }
+
+            final ByteBuffer processingBuffer = mappedBuffer;
+            processingBuffer.position((int) startOffset);
 
             final String preambleProblem = preambleProblem(processingBuffer);
             if (preambleProblem != null)
@@ -283,12 +292,17 @@ public final class R7Tailer
                     return false;
                 }
 
-                // A sealed or compressed file is nobody's to write any more. Without this
+                // A sealed file is nobody's to write any more. Without this
                 // check it would be decoded as whatever its bytes happened to look like,
                 // and then deleted as "processed".
                 quarantine(path, preambleProblem);
                 checkpoints.remove(key);
                 return false;
+            }
+
+            if (!isActive)
+            {
+                boundBySealedDataEnd(path, processingBuffer, fileSize);
             }
 
             final long before = processingBuffer.remaining();
@@ -321,6 +335,18 @@ public final class R7Tailer
 
             if (isFinished)
             {
+                verifyAgainstSealRecord(path, processingBuffer, nextSequence);
+
+                if (stats.undeliveredBytes() > 0)
+                {
+                    logger.error("Segment {} keeps {} bytes of readable entries this reader would not "
+                                    + "deliver; it will not be deleted. Inspect it and remove it by hand once "
+                                    + "the contents have been accounted for.",
+                            path.getFileName(), stats.undeliveredBytes());
+                    checkpoints.put(key, new Checkpoint(FULLY_READ_UNDELIVERED, nextSequence));
+                    return false;
+                }
+
                 checkpoints.put(key, new Checkpoint(FULLY_READ, nextSequence));
             }
             else
@@ -333,23 +359,95 @@ public final class R7Tailer
     }
 
     /**
-     * Declared uncompressed size of a zstd frame, or -1 when the frame cannot be read.
-     * Zstd reports unknown or invalid sizes through sentinel values and can also throw,
-     * so both are funnelled into one "cannot size this" answer.
+     * Limits a sealed segment to the extent its seal record declares.
+     * <p>
+     * Sealing no longer has to truncate for this to work. Where the data ends used to be
+     * inferred from the file's size, which meant every seal had to cut the pre-allocated
+     * tail or the reader would read zeroes and call them lost pages. Now it is a recorded
+     * fact, so the tail is simply outside the segment's contents — neither data nor damage.
+     * <p>
+     * A segment with no seal record falls back to the whole file and the old inference; that
+     * is reported by {@link #verifyAgainstSealRecord} when the segment finishes.
      */
-    private static long frameContentSize(final ByteBuffer compressed, final long fileSize)
+    private void boundBySealedDataEnd(final Path path, final ByteBuffer buffer, final long fileSize)
     {
-        if (fileSize <= 0 || fileSize > Integer.MAX_VALUE)
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+        if (header.limit() < R7fConstants.PREAMBLE_SIZE
+                || header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) != R7fConstants.SEAL_MAGIC)
         {
-            return -1L;
+            return;
         }
-        try
+
+        final long dataEnd = header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END);
+        final String name = path.getFileName().toString();
+
+        if (dataEnd < R7fConstants.PREAMBLE_SIZE || dataEnd > fileSize)
         {
-            return Zstd.getDirectByteBufferFrameContentSize(compressed, 0, (int) fileSize);
+            // Beyond the file, or nonsensical. A data end past the end of the file means the
+            // segment lost its tail after being sealed — which is exactly the loss the seal
+            // record exists to expose, and which nothing inside the file could show.
+            logger.error("Segment {} declares data ending at {} but the file is {} bytes.",
+                    name, dataEnd, fileSize);
+            integrity.onCorruptRegion(name, Math.min(dataEnd, fileSize), Math.max(0L, dataEnd - fileSize),
+                    "declared data end lies outside the file");
+            return;
         }
-        catch (final RuntimeException e)
+
+        // Clamping rather than comparing: a resume offset at or past the declared end means
+        // the segment has been read out, and the buffer must end there so the caller sees
+        // "finished" rather than decoding the pre-allocated tail as a hole.
+        buffer.limit((int) Math.max(dataEnd, buffer.position()));
+    }
+
+    /**
+     * Compares what this reader decoded against what the segment says it holds.
+     * <p>
+     * A sealed segment records its entry count and last sequence in its preamble, behind a
+     * seal magic written last (FORMAT.md 3.2). That turns "did I read all of it?" from
+     * something inferred out of not having hit anything unusual into a comparison that either
+     * matches or does not.
+     * <p>
+     * Only the last sequence is checked here, because it needs no state the tailer does not
+     * already carry across ticks. The entry count is for a full-scan verifier, which can
+     * count what it sees.
+     */
+    private void verifyAgainstSealRecord(final Path path, final ByteBuffer buffer, final int nextSequence)
+    {
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+        final String name = path.getFileName().toString();
+
+        if (header.limit() < R7fConstants.PREAMBLE_SIZE
+                || header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) != R7fConstants.SEAL_MAGIC)
         {
-            return -1L;
+            // Renamed without being sealed, or written by a build that predates the seal
+            // record. The entries are still entries, so this is reported rather than acted
+            // on — but it means nothing here can be cross-checked.
+            integrity.onCorruptRegion(name, 0L, 0L, "sealed segment carries no seal record");
+            logger.warn("Segment {} has no seal record; its contents cannot be cross-checked.", name);
+            return;
+        }
+
+        final int recordedLast = header.getInt(R7fConstants.PREAMBLE_OFF_LAST_SEQUENCE);
+        final int decodedLast = nextSequence - 1;
+
+        if (decodedLast != recordedLast)
+        {
+            final int missing = recordedLast - decodedLast;
+            if (missing > 0)
+            {
+                totalMissingEntries += missing;
+                integrity.onEntriesMissing(name, 0L, recordedLast, decodedLast, missing);
+                logger.error("Segment {} says its last entry is #{} but the reader finished at #{} — "
+                        + "{} entries at the end of the segment were never read.", name, recordedLast, decodedLast, missing);
+            }
+            else
+            {
+                // More than the writer says it wrote: the seal record and the entries
+                // disagree in the direction that cannot happen by loss alone.
+                integrity.onCorruptRegion(name, 0L, 0L,
+                        "seal record says last entry #" + recordedLast + " but #" + decodedLast + " was decoded");
+                logger.error("Segment {} decoded past its recorded last entry (#{} > #{}).", name, decodedLast, recordedLast);
+            }
         }
     }
 
@@ -390,10 +488,12 @@ public final class R7Tailer
      */
     private void quarantine(final Path path, final String reason)
     {
-        final Path target = path.resolveSibling(path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION);
+        final Path target = nonCollidingQuarantinePath(path);
         try
         {
-            Files.move(path, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            // No REPLACE_EXISTING: quarantine exists to preserve what could not be proven
+            // good, so it must never be the thing that destroys an earlier copy.
+            Files.move(path, target, StandardCopyOption.ATOMIC_MOVE);
             integrity.onSegmentQuarantined(path.getFileName().toString(), reason);
             logger.error("Quarantined unreadable segment {} as {}: {}", path.getFileName(), target.getFileName(), reason);
         }
@@ -453,8 +553,7 @@ public final class R7Tailer
      * Active segments are named {@code shard-<shardId>-<createdEpochMillis>-<segmentSequence>.flux}.
      * Sealing appends the observed time bounds:
      * {@code shard-<shardId>-<createdEpochMillis>-<segmentSequence>-<firstTs>-<lastTs>.r7f},
-     * optionally followed by {@code .zst}. The two trailing fields are therefore only
-     * present once a segment has been sealed.
+     * The two trailing fields are therefore only present once a segment has been sealed.
      */
     private FileMeta parseMeta(final Path path)
     {
@@ -467,7 +566,6 @@ public final class R7Tailer
     private FileMeta parseMetaUncached(final Path path)
     {
         final String name = path.getFileName().toString()
-                .replace(COMPRESSED_EXTENSION, "")
                 .replace(ACTIVE_FILE_EXTENSION, "")
                 .replace(R7F_FILE_EXTENSION, "");
         try
@@ -499,10 +597,35 @@ public final class R7Tailer
     private static final FileMeta UNPARSED = new FileMeta(-1, 0L, -1L, -1L, -1L);
 
     /**
-     * Identifies a segment across its whole life: active, sealed and compressed. The
-     * shard id and the monotonic segment sequence are the two fields that never change,
-     * so the checkpoint survives both renames.
+     * Identifies a segment across its whole life, active and sealed. The shard id and the
+     * monotonic segment sequence are the two fields that never change, so the checkpoint
+     * survives the rename.
      */
+    /**
+     * A {@code .corrupt} name that is not already taken. A repeated quarantine of the same
+     * segment — recovery partially succeeding twice, or an operator having restored a copy
+     * — must not overwrite what is already set aside.
+     */
+    static Path nonCollidingQuarantinePath(final Path path)
+    {
+        final Path first = path.resolveSibling(path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION);
+        if (!Files.exists(first))
+        {
+            return first;
+        }
+        for (int n = 2; n < 1000; n++)
+        {
+            final Path candidate = path.resolveSibling(
+                    path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION + "." + n);
+            if (!Files.exists(candidate))
+            {
+                return candidate;
+            }
+        }
+        // Give up distinguishing rather than loop: the move will fail and be logged.
+        return first;
+    }
+
     private String getStableKey(final Path path)
     {
         final FileMeta meta = parseMeta(path);
@@ -617,10 +740,17 @@ public final class R7Tailer
                 if (sep < 0)
                 {
                     // A bare offset, written before sequences were tracked. It may point
-                    // anywhere inside the segment, so there is no sequence to expect —
-                    // unlike START, which is known to begin at the first entry. This is
-                    // the one place UNKNOWN_SEQUENCE is still the right answer.
-                    return new Checkpoint(Long.parseLong(value.trim()), JournalDecoder.UNKNOWN_SEQUENCE);
+                    // anywhere inside the segment, so in general there is no sequence to
+                    // expect — unlike START, which is known to begin at the first entry.
+                    //
+                    // Offset 0 is the exception: it means nothing has been read, so the
+                    // first entry must be #1 like any fresh segment. Treating it as unknown
+                    // gave away the one expectation the reader is entitled to, and — since
+                    // the value is re-serialised as "0:-1" — made the legacy carve-out
+                    // permanent rather than one-shot.
+                    final long legacyOffset = Long.parseLong(value.trim());
+                    return new Checkpoint(legacyOffset,
+                            legacyOffset == 0L ? R7fConstants.FIRST_ENTRY_SEQUENCE : JournalDecoder.UNKNOWN_SEQUENCE);
                 }
                 return new Checkpoint(
                         Long.parseLong(value.substring(0, sep).trim()),

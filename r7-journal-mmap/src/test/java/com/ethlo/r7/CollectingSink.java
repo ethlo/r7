@@ -27,7 +27,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     public final List<String> corruptRegions = new ArrayList<>();
     public final List<String> quarantined = new ArrayList<>();
     public final List<String> sequenceRegressions = new ArrayList<>();
-    public final List<String> truncatedSegments = new ArrayList<>();
+    public final List<String> recoveredSegments = new ArrayList<>();
     public long missingEntries;
 
     @Override
@@ -91,9 +91,9 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     }
 
     @Override
-    public void onSegmentTruncated(final String segment, final long validBytes, final long discardedBytes, final long recordsRecovered)
+    public void onSegmentRecovered(final String segment, final long dataEnd, final long discardedBytes, final long recordsRecovered)
     {
-        truncatedSegments.add(segment + ":" + validBytes + "/" + recordsRecovered);
+        recoveredSegments.add(segment + ":" + dataEnd + "/" + recordsRecovered);
     }
 
     /**

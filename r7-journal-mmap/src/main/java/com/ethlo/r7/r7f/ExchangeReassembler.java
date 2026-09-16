@@ -166,18 +166,24 @@ public class ExchangeReassembler implements JournalEventListener
      */
     private void verifyChecksums(final JournalExchange exchange, final long journaledRequestCrc, final long journaledResponseCrc)
     {
-        // Whether a body should be there is decided by the journal level and the byte
-        // count, never by the checksum value: CRC32C of a non-empty body is legitimately
-        // zero for some inputs, so treating zero as "no body" would wave through exactly
-        // the exchanges whose bodies hash that way.
+        // A recorded checksum is the whole condition. The writer only has one to record if
+        // it passed body bytes to the journal, so the value's presence already carries
+        // everything an extra guard could have told us — and it carries it in the one field
+        // that cannot be lost independently of the checksum itself.
         //
-        // Whether a checksum was *recorded* is a separate question, and one the writer has
-        // to answer explicitly for the same reason — see CHECKSUM_NOT_RECORDED. Both values
-        // are unsigned 32-bit checksums widened to long, which is what leaves -1 free to
-        // mean "absent"; comparing them as int would make 0xFFFFFFFF indistinguishable from
-        // the sentinel.
-        if (journaledRequestCrc != JournalExchange.CHECKSUM_NOT_RECORDED
-                && bodyWasJournaled(exchange.getClientRequestLevel(), exchange.getRequestBodyBytes()))
+        // This used to also require the start event's journal level and a positive body-byte
+        // count. Those come from other entries: the level from the client request, the byte
+        // count from the end event's traffic metrics. Requiring them turned a sufficient
+        // condition into a conjunction that fails open — lose the start entry, or record the
+        // wrong byte count, and verification is skipped precisely on the exchange whose
+        // record is already damaged. The gate was load-bearing only while the writer had no
+        // way to say "I did not compute one"; the sentinel says it now.
+        //
+        // Both values are unsigned 32-bit checksums widened to long, which is what leaves -1
+        // free to mean "absent"; comparing them as int would make 0xFFFFFFFF indistinguishable
+        // from the sentinel. An observed value of null means no body was read back at all,
+        // which against a recorded checksum is a mismatch, not an exemption.
+        if (journaledRequestCrc != JournalExchange.CHECKSUM_NOT_RECORDED)
         {
             final Long observed = exchange.getObservedRequestCrc32();
             if (observed == null || observed.longValue() != journaledRequestCrc)
@@ -186,8 +192,7 @@ public class ExchangeReassembler implements JournalEventListener
             }
         }
 
-        if (journaledResponseCrc != JournalExchange.CHECKSUM_NOT_RECORDED
-                && bodyWasJournaled(exchange.getClientResponseLevel(), exchange.getResponseBodyBytes()))
+        if (journaledResponseCrc != JournalExchange.CHECKSUM_NOT_RECORDED)
         {
             final Long observed = exchange.getObservedResponseCrc32();
             if (observed == null || observed.longValue() != journaledResponseCrc)
@@ -224,17 +229,6 @@ public class ExchangeReassembler implements JournalEventListener
         {
             logger.debug("{} body checksum mismatch for {} (mismatch #{})", kind, exchange.getRequestId(), total);
         }
-    }
-
-    /**
-     * Whether the journal should hold a body for this half of the exchange: bodies are
-     * only written at {@link JournalLevel#FULL}, and only when there were any bytes.
-     * A null level means the corresponding start event was never seen, so there is
-     * nothing to check against.
-     */
-    private static boolean bodyWasJournaled(final JournalLevel level, final long bodyBytes)
-    {
-        return level == JournalLevel.FULL && bodyBytes > 0;
     }
 
     private void maybeSweep()
@@ -292,11 +286,11 @@ public class ExchangeReassembler implements JournalEventListener
     /**
      * Copies header metadata out of the reader's buffers.
      * <p>
-     * The decoder hands over lazy FlatBuffer views, and for a compressed segment those
-     * point into the tailer's reusable decompression buffer. An exchange outlives that —
+     * The decoder hands over lazy FlatBuffer views, and those point into whatever the
+     * reader is currently looking at: a mapped segment. An exchange outlives that —
      * it is held until its end event, which can be in a later segment, and a consumer may
      * hold a completed one for longer still. Keeping the view would let the headers
-     * silently change contents when the next file is decompressed, which is the same
+     * silently change contents when the next file is mapped, which is the same
      * defect the body fragments already had.
      * <p>
      * Like the body copy, this allocates on the reader side only; the gateway write path

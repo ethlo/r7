@@ -123,9 +123,9 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
     }
 
     @Override
-    public void onSegmentTruncated(String segment, long validBytes, long discardedBytes, long recordsRecovered)
+    public void onSegmentRecovered(String segment, long dataEnd, long discardedBytes, long recordsRecovered)
     {
-        stats.truncatedSegments++;
+        stats.recoveredSegments++;
         stats.recoveredRecords += recordsRecovered;
     }
 
@@ -155,7 +155,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
         public long quarantinedSegments = 0;
 
         // Recovery activity (not in itself a failure)
-        public long truncatedSegments = 0;
+        public long recoveredSegments = 0;
         public long recoveredRecords = 0;
 
         /**
@@ -195,7 +195,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
                     + ", bytesSkipped=" + bytesSkipped
                     + ", sequenceRegressions=" + sequenceRegressions
                     + ", quarantined=" + quarantinedSegments
-                    + ", truncated=" + truncatedSegments
+                    + ", recovered=" + recoveredSegments
                     + ", recoveredRecords=" + recoveredRecords
                     + (problems.isEmpty() ? "" : ", problems=" + problems)
                     + '}';

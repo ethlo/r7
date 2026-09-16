@@ -301,9 +301,12 @@ began. This distinction matters:
   ```
   maxAge > max request duration
          + segment rotation period
-         + compression delay
          + tailer tick interval
   ```
+
+  (Compression used to add a term here. It is no longer part of a segment's life — a
+  segment goes `.flux` → `.r7f` and stops there — so nothing sits between sealing and the
+  tailer seeing the file.)
 
   An exchange that starts near the end of one segment and ends in the next is held for the
   whole of that gap.

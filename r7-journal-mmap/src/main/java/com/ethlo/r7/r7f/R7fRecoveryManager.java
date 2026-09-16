@@ -26,8 +26,10 @@ import com.ethlo.r7.journal.api.JournalIntegrityListener;
  * A segment is pre-allocated at full size and written append-only, so an unclean stop
  * leaves a prefix of valid entries followed by a partially written entry and/or the
  * zero-filled remainder of the pre-allocation. Recovery finds the last entry that is
- * structurally intact <em>and</em> passes its CRC, truncates the file to exactly that
- * boundary, and seals it under the finalized extension.
+ * structurally intact <em>and</em> passes its CRC, records that point as the segment's Data
+ * End, and seals it under the finalized extension. The pre-allocated tail is left in place:
+ * Data End is what a reader bounds itself by, and shrinking a file the tailer may have
+ * mapped — in another process — is a SIGBUS.
  * <p>
  * Because every entry carries a monotonic sequence number, recovery can also tell the
  * difference between "the tail was never written" and "a page in the middle did not reach
@@ -50,7 +52,7 @@ public final class R7fRecoveryManager
     }
 
     /**
-     * Scans the given directory for active segments, truncates each at the last valid
+     * Scans the given directory for active segments, seals each at the last valid
      * entry and renames it to the finalized extension.
      */
     private static void recoverActiveSegments(final Path journalDirectory, final JournalIntegrityListener integrity) throws IOException
@@ -125,7 +127,7 @@ public final class R7fRecoveryManager
     }
 
     /**
-     * Scans one active segment, truncates it at the last fully valid entry and seals it.
+     * Scans one active segment and seals it at the last fully valid entry.
      *
      * @throws UnreadableSegmentException if the file is not a recognizable r7f segment
      */
@@ -134,6 +136,8 @@ public final class R7fRecoveryManager
         final ScanResult scanResult;
         final long originalSize;
         boolean uninitialised = false;
+        boolean dataRegionIsZero = false;
+        boolean trailingBytesAreZero = true;
 
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
              Arena arena = Arena.ofConfined())
@@ -173,9 +177,20 @@ public final class R7fRecoveryManager
             {
                 validatePreamble(segment);
                 scanResult = scan(segment, originalSize, file, integrity);
+
+                if (scanResult.recordCount() == 0)
+                {
+                    // Decided here, while the mapping is still open: the arena closes below.
+                    dataRegionIsZero = isEntirelyZero(segment, R7fConstants.PREAMBLE_SIZE, originalSize);
+                }
+
+                // Likewise: how much of what lies past the last valid entry is actually
+                // content rather than the untouched remainder of the pre-allocation.
+                trailingBytesAreZero = isEntirelyZero(segment, scanResult.lastValidPosition(), originalSize);
             }
         }
-        // The confined arena is closed here, so the mapping is released before we resize the file.
+        // The confined arena is closed here, so the mapping is released before the file is
+        // renamed and its seal record written through a channel.
 
         if (uninitialised)
         {
@@ -186,27 +201,52 @@ public final class R7fRecoveryManager
 
         if (scanResult.recordCount() == 0)
         {
-            logger.debug("No valid records in {}, removing", file.getFileName());
+            if (!dataRegionIsZero)
+            {
+                // Stamped, and it still holds bytes, but the scan could not read a single
+                // entry from them — the first entry is torn or corrupt and no later magic
+                // was found. Those bytes are the only remaining evidence of what was
+                // written, and deleting them makes lost audit data look exactly like a
+                // segment that was never used. Quarantine instead: the caller renames it
+                // and reports it, so it neither disappears nor is rescanned for ever.
+                throw new UnreadableSegmentException(
+                        "segment holds data after the preamble but no entry could be read from it");
+            }
+
+            logger.debug("Stamped but empty segment {}, removing", file.getFileName());
             Files.delete(file);
             return new RecoveryResult(0, scanResult.missingRecords());
         }
 
+        // Not truncated to lastValidPosition, deliberately. The seal record's Data End says
+        // where the entries stop, so nothing needs the file's size to agree — and the tailer
+        // may have this very file mapped at its pre-allocated length, in a different
+        // process. Shrinking it underneath that mapping is a SIGBUS, which is the only way
+        // recovery could take the reader down while putting the writer's data back together.
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE))
         {
-            if (channel.size() > scanResult.lastValidPosition())
-            {
-                channel.truncate(scanResult.lastValidPosition());
-            }
+            stampSealRecord(channel, scanResult.recordCount(), scanResult.lastSequence(), scanResult.lastValidPosition());
         }
-
-        integrity.onSegmentTruncated(file.getFileName().toString(),
-                scanResult.lastValidPosition(),
-                originalSize - scanResult.lastValidPosition(),
-                scanResult.recordCount());
 
         final String newName = file.getFileName().toString()
                 .replace(R7fConstants.ACTIVE_FILE_EXTENSION, R7fConstants.R7F_FILE_EXTENSION);
         Files.move(file, file.resolveSibling(newName), StandardCopyOption.ATOMIC_MOVE);
+
+        // Reported only once the segment is sealed, and after the rename rather than before.
+        // The caller quarantines anything that throws out of here, so a listener that failed
+        // — user code, on a path with no other error handling — used to turn a fully
+        // recovered segment into a .corrupt file that no reader ever looks at.
+        // Only content counts as discarded. Everything past the last valid entry used to be
+        // reported here, which was defensible while sealing truncated — those bytes really
+        // did leave the file. Now that the tail stays, that number would be the whole unused
+        // pre-allocation on every clean recovery: a six-figure "discarded" against a segment
+        // that lost nothing at all.
+        final long discarded = trailingBytesAreZero ? 0L : originalSize - scanResult.lastValidPosition();
+
+        integrity.onSegmentRecovered(newName,
+                scanResult.lastValidPosition(),
+                discarded,
+                scanResult.recordCount());
 
         return new RecoveryResult(scanResult.recordCount(), scanResult.missingRecords());
     }
@@ -229,8 +269,13 @@ public final class R7fRecoveryManager
      */
     private static boolean isEntirelyZero(final MemorySegment segment, final long size)
     {
-        long position = 0;
-        final long wordEnd = size - (size % Long.BYTES);
+        return isEntirelyZero(segment, 0, size);
+    }
+
+    private static boolean isEntirelyZero(final MemorySegment segment, final long from, final long size)
+    {
+        long position = from;
+        final long wordEnd = size - ((size - from) % Long.BYTES);
 
         for (; position < wordEnd; position += Long.BYTES)
         {
@@ -270,10 +315,10 @@ public final class R7fRecoveryManager
      * <p>
      * Damage does not end the scan. An unclean stop leaves a torn entry at the tail, but a
      * power loss can leave a gap anywhere, with perfectly good entries after it — stopping
-     * at the first anomaly and truncating there would destroy those entries before anyone
+     * at the first anomaly and sealing there would strand those entries before anyone
      * could see that they were separated from the rest by a hole. So the scan resynchronises
      * on the next entry magic, reports what it skipped, and keeps going. The file is later
-     * truncated to the end of the <em>last</em> valid entry found, not the first anomaly.
+     * sealed at the end of the <em>last</em> valid entry found, not the first anomaly.
      * <p>
      * Sequence numbers make the difference visible: a forward jump means entries that were
      * written are not on disk, which append-only writing cannot produce on its own. Those
@@ -346,7 +391,7 @@ public final class R7fRecoveryManager
             recordCount++;
         }
 
-        return new ScanResult(lastValidPosition, recordCount, missingRecords);
+        return new ScanResult(lastValidPosition, recordCount, missingRecords, expectedSequence - 1);
     }
 
     /**
@@ -429,10 +474,12 @@ public final class R7fRecoveryManager
 
     private static void quarantine(final Path file, final String reason, final JournalIntegrityListener integrity)
     {
-        final Path target = file.resolveSibling(file.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION);
+        final Path target = R7Tailer.nonCollidingQuarantinePath(file);
         try
         {
-            Files.move(file, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            // No REPLACE_EXISTING: quarantine preserves what could not be proven good, so it
+            // must never destroy an earlier quarantined copy of the same segment.
+            Files.move(file, target, StandardCopyOption.ATOMIC_MOVE);
             integrity.onSegmentQuarantined(file.getFileName().toString(), reason);
             logger.error("Quarantined unreadable segment {} as {}: {}", file.getFileName(), target.getFileName(), reason);
         }
@@ -456,7 +503,7 @@ public final class R7fRecoveryManager
     }
 
     /**
-     * @param integrity receives an event per quarantined, truncated or incomplete segment
+     * @param integrity receives an event per quarantined, shortened or incomplete segment
      */
     public static List<Path> cleanAndRecover(final Path journalDirectory, final JournalIntegrityListener integrity) throws IOException
     {
@@ -465,28 +512,11 @@ public final class R7fRecoveryManager
             return List.of();
         }
 
-        // 1. Delete orphaned partial compressions
-        try (Stream<Path> stream = Files.list(journalDirectory))
-        {
-            stream.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".zst.tmp"))
-                    .forEach(p -> {
-                        try
-                        {
-                            Files.deleteIfExists(p);
-                            logger.info("Deleted orphaned temp file: {}", p.getFileName());
-                        }
-                        catch (final Exception e)
-                        {
-                            logger.warn("Unable to delete orphaned temp file {}", p.getFileName(), e);
-                        }
-                    });
-        }
-
-        // 2. Recover the active files
         recoverActiveSegments(journalDirectory, integrity);
 
-        // 3. Collect ALL uncompressed files for the compression queue
+        // The sealed segments now present. Compression is no longer part of a segment's
+        // life — it is one thing a consumer may choose to do — so this list is returned for
+        // the caller's information rather than fed to a compression queue.
         try (Stream<Path> stream = Files.list(journalDirectory))
         {
             return stream
@@ -496,7 +526,35 @@ public final class R7fRecoveryManager
         }
     }
 
-    private record ScanResult(long lastValidPosition, long recordCount, long missingRecords)
+    /**
+     * @param lastSequence the highest entry sequence read, or {@code FIRST_ENTRY_SEQUENCE - 1}
+     *                     when no entry was read at all
+     */
+    /**
+     * Records what the sealed segment contains, in the segment itself, so that a reader can
+     * check its own decode against the file's own account rather than inferring completeness
+     * from the absence of surprises.
+     * <p>
+     * Recovery is the one place the two numbers can legitimately disagree: the writer always
+     * seals with {@code count == lastSequence}, so a sealed segment whose count is lower than
+     * its last sequence is one that lost entries — visible from the preamble alone, without
+     * scanning.
+     * <p>
+     * The seal magic goes last, after the facts it vouches for, exactly as an entry's magic
+     * does.
+     */
+    private static void stampSealRecord(final FileChannel channel, final long entryCount, final int lastSequence, final long dataEnd) throws IOException
+    {
+        final ByteBuffer facts = ByteBuffer.allocate(Long.BYTES + Integer.BYTES + Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+        facts.putLong(entryCount).putInt(lastSequence).putLong(dataEnd).flip();
+        channel.write(facts, R7fConstants.PREAMBLE_OFF_ENTRY_COUNT);
+
+        final ByteBuffer sealMagic = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.BIG_ENDIAN);
+        sealMagic.putInt(R7fConstants.SEAL_MAGIC).flip();
+        channel.write(sealMagic, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC);
+    }
+
+    private record ScanResult(long lastValidPosition, long recordCount, long missingRecords, int lastSequence)
     {
     }
 

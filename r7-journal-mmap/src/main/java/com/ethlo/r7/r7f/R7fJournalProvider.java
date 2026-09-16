@@ -292,7 +292,14 @@ public class R7fJournalProvider implements AutoCloseable
         }
         catch (final RuntimeException e)
         {
-            log.warn("Unable to release warmed segment {}", warmed.path().getFileName(), e);
+            // The mapping is still live — a shared arena refuses to close while its segment
+            // is in use. Unlinking the file now would leave the writer appending into an
+            // inode with no name: the entries go nowhere recoverable, rotation later fails
+            // to find the path, and there is no .corrupt file and no integrity event to say
+            // so. Leaving the file is recoverable at the next startup; deleting it is not.
+            log.warn("Unable to release warmed segment {}; leaving the file in place for recovery",
+                    warmed.path().getFileName(), e);
+            return;
         }
         try
         {
