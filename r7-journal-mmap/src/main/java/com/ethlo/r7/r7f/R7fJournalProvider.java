@@ -117,7 +117,7 @@ public class R7fJournalProvider implements AutoCloseable
         this.tempDir = tempDir;
         this.shardId = shardId;
         this.segmentSizeBytes = segmentSizeBytes;
-        this.sequenceMarkerPath = tempDir == null ? null : tempDir.resolve("shard-" + shardId + SEQUENCE_MARKER_EXTENSION);
+this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").resolve("shard-" + shardId + SEQUENCE_MARKER_EXTENSION);
         // Whichever is higher: the marker can lag if a write of it failed, and the segments
         // can outlive a marker that was lost. Neither source may lower the counter.
         this.segmentSequence = new AtomicLong(Math.max(
