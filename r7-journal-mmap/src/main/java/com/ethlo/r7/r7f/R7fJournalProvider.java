@@ -190,9 +190,8 @@ public class R7fJournalProvider implements AutoCloseable
         }
         catch (final IOException | NumberFormatException e)
         {
-            log.warn("Unreadable segment sequence marker {} ({}); falling back to the highest sequence on disk",
-                    sequenceMarkerPath, e.toString());
-            return 0L;
+            throw new IllegalStateException("Cannot read segment sequence marker " + sequenceMarkerPath
+                    + "; refusing to start rather than risk reusing a segment key", e);
         }
     }
 
