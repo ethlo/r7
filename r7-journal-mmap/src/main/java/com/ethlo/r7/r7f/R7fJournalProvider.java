@@ -230,7 +230,14 @@ public class R7fJournalProvider implements AutoCloseable
             try (final FileChannel channel = FileChannel.open(tmp,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE))
             {
-                channel.write(ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII)));
+                final ByteBuffer marker = ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII));
+                while (marker.hasRemaining())
+                {
+                    if (channel.write(marker) <= 0)
+                    {
+                        throw new IOException("Made no progress writing segment sequence marker " + tmp);
+                    }
+                }
                 channel.force(true);
             }
 
