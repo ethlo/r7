@@ -218,11 +218,8 @@ public class R7fJournalProvider implements AutoCloseable
         }
         catch (final IOException e)
         {
-            // Not fatal: the segments on disk still bound the counter for as long as they
-            // are retained. Taking the gateway down over a marker file would trade a
-            // narrow, restart-only risk for an outage.
-            log.warn("Could not record the segment sequence high-water mark in {} ({}); "
-                    + "a restart after full retention could reuse sequence numbers", sequenceMarkerPath, e.toString());
+            throw new UncheckedIOException("Cannot persist segment sequence marker " + sequenceMarkerPath
+                    + "; refusing to create a segment with an unrecorded key", e);
         }
     }
 
