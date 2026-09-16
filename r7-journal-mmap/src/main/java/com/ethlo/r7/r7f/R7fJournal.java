@@ -532,12 +532,14 @@ public final class R7fJournal implements Journal
             try
             {
                 finalizer.join(FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
-                if (finalizer.isAlive())
-                {
-                    logger.error("A rotated segment was still being finalized after {} ms; shutting down "
-                                    + "anyway. Recovery will seal it at next start.",
-                            FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
-                }
+if (finalizer.isAlive())
+{
+    finalizerFailure = new IOException("A rotated segment was still being finalized after "
+            + FINALIZER_SHUTDOWN_TIMEOUT_MILLIS + " ms");
+    logger.error("A rotated segment was still being finalized after {} ms; shutting down "
+                    + "anyway. Recovery will seal it at next start.",
+            FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+}
             }
             catch (final InterruptedException e)
             {
