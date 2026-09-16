@@ -258,25 +258,28 @@ public final class R7Tailer
             final MappedByteBuffer mappedBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
             mappedBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
-            if (fileSize <= startOffset)
+            if (isActive && fileSize <= startOffset)
             {
-                // Nothing to read at this offset. For an active segment that is simply
-                // "not yet" and the writer will extend it.
-                //
-                // For a sealed one it is a claim that the file has been read in full, and
-                // runTick turns that into a delete. A sealed file smaller than the preamble
-                // has certainly not been read in full — it cannot even be validated — so it
-                // must not take that exit. Falling through puts it through the preamble
-                // check below, which quarantines it instead of destroying it on the
-                // strength of a size comparison.
-                if (isActive || fileSize > R7fConstants.PREAMBLE_SIZE)
-                {
-                    return !isActive;
-                }
+                // Nothing to read at this offset, and the writer will extend it. The only
+                // early exit left, and it is only safe because an active segment is never
+                // finished and so is never deleted on the strength of this.
+                return false;
             }
 
+            // A sealed segment takes no shortcut, whatever its size. "The file is no longer
+            // than where I stopped reading" was treated as "I read all of it", and runTick
+            // turns that into a delete — but the two are the same statement only while
+            // nothing shrinks a file. A sealed segment that lost its tail is exactly the
+            // case the seal record was added to expose, and this exit skipped past the seal
+            // record to delete the evidence. Everything below — preamble validation, the
+            // declared Data End, the comparison against the recorded last sequence — has to
+            // run before this file can be called finished.
             final ByteBuffer processingBuffer = mappedBuffer;
-            processingBuffer.position((int) startOffset);
+
+            // Clamped, because the resume offset can now legitimately lie past the end of a
+            // file that shrank. There is nothing left to decode in that case; what matters is
+            // that the checks below still get to run and say so.
+            processingBuffer.position((int) Math.min(startOffset, fileSize));
 
             final String preambleProblem = preambleProblem(processingBuffer);
             if (preambleProblem != null)
@@ -452,7 +455,13 @@ public final class R7Tailer
             if (missing > 0)
             {
                 totalMissingEntries += missing;
-                integrity.onEntriesMissing(name, 0L, recordedLast, decodedLast, missing);
+                // Stated as the decoder states a gap: the sequence the reader was about to
+                // read, and the one it would have found on the far side. Passing the two
+                // last-sequence numbers instead made found < expected, so every consumer read
+                // a forward gap at the end of a segment as a backward jump — the one shape
+                // that means something entirely different (FORMAT.md §6). The arithmetic
+                // holds now: found - expected == missing, as at every other call site.
+                integrity.onEntriesMissing(name, 0L, decodedLast + 1, recordedLast + 1, missing);
                 logger.error("Segment {} says its last entry is #{} but the reader finished at #{} — "
                         + "{} entries at the end of the segment were never read.", name, recordedLast, decodedLast, missing);
             }

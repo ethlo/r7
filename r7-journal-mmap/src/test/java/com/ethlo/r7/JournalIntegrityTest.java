@@ -1147,6 +1147,56 @@ class JournalIntegrityTest
     }
 
     /**
+     * A sealed segment that lost its tail must be reported, not quietly deleted.
+     * <p>
+     * The tailer treated "the file is no longer than where I stopped reading" as "I read all
+     * of it" and went straight to finished, which under eager retention is a delete. The two
+     * are the same statement only while nothing shrinks a file — and a sealed segment losing
+     * its tail is precisely the loss the seal record was added to expose, because nothing
+     * inside the file can show it. So the shortcut skipped past the seal record in order to
+     * destroy the evidence it was holding.
+     */
+    @Test
+    void aSealedSegmentThatLostItsTailIsReportedBeforeItIsDeleted() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef cut = entries.get(entries.size() / 2);
+
+        // The segment loses everything from the middle on, after it was sealed. Its seal
+        // record still declares a Data End far beyond what is left.
+        try (var channel = java.nio.channels.FileChannel.open(segment, StandardOpenOption.WRITE))
+        {
+            channel.truncate(cut.offset());
+        }
+
+        // A checkpoint from while the segment was still active, recorded at an offset that no
+        // longer exists. This is the state that took the shortcut.
+        Files.writeString(journalDir.resolve(CHECKPOINT_FILE),
+                "journal-0-" + sequenceOfOnlySegment() + "="
+                        + entries.get(entries.size() - 1).offset() + ":" + cut.sequence() + "\n");
+
+        // No minimum age: if it is ever called finished it goes immediately, which is the
+        // outcome this test exists to make impossible without a report first.
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.isClean())
+                .as("a segment that lost entries after sealing is not a clean read. sink: %s", sink)
+                .isFalse();
+        assertThat(sink.missingEntries)
+                .as("the seal record knows how many entries the segment held, and is the only "
+                        + "thing that does. sink: %s", sink)
+                .isGreaterThan(0L);
+        assertThat(sink.corruptRegions)
+                .as("and the declared data end lying past the end of the file is itself the "
+                        + "evidence of the loss. sink: %s", sink)
+                .anySatisfy(region -> assertThat(region).contains("declared data end lies outside the file"));
+    }
+
+    /**
      * The sweep must never hand back an exchange it has just let go of.
      * <p>
      * The lookup came first and the sweep second, on a reference already taken — so an

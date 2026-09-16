@@ -128,6 +128,18 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
     {
         stats.recoveredSegments++;
         stats.recoveredRecords += recordsRecovered;
+
+        // Recovery on its own is not a fault — every unclean stop produces one, and the
+        // records it salvaged are counted above. Discarded bytes are different: they are
+        // content past the last valid entry that could not be read, and when recovery finds
+        // no later magic they are the *only* signal that the tail was torn. Ignoring them
+        // let a run that lost journal content report itself clean.
+        if (discardedBytes > 0)
+        {
+            stats.recoveryDiscardedBytes += discardedBytes;
+            stats.problems.add("recovery discarded " + discardedBytes + " unreadable bytes past the end of "
+                    + segment + " (data ends at " + dataEnd + ")");
+        }
     }
 
     public static class Stats
@@ -160,6 +172,12 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
         public long recoveredRecords = 0;
 
         /**
+         * Content past a recovered segment's data end that could not be read. Unlike the two
+         * counters above this one is a fault, which is why {@link #isClean()} asks about it.
+         */
+        public long recoveryDiscardedBytes = 0;
+
+        /**
          * Human-readable description of every problem observed, in the order found.
          * A failing assertion on a counter can print this instead of leaving the reader
          * to go digging through logs.
@@ -179,7 +197,8 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
                     && missingEntries == 0
                     && corruptRegions == 0
                     && sequenceRegressions == 0
-                    && quarantinedSegments == 0;
+                    && quarantinedSegments == 0
+                    && recoveryDiscardedBytes == 0;
         }
 
         @Override
@@ -198,6 +217,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
                     + ", quarantined=" + quarantinedSegments
                     + ", recovered=" + recoveredSegments
                     + ", recoveredRecords=" + recoveredRecords
+                    + ", recoveryDiscardedBytes=" + recoveryDiscardedBytes
                     + (problems.isEmpty() ? "" : ", problems=" + problems)
                     + '}';
         }
