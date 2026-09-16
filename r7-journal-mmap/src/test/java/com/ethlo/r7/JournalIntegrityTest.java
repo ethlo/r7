@@ -27,6 +27,7 @@ import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.r7f.ExchangeReassembler;
 import com.ethlo.r7.r7f.R7Tailer;
 import com.ethlo.r7.r7f.R7fConstants;
 import com.ethlo.r7.r7f.R7fJournal;
@@ -1087,6 +1088,43 @@ class JournalIntegrityTest
         assertThat(Files.exists(segment))
                 .as("and only now, with everything delivered, may the segment go")
                 .isFalse();
+    }
+
+    /**
+     * Body events must advance the amortised sweep like any other event.
+     * <p>
+     * Every other event type reaches the exchange through {@code getOrCreate}, which ticks
+     * the sweep counter; body events go straight to the map and did not. So
+     * {@code sweepIntervalEvents} was counting non-body events only, and a stream of large
+     * uploads — where bodies outnumber everything else by an order of magnitude — swept that
+     * much less often than its configuration said. The age limit then means something other
+     * than what the operator set, and abandoned exchanges are held and reported late.
+     */
+    @Test
+    void bodyEventsAdvanceTheAmortisedSweep()
+    {
+        final CollectingSink sink = new CollectingSink();
+        final ExchangeReassembler reassembler = new ExchangeReassembler(sink,
+                ReassemblyOptions.DEFAULTS
+                        // Everything already in flight is over the age limit by the time the
+                        // next event arrives, so the only question this test asks is whether
+                        // the sweep runs at all.
+                        .withMaxAge(Duration.ofNanos(1))
+                        .withSweepIntervalEvents(3));
+
+        // Event one: the start, which ticks the counter through getOrCreate.
+        reassembler.onClientRequest("req-bodies-only", JournalLevel.FULL, "POST /upload HTTP/1.1",
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        assertThat(sink.abandoned).as("nothing swept yet. sink: %s", sink).isEmpty();
+
+        // Events two and three are bodies, and nothing else happens. The third must trip the
+        // interval; before the fix it counted for nothing and the sweep never ran.
+        reassembler.onRequestBody("req-bodies-only", ByteBuffer.wrap(new byte[]{'a'}));
+        reassembler.onRequestBody("req-bodies-only", ByteBuffer.wrap(new byte[]{'b'}));
+
+        assertThat(sink.abandoned)
+                .as("the sweep must be driven by body events too. sink: %s", sink)
+                .containsExactly("req-bodies-only:TIMED_OUT");
     }
 
     /**

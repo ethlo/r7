@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -55,8 +57,17 @@ public class R7fJournalProvider implements AutoCloseable
      * offset. This file is what makes the counter monotonic across a restart that finds no
      * segments at all.
      * <p>
-     * It is not fsynced, in keeping with the rest of the design. Losing it degrades to
-     * seeding from the segments on disk, which is exactly the behaviour without it.
+     * This one <em>is</em> fsynced, unlike everything else here, and the paragraph above is
+     * why: the claim that losing it "degrades to seeding from the segments on disk" is only
+     * true while segments are still there to seed from, and the case this file exists for is
+     * precisely the one where they are not. A marker that rolls back after a power loss while
+     * a tailer checkpoint survives hands a new segment a key the checkpoint already answers
+     * for, and that segment is resumed at a dead one's offset — skipped, or marked read and
+     * deleted unread.
+     * <p>
+     * The no-fsync design is about the write path, where a sync per entry would cost
+     * everything. This is one small write per segment rotation, and what it buys is the
+     * uniqueness of segment identity. Different trade, different answer.
      */
     private final Path sequenceMarkerPath;
 
@@ -211,14 +222,55 @@ public class R7fJournalProvider implements AutoCloseable
         final Path tmp = sequenceMarkerPath.resolveSibling(sequenceMarkerPath.getFileName() + ".tmp");
         try
         {
-            Files.writeString(tmp, Long.toString(sequence),
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            // Contents first, and forced before the rename. A rename is atomic, not durable,
+            // and the two are independent: the classic delayed-allocation failure leaves the
+            // new name in place over an empty file. That one at least fails closed —
+            // readPersistedSequence refuses to start on an unparsable marker — but there is
+            // no reason to rely on it.
+            try (final FileChannel channel = FileChannel.open(tmp,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE))
+            {
+                channel.write(ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII)));
+                channel.force(true);
+            }
+
             Files.move(tmp, sequenceMarkerPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+
+            // Then the directory entry the rename created. Without this the marker can roll
+            // back to its previous value after a power loss — the failure that actually
+            // matters here, because it is the one that reuses a key rather than skipping one.
+            forceDirectory(sequenceMarkerPath.getParent());
         }
         catch (final IOException e)
         {
             throw new UncheckedIOException("Cannot persist segment sequence marker " + sequenceMarkerPath
                     + "; refusing to create a segment with an unrecorded key", e);
+        }
+    }
+
+    /**
+     * Makes a directory's own contents durable, so that a rename into it survives a power
+     * loss.
+     * <p>
+     * Opening a directory as a channel is a POSIX affordance and is rejected on Windows. A
+     * failure is logged rather than thrown: the file's own contents are already forced by
+     * the caller, and refusing to start a gateway because a development machine cannot sync
+     * a directory would trade a narrow durability gap for a total outage.
+     */
+    private static void forceDirectory(final Path directory)
+    {
+        if (directory == null)
+        {
+            return;
+        }
+        try (final FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ))
+        {
+            channel.force(true);
+        }
+        catch (final IOException | UnsupportedOperationException e)
+        {
+            log.warn("Could not fsync the journal directory {}; the segment sequence marker is written but "
+                    + "its directory entry may not survive a power loss on this platform: {}", directory, e.toString());
         }
     }
 

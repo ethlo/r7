@@ -99,6 +99,11 @@ public class ExchangeReassembler implements JournalEventListener
             // exchanges cannot contaminate each other's value.
             exchange.appendRequestBody(bodyChunk);
         }
+        // Body events are events. They reach the exchange directly rather than through
+        // getOrCreate, which is where every other event type ticks the sweep counter — so
+        // sweepIntervalEvents was counting non-body events only, and a stream of large
+        // uploads swept an order of magnitude less often than its configuration said.
+        maybeSweep();
     }
 
     @Override
@@ -109,6 +114,7 @@ public class ExchangeReassembler implements JournalEventListener
         {
             exchange.appendResponseBody(bodyChunk);
         }
+        maybeSweep();
     }
 
     @Override
@@ -324,10 +330,38 @@ public class ExchangeReassembler implements JournalEventListener
         }
     }
 
+    /**
+     * Hands an exchange that will never complete to the consumer, and does not let a failure
+     * there escape.
+     * <p>
+     * This is the one consumer call that a refusal cannot help. Everywhere else a throw means
+     * "offer me this entry again", and the decoder can: it rewinds and the record is
+     * redelivered. An abandoned exchange has no entry to rewind to — the events that built it
+     * were consumed and checkpointed ticks ago, and the sweep that surfaces it is amortised
+     * over whatever event happens to be passing. Letting the throw out would rewind an
+     * unrelated entry, redeliver <em>it</em>, and still not retry this one.
+     * <p>
+     * Worse, it would rewind entries whose effects are already applied. A refusal from inside
+     * a body event would replay that fragment into an exchange that already holds it; a
+     * refusal from the sweep at the end of {@code onEnd} would rewind an exchange that was
+     * delivered successfully and removed, so the retry would report it as an orphaned end.
+     * Both are the failure this mechanism exists to prevent, arriving through the mechanism.
+     * <p>
+     * So the report is best-effort and loud. The exchange is already incomplete and exists
+     * only in memory; there is nothing to preserve by trying again.
+     */
     private void evictIncomplete(final JournalExchange exchange, final IncompleteReason reason)
     {
         abandoned.incrementAndGet();
-        output.onAbandoned(exchange, reason);
+        try
+        {
+            output.onAbandoned(exchange, reason);
+        }
+        catch (final RuntimeException e)
+        {
+            logger.error("The consumer rejected abandoned exchange {} ({}); it cannot be offered again "
+                    + "and has been dropped.", exchange.getRequestId(), reason, e);
+        }
         if (logger.isDebugEnabled())
         {
             logger.debug("Abandoned incomplete exchange {}: {}", exchange.getRequestId(), reason);
