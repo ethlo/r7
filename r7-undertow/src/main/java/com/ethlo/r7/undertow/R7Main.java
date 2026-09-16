@@ -236,7 +236,7 @@ public final class R7Main
 
     private static InputStream getLoggerConfigStream()
     {
-        final String logbackConfigPath = System.getenv().getOrDefault("R7_LOGBACK_CONFIG", "config/server.yaml");
+        final String logbackConfigPath = System.getenv().getOrDefault("R7_LOGBACK_CONFIG", "config/logback.xml");
         final Path configFilePath = Paths.get(logbackConfigPath).toAbsolutePath();
         if (Files.exists(configFilePath) && Files.isRegularFile(configFilePath))
         {
@@ -253,7 +253,7 @@ public final class R7Main
         final InputStream defaultConfig = R7Main.class.getResourceAsStream("/default-logback.xml");
         if (defaultConfig == null)
         {
-            throw new IllegalStateException("FATAL: Unable to load logback configuration from config/logback.xml or classpath:/default-logback.xml");
+            throw new IllegalStateException("FATAL: Unable to load classpath:/default-logback.xml");
         }
 
         return defaultConfig;
