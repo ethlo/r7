@@ -396,8 +396,9 @@ Two consequences for consumer code:
   its own in-flight state on a refusal, so the retry carries the whole exchange rather than
   an orphaned end.
 
-An exception thrown from `sweep()` — that is, from `onAbandoned` — is outside this mechanism:
-it is not tied to an entry and propagates out of `runTick`.
+An exception thrown by `onAbandoned` during `sweep()` is outside the decoder's retry
+mechanism. `ExchangeReassembler` catches and logs it because there is no journal entry to
+rewind, so the abandoned exchange is not offered again.
 
 ---
 
