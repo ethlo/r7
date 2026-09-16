@@ -422,16 +422,31 @@ public class ExchangeReassembler implements JournalEventListener
         return copy;
     }
 
+    /**
+     * The exchange this id is being assembled into, creating one if there is none.
+     * <p>
+     * The sweep runs <em>before</em> the lookup, and that ordering is the whole correctness
+     * of this method. It ran after, on a reference already taken, and the sweep can evict
+     * that very exchange: an exchange past {@code maxAge} receiving a new metadata event on
+     * the tick that trips the interval was reported abandoned, detached from the map, and
+     * then handed back here as though it were still tracked. Everything set on it afterwards
+     * went nowhere, and its end event arrived to an empty map and was reported an orphan —
+     * two incomplete reports for one exchange that might have completed.
+     * <p>
+     * Sweeping first means an evicted id is simply recreated. That loses the metadata
+     * gathered before the eviction, but the eviction already said so; a caller cannot be
+     * handed an object the map has let go of.
+     */
     private JournalExchange getOrCreate(String id)
     {
+        maybeSweep();
+
         final JournalExchange existing = inFlight.get(id);
         if (existing != null)
         {
-            maybeSweep();
             return existing;
         }
 
-        maybeSweep();
         makeRoomForNewExchange();
         return inFlight.computeIfAbsent(id, JournalExchange::new);
     }

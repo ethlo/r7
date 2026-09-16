@@ -121,6 +121,11 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
                 && quarantined.isEmpty()
                 && sequenceRegressions.isEmpty()
                 && deliveryStalls.isEmpty()
+                // A recovery that found unreadable content past the last valid entry is not
+                // a clean one. Recording the number without asking about it let this oracle
+                // call a lossy recovery clean, which is the one thing a test oracle may
+                // never do.
+                && recoveryDiscardedBytes.stream().allMatch(b -> b == 0L)
                 && missingEntries == 0;
     }
 
@@ -137,6 +142,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
                 + ", quarantined=" + quarantined
                 + ", sequenceRegressions=" + sequenceRegressions
                 + ", deliveryStalls=" + deliveryStalls
+                + ", recoveryDiscardedBytes=" + recoveryDiscardedBytes
                 + ", missingEntries=" + missingEntries;
     }
 

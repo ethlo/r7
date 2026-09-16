@@ -260,27 +260,10 @@ public final class R7fRecoveryManager
         // by the scan, through onSequenceRegression.
         final long discarded = scanResult.stoppedOnRegression() ? 0L : trailingContentBytes;
 
-        // Isolated, not merely moved. Putting the call after the rename stopped a listener
-        // failure from turning a fully recovered segment into a .corrupt file — but the
-        // caller still catches whatever comes out of here and classifies it as a segment
-        // that could not be recovered. So the failure was reported as a quarantine of a path
-        // that no longer exists: an "unable to quarantine" error, a quarantined count that
-        // counted a success, and the listener's own exception swallowed.
-        //
-        // The recovery is finished and correct at this point. A consumer that cannot accept
-        // the news does not change that, and must not be allowed to describe it.
-        try
-        {
-            integrity.onSegmentRecovered(newName,
-                    scanResult.lastValidPosition(),
-                    discarded,
-                    scanResult.recordCount());
-        }
-        catch (final RuntimeException e)
-        {
-            logger.error("Recovered {} successfully, but the integrity listener rejected the report. "
-                    + "The segment is sealed and intact; only the notification was lost.", newName, e);
-        }
+        integrity.onSegmentRecovered(newName,
+                scanResult.lastValidPosition(),
+                discarded,
+                scanResult.recordCount());
 
         return new RecoveryResult(scanResult.recordCount(), scanResult.missingRecords());
     }
@@ -583,7 +566,15 @@ public final class R7fRecoveryManager
             return List.of();
         }
 
-        recoverActiveSegments(journalDirectory, integrity);
+        // Wrapped once, here, rather than guarded at each of the places recovery reports
+        // something. Recovery's whole job is to classify segments, and it does that by
+        // catching what comes out of recoverFile — so every unguarded listener call inside
+        // was a way for a monitoring integration to be mistaken for a damaged file. A throw
+        // from onCorruptRegion during the scan quarantined a segment that had just been read
+        // successfully; a throw from onSegmentQuarantined aborted the recovery of every
+        // remaining file in the directory. Isolating one call site at a time was how three
+        // of these survived a round each.
+        recoverActiveSegments(journalDirectory, new IsolatedIntegrityListener(integrity));
 
         // The sealed segments now present. Compression is no longer part of a segment's
         // life — it is one thing a consumer may choose to do — so this list is returned for
@@ -644,6 +635,72 @@ public final class R7fRecoveryManager
                 throw new IOException("Made no progress writing the seal record at offset " + at);
             }
             at += written;
+        }
+    }
+
+    /**
+     * Passes integrity events on, and never lets one come back.
+     * <p>
+     * Every one of these is a notification about work that is already done and already
+     * correct. Recovery decides what happened to a segment by what escapes {@code
+     * recoverFile}, so a listener that throws does not merely fail to be notified — it
+     * rewrites the conclusion. There is nothing for a caller to retry and nothing to undo,
+     * which is what separates these from a consumer refusing an <em>entry</em>: there, a
+     * throw means "offer it again" and the decoder can (FORMAT.md §6).
+     * <p>
+     * Deliberately not implemented with a lambda per method or a shared catch at the call
+     * site: the point is that the guarantee holds for every method on the interface,
+     * including ones added later, and a wrapper is the only shape that makes that visible.
+     */
+    private record IsolatedIntegrityListener(JournalIntegrityListener delegate) implements JournalIntegrityListener
+    {
+        @Override
+        public void onEntriesMissing(final String segment, final long offset, final int expectedSequence, final int foundSequence, final int missingCount)
+        {
+            report(segment, "onEntriesMissing", () -> delegate.onEntriesMissing(segment, offset, expectedSequence, foundSequence, missingCount));
+        }
+
+        @Override
+        public void onCorruptRegion(final String segment, final long offset, final long bytesSkipped, final String reason)
+        {
+            report(segment, "onCorruptRegion", () -> delegate.onCorruptRegion(segment, offset, bytesSkipped, reason));
+        }
+
+        @Override
+        public void onSequenceRegression(final String segment, final long offset, final int expectedSequence, final int foundSequence)
+        {
+            report(segment, "onSequenceRegression", () -> delegate.onSequenceRegression(segment, offset, expectedSequence, foundSequence));
+        }
+
+        @Override
+        public void onSegmentQuarantined(final String segment, final String reason)
+        {
+            report(segment, "onSegmentQuarantined", () -> delegate.onSegmentQuarantined(segment, reason));
+        }
+
+        @Override
+        public void onDeliveryStalled(final String segment, final long offset, final int sequence, final Throwable cause)
+        {
+            report(segment, "onDeliveryStalled", () -> delegate.onDeliveryStalled(segment, offset, sequence, cause));
+        }
+
+        @Override
+        public void onSegmentRecovered(final String segment, final long dataEnd, final long discardedBytes, final long recordsRecovered)
+        {
+            report(segment, "onSegmentRecovered", () -> delegate.onSegmentRecovered(segment, dataEnd, discardedBytes, recordsRecovered));
+        }
+
+        private static void report(final String segment, final String event, final Runnable notification)
+        {
+            try
+            {
+                notification.run();
+            }
+            catch (final RuntimeException e)
+            {
+                logger.error("The integrity listener rejected {} for segment {}. The segment itself is "
+                        + "unaffected; only the notification was lost.", event, segment, e);
+            }
         }
     }
 

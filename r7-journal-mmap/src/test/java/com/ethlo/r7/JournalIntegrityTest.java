@@ -428,8 +428,11 @@ class JournalIntegrityTest
     @Test
     void aFileThatIsNotASegmentIsLeftAlone() throws IOException
     {
+        // ".zst" spelled out, not a constant: the journal has no notion of a compressed
+        // extension any more, which is the point. This is simply a file some consumer left
+        // in the directory, and it could as easily be ".tar" or ".parquet".
         final Path notASegment = journalDir.resolve(
-                "shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION + R7fConstants.COMPRESSED_FILE_EXTENSION);
+                "shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION + ".zst");
         final byte[] contents = new byte[512];
         java.util.Arrays.fill(contents, (byte) 'Q');
         Files.write(notASegment, contents);
@@ -630,7 +633,23 @@ class JournalIntegrityTest
         {
             Files.delete(segment);
         }
-        assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION)).isEmpty();
+
+        // Spelled out, because it is the entire premise. If any file named shard-0-… is
+        // still here — a sealed segment, or a pre-allocated spare a provider failed to
+        // release — then highestExistingSequence can seed the counter from its name and this
+        // test passes whether or not the marker works at all. The marker exists for exactly
+        // one situation: a shard drained to nothing.
+        try (Stream<Path> remaining = Files.list(journalDir))
+        {
+            assertThat(remaining.map(p -> p.getFileName().toString())
+                    .filter(n -> n.startsWith("shard-0-"))
+                    .toList())
+                    .as("nothing may remain for the counter to be seeded from")
+                    .isEmpty();
+        }
+        assertThat(journalDir.resolve("shard-0.seq"))
+                .as("and the marker, which is the only thing left that knows the answer")
+                .exists();
 
         writeExchanges(2);
 
@@ -1125,6 +1144,49 @@ class JournalIntegrityTest
         assertThat(sink.abandoned)
                 .as("the sweep must be driven by body events too. sink: %s", sink)
                 .containsExactly("req-bodies-only:TIMED_OUT");
+    }
+
+    /**
+     * The sweep must never hand back an exchange it has just let go of.
+     * <p>
+     * The lookup came first and the sweep second, on a reference already taken — so an
+     * exchange past {@code maxAge} that received one more metadata event on the tick that
+     * tripped the interval was evicted, reported abandoned, and then returned to the caller
+     * anyway. Everything set on it afterwards went into an object no longer in the map, and
+     * the end event arrived to find nothing: one exchange, reported twice, complete neither
+     * time. Silent, because both reports are ones a reader legitimately emits.
+     */
+    @Test
+    void theSweepNeverReturnsAnExchangeItJustEvicted()
+    {
+        final CollectingSink sink = new CollectingSink();
+        final ExchangeReassembler reassembler = new ExchangeReassembler(sink,
+                ReassemblyOptions.DEFAULTS
+                        .withMaxAge(Duration.ofNanos(1))
+                        .withSweepIntervalEvents(2));
+
+        // Event one creates it. Event two trips the interval, and by then it is older than
+        // the age limit, so the sweep takes it.
+        reassembler.onClientRequest("req-swept", JournalLevel.FULL, "GET /slow HTTP/1.1",
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        reassembler.onUpstreamRequest("req-swept", JournalLevel.FULL, "GET /slow HTTP/1.1",
+                new MutableFastGatewayHeaders());
+
+        assertThat(sink.abandoned)
+                .as("the eviction itself is expected. sink: %s", sink)
+                .containsExactly("req-swept:TIMED_OUT");
+
+        reassembler.onEnd("req-swept", new FastGatewayAttributes(), 1L, 2L, 200,
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+
+        assertThat(sink.orphanedEnds)
+                .as("the event after the eviction must be tracked, not applied to a detached "
+                        + "object. sink: %s", sink)
+                .isEmpty();
+        assertThat(sink.incompleteEnds)
+                .as("it is an incomplete record — the start line went with the eviction — but it "
+                        + "is this exchange's record, not an orphan. sink: %s", sink)
+                .containsExactly("req-swept:NO_START_EVENT");
     }
 
     /**
