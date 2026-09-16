@@ -140,10 +140,17 @@ public class ExchangeReassembler implements JournalEventListener
         exchange.setStatus(status);
         exchange.setJournalChecksums(requestChecksum, responseChecksum);
 
-        verifyChecksums(exchange, requestChecksum, responseChecksum);
-
         try
         {
+            // Inside the guard, not before it. Verification reports through
+            // output.onChecksumMismatch, which is consumer code like any other — and a
+            // consumer that throws from it was refusing the entry while this method had
+            // already taken the exchange out of the map, so the decoder's rewind produced an
+            // orphaned end on the retry and lost every fragment gathered before it. The rule
+            // is not "guard the delivery call"; it is that nothing which can reach the
+            // consumer may run outside the region that puts the exchange back.
+            verifyChecksums(exchange, requestChecksum, responseChecksum);
+
             if (isExchangeComplete(exchange))
             {
                 // Counted after the call, not before: a refusal below rewinds the exchange
@@ -232,8 +239,13 @@ public class ExchangeReassembler implements JournalEventListener
      */
     private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final BodyChecksum journaled, final BodyChecksum observed)
     {
-        final long total = checksumMismatches.incrementAndGet();
+        // Counted after the call, like the completion counters: a consumer that refuses the
+        // report gets the whole end event offered again, and a counter bumped on every
+        // attempt would report more mismatches than a consumer was ever told about. The
+        // report itself is repeated on the retry, deliberately — a consumer that threw may
+        // well not have recorded the first one.
         output.onChecksumMismatch(exchange, kind, journaled, observed);
+        final long total = checksumMismatches.incrementAndGet();
 
         if (total == 1)
         {

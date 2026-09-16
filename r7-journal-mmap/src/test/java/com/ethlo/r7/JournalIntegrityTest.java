@@ -1090,6 +1090,100 @@ class JournalIntegrityTest
     }
 
     /**
+     * A consumer that refuses the <em>mismatch report</em> must lose no more than one that
+     * refuses the exchange itself.
+     * <p>
+     * Verification reports through {@code onChecksumMismatch}, which is consumer code like
+     * any other. Running it outside the region that restores the in-flight exchange meant a
+     * throw from there left the reassembler having already taken the exchange out of its
+     * map: the decoder rewound the end entry as designed, and the retry found nothing to
+     * attach it to. The record came back as an orphaned end with its start line, headers and
+     * every body fragment gone — a worse outcome than the skip this whole mechanism replaced,
+     * reached through the mechanism itself.
+     */
+    @Test
+    void aConsumerThatRefusesAMismatchReportDoesNotLoseTheExchange() throws IOException
+    {
+        final String reqId = "req-refused-mismatch";
+        final byte[] body = "the original body".getBytes(StandardCharsets.ISO_8859_1);
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId, ByteBuffer.wrap("GET / HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            journal.requestBody(reqId, ByteBuffer.wrap(body));
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED);
+        }
+
+        final RefusingSink sink = RefusingSink.refusingTheNextMismatchReport();
+        final R7Tailer tailer = new R7Tailer(journalDir, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+
+        assertThat(sink.stalls).as("the refused report stalls the segment. sink: %s", sink).hasSize(1);
+        assertThat(sink.delivered).isEmpty();
+
+        tailer.runTick();
+
+        assertThat(sink.orphanedEnds)
+                .as("the retry must find the exchange the first attempt had removed. sink: %s", sink)
+                .isEmpty();
+        assertThat(sink.delivered).containsExactly(reqId);
+        assertThat(sink.mismatches)
+                .as("and the mismatch itself must still be reported")
+                .containsExactly(reqId + ":REQUEST");
+        assertThat(CollectingSink.concat(sink.lastExchange.getRequestBodyFragments()))
+                .as("with the body that was assembled before the refusal")
+                .isEqualTo(body);
+    }
+
+    /**
+     * What recovery reports as discarded must be the content it could not read, not the
+     * region that content sits in.
+     * <p>
+     * A segment is pre-allocated at full size, so "everything past the last valid entry" is
+     * almost entirely untouched tail. Answering the question as a yes/no — is the remainder
+     * all zeroes? — made a single torn entry report the whole pre-allocation as lost, which
+     * is a six-figure integrity metric for a few dozen bytes of damage. An operator who
+     * cannot trust the number cannot use it.
+     */
+    @Test
+    void recoveryReportsOnlyTheContentItCouldNotRead() throws IOException
+    {
+        writeExchanges(4);
+        final Path sealed = onlySealedSegment();
+
+        final byte[] active = Files.readAllBytes(sealed);
+        final int preAllocatedSize = active.length;
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC,
+                R7fConstants.PREAMBLE_OFF_SEAL_FLAGS + Integer.BYTES, (byte) 0);
+
+        // A torn entry right after the last valid one: a plausible magic, then rubbish. The
+        // 200-odd kilobytes behind it stay zero, exactly as the warmer left them.
+        final List<EntryRef> entries = entriesOf(sealed);
+        final EntryRef last = entries.get(entries.size() - 1);
+        final int tornStart = last.offset() + last.totalLength();
+        final int tornLength = 40;
+        java.util.Arrays.fill(active, tornStart, tornStart + tornLength, (byte) 0xAB);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        final CollectingSink recovery = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, recovery);
+
+        assertThat(recovery.recoveredSegments).as("recovery sink: %s", recovery).hasSize(1);
+        assertThat(recovery.recoveryDiscardedBytes)
+                .as("the damage is %d bytes, not the %d-byte pre-allocation it sits in. sink: %s",
+                        tornLength, preAllocatedSize, recovery)
+                .containsExactly((long) tornLength);
+    }
+
+    /**
      * Recovery can leave entries in a segment that it deliberately did not publish, and the
      * tailer must not delete such a segment however clean its own read was.
      * <p>
@@ -1186,12 +1280,26 @@ class JournalIntegrityTest
         final List<String> stalls = new ArrayList<>();
         final List<String> corruptRegions = new ArrayList<>();
         final List<String> orphanedEnds = new ArrayList<>();
+        final List<String> mismatches = new ArrayList<>();
+        JournalExchange lastExchange;
 
         private String refusing;
+        private boolean refusingMismatch;
 
         RefusingSink(final String requestIdToRefuse)
         {
             this.refusing = requestIdToRefuse;
+        }
+
+        /**
+         * Refuses once and then behaves, which is what a sink that was briefly unavailable
+         * looks like — and what makes the retry observable rather than an infinite stall.
+         */
+        static RefusingSink refusingTheNextMismatchReport()
+        {
+            final RefusingSink sink = new RefusingSink(null);
+            sink.refusingMismatch = true;
+            return sink;
         }
 
         void acceptEverything()
@@ -1206,7 +1314,20 @@ class JournalIntegrityTest
             {
                 throw new IllegalStateException("sink unavailable for " + refusing);
             }
+            lastExchange = exchange;
             delivered.add(exchange.getRequestId());
+        }
+
+        @Override
+        public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind,
+                                       final BodyChecksum journaled, final BodyChecksum observed)
+        {
+            if (refusingMismatch)
+            {
+                refusingMismatch = false;
+                throw new IllegalStateException("sink unavailable for the mismatch report");
+            }
+            mismatches.add(exchange.getRequestId() + ":" + kind);
         }
 
         @Override
@@ -1230,7 +1351,7 @@ class JournalIntegrityTest
         @Override
         public String toString()
         {
-            return "delivered=" + delivered + ", stalls=" + stalls
+            return "delivered=" + delivered + ", stalls=" + stalls + ", mismatches=" + mismatches
                     + ", corruptRegions=" + corruptRegions + ", orphanedEnds=" + orphanedEnds;
         }
     }

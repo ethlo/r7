@@ -137,7 +137,7 @@ public final class R7fRecoveryManager
         final long originalSize;
         boolean uninitialised = false;
         boolean dataRegionIsZero = false;
-        boolean trailingBytesAreZero = true;
+        long trailingContentBytes = 0L;
 
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
              Arena arena = Arena.ofConfined())
@@ -185,8 +185,12 @@ public final class R7fRecoveryManager
                 }
 
                 // Likewise: how much of what lies past the last valid entry is actually
-                // content rather than the untouched remainder of the pre-allocation.
-                trailingBytesAreZero = isEntirelyZero(segment, scanResult.lastValidPosition(), originalSize);
+                // content rather than the untouched remainder of the pre-allocation. The
+                // extent, not a yes/no — a torn 40-byte entry followed by a zero-filled
+                // 200 MB tail is 40 bytes of unreadable content, and answering "not all
+                // zero" made it 200 MB of reported loss on a segment that lost 40 bytes.
+                trailingContentBytes = contentEndAfter(segment, scanResult.lastValidPosition(), originalSize)
+                        - scanResult.lastValidPosition();
             }
         }
         // The confined arena is closed here, so the mapping is released before the file is
@@ -243,12 +247,18 @@ public final class R7fRecoveryManager
         // The caller quarantines anything that throws out of here, so a listener that failed
         // — user code, on a path with no other error handling — used to turn a fully
         // recovered segment into a .corrupt file that no reader ever looks at.
-        // Only content counts as discarded. Everything past the last valid entry used to be
-        // reported here, which was defensible while sealing truncated — those bytes really
-        // did leave the file. Now that the tail stays, that number would be the whole unused
-        // pre-allocation on every clean recovery: a six-figure "discarded" against a segment
-        // that lost nothing at all.
-        final long discarded = trailingBytesAreZero ? 0L : originalSize - scanResult.lastValidPosition();
+        // Only content counts as discarded, and only as much of it as there actually is.
+        // Everything past the last valid entry used to be reported here, which was defensible
+        // while sealing truncated — those bytes really did leave the file. Now that the tail
+        // stays, that number would be the whole unused pre-allocation on every clean
+        // recovery: a six-figure "discarded" against a segment that lost nothing at all.
+        //
+        // A regression is the other case where the number would be a lie, in the opposite
+        // direction. Recovery stopped there on purpose and flagged the segment RETAIN, so
+        // what lies past Data End is readable content that was deliberately kept — the one
+        // thing "discarded" must never describe. The regression itself was already reported
+        // by the scan, through onSequenceRegression.
+        final long discarded = scanResult.stoppedOnRegression() ? 0L : trailingContentBytes;
 
         integrity.onSegmentRecovered(newName,
                 scanResult.lastValidPosition(),
@@ -299,6 +309,40 @@ public final class R7fRecoveryManager
             }
         }
         return true;
+    }
+
+    /**
+     * The offset one past the last non-zero byte in {@code [from, size)}, or {@code from} if
+     * every byte in that range is zero.
+     * <p>
+     * Scans backwards, because the question is where content <em>ends</em>: in the ordinary
+     * case — a segment sealed at its last intact entry with the untouched pre-allocation
+     * behind it — the answer is at the very start of the range and a forward scan would read
+     * the whole tail to find it. {@link #isEntirelyZero} keeps its forward scan for the
+     * opposite question, where the first non-zero byte is the early exit.
+     */
+    private static long contentEndAfter(final MemorySegment segment, final long from, final long size)
+    {
+        long position = size;
+
+        // Eight bytes at a time while a whole word still fits inside the range.
+        while (position - Long.BYTES >= from)
+        {
+            if (segment.get(LONG_BE, position - Long.BYTES) != 0L)
+            {
+                break;
+            }
+            position -= Long.BYTES;
+        }
+
+        // Then byte by byte: the leftover shorter than a word, and the zero bytes inside the
+        // word that stopped the loop above.
+        while (position > from && segment.get(ValueLayout.JAVA_BYTE, position - 1) == 0)
+        {
+            position--;
+        }
+
+        return position;
     }
 
     private static void validatePreamble(final MemorySegment segment)

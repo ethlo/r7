@@ -89,9 +89,13 @@ public interface JournalIntegrityListener
      * get to finish, not that anything was removed.
      *
      * @param dataEnd        offset one past the last intact entry, recorded in the seal record
-     * @param discardedBytes content past {@code dataEnd} that could not be read — zero for
-     *                       the ordinary case, where everything past it is the untouched
-     *                       remainder of the pre-allocation
+     * @param discardedBytes how many bytes of unreadable <em>content</em> lie past
+     *                       {@code dataEnd} — the extent of it, not the size of the region it
+     *                       sits in. Zero for the ordinary case, where everything past
+     *                       {@code dataEnd} is the untouched remainder of the pre-allocation,
+     *                       and zero again when the sealer stopped deliberately and kept what
+     *                       follows (seal flag {@code RETAIN}): that content was preserved,
+     *                       not discarded, and the reason was already reported separately.
      */
     default void onSegmentRecovered(String segment, long dataEnd, long discardedBytes, long recordsRecovered)
     {

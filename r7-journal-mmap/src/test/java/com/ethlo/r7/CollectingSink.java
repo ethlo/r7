@@ -30,6 +30,8 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     public final List<String> sequenceRegressions = new ArrayList<>();
     public final List<String> recoveredSegments = new ArrayList<>();
     public final List<String> deliveryStalls = new ArrayList<>();
+    /** discardedBytes per onSegmentRecovered, in call order. */
+    public final List<Long> recoveryDiscardedBytes = new ArrayList<>();
     public long missingEntries;
 
     @Override
@@ -95,7 +97,8 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     @Override
     public void onSegmentRecovered(final String segment, final long dataEnd, final long discardedBytes, final long recordsRecovered)
     {
-        recoveredSegments.add(segment + ":" + dataEnd + "/" + recordsRecovered);
+        recoveredSegments.add(segment + ":" + dataEnd + "/" + recordsRecovered + "/discarded=" + discardedBytes);
+        recoveryDiscardedBytes.add(discardedBytes);
     }
 
     @Override
