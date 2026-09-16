@@ -13,6 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
@@ -33,6 +34,20 @@ public class R7fJournalProvider implements AutoCloseable
      * journal extensions, so the tailer's file filter passes over it.
      */
     private static final String SEQUENCE_MARKER_EXTENSION = ".seq";
+
+    /**
+     * How many consecutive warm-up failures are treated as transient before the warmer gives
+     * up and hands the cause to whoever is waiting. At one second apart this tolerates a few
+     * seconds of a blip without letting a permanent fault hang the gateway silently.
+     */
+    private static final int MAX_CONSECUTIVE_WARMUP_FAILURES = 5;
+
+    /**
+     * How long a caller waits between checks for a warmer that has stopped. Short enough that
+     * a permanent failure surfaces promptly, long enough to cost nothing while segments are
+     * arriving normally — in the healthy case the very first poll succeeds.
+     */
+    private static final long WARMUP_POLL_MILLIS = 250L;
 
     private final Path tempDir;
     private final int shardId;
@@ -74,6 +89,13 @@ public class R7fJournalProvider implements AutoCloseable
     // Hands a mapped file straight from the warmer thread to the writer
     private final BlockingQueue<WarmedSegment> pool = new SynchronousQueue<>();
     private final Thread warmerThread;
+
+    /**
+     * Set once by the warmer when it stops trying, and read by every waiting caller. Terminal
+     * on purpose: a gateway that cannot write its journal needs an operator, and silently
+     * resuming after dropping requests is worse than staying down with a reason.
+     */
+    private volatile Exception warmupFailure;
     private final boolean preFault;
     private volatile boolean running = true;
 
@@ -111,6 +133,8 @@ public class R7fJournalProvider implements AutoCloseable
 
     private void warmupLoop()
     {
+        int consecutiveFailures = 0;
+
         while (running)
         {
             WarmedSegment warmed = null;
@@ -119,6 +143,7 @@ public class R7fJournalProvider implements AutoCloseable
                 warmed = createSegment();
                 pool.put(warmed);
                 warmed = null; // ownership transferred to the taker
+                consecutiveFailures = 0;
             }
             catch (InterruptedException e)
             {
@@ -127,7 +152,23 @@ public class R7fJournalProvider implements AutoCloseable
             }
             catch (IOException | UncheckedIOException e)
             {
-                log.error("Failed to warm up next segment", e);
+                if (++consecutiveFailures >= MAX_CONSECUTIVE_WARMUP_FAILURES)
+                {
+                    // Retrying for ever while getNextSegment() blocks on an empty pool is the
+                    // worst failure a fail-closed gateway can have: no error, no rejected
+                    // request, no exit code — just a hang, and a log line repeating the
+                    // reason to nobody. A permanent cause is easy to reach (a full disk, a
+                    // read-only mount, a filesystem without atomic rename, or the sequence
+                    // marker failing to fsync), so the caller has to be told.
+                    warmupFailure = e;
+                    log.error("Giving up warming segments for shard {} after {} consecutive failures; "
+                                    + "callers waiting for a segment will now fail with this cause.",
+                            shardId, consecutiveFailures, e);
+                    break;
+                }
+
+                log.error("Failed to warm up next segment for shard {} (attempt {} of {})",
+                        shardId, consecutiveFailures, MAX_CONSECUTIVE_WARMUP_FAILURES, e);
                 try
                 {
                     Thread.sleep(1000);
@@ -230,14 +271,7 @@ public class R7fJournalProvider implements AutoCloseable
             try (final FileChannel channel = FileChannel.open(tmp,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE))
             {
-                final ByteBuffer marker = ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII));
-                while (marker.hasRemaining())
-                {
-                    if (channel.write(marker) <= 0)
-                    {
-                        throw new IOException("Made no progress writing segment sequence marker " + tmp);
-                    }
-                }
+                channel.write(ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII)));
                 channel.force(true);
             }
 
@@ -366,19 +400,64 @@ public class R7fJournalProvider implements AutoCloseable
         }
     }
 
+    /**
+     * The next pre-allocated segment, waiting for the warmer if one is not ready.
+     * <p>
+     * Polls rather than blocking outright, so that a warmer which has given up can be noticed.
+     * Waiting for ever on a pool nothing will ever fill is how a gateway stops serving without
+     * saying anything — and the causes are ordinary operational ones, not exotic: a full disk,
+     * a read-only mount, a sequence marker that cannot be made durable. Failing the caller
+     * turns that into a rejected request with the real reason attached, which for a gateway
+     * that may not serve what it cannot journal is the correct outcome.
+     *
+     * @throws UncheckedIOException  if warming has failed permanently; the cause is the
+     *                               failure the warmer last saw
+     * @throws IllegalStateException if the provider was closed while waiting
+     */
     public WarmedSegment getNextSegment()
     {
         try
         {
-            final WarmedSegment warmedSegment = pool.take();
-            log.debug("Fetched segment {} of size {}", warmedSegment.path().getFileName(), DiskSpaceUtils.formatBytes(warmedSegment.segment().byteSize()));
-            return warmedSegment;
+            while (true)
+            {
+                final WarmedSegment warmedSegment = pool.poll(WARMUP_POLL_MILLIS, TimeUnit.MILLISECONDS);
+                if (warmedSegment != null)
+                {
+                    log.debug("Fetched segment {} of size {}", warmedSegment.path().getFileName(), DiskSpaceUtils.formatBytes(warmedSegment.segment().byteSize()));
+                    return warmedSegment;
+                }
+
+                final RuntimeException failure = asUnchecked(warmupFailure);
+                if (failure != null)
+                {
+                    throw failure;
+                }
+
+                if (!running)
+                {
+                    throw new IllegalStateException("Segment provider for shard " + shardId
+                            + " was closed while a caller was waiting for a segment");
+                }
+            }
         }
         catch (InterruptedException e)
         {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for warmed segment", e);
         }
+    }
+
+    private RuntimeException asUnchecked(final Exception failure)
+    {
+        if (failure == null)
+        {
+            return null;
+        }
+        final IOException cause = failure instanceof UncheckedIOException unchecked
+                ? unchecked.getCause()
+                : (IOException) failure;
+        return new UncheckedIOException("Cannot provide a journal segment for shard " + shardId
+                + ": warming it has failed permanently", cause);
     }
 
     public long getSegmentSizeBytes()

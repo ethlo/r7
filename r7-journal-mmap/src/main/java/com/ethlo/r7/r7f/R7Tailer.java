@@ -148,6 +148,7 @@ public final class R7Tailer
                         return name.endsWith(R7F_FILE_EXTENSION) ||
                                 name.endsWith(ACTIVE_FILE_EXTENSION);
                     })
+                    .filter(this::hasReadableIdentity)
                     .forEach(path -> {
                         final String key = getStableKey(path);
                         final Path existing = resolvedFiles.get(key);
@@ -197,6 +198,47 @@ public final class R7Tailer
             // (shard, sequence) resume a brand-new segment at a dead one's offset.
             forgetCheckpointsWithoutSegments(resolvedFiles.keySet());
         }
+    }
+
+    /**
+     * Whether a segment's name tells us where it belongs in the stream, setting it aside if
+     * it does not.
+     * <p>
+     * Order is not a nicety here: the reassembler joins an exchange whose start is in one
+     * segment to its end in the next, so replaying segments out of order turns a whole
+     * exchange into an orphaned end. Segments are ordered by (shard, sequence), and both come
+     * from the file name — so a name this parser cannot read has no position in the stream at
+     * all. Every such file used to be given the same {@code (-1, -1)}, which sorted them
+     * equal to each other and ahead of every real shard, leaving the actual order to whatever
+     * {@link Files#list} happened to return. That is unspecified, so the outcome varied by
+     * filesystem.
+     * <p>
+     * The writer cannot produce such a name — sealing preserves the stem, and quarantining
+     * moves the file out of the tailer's filter entirely — so this only happens when someone
+     * puts a file here by hand, usually restoring one. Quarantine says so and keeps the
+     * contents; a rename puts it back in the stream. Guessing at the order and replaying it
+     * would risk assembling records that never happened, and an audit log may not do that
+     * even once.
+     * <p>
+     * An active file is left alone whatever its name: it may belong to a writer, and renaming
+     * a file a writer has mapped would leave rotation unable to seal it.
+     */
+    private boolean hasReadableIdentity(final Path path)
+    {
+        if (parseMeta(path).segmentSequence() >= 0)
+        {
+            return true;
+        }
+
+        if (path.toString().endsWith(ACTIVE_FILE_EXTENSION))
+        {
+            logger.debug("Leaving active file with an unrecognized name alone: {}", path.getFileName());
+            return false;
+        }
+
+        quarantine(path, "the file name carries no shard and sequence, so the segment has no "
+                + "position in the stream and cannot be replayed in order");
+        return false;
     }
 
     /**
@@ -676,12 +718,10 @@ public final class R7Tailer
         final FileMeta meta = parseMeta(path);
         if (meta.segmentSequence() < 0)
         {
-            // No identity could be read from the name, so the name is the identity. Handing
-            // every unparsed file the same key would collapse them in the dedup map above:
-            // only one would ever be examined, and checkDelete would then be free to remove
-            // a file whose contents were never read. Keying by file name keeps them
-            // distinct; it does not survive a rename, but an unparsed name has no rename to
-            // survive — sealing only renames files this parser can read.
+            // Unreachable for anything this tailer processes: hasReadableIdentity sets such
+            // a file aside before it reaches the dedup map. Kept distinct per file name
+            // rather than collapsing every unparsed file onto one key, so that a future
+            // caller which does reach here cannot have two files share a checkpoint.
             return "unparsed-" + path.getFileName();
         }
         return "journal-" + meta.shardId() + "-" + meta.segmentSequence();

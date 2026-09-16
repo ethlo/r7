@@ -3,6 +3,8 @@ package com.ethlo.r7.r7f;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -35,6 +37,24 @@ public class ExchangeReassembler implements JournalEventListener
     private static final Logger logger = LoggerFactory.getLogger(ExchangeReassembler.class);
 
     private final StringExchangeMap inFlight = new StringExchangeMap(10_000);
+
+    /**
+     * Exchanges whose end event arrived and whose delivery the consumer refused, held until
+     * that end entry is accepted.
+     * <p>
+     * Deliberately not in {@link #inFlight}. Putting the exchange back there made it visible
+     * to the age sweep, and a stall is unbounded by design while {@code maxAge} is five
+     * minutes — so an outage that lasted longer than the age limit evicted the very state the
+     * retry depends on. The next attempt then found nothing to attach the end event to,
+     * reported an orphan, and let the segment be checkpointed and deleted: the exact loss the
+     * stall exists to prevent, on a timer.
+     * <p>
+     * These are not in flight. Nothing further is coming for them — they are complete records
+     * waiting on a consumer, so neither ageing them out nor counting them against the
+     * in-flight ceiling means anything. The bound is the number of stalled segments, because
+     * a stall stops its segment, and each stalled segment is itself being held on disk.
+     */
+    private final Map<String, JournalExchange> awaitingRedelivery = new HashMap<>();
     private final ExchangeCompletionListener output;
     private final ReassemblyOptions options;
     private final long maxAgeNanos;
@@ -125,7 +145,14 @@ public class ExchangeReassembler implements JournalEventListener
                       long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
                       final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
     {
-        final JournalExchange exchange = inFlight.remove(reqId);
+        // A refused delivery is retried whole, so an exchange held for redelivery answers
+        // first: it is this exchange, fully assembled, and the copy in the map (if a later
+        // event recreated the id) is not.
+        JournalExchange exchange = awaitingRedelivery.remove(reqId);
+        if (exchange == null)
+        {
+            exchange = inFlight.remove(reqId);
+        }
 
         if (exchange == null)
         {
@@ -182,14 +209,16 @@ public class ExchangeReassembler implements JournalEventListener
         catch (final RuntimeException e)
         {
             // The consumer refused this exchange, so the decoder will offer the end entry
-            // again (FORMAT.md §6). Put the assembled exchange back first: everything before
+            // again (FORMAT.md §6). Hold the assembled exchange until then: everything before
             // the end event — the start line, the headers, every body fragment — lives only
             // here, and a retry against an empty map would report an orphaned end and hand
             // the consumer a record missing everything but its final metrics.
             //
-            // Removing first and restoring on failure, rather than removing last, keeps the
-            // success path — every exchange, always — a single map operation.
-            inFlight.put(reqId, exchange);
+            // Held aside rather than returned to inFlight, because the sweep would age it out
+            // from there while the consumer was still down. Removing first and restoring on
+            // failure, rather than removing last, keeps the success path — every exchange,
+            // always — a single map operation.
+            awaitingRedelivery.put(reqId, exchange);
             throw e;
         }
 

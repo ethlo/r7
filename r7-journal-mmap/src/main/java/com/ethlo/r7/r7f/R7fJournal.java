@@ -13,6 +13,8 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
@@ -59,6 +61,12 @@ public final class R7fJournal implements Journal
      */
     private static final int MAX_SCRATCH = 1 << 20;
 
+    /**
+     * How long close() waits for each rotation finalizer. Matches the provider's own
+     * shutdown budget.
+     */
+    private static final long FINALIZER_SHUTDOWN_TIMEOUT_MILLIS = 5_000L;
+
     private static final int INITIAL_HEADER_SLOTS = 1024;
     private static final int INITIAL_ATTRIBUTE_SLOTS = 128;
 
@@ -85,6 +93,20 @@ public final class R7fJournal implements Journal
     private long position;
     private int currentHeaderCount;
     private int currentAttributeCount;
+    /**
+     * Rotation finalizers still running. Registered before they start, so close() cannot
+     * race past one, and each removes itself when it is done, so this stays empty in steady
+     * state rather than accumulating dead threads for the life of the journal.
+     */
+    private final Set<Thread> pendingFinalizers = ConcurrentHashMap.newKeySet();
+
+    /**
+     * The first failure a rotation finalizer reported, surfaced by close(). A segment that
+     * could not be sealed is a fact about the shutdown, and a close() that returns normally
+     * has said the opposite.
+     */
+    private volatile IOException finalizerFailure;
+
     private boolean closed;
 
     /**
@@ -465,6 +487,14 @@ public final class R7fJournal implements Journal
         }
         finally
         {
+            // Rotation hands the retiring segment to a virtual thread, and virtual threads
+            // are daemons. Returning from close() without waiting let the JVM exit with a
+            // rotated segment still mapped and still named .flux — so a clean shutdown left
+            // behind the one artifact that is supposed to mean the process died, and every
+            // restart reported a recovery. Nothing is lost either way; the cost is that the
+            // signal stops meaning anything.
+            awaitPendingFinalizers();
+
             // The provider is this journal's to close. Its warmer thread spends its life
             // blocked in put() holding a mapped, pre-allocated .flux, and nothing else holds
             // a reference to it — the gateway constructs one per shard and keeps only the
@@ -475,6 +505,46 @@ public final class R7fJournal implements Journal
             // In a finally because sealing the active segment is the part that can fail, and
             // a failure there is exactly when an orphaned mapping is least welcome.
             provider.close();
+        }
+
+        final IOException failure = finalizerFailure;
+        if (failure != null)
+        {
+            // A close() that returns normally is a statement that everything was sealed. It
+            // was not.
+            throw new IOException("A segment rotated before close could not be finalized", failure);
+        }
+    }
+
+    /**
+     * Waits for rotation finalizers to finish sealing and renaming their segments.
+     * <p>
+     * Bounded rather than indefinite, and deliberately. This runs while holding the
+     * journal's monitor, and a finalizer's last act is to call the caller-supplied
+     * {@code finishedJournalFileSupplier} — user code, which could in principle reach back
+     * into this journal and block on that same monitor. A bounded wait turns that from a
+     * shutdown that hangs for ever into one that is a few seconds slow and says why.
+     */
+    private void awaitPendingFinalizers()
+    {
+        for (final Thread finalizer : pendingFinalizers)
+        {
+            try
+            {
+                finalizer.join(FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+                if (finalizer.isAlive())
+                {
+                    logger.error("A rotated segment was still being finalized after {} ms; shutting down "
+                                    + "anyway. Recovery will seal it at next start.",
+                            FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+                }
+            }
+            catch (final InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+                logger.warn("Interrupted while waiting for rotated segments to be finalized");
+                return;
+            }
         }
     }
 
@@ -508,7 +578,10 @@ public final class R7fJournal implements Journal
             this.segment = null;
             this.arena = null;
 
-            Thread.startVirtualThread(() -> {
+            // Built unstarted and registered first. Starting it and then recording it
+            // leaves a window in which close() sees an empty set and returns while a segment
+            // is still mapped and still named .flux.
+            final Thread finalizer = Thread.ofVirtual().unstarted(() -> {
                 try
                 {
                     // Pass the timestamps into the async finalizer
@@ -529,8 +602,15 @@ public final class R7fJournal implements Journal
                 catch (final IOException e)
                 {
                     logger.error("Unable to rotate segment", e);
+                    finalizerFailure = e;
+                }
+                finally
+                {
+                    pendingFinalizers.remove(Thread.currentThread());
                 }
             });
+            pendingFinalizers.add(finalizer);
+            finalizer.start();
         }
 
         final R7fJournalProvider.WarmedSegment next = provider.getNextSegment();

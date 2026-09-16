@@ -1,8 +1,11 @@
 package com.ethlo.r7;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -1147,6 +1150,125 @@ class JournalIntegrityTest
     }
 
     /**
+     * An exchange held for redelivery must outlive the age sweep.
+     * <p>
+     * A stall is unbounded by design — it lasts as long as the consumer refuses — but the
+     * state the retry depends on was put back into the in-flight map, where {@code maxAge}
+     * is five minutes. So an outage longer than the age limit evicted the assembled
+     * exchange, and the next attempt found nothing to attach the end event to: an orphaned
+     * end, a checkpointed segment, and a deleted file. The stall converted a permanent loss
+     * into a delayed one and called it a guarantee.
+     */
+    @Test
+    void anExchangeAwaitingRedeliverySurvivesTheSweep()
+    {
+        final byte[] body = "a body that must survive the outage".getBytes(StandardCharsets.ISO_8859_1);
+
+        final RefusingSink sink = new RefusingSink("req-held");
+        final ExchangeReassembler reassembler = new ExchangeReassembler(sink,
+                ReassemblyOptions.DEFAULTS
+                        // Everything in flight is over the age limit the moment it is created,
+                        // so any sweep that can see this exchange will take it.
+                        .withMaxAge(Duration.ofNanos(1))
+                        .withSweepIntervalEvents(10_000));
+
+        reassembler.onClientRequest("req-held", JournalLevel.FULL, "POST /held HTTP/1.1",
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        reassembler.onRequestBody("req-held", ByteBuffer.wrap(body));
+
+        assertThatThrownBy(() -> reassembler.onEnd("req-held", new FastGatewayAttributes(),
+                1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED))
+                .as("the consumer refuses, which is what stalls the segment")
+                .isInstanceOf(IllegalStateException.class);
+
+        // The outage outlasts maxAge. R7Tailer runs this at the end of every tick.
+        reassembler.sweep();
+
+        assertThat(sink.abandoned)
+                .as("a record waiting on a consumer is not an exchange whose end never came. "
+                        + "sink: %s", sink)
+                .isEmpty();
+
+        sink.acceptEverything();
+        reassembler.onEnd("req-held", new FastGatewayAttributes(),
+                1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+
+        assertThat(sink.orphanedEnds).as("sink: %s", sink).isEmpty();
+        assertThat(sink.delivered).containsExactly("req-held");
+        assertThat(CollectingSink.concat(sink.lastExchange.getRequestBodyFragments()))
+                .as("with everything assembled before the refusal")
+                .isEqualTo(body);
+    }
+
+    /**
+     * A segment whose name carries no shard and sequence has no place in the stream, and is
+     * set aside rather than replayed at a guess.
+     * <p>
+     * The reassembler joins an exchange whose start is in one segment to its end in the next,
+     * so order is correctness, not presentation. Unparsable names were all given the same
+     * {@code (-1, -1)}, which sorted them equal to each other and ahead of every real shard —
+     * leaving the actual order to whatever {@code Files.list} returned, which is unspecified.
+     * Quarantine keeps the bytes and says why; a rename puts the file back in the stream.
+     */
+    @Test
+    void aSegmentWithAnUnreadableNameIsSetAsideRatherThanReplayedOutOfOrder() throws IOException
+    {
+        writeExchanges(4);
+        final Path sealed = onlySealedSegment();
+
+        // Perfectly good contents under a name nobody can place — an operator restoring a
+        // backup is the realistic way this happens.
+        final Path restored = journalDir.resolve("restored-backup" + R7fConstants.R7F_FILE_EXTENSION);
+        Files.move(sealed, restored);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(sink.completed)
+                .as("its records must not be replayed at an arbitrary position. sink: %s", sink)
+                .isEmpty();
+        assertThat(Files.exists(restored)).as("and the original must not be left to be rescanned").isFalse();
+        assertThat(quarantinedFiles()).as("the bytes are kept, under a name a reader ignores").hasSize(1);
+    }
+
+    /**
+     * A journal that cannot create segments must fail its caller, not wait for ever.
+     * <p>
+     * The warmer logged each failure and retried, while {@code getNextSegment()} sat on an
+     * empty pool — so a permanent cause (a full disk, a read-only mount, a sequence marker
+     * that cannot be made durable) produced no error, no rejected request and no exit code.
+     * Just a gateway that stopped serving, and a log line repeating the reason to nobody.
+     * For something that may not serve what it cannot journal, a refusal carrying the real
+     * cause is the only acceptable outcome.
+     * <p>
+     * The timeout is the assertion. A hang is the defect.
+     */
+    @Test
+    void aJournalThatCannotCreateSegmentsFailsRatherThanHangs() throws IOException
+    {
+        // A regular file where a directory belongs: every attempt to create a segment inside
+        // it fails, identically, for ever.
+        final Path notADirectory = journalDir.resolve("this-is-a-file");
+        Files.writeString(notADirectory, "not a directory");
+
+        assertTimeoutPreemptively(Duration.ofSeconds(30), () ->
+        {
+            try (R7fJournalProvider provider = new R7fJournalProvider(notADirectory, 0, SEGMENT_SIZE, false))
+            {
+                assertThatThrownBy(provider::getNextSegment)
+                        .as("the caller must be told, and told why")
+                        .isInstanceOf(UncheckedIOException.class)
+                        .hasMessageContaining("warming it has failed permanently")
+                        .hasCauseInstanceOf(IOException.class);
+            }
+        });
+    }
+
+    /**
      * A sealed segment that lost its tail must be reported, not quietly deleted.
      * <p>
      * The tailer treated "the file is no longer than where I stopped reading" as "I read all
@@ -1431,6 +1553,7 @@ class JournalIntegrityTest
         final List<String> corruptRegions = new ArrayList<>();
         final List<String> orphanedEnds = new ArrayList<>();
         final List<String> mismatches = new ArrayList<>();
+        final List<String> abandoned = new ArrayList<>();
         JournalExchange lastExchange;
 
         private String refusing;
@@ -1487,6 +1610,12 @@ class JournalIntegrityTest
         }
 
         @Override
+        public void onAbandoned(final JournalExchange exchange, final IncompleteReason reason)
+        {
+            abandoned.add(exchange.getRequestId() + ":" + reason);
+        }
+
+        @Override
         public void onCorruptRegion(final String segment, final long offset, final long bytesSkipped, final String reason)
         {
             corruptRegions.add(segment + "@" + offset + ":" + reason);
@@ -1502,6 +1631,7 @@ class JournalIntegrityTest
         public String toString()
         {
             return "delivered=" + delivered + ", stalls=" + stalls + ", mismatches=" + mismatches
+                    + ", abandoned=" + abandoned
                     + ", corruptRegions=" + corruptRegions + ", orphanedEnds=" + orphanedEnds;
         }
     }
