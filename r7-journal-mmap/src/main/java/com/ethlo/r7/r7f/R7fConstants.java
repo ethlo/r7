@@ -118,8 +118,8 @@ public final class R7fConstants
     /**
      * Not part of a segment's life. A segment goes {@code .flux} → {@code .r7f} and stops
      * there; compression is one thing a consumer may choose to do with a sealed segment,
-     * and its output belongs to that consumer rather than to this directory. Kept because
-     * {@code R7fCompressionEngine} is still available for a consumer that wants it.
+     * and its output belongs to that consumer rather than to this directory. Kept as the
+     * conventional suffix for consumer-produced compressed output.
      */
     public static final String COMPRESSED_FILE_EXTENSION = ".zst";
     public static final String CORRUPT_FILE_EXTENSION = ".corrupt";
