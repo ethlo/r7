@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.fbs.ClientRequest;
@@ -224,7 +225,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long requestCheckSumValue, final long responseChecksumValue)
+    public synchronized int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
     {
         fbb.clear();
         int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
@@ -243,9 +244,22 @@ public final class R7fJournal implements Journal
         EndExchange.addProxyFirstByteReceived(fbb, proxyFirstByteReceivedTs);
         EndExchange.addProxyEnd(fbb, proxyEndTs);
         EndExchange.addAttributes(fbb, attrVecOff);
-        EndExchange.addRequestCrc32c(fbb, requestCheckSumValue);
-        EndExchange.addResponseCrc32c(fbb, responseChecksumValue);
+        // One of the two places the sentinel exists. The format has no types, so the
+        // distinction BodyChecksum carries has to be encoded here and decoded by
+        // JournalDecoder; nothing in between ever sees the number.
+        EndExchange.addRequestCrc32c(fbb, stored(requestChecksum));
+        EndExchange.addResponseCrc32c(fbb, stored(responseChecksum));
         return finishAndWrite(EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
+    }
+
+    /**
+     * Encodes a body checksum for storage. The counterpart is {@code JournalDecoder}'s
+     * decode of the same field; the two are kept honest by
+     * {@code checksumsRoundTripThroughTheJournal}.
+     */
+    private static long stored(final BodyChecksum checksum)
+    {
+        return checksum.isRecorded() ? checksum.value() : R7fConstants.CHECKSUM_ABSENT;
     }
 
     /* ============================================================
@@ -585,6 +599,8 @@ public final class R7fJournal implements Journal
         target.set(LONG_BE, R7fConstants.PREAMBLE_OFF_ENTRY_COUNT, entryCount);
         target.set(INT_BE, R7fConstants.PREAMBLE_OFF_LAST_SEQUENCE, nextSequenceAfterLast - 1);
         target.set(LONG_BE, R7fConstants.PREAMBLE_OFF_DATA_END, dataEnd);
+        // No flags: a segment the writer sealed itself holds nothing beyond its Data End.
+        target.set(INT_BE, R7fConstants.PREAMBLE_OFF_SEAL_FLAGS, 0);
         VarHandle.releaseFence();
         target.set(INT_BE, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC, R7fConstants.SEAL_MAGIC);
     }

@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener.BodyKind;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
@@ -116,7 +117,7 @@ public class ExchangeReassembler implements JournalEventListener
                       int status,
                       long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                       long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
-                      final long requestCrc32, final long responseCrc32c)
+                      final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
     {
         final JournalExchange exchange = inFlight.remove(reqId);
 
@@ -137,23 +138,42 @@ public class ExchangeReassembler implements JournalEventListener
         exchange.setTraffic(requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes);
         exchange.setAttributes(copyOf(attributes));
         exchange.setStatus(status);
-        exchange.setJournalChecksums(requestCrc32, responseCrc32c);
+        exchange.setJournalChecksums(requestChecksum, responseChecksum);
 
-        verifyChecksums(exchange, requestCrc32, responseCrc32c);
+        verifyChecksums(exchange, requestChecksum, responseChecksum);
 
-        if (isExchangeComplete(exchange))
+        try
         {
-            completed.incrementAndGet();
-            output.onComplete(exchange);
+            if (isExchangeComplete(exchange))
+            {
+                // Counted after the call, not before: a refusal below rewinds the exchange
+                // for a later attempt, and a counter bumped on every attempt would say more
+                // exchanges completed than a consumer ever received.
+                output.onComplete(exchange);
+                completed.incrementAndGet();
+            }
+            else
+            {
+                final IncompleteReason reason = exchange.getClientRequestStartLine() == null
+                        ? IncompleteReason.NO_START_EVENT
+                        : IncompleteReason.NO_STATUS;
+                output.onIncompleteEnd(exchange, reason);
+                incompleteEnds.incrementAndGet();
+                logger.warn("Exchange {} ended but is not a complete record: {}", reqId, reason);
+            }
         }
-        else
+        catch (final RuntimeException e)
         {
-            final IncompleteReason reason = exchange.getClientRequestStartLine() == null
-                    ? IncompleteReason.NO_START_EVENT
-                    : IncompleteReason.NO_STATUS;
-            incompleteEnds.incrementAndGet();
-            output.onIncompleteEnd(exchange, reason);
-            logger.warn("Exchange {} ended but is not a complete record: {}", reqId, reason);
+            // The consumer refused this exchange, so the decoder will offer the end entry
+            // again (FORMAT.md §6). Put the assembled exchange back first: everything before
+            // the end event — the start line, the headers, every body fragment — lives only
+            // here, and a retry against an empty map would report an orphaned end and hand
+            // the consumer a record missing everything but its final metrics.
+            //
+            // Removing first and restoring on failure, rather than removing last, keeps the
+            // success path — every exchange, always — a single map operation.
+            inFlight.put(reqId, exchange);
+            throw e;
         }
 
         maybeSweep();
@@ -164,7 +184,7 @@ public class ExchangeReassembler implements JournalEventListener
      * means the body bytes in the journal are not the bytes that crossed the wire, which
      * is exactly what an audit trail exists to rule out.
      */
-    private void verifyChecksums(final JournalExchange exchange, final long journaledRequestCrc, final long journaledResponseCrc)
+    private void verifyChecksums(final JournalExchange exchange, final BodyChecksum journaledRequest, final BodyChecksum journaledResponse)
     {
         // A recorded checksum is the whole condition. The writer only has one to record if
         // it passed body bytes to the journal, so the value's presence already carries
@@ -177,27 +197,27 @@ public class ExchangeReassembler implements JournalEventListener
         // condition into a conjunction that fails open — lose the start entry, or record the
         // wrong byte count, and verification is skipped precisely on the exchange whose
         // record is already damaged. The gate was load-bearing only while the writer had no
-        // way to say "I did not compute one"; the sentinel says it now.
+        // way to say "I did not compute one"; BodyChecksum says it now, as a type rather
+        // than as a value every reader has to remember to exclude.
         //
-        // Both values are unsigned 32-bit checksums widened to long, which is what leaves -1
-        // free to mean "absent"; comparing them as int would make 0xFFFFFFFF indistinguishable
-        // from the sentinel. An observed value of null means no body was read back at all,
-        // which against a recorded checksum is a mismatch, not an exemption.
-        if (journaledRequestCrc != JournalExchange.CHECKSUM_NOT_RECORDED)
+        // An observed NOT_RECORDED means no body came back at all, and it is unequal to any
+        // recorded checksum — so the "the writer hashed a body the reader never saw" case
+        // falls out of the same comparison instead of needing a null check beside it.
+        if (journaledRequest.isRecorded())
         {
-            final Long observed = exchange.getObservedRequestCrc32();
-            if (observed == null || observed.longValue() != journaledRequestCrc)
+            final BodyChecksum observed = exchange.getObservedRequestChecksum();
+            if (!journaledRequest.equals(observed))
             {
-                reportMismatch(exchange, BodyKind.REQUEST, journaledRequestCrc, observed);
+                reportMismatch(exchange, BodyKind.REQUEST, journaledRequest, observed);
             }
         }
 
-        if (journaledResponseCrc != JournalExchange.CHECKSUM_NOT_RECORDED)
+        if (journaledResponse.isRecorded())
         {
-            final Long observed = exchange.getObservedResponseCrc32();
-            if (observed == null || observed.longValue() != journaledResponseCrc)
+            final BodyChecksum observed = exchange.getObservedResponseChecksum();
+            if (!journaledResponse.equals(observed))
             {
-                reportMismatch(exchange, BodyKind.RESPONSE, journaledResponseCrc, observed);
+                reportMismatch(exchange, BodyKind.RESPONSE, journaledResponse, observed);
             }
         }
     }
@@ -210,20 +230,18 @@ public class ExchangeReassembler implements JournalEventListener
      * the rest of the log under hundreds of thousands of identical lines and tells an
      * operator nothing the first line did not.
      */
-    private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final long journaled, final Long observed)
+    private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final BodyChecksum journaled, final BodyChecksum observed)
     {
         final long total = checksumMismatches.incrementAndGet();
-        // No body observed is reported as the same sentinel the writer would have used, so
-        // a listener never has to read "observed 0" and guess whether that means the empty
-        // checksum or nothing at all.
-        output.onChecksumMismatch(exchange, kind, journaled,
-                observed == null ? JournalExchange.CHECKSUM_NOT_RECORDED : observed);
+        output.onChecksumMismatch(exchange, kind, journaled, observed);
 
         if (total == 1)
         {
+            // BodyChecksum prints "not recorded" for an absent one, so a reader of this line
+            // never has to work out whether "0" means the empty checksum or nothing at all.
             logger.error("{} body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}. "
                             + "Further mismatches are counted, not logged; see getChecksumMismatchCount().",
-                    kind, exchange.getRequestId(), journaled, observed == null ? "nothing at all" : observed);
+                    kind, exchange.getRequestId(), journaled, observed);
         }
         else if (logger.isDebugEnabled())
         {
@@ -233,7 +251,7 @@ public class ExchangeReassembler implements JournalEventListener
 
     private void maybeSweep()
     {
-        if (++eventsSinceSweep < options.sweepIntervalEvents() && inFlight.size() < options.maxInFlight())
+        if (++eventsSinceSweep < options.sweepIntervalEvents())
         {
             return;
         }
@@ -255,6 +273,32 @@ public class ExchangeReassembler implements JournalEventListener
         final long cutoff = System.nanoTime() - maxAgeNanos;
         final int evicted = inFlight.evictOlderThan(cutoff, e -> evictIncomplete(e, IncompleteReason.TIMED_OUT));
 
+        if (evicted > 0)
+        {
+            logger.warn("Evicted {} exchanges with no EndExchange within {} — journal for those requests is incomplete.",
+                    evicted, Duration.ofNanos(maxAgeNanos));
+        }
+    }
+
+    /**
+     * Makes room for one more in-flight exchange, if there is not already room.
+     * <p>
+     * Only ever called when a request id that is <em>not</em> being tracked is about to be
+     * added. It used to sit in {@link #sweep()}, which runs on every event — so an event for
+     * an exchange already in the map could trip the ceiling and evict it. At
+     * {@code maxInFlight = 1} that was fatal rather than merely wasteful: the second event
+     * of every exchange evicted the exchange it belonged to, and nothing could ever
+     * complete.
+     */
+    private void makeRoomForNewExchange()
+    {
+        if (inFlight.size() < options.maxInFlight())
+        {
+            return;
+        }
+
+        sweep();
+
         if (inFlight.size() >= options.maxInFlight())
         {
             // Still over the ceiling after the age sweep. This drops everything currently
@@ -265,11 +309,6 @@ public class ExchangeReassembler implements JournalEventListener
             logger.error("In-flight exchanges exceeded the ceiling of {}; force-evicted {} incomplete exchanges. "
                             + "Raise maxInFlight or lower maxAge.",
                     options.maxInFlight(), forced);
-        }
-        else if (evicted > 0)
-        {
-            logger.warn("Evicted {} exchanges with no EndExchange within {} — journal for those requests is incomplete.",
-                    evicted, Duration.ofNanos(maxAgeNanos));
         }
     }
 
@@ -335,7 +374,15 @@ public class ExchangeReassembler implements JournalEventListener
 
     private JournalExchange getOrCreate(String id)
     {
+        final JournalExchange existing = inFlight.get(id);
+        if (existing != null)
+        {
+            maybeSweep();
+            return existing;
+        }
+
         maybeSweep();
+        makeRoomForNewExchange();
         return inFlight.computeIfAbsent(id, JournalExchange::new);
     }
 

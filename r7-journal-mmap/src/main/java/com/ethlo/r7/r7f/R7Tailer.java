@@ -347,6 +347,22 @@ public final class R7Tailer
                     return false;
                 }
 
+                if (sealedForRetention(processingBuffer))
+                {
+                    // Recovery stopped short of the end and said so. What it left behind lies
+                    // past Data End, so this reader never saw it and its own stats are
+                    // perfectly clean — which is precisely the trap: a clean read of a
+                    // deliberately shortened segment would be a delete, and the entries
+                    // recovery preserved would be destroyed by the one component whose own
+                    // regression handling exists to preserve them.
+                    logger.error("Segment {} was sealed by recovery with content past its data end that "
+                                    + "is readable but not replayable; it will not be deleted. Inspect it and "
+                                    + "remove it by hand once the contents have been accounted for.",
+                            path.getFileName());
+                    checkpoints.put(key, new Checkpoint(FULLY_READ_UNDELIVERED, nextSequence));
+                    return false;
+                }
+
                 checkpoints.put(key, new Checkpoint(FULLY_READ, nextSequence));
             }
             else
@@ -449,6 +465,26 @@ public final class R7Tailer
                 logger.error("Segment {} decoded past its recorded last entry (#{} > #{}).", name, decodedLast, recordedLast);
             }
         }
+    }
+
+    /**
+     * Whether the segment's seal record asks for it to be kept after it has been read.
+     * <p>
+     * Only recovery sets this, and only when its scan stopped on a sequence regression. The
+     * entries past Data End are structurally intact but not safe to replay, so recovery
+     * hides them from readers instead of destroying them — and this flag is how that decision
+     * survives the handover to a different process, which has no other way to know that the
+     * file holds more than it was shown.
+     */
+    private static boolean sealedForRetention(final ByteBuffer buffer)
+    {
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+        if (header.limit() < R7fConstants.PREAMBLE_SIZE
+                || header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) != R7fConstants.SEAL_MAGIC)
+        {
+            return false;
+        }
+        return (header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_FLAGS) & R7fConstants.SEAL_FLAG_RETAIN) != 0;
     }
 
     /**

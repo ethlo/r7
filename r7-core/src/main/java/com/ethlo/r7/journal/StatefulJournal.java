@@ -13,8 +13,8 @@ import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
 import com.ethlo.r7.config.RouteJournalConfig;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
-import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -121,20 +121,19 @@ public final class StatefulJournal implements Journal
     {
         if (config.request().level() == JournalLevel.FULL)
         {
-            // Anchor the body before writing it.
+            // Anchor the body before writing it: a body entry the reader cannot attach to a
+            // request is discarded as an orphan, and its recorded checksum is then compared
+            // against a body that was thrown away — a mismatch on a record that is exactly
+            // what this writer intended.
             //
-            // Every other request-side decision resolves the level against the response
-            // status, but the status is not known yet when body fragments arrive, so this
-            // one cannot. When the two disagree — a base level of FULL that resolves to NONE
-            // at the not-yet-known status — checkAndFlushRequest returns without emitting
-            // anything, and the body entries land in the journal ahead of the ClientRequest
-            // entry that anchors them.
-            //
-            // The reader then has nowhere to put those fragments, discards them as orphaned
-            // bodies, and afterwards compares the recorded checksum against a body it threw
-            // away: a mismatch reported on a record that is exactly what this writer
-            // intended. If we are going to journal the body, the request goes first.
-            final int anchored = flushRequestAtFull();
+            // This resolves the level rather than forcing FULL. Forcing it would override an
+            // operator's status-based downgrade and journal headers they asked not to keep,
+            // and no reported mismatch is worth that. RouteJournalConfig rejects the
+            // configuration that would make the two disagree — a request-side override below
+            // FULL when the base is FULL — so by the time we are here, resolving cannot
+            // return anything lower. If that validation is ever relaxed, this degrades to the
+            // orphaned-body problem rather than to disclosure.
+            final int anchored = checkAndFlushRequest();
 
             if (requestChecksum == null)
             {
@@ -146,20 +145,6 @@ public final class StatefulJournal implements Journal
             return anchored + bodyBytes;
         }
         return 0;
-    }
-
-    /**
-     * Emits the request entries at FULL if they have not gone out yet.
-     * <p>
-     * Deliberately not status-resolved: this is called because a body is about to be
-     * journaled, which already commits us to a FULL record. Recording the request at a lower
-     * level, or not at all, would leave the body without the entry that gives it meaning.
-     * The flushed flags make it a no-op once the request has been written.
-     */
-    private int flushRequestAtFull()
-    {
-        // Both handlers add their own output to bytesWritten, so this must not.
-        return handleClientRequest(JournalLevel.FULL) + handleUpstreamRequest(JournalLevel.FULL);
     }
 
     @Override
@@ -188,14 +173,20 @@ public final class StatefulJournal implements Journal
      * which is a different set whenever the level is below FULL. Recording the caller's
      * value would produce a checksum of bytes the journal does not contain, and the reader
      * would report a mismatch on an intact record.
+     * <p>
+     * The accumulators are created on the first fragment of their direction, so a direction
+     * that journaled nothing has a null one, and {@link BodyChecksum#of(java.util.zip.CRC32C)}
+     * turns that into {@link BodyChecksum#NOT_RECORDED} — the difference between "hashes to
+     * the CRC32C of nothing" and "there was nothing to hash", which is the difference the
+     * reader needs to decide whether to verify at all.
      */
     @Override
-    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final long ignoredRequestChecksum, final long ignoredResponseChecksum)
+    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum ignoredRequestChecksum, final BodyChecksum ignoredResponseChecksum)
     {
         int written = checkAndFlushRequest();
         written += checkAndFlushResponse();
 
-        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, JournalExchange.checksumOf(requestChecksum), JournalExchange.checksumOf(responseChecksum));
+        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, BodyChecksum.of(requestChecksum), BodyChecksum.of(responseChecksum));
         this.bytesWritten += endBytes;
         return written + endBytes;
     }

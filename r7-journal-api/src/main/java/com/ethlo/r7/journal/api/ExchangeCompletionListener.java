@@ -89,10 +89,14 @@ public interface ExchangeCompletionListener
      * recorded at the time of the exchange — the stored record is not what crossed the
      * wire.
      *
-     * @param journaled the CRC32C the gateway wrote into the EndExchange event
-     * @param observed  the CRC32C of the body fragments actually read back
+     * @param journaled the CRC32C the gateway wrote into the EndExchange event; always
+     *                  {@link BodyChecksum#isRecorded() recorded}, since nothing is verified
+     *                  against an absent one
+     * @param observed  the CRC32C of the body fragments actually read back, or
+     *                  {@link BodyChecksum#NOT_RECORDED} when no body came back at all —
+     *                  which against a recorded checksum is a mismatch, not an exemption
      */
-    default void onChecksumMismatch(JournalExchange exchange, BodyKind kind, long journaled, long observed)
+    default void onChecksumMismatch(JournalExchange exchange, BodyKind kind, BodyChecksum journaled, BodyChecksum observed)
     {
     }
 

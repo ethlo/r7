@@ -225,7 +225,14 @@ public final class R7fRecoveryManager
         // recovery could take the reader down while putting the writer's data back together.
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE))
         {
-            stampSealRecord(channel, scanResult.recordCount(), scanResult.lastSequence(), scanResult.lastValidPosition());
+            // A regression means the entries past Data End are readable but not replayable.
+            // They stay in the file, and the flag tells whoever reads this segment not to
+            // delete it once the prefix has been consumed — otherwise recovery would hide
+            // them and the tailer would then destroy them, which is exactly the outcome the
+            // tailer's own regression handling refuses.
+            final int sealFlags = scanResult.stoppedOnRegression() ? R7fConstants.SEAL_FLAG_RETAIN : 0;
+            stampSealRecord(channel, scanResult.recordCount(), scanResult.lastSequence(),
+                    scanResult.lastValidPosition(), sealFlags);
         }
 
         final String newName = file.getFileName().toString()
@@ -330,6 +337,7 @@ public final class R7fRecoveryManager
         long lastValidPosition = R7fConstants.PREAMBLE_SIZE;
         long recordCount = 0;
         long missingRecords = 0;
+        boolean stoppedOnRegression = false;
         int expectedSequence = R7fConstants.FIRST_ENTRY_SEQUENCE;
 
         final String name = file.getFileName().toString();
@@ -379,8 +387,10 @@ public final class R7fRecoveryManager
                 else
                 {
                     integrity.onSequenceRegression(name, position, expectedSequence, sequence);
-                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
+                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping, "
+                                    + "and marking the segment so that what follows is kept rather than deleted.",
                             name, position, expectedSequence, sequence);
+                    stoppedOnRegression = true;
                     break;
                 }
             }
@@ -391,7 +401,7 @@ public final class R7fRecoveryManager
             recordCount++;
         }
 
-        return new ScanResult(lastValidPosition, recordCount, missingRecords, expectedSequence - 1);
+        return new ScanResult(lastValidPosition, recordCount, missingRecords, expectedSequence - 1, stoppedOnRegression);
     }
 
     /**
@@ -543,18 +553,41 @@ public final class R7fRecoveryManager
      * The seal magic goes last, after the facts it vouches for, exactly as an entry's magic
      * does.
      */
-    private static void stampSealRecord(final FileChannel channel, final long entryCount, final int lastSequence, final long dataEnd) throws IOException
+    private static void stampSealRecord(final FileChannel channel, final long entryCount, final int lastSequence,
+                                        final long dataEnd, final int sealFlags) throws IOException
     {
-        final ByteBuffer facts = ByteBuffer.allocate(Long.BYTES + Integer.BYTES + Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-        facts.putLong(entryCount).putInt(lastSequence).putLong(dataEnd).flip();
-        channel.write(facts, R7fConstants.PREAMBLE_OFF_ENTRY_COUNT);
+        final ByteBuffer facts = ByteBuffer.allocate(Long.BYTES + Integer.BYTES + Long.BYTES + Integer.BYTES)
+                .order(ByteOrder.BIG_ENDIAN);
+        facts.putLong(entryCount).putInt(lastSequence).putLong(dataEnd).putInt(sealFlags).flip();
+        writeFully(channel, facts, R7fConstants.PREAMBLE_OFF_ENTRY_COUNT);
 
         final ByteBuffer sealMagic = ByteBuffer.allocate(Integer.BYTES).order(ByteOrder.BIG_ENDIAN);
         sealMagic.putInt(R7fConstants.SEAL_MAGIC).flip();
-        channel.write(sealMagic, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC);
+        writeFully(channel, sealMagic, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC);
     }
 
-    private record ScanResult(long lastValidPosition, long recordCount, long missingRecords, int lastSequence)
+    /**
+     * Positional {@link FileChannel#write} may write fewer bytes than remain, so it has to
+     * be driven to completion. A short write on the facts followed by a complete write of
+     * the seal magic would publish a seal record vouching for numbers that were never
+     * finished — the one thing the magic-last ordering exists to prevent.
+     */
+    private static void writeFully(final FileChannel channel, final ByteBuffer buffer, final long position) throws IOException
+    {
+        long at = position;
+        while (buffer.hasRemaining())
+        {
+            final int written = channel.write(buffer, at);
+            if (written <= 0)
+            {
+                throw new IOException("Made no progress writing the seal record at offset " + at);
+            }
+            at += written;
+        }
+    }
+
+    private record ScanResult(long lastValidPosition, long recordCount, long missingRecords, int lastSequence,
+                              boolean stoppedOnRegression)
     {
     }
 

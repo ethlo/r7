@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
@@ -28,6 +29,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     public final List<String> quarantined = new ArrayList<>();
     public final List<String> sequenceRegressions = new ArrayList<>();
     public final List<String> recoveredSegments = new ArrayList<>();
+    public final List<String> deliveryStalls = new ArrayList<>();
     public long missingEntries;
 
     @Override
@@ -61,7 +63,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     }
 
     @Override
-    public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind, final long journaled, final long observed)
+    public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind, final BodyChecksum journaled, final BodyChecksum observed)
     {
         checksumMismatches.add(exchange.getRequestId() + ":" + kind);
     }
@@ -96,6 +98,12 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
         recoveredSegments.add(segment + ":" + dataEnd + "/" + recordsRecovered);
     }
 
+    @Override
+    public void onDeliveryStalled(final String segment, final long offset, final int sequence, final Throwable cause)
+    {
+        deliveryStalls.add(segment + "@" + offset + ":#" + sequence);
+    }
+
     /**
      * True when nothing was lost, damaged, orphaned or left incomplete.
      */
@@ -109,6 +117,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
                 && corruptRegions.isEmpty()
                 && quarantined.isEmpty()
                 && sequenceRegressions.isEmpty()
+                && deliveryStalls.isEmpty()
                 && missingEntries == 0;
     }
 
@@ -124,6 +133,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
                 + ", corruptRegions=" + corruptRegions
                 + ", quarantined=" + quarantined
                 + ", sequenceRegressions=" + sequenceRegressions
+                + ", deliveryStalls=" + deliveryStalls
                 + ", missingEntries=" + missingEntries;
     }
 

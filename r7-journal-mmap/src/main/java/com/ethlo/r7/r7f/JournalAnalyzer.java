@@ -9,6 +9,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
@@ -82,7 +83,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
     }
 
     @Override
-    public void onChecksumMismatch(JournalExchange exchange, BodyKind kind, long journaled, long observed)
+    public void onChecksumMismatch(JournalExchange exchange, BodyKind kind, BodyChecksum journaled, BodyChecksum observed)
     {
         stats.checksumMismatches++;
         stats.problems.add("checksum mismatch " + exchange.getRequestId() + " " + kind

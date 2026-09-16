@@ -61,6 +61,27 @@ public interface JournalIntegrityListener
     }
 
     /**
+     * A consumer refused an entry, so the reader stopped at it rather than passing it by.
+     * <p>
+     * This is not damage. The entry is intact, it is still in the segment, and the reader
+     * has left its position on it — the next pass will offer it again. Nothing after it in
+     * that segment is read until it is accepted, which is deliberate: an audit log that
+     * drops a record because a sink was briefly unavailable is not an audit log.
+     * <p>
+     * It is reported here rather than through {@link #onCorruptRegion} because the two ask
+     * different things of an operator. A corrupt region is a fact about the file and there
+     * is nothing to do about it; a stall is a fact about the consumer, and it clears by
+     * itself the moment the consumer recovers.
+     *
+     * @param offset   byte offset of the entry that was refused
+     * @param sequence its sequence number within the segment
+     * @param cause    what the consumer threw
+     */
+    default void onDeliveryStalled(String segment, long offset, int sequence, Throwable cause)
+    {
+    }
+
+    /**
      * Recovery sealed a segment at its last intact entry, after an unclean stop.
      * <p>
      * Nothing was cut from the file: the segment keeps its pre-allocated tail, and

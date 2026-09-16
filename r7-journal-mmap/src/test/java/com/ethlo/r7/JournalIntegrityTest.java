@@ -21,7 +21,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
+import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
+import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
@@ -190,7 +193,7 @@ class JournalIntegrityTest
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                    0x0BADC0DE, JournalExchange.CHECKSUM_NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -310,7 +313,7 @@ class JournalIntegrityTest
                         new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
                 journal.endExchange(reqId, new FastGatewayAttributes(),
                         1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                        JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
             }
         }
 
@@ -376,7 +379,7 @@ class JournalIntegrityTest
             // No requestBody entry at all, but the end event says a body was seen.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, 4096L, 0L, 0L, 0L, 0L, 0L,
-                    0x12345678, JournalExchange.CHECKSUM_NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x12345678), BodyChecksum.NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -404,7 +407,7 @@ class JournalIntegrityTest
             // checksum happens to be zero.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, 128L, 0L, 0L, 0L, 0L, 0L,
-                    0, JournalExchange.CHECKSUM_NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0), BodyChecksum.NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -502,7 +505,7 @@ class JournalIntegrityTest
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                    0xFFFFFFFFL, JournalExchange.CHECKSUM_NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0xFFFFFFFFL), BodyChecksum.NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -687,7 +690,7 @@ class JournalIntegrityTest
                     // Zero request-body bytes, contradicting the body that was just written.
                     0L, 0L, 0L, 0L,
                     0L, 0L, 0L,
-                    0x0BADC0DEL, JournalExchange.CHECKSUM_NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x0BADC0DEL), BodyChecksum.NOT_RECORDED);
         }
 
         final CollectingSink sink = tail();
@@ -977,7 +980,7 @@ class JournalIntegrityTest
      * actually destroy them.
      */
     @Test
-    void aSegmentWithAbandonedEntriesIsKept() throws IOException
+    void aSegmentWithUndeliveredEntriesIsKept() throws IOException
     {
         writeExchanges(6);
         final Path segment = onlySealedSegment();
@@ -1034,6 +1037,204 @@ class JournalIntegrityTest
                 .isFalse();
     }
 
+    /**
+     * A consumer that refuses an entry must not lose it.
+     * <p>
+     * Skipping the entry looks like tolerance and is destruction: the tailer checkpoints
+     * past a record nobody received, the segment then reads as fully processed, and the
+     * next tick deletes it. A sink that was unavailable for one tick would cost an
+     * exchange, permanently, with nothing left to recover it from.
+     * <p>
+     * So the reader stops on the refused entry and offers it again. Everything after it in
+     * that segment waits — head-of-line blocking on purpose, because an audit log may stall
+     * loudly but may not skip quietly.
+     */
+    @Test
+    void anEntryTheConsumerRefusesIsOfferedAgainRatherThanSkipped() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final RefusingSink sink = new RefusingSink("req-2");
+        // No minimum age: if the segment is ever considered finished it goes immediately,
+        // which is the failure this test exists to catch.
+        final R7Tailer tailer = new R7Tailer(journalDir, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+
+        assertThat(sink.delivered)
+                .as("delivery stops at the refused entry. sink: %s", sink)
+                .containsExactly("req-0", "req-1");
+        assertThat(sink.stalls).as("and the stall is reported. sink: %s", sink).hasSize(1);
+        assertThat(sink.corruptRegions)
+                .as("a consumer failure is not damage to the journal. sink: %s", sink)
+                .isEmpty();
+        assertThat(Files.exists(segment))
+                .as("a segment holding an undelivered entry must survive")
+                .isTrue();
+
+        // The sink recovers, as a sink that was briefly unavailable does.
+        sink.acceptEverything();
+        tailer.runTick();
+
+        assertThat(sink.delivered)
+                .as("the refused entry is delivered once, and the rest follow. sink: %s", sink)
+                .containsExactly("req-0", "req-1", "req-2", "req-3", "req-4", "req-5");
+        assertThat(sink.orphanedEnds)
+                .as("the exchange state gathered before the refusal must survive it. sink: %s", sink)
+                .isEmpty();
+        assertThat(Files.exists(segment))
+                .as("and only now, with everything delivered, may the segment go")
+                .isFalse();
+    }
+
+    /**
+     * Recovery can leave entries in a segment that it deliberately did not publish, and the
+     * tailer must not delete such a segment however clean its own read was.
+     * <p>
+     * This is the one case the tailer cannot work out for itself. Recovery stops at a
+     * sequence regression and seals at that point, so everything after it lies past Data End
+     * — outside what any reader is allowed to look at. The tailer therefore sees a short,
+     * entirely healthy segment, reads it to the end without a single anomaly, and would
+     * delete it. The entries recovery was careful to preserve would be destroyed by the one
+     * component whose own regression handling exists to preserve them, which is why the seal
+     * record carries the decision across the handover.
+     */
+    @Test
+    void aSegmentRecoveryShortenedAroundARegressionIsNeverDeleted() throws IOException
+    {
+        writeExchanges(6);
+        final Path sealed = onlySealedSegment();
+
+        // Put it back the way an unclean stop would have left it: same bytes, no seal record.
+        final byte[] active = Files.readAllBytes(sealed);
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC,
+                R7fConstants.PREAMBLE_OFF_SEAL_FLAGS + Integer.BYTES, (byte) 0);
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        final List<EntryRef> entries = entriesOf(activePath);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        rewriteSequence(activePath, victim, R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink recovery = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, recovery);
+        assertThat(recovery.sequenceRegressions).as("recovery sink: %s", recovery).hasSize(1);
+
+        final Path resealed = onlySealedSegment();
+        final ByteBuffer header = ByteBuffer.wrap(Files.readAllBytes(resealed)).order(ByteOrder.BIG_ENDIAN);
+        assertThat(header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END))
+                .as("recovery seals at the regression, hiding what follows")
+                .isEqualTo(victim.offset());
+        assertThat(header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_FLAGS) & R7fConstants.SEAL_FLAG_RETAIN)
+                .as("and records that what it hid is content, not damage")
+                .isNotZero();
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.isClean())
+                .as("the tailer's own read is spotless — which is exactly the trap. sink: %s", sink)
+                .isTrue();
+        assertThat(Files.exists(resealed))
+                .as("and it must still not delete a segment recovery asked to be kept")
+                .isTrue();
+
+        // Nor may it read it again: finished is finished, it is only not disposable.
+        final CollectingSink second = new CollectingSink();
+        new R7Tailer(journalDir, null, second, second,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(second.completed).as("a kept segment must not be replayed. sink: %s", second).isEmpty();
+        assertThat(Files.exists(resealed)).isTrue();
+    }
+
+    /**
+     * The in-flight ceiling must bound memory without ever evicting the exchange the
+     * current event belongs to.
+     * <p>
+     * At {@code maxInFlight = 1} the distinction is not academic: a per-event check makes
+     * every second event of the only exchange in flight evict it, so an exchange can never
+     * be assembled at all and the setting is fatal rather than merely tight. Making room is
+     * something admitting a <em>new</em> exchange does, and nothing else.
+     */
+    @Test
+    void anExchangeSurvivesTheSmallestPossibleInFlightBudget() throws IOException
+    {
+        writeExchanges(1);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, Duration.ofHours(1), sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)).withMaxInFlight(1)).runTick();
+
+        assertThat(sink.isClean()).as("sink: %s", sink).isTrue();
+        assertThat(sink.completed)
+                .as("the one exchange in flight must not be evicted by its own body event")
+                .containsOnlyKeys("req-0");
+    }
+
+    /**
+     * A consumer that refuses one exchange, records what it did receive, and can be told to
+     * stop refusing — a sink that is briefly unavailable and then is not.
+     */
+    private static final class RefusingSink implements ExchangeCompletionListener, JournalIntegrityListener
+    {
+        final List<String> delivered = new ArrayList<>();
+        final List<String> stalls = new ArrayList<>();
+        final List<String> corruptRegions = new ArrayList<>();
+        final List<String> orphanedEnds = new ArrayList<>();
+
+        private String refusing;
+
+        RefusingSink(final String requestIdToRefuse)
+        {
+            this.refusing = requestIdToRefuse;
+        }
+
+        void acceptEverything()
+        {
+            refusing = null;
+        }
+
+        @Override
+        public void onComplete(final JournalExchange exchange)
+        {
+            if (exchange.getRequestId().equals(refusing))
+            {
+                throw new IllegalStateException("sink unavailable for " + refusing);
+            }
+            delivered.add(exchange.getRequestId());
+        }
+
+        @Override
+        public void onOrphanedEnd(final String requestId)
+        {
+            orphanedEnds.add(requestId);
+        }
+
+        @Override
+        public void onCorruptRegion(final String segment, final long offset, final long bytesSkipped, final String reason)
+        {
+            corruptRegions.add(segment + "@" + offset + ":" + reason);
+        }
+
+        @Override
+        public void onDeliveryStalled(final String segment, final long offset, final int sequence, final Throwable cause)
+        {
+            stalls.add(segment + "@" + offset + ":#" + sequence);
+        }
+
+        @Override
+        public String toString()
+        {
+            return "delivered=" + delivered + ", stalls=" + stalls
+                    + ", corruptRegions=" + corruptRegions + ", orphanedEnds=" + orphanedEnds;
+        }
+    }
+
     /* ---------- journal writing ---------- */
 
     private void writeExchanges(final int count) throws IOException
@@ -1049,7 +1250,7 @@ class JournalIntegrityTest
                 journal.requestBody(reqId, ByteBuffer.wrap(("body-" + i).getBytes(StandardCharsets.ISO_8859_1)));
                 journal.endExchange(reqId, new FastGatewayAttributes(),
                         1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                        JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
             }
         }
     }

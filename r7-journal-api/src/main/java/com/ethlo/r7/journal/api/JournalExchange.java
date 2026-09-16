@@ -18,39 +18,6 @@ import com.ethlo.r7.api.IpSource;
  */
 public final class JournalExchange
 {
-    /**
-     * Value a writer records when it did not compute a body checksum.
-     * <p>
-     * A checksum cannot signal its own absence — every 32-bit value, zero included, is a
-     * legitimate CRC32C of some input — so the writer has to say so explicitly, and the
-     * sentinel has to live outside the value domain. That is why checksums are carried as
-     * {@code long} holding the unsigned 32-bit value: as an {@code int}, {@code -1} is the
-     * perfectly ordinary checksum {@code 0xFFFFFFFF}, and one body in four billion would
-     * have had its verification skipped by the very mechanism meant to guarantee it.
-     * <p>
-     * The gateway records this per direction, not per exchange: it checksums exactly the
-     * bytes it hands to the journal, so a direction that journaled no body (no body on the
-     * wire, a journal level below {@code FULL}, or a protocol such as WebSocket that never
-     * installs the body tees) has nothing to checksum and records this instead. A reader
-     * must skip verification for such a direction rather than treat {@code -1} as a
-     * checksum that failed to match.
-     */
-    public static final long CHECKSUM_NOT_RECORDED = -1L;
-
-    /**
-     * The value to record for a body checksum: the accumulated CRC32C as an unsigned 32-bit
-     * number, or {@link #CHECKSUM_NOT_RECORDED} when nothing was checksummed.
-     * <p>
-     * Use this rather than reading the accumulator directly. {@code (int) crc.getValue()}
-     * is the trap: narrowing and re-widening sign-extends every checksum with the high bit
-     * set into a negative number that can never equal what a reader computes, and exactly
-     * one value in four billion lands on the sentinel and skips verification entirely.
-     */
-    public static long checksumOf(final CRC32C accumulator)
-    {
-        return accumulator == null ? CHECKSUM_NOT_RECORDED : accumulator.getValue();
-    }
-
     private final String requestId;
     private final List<ByteBuffer> requestBodyFragments = new ArrayList<>(0);
     private final List<ByteBuffer> responseBodyFragments = new ArrayList<>(0);
@@ -78,8 +45,8 @@ public final class JournalExchange
     // Metrics & Forensic Metadata
     private int status;
     private GatewayAttributes attributes;
-    private long journaledRequestCrc32;
-    private long journaledResponseCrc32;
+    private BodyChecksum journaledRequestChecksum = BodyChecksum.NOT_RECORDED;
+    private BodyChecksum journaledResponseChecksum = BodyChecksum.NOT_RECORDED;
     private long clientStartTs;
     private long clientEndTs;
     private long proxyStartTs;
@@ -185,21 +152,21 @@ public final class JournalExchange
     }
 
     /**
-     * CRC32C of the request body fragments seen by this reader, or {@code null} if no
-     * request body was journaled.
+     * CRC32C of the request body fragments seen by this reader, or
+     * {@link BodyChecksum#NOT_RECORDED} if no request body was read back.
      */
-    public Long getObservedRequestCrc32()
+    public BodyChecksum getObservedRequestChecksum()
     {
-        return observedRequestCrc == null ? null : observedRequestCrc.getValue();
+        return BodyChecksum.of(observedRequestCrc);
     }
 
     /**
-     * CRC32C of the response body fragments seen by this reader, or {@code null} if no
-     * response body was journaled.
+     * CRC32C of the response body fragments seen by this reader, or
+     * {@link BodyChecksum#NOT_RECORDED} if no response body was read back.
      */
-    public Long getObservedResponseCrc32()
+    public BodyChecksum getObservedResponseChecksum()
     {
-        return observedResponseCrc == null ? null : observedResponseCrc.getValue();
+        return BodyChecksum.of(observedResponseCrc);
     }
 
     public void setTiming(final long clientStartTs, final long clientEndTs, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs)
@@ -211,10 +178,10 @@ public final class JournalExchange
         this.proxyEndTs = proxyEndTs;
     }
 
-    public void setJournalChecksums(long requestCrc32, long responseCrc32)
+    public void setJournalChecksums(BodyChecksum requestChecksum, BodyChecksum responseChecksum)
     {
-        this.journaledRequestCrc32 = requestCrc32;
-        this.journaledResponseCrc32 = responseCrc32;
+        this.journaledRequestChecksum = requestChecksum;
+        this.journaledResponseChecksum = responseChecksum;
     }
 
     public String getRequestId()
@@ -317,14 +284,22 @@ public final class JournalExchange
         this.attributes = attributes;
     }
 
-    public long getJournaledRequestCrc32()
+    /**
+     * What the gateway recorded for the request body, which may be
+     * {@link BodyChecksum#NOT_RECORDED}.
+     */
+    public BodyChecksum getJournaledRequestChecksum()
     {
-        return journaledRequestCrc32;
+        return journaledRequestChecksum;
     }
 
-    public long getJournaledResponseCrc32()
+    /**
+     * What the gateway recorded for the response body, which may be
+     * {@link BodyChecksum#NOT_RECORDED}.
+     */
+    public BodyChecksum getJournaledResponseChecksum()
     {
-        return journaledResponseCrc32;
+        return journaledResponseChecksum;
     }
 
     public long getClientStartTs()

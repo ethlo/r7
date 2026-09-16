@@ -373,6 +373,32 @@ logged as a partial record. An `onAbandoned` record has absent fields that are *
 not zero, and a logger that writes them as zeros will produce an audit trail that quietly
 lies about response status and duration.
 
+## 11.5 Throwing from a consumer callback
+
+A consumer that throws is **refusing** the record, and the reader treats it that way: it
+rewinds to the start of the entry that produced the callback, reports the stall through
+`JournalIntegrityListener.onDeliveryStalled`, and stops reading that segment. The entry is
+offered again on the next tick, and nothing after it in that segment is read until it is
+accepted. The segment is never marked processed and never deleted while it holds an entry
+nobody received.
+
+This is a deliberate trade. A sink that is briefly unavailable — a database restarting, a
+queue full — costs latency and nothing else. The alternative, skipping the entry, would
+checkpoint past a record nobody received and delete the only copy of it a tick later.
+
+Two consequences for consumer code:
+
+* **Throw for "not now", return for "not interesting".** A consumer that does not care about
+  an exchange must return normally. Throwing to signal a filtering decision stalls the
+  reader for ever.
+* **Callbacks should be idempotent.** A refused entry is delivered again, so a consumer that
+  fails *after* a side effect may see that side effect twice. `ExchangeReassembler` restores
+  its own in-flight state on a refusal, so the retry carries the whole exchange rather than
+  an orphaned end.
+
+An exception thrown from `sweep()` — that is, from `onAbandoned` — is outside this mechanism:
+it is not tied to an entry and propagates out of `runTick`.
+
 ---
 
 # 12. Text Encoding

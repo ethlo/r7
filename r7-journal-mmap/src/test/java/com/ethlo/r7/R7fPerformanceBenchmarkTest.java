@@ -21,8 +21,8 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.chronograph.Chronograph;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
-import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.R7Tailer;
 import com.ethlo.r7.r7f.R7fJournal;
@@ -82,11 +82,11 @@ public final class R7fPerformanceBenchmarkTest
                                 final long proxyFirstByteReceivedTs = proxyStartTs + 212_000_000;
                                 final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
                                 final long requestEndTs = proxyEndTs + 60_000L;
-                                // CHECKSUM_NOT_RECORDED, not 0: zero is a legitimate CRC32C value, so a
-                                // benchmark that does not compute checksums has to say so rather
+                                // NOT_RECORDED, not a number: zero is a legitimate CRC32C value, so
+                                // a benchmark that does not compute checksums has to say so rather
                                 // than record a value the reader will try to verify.
                                 journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, 22, 44, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs,
-                                        JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
+                                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
                             }
                         }
                 );

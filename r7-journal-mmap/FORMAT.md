@@ -68,19 +68,20 @@ The first 1024 bytes MUST be reserved as a file header:
 | 26     | Entry Count        | 8    | Entries the segment holds; valid only when sealed |
 | 34     | Last Sequence      | 4    | Highest entry Sequence; valid only when sealed  |
 | 38     | Data End           | 8    | Offset one past the last entry; valid only when sealed |
-| 46     | Reserved           | 978  | MUST be zero-filled                             |
+| 46     | Seal Flags         | 4    | Bit flags; valid only when sealed. Zero for a healthy seal |
+| 50     | Reserved           | 974  | MUST be zero-filled                             |
 
 The first entry MUST begin at offset 1024.
 
 ### The Seal Record
 
-Offsets 22–45 are the **seal record**, and are zero while a segment is active. A writer
-sealing a segment MUST write the Entry Count, Last Sequence and Data End first and the Seal
-Magic last, with a store-store barrier between — the same commit discipline as an entry's Magic
-(§5.1), applied at segment scale.
+Offsets 22–49 are the **seal record**, and are zero while a segment is active. A writer
+sealing a segment MUST write the Entry Count, Last Sequence, Data End and Seal Flags first and
+the Seal Magic last, with a store-store barrier between — the same commit discipline as an
+entry's Magic (§5.1), applied at segment scale.
 
 A reader MUST treat the Seal Magic's absence as "this segment was never sealed", and MUST
-NOT read the other three fields in that case. A `.r7f` without it was renamed without being
+NOT read the other four fields in that case. A `.r7f` without it was renamed without being
 sealed; its entries are still valid and SHOULD be read, but nothing about it can be
 cross-checked, and the condition SHOULD be reported.
 
@@ -99,6 +100,26 @@ Entry Count and Last Sequence are equal for a segment sealed by a healthy writer
 Sequence starts at 1 and increases by one per entry. **Recovery is the exception**: it seals
 what it could read, so a segment whose Entry Count is lower than its Last Sequence is one
 that lost entries — visible from the preamble alone, without scanning the file.
+
+**Seal Flags** carry what a reader could not otherwise learn, because Data End hides it.
+Unknown bits MUST be ignored, so that a later version may define them.
+
+| Bit  | Name     | Meaning                                                              |
+| ---- | -------- | -------------------------------------------------------------------- |
+| 0x1  | `RETAIN` | Content past Data End is readable but was deliberately not published |
+
+A sealer MUST set `RETAIN` when it stops before the end of what it could read and leaves
+readable entries behind — today, when its scan stops on a Sequence regression (§6). A reader
+that finishes such a segment MUST NOT delete it, however clean its own read was: everything
+the sealer withheld lies past Data End, so the reader never sees it and has nothing else to
+go on. Without the flag, hiding those entries and then deleting the file would destroy them,
+which is the opposite of why they were withheld.
+
+The distinction the flag preserves is between damage and abandonment. Bytes lost to a hole
+or a bad checksum are gone whoever looks at them, so a segment holding only those may be
+deleted once read. Bytes after a regression are intact and still decodable — they are simply
+not safe to replay — and deleting the segment is the only thing that would actually destroy
+them.
 
 **Segment Sequence** is a counter, not a clock. It MUST increase by one per segment within
 a shard, and MUST NOT be derived from wall-clock time, which can step backwards under NTP
@@ -269,6 +290,22 @@ discontinuity:
   pre-allocated segment tells a reader that checkpoints by offset that it has read the
   whole file, and every entry the writer appends afterwards is then skipped without a
   word.
+* An entry a **consumer refuses** — one whose framing and CRC are sound but whose delivery
+  the reader's own client rejects — MUST NOT be passed over. The reader MUST leave its
+  position at the start of that entry and offer it again on a later pass, and MUST NOT
+  advance any Sequence expectation past it. Nothing later in that segment is read until it
+  is accepted.
+
+  Skipping it looks harmless and is not: the reader checkpoints past a record nobody
+  received, the segment then reads as fully processed, and a reader that deletes what it has
+  finished destroys the only copy. A sink that was unavailable for one tick would cost an
+  exchange, permanently. Stalling is loud, bounded by the consumer's own recovery, and
+  destroys nothing.
+
+  A reader that cannot distinguish a refusal from a payload it could not decode — lazy
+  payload decoding makes both surface at the same call — MUST resolve the ambiguity toward
+  refusal. A stall names the segment, offset and Sequence and can be diagnosed; the opposite
+  mistake is silent and irreversible.
 
 Replay semantics of `JournalEvent` are defined in the FlatBuffer specification, not here.
 

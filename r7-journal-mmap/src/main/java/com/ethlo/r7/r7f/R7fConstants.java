@@ -40,6 +40,26 @@ public final class R7fConstants
     public static final int FIRST_ENTRY_SEQUENCE = 1;
 
     /**
+     * Value stored in an EndExchange event's body checksum field when the writer computed no
+     * checksum for that direction.
+     * <p>
+     * A checksum cannot signal its own absence — every 32-bit value, zero included, is the
+     * legitimate CRC32C of some input — so the sentinel has to live outside the value domain.
+     * That is why the field is a {@code long} holding the unsigned 32-bit value: as an
+     * {@code int}, {@code -1} is the perfectly ordinary checksum {@code 0xFFFFFFFF}, and one
+     * body in four billion would have had its verification skipped by the very mechanism
+     * meant to guarantee it.
+     * <p>
+     * This lives here, with the format's other constants, and not on {@code BodyChecksum}.
+     * An encoding is a fact about a file, and a type that exposes one hands every consumer a
+     * never-throwing accessor that answers a number for "no checksum" — which is how a
+     * {@code -1} ends up in a JSON column. Only this module encodes and decodes it, and it
+     * must equal the default declared for those fields in {@code journal.fbs}, so that a
+     * writer which omits them and a writer which stores the sentinel read back the same.
+     */
+    public static final long CHECKSUM_ABSENT = -1L;
+
+    /**
      * Magic stamped into the preamble when a segment is sealed: 'R7FS'.
      * <p>
      * Until this is present the seal record below is meaningless. It is written last, after
@@ -74,6 +94,23 @@ public final class R7fConstants
      * Recorded rather than inferred, nothing has to shrink anything.
      */
     public static final int PREAMBLE_OFF_DATA_END = 38;
+
+    /**
+     * Seal flags. Zero for a segment sealed by a healthy writer.
+     */
+    public static final int PREAMBLE_OFF_SEAL_FLAGS = 46;
+
+    /**
+     * Content past Data End that a reader declined to deliver, rather than content that was
+     * lost. Recovery sets this when its scan stopped on a sequence regression: the entries
+     * after that point are structurally readable, they are simply not safe to replay.
+     * <p>
+     * A reader that finishes such a segment must not delete it. This is the same rule the
+     * tailer applies when <em>it</em> stops on a regression — damage is deleted, undelivered
+     * content is kept — carried in the file so that the decision survives recovery handing
+     * the segment over to a different process.
+     */
+    public static final int SEAL_FLAG_RETAIN = 0x1;
 
     // --- File extensions ---
     public static final String R7F_FILE_EXTENSION = ".r7f";

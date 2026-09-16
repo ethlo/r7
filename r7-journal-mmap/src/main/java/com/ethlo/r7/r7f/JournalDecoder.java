@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.fbs.ClientRequest;
@@ -133,6 +134,12 @@ public final class JournalDecoder
         {
             buffer.position(R7fConstants.PREAMBLE_SIZE);
         }
+
+        // Everything the consumer throws comes back wrapped, so that a consumer failure and
+        // an undecodable payload — which are otherwise indistinguishable, because FlatBuffers
+        // decodes lazily and the field access happens inside the listener call — are handled
+        // by different branches below.
+        final JournalEventListener guarded = new DeliveryGuard(listener);
 
         long entries = 0;
         long corruptEntriesSkipped = 0;
@@ -280,35 +287,64 @@ public final class JournalDecoder
                     break;
                 }
             }
-            expectedSequence = entry.sequence() + 1;
-            lastSequence = entry.sequence();
 
             try
             {
                 final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(entry.fbSlice());
-                dispatch(journalEvent, entry.rawSlice(), listener);
+                dispatch(journalEvent, entry.rawSlice(), guarded);
                 entries++;
+            }
+            catch (final ListenerFailureException e)
+            {
+                // The consumer refused this entry. Skipping it would consume it: the caller
+                // checkpoints past it, the segment eventually reads as fully processed, and
+                // the tailer deletes it — so a sink that was unavailable for one tick costs a
+                // valid exchange, permanently. That is exactly the loss this journal exists
+                // to make impossible.
+                //
+                // So the reader stops here and gives up nothing. Position goes back to the
+                // start of the entry, the sequence expectation is not advanced, and the next
+                // pass offers the same entry again. Nothing later in this segment is read
+                // until it is accepted, which is head-of-line blocking on purpose: an audit
+                // log may stall loudly, but it may not skip.
+                //
+                // Note the one ambiguity this cannot resolve. FlatBuffers decodes lazily, so
+                // a consumer that touches a header or attribute pulls bytes at that moment;
+                // an undecodable payload can therefore surface as a listener failure and
+                // stall a segment that will never decode. That is the safe direction of the
+                // error — a stall names the segment, offset and sequence on every tick and
+                // destroys nothing, whereas the opposite mistake is silent and permanent.
+                buffer.position(startPos);
+                logger.error("Entry #{} at offset {} in {} was refused by the consumer; the segment "
+                                + "stops here and will be offered again. Nothing after it is read until "
+                                + "it is accepted.",
+                        entry.sequence(), startPos, sourceName, e.getCause());
+                integrity.onDeliveryStalled(sourceName, startPos, entry.sequence(), e.getCause());
+                break;
             }
             catch (final RuntimeException e)
             {
-                // The framing and CRC were valid, so the bytes are what the writer wrote.
-                // Past that point two different things can throw and they cannot be told
-                // apart from here: the payload may not be something this build understands,
-                // or the listener may have rejected it. FlatBuffers decodes lazily, so field
-                // access happens inside dispatch, in the same call as the listener — there is
-                // no seam between them to catch on.
+                // The framing and CRC were valid, so the bytes are what the writer wrote, but
+                // they are not something this build can decode — an event type it does not
+                // know, or a payload whose internal offsets do not hold up. The consumer is
+                // not implicated: everything it threw arrived as ListenerFailureException
+                // above.
                 //
-                // So the message says both, rather than asserting corruption on what may be
-                // a bug in consumer code. What is not in doubt is that the entry must be
-                // skipped and the read must continue: letting it out would leave this
-                // segment's progress unrecorded and have every tick re-dispatch the same
-                // entries for ever.
-                logger.warn("Entry #{} at offset {} could not be delivered — the payload is "
-                        + "undecodable or the listener rejected it: {}", entry.sequence(), startPos, e.toString());
+                // Skip it and continue. Letting it out would leave this segment's progress
+                // unrecorded and have every tick re-dispatch the same entries for ever, and
+                // unlike a refusal there is nothing a later attempt would do differently.
+                logger.warn("Entry #{} at offset {} holds a payload this build cannot decode: {}",
+                        entry.sequence(), startPos, e.toString());
                 corruptEntriesSkipped++;
-                integrity.onCorruptRegion(sourceName, startPos, 0L,
-                        "entry not delivered (undecodable payload or listener failure): " + e);
+                integrity.onCorruptRegion(sourceName, startPos, 0L, "undecodable payload: " + e);
             }
+
+            // After delivery, not before. A refusal above leaves the entry unread, and the
+            // caller checkpoints the sequence alongside the offset — advancing it here would
+            // record "next expected #8" against an offset pointing at #8, and the retry would
+            // then read #8 as a sequence regression and abandon the rest of the segment.
+            expectedSequence = entry.sequence() + 1;
+            lastSequence = entry.sequence();
         }
 
         // The loop stops when fewer than MIN_ENTRY_SIZE bytes remain, and those bytes were
@@ -320,7 +356,19 @@ public final class JournalDecoder
         //
         // An active segment keeps it: the writer may still be about to fill it, which is the
         // one case where standing still is progress (see the resync branch above).
-        if (!activeSegment && buffer.hasRemaining())
+        //
+        // The size test is what restricts this to the loop's own exit, and it is load-bearing
+        // rather than decorative. Everything that breaks out of the loop above either consumes
+        // to the limit or leaves an active segment alone — except a delivery stall, which
+        // deliberately rewinds to the start of an entry it means to offer again. Reaching here
+        // on `hasRemaining()` alone turned that rewind into a consume: the segment was declared
+        // read in full and deleted, with the refused entry and every entry after it in it. That
+        // is the exact loss the stall exists to prevent, reintroduced three lines further down
+        // by the block that was supposed to stop segments being left unread.
+        //
+        // A rewound entry is at least MIN_ENTRY_SIZE long, so the two cases cannot overlap:
+        // what remains below that bound is only ever what the loop condition refused to look at.
+        if (!activeSegment && buffer.hasRemaining() && buffer.remaining() < R7fConstants.MIN_ENTRY_SIZE)
         {
             final int trailingStart = buffer.position();
             final long trailing = buffer.remaining();
@@ -485,6 +533,32 @@ public final class JournalDecoder
         }
     }
 
+    /**
+     * Decodes a stored body checksum field.
+     * <p>
+     * A value that is neither the sentinel nor a possible CRC32C is a damaged payload, and
+     * is treated as one: the throw lands in {@code decode}'s undecodable-payload branch,
+     * which skips the entry and reports it, exactly as an out-of-range journal level does
+     * in {@link #level(int)}. The two alternatives both fail: mapping it to
+     * {@code NOT_RECORDED} skips verification on precisely the record that already looks
+     * wrong, and taking it at face value stores a number no writer could have produced.
+     */
+    private static BodyChecksum storedChecksum(final long storedValue)
+    {
+        if (storedValue == R7fConstants.CHECKSUM_ABSENT)
+        {
+            return BodyChecksum.NOT_RECORDED;
+        }
+        try
+        {
+            return BodyChecksum.ofUnsigned32(storedValue);
+        }
+        catch (final IllegalArgumentException e)
+        {
+            throw new CorruptEntryException("body checksum field out of range: " + storedValue);
+        }
+    }
+
     private static JournalLevel level(final int ordinal)
     {
         if (ordinal < 0 || ordinal >= JOURNAL_LEVELS.length)
@@ -583,7 +657,11 @@ public final class JournalDecoder
                 final long responseBodyBytes = end.responseBodyBytes();
                 final GatewayAttributes attributes = new FbsGatewayAttributes(end);
 
-                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd, end.requestCrc32c(), end.responseCrc32c());
+                // The other place the sentinel exists; see R7fJournal.endExchange. From here
+                // on the distinction is carried by the type rather than by a value a caller
+                // has to remember not to compare against.
+                listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd,
+                        storedChecksum(end.requestCrc32c()), storedChecksum(end.responseCrc32c()));
             }
 
             default -> throw new CorruptEntryException("Unknown event type: " + journalEvent.eventType());
@@ -686,6 +764,133 @@ public final class JournalDecoder
         CorruptEntryException(final String message)
         {
             super(message);
+        }
+    }
+
+    /**
+     * Marks a throw that came out of the consumer rather than out of this decoder.
+     */
+    static final class ListenerFailureException extends RuntimeException
+    {
+        ListenerFailureException(final Throwable cause)
+        {
+            // No stack trace of its own: this carries a cause and nothing else, and the
+            // cause has the trace that matters.
+            super(null, cause, false, false);
+        }
+    }
+
+    /**
+     * Wraps a consumer so that anything it throws is identifiable as its own.
+     * <p>
+     * Without the wrapper the decoder sees one {@code RuntimeException} out of
+     * {@code dispatch} and cannot tell a payload it failed to decode from a sink that was
+     * briefly unavailable — and the two want opposite handling. An undecodable entry has to
+     * be skipped, because no later attempt would do better. A refused entry must not be,
+     * because skipping it lets the caller checkpoint past a record it never received.
+     * <p>
+     * Seven methods of delegation buys that distinction. There is no cheaper seam: the
+     * listener is called from inside {@code dispatch}, in the middle of the lazy FlatBuffers
+     * field access that is the other thing that can throw there.
+     */
+    private record DeliveryGuard(JournalEventListener delegate) implements JournalEventListener
+    {
+        @Override
+        public void onClientRequest(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers, final InetAddress remoteAddress, final IpSource ipSource)
+        {
+            try
+            {
+                delegate.onClientRequest(reqId, level, startLine, headers, remoteAddress, ipSource);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onUpstreamRequest(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        {
+            try
+            {
+                delegate.onUpstreamRequest(reqId, level, startLine, headers);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onRequestBody(final String reqId, final ByteBuffer bodyChunk)
+        {
+            try
+            {
+                delegate.onRequestBody(reqId, bodyChunk);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onResponseBody(final String reqId, final ByteBuffer bodyChunk)
+        {
+            try
+            {
+                delegate.onResponseBody(reqId, bodyChunk);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onUpstreamResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        {
+            try
+            {
+                delegate.onUpstreamResponse(reqId, level, startLine, headers);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onClientResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        {
+            try
+            {
+                delegate.onClientResponse(reqId, level, startLine, headers);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
+        }
+
+        @Override
+        public void onEnd(final String reqId, final GatewayAttributes attributes,
+                          final long clientStartTs, final long clientEndTs,
+                          final int status,
+                          final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes,
+                          final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs,
+                          final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+        {
+            try
+            {
+                delegate.onEnd(reqId, attributes, clientStartTs, clientEndTs, status,
+                        requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes,
+                        proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, requestChecksum, responseChecksum);
+            }
+            catch (final RuntimeException e)
+            {
+                throw new ListenerFailureException(e);
+            }
         }
     }
 }

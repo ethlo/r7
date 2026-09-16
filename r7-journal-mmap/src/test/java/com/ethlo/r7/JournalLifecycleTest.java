@@ -22,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -118,6 +119,54 @@ class JournalLifecycleTest
 
         assertThat(CollectingSink.concat(read.getRequestBodyFragments())).isEqualTo(requestBody);
         assertThat(CollectingSink.concat(read.getResponseBodyFragments())).isEqualTo(responseBody);
+    }
+
+    /**
+     * Both states of a body checksum must survive the journal unchanged.
+     * <p>
+     * {@code BodyChecksum} carries no encoding of its own, so the sentinel that separates
+     * "hashes to this" from "nothing was hashed" is written by {@code R7fJournal} and read
+     * by {@code JournalDecoder} — two places, which is the price of keeping the file
+     * format's constants out of the API. This is what keeps them in step. Get it wrong in
+     * one direction only and every exchange either skips verification silently or reports a
+     * mismatch it should not.
+     */
+    @Test
+    void checksumsRoundTripThroughTheJournal() throws IOException
+    {
+        final String reqId = "req-checksum-round-trip";
+        final byte[] requestBody = "a body worth hashing".getBytes(StandardCharsets.UTF_8);
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId, wrap("POST /c HTTP/1.1"),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            journal.requestBody(reqId, ByteBuffer.wrap(requestBody));
+            journal.clientResponse(JournalLevel.FULL, reqId, 204, wrap("HTTP/1.1 204 No Content"), new FastGatewayHeaders());
+            // One direction recorded, one not — the whole point of the type, in one record.
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 204, 0L, requestBody.length, 0L, 0L, 0L, 0L, 0L,
+                    crc32c(requestBody), BodyChecksum.NOT_RECORDED);
+        }
+
+        final CollectingSink sink = tail();
+        assertThat(sink.isClean()).as("sink: %s", sink).isTrue();
+
+        final JournalExchange read = sink.completed.get(reqId);
+        assertThat(read.getJournaledRequestChecksum())
+                .as("a recorded checksum must come back as the same value")
+                .isEqualTo(crc32c(requestBody));
+        assertThat(read.getJournaledRequestChecksum().isRecorded()).isTrue();
+
+        assertThat(read.getJournaledResponseChecksum())
+                .as("and an absent one must come back absent, not as a number")
+                .isEqualTo(BodyChecksum.NOT_RECORDED);
+        assertThat(read.getJournaledResponseChecksum().isRecorded()).isFalse();
+
+        // The reader's own view of what it read back, which is what verification compares
+        // against — and the reason a clean sink above means anything.
+        assertThat(read.getObservedRequestChecksum()).isEqualTo(crc32c(requestBody));
+        assertThat(read.getObservedResponseChecksum()).isEqualTo(BodyChecksum.NOT_RECORDED);
     }
 
     /**
@@ -402,17 +451,14 @@ class JournalLifecycleTest
      * the full 32 bits, because CRC32C of a non-empty body is legitimately zero for some
      * inputs and cannot be used as a "no body" sentinel.
      * <p>
-     * Returned as the unsigned 32-bit value in a {@code long}, never narrowed to
-     * {@code int}. Narrowing and re-widening sign-extends every checksum with the high bit
-     * set into a negative number that cannot equal what the reader computes — and one value
-     * in four billion would land exactly on {@link JournalExchange#CHECKSUM_NOT_RECORDED}
-     * and skip verification altogether.
+     * Built through the accumulator rather than from a number, exactly as the gateway does,
+     * so the test cannot express a checksum the production path could not produce.
      */
-    private static long crc32c(final byte[] data)
+    private static BodyChecksum crc32c(final byte[] data)
     {
         final CRC32C crc = new CRC32C();
         crc.update(data, 0, data.length);
-        return crc.getValue();
+        return BodyChecksum.of(crc);
     }
 
     private static ByteBuffer wrap(final String s)
@@ -426,7 +472,7 @@ class JournalLifecycleTest
                 1_700_000_000_000L, 1_700_000_000_123L, status,
                 0L, 0L, 0L, 0L,
                 0L, 0L, 0L,
-                JournalExchange.CHECKSUM_NOT_RECORDED, JournalExchange.CHECKSUM_NOT_RECORDED);
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
     }
 
     private List<Path> sealedSegments() throws IOException
