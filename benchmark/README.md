@@ -34,10 +34,22 @@ gateway-*.log     gateway stdout/stderr per journal level
 
 | Scenario | What it isolates |
 | --- | --- |
-| `baseline` | The floor. wrk → nginx directly. Everything else is reported as a delta against this. |
-| `passthrough` | r7 in the path, no filters, journaling off. The irreducible cost of proxying. |
-| `filtered` | Same, through `AddCorrelationId` + request/response header rewrites. The cost of the filter chain. |
-| `journal` | The same workload at journal level `NONE` → `METADATA` → `HEADERS` → `FULL`, fresh JVM each time. The real cost of the mmap journal. |
+| `baseline` | The floor. wrk → nginx directly, no gateway. |
+| `passthrough` | r7 in the path, no filters, journaling off. The irreducible cost of proxying — **and the denominator for everything below**. |
+| `filtered` | Same route shape, through `AddCorrelationId` + request/response header rewrites. The cost of the filter chain. |
+| `journal` | `METADATA` → `HEADERS` → `FULL`, fresh JVM per level. The real cost of the mmap journal. `NONE` is deliberately absent: it is identical to `passthrough`, so selecting `journal` implies `passthrough` and reuses that run. |
+| `sweep` | wrk2 at a ladder of fixed rates (default 20k→160k) against `NONE` and `FULL`. p99 versus offered load — the curve that actually characterises a gateway. Opt-in; not in the default suite. |
+
+### Two delta columns, and only one of them is trustworthy
+
+`vs base` compares throughput to the no-gateway baseline. When the load generator
+shares a host with the gateway — which it does unless you went out of your way —
+adding r7 means three processes competing for the same cores, so this number
+overstates the cost. Treat it as an upper bound.
+
+`vs r7` compares to the `passthrough` run: same topology, same co-location, same
+contention. The noise cancels. **This is the number to quote for filter and
+journal cost**, and it is why `passthrough` is mandatory rather than optional.
 
 Each scenario runs across three workloads:
 
@@ -70,9 +82,26 @@ you and the run should be discarded.
 ## Methodology notes
 
 **Warmup is not optional.** A cold JVM is 3–10× slower than a warm one, and C2
-needs tens of thousands of iterations to settle. Every run is preceded by a
-discarded warmup (default 20s) whose output is kept in `raw/*.warmup.txt` so you
-can confirm the JIT actually settled.
+needs tens of thousands of iterations to settle. Every configuration is preceded
+by a discarded warmup (default 20s) whose output is kept in `raw/*.warmup.txt` so
+you can confirm the JIT actually settled.
+
+**One run is not a measurement.** `--repeat N` runs each configuration N times and
+reports the median plus a `±` column: the peak-to-peak spread of throughput as a
+percentage of the median. That column is your noise floor, and **a difference
+smaller than it is not a finding**. Use `--repeat 3` minimum before believing any
+delta under a few percent; the report nags you if you didn't.
+
+By default repeats run back-to-back against one already-hot JVM, which bounds
+run-to-run noise but not JIT or JVM-to-JVM variance. `--restart-per-repeat` gives
+each repeat a fresh JVM and a fresh warmup — slower, but it is the only way to
+catch the case where two supposedly identical configurations disagree because
+they compiled differently.
+
+**Rate sweeps find the knee; a single rate does not.** If every wrk2 row reports
+back your `--rate` almost exactly, the rate is the binding constraint and you have
+measured latency at idle, not capacity. Run `--scenario sweep` and read p99 against
+offered load.
 
 **Fresh JVM per journal level.** The journal matrix restarts the gateway between
 levels rather than hot-reloading, so no profile pollution or already-faulted

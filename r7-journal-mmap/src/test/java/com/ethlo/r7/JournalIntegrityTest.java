@@ -706,7 +706,7 @@ class JournalIntegrityTest
             // level is never learned.
             journal.clientResponse(JournalLevel.FULL, reqId, 200,
                     ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes(StandardCharsets.ISO_8859_1)),
-                    new MutableFastGatewayHeaders());
+                    new MutableFastGatewayHeaders(), null);
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200,
@@ -1342,7 +1342,7 @@ class JournalIntegrityTest
         reassembler.onClientRequest("req-swept", JournalLevel.FULL, "GET /slow HTTP/1.1",
                 new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
         reassembler.onUpstreamRequest("req-swept", JournalLevel.FULL, "GET /slow HTTP/1.1",
-                new MutableFastGatewayHeaders());
+                new MutableFastGatewayHeaders(), null);
 
         assertThat(sink.abandoned)
                 .as("the eviction itself is expected. sink: %s", sink)

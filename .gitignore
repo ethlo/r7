@@ -1,6 +1,8 @@
 r7-core/src/test/resources/.cifuzz-corpus
 site
 docker/journals
+/journals
+/benchmark/results
 gc.log*
 target/
 !.mvn/wrapper/maven-wrapper.jar

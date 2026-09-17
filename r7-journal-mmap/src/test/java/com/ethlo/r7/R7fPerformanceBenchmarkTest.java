@@ -70,11 +70,11 @@ public final class R7fPerformanceBenchmarkTest
                             {
                                 final String id = "req" + i;
                                 journal.clientRequest(JournalLevel.FULL, id, startLine, headers, localhost, IpSource.SOCKET);
-                                journal.upstreamRequest(JournalLevel.FULL, id, startLine, headers);
+                                journal.upstreamRequest(JournalLevel.FULL, id, startLine, headers, headers);
                                 journal.requestBody(id, requestBody.clear());
                                 journal.responseBody(id, responseBody.clear());
                                 journal.upstreamResponse(JournalLevel.FULL, id, 200, startLine, headers);
-                                journal.clientResponse(JournalLevel.FULL, id, 200, startLine, headers);
+                                journal.clientResponse(JournalLevel.FULL, id, 200, startLine, headers, headers);
 
                                 final long requestStartTs = Instant.now().toEpochMilli() * 1000L;
                                 final int statusCode = 201;

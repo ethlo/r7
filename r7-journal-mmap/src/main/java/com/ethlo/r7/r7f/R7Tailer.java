@@ -100,7 +100,7 @@ public final class R7Tailer
     {
         this.logDir = logDir;
         this.minAge = minAge;
-        this.reassembler = new ExchangeReassembler(output, options);
+        this.reassembler = new ExchangeReassembler(output, options, integrity);
         this.integrity = integrity;
         this.checkpointPath = logDir.resolve(CHECKPOINT_FILE);
         loadCheckpoints();
