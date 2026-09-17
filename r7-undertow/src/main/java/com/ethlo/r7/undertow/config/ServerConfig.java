@@ -309,7 +309,7 @@ public record ServerConfig(
         @Override
         public String workDir()
         {
-            return Optional.ofNullable(this.workDir).orElse("/tmp/r7/journal");
+            return Optional.ofNullable(this.workDir).orElse("journals");
         }
 
         @Override

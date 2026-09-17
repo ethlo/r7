@@ -1,0 +1,35 @@
+# Gateway-under-test for `run.sh --mode docker`.
+#
+# host networking on purpose: with bridge networking you measure Docker's NAT
+# and userland proxy alongside r7, which is exactly the confound this suite
+# exists to avoid. The backend container is started by run.sh, also on host net.
+#
+# Not to be confused with ../docker/docker-compose.yaml, which is the
+# deployment example.
+
+services:
+  gateway:
+    image: ${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-jvm:latest}
+    container_name: r7-bench-gateway
+    network_mode: host
+    volumes:
+      - ${R7_BENCH_CONFIG:?run.sh sets this}:/app/config:ro
+      - ${R7_BENCH_JOURNALS:?run.sh sets this}:/journals:rw
+    environment:
+      - JAVA_TOOL_OPTIONS=${R7_BENCH_JVM_OPTS:--XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow}
+    # Bind-mounted journals are owned by the host user, but the image runs as
+    # 65532. Run as the invoking user so the journal writes actually land.
+    user: "${R7_BENCH_UID:-1000}:${R7_BENCH_GID:-1000}"
+    ulimits:
+      nofile:
+        soft: 200000
+        hard: 200000
+    deploy:
+      resources:
+        limits:
+          # Override to reproduce the memory-pressure study in docs/benchmarks.md:
+          #   R7_BENCH_MEM=200M ./run.sh --mode docker
+          memory: ${R7_BENCH_MEM:-990M}
+        reservations:
+          memory: ${R7_BENCH_MEM_RESERVE:-400M}
+    restart: "no"

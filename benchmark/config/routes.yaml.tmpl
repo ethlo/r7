@@ -1,0 +1,49 @@
+# Rendered by run.sh. Placeholders: __JOURNAL_LEVEL__, __BACKEND_URL__
+#
+# Deliberately minimal. Every filter you add here is a filter that shows up in
+# the number, so this config answers exactly one question: what does it cost to
+# put r7 in the path?
+#
+# NOTE: no `global_filters:` block. SimpleMetrics, CORS, RequestSizeLimit etc.
+# are all real costs, but they are *feature* costs, not *gateway* costs. Measure
+# them by adding a scenario, not by contaminating the baseline route.
+
+version: benchmark
+
+routes:
+  # The route under test. Pure proxy, no filters.
+  - id: bench-passthrough
+    match:
+      - PathPrefix:
+          prefix: /bench
+    upstream:
+      targets:
+        - url: __BACKEND_URL__
+    journal:
+      request:
+        level: __JOURNAL_LEVEL__
+      response:
+        level: __JOURNAL_LEVEL__
+
+  # Same upstream, but exercising the filter chain. Used by the `filters`
+  # scenario so the delta against bench-passthrough is attributable.
+  - id: bench-filtered
+    match:
+      - PathPrefix:
+          prefix: /filtered
+    upstream:
+      targets:
+        - url: __BACKEND_URL__
+    filters:
+      - AddCorrelationId
+      - AddRequestHeader:
+          name: X-Gateway-Routed
+          value: "true"
+      - AddResponseHeader:
+          name: X-Powered-By
+          value: Ethlo R7
+    journal:
+      request:
+        level: __JOURNAL_LEVEL__
+      response:
+        level: __JOURNAL_LEVEL__

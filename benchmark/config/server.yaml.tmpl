@@ -1,0 +1,7 @@
+# Rendered by run.sh into the per-run work directory.
+# __WORK_DIR__ is replaced with an absolute path, on purpose: a relative
+# work_dir resolves against the process CWD, which differs between
+# jvm-local (the run dir) and docker (/app), and is a classic source of
+# "my journals went somewhere I wasn't looking".
+storage:
+  work_dir: __WORK_DIR__
