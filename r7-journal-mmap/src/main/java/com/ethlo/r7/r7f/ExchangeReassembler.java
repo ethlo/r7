@@ -19,10 +19,12 @@ import com.ethlo.r7.journal.api.ExchangeCompletionListener.BodyKind;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.r7f.fbs.HeaderDelta;
 import com.ethlo.r7.r7f.util.StringExchangeMap;
 import com.ethlo.r7.util.FastGatewayAttributes;
-import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.ethlo.r7.util.PackedGatewayHeaders;
 
 /**
  * Rebuilds whole exchanges from the interleaved event stream.
@@ -56,6 +58,7 @@ public class ExchangeReassembler implements JournalEventListener
      */
     private final Map<String, JournalExchange> awaitingRedelivery = new HashMap<>();
     private final ExchangeCompletionListener output;
+    private final JournalIntegrityListener integrity;
     private final ReassemblyOptions options;
     private final long maxAgeNanos;
 
@@ -75,8 +78,14 @@ public class ExchangeReassembler implements JournalEventListener
 
     public ExchangeReassembler(ExchangeCompletionListener output, ReassemblyOptions options)
     {
+        this(output, options, JournalIntegrityListener.NOOP);
+    }
+
+    public ExchangeReassembler(ExchangeCompletionListener output, ReassemblyOptions options, JournalIntegrityListener integrity)
+    {
         this.output = output;
         this.options = options;
+        this.integrity = integrity;
         this.maxAgeNanos = options.maxAge().toNanos();
     }
 
@@ -92,9 +101,12 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
+    public void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, HeaderDelta delta)
     {
-        getOrCreate(reqId).setUpstreamRequest(startLine, level, copyOf(headers));
+        final JournalExchange exchange = getOrCreate(reqId);
+        final GatewayHeaders base = exchange.getClientRequestHeaders();
+        final GatewayHeaders resolved = resolve(reqId, "upstream request", headers, delta, base);
+        exchange.setUpstreamRequest(startLine, level, shareIfIdentical(copyOf(resolved), base));
     }
 
     @Override
@@ -104,9 +116,12 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
+    public void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, HeaderDelta delta)
     {
-        getOrCreate(reqId).setClientResponse(startLine, level, copyOf(headers));
+        final JournalExchange exchange = getOrCreate(reqId);
+        final GatewayHeaders base = exchange.getUpstreamResponseHeaders();
+        final GatewayHeaders resolved = resolve(reqId, "client response", headers, delta, base);
+        exchange.setClientResponse(startLine, level, shareIfIdentical(copyOf(resolved), base));
     }
 
     @Override
@@ -414,21 +429,77 @@ public class ExchangeReassembler implements JournalEventListener
      * Like the body copy, this allocates on the reader side only; the gateway write path
      * is untouched.
      */
-    private static GatewayHeaders copyOf(final GatewayHeaders headers)
+    /**
+     * Copies a decoded header view into storage the exchange can keep.
+     * <p>
+     * Kept as the bytes rather than as strings. An in-flight exchange holds four header sets
+     * from its first event until its end arrives, and a string pair per header costs several
+     * times what the text does — which is what made the in-flight set dominate the reader's
+     * heap. Body fragments here were always retained as raw bytes; this makes headers agree
+     * with them. Order and multiplicity are preserved exactly, and the text is decoded only
+     * when a consumer actually reads it.
+     */
+    /**
+     * Returns the set already stored on the exchange when this one packs to identical bytes, so
+     * that an exchange holds one copy rather than two.
+     * <p>
+     * Worth doing only because the copies are bytes: byte equality is unambiguous and needs no
+     * reconstruction, where sharing string-backed containers would have meant reasoning about
+     * aliasing. It fires on the response pair of a route with no response filters, where the
+     * snapshot taken at commit and the headers finally sent are the same. It does not fire on
+     * the request pair under the current proxy setup, which rewrites Host and adds forwarding
+     * headers on the way upstream — the check costs a length comparison to find that out.
+     */
+    /**
+     * Returns the header set an entry carries, rebuilding it when the entry recorded a
+     * difference rather than the whole thing.
+     * <p>
+     * A delta that cannot be rebuilt yields null, not a guess and not an empty set. The base it
+     * refers to was in an entry this reader did not get — lost with its segment, or never
+     * written because the level did not call for it — so the headers are <em>unknown</em>, and
+     * the one thing this must not do is let a consumer read "unknown" as "none". It is reported
+     * through the integrity listener for the same reason every other gap is.
+     */
+    private GatewayHeaders resolve(final String reqId,
+                                   final String what,
+                                   final GatewayHeaders headers,
+                                   final HeaderDelta delta,
+                                   final GatewayHeaders base)
     {
-        if (headers == null)
+        if (delta == null)
         {
+            return headers;
+        }
+        try
+        {
+            return HeaderDeltaCodec.reconstruct(base, delta);
+        }
+        catch (final HeaderDeltaCodec.UnreconstructableDeltaException e)
+        {
+            // Guarded, because this is an observer and not part of the work. Everywhere else
+            // in this class a throw out of a callback means "offer me that entry again", and
+            // letting a monitoring integration's failure travel that path would stall the
+            // segment over a report rather than over the record it describes.
+            try
+            {
+                integrity.onDeltaUnreconstructable(reqId, what, e.getMessage());
+            }
+            catch (final RuntimeException reportFailed)
+            {
+                logger.warn("Integrity listener threw while reporting an unreconstructable delta for {}", reqId, reportFailed);
+            }
             return null;
         }
+    }
 
-        final MutableFastGatewayHeaders copy = new MutableFastGatewayHeaders();
-        headers.forEach((name, value) -> {
-            if (name != null && value != null)
-            {
-                copy.add(name, value);
-            }
-        });
-        return copy;
+    private static GatewayHeaders shareIfIdentical(final GatewayHeaders packed, final GatewayHeaders alreadyStored)
+    {
+        return alreadyStored != null && alreadyStored.equals(packed) ? alreadyStored : packed;
+    }
+
+    private static GatewayHeaders copyOf(final GatewayHeaders headers)
+    {
+        return PackedGatewayHeaders.pack(headers);
     }
 
     /**

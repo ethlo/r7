@@ -71,6 +71,7 @@ public final class JournalExchange
     private CRC32C observedRequestCrc;
     private CRC32C observedResponseCrc;
 
+
     public JournalExchange(String requestId)
     {
         this.requestId = requestId;

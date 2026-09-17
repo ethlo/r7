@@ -186,7 +186,7 @@ class JournalBinaryIntegrationTest
             journal.clientRequest(JournalLevel.FULL, id, ByteBuffer.wrap("GET".getBytes()), headers, InetAddress.getLocalHost(), IpSource.SOCKET);
             journal.requestBody(id, ByteBuffer.wrap(requestBody));
 
-            journal.clientResponse(JournalLevel.FULL, id, 200, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders());
+            journal.clientResponse(JournalLevel.FULL, id, 200, ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes()), new FastGatewayHeaders(), null);
             journal.responseBody(id, ByteBuffer.wrap(responseBody));
 
             final long requestStartTs = Instant.now().toEpochMilli() * 1000L;

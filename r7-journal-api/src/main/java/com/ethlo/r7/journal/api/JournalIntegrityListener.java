@@ -56,6 +56,22 @@ public interface JournalIntegrityListener
     /**
      * A segment could not be interpreted at all and was set aside rather than deleted.
      */
+    /**
+     * A header set was recorded as a difference from another entry, and that entry is not
+     * available to rebuild it against.
+     * <p>
+     * The headers are unknown rather than absent, which is why this is reported rather than
+     * quietly yielding an empty set: a consumer that wrote "no headers" into an audit trail
+     * because the base entry was lost would be stating something the journal never said.
+     *
+     * @param requestId the exchange whose headers could not be rebuilt
+     * @param part      which header set it was, for example "upstream request"
+     * @param reason    what was missing or out of range
+     */
+    default void onDeltaUnreconstructable(String requestId, String part, String reason)
+    {
+    }
+
     default void onSegmentQuarantined(String segment, String reason)
     {
     }

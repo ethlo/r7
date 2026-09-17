@@ -14,6 +14,47 @@ table Header {
   value: [ubyte];
 }
 
+/// Which already-journaled header set a delta is expressed against. The base always precedes
+/// its delta in the entry stream, so a reader replaying in order has it before it is needed.
+enum DeltaBase : byte {
+  CLIENT_REQUEST = 0,
+  UPSTREAM_RESPONSE = 1
+}
+
+enum DeltaOpKind : byte {
+  /// Take `count` consecutive entries from the base, starting at `base_index`.
+  COPY = 0,
+  /// Append this name and value, which the base does not carry at this position.
+  EMIT = 1
+}
+
+/// One instruction in rebuilding a header sequence. Applied in order, so the result reproduces
+/// the original ordering and multiplicity exactly — both are part of the record being audited,
+/// and a delta that only said which headers were added could not restore either.
+table DeltaOp {
+  kind: DeltaOpKind;
+  base_index: uint32;
+  count: uint32;
+  name: [ubyte];
+  value: [ubyte];
+}
+
+/// A header set expressed as the difference from one already in the journal.
+///
+/// The gateway journals the request as it arrived and again as it was forwarded, and the
+/// response as the upstream sent it and again as it went back to the client. Those pairs differ
+/// only by what the gateway itself did — rewriting Host, appending forwarding headers, whatever
+/// the filter chain changed — so repeating the whole set twice spends most of its bytes saying
+/// nothing changed.
+///
+/// Encoding the difference is also the more useful record: what the gateway altered is stated
+/// outright rather than left for a reader to work out by diffing two full sets. An EMIT is
+/// something the gateway put there; a base entry no COPY covers is something it removed.
+table HeaderDelta {
+  base: DeltaBase;
+  ops: [DeltaOp];
+}
+
 table ClientRequest {
   journal_level: FbsJournalLevel;
   req_id: [ubyte];
@@ -27,7 +68,11 @@ table UpstreamRequest {
   journal_level: FbsJournalLevel;
   req_id: [ubyte];
   start_line: [ubyte];
+  /// Exactly one of `headers` and `header_delta` is present. The full set is written when
+  /// there is no base to express a difference against — the client request was journaled at
+  /// METADATA and carries no headers, or was not journaled at all.
   headers: [Header];
+  header_delta: HeaderDelta;
 }
 
 table UpstreamResponse {
@@ -42,7 +87,9 @@ table ClientResponse {
   journal_level: FbsJournalLevel;
   req_id: [ubyte];
   start_line: [ubyte];
+  /// As on UpstreamRequest: exactly one of these is present.
   headers: [Header];
+  header_delta: HeaderDelta;
   status: uint16;
 }
 

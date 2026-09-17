@@ -30,6 +30,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     public final List<String> sequenceRegressions = new ArrayList<>();
     public final List<String> recoveredSegments = new ArrayList<>();
     public final List<String> deliveryStalls = new ArrayList<>();
+    public final List<String> unreconstructableDeltas = new ArrayList<>();
     /** discardedBytes per onSegmentRecovered, in call order. */
     public final List<Long> recoveryDiscardedBytes = new ArrayList<>();
     public long missingEntries;
@@ -107,6 +108,12 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
         deliveryStalls.add(segment + "@" + offset + ":#" + sequence);
     }
 
+    @Override
+    public void onDeltaUnreconstructable(final String requestId, final String part, final String reason)
+    {
+        unreconstructableDeltas.add(requestId + "/" + part + ": " + reason);
+    }
+
     /**
      * True when nothing was lost, damaged, orphaned or left incomplete.
      */
@@ -121,6 +128,10 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
                 && quarantined.isEmpty()
                 && sequenceRegressions.isEmpty()
                 && deliveryStalls.isEmpty()
+                // An exchange whose headers could not be rebuilt is not a clean read: the
+                // headers are unknown, and an oracle that answers "clean" for an exchange it
+                // cannot describe is the same mistake as the one below.
+                && unreconstructableDeltas.isEmpty()
                 // A recovery that found unreadable content past the last valid entry is not
                 // a clean one. Recording the number without asking about it let this oracle
                 // call a lossy recovery clean, which is the one thing a test oracle may
@@ -142,6 +153,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
                 + ", quarantined=" + quarantined
                 + ", sequenceRegressions=" + sequenceRegressions
                 + ", deliveryStalls=" + deliveryStalls
+                + ", unreconstructableDeltas=" + unreconstructableDeltas
                 + ", recoveryDiscardedBytes=" + recoveryDiscardedBytes
                 + ", missingEntries=" + missingEntries;
     }

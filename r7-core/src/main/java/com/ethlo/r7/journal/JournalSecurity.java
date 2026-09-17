@@ -1,6 +1,5 @@
 package com.ethlo.r7.journal;
 
-import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -25,7 +24,7 @@ public final class JournalSecurity
             "date"
     );
 
-    public static final Set<String> SAFE_REQUEST_HEADERS = Collections.unmodifiableSet(
+    public static final HeaderNameSet SAFE_REQUEST_HEADERS = HeaderNameSet.of(
             Stream.concat(COMMON_SAFE.stream(), Stream.of(
                             "host",
                             "user-agent",
@@ -57,7 +56,7 @@ public final class JournalSecurity
             ).collect(Collectors.toSet())
     );
 
-    public static final Set<String> SAFE_RESPONSE_HEADERS = Collections.unmodifiableSet(
+    public static final HeaderNameSet SAFE_RESPONSE_HEADERS = HeaderNameSet.of(
             Stream.concat(COMMON_SAFE.stream(), Stream.of(
                             "server",
                             "x-powered-by",
