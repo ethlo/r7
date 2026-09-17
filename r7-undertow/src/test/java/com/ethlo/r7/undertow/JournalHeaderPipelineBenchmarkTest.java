@@ -635,7 +635,7 @@ final class JournalHeaderPipelineBenchmarkTest
                     r.allocatedBytesPerExchange());
         }
         System.out.println();
-        System.out.println("Single-threaded, no socket and no upstream: comparable across runs of this test only.");
+        System.out.println("No socket and no upstream: comparable across runs of this test only.");
     }
 
     private static void deleteQuietly(final Path path)

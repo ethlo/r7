@@ -85,6 +85,7 @@ final class HeaderDeltaCodec
                 ops.baseCursor = cursor + 1;
             }
         });
+        out.releaseUnusedEmitted();
     }
 
     private static boolean matches(final String baseName, final String baseValue, final String name, final String value)
@@ -148,8 +149,16 @@ final class HeaderDeltaCodec
      */
     static int materialise(final GatewayHeaders headers, final Ops into)
     {
+        final int previousLength = into.baseLength;
         into.baseLength = 0;
         headers.forEach(into, (target, name, value) -> target.appendBase(name, value));
+
+        // Slots past the new base still point at the previous exchange's header strings, and
+        // this workspace lives in a ThreadLocal — so without this, one request with an unusual
+        // number of headers keeps them alive on that IO thread for as long as it runs. Only the
+        // tail is cleared: in the steady state, where consecutive requests carry the same
+        // number of headers, that is nothing at all.
+        into.clearBaseFrom(previousLength);
         return into.baseLength;
     }
 
@@ -174,11 +183,37 @@ final class HeaderDeltaCodec
         int baseLength;
 
         int baseCursor;
+        private int previousSize;
 
         void reset()
         {
+            previousSize = size;
             size = 0;
             baseCursor = 0;
+        }
+
+        /**
+         * Releases the emitted names and values of the previous diff that this one did not
+         * overwrite. Called when the diff is complete, so the common case — fewer emitted
+         * entries this time than last — clears exactly the difference and nothing more.
+         */
+        void releaseUnusedEmitted()
+        {
+            for (int i = size; i < previousSize; i++)
+            {
+                emittedName[i] = null;
+                emittedValue[i] = null;
+            }
+            previousSize = size;
+        }
+
+        void clearBaseFrom(final int previousLength)
+        {
+            for (int i = baseLength; i < previousLength; i++)
+            {
+                name[i] = null;
+                value[i] = null;
+            }
         }
 
         void appendBase(final String headerName, final String headerValue)
@@ -209,6 +244,11 @@ final class HeaderDeltaCodec
             kind[size] = COPY;
             baseIndex[size] = index;
             count[size] = 1;
+            // This slot may have held an EMIT last time round. A copy does not overwrite the
+            // name and value, so without clearing them the previous exchange's header strings
+            // stay reachable through a slot that no longer describes them.
+            emittedName[size] = null;
+            emittedValue[size] = null;
             size++;
         }
 

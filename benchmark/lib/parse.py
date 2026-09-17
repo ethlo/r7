@@ -299,7 +299,10 @@ def report(d, fmt_kind="md"):
     if problems:
         out += ["", "**Validity warnings** (these runs should not be quoted):"] + problems
 
-    n_max = max(a["n"] for a in agg.values())
+    # The least-repeated configuration decides this, not the best one: a report where
+    # one row has three runs and another has one is exactly the report that needs the
+    # warning, and keying off the maximum is what silences it.
+    n_min = min(a["n"] for a in agg.values())
     out += [
         "",
         "Latencies in milliseconds, medians across `n` repeats. `±` is the",
@@ -318,11 +321,11 @@ def report(d, fmt_kind="md"):
         "latency figures are the ones to quote. wrk rows show saturation",
         "throughput; their latency figures understate the tail.",
     ]
-    if n_max < 3:
+    if n_min < 3:
         out += [
             "",
-            "> Only %d repeat(s). Run with `--repeat 3` or more before trusting any" % n_max,
-            "> difference under a few percent.",
+            "> Only %d repeat(s) for at least one configuration. Run with `--repeat 3` or" % n_min,
+            "> more before trusting any difference under a few percent.",
         ]
     return "\n".join(out) + "\n"
 

@@ -109,6 +109,13 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
     }
 
     @Override
+    public void onDeltaUnreconstructable(String requestId, String part, String reason)
+    {
+        stats.unreconstructableDeltas++;
+        stats.problems.add("could not rebuild the " + part + " headers of " + requestId + ": " + reason);
+    }
+
+    @Override
     public void onSequenceRegression(String segment, long offset, int expectedSequence, int foundSequence)
     {
         stats.sequenceRegressions++;
@@ -165,6 +172,13 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
         public long corruptRegions = 0;
         public long bytesSkipped = 0;
         public long sequenceRegressions = 0;
+
+        /**
+         * Exchanges whose headers were journaled as a difference from an entry this reader did
+         * not get. Their headers are unknown, which is a different thing from absent, and a
+         * count that is not asked about in {@link #isClean()} would let that pass as a clean read.
+         */
+        public long unreconstructableDeltas = 0;
         public long quarantinedSegments = 0;
 
         // Recovery activity (not in itself a failure)
@@ -197,6 +211,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
                     && missingEntries == 0
                     && corruptRegions == 0
                     && sequenceRegressions == 0
+                    && unreconstructableDeltas == 0
                     && quarantinedSegments == 0
                     && recoveryDiscardedBytes == 0;
         }

@@ -280,7 +280,10 @@ stop_gateway() {
 }
 
 journal_size() {
-  du -sb "$RUNDIR/journals" 2>/dev/null | awk '{print $1}' || echo 0
+  # Allocated bytes, not apparent size. Segments are pre-allocated sparse files and the
+  # writer keeps several warmed ahead of itself, so -b (which implies --apparent-size)
+  # reports segment_size x queue_depth regardless of how much was actually written.
+  du -s --block-size=1 "$RUNDIR/journals" 2>/dev/null | awk '{print $1}' || echo 0
 }
 
 # ----------------------------------------------------------------- workloads
