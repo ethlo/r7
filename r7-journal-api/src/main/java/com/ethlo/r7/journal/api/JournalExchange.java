@@ -71,6 +71,13 @@ public final class JournalExchange
     private CRC32C observedRequestCrc;
     private CRC32C observedResponseCrc;
 
+    /**
+     * Deduplicates the header names and values of this exchange's four header sets, which the
+     * decoder otherwise builds independently of one another. Owned here so that its lifetime is
+     * the exchange's and it needs no eviction rule of its own.
+     */
+    private final StringInterner interner = new StringInterner();
+
     public JournalExchange(String requestId)
     {
         this.requestId = requestId;
@@ -79,6 +86,14 @@ public final class JournalExchange
     public long getCreatedAtNanos()
     {
         return createdAtNanos;
+    }
+
+    /**
+     * This exchange's string interner, for whoever copies decoded headers into it.
+     */
+    public StringInterner interner()
+    {
+        return interner;
     }
 
     public void setClientRequest(String line, JournalLevel level, GatewayHeaders headers, InetAddress remoteAddress, final IpSource ipSource)

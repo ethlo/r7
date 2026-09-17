@@ -20,6 +20,7 @@ import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.journal.api.StringInterner;
 import com.ethlo.r7.r7f.util.StringExchangeMap;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -88,25 +89,29 @@ public class ExchangeReassembler implements JournalEventListener
     @Override
     public void onClientRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource)
     {
-        getOrCreate(reqId).setClientRequest(startLine, level, copyOf(headers), remoteAddress, ipSource);
+        final JournalExchange exchange = getOrCreate(reqId);
+        exchange.setClientRequest(startLine, level, copyOf(headers, exchange.interner()), remoteAddress, ipSource);
     }
 
     @Override
     public void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        getOrCreate(reqId).setUpstreamRequest(startLine, level, copyOf(headers));
+        final JournalExchange exchange = getOrCreate(reqId);
+        exchange.setUpstreamRequest(startLine, level, copyOf(headers, exchange.interner()));
     }
 
     @Override
     public void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        getOrCreate(reqId).setUpstreamResponse(startLine, level, copyOf(headers));
+        final JournalExchange exchange = getOrCreate(reqId);
+        exchange.setUpstreamResponse(startLine, level, copyOf(headers, exchange.interner()));
     }
 
     @Override
     public void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        getOrCreate(reqId).setClientResponse(startLine, level, copyOf(headers));
+        final JournalExchange exchange = getOrCreate(reqId);
+        exchange.setClientResponse(startLine, level, copyOf(headers, exchange.interner()));
     }
 
     @Override
@@ -414,7 +419,16 @@ public class ExchangeReassembler implements JournalEventListener
      * Like the body copy, this allocates on the reader side only; the gateway write path
      * is untouched.
      */
-    private static GatewayHeaders copyOf(final GatewayHeaders headers)
+    /**
+     * Copies a decoded header view into storage the exchange can keep.
+     * <p>
+     * Every name and value arrives freshly built from the journal's bytes, sharing nothing with
+     * the other header sets of the same exchange even where the text is identical — which it
+     * largely is, since the request is journaled both as received and as forwarded. The
+     * exchange's interner collapses those duplicates onto one instance each, leaving order and
+     * multiplicity exactly as they arrived.
+     */
+    private static GatewayHeaders copyOf(final GatewayHeaders headers, final StringInterner interner)
     {
         if (headers == null)
         {
@@ -425,7 +439,7 @@ public class ExchangeReassembler implements JournalEventListener
         headers.forEach((name, value) -> {
             if (name != null && value != null)
             {
-                copy.add(name, value);
+                copy.add(interner.intern(name), interner.intern(value));
             }
         });
         return copy;

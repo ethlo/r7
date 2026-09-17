@@ -31,6 +31,12 @@ public final class StatefulJournal implements Journal
     private CRC32C requestChecksum;
     private CRC32C responseChecksum;
 
+    /**
+     * Shared by all four header views of this exchange, so a header that survived the filter
+     * chain unchanged is fingerprinted once rather than once per journaled message.
+     */
+    private final FingerprintMemo fingerprints = new FingerprintMemo();
+
     private JournalLevel level;
     private String requestId;
     private boolean clientReqFlushed = false;
@@ -295,7 +301,7 @@ public final class StatefulJournal implements Journal
         {
             return FastGatewayHeaders.empty();
         }
-        return new RedactingHeaders(original, safeHeaders);
+        return new RedactingHeaders(original, safeHeaders, fingerprints);
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)

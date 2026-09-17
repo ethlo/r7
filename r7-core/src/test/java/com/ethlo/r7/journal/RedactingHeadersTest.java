@@ -98,6 +98,63 @@ class RedactingHeadersTest
         assertThat(safe.contains(null)).isFalse();
     }
 
+    /**
+     * The memo is shared by all four of an exchange's header views and keyed on identity, so
+     * the value instance the ingress snapshot shares with the live header map is hashed once.
+     * Reuse must be invisible: the same value fingerprints the same way whether it was hashed
+     * or recalled.
+     */
+    @Test
+    void aSharedMemoGivesTheSameAnswerAsHashingEveryTime()
+    {
+        final String sharedCookie = new String("session=shared");
+        final FingerprintMemo memo = new FingerprintMemo();
+
+        final GatewayHeaders first = new RedactingHeaders(headers("cookie", sharedCookie), SAFE, memo);
+        final GatewayHeaders second = new RedactingHeaders(headers("cookie", sharedCookie), SAFE, memo);
+
+        final String expected = RedactUtil.fingerprint("session=shared");
+        assertThat(collect(first)).containsExactly("cookie=" + expected);
+        assertThat(collect(second)).containsExactly("cookie=" + expected);
+    }
+
+    /**
+     * Two values that are equal but distinct instances are hashed separately; identity keying
+     * must never let one value's fingerprint stand in for another's.
+     */
+    @Test
+    void distinctValuesAreNeverGivenEachOthersFingerprint()
+    {
+        final FingerprintMemo memo = new FingerprintMemo();
+        final GatewayHeaders headers = new RedactingHeaders(headers(
+                "cookie", new String("a=1"),
+                "authorization", new String("b=2")), SAFE, memo);
+
+        assertThat(collect(headers)).containsExactly(
+                "cookie=" + RedactUtil.fingerprint("a=1"),
+                "authorization=" + RedactUtil.fingerprint("b=2"));
+    }
+
+    /**
+     * The memo stops growing past its cap; values beyond it must still be fingerprinted
+     * correctly, just without being remembered.
+     */
+    @Test
+    void valuesBeyondTheMemoCapAreStillFingerprintedCorrectly()
+    {
+        final FingerprintMemo memo = new FingerprintMemo();
+        final MutableFastGatewayHeaders source = new MutableFastGatewayHeaders();
+        final List<String> expected = new ArrayList<>();
+        for (int i = 0; i < 100; i++)
+        {
+            final String value = "value-" + i;
+            source.add("cookie", value);
+            expected.add("cookie=" + RedactUtil.fingerprint(value));
+        }
+
+        assertThat(collect(new RedactingHeaders(source, SAFE, memo))).containsExactlyElementsOf(expected);
+    }
+
     @Test
     void theSetReportsEveryNameItWasBuiltFrom()
     {

@@ -6,7 +6,6 @@ import java.util.List;
 import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
-import com.ethlo.r7.util.RedactUtil;
 
 /**
  * A read-only view over another header container that replaces every value whose name is not
@@ -32,16 +31,23 @@ public final class RedactingHeaders implements GatewayHeaders
 {
     private final GatewayHeaders delegate;
     private final HeaderNameSet safeNames;
+    private final FingerprintMemo memo;
 
-    public RedactingHeaders(final GatewayHeaders delegate, final HeaderNameSet safeNames)
+    RedactingHeaders(final GatewayHeaders delegate, final HeaderNameSet safeNames, final FingerprintMemo memo)
     {
         this.delegate = delegate;
         this.safeNames = safeNames;
+        this.memo = memo;
+    }
+
+    public RedactingHeaders(final GatewayHeaders delegate, final HeaderNameSet safeNames)
+    {
+        this(delegate, safeNames, new FingerprintMemo());
     }
 
     private String redact(final String name, final String value)
     {
-        return safeNames.contains(name) ? value : RedactUtil.fingerprint(value);
+        return safeNames.contains(name) ? value : memo.fingerprintOf(value);
     }
 
     @Override

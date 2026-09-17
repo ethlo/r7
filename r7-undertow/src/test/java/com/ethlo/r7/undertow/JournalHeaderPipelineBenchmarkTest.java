@@ -451,17 +451,30 @@ final class JournalHeaderPipelineBenchmarkTest
             throw new IllegalArgumentException("Not enough distinct header names for " + scenario.name());
         }
 
-        final String value = filler(scenario.valueLength());
         final HeaderMap map = new HeaderMap();
         for (int i = 0; i < safeCount; i++)
         {
-            map.add(HttpString.tryFromString(SAFE_NAMES.get(i)), value);
+            map.add(HttpString.tryFromString(SAFE_NAMES.get(i)), distinctValue(i, scenario.valueLength()));
         }
         for (int i = 0; i < scenario.unsafeCount(); i++)
         {
-            map.add(HttpString.tryFromString(UNSAFE_NAMES.get(i)), value);
+            map.add(HttpString.tryFromString(UNSAFE_NAMES.get(i)), distinctValue(100 + i, scenario.valueLength()));
         }
         return map;
+    }
+
+    /**
+     * A value of the requested length that differs from every other header's.
+     * <p>
+     * It matters that these differ. Anything that deduplicates values — the fingerprint memo on
+     * the write side, the interner on the read side — would collapse a fixture whose headers
+     * all carried one string into a single entry, and report a saving that real traffic, where
+     * each header carries its own value, would never see.
+     */
+    private static String distinctValue(final int index, final int length)
+    {
+        final String body = index + "-" + filler(Math.max(length, 8));
+        return body.substring(0, length);
     }
 
     private static HeaderMap buildResponseHeaders()
