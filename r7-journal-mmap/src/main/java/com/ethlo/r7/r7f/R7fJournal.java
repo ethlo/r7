@@ -70,29 +70,37 @@ public final class R7fJournal implements Journal
     private static final int INITIAL_HEADER_SLOTS = 1024;
     private static final int INITIAL_ATTRIBUTE_SLOTS = 128;
 
-    private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
+    /**
+     * Per-thread encoding state.
+     * <p>
+     * Everything an entry needs before it reaches the segment — the FlatBuffer builder, the
+     * latin-1 scratch, the offset arrays and the CRC — lives here rather than on the journal,
+     * because that is what allows encoding to happen outside {@link #writeEntry}'s monitor.
+     * Held as a single object so the traversal callbacks can carry it as their state and stay
+     * free of captures.
+     * <p>
+     * A {@link ThreadLocal} is appropriate because journal writes come from the IO threads and
+     * the exchange completion listeners that run on them — a bounded set — which is the same
+     * assumption {@code StartLineBuilder} and {@code RedactUtil} already make on this path. A
+     * write arriving on a short-lived virtual thread costs that thread its own encoder rather
+     * than correctness.
+     */
+    private final ThreadLocal<EntryEncoder> encoders = ThreadLocal.withInitial(EntryEncoder::new);
 
     private final R7fJournalProvider provider;
     private final Consumer<Path> finishedJournalFileSupplier;
 
-    private final byte[] fbsJournalLevels = new byte[]{
+    private static final byte[] FBS_JOURNAL_LEVELS = new byte[]{
             FbsJournalLevel.NONE,
             FbsJournalLevel.METADATA,
             FbsJournalLevel.HEADERS,
             FbsJournalLevel.FULL,
     };
-    private final CRC32C crc = new CRC32C();
-
-    private byte[] asciiScratch = new byte[INITIAL_SCRATCH];
-    private int[] headerOffsetsScratch = new int[INITIAL_HEADER_SLOTS];
-    private int[] attributeOffsetsScratch = new int[INITIAL_ATTRIBUTE_SLOTS];
 
     private MemorySegment segment;
     private Arena arena;
     private Path activePath;
     private long position;
-    private int currentHeaderCount;
-    private int currentAttributeCount;
     /**
      * Rotation finalizers still running. Registered before they start, so close() cannot
      * race past one, and each removes itself when it is done, so this stays empty in steady
@@ -144,72 +152,80 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public synchronized int clientRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress inetAddress, IpSource ipSource)
+    public int clientRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress inetAddress, IpSource ipSource)
     {
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
-        int headOff = buildHeadersVector(headers);
+        int headOff = enc.buildHeadersVector(headers);
         int remoteAddressOff = fbb.createByteVector(inetAddress.getAddress());
 
         ClientRequest.startClientRequest(fbb);
-        ClientRequest.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        ClientRequest.addJournalLevel(fbb, FBS_JOURNAL_LEVELS[level.ordinal()]);
         ClientRequest.addReqId(fbb, reqIdOff);
         ClientRequest.addStartLine(fbb, lineOff);
         ClientRequest.addHeaders(fbb, headOff);
         ClientRequest.addClientIp(fbb, remoteAddressOff);
         ClientRequest.addClientIpSource(fbb, ipSource.byteValue());
-        return finishAndWrite(EventPayload.ClientRequest, ClientRequest.endClientRequest(fbb));
+        return finishAndWrite(enc, EventPayload.ClientRequest, ClientRequest.endClientRequest(fbb));
     }
 
     @Override
-    public synchronized int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers)
     {
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
-        int headOff = buildHeadersVector(headers);
+        int headOff = enc.buildHeadersVector(headers);
 
         UpstreamRequest.startUpstreamRequest(fbb);
-        UpstreamRequest.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        UpstreamRequest.addJournalLevel(fbb, FBS_JOURNAL_LEVELS[level.ordinal()]);
         UpstreamRequest.addReqId(fbb, reqIdOff);
         UpstreamRequest.addStartLine(fbb, lineOff);
         UpstreamRequest.addHeaders(fbb, headOff);
-        return finishAndWrite(EventPayload.UpstreamRequest, UpstreamRequest.endUpstreamRequest(fbb));
+        return finishAndWrite(enc, EventPayload.UpstreamRequest, UpstreamRequest.endUpstreamRequest(fbb));
     }
 
     @Override
-    public synchronized int upstreamResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public int upstreamResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
-        int headOff = buildHeadersVector(headers);
+        int headOff = enc.buildHeadersVector(headers);
 
         UpstreamResponse.startUpstreamResponse(fbb);
-        UpstreamResponse.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        UpstreamResponse.addJournalLevel(fbb, FBS_JOURNAL_LEVELS[level.ordinal()]);
         UpstreamResponse.addReqId(fbb, reqIdOff);
         UpstreamResponse.addStatus(fbb, statusCode);
         UpstreamResponse.addStartLine(fbb, lineOff);
         UpstreamResponse.addHeaders(fbb, headOff);
-        return finishAndWrite(EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
+        return finishAndWrite(enc, EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
     }
 
     @Override
-    public synchronized int clientResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public int clientResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
     {
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
-        int headOff = buildHeadersVector(headers);
+        int headOff = enc.buildHeadersVector(headers);
 
         ClientResponse.startClientResponse(fbb);
-        ClientResponse.addJournalLevel(fbb, fbsJournalLevels[level.ordinal()]);
+        ClientResponse.addJournalLevel(fbb, FBS_JOURNAL_LEVELS[level.ordinal()]);
         ClientResponse.addReqId(fbb, reqIdOff);
         ClientResponse.addStatus(fbb, statusCode);
         ClientResponse.addStartLine(fbb, lineOff);
         ClientResponse.addHeaders(fbb, headOff);
-        return finishAndWrite(EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));
+        return finishAndWrite(enc, EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));
     }
 
     /* ============================================================
@@ -217,41 +233,47 @@ public final class R7fJournal implements Journal
        ============================================================ */
 
     @Override
-    public synchronized int requestBody(String reqId, ByteBuffer data)
+    public int requestBody(String reqId, ByteBuffer data)
     {
         if (!data.hasRemaining())
         {
             throw new IllegalStateException("No data available for request body");
         }
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         RequestBody.startRequestBody(fbb);
         RequestBody.addReqId(fbb, reqIdOff);
         RequestBody.addLength(fbb, data.remaining());
-        return finishAndWrite(EventPayload.RequestBody, RequestBody.endRequestBody(fbb), data);
+        return finishAndWrite(enc, EventPayload.RequestBody, RequestBody.endRequestBody(fbb), data);
     }
 
     @Override
-    public synchronized int responseBody(String reqId, ByteBuffer data)
+    public int responseBody(String reqId, ByteBuffer data)
     {
         if (!data.hasRemaining())
         {
             throw new IllegalStateException("No data available for response body");
         }
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         ResponseBody.startResponseBody(fbb);
         ResponseBody.addReqId(fbb, reqIdOff);
         ResponseBody.addLength(fbb, data.remaining());
-        return finishAndWrite(EventPayload.ResponseBody, ResponseBody.endResponseBody(fbb), data);
+        return finishAndWrite(enc, EventPayload.ResponseBody, ResponseBody.endResponseBody(fbb), data);
     }
 
     @Override
-    public synchronized int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+    public int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
     {
+        final EntryEncoder enc = encoders.get();
+        final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
-        int reqIdOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(reqId));
-        int attrVecOff = buildAttributesVector(attributes);
+        int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
+        int attrVecOff = enc.buildAttributesVector(attributes);
 
         EndExchange.startEndExchange(fbb);
         EndExchange.addReqId(fbb, reqIdOff);
@@ -271,7 +293,7 @@ public final class R7fJournal implements Journal
         // JournalDecoder; nothing in between ever sees the number.
         EndExchange.addRequestCrc32c(fbb, stored(requestChecksum));
         EndExchange.addResponseCrc32c(fbb, stored(responseChecksum));
-        return finishAndWrite(EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
+        return finishAndWrite(enc, EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
     }
 
     /**
@@ -288,23 +310,42 @@ public final class R7fJournal implements Journal
        PRIVATE LOGIC & UTILITIES
        ============================================================ */
 
-    private int finishAndWrite(byte type, int offset)
+    private int finishAndWrite(final EntryEncoder enc, byte type, int offset)
     {
-        return finishAndWrite(type, offset, null);
+        return finishAndWrite(enc, type, offset, null);
     }
 
-    private int finishAndWrite(byte type, int offset, ByteBuffer rawData)
+    /**
+     * Completes the encoder's buffer and hands it to {@link #writeEntry}.
+     * <p>
+     * Everything above this line — the FlatBuffer build, the latin-1 copying and, since
+     * redaction became a view, the fingerprinting it triggers — runs on the calling thread
+     * with no lock held. Only the segment itself is shared, and only {@code writeEntry}
+     * touches it.
+     */
+    private int finishAndWrite(final EntryEncoder enc, byte type, int offset, ByteBuffer rawData)
     {
+        final FlatBufferBuilder fbb = enc.fbb;
         JournalEvent.startJournalEvent(fbb);
         JournalEvent.addEventType(fbb, type);
         JournalEvent.addEvent(fbb, offset);
         fbb.finish(JournalEvent.endJournalEvent(fbb));
-        return writeEntry(fbb, rawData);
+        return writeEntry(enc, rawData);
     }
 
-    private int writeEntry(FlatBufferBuilder fbBuilder, ByteBuffer rawData)
+    /**
+     * Claims this entry's place in the segment and publishes it.
+     * <p>
+     * Synchronized because {@link #position}, {@link #nextSequence} and the segment itself are
+     * the journal's, not the caller's: the sequence must be contiguous within a segment and
+     * the bytes must land where the sequence says they do, so claiming and copying cannot be
+     * separated without a different publication protocol. The encoder it reads from is
+     * thread-confined, so no other thread can be building into it while this runs.
+     */
+    private synchronized int writeEntry(final EntryEncoder enc, ByteBuffer rawData)
     {
-        final ByteBuffer fbBuf = fbBuilder.dataBuffer();
+        final CRC32C crc = enc.crc;
+        final ByteBuffer fbBuf = enc.fbb.dataBuffer();
         final int fbLen = fbBuf.remaining();
         final MemorySegment fbSource = MemorySegment.ofBuffer(fbBuf);
 
@@ -339,10 +380,10 @@ public final class R7fJournal implements Journal
 
         // CRC covers everything but the magic: the sequence, the three lengths and the payload.
         crc.reset();
-        updateInt(crc, sequence);
-        updateInt(crc, payloadLen);
-        updateInt(crc, fbLen);
-        updateInt(crc, rawLen);
+        enc.updateInt(sequence);
+        enc.updateInt(payloadLen);
+        enc.updateInt(fbLen);
+        enc.updateInt(rawLen);
         crc.update(fbBuf.duplicate());
 
         // Copy FlatBuffer
@@ -373,101 +414,118 @@ public final class R7fJournal implements Journal
         return totalLen; // Returning the total binary size of the entry
     }
 
-    private int buildHeadersVector(GatewayHeaders headers)
+    /**
+     * One thread's encoding workspace. Every method here runs outside the journal's monitor,
+     * so nothing it touches may be shared between threads.
+     */
+    private static final class EntryEncoder
     {
-        this.currentHeaderCount = 0;
-        headers.forEach(this, (self, name, value) ->
-                {
-                    self.headerOffsetsScratch = ensureSlot(self.headerOffsetsScratch, self.currentHeaderCount);
-                    headerWrite(self, name, value);
-                    self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
-                }
-        );
-        return currentHeaderCount == 0 ? 0 : createOffsetVector(headerOffsetsScratch, currentHeaderCount);
-    }
+        private final FlatBufferBuilder fbb = new FlatBufferBuilder(8192);
+        private final CRC32C crc = new CRC32C();
 
-    private void headerWrite(final R7fJournal self, final String name, final String value)
-    {
-        int nOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(name));
-        int vOff = self.fbb.createByteVector(self.asciiScratch, 0, self.copyToScratch(value));
-        Header.startHeader(self.fbb);
-        Header.addName(self.fbb, nOff);
-        Header.addValue(self.fbb, vOff);
-    }
+        private byte[] asciiScratch = new byte[INITIAL_SCRATCH];
+        private int[] headerOffsetsScratch = new int[INITIAL_HEADER_SLOTS];
+        private int[] attributeOffsetsScratch = new int[INITIAL_ATTRIBUTE_SLOTS];
 
-    private int buildAttributesVector(GatewayAttributes attributes)
-    {
-        this.currentAttributeCount = 0;
-        if (attributes != null)
+        private int currentHeaderCount;
+        private int currentAttributeCount;
+
+        private int buildHeadersVector(final GatewayHeaders headers)
         {
-            attributes.forEach(this, (self, name, value) -> {
-                        self.attributeOffsetsScratch = ensureSlot(self.attributeOffsetsScratch, self.currentAttributeCount);
-                        headerWrite(self, name, value);
-                        self.attributeOffsetsScratch[self.currentAttributeCount++] = Header.endHeader(self.fbb);
+            this.currentHeaderCount = 0;
+            headers.forEach(this, (self, name, value) ->
+                    {
+                        self.headerOffsetsScratch = ensureSlot(self.headerOffsetsScratch, self.currentHeaderCount);
+                        self.headerWrite(name, value);
+                        self.headerOffsetsScratch[self.currentHeaderCount++] = Header.endHeader(self.fbb);
                     }
             );
+            return currentHeaderCount == 0 ? 0 : createOffsetVector(headerOffsetsScratch, currentHeaderCount);
         }
-        return currentAttributeCount == 0 ? 0 : createOffsetVector(attributeOffsetsScratch, currentAttributeCount);
-    }
 
-    /**
-     * Grows an offset scratch array when a request carries more headers or attributes
-     * than the current array holds. Doubling means this is amortised away after the first
-     * few requests, and the steady state stays allocation-free.
-     */
-    private static int[] ensureSlot(final int[] current, final int index)
-    {
-        if (index < current.length)
+        private void headerWrite(final String name, final String value)
         {
-            return current;
+            int nOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(name));
+            int vOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(value));
+            Header.startHeader(fbb);
+            Header.addName(fbb, nOff);
+            Header.addValue(fbb, vOff);
         }
-        final int[] grown = new int[current.length * 2];
-        System.arraycopy(current, 0, grown, 0, current.length);
-        return grown;
-    }
 
-    private int createOffsetVector(int[] offsets, int count)
-    {
-        fbb.startVector(4, count, 4);
-        for (int i = count - 1; i >= 0; i--) fbb.addOffset(offsets[i]);
-        return fbb.endVector();
-    }
-
-    /**
-     * Copies the latin-1 bytes of the given string into the reusable scratch buffer.
-     * <p>
-     * The deprecated {@code String.getBytes(int, int, byte[], int)} is used deliberately:
-     * it truncates each char to its low byte with no intermediate allocation, which is
-     * exactly the ISO-8859-1 encoding HTTP header values arrive in. The decoder reads
-     * them back as ISO-8859-1, so the bytes round-trip unchanged.
-     */
-    @SuppressWarnings("deprecation")
-    private int copyToScratch(String str)
-    {
-        final int len = str.length();
-        if (len > MAX_SCRATCH)
+        private int buildAttributesVector(final GatewayAttributes attributes)
         {
-            throw new IllegalArgumentException("Journal value exceeds the maximum of " + MAX_SCRATCH + " bytes: " + len);
-        }
-        if (len > asciiScratch.length)
-        {
-            int capacity = asciiScratch.length;
-            while (capacity < len)
+            this.currentAttributeCount = 0;
+            if (attributes != null)
             {
-                capacity <<= 1;
+                attributes.forEach(this, (self, name, value) -> {
+                            self.attributeOffsetsScratch = ensureSlot(self.attributeOffsetsScratch, self.currentAttributeCount);
+                            self.headerWrite(name, value);
+                            self.attributeOffsetsScratch[self.currentAttributeCount++] = Header.endHeader(self.fbb);
+                        }
+                );
             }
-            asciiScratch = new byte[capacity];
+            return currentAttributeCount == 0 ? 0 : createOffsetVector(attributeOffsetsScratch, currentAttributeCount);
         }
-        str.getBytes(0, len, asciiScratch, 0);
-        return len;
-    }
 
-    private void updateInt(CRC32C crc, int v)
-    {
-        crc.update((v >>> 24) & 0xFF);
-        crc.update((v >>> 16) & 0xFF);
-        crc.update((v >>> 8) & 0xFF);
-        crc.update(v & 0xFF);
+        /**
+         * Grows an offset scratch array when a request carries more headers or attributes
+         * than the current array holds. Doubling means this is amortised away after the first
+         * few requests, and the steady state stays allocation-free.
+         */
+        private static int[] ensureSlot(final int[] current, final int index)
+        {
+            if (index < current.length)
+            {
+                return current;
+            }
+            final int[] grown = new int[current.length * 2];
+            System.arraycopy(current, 0, grown, 0, current.length);
+            return grown;
+        }
+
+        private int createOffsetVector(final int[] offsets, final int count)
+        {
+            fbb.startVector(4, count, 4);
+            for (int i = count - 1; i >= 0; i--) fbb.addOffset(offsets[i]);
+            return fbb.endVector();
+        }
+
+        /**
+         * Copies the latin-1 bytes of the given string into the reusable scratch buffer.
+         * <p>
+         * The deprecated {@code String.getBytes(int, int, byte[], int)} is used deliberately:
+         * it truncates each char to its low byte with no intermediate allocation, which is
+         * exactly the ISO-8859-1 encoding HTTP header values arrive in. The decoder reads
+         * them back as ISO-8859-1, so the bytes round-trip unchanged.
+         */
+        @SuppressWarnings("deprecation")
+        private int copyToScratch(final String str)
+        {
+            final int len = str.length();
+            if (len > MAX_SCRATCH)
+            {
+                throw new IllegalArgumentException("Journal value exceeds the maximum of " + MAX_SCRATCH + " bytes: " + len);
+            }
+            if (len > asciiScratch.length)
+            {
+                int capacity = asciiScratch.length;
+                while (capacity < len)
+                {
+                    capacity <<= 1;
+                }
+                asciiScratch = new byte[capacity];
+            }
+            str.getBytes(0, len, asciiScratch, 0);
+            return len;
+        }
+
+        private void updateInt(final int v)
+        {
+            crc.update((v >>> 24) & 0xFF);
+            crc.update((v >>> 16) & 0xFF);
+            crc.update((v >>> 8) & 0xFF);
+            crc.update(v & 0xFF);
+        }
     }
 
     @Override

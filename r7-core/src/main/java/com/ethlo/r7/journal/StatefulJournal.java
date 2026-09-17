@@ -2,22 +2,17 @@ package com.ethlo.r7.journal;
 
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
-import java.util.Set;
 import java.util.zip.CRC32C;
 
-import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
-import com.ethlo.r7.api.MutableGatewayHeaders;
-import com.ethlo.r7.api.StatefulEntryConsumer;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayHeaders;
-import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
 public final class StatefulJournal implements Journal
 {
@@ -294,27 +289,13 @@ public final class StatefulJournal implements Journal
         return 0;
     }
 
-    private GatewayHeaders redactHeaders(final GatewayHeaders original, final Set<String> safeHeaders)
+    private GatewayHeaders redactHeaders(final GatewayHeaders original, final HeaderNameSet safeHeaders)
     {
         if (original == null)
         {
             return FastGatewayHeaders.empty();
         }
-        final MutableGatewayHeaders redacted = new MutableFastGatewayHeaders();
-
-        final StatefulEntryConsumer<MutableGatewayHeaders> redactingConsumer = (state, name, value) ->
-        {
-            if (safeHeaders.contains(name.toString().toLowerCase()))
-            {
-                state.add(name, value);
-            }
-            else
-            {
-                state.add(name, RedactUtil.fingerprint(value.toString()));
-            }
-        };
-        original.forEach(redacted, redactingConsumer);
-        return redacted;
+        return new RedactingHeaders(original, safeHeaders);
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)
