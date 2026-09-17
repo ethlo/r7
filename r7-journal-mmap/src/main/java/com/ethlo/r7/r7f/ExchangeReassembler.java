@@ -20,10 +20,9 @@ import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
-import com.ethlo.r7.journal.api.StringInterner;
 import com.ethlo.r7.r7f.util.StringExchangeMap;
 import com.ethlo.r7.util.FastGatewayAttributes;
-import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.ethlo.r7.util.PackedGatewayHeaders;
 
 /**
  * Rebuilds whole exchanges from the interleaved event stream.
@@ -89,29 +88,27 @@ public class ExchangeReassembler implements JournalEventListener
     @Override
     public void onClientRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource)
     {
-        final JournalExchange exchange = getOrCreate(reqId);
-        exchange.setClientRequest(startLine, level, copyOf(headers, exchange.interner()), remoteAddress, ipSource);
+        getOrCreate(reqId).setClientRequest(startLine, level, copyOf(headers), remoteAddress, ipSource);
     }
 
     @Override
     public void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
         final JournalExchange exchange = getOrCreate(reqId);
-        exchange.setUpstreamRequest(startLine, level, copyOf(headers, exchange.interner()));
+        exchange.setUpstreamRequest(startLine, level, shareIfIdentical(copyOf(headers), exchange.getClientRequestHeaders()));
     }
 
     @Override
     public void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
-        final JournalExchange exchange = getOrCreate(reqId);
-        exchange.setUpstreamResponse(startLine, level, copyOf(headers, exchange.interner()));
+        getOrCreate(reqId).setUpstreamResponse(startLine, level, copyOf(headers));
     }
 
     @Override
     public void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
     {
         final JournalExchange exchange = getOrCreate(reqId);
-        exchange.setClientResponse(startLine, level, copyOf(headers, exchange.interner()));
+        exchange.setClientResponse(startLine, level, shareIfIdentical(copyOf(headers), exchange.getUpstreamResponseHeaders()));
     }
 
     @Override
@@ -422,27 +419,32 @@ public class ExchangeReassembler implements JournalEventListener
     /**
      * Copies a decoded header view into storage the exchange can keep.
      * <p>
-     * Every name and value arrives freshly built from the journal's bytes, sharing nothing with
-     * the other header sets of the same exchange even where the text is identical — which it
-     * largely is, since the request is journaled both as received and as forwarded. The
-     * exchange's interner collapses those duplicates onto one instance each, leaving order and
-     * multiplicity exactly as they arrived.
+     * Kept as the bytes rather than as strings. An in-flight exchange holds four header sets
+     * from its first event until its end arrives, and a string pair per header costs several
+     * times what the text does — which is what made the in-flight set dominate the reader's
+     * heap. Body fragments here were always retained as raw bytes; this makes headers agree
+     * with them. Order and multiplicity are preserved exactly, and the text is decoded only
+     * when a consumer actually reads it.
      */
-    private static GatewayHeaders copyOf(final GatewayHeaders headers, final StringInterner interner)
+    /**
+     * Returns the set already stored on the exchange when this one packs to identical bytes, so
+     * that an exchange holds one copy rather than two.
+     * <p>
+     * Worth doing only because the copies are bytes: byte equality is unambiguous and needs no
+     * reconstruction, where sharing string-backed containers would have meant reasoning about
+     * aliasing. It fires on the response pair of a route with no response filters, where the
+     * snapshot taken at commit and the headers finally sent are the same. It does not fire on
+     * the request pair under the current proxy setup, which rewrites Host and adds forwarding
+     * headers on the way upstream — the check costs a length comparison to find that out.
+     */
+    private static GatewayHeaders shareIfIdentical(final GatewayHeaders packed, final GatewayHeaders alreadyStored)
     {
-        if (headers == null)
-        {
-            return null;
-        }
+        return alreadyStored != null && alreadyStored.equals(packed) ? alreadyStored : packed;
+    }
 
-        final MutableFastGatewayHeaders copy = new MutableFastGatewayHeaders();
-        headers.forEach((name, value) -> {
-            if (name != null && value != null)
-            {
-                copy.add(interner.intern(name), interner.intern(value));
-            }
-        });
-        return copy;
+    private static GatewayHeaders copyOf(final GatewayHeaders headers)
+    {
+        return PackedGatewayHeaders.pack(headers);
     }
 
     /**

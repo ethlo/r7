@@ -94,8 +94,14 @@ class ReassemblerHeapBenchmarkTest
             final ByteBuffer requestLine = ascii("GET /bench/api/v1/users HTTP/1.1");
             final ByteBuffer responseLine = ascii("HTTP/1.1 200 OK");
 
+            // The request pair differs as it does in production: the proxy rewrites Host and
+            // appends forwarding headers on the way upstream, so the two sets never pack to the
+            // same bytes. The response pair is the same object twice, as on a route with no
+            // response filters, where the snapshot taken at commit is what is finally sent.
             final MutableGatewayHeaders clientHeaders = requestHeaders(REQUEST_HEADERS);
+            clientHeaders.add("host", "api.example.com");
             final MutableGatewayHeaders upstreamHeaders = requestHeaders(REQUEST_HEADERS);
+            upstreamHeaders.add("host", "backend.internal:11111");
             for (int i = 0; i < FORWARDED_HEADERS; i++)
             {
                 upstreamHeaders.add("x-forwarded-" + i, distinctValue(100 + i));
