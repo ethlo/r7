@@ -116,9 +116,9 @@ class ReassemblerHeapBenchmarkTest
             {
                 final String id = "req-" + i;
                 journal.clientRequest(JournalLevel.HEADERS, id, requestLine.rewind(), clientHeaders, client, IpSource.SOCKET);
-                journal.upstreamRequest(JournalLevel.HEADERS, id, requestLine.rewind(), upstreamHeaders);
+                journal.upstreamRequest(JournalLevel.HEADERS, id, requestLine.rewind(), upstreamHeaders, clientHeaders);
                 journal.upstreamResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), responseHeaders);
-                journal.clientResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), responseHeaders);
+                journal.clientResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), responseHeaders, responseHeaders);
                 // No endExchange: that is what leaves it in flight.
             }
         }
@@ -137,10 +137,11 @@ class ReassemblerHeapBenchmarkTest
     /**
      * A value that differs from every other header's in the same set.
      * <p>
-     * It matters that they differ: the interner would collapse a fixture whose headers all
-     * carried one string into a single entry and report a saving real traffic would never see.
-     * The duplication worth measuring is between the client and upstream copies of the
-     * <em>same</em> header, which the two sets here still share.
+     * It matters that they differ. Anything that collapses repeats — the packed representation,
+     * the identical-blob sharing, the journal's own header delta — would flatter a fixture whose
+     * headers all carried one string and report a saving real traffic would never see. The
+     * duplication worth measuring is between the client and upstream copies of the <em>same</em>
+     * header, which the two sets here still share.
      */
     private static String distinctValue(final int index)
     {

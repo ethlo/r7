@@ -23,6 +23,7 @@ import com.ethlo.r7.r7f.fbs.ClientRequest;
 import com.ethlo.r7.r7f.fbs.ClientResponse;
 import com.ethlo.r7.r7f.fbs.EndExchange;
 import com.ethlo.r7.r7f.fbs.EventPayload;
+import com.ethlo.r7.r7f.fbs.HeaderDelta;
 import com.ethlo.r7.r7f.fbs.JournalEvent;
 import com.ethlo.r7.r7f.fbs.RequestBody;
 import com.ethlo.r7.r7f.fbs.ResponseBody;
@@ -590,8 +591,9 @@ public final class JournalDecoder
                 final String reqId = asLatin1(ev.reqIdAsByteBuffer());
                 final JournalLevel level = level(ev.journalLevel());
                 final String startLine = asLatin1(ev.startLineAsByteBuffer());
-                final GatewayHeaders headers = new FbsUpstreamRequestHeaders(ev);
-                listener.onUpstreamRequest(reqId, level, startLine, headers);
+                final HeaderDelta delta = ev.headerDelta();
+                final GatewayHeaders headers = delta == null ? new FbsUpstreamRequestHeaders(ev) : null;
+                listener.onUpstreamRequest(reqId, level, startLine, headers, delta);
             }
 
             case EventPayload.RequestBody ->
@@ -624,8 +626,9 @@ public final class JournalDecoder
                 final String reqId = asLatin1(ev.reqIdAsByteBuffer());
                 final JournalLevel level = level(ev.journalLevel());
                 final String startLine = asLatin1(ev.startLineAsByteBuffer());
-                final GatewayHeaders headers = new FbsClientResponseHeaders(ev);
-                listener.onClientResponse(reqId, level, startLine, headers);
+                final HeaderDelta delta = ev.headerDelta();
+                final GatewayHeaders headers = delta == null ? new FbsClientResponseHeaders(ev) : null;
+                listener.onClientResponse(reqId, level, startLine, headers, delta);
             }
 
             case EventPayload.ResponseBody ->
@@ -809,11 +812,11 @@ public final class JournalDecoder
         }
 
         @Override
-        public void onUpstreamRequest(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        public void onUpstreamRequest(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers, final HeaderDelta delta)
         {
             try
             {
-                delegate.onUpstreamRequest(reqId, level, startLine, headers);
+                delegate.onUpstreamRequest(reqId, level, startLine, headers, delta);
             }
             catch (final RuntimeException e)
             {
@@ -861,11 +864,11 @@ public final class JournalDecoder
         }
 
         @Override
-        public void onClientResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        public void onClientResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers, final HeaderDelta delta)
         {
             try
             {
-                delegate.onClientResponse(reqId, level, startLine, headers);
+                delegate.onClientResponse(reqId, level, startLine, headers, delta);
             }
             catch (final RuntimeException e)
             {

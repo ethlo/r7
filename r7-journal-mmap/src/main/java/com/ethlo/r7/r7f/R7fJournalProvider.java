@@ -11,8 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
@@ -96,8 +96,32 @@ public class R7fJournalProvider implements AutoCloseable
      */
     private final Path sequenceMarkerPath;
 
-    // Hands a mapped file straight from the warmer thread to the writer
-    private final BlockingQueue<WarmedSegment> pool = new SynchronousQueue<>();
+    /**
+     * How many warmed segments may wait ahead of the writer.
+     * <p>
+     * This was a {@link java.util.concurrent.SynchronousQueue}, which has no capacity at all:
+     * the warmer created a segment, blocked handing it over, and only then began the next one.
+     * Creating a segment starts with {@link #persistSequence}, which fsyncs the marker and its
+     * parent directory, and under sustained journal writes that occasionally takes seconds. With
+     * no cushion, every such moment landed on the writer — and it lands inside
+     * {@code R7fJournal.writeEntry}'s monitor, so one thread waiting parks all of them.
+     * <p>
+     * A queue lets the warmer run ahead while the writer is busy with the segment it already
+     * has. It absorbs slowness that is <em>bursty</em>, which is what was measured: the wait is
+     * zero at the median and seconds at the extreme. It is not a fix for creation being slower
+     * than segments fill on average — nothing here could be — and if that happens the cushion
+     * drains and the stalls return, which is what the wait log below is for.
+     */
+    private static final int WARMED_SEGMENT_DEPTH = 4;
+
+    /**
+     * Waits longer than this for a segment are logged. Normal is under a millisecond, so
+     * anything at this scale means the writer was blocked on segment creation, which is
+     * invisible from the outside — it looks like the gateway simply stopped.
+     */
+    private static final long SLOW_SEGMENT_WAIT_WARN_MILLIS = 100L;
+
+    private final BlockingQueue<WarmedSegment> pool = new ArrayBlockingQueue<>(WARMED_SEGMENT_DEPTH);
     private final Thread warmerThread;
 
     /**
@@ -352,6 +376,11 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
         );
         final Path nextPath = tempDir.resolve(name);
 
+        // Anything that fails after the file exists has to take it with it. Opening creates a
+        // zero-length .flux, and the warmer is interrupted here routinely — a shutdown lands
+        // mid-creation whenever it lands — so without this a clean stop leaves a pre-allocated
+        // orphan behind, which is both clutter and something the next startup has to reason
+        // about.
         try (FileChannel channel = FileChannel.open(nextPath, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE))
         {
             // A shared arena: created by the warmer thread, written to by the gateway
@@ -376,6 +405,18 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
             // The channel closes here, but the Arena keeps the Segment alive
             log.debug("Warmed up and queued segment: {}", nextPath.getFileName());
             return new WarmedSegment(nextPath, segment, arena, sequence);
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            try
+            {
+                Files.deleteIfExists(nextPath);
+            }
+            catch (final IOException cleanupFailed)
+            {
+                log.warn("Could not remove partially created segment {}", nextPath.getFileName(), cleanupFailed);
+            }
+            throw e;
         }
     }
 
@@ -426,6 +467,7 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
      */
     public WarmedSegment getNextSegment()
     {
+        final long waitStartNanos = System.nanoTime();
         try
         {
             while (true)
@@ -433,6 +475,14 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
                 final WarmedSegment warmedSegment = pool.poll(WARMUP_POLL_MILLIS, TimeUnit.MILLISECONDS);
                 if (warmedSegment != null)
                 {
+                    final long waitedMillis = (System.nanoTime() - waitStartNanos) / 1_000_000L;
+                    if (waitedMillis >= SLOW_SEGMENT_WAIT_WARN_MILLIS)
+                    {
+                        // The caller is inside the journal's monitor, so this was not one
+                        // thread waiting — it was every writer on this shard.
+                        log.warn("Waited {} ms for a warmed segment on shard {}; journal writes were blocked for that long",
+                                waitedMillis, shardId);
+                    }
                     log.debug("Fetched segment {} of size {}", warmedSegment.path().getFileName(), DiskSpaceUtils.formatBytes(warmedSegment.segment().byteSize()));
                     return warmedSegment;
                 }
@@ -495,9 +545,13 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
             Thread.currentThread().interrupt();
         }
 
-        // Belt and braces: if the warmer was blocked in put() and handed the segment over
-        // before noticing the interrupt, collect it here.
-        discard(pool.poll());
+        // Every segment the warmer ran ahead on, not just one: the queue holds several now,
+        // and each is a mapped region and a pre-allocated file. Leaving any behind orphans the
+        // mapping and leaves a .flux for the next startup to recover.
+        for (WarmedSegment queued = pool.poll(); queued != null; queued = pool.poll())
+        {
+            discard(queued);
+        }
     }
 
     // We must pass the Arena along with the Segment so the hot path can close it on rollover

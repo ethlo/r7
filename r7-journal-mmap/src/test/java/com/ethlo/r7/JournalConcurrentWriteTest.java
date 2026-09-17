@@ -118,11 +118,11 @@ class JournalConcurrentWriteTest
             final String id = "t" + threadIndex + "-" + i;
 
             journal.clientRequest(JournalLevel.FULL, id, startLine.rewind(), headers, client, IpSource.SOCKET);
-            journal.upstreamRequest(JournalLevel.FULL, id, startLine.rewind(), headers);
+            journal.upstreamRequest(JournalLevel.FULL, id, startLine.rewind(), headers, headers);
             journal.requestBody(id, requestBody.rewind());
             journal.upstreamResponse(JournalLevel.FULL, id, 200, responseLine.rewind(), headers);
             journal.responseBody(id, responseBody.rewind());
-            journal.clientResponse(JournalLevel.FULL, id, 200, responseLine.rewind(), headers);
+            journal.clientResponse(JournalLevel.FULL, id, 200, responseLine.rewind(), headers, headers);
             journal.endExchange(id, new FastGatewayAttributes(), 1_000L, 2_000L, 200,
                     64, requestBody.capacity(), 32, responseBody.capacity(),
                     1_100L, 1_500L, 1_900L,

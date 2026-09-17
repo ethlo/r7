@@ -126,11 +126,14 @@ public final class R7UndertowHandler implements HttpHandler
 
         if (gatewayExchange.wasProxied())
         {
-            journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers());
+            // No base passed: StatefulJournal tracks what it actually journaled for the client
+            // request and hands that to the delegate, which is the only set a difference is
+            // meaningful against — redaction and level downgrades included.
+            journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(gatewayExchange.upstreamRequest()), gatewayExchange.upstreamRequest().headers(), null);
             journal.upstreamResponse(journalConfig.response().level(), requestId, gatewayExchange.upstreamResponse().status(), StartLineBuilder.buildResponseLine(exchange.getProtocol().toString(), gatewayExchange.upstreamResponse()), gatewayExchange.upstreamResponse().headers());
         }
 
-        journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(exchange.getProtocol().toString(), gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers());
+        journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(exchange.getProtocol().toString(), gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers(), null);
 
         final boolean isWebSocket = Boolean.TRUE.equals(exchange.getAttachment(IS_WEBSOCKET_KEY));
         if (isWebSocket)

@@ -12,11 +12,23 @@ public interface Journal extends AutoCloseable
 {
     int clientRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, final InetAddress remoteAddress, final IpSource ipSource);
 
-    int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers);
+    /**
+     * @param base the header set already journaled for this exchange's client request, against
+     *             which this one may be recorded as a difference, or null when there is none to
+     *             refer to. The gateway journals the request as received and as forwarded, and
+     *             those differ only by what it did itself; passing the first lets the second be
+     *             recorded as that difference rather than as a second full copy. An
+     *             implementation may ignore it and write the whole set.
+     */
+    int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, GatewayHeaders base);
 
     int upstreamResponse(JournalLevel level, String reqId, int status, ByteBuffer startLine, GatewayHeaders headers);
 
-    int clientResponse(JournalLevel level, String reqId, int status, ByteBuffer startLine, GatewayHeaders headers);
+    /**
+     * @param base as on {@link #upstreamRequest}, here the upstream response already journaled
+     *             for this exchange
+     */
+    int clientResponse(JournalLevel level, String reqId, int status, ByteBuffer startLine, GatewayHeaders headers, GatewayHeaders base);
 
     int requestBody(String reqId, ByteBuffer data);
 

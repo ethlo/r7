@@ -109,21 +109,35 @@ final class JournalHeaderPipelineBenchmarkTest
                             JournalLevel level,
                             int bodyBytes,
                             int threads,
-                            int shards)
+                            int shards,
+                            int upstreamHeaderCount)
     {
         Scenario(String name, int headerCount, int valueLength, int unsafeCount, JournalLevel level, int bodyBytes)
         {
-            this(name, headerCount, valueLength, unsafeCount, level, bodyBytes, 1, 1);
+            this(name, headerCount, valueLength, unsafeCount, level, bodyBytes, 1, 1, headerCount);
+        }
+
+        /**
+         * Sizes the upstream-request entry. {@code -1} omits it entirely, which is the only
+         * thing left to compare against now that the entry is journaled as a difference: it
+         * says what keeping the forwarded-request record actually costs.
+         */
+        Scenario withUpstreamHeaders(final String suffix, final int upstreamHeaderCount)
+        {
+            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes,
+                    threads, shards, upstreamHeaderCount);
         }
 
         Scenario withThreads(final String suffix, final int threads)
         {
-            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes, threads, shards);
+            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes,
+                    threads, shards, upstreamHeaderCount);
         }
 
         Scenario withShards(final String suffix, final int shards)
         {
-            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes, threads, shards);
+            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes,
+                    threads, shards, upstreamHeaderCount);
         }
     }
 
@@ -190,7 +204,13 @@ final class JournalHeaderPipelineBenchmarkTest
             new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0)
                     .withThreads("-t8", 8).withShards("-s4", 4),
             new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0)
-                    .withThreads("-t8", 8).withShards("-s8", 8)
+                    .withThreads("-t8", 8).withShards("-s8", 8),
+
+            // What the upstream-request entry still costs now that it is journaled as a
+            // difference rather than a second full copy: the gap between this row and
+            // browser-realistic is the price of keeping that record at all.
+            new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0)
+                    .withUpstreamHeaders("-noupreq", -1)
     );
 
     @Test
@@ -429,7 +449,9 @@ final class JournalHeaderPipelineBenchmarkTest
             // As in production: the client view is the ingress snapshot, the upstream view is
             // the live map. Untouched headers are the same String instances in both.
             this.clientRequestHeaders = new ImmutableHeaderSnapshot(requestHeaders);
-            this.upstreamRequestHeaders = new UndertowGatewayHeaders(requestHeaders);
+            this.upstreamRequestHeaders = scenario.upstreamHeaderCount() == scenario.headerCount()
+                    ? new UndertowGatewayHeaders(requestHeaders)
+                    : new UndertowGatewayHeaders(buildUpstreamSubset(scenario));
 
             final HeaderMap responseHeaders = buildResponseHeaders();
             this.upstreamResponseHeaders = new ImmutableHeaderSnapshot(responseHeaders);
@@ -470,7 +492,10 @@ final class JournalHeaderPipelineBenchmarkTest
                 stateful.requestBody(requestId, requestBody.rewind());
             }
 
-            stateful.upstreamRequest(scenario.level(), requestId, requestLine.rewind(), upstreamRequestHeaders);
+            if (scenario.upstreamHeaderCount() >= 0)
+            {
+                stateful.upstreamRequest(scenario.level(), requestId, requestLine.rewind(), upstreamRequestHeaders, null);
+            }
             stateful.upstreamResponse(scenario.level(), requestId, 200, responseLine.rewind(), upstreamResponseHeaders);
 
             if (scenario.bodyBytes() > 0)
@@ -478,7 +503,7 @@ final class JournalHeaderPipelineBenchmarkTest
                 stateful.responseBody(requestId, responseBody.rewind());
             }
 
-            stateful.clientResponse(scenario.level(), requestId, 200, responseLine.rewind(), clientResponseHeaders);
+            stateful.clientResponse(scenario.level(), requestId, 200, responseLine.rewind(), clientResponseHeaders, null);
             stateful.endExchange(requestId, attributes, 1_000L, 2_000L, 200,
                     512, scenario.bodyBytes(), 128, scenario.bodyBytes(),
                     1_100L, 1_500L, 1_900L,
@@ -524,6 +549,23 @@ final class JournalHeaderPipelineBenchmarkTest
     {
         final String body = index + "-" + filler(Math.max(length, 8));
         return body.substring(0, length);
+    }
+
+    /**
+     * The headers a proxy actually changes on the way upstream: the rewritten Host plus the
+     * forwarding set. This is what an upstream-request entry would carry if it recorded the
+     * difference rather than repeating the whole set.
+     */
+    private static HeaderMap buildUpstreamSubset(final Scenario scenario)
+    {
+        final HeaderMap map = new HeaderMap();
+        final int count = Math.max(scenario.upstreamHeaderCount(), 0);
+        for (int i = 0; i < count; i++)
+        {
+            map.add(HttpString.tryFromString(i == 0 ? "host" : "x-forwarded-" + i),
+                    distinctValue(200 + i, scenario.valueLength()));
+        }
+        return map;
     }
 
     private static HeaderMap buildResponseHeaders()

@@ -37,6 +37,18 @@ public final class StatefulJournal implements Journal
      */
     private final FingerprintMemo fingerprints = new FingerprintMemo();
 
+    /**
+     * The header sets actually handed to the delegate for this exchange's client request and
+     * upstream response — not the sets that arrived, the ones that were written, redaction and
+     * level downgrades included.
+     * <p>
+     * They are the bases the forwarded request and the returned response may be recorded as
+     * differences from, and a difference is only meaningful against what the journal really
+     * holds. Null means nothing was written to refer to, and the full set is written instead.
+     */
+    private GatewayHeaders clientRequestBase;
+    private GatewayHeaders upstreamResponseBase;
+
     private JournalLevel level;
     private String requestId;
     private boolean clientReqFlushed = false;
@@ -83,7 +95,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int upstreamRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int upstreamRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers, final GatewayHeaders ignoredBase)
     {
         this.upstreamReqLine = cloneBuffer(startLine);
         this.upstreamReqHeaders = headers;
@@ -108,7 +120,7 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int clientResponse(final JournalLevel level, final String reqId, final int clientStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int clientResponse(final JournalLevel level, final String reqId, final int clientStatusCode, final ByteBuffer startLine, final GatewayHeaders headers, final GatewayHeaders ignoredBase)
     {
         this.clientStatusCode = clientStatusCode;
         this.clientResLine = cloneBuffer(startLine);
@@ -230,7 +242,7 @@ public final class StatefulJournal implements Journal
         if (!upstreamReqFlushed && upstreamReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
-            final int written = delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine, headers);
+            final int written = delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine, headers, clientRequestBase);
             this.bytesWritten += written;
             this.upstreamReqFlushed = true;
             this.upstreamReqLine = null;
@@ -244,6 +256,7 @@ public final class StatefulJournal implements Journal
         if (!clientReqFlushed && clientReqLine != null)
         {
             final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
+            this.clientRequestBase = headers;
             final int written = delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers, remoteAddress, remoteAddressSource);
             this.bytesWritten += written;
             this.clientReqFlushed = true;
@@ -272,7 +285,7 @@ public final class StatefulJournal implements Journal
         if (!clientResFlushed && clientResLine != null)
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
-            final int written = delegate.clientResponse(resLevel, requestId, clientStatusCode, clientResLine, headers);
+            final int written = delegate.clientResponse(resLevel, requestId, clientStatusCode, clientResLine, headers, upstreamResponseBase);
             this.bytesWritten += written;
             this.clientResFlushed = true;
             this.clientResLine = null;
@@ -286,6 +299,7 @@ public final class StatefulJournal implements Journal
         if (!upstreamResFlushed && upstreamResLine != null)
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
+            this.upstreamResponseBase = headers;
             final int written = delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers);
             this.bytesWritten += written;
             this.upstreamResFlushed = true;

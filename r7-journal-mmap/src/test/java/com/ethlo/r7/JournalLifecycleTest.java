@@ -79,7 +79,7 @@ class JournalLifecycleTest
         {
             journal.clientRequest(JournalLevel.FULL, reqId, wrap(requestLine), requestHeaders, client, IpSource.SOCKET);
             journal.requestBody(reqId, ByteBuffer.wrap(requestBody));
-            journal.clientResponse(JournalLevel.FULL, reqId, 201, wrap(responseLine), new FastGatewayHeaders());
+            journal.clientResponse(JournalLevel.FULL, reqId, 201, wrap(responseLine), new FastGatewayHeaders(), null);
             journal.responseBody(reqId, ByteBuffer.wrap(responseBody));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     clientStart, clientEnd, 201,
@@ -142,7 +142,7 @@ class JournalLifecycleTest
             journal.clientRequest(JournalLevel.FULL, reqId, wrap("POST /c HTTP/1.1"),
                     new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
             journal.requestBody(reqId, ByteBuffer.wrap(requestBody));
-            journal.clientResponse(JournalLevel.FULL, reqId, 204, wrap("HTTP/1.1 204 No Content"), new FastGatewayHeaders());
+            journal.clientResponse(JournalLevel.FULL, reqId, 204, wrap("HTTP/1.1 204 No Content"), new FastGatewayHeaders(), null);
             // One direction recorded, one not — the whole point of the type, in one record.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 204, 0L, requestBody.length, 0L, 0L, 0L, 0L, 0L,
@@ -406,7 +406,8 @@ class JournalLifecycleTest
     @Test
     void recoveryIsIdempotent() throws IOException
     {
-        final R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true));
+        final R7fJournalProvider provider = new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true);
+        final R7fJournal journal = new R7fJournal(provider);
         for (int i = 0; i < 5; i++)
         {
             final String reqId = "idem-" + i;
@@ -414,6 +415,16 @@ class JournalLifecycleTest
                     new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
             endOf(journal, reqId, 200);
         }
+
+        // A crash leaves the active segment unsealed, and leaves nothing running. Closing the
+        // provider stops the warmer and releases the segments it had ready; not closing the
+        // journal is what leaves the active one a .flux, which is the state recovery exists for.
+        //
+        // The warmer has to be stopped, not merely ignored: recovery deletes pre-allocated
+        // segments that were never written, so a warmer still producing them into the directory
+        // makes two passes disagree about what is in it — and in production recovery runs before
+        // any journal is opened, so that race is a property of this test rather than of r7.
+        provider.close();
 
         R7fRecoveryManager.cleanAndRecover(journalDir, new CollectingSink());
         final Map<String, Long> afterFirst = segmentSizes();

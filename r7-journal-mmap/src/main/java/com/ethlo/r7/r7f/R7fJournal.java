@@ -28,6 +28,10 @@ import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.fbs.ClientRequest;
+import com.ethlo.r7.r7f.fbs.DeltaBase;
+import com.ethlo.r7.r7f.fbs.DeltaOp;
+import com.ethlo.r7.r7f.fbs.DeltaOpKind;
+import com.ethlo.r7.r7f.fbs.HeaderDelta;
 import com.ethlo.r7.r7f.fbs.ClientResponse;
 import com.ethlo.r7.r7f.fbs.EndExchange;
 import com.ethlo.r7.r7f.fbs.EventPayload;
@@ -173,20 +177,32 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers)
+    public int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, GatewayHeaders base)
     {
         final EntryEncoder enc = encoders.get();
         final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
         int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
-        int headOff = enc.buildHeadersVector(headers);
+
+        // Exactly one of the two: a difference when there is a base to express it against, and
+        // the whole set otherwise. Nothing downstream has to guess which, because the field it
+        // finds says so.
+        final int deltaOff = enc.buildHeaderDelta(DeltaBase.CLIENT_REQUEST, base, headers);
+        final int headOff = deltaOff == 0 ? enc.buildHeadersVector(headers) : 0;
 
         UpstreamRequest.startUpstreamRequest(fbb);
         UpstreamRequest.addJournalLevel(fbb, FBS_JOURNAL_LEVELS[level.ordinal()]);
         UpstreamRequest.addReqId(fbb, reqIdOff);
         UpstreamRequest.addStartLine(fbb, lineOff);
-        UpstreamRequest.addHeaders(fbb, headOff);
+        if (deltaOff == 0)
+        {
+            UpstreamRequest.addHeaders(fbb, headOff);
+        }
+        else
+        {
+            UpstreamRequest.addHeaderDelta(fbb, deltaOff);
+        }
         return finishAndWrite(enc, EventPayload.UpstreamRequest, UpstreamRequest.endUpstreamRequest(fbb));
     }
 
@@ -210,21 +226,30 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public int clientResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public int clientResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers, GatewayHeaders base)
     {
         final EntryEncoder enc = encoders.get();
         final FlatBufferBuilder fbb = enc.fbb;
         fbb.clear();
         int reqIdOff = fbb.createByteVector(enc.asciiScratch, 0, enc.copyToScratch(reqId));
         int lineOff = fbb.createByteVector(startLine);
-        int headOff = enc.buildHeadersVector(headers);
+
+        final int deltaOff = enc.buildHeaderDelta(DeltaBase.UPSTREAM_RESPONSE, base, headers);
+        final int headOff = deltaOff == 0 ? enc.buildHeadersVector(headers) : 0;
 
         ClientResponse.startClientResponse(fbb);
         ClientResponse.addJournalLevel(fbb, FBS_JOURNAL_LEVELS[level.ordinal()]);
         ClientResponse.addReqId(fbb, reqIdOff);
         ClientResponse.addStatus(fbb, statusCode);
         ClientResponse.addStartLine(fbb, lineOff);
-        ClientResponse.addHeaders(fbb, headOff);
+        if (deltaOff == 0)
+        {
+            ClientResponse.addHeaders(fbb, headOff);
+        }
+        else
+        {
+            ClientResponse.addHeaderDelta(fbb, deltaOff);
+        }
         return finishAndWrite(enc, EventPayload.ClientResponse, ClientResponse.endClientResponse(fbb));
     }
 
@@ -430,6 +455,68 @@ public final class R7fJournal implements Journal
         private int currentHeaderCount;
         private int currentAttributeCount;
 
+        /** Reused across exchanges; a diff needs the base indexable and the ops somewhere. */
+        private final HeaderDeltaCodec.Ops deltaOps = new HeaderDeltaCodec.Ops();
+        private int[] deltaOpOffsets = new int[32];
+
+        /**
+         * Encodes {@code target} as its difference from {@code base}.
+         *
+         * @return the offset of the HeaderDelta table, or 0 when there is no base to express a
+         *         difference against, in which case the caller writes the full set instead
+         */
+        private int buildHeaderDelta(final byte baseKind, final GatewayHeaders base, final GatewayHeaders target)
+        {
+            if (base == null)
+            {
+                return 0;
+            }
+            final int baseCount = HeaderDeltaCodec.materialise(base, deltaOps);
+            if (baseCount == 0)
+            {
+                // Nothing to refer to. A delta against an empty base is the full set with extra
+                // framing, and worse, it would make the record depend on an entry that carries
+                // nothing.
+                return 0;
+            }
+
+            HeaderDeltaCodec.diff(deltaOps.name, deltaOps.value, baseCount, target, deltaOps);
+
+            final int opCount = deltaOps.size;
+            if (deltaOpOffsets.length < opCount)
+            {
+                deltaOpOffsets = new int[Integer.highestOneBit(opCount) * 2];
+            }
+
+            for (int i = 0; i < opCount; i++)
+            {
+                if (deltaOps.kind[i] == HeaderDeltaCodec.Ops.COPY)
+                {
+                    DeltaOp.startDeltaOp(fbb);
+                    DeltaOp.addKind(fbb, DeltaOpKind.COPY);
+                    DeltaOp.addBaseIndex(fbb, deltaOps.baseIndex[i]);
+                    DeltaOp.addCount(fbb, deltaOps.count[i]);
+                    deltaOpOffsets[i] = DeltaOp.endDeltaOp(fbb);
+                }
+                else
+                {
+                    final int nameOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(deltaOps.emittedName[i]));
+                    final int valueOff = fbb.createByteVector(asciiScratch, 0, copyToScratch(deltaOps.emittedValue[i]));
+                    DeltaOp.startDeltaOp(fbb);
+                    DeltaOp.addKind(fbb, DeltaOpKind.EMIT);
+                    DeltaOp.addName(fbb, nameOff);
+                    DeltaOp.addValue(fbb, valueOff);
+                    deltaOpOffsets[i] = DeltaOp.endDeltaOp(fbb);
+                }
+            }
+
+            final int opsVector = createOffsetVector(deltaOpOffsets, opCount);
+            HeaderDelta.startHeaderDelta(fbb);
+            HeaderDelta.addBase(fbb, baseKind);
+            HeaderDelta.addOps(fbb, opsVector);
+            return HeaderDelta.endHeaderDelta(fbb);
+        }
+
         private int buildHeadersVector(final GatewayHeaders headers)
         {
             this.currentHeaderCount = 0;
@@ -553,8 +640,8 @@ public final class R7fJournal implements Journal
             // signal stops meaning anything.
             awaitPendingFinalizers();
 
-            // The provider is this journal's to close. Its warmer thread spends its life
-            // blocked in put() holding a mapped, pre-allocated .flux, and nothing else holds
+            // The provider is this journal's to close. Its warmer thread runs ahead of the
+            // writer holding mapped, pre-allocated .flux segments, and nothing else holds
             // a reference to it — the gateway constructs one per shard and keeps only the
             // journal. Leaving it running meant a clean shutdown released the active segment
             // and abandoned the warmed one, mapping and all, so the next boot found a

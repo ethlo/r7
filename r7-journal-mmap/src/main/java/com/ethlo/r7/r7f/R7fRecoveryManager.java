@@ -139,6 +139,22 @@ public final class R7fRecoveryManager
         boolean dataRegionIsZero = false;
         long trailingContentBytes = 0L;
 
+        // A segment file is created and then mapped, and mapping is what gives it its length. A
+        // zero-length one was caught between those two steps — by a crash, or by a shutdown that
+        // could not reclaim it because it had not yet been handed over — and it provably holds
+        // nothing: there are no bytes to have lost. Checked before the file is opened so that it
+        // is not unlinked underneath a channel still pointing at it.
+        //
+        // Every other short file is a different matter. Nothing in this format ever truncates a
+        // segment, so a file with some bytes but fewer than a preamble did not get that way by
+        // never being written, and is reported rather than removed.
+        if (Files.size(file) == 0)
+        {
+            logger.debug("Removing zero-length segment {}, created but never mapped", file.getFileName());
+            Files.delete(file);
+            return new RecoveryResult(0, 0);
+        }
+
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
              Arena arena = Arena.ofConfined())
         {
