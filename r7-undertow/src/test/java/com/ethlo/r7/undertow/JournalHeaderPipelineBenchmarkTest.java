@@ -17,6 +17,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
+import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.GatewayRequest;
@@ -107,16 +108,22 @@ final class JournalHeaderPipelineBenchmarkTest
                             int unsafeCount,
                             JournalLevel level,
                             int bodyBytes,
-                            int threads)
+                            int threads,
+                            int shards)
     {
         Scenario(String name, int headerCount, int valueLength, int unsafeCount, JournalLevel level, int bodyBytes)
         {
-            this(name, headerCount, valueLength, unsafeCount, level, bodyBytes, 1);
+            this(name, headerCount, valueLength, unsafeCount, level, bodyBytes, 1, 1);
         }
 
         Scenario withThreads(final String suffix, final int threads)
         {
-            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes, threads);
+            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes, threads, shards);
+        }
+
+        Scenario withShards(final String suffix, final int shards)
+        {
+            return new Scenario(name + suffix, headerCount, valueLength, unsafeCount, level, bodyBytes, threads, shards);
         }
     }
 
@@ -173,7 +180,17 @@ final class JournalHeaderPipelineBenchmarkTest
             // deployment presents, and the only place the size of the journal's critical
             // section is visible at all.
             new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0).withThreads("-t4", 4),
-            new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0).withThreads("-t8", 8)
+            new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0).withThreads("-t8", 8),
+
+            // Sharding axis, at the thread count where contention actually shows. Whether
+            // these beat the single-shard row above is the whole question behind the
+            // shard_count default.
+            new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0)
+                    .withThreads("-t8", 8).withShards("-s2", 2),
+            new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0)
+                    .withThreads("-t8", 8).withShards("-s4", 4),
+            new Scenario("browser-realistic", 18, 40, 7, JournalLevel.HEADERS, 0)
+                    .withThreads("-t8", 8).withShards("-s8", 8)
     );
 
     @Test
@@ -192,10 +209,15 @@ final class JournalHeaderPipelineBenchmarkTest
         final Path dir = Files.createTempDirectory("r7-header-bench");
         try
         {
-            // Sealed segments are deleted as they retire, exactly as a tailer would, so that
-            // disk usage stays bounded no matter how many exchanges are measured.
-            final R7fJournalProvider provider = new R7fJournalProvider(dir, 0, SEGMENT_BYTES, true);
-            try (final R7fJournal journal = new R7fJournal(provider, JournalHeaderPipelineBenchmarkTest::deleteQuietly))
+            // Each shard gets its own slice of the budget, so that adding shards changes what
+            // is being measured rather than how much is pre-allocated for it.
+            final long segmentBytes = Math.max(SEGMENT_BYTES / scenario.shards(), 64L * 1024 * 1024);
+            final ShardedJournalWriter<R7fJournal> writer = new ShardedJournalWriter<>(scenario.shards(),
+                    // Sealed segments are deleted as they retire, exactly as a tailer would, so
+                    // that disk usage stays bounded no matter how many exchanges are measured.
+                    shard -> new R7fJournal(new R7fJournalProvider(dir, shard, segmentBytes, true),
+                            JournalHeaderPipelineBenchmarkTest::deleteQuietly));
+            try
             {
                 final int perThread = measuredExchanges(scenario) / scenario.threads();
                 final int measured = perThread * scenario.threads();
@@ -207,12 +229,12 @@ final class JournalHeaderPipelineBenchmarkTest
                     fixtures.add(new Fixture(scenario));
                 }
 
-                runConcurrently(journal, fixtures, perThread / 4);
+                runConcurrently(writer, fixtures, perThread / 4);
 
-                final Path segmentBefore = journal.getActivePath();
-                final Totals totals = runConcurrently(journal, fixtures, perThread);
+                final List<Path> segmentsBefore = activeSegments(writer, scenario.shards());
+                final Totals totals = runConcurrently(writer, fixtures, perThread);
 
-                if (!segmentBefore.equals(journal.getActivePath()))
+                if (!segmentsBefore.equals(activeSegments(writer, scenario.shards())))
                 {
                     throw new IllegalStateException("Scenario " + scenario.name() + " rotated a segment while"
                             + " being measured, so its timing includes waiting for the warmer thread. Raise"
@@ -221,14 +243,41 @@ final class JournalHeaderPipelineBenchmarkTest
 
                 return new Result(scenario, measured, totals.elapsedNanos(), totals.journalBytes(), totals.allocatedBytes());
             }
-            catch (final IOException e)
+            finally
             {
-                throw new IllegalStateException("Benchmark scenario " + scenario.name() + " failed", e);
+                writer.shutdown();
             }
         }
         finally
         {
             deleteRecursively(dir);
+        }
+    }
+
+    private static List<Path> activeSegments(final ShardedJournalWriter<R7fJournal> writer, final int shards)
+    {
+        final List<Path> paths = new ArrayList<>(shards);
+        for (int i = 0; i < shards; i++)
+        {
+            paths.add(writer.getJournal(shardProbe(i, shards)).getActivePath());
+        }
+        return paths;
+    }
+
+    /**
+     * A request id that {@link ShardedJournalWriter} routes to the given shard, so the shards
+     * can be enumerated through the same mapping the benchmark writes through.
+     */
+    private static String shardProbe(final int shard, final int shards)
+    {
+        for (int candidate = 0; ; candidate++)
+        {
+            final String id = "probe-" + candidate;
+            final int h = id.hashCode();
+            if (((h ^ (h >>> 16)) & (shards - 1)) == shard)
+            {
+                return id;
+            }
         }
     }
 
@@ -266,7 +315,7 @@ final class JournalHeaderPipelineBenchmarkTest
      * critical section visible: perfect scaling halves it when the writers double, and a fully
      * serialised write path leaves it flat.
      */
-    private Totals runConcurrently(final R7fJournal journal, final List<Fixture> fixtures, final int exchangesPerThread)
+    private Totals runConcurrently(final ShardedJournalWriter<R7fJournal> writer, final List<Fixture> fixtures, final int exchangesPerThread)
     {
         final int threads = fixtures.size();
         final long[] bytes = new long[threads];
@@ -290,7 +339,7 @@ final class JournalHeaderPipelineBenchmarkTest
                     long written = 0;
                     for (int i = 0; i < exchangesPerThread; i++)
                     {
-                        written += fixture.exchange(journal, i);
+                        written += fixture.exchange(writer, i);
                     }
                     final long allocAfter = allocatedBytes();
                     bytes[index] = written;
@@ -310,9 +359,9 @@ final class JournalHeaderPipelineBenchmarkTest
             ready.await();
             final long begin = System.nanoTime();
             start.countDown();
-            for (final Thread writer : writers)
+            for (final Thread thread : writers)
             {
-                writer.join();
+                thread.join();
             }
             elapsed = System.nanoTime() - begin;
         }
@@ -407,11 +456,11 @@ final class JournalHeaderPipelineBenchmarkTest
             attributes.add("route.id", "bench-passthrough");
         }
 
-        private long exchange(final R7fJournal journal, final int iteration)
+        private long exchange(final ShardedJournalWriter<R7fJournal> writer, final int iteration)
         {
             // Per exchange in production, and its flush-state flags make that load-bearing.
-            final StatefulJournal stateful = new StatefulJournal(journal, config, exchange);
             final String requestId = requestIds[iteration & (REQUEST_ID_POOL - 1)];
+            final StatefulJournal stateful = new StatefulJournal(writer.getJournal(requestId), config, exchange);
 
             stateful.clientRequest(scenario.level(), requestId, requestLine.rewind(),
                     clientRequestHeaders, clientAddress, IpSource.SOCKET);
@@ -521,21 +570,22 @@ final class JournalHeaderPipelineBenchmarkTest
     private static void printTable(final List<Result> results)
     {
         final String header = String.format(
-                "%-24s %8s %8s %8s %-9s %7s %9s %10s %12s %12s %12s",
-                "scenario", "headers", "val-len", "unsafe", "level", "threads", "exchanges", "ns/exch", "exch/s", "bytes/exch", "alloc/exch");
+                "%-28s %8s %8s %8s %-9s %7s %6s %9s %10s %12s %12s %12s",
+                "scenario", "headers", "val-len", "unsafe", "level", "threads", "shards", "exchanges", "ns/exch", "exch/s", "bytes/exch", "alloc/exch");
         System.out.println();
         System.out.println(header);
         System.out.println("-".repeat(header.length()));
         for (final Result r : results)
         {
             System.out.printf(
-                    "%-24s %8d %8d %8d %-9s %7d %9d %10.0f %12.0f %12.0f %12.0f%n",
+                    "%-28s %8d %8d %8d %-9s %7d %6d %9d %10.0f %12.0f %12.0f %12.0f%n",
                     r.scenario().name(),
                     r.scenario().headerCount(),
                     r.scenario().valueLength(),
                     r.scenario().unsafeCount(),
                     r.scenario().level(),
                     r.scenario().threads(),
+                    r.scenario().shards(),
                     r.exchanges(),
                     r.nanosPerExchange(),
                     r.exchangesPerSecond(),

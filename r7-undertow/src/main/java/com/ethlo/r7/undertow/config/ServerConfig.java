@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.Optional;
 
 import com.ethlo.r7.config.model.DataSize;
+import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -300,10 +301,55 @@ public record ServerConfig(
             final ValidatorUtils v = new ValidatorUtils(result);
             v.required("work_dir", this.workDir());
 
-            if (this.shardCount() < 1)
+            final int shardCount = this.shardCount();
+            if (shardCount < 1)
             {
                 result.addError("shard_count", "must be >= 1");
             }
+            else if (!isPowerOfTwo(shardCount))
+            {
+                // The writer picks a shard by masking the request id's hash, which only
+                // distributes evenly when the count is a power of two. Without this check the
+                // configuration passes validation and ShardedJournalWriter then refuses to be
+                // constructed, so an operator sees a stack trace at startup instead of being
+                // told which value to use.
+                result.addError("shard_count", "must be a power of two, but was " + shardCount
+                        + ". The nearest valid values are " + Integer.highestOneBit(shardCount)
+                        + " and " + nextPowerOfTwo(shardCount) + ".");
+            }
+
+            // Same reasoning as shard_count: R7fJournalProvider refuses these values in its
+            // constructor, and without the check here that refusal arrives as a stack trace at
+            // startup instead of as an error naming the field. The bounds are the provider's
+            // own constants so the two cannot drift apart.
+            final long shardSizeBytes = this.shardSize().bytes();
+            if (shardSizeBytes < R7fJournalProvider.MIN_SEGMENT_SIZE)
+            {
+                result.addError("shard_size", "must be at least " + R7fJournalProvider.MIN_SEGMENT_SIZE
+                        + " bytes, but was " + shardSizeBytes
+                        + ". A segment has to hold the preamble plus at least one entry.");
+            }
+            else if (shardSizeBytes > R7fJournalProvider.MAX_SEGMENT_SIZE)
+            {
+                result.addError("shard_size", "must not exceed " + R7fJournalProvider.MAX_SEGMENT_SIZE
+                        + " bytes, but was " + shardSizeBytes
+                        + ". Readers address segment offsets with ints.");
+            }
+        }
+
+        private static boolean isPowerOfTwo(final int value)
+        {
+            return (value & (value - 1)) == 0;
+        }
+
+        /**
+         * Smallest power of two above {@code value}, saturating rather than overflowing into a
+         * negative number that would make the advice nonsense.
+         */
+        private static int nextPowerOfTwo(final int value)
+        {
+            final int highest = Integer.highestOneBit(value);
+            return highest >= (1 << 30) ? highest : highest << 1;
         }
 
         @Override

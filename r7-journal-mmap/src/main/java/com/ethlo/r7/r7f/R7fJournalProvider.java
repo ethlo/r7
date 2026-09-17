@@ -26,8 +26,18 @@ public class R7fJournalProvider implements AutoCloseable
 
     /**
      * A segment has to hold the preamble plus at least one entry to be of any use.
+     * <p>
+     * Public so that configuration validation can refuse a bad value with a message naming the
+     * field, rather than leaving this constructor to throw during startup. The two must agree,
+     * so they share the constant rather than each carrying their own copy of the number.
      */
-    private static final long MIN_SEGMENT_SIZE = 64L * 1024L;
+    public static final long MIN_SEGMENT_SIZE = 64L * 1024L;
+
+    /**
+     * Downstream readers address segment offsets with ints, so a segment cannot be larger than
+     * an int can address. Public for the same reason as {@link #MIN_SEGMENT_SIZE}.
+     */
+    public static final long MAX_SEGMENT_SIZE = Integer.MAX_VALUE;
 
     /**
      * Extension of the per-shard sequence high-water marker. Deliberately not one of the
@@ -106,11 +116,11 @@ public class R7fJournalProvider implements AutoCloseable
             throw new IllegalArgumentException("segmentSizeBytes must be at least " + MIN_SEGMENT_SIZE
                     + " bytes, got " + segmentSizeBytes);
         }
-        if (segmentSizeBytes > Integer.MAX_VALUE)
+        if (segmentSizeBytes > MAX_SEGMENT_SIZE)
         {
             // Downstream readers (the tailer and the compressor) address segments with
             // int offsets, so refuse here rather than fail obscurely much later.
-            throw new IllegalArgumentException("segmentSizeBytes must not exceed " + Integer.MAX_VALUE
+            throw new IllegalArgumentException("segmentSizeBytes must not exceed " + MAX_SEGMENT_SIZE
                     + " bytes, got " + segmentSizeBytes);
         }
 
