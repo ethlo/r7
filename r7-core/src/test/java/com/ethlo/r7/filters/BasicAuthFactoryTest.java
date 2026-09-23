@@ -13,6 +13,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -40,6 +41,12 @@ class BasicAuthFactoryTest
      */
     private static final String BOB = "bob:$2y$05$wbODsbwkzHjWDgCS7gUvlunDRPVKM/SkpFGNsu.q5.s9HSJJRB5hi";
 
+    /**
+     * {@code htpasswd -nbBC 4 carol 'pa:ss:word'} - the password itself contains the separator,
+     * which is legal per RFC 7617: only the username is colon-free.
+     */
+    private static final String CAROL = "carol:$2y$04$Tj3RYx8ExzaiQ1.wz5WN1.mT5Fd9JMPr68pXKVerAPZtYN1tCc4.O";
+
     private final BasicAuthFactory factory = new BasicAuthFactory();
 
     @Test
@@ -53,15 +60,34 @@ class BasicAuthFactoryTest
         verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, "alice");
     }
 
+    /**
+     * The split must be on the <em>first</em> colon only. Splitting on the last, or with
+     * {@code String.split(":")}, would hand bcrypt the truncated "pa" and reject a valid user.
+     */
     @Test
     void aPasswordContainingTheSeparatorIsNotTruncated()
     {
-        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("bob:p4ssw0rd!"));
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("carol:pa:ss:word"));
 
-        filter(ALICE, BOB).onClientRequest(exchange);
+        filter(ALICE, CAROL).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, "bob");
+        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, "carol");
+    }
+
+    /**
+     * The mirror of the above: only the full password authenticates, so a split on the last colon
+     * (or any other mangling that happens to pass the test above) still fails here.
+     */
+    @Test
+    void aPrefixOfASeparatorContainingPasswordIsRejected()
+    {
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("carol:pa"));
+
+        filter(ALICE, CAROL).onClientRequest(exchange);
+
+        verify(exchange).shortCircuit(any());
+        verify(exchange.attributes(), never()).set(any(String.class), any(String.class));
     }
 
     /**
@@ -107,16 +133,53 @@ class BasicAuthFactoryTest
         assertRejected(exchange("MISSING".equals(header) ? null : header));
     }
 
-    @Test
-    void aRejectionCarriesTheConfiguredRealmAsAChallenge()
+    /**
+     * A backslash must be escaped too, and before the quotes. A realm ending in one would otherwise
+     * escape the closing quote and let a client parse the rest of the header as further
+     * auth-params; an interior one is silently swallowed as a quoted-pair.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "My \"Realm\"      | Basic realm=\"My \\\"Realm\\\"\"",
+            "back\\slash       | Basic realm=\"back\\\\slash\"",
+            "trailing\\        | Basic realm=\"trailing\\\\\"",
+            "both\\and\"quote  | Basic realm=\"both\\\\and\\\"quote\""
+    })
+    void theChallengeEscapesQuotedStringMetacharacters(final String realm, final String expected)
     {
         final ClientRequestGatewayExchange exchange = exchange(null);
 
-        factory.create(new BasicAuthFactory.Config(List.of(ALICE), "My \"Realm\""), null)
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip()), null)
                 .onClientRequest(exchange);
 
         assertThat(captureRejection(exchange).headers().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .isEqualTo("Basic realm=\"My \\\"Realm\\\"\"");
+                .isEqualTo(expected.strip());
+    }
+
+    /**
+     * A CR or LF would split the 401 response, and anything above ISO-8859-1 cannot be encoded in a
+     * header at all. Both are refused at startup rather than on every rejected request.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"bad\rrealm", "bad\nrealm", "bad\u0000realm", "bad\u007Frealm", "caf\u4E2D"})
+    void aRealmThatCannotBeSentInAHeaderIsRejected(final String realm)
+    {
+        final ValidationResult result = new ValidationResult();
+
+        new BasicAuthFactory.Config(List.of(ALICE), realm).validate(result);
+
+        assertThat(result.hasErrors()).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"My \"Realm\"", "back\\slash", "trailing\\", "Se\u00f1ores", "with\ttab"})
+    void aRealmThatCanBeSentInAHeaderIsAccepted(final String realm)
+    {
+        final ValidationResult result = new ValidationResult();
+
+        new BasicAuthFactory.Config(List.of(ALICE), realm).validate(result);
+
+        assertThat(result.hasErrors()).isFalse();
     }
 
     /**

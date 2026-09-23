@@ -17,6 +17,7 @@ import java.util.Set;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
@@ -127,6 +128,30 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
                     validator.invalid(property, username, "duplicate username");
                 }
             }
+
+            this.validateRealm(validator);
+        }
+
+        /**
+         * The realm is echoed into a quoted-string in the {@code WWW-Authenticate} header of every
+         * 401. A control character there would split the response, and one above ISO-8859-1 cannot
+         * be encoded in a header at all, so both are refused once at startup rather than on every
+         * rejected request. Quote and backslash are permitted because the challenge escapes them.
+         */
+        private void validateRealm(final ValidatorUtils validator)
+        {
+            final String effective = this.realm();
+            for (int i = 0; i < effective.length(); i++)
+            {
+                final char character = effective.charAt(i);
+                if (character > TextValues.MAX_STORABLE || character == 0x7F || (character < 0x20 && character != '\t'))
+                {
+                    validator.invalid("realm", effective, String.format(
+                            "character U+%04X at index %d cannot appear in an HTTP challenge; "
+                                    + "use printable ISO-8859-1 text", (int) character, i));
+                    return;
+                }
+            }
         }
 
         /**
@@ -175,13 +200,25 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         GF(final Config config)
         {
             this.realm = config.realm();
-            this.challenge = "Basic realm=\"" + this.realm.replace("\"", "\\\"") + "\"";
+            this.challenge = "Basic realm=\"" + escapeQuotedString(this.realm) + "\"";
             this.credentials = config.credentials();
             this.verifiedCredentials = Caffeine.newBuilder()
                     .maximumSize(MAX_CACHE_ENTRIES)
                     .expireAfterAccess(CACHE_TTL)
                     .build();
             this.dummyHash = buildDummyHash(this.credentials.values());
+        }
+
+        /**
+         * Escapes a value for an RFC 9110 quoted-string. Backslashes must be doubled <em>before</em>
+         * quotes are escaped: doing it the other way round would re-escape the backslashes this
+         * inserts. Leaving backslashes alone is worse than cosmetic - a realm ending in one would
+         * escape the closing quote, so the remainder of the header would be parsed as further
+         * auth-params.
+         */
+        private static String escapeQuotedString(final String value)
+        {
+            return value.replace("\\", "\\\\").replace("\"", "\\\"");
         }
 
         /**
