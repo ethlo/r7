@@ -66,6 +66,26 @@ $defs:
             body:
               name: $1
               value: $2
+        BasicAuth:
+          type: object
+          properties:
+            realm:
+              type: string
+              description: The authentication realm presented to the client.
+            users:
+              type: array
+              items:
+                type: string
+              description: "List of users in htpasswd format (username:bcrypt-hash), as produced by 'htpasswd -B'."
+          required:
+          - users
+          additionalProperties: false
+          description: Rejects requests that do not present valid Basic Authentication credentials.
+          defaultSnippets:
+          - label: Insert BasicAuth
+            description: Rejects requests that do not present valid Basic Authentication credentials.
+            body:
+              users: $1
         CircuitBreaker:
           type: object
           properties:

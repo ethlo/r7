@@ -15,6 +15,7 @@ public final class HttpHeaders
     public static final String SET_COOKIE = "Set-Cookie";
     public static final String LOCATION = "Location";
     public static final String SERVER = "Server";
+    public static final String WWW_AUTHENTICATE = "WWW-Authenticate";
 
     public static final String CACHE_CONTROL = "Cache-Control";
     public static final String IF_MODIFIED_SINCE = "If-Modified-Since";

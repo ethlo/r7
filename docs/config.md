@@ -517,6 +517,30 @@ Validates a cookie is present and its value matches a specified regular expressi
 Validates that incoming requests contain an `Authorization` header starting with either `Bearer ` or `Basic `. Short-circuits requests with a `401 Unauthorized` status if the header is missing or invalid.
 *This filter requires no configuration parameters.*
 
+#### BasicAuth
+
+Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the authenticated username is recorded in the `gateway.auth.basic.user` attribute for journaling.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
+| `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
+
+Only bcrypt hashes are accepted (`$2a$`, `$2b$`, `$2x$` or `$2y$`, cost 4-31); htpasswd's MD5, SHA-1 and crypt formats are rejected at startup, as are duplicate usernames and malformed entries.
+
+```yaml
+filters:
+  - type: BasicAuth
+    realm: "Admin API"
+    users:
+      - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+      - "bob:${BOB_HTPASSWD_ENTRY}"
+```
+
+Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash. That cost is also a denial-of-service lever: put a `RateLimiter` in front of `BasicAuth` on any route exposed to untrusted clients.
+
+A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
+
 #### InjectBasicAuth
 
 Generates a Base64 encoded Basic Authentication string and injects it into the `Authorization` header of the upstream request.
