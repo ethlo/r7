@@ -8,6 +8,12 @@ To ingest these logs into your observability stack (like Grafana, ELK, or ClickH
 
 In containerized environments, the gateway and the tailer share a volume. The gateway writes the binary journals, and the tailer reads them.
 
+!!! warning "The journal mount must be read-write on the tailer side too"
+    A tailer does more than read: it deletes segments once they are fully processed and persists
+    a `.r7_checkpoints` file under the same directory so it can resume where it left off after a
+    restart. Mounting `/journals` read-only on the tailer will not fail loudly — it fails as
+    segments silently piling up and the checkpoint file never being written.
+
 ```mermaid
 graph LR
     Client -->|HTTP| R7[r7 gateway Container]
@@ -52,7 +58,7 @@ services:
   r7-tailer-json:
     image: ghcr.io/ethlo/r7-tailer-json:latest
     volumes:
-      - r7-journals:/journals:ro # Mount read-only
+      - r7-journals:/journals:rw # r7Tailer deletes completed segments and writes its checkpoint file here
     environment:
       - JOURNAL_DIR=/journals
     # The output of this container goes to Docker's stdout, 
@@ -71,7 +77,11 @@ This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc
 
 Each WARC record is compressed as one independent Zstandard frame per the (proposed) IIPC "Zstandard Compression for WARC Files" convention — the same "record-at-a-time" approach `.warc.gz` has used for gzip since WARC/1.0. `zstd -d` (or any zstd-aware WARC tool) decompresses the whole file back to a plain WARC stream.
 
-**Deduplication.** The gateway's journal stores exactly one copy of a request body and one copy of a response body per exchange — not one per network leg — so the client-facing and upstream-facing legs of the same exchange are structurally guaranteed to carry byte-identical payloads. The tailer exploits this with a single mechanism: a bounded, digest-keyed cache of payloads already written in full. The first record needing a given payload (by SHA-256) is written normally; every later record needing the same payload — whether that's the other leg of the very same exchange, or a completely different exchange that happens to return the same bytes (a cached response, a repeated static asset) — is written as a `revisit` record per the WARC 1.1 `identical-payload-digest` profile: headers preserved, payload omitted, `WARC-Truncated: length`, and a `WARC-Refers-To`/`-Target-URI`/`-Date` pointing back at the original record.
+**Record shape.** Every exchange is written as up to four records, in the order they occurred: the client request, the forwarded upstream request, the upstream response, and the client response — linked to each other by repeated `WARC-Concurrent-To` fields (see [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full rationale). The gateway's journal stores exactly one copy of a request body and one copy of a response body per exchange — not one per network leg — so the upstream request/response records never have a payload of their own to write: each carries `WARC-Truncated: unspecified` plus the `WARC-Payload-Digest` of the payload the corresponding client-side record actually stores. This is deliberately not a `revisit` record — `revisit` means "unchanged since it was previously archived", which the second hop of one exchange is not.
+
+**Cross-exchange deduplication.** Separately, two genuinely different exchanges (a repeated static asset, a cached response) can produce byte-identical payloads. The client request/response records participate in this via a bounded, digest-keyed cache of payloads already written in full: the first record needing a given payload (by SHA-256) is written normally, and a later record for a *different* exchange needing the same payload is written as a `revisit` record per the WARC 1.1 `identical-payload-digest` profile — headers preserved, payload omitted, `WARC-Truncated: length`, and a `WARC-Refers-To`/`-Target-URI`/`-Date` pointing back at the original record.
+
+**Checksum integrity.** If the journal itself reports a body checksum mismatch for a leg (stored bytes don't match what the gateway recorded at request time), that leg's records are written without a payload or digest, marked `WARC-Truncated: unspecified` and `WARC-R7-Checksum-Mismatch: true`, instead of silently archiving corrupted bytes as an authoritative record.
 
 **Configuration (environment variables):**
 
@@ -80,9 +90,9 @@ Each WARC record is compressed as one independent Zstandard frame per the (propo
 | `JOURNAL_DIR`               | `/journals` | Directory the tailer reads binary journals from                             |
 | `OUTPUT_DIR`                | `/warc`     | Directory rotated `.warc.zst` files are written to                          |
 | `WARC_FILE_PREFIX`          | `r7`        | Filename prefix for rotated WARC files                                      |
-| `WARC_MAX_FILE_SIZE_BYTES`  | `1000000000`| Rotate to a new file once the current one reaches this size                 |
+| `WARC_MAX_FILE_SIZE_BYTES`  | `1000000000`| Rotate to a new file once the current one reaches this size (must be positive) |
 | `ZSTD_LEVEL`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
-| `DEDUP_CACHE_ENTRIES`       | `100000`    | Max number of payload digests remembered for revisit-record deduplication   |
+| `DEDUP_CACHE_ENTRIES`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
 | `MIN_AGE_SECONDS`           | `3600`      | How old a segment must be before it is eligible for tailing/deletion        |
 | `POLL_INTERVAL_MS`          | `1000`      | Delay between tailer ticks                                                   |
 
@@ -98,7 +108,7 @@ services:
   r7-tailer-warc:
     image: ghcr.io/ethlo/r7-tailer-warc:latest
     volumes:
-      - r7-journals:/journals:ro
+      - r7-journals:/journals:rw
       - r7-warc:/warc:rw
     environment:
       - JOURNAL_DIR=/journals
@@ -133,7 +143,7 @@ services:
   r7-tailer-clickhouse:
     image: ghcr.io/ethlo/r7-tailer-clickhouse:latest
     volumes:
-      - r7-journals:/journals:ro
+      - r7-journals:/journals:rw
     environment:
       - JOURNAL_DIR=/journals
       - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs

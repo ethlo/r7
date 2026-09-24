@@ -7,16 +7,13 @@ import java.util.Map;
  * Maps a payload digest to the WARC record that first carried that payload in full, so a later
  * record with the same bytes can be written as a {@code revisit} instead.
  * <p>
- * Two distinct dedup opportunities share this one mechanism:
- * <ol>
- *   <li>Within a single exchange, the client and upstream legs of the same direction are
- *   guaranteed byte-identical — the gateway journal itself only stores one copy of the request
- *   body and one copy of the response body (see {@code JournalExchange}), so the second leg is
- *   always an immediate hit here.</li>
- *   <li>Across different exchanges, a repeated identical body (the same cached JSON payload,
- *   the same error page, the same static asset) is a probabilistic but very real hit, exactly
- *   the case the WARC {@code revisit}/{@code identical-payload-digest} profile exists for.</li>
- * </ol>
+ * This is for genuine cross-exchange duplicates only — two different exchanges that happen to
+ * return the same bytes (a cached response, a repeated static asset). Only records that actually
+ * own a payload consult it ({@code WarcExchangeWriter}'s client request/response records); the
+ * intra-exchange case (upstream leg mirrors the client leg's payload) is a different, guaranteed
+ * hit rather than a probabilistic one, and per {@code design/warc.md} is handled by
+ * {@code WARC-Truncated}/{@code WARC-Payload-Digest} pointer fields on those records instead of
+ * a {@code revisit} record — see {@code WarcExchangeWriter}'s class javadoc for why.
  * <p>
  * Bounded by entry count (not by memory, which would need to size each digest+URI+date triple)
  * so a long-running tailer process cannot grow this without limit. Eviction simply means a

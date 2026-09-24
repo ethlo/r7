@@ -10,7 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -71,35 +72,37 @@ public final class WarcFileWriter implements AutoCloseable
     /**
      * Writes a record with a caller-supplied {@code WARC-Record-ID}.
      * <p>
-     * The ID is supplied rather than generated here because a request/response pair must each
-     * carry the <em>other's</em> ID in {@code WARC-Concurrent-To} before either has been
-     * written — see {@code WarcExchangeWriter}.
+     * The ID is supplied rather than generated here because the records of a four-record
+     * exchange group must each carry the <em>others'</em> IDs in {@code WARC-Concurrent-To}
+     * before any of them has been written — see {@code WarcExchangeWriter}. Fields are an
+     * ordered list rather than a map because {@code WARC-Concurrent-To} may legitimately repeat
+     * within one record.
      */
-    synchronized void writeRecord(final String recordId, final String warcType, final Map<String, String> fields, final byte[] block) throws IOException
+    synchronized void writeRecord(final String recordId, final String warcType, final List<Map.Entry<String, String>> fields, final byte[] block) throws IOException
     {
         if (bytesWrittenToCurrentFile >= maxFileSizeBytes)
         {
             rotate();
         }
 
-        final Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("WARC-Type", warcType);
-        headers.put("WARC-Record-ID", "<" + recordId + ">");
-        headers.putAll(fields);
+        final List<Map.Entry<String, String>> headers = new ArrayList<>(fields.size() + 4);
+        headers.add(Map.entry("WARC-Type", warcType));
+        headers.add(Map.entry("WARC-Record-ID", "<" + recordId + ">"));
+        headers.addAll(fields);
         if (currentWarcinfoId != null && !"warcinfo".equals(warcType))
         {
-            headers.put("WARC-Warcinfo-ID", "<" + currentWarcinfoId + ">");
+            headers.add(Map.entry("WARC-Warcinfo-ID", "<" + currentWarcinfoId + ">"));
         }
-        headers.put("Content-Length", Long.toString(block.length));
+        headers.add(Map.entry("Content-Length", Long.toString(block.length)));
 
         writeFrame(headers, block);
     }
 
-    private void writeFrame(final Map<String, String> headers, final byte[] block) throws IOException
+    private void writeFrame(final List<Map.Entry<String, String>> headers, final byte[] block) throws IOException
     {
         final StringBuilder sb = new StringBuilder(256);
         sb.append("WARC/1.1\r\n");
-        for (final Map.Entry<String, String> e : headers.entrySet())
+        for (final Map.Entry<String, String> e : headers)
         {
             if (e.getValue() != null)
             {
@@ -138,10 +141,10 @@ public final class WarcFileWriter implements AutoCloseable
         compressor.setChecksum(true);
         this.bytesWrittenToCurrentFile = 0;
 
-        final Map<String, String> warcinfoFields = new LinkedHashMap<>();
-        warcinfoFields.put("WARC-Date", WarcFields.now());
-        warcinfoFields.put("WARC-Filename", fileName);
-        warcinfoFields.put("Content-Type", "application/warc-fields");
+        final List<Map.Entry<String, String>> warcinfoFields = new ArrayList<>();
+        warcinfoFields.add(Map.entry("WARC-Date", WarcFields.now()));
+        warcinfoFields.add(Map.entry("WARC-Filename", fileName));
+        warcinfoFields.add(Map.entry("Content-Type", "application/warc-fields"));
         this.currentWarcinfoId = null; // the warcinfo record itself must not carry a Warcinfo-ID
         final String warcinfoId = WarcFields.newRecordId();
         writeRecord(warcinfoId, "warcinfo", warcinfoFields, warcinfoBlock());

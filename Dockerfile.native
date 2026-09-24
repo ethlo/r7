@@ -19,10 +19,19 @@ RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw native:compile -Pnative -DskipTests -pl r7-undertow
 
 # STAGE 2: Runtime
+
+# distroless has no shell, so a directory can't be chown'd in this stage - prepare it in a tiny
+# side stage instead. Docker copies an image's pre-existing directory (including ownership) into
+# a *named* volume the first time that volume is created empty, so this is what makes a freshly
+# created r7-journals volume writable by the nonroot user below instead of root:root.
+FROM busybox:stable AS dirs
+RUN mkdir -p /journals && chown 65532:65532 /journals
+
 FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
 
 COPY --from=builder /build/r7-undertow/target/r7-server /app/server
+COPY --from=dirs --chown=65532:65532 /journals /journals
 
 USER 65532:65532
 ENTRYPOINT ["/app/server", "-Djava.security.egd=file:/dev/./urandom"]

@@ -37,7 +37,7 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 java -jar r7-undertow/target/r7-undertow-1.0-SNAPSHOT.jar        # reads ./config/{routes,server}.yaml
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
 docker compose up -d                                             # nginx test backend on :11111
-./build.sh          # mvn install + paketo buildpack image (r7-server)
+./build.sh          # mvn install + paketo buildpack image (r7-gateway)
 ./build-native.sh   # GraalVM native image via Dockerfile.native
 ```
 

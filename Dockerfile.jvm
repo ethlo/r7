@@ -1,9 +1,18 @@
 # Dockerfile.jvm
+
+# distroless has no shell, so a directory can't be chown'd in the final stage - prepare it here
+# instead. Docker copies an image's pre-existing directory (including ownership) into a *named*
+# volume the first time that volume is created empty, so this is what makes a freshly created
+# r7-journals volume writable by the nonroot user below instead of root:root.
+FROM busybox:stable AS dirs
+RUN mkdir -p /journals && chown 65532:65532 /journals
+
 FROM gcr.io/distroless/java25-debian13:nonroot
 WORKDIR /app
 
 # We assume the JAR is already compiled by the CI runner
 COPY r7-undertow/target/r7-undertow-*.jar /app/server.jar
+COPY --from=dirs --chown=65532:65532 /journals /journals
 
 USER 65532:65532
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]
