@@ -1,0 +1,27 @@
+# Dockerfile.tailer-warc.jvm
+FROM gcr.io/distroless/java25-debian13:nonroot
+WORKDIR /app
+
+# Copy the tailer fat JAR
+COPY r7-tailer-warc/target/r7-tailer-warc-*.jar /app/tailer.jar
+
+# Ensure the tailer has read-write access to the shared journal mount
+# Both the gateway container and tailer container must mount the same volume to this path
+VOLUME ["/journals", "/warc"]
+
+# JOURNAL_DIR:              where the gateway's binary journals are read from (the shared volume above).
+# OUTPUT_DIR:                where completed exchanges are written as rotating .warc.zst files.
+# WARC_FILE_PREFIX:          filename prefix for rotated WARC files.
+# WARC_MAX_FILE_SIZE_BYTES:  rotate to a new file once the current one reaches this size.
+# ZSTD_LEVEL:                Zstandard compression level (1-22), applied per WARC record.
+# DEDUP_CACHE_ENTRIES:       max number of payload digests remembered for revisit-record dedup.
+ENV JOURNAL_DIR=/journals
+ENV OUTPUT_DIR=/warc
+ENV WARC_FILE_PREFIX=r7
+ENV WARC_MAX_FILE_SIZE_BYTES=1000000000
+ENV ZSTD_LEVEL=9
+ENV DEDUP_CACHE_ENTRIES=100000
+
+USER 65532:65532
+
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/tailer.jar"]

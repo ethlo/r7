@@ -33,9 +33,9 @@ jobs:
           sudo unzip flatc.zip -d /usr/local/bin/
           sudo chmod +x /usr/local/bin/flatc
 
-      # Compile BOTH the gateway and the tailer in a single pass
+      # Compile BOTH the gateway and the tailers in a single pass
       - name: Build JVM Jars
-        run: ./mvnw clean package -DskipTests -pl r7-undertow,r7-tailer-jsonld -am
+        run: ./mvnw clean package -DskipTests -pl r7-undertow,r7-tailer-jsonld,r7-tailer-warc -am
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -60,12 +60,22 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}-jvm:latest
 
-      # 2. Build and push the tailer sidecar image
-      - name: Build and push Tailer image
+      # 2. Build and push the JSON tailer sidecar image
+      - name: Build and push JSON Tailer image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile.tailer.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-tailer-jvm:latest
+          tags: ghcr.io/${{ github.repository }}-tailer-json-jvm:latest
+
+      # 3. Build and push the WARC tailer sidecar image
+      - name: Build and push WARC Tailer image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.tailer-warc.jvm
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}-tailer-warc-jvm:latest

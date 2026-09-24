@@ -7,7 +7,15 @@ COPY r7-tailer-jsonld/target/r7-tailer-jsonld-*.jar /app/tailer.jar
 
 # Ensure the tailer has read-write access to the shared journal mount
 # Both the gateway container and tailer container must mount the same volume to this path
-VOLUME ["/var/log/r7"]
+VOLUME ["/journals"]
+
+# JOURNAL_DIR: where the gateway's binary journals are read from (the shared volume above).
+# OUTPUT_PATH: where completed exchanges are written as JSON Lines. "-" (the default) means
+#              standard output, ready to be scraped by whatever log forwarder or Docker
+#              logging driver the deployment already runs; any other value is treated as a
+#              file path and appended to, with parent directories created if missing.
+ENV JOURNAL_DIR=/journals
+ENV OUTPUT_PATH=-
 
 USER 65532:65532
 

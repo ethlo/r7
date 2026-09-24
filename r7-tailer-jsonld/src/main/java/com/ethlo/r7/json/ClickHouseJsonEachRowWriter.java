@@ -48,6 +48,15 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
             writeString("gateway_request_id", exchange.getRequestId().toString());
             generator.writeNumberProperty("timestamp", exchange.getClientStartTs());
             generator.writeNumberProperty("duration", exchange.getDurationNanos() / 1_000_000_000D);
+            generator.writeNumberProperty("was_proxied", exchange.wasProxied() ? 1 : 0);
+
+            if (exchange.wasProxied())
+            {
+                generator.writeNumberProperty("proxy_start", exchange.getProxyStartTs());
+                generator.writeNumberProperty("proxy_first_byte", exchange.getProxyFirstByteReceivedTs());
+                generator.writeNumberProperty("proxy_end", exchange.getProxyEndTs());
+                generator.writeNumberProperty("proxy_duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
+            }
 
             writeJournalLevels(exchange);
 
@@ -64,11 +73,13 @@ public class ClickHouseJsonEachRowWriter implements ExchangeCompletionListener
 
             writeNumber("request_header_bytes", exchange.getRequestHeaderBytes());
             writeNumber("request_body_bytes", exchange.getRequestBodyBytes());
-            writeNumber("response_header_bytes", exchange.getRequestHeaderBytes());
-            writeNumber("response_body_bytes", exchange.getRequestBodyBytes());
+            writeNumber("response_header_bytes", exchange.getResponseHeaderBytes());
+            writeNumber("response_body_bytes", exchange.getResponseBodyBytes());
 
             writeNumber("request_crc32", exchange.getJournaledRequestChecksum().isRecorded() ? exchange.getJournaledRequestChecksum().value() : null);
             writeNumber("response_crc32", exchange.getJournaledResponseChecksum().isRecorded() ? exchange.getJournaledResponseChecksum().value() : null);
+            writeNumber("observed_request_crc32", exchange.getObservedRequestChecksum().isRecorded() ? exchange.getObservedRequestChecksum().value() : null);
+            writeNumber("observed_response_crc32", exchange.getObservedResponseChecksum().isRecorded() ? exchange.getObservedResponseChecksum().value() : null);
 
             // --- Payloads ---
             writeBody("request_body", exchange.getRequestBodyFragments());

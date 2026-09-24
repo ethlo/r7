@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -70,6 +71,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             if (exchange.wasProxied())
             {
                 generator.writeStringProperty("proxy_start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyStartTs())));
+                generator.writeStringProperty("proxy_first_byte", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyFirstByteReceivedTs())));
                 generator.writeStringProperty("proxy_end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyEndTs())));
                 writePlainDouble(generator, "proxy_duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
             }
@@ -84,6 +86,14 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             writeNumber("response_header_bytes", exchange.getResponseHeaderBytes());
             writeNumber("response_body_bytes", exchange.getResponseBodyBytes());
             writeNumber("response_total_bytes", exchange.getResponseTotalBytes());
+
+            // --- Checksums ---
+            // "Journaled" is what the gateway recorded to disk; "observed" is what this reader
+            // actually saw. A mismatch between the two means the segment was damaged in transit.
+            writeChecksum("journaled_request_crc32", exchange.getJournaledRequestChecksum());
+            writeChecksum("journaled_response_crc32", exchange.getJournaledResponseChecksum());
+            writeChecksum("observed_request_crc32", exchange.getObservedRequestChecksum());
+            writeChecksum("observed_response_crc32", exchange.getObservedResponseChecksum());
 
             // --- Client Object ---
             generator.writeName("client");
@@ -121,7 +131,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             generator.flush();
 
             out.write(NEWLINE);
-            //out.flush();
+            out.flush();
         }
         catch (IOException e)
         {
@@ -256,11 +266,16 @@ public class DebugJsonWriter implements ExchangeCompletionListener
         generator.writeNumberProperty(name, value);
     }
 
-    private void writePart(final JsonGenerator generator, final int index, final String seq, final int start, final int end) throws IOException
+    private void writeChecksum(String name, BodyChecksum checksum) throws IOException
     {
-        final String fieldName = (index == 0) ? "method" : "path";
-
-        generator.writeStringProperty(fieldName, seq.subSequence(start, end).toString());
+        if (checksum.isRecorded())
+        {
+            generator.writeNumberProperty(name, checksum.value());
+        }
+        else
+        {
+            generator.writeNullProperty(name);
+        }
     }
 
     private void writeBody(String fieldName, List<ByteBuffer> fragments) throws IOException
