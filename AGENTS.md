@@ -37,7 +37,7 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 java -jar r7-undertow/target/r7-undertow-1.0-SNAPSHOT.jar        # reads ./config/{routes,server}.yaml
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
 docker compose up -d                                             # nginx test backend on :11111
-./build.sh          # mvn install + paketo buildpack image (r7-server)
+./build.sh          # mvn install + paketo buildpack image (r7-gateway)
 ./build-native.sh   # GraalVM native image via Dockerfile.native
 ```
 
@@ -47,7 +47,7 @@ Recommended JVM flags (used by benchmarks, docs and CI images):
 Data plane defaults to `:8888`, management/status/dashboard to `:18888`.
 
 Integration tests in `r7-undertow` pick their target via `-Dr7.test.mode=in-process` (default),
-`jvm-docker` or `native-docker`; the Docker modes need locally built `r7-jvm` / `r7-native` images.
+`jvm-docker` or `native-docker`; the Docker modes need locally built `r7-gateway` / `r7-gateway-native` images.
 
 Benchmarks live in `benchmark/` (`./run.sh --quick`); read `benchmark/README.md` before quoting
 any number — only the `vs r7` (passthrough-relative) deltas are meaningful, and `--repeat 3`

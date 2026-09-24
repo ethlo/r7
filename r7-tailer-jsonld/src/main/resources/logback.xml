@@ -1,0 +1,18 @@
+<configuration>
+    <!--
+      This module's stdout is the documented JSONL data stream (OUTPUT_PATH=- or "stdout" writes
+      records there for a container's log driver / Promtail / Fluent Bit to tail). Logging must
+      never share stdout with that stream, or log lines interleave with JSON records and the
+      result is not valid JSONL. All logging goes to stderr instead; stdout stays data-only.
+    -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDERR"/>
+    </root>
+</configuration>

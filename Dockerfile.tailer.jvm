@@ -1,13 +1,31 @@
 # Dockerfile.tailer.jvm
+
+# distroless has no shell, so a directory can't be chown'd in the final stage - prepare it here
+# instead. Docker copies an image's pre-existing directory (including ownership) into a *named*
+# volume the first time that volume is created empty, so this is what makes a freshly created
+# r7-journals volume writable by the nonroot user below instead of root:root. Bind-mounted host
+# directories are not affected by this - their ownership is the operator's responsibility.
+FROM busybox:stable AS dirs
+RUN mkdir -p /journals && chown 65532:65532 /journals
+
 FROM gcr.io/distroless/java25-debian13:nonroot
 WORKDIR /app
 
 # Copy the tailer fat JAR
 COPY r7-tailer-jsonld/target/r7-tailer-jsonld-*.jar /app/tailer.jar
+COPY --from=dirs --chown=65532:65532 /journals /journals
 
 # Ensure the tailer has read-write access to the shared journal mount
 # Both the gateway container and tailer container must mount the same volume to this path
-VOLUME ["/var/log/r7"]
+VOLUME ["/journals"]
+
+# JOURNAL_DIR: where the gateway's binary journals are read from (the shared volume above).
+# OUTPUT_PATH: where completed exchanges are written as JSON Lines. "-" (the default) means
+#              standard output, ready to be scraped by whatever log forwarder or Docker
+#              logging driver the deployment already runs; any other value is treated as a
+#              file path and appended to, with parent directories created if missing.
+ENV JOURNAL_DIR=/journals
+ENV OUTPUT_PATH=-
 
 USER 65532:65532
 

@@ -239,7 +239,7 @@ To use this with the r7 Docker container, you simply need to mount the JAR into 
 ```yaml
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-jvm:latest
+    image: ghcr.io/ethlo/r7-gateway:latest
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"

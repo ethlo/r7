@@ -9,7 +9,7 @@
 
 services:
   gateway:
-    image: ${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-jvm:latest}
+    image: ${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:latest}
     container_name: r7-bench-gateway
     network_mode: host
     volumes:

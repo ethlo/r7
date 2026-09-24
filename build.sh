@@ -1,6 +1,6 @@
 mvn clean install -DskipTests
 
-pack build r7-server \
+pack build r7-gateway \
     --path r7-undertow/target/r7-undertow-1.0-SNAPSHOT.jar \
     --builder paketobuildpacks/builder-jammy-java-tiny \
     --env BP_JVM_VERSION=25 \

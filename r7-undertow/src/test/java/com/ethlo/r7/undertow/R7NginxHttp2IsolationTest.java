@@ -55,7 +55,7 @@ public class R7NginxHttp2IsolationTest
             """;
 
     @Container
-    public static final GenericContainer<?> R7_GATEWAY = new GenericContainer<>(DockerImageName.parse("docker.io/library/r7-native:latest"))
+    public static final GenericContainer<?> R7_GATEWAY = new GenericContainer<>(DockerImageName.parse("docker.io/library/r7-gateway-native:latest"))
             .withNetwork(NETWORK)
             .withExposedPorts(8888)
             .withCopyToContainer(Transferable.of(ROUTES_YAML), "/app/config/routes.yaml")
