@@ -24,13 +24,15 @@ VOLUME ["/journals", "/warc"]
 # JOURNAL_DIR:              where the gateway's binary journals are read from (the shared volume above).
 # OUTPUT_DIR:                where completed exchanges are written as rotating .warc.zst files.
 # WARC_FILE_PREFIX:          filename prefix for rotated WARC files.
-# WARC_MAX_FILE_SIZE_BYTES:  rotate to a new file once the current one reaches this size.
+# WARC_MAX_FILE_SIZE_BYTES:  rotate to a new file once the current one reaches this size (size-or-age rollover).
+# WARC_MAX_FILE_AGE_SECONDS: rotate to a new file once the current one is this old, even if quiet.
 # ZSTD_LEVEL:                Zstandard compression level (1-22), applied per WARC record.
 # DEDUP_CACHE_ENTRIES:       max number of payload digests remembered for revisit-record dedup.
 ENV JOURNAL_DIR=/journals
 ENV OUTPUT_DIR=/warc
 ENV WARC_FILE_PREFIX=r7
 ENV WARC_MAX_FILE_SIZE_BYTES=1000000000
+ENV WARC_MAX_FILE_AGE_SECONDS=900
 ENV ZSTD_LEVEL=9
 ENV DEDUP_CACHE_ENTRIES=100000
 

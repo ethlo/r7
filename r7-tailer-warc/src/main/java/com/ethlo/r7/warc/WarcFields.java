@@ -84,6 +84,24 @@ final class WarcFields
     }
 
     /**
+     * A {@code request} or {@code response} record for a leg that <em>did</em> have a body on
+     * the wire — the exchange's traffic counters report a non-zero byte count for it — but
+     * nothing was captured for it because the journal level for this route/direction is below
+     * {@code FULL}. Without {@code WARC-Truncated} here, a headers-only record is
+     * indistinguishable from one whose message genuinely had no body at all, which is exactly
+     * the ambiguity {@code design/warc.md} calls out for records 2/3; this is the same
+     * ambiguity on a body-owning record (1/4), for a different reason (policy, not topology).
+     * No digest is attached: nothing was captured to digest.
+     */
+    static List<Map.Entry<String, String>> notCaptured(final String msgType, final String targetUri,
+                                                        final List<String> concurrentToIds, final String requestId)
+    {
+        final List<Map.Entry<String, String>> fields = header(msgType, targetUri, concurrentToIds, requestId);
+        fields.add(entry("WARC-Truncated", "unspecified"));
+        return fields;
+    }
+
+    /**
      * A {@code request} or {@code response} record for a body the journal itself reports as
      * corrupt: {@link com.ethlo.r7.journal.api.ExchangeCompletionListener#onChecksumMismatch}
      * fired for it. The payload is never written and never digested — a digest here would only

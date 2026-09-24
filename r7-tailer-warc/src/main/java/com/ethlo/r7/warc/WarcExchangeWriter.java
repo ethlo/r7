@@ -41,7 +41,17 @@ import com.ethlo.r7.journal.api.JournalExchange;
  * own a payload - participate in it, via a bounded {@link PayloadDedupIndex} keyed by payload
  * digest; the first record needing a given payload in this process's lifetime is written in
  * full and remembered, and a later one for a genuinely different exchange is written as a
- * {@code revisit} per the WARC 1.1 {@code identical-payload-digest} profile.
+ * {@code revisit} per the WARC 1.1 {@code identical-payload-digest} profile. The index is only
+ * ever consulted or updated once a whole exchange group's records have been decided, so a hit
+ * can never be this same exchange's own request/response body (which, at empty or otherwise
+ * identical payloads, would otherwise be a false intra-exchange match).
+ * <p>
+ * <b>Atomicity</b>: every leg's frame is built in memory first; the whole group is handed to
+ * {@link WarcFileWriter#writeRecords} as one call, which either writes all of it or none of
+ * it. {@code R7Tailer} retries a whole exchange when this listener throws, so this is what
+ * keeps a failure partway through a group from leaving some of its records durably written and
+ * others not - a retry would otherwise re-decide and re-write the group under new record IDs,
+ * duplicating whatever had already landed.
  */
 public final class WarcExchangeWriter implements ExchangeCompletionListener
 {
@@ -103,9 +113,16 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
 
     /**
      * A single leg (start line + headers), one of the up-to-four records this exchange emits.
+     *
+     * @param bodyBytesReported the byte count the exchange's traffic counters report for this
+     *                          leg's body, regardless of journal level — {@code 0} both for a
+     *                          genuinely empty body and for a leg this record doesn't own; used
+     *                          only to tell "no body" apart from "body not captured" when
+     *                          {@code payloadDigest} is {@code null}
      */
     private record Leg(String msgType, String startLine, GatewayHeaders headers, boolean bodyOwner,
-                       List<ByteBuffer> body, String payloadDigest, boolean checksumMismatch, InetAddress clientAddress)
+                       List<ByteBuffer> body, String payloadDigest, long bodyBytesReported,
+                       boolean checksumMismatch, InetAddress clientAddress)
     {
     }
 
@@ -128,25 +145,25 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         final List<Leg> legs = new ArrayList<>(4);
         final List<String> targetUris = new ArrayList<>(4);
         if (addIfJournaled(legs, "request", clientStartLine, exchange.getClientRequestHeaders(),
-                true, exchange.getRequestBodyFragments(), requestDigest, requestMismatch, exchange.remoteAddress()))
+                true, exchange.getRequestBodyFragments(), requestDigest, exchange.getRequestBodyBytes(), requestMismatch, exchange.remoteAddress()))
         {
             targetUris.add(clientTargetUri);
         }
         if (exchange.wasProxied())
         {
             if (addIfJournaled(legs, "request", upstreamStartLine, exchange.getUpstreamRequestHeaders(),
-                    false, null, requestDigest, requestMismatch, null))
+                    false, null, requestDigest, 0, requestMismatch, null))
             {
                 targetUris.add(upstreamTargetUri);
             }
             if (addIfJournaled(legs, "response", exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(),
-                    false, null, responseDigest, responseMismatch, null))
+                    false, null, responseDigest, 0, responseMismatch, null))
             {
                 targetUris.add(upstreamTargetUri);
             }
         }
         if (addIfJournaled(legs, "response", exchange.getClientResponseStartLine(), exchange.getClientResponseHeaders(),
-                true, exchange.getResponseBodyFragments(), responseDigest, responseMismatch, exchange.remoteAddress()))
+                true, exchange.getResponseBodyFragments(), responseDigest, exchange.getResponseBodyBytes(), responseMismatch, exchange.remoteAddress()))
         {
             targetUris.add(clientTargetUri);
         }
@@ -163,6 +180,14 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             recordIds[i] = WarcFields.newRecordId();
         }
 
+        // Every frame is built and staged here first; nothing is written to disk or remembered
+        // in the dedup index until the whole group has been assembled. This is what keeps a
+        // thrown exception from ever leaving a partial group on disk (R7Tailer retries the
+        // whole exchange on failure - see WarcFileWriter#writeRecords), and it is also what
+        // keeps a dedup lookup for a later leg in this same group from ever matching a payload
+        // this same group already wrote: remembers only happen after every leg has been decided.
+        final List<WarcFileWriter.PendingRecord> pending = new ArrayList<>(legs.size());
+        final List<Runnable> dedupRemembers = new ArrayList<>(2);
         for (int i = 0; i < legs.size(); i++)
         {
             final List<String> concurrentToIds = new ArrayList<>(legs.size() - 1);
@@ -173,32 +198,43 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
                     concurrentToIds.add(recordIds[j]);
                 }
             }
-            writeMessageRecord(legs.get(i), recordIds[i], concurrentToIds, targetUris.get(i), requestId);
+            pending.add(prepareRecord(legs.get(i), recordIds[i], concurrentToIds, targetUris.get(i), requestId, dedupRemembers));
+        }
+
+        fileWriter.writeRecords(pending);
+
+        for (final Runnable remember : dedupRemembers)
+        {
+            remember.run();
         }
     }
 
     private static boolean addIfJournaled(final List<Leg> legs, final String msgType, final String startLine, final GatewayHeaders headers,
                                            final boolean bodyOwner, final List<ByteBuffer> body, final String payloadDigest,
-                                           final boolean checksumMismatch, final InetAddress clientAddress)
+                                           final long bodyBytesReported, final boolean checksumMismatch, final InetAddress clientAddress)
     {
         if (startLine != null)
         {
-            legs.add(new Leg(msgType, startLine, headers, bodyOwner, body, payloadDigest, checksumMismatch, clientAddress));
+            legs.add(new Leg(msgType, startLine, headers, bodyOwner, body, payloadDigest, bodyBytesReported, checksumMismatch, clientAddress));
             return true;
         }
         return false;
     }
 
-    private void writeMessageRecord(final Leg leg, final String ownRecordId, final List<String> concurrentToIds,
-                                     final String targetUri, final String requestId) throws IOException
+    /**
+     * Decides the record type for one leg and builds its frame contents, without writing
+     * anything or touching the dedup index — see {@link #writeExchangeGroup} for why both are
+     * deferred until the whole group is ready.
+     */
+    private WarcFileWriter.PendingRecord prepareRecord(final Leg leg, final String ownRecordId, final List<String> concurrentToIds,
+                                                        final String targetUri, final String requestId, final List<Runnable> dedupRemembers)
     {
         if (leg.checksumMismatch())
         {
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
             final List<Map.Entry<String, String>> fields = WarcFields.checksumMismatch(leg.msgType(), targetUri, concurrentToIds, requestId);
             addClientAddress(fields, leg.clientAddress());
-            fileWriter.writeRecord(ownRecordId, leg.msgType(), fields, block);
-            return;
+            return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
 
         if (!leg.bodyOwner())
@@ -208,19 +244,32 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
             final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), targetUri, concurrentToIds, requestId, leg.payloadDigest());
             addClientAddress(fields, leg.clientAddress());
-            fileWriter.writeRecord(ownRecordId, leg.msgType(), fields, block);
-            return;
+            return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
 
         final String payloadDigest = leg.payloadDigest();
+
+        if (payloadDigest == null && leg.bodyBytesReported() > 0)
+        {
+            // A body crossed the wire (non-zero traffic count) but nothing was captured for it -
+            // the journal level for this route/direction is below FULL. Without WARC-Truncated
+            // this would look like a message that genuinely had no body at all.
+            final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
+            final List<Map.Entry<String, String>> fields = WarcFields.notCaptured(leg.msgType(), targetUri, concurrentToIds, requestId);
+            addClientAddress(fields, leg.clientAddress());
+            return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
+        }
+
+        // Cross-exchange dedup only: the index is never consulted or updated for any leg of the
+        // exchange currently being written until this whole group has been durably written (see
+        // writeExchangeGroup), so a hit here can only ever be a genuinely earlier exchange.
         final PayloadDedupIndex.RevisitTarget existing = payloadDigest != null ? dedupIndex.find(payloadDigest) : null;
         if (existing != null)
         {
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
             final List<Map.Entry<String, String>> fields = WarcFields.revisit(leg.msgType(), targetUri, concurrentToIds, requestId, payloadDigest, existing);
             addClientAddress(fields, leg.clientAddress());
-            fileWriter.writeRecord(ownRecordId, "revisit", fields, block);
-            return;
+            return new WarcFileWriter.PendingRecord(ownRecordId, "revisit", fields, block);
         }
 
         final byte[] block = payloadDigest != null
@@ -228,13 +277,14 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
                 : HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
         final List<Map.Entry<String, String>> fields = WarcFields.stored(leg.msgType(), targetUri, concurrentToIds, requestId, payloadDigest);
         addClientAddress(fields, leg.clientAddress());
-        final String warcDate = fieldValue(fields, "WARC-Date");
-        fileWriter.writeRecord(ownRecordId, leg.msgType(), fields, block);
 
         if (payloadDigest != null)
         {
-            dedupIndex.remember(payloadDigest, new PayloadDedupIndex.RevisitTarget(ownRecordId, targetUri, warcDate));
+            final String warcDate = fieldValue(fields, "WARC-Date");
+            dedupRemembers.add(() -> dedupIndex.remember(payloadDigest, new PayloadDedupIndex.RevisitTarget(ownRecordId, targetUri, warcDate)));
         }
+
+        return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
     }
 
     private static String fieldValue(final List<Map.Entry<String, String>> fields, final String key)

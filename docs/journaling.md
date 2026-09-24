@@ -14,6 +14,14 @@ In containerized environments, the gateway and the tailer share a volume. The ga
     restart. Mounting `/journals` read-only on the tailer will not fail loudly — it fails as
     segments silently piling up and the checkpoint file never being written.
 
+!!! warning "Only one tailer may consume a given journal directory"
+    `R7Tailer` always deletes segments once fully processed and always persists its own
+    `.r7_checkpoints` file — there is no "read-only" or "best-effort" mode today. Two tailer
+    containers pointed at the same `/journals` (say, one JSON and one WARC) race on both, and
+    one of them will silently lose records to the other's deletions and checkpoint writes. Run
+    exactly one tailer per journal directory; if you need both JSON and WARC output from the
+    same traffic, that is not yet supported by a single gateway journal.
+
 ```mermaid
 graph LR
     Client -->|HTTP| R7[r7 gateway Container]
@@ -77,9 +85,9 @@ This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc
 
 Each WARC record is compressed as one independent Zstandard frame per the (proposed) IIPC "Zstandard Compression for WARC Files" convention — the same "record-at-a-time" approach `.warc.gz` has used for gzip since WARC/1.0. `zstd -d` (or any zstd-aware WARC tool) decompresses the whole file back to a plain WARC stream.
 
-**Record shape.** Every exchange is written as up to four records, in the order they occurred: the client request, the forwarded upstream request, the upstream response, and the client response — linked to each other by repeated `WARC-Concurrent-To` fields (see [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full rationale). The gateway's journal stores exactly one copy of a request body and one copy of a response body per exchange — not one per network leg — so the upstream request/response records never have a payload of their own to write: each carries `WARC-Truncated: unspecified` plus the `WARC-Payload-Digest` of the payload the corresponding client-side record actually stores. This is deliberately not a `revisit` record — `revisit` means "unchanged since it was previously archived", which the second hop of one exchange is not.
+**Record shape.** Every exchange is written as up to four records, in the order they occurred: the client request, the forwarded upstream request, the upstream response, and the client response — linked to each other by repeated `WARC-Concurrent-To` fields (see [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full rationale). The gateway's journal stores exactly one copy of a request body and one copy of a response body per exchange — not one per network leg — so the upstream request/response records never have a payload of their own to write: each carries `WARC-Truncated: unspecified` plus the `WARC-Payload-Digest` of the payload the corresponding client-side record actually stores. This is deliberately not a `revisit` record — `revisit` means "unchanged since it was previously archived", which the second hop of one exchange is not. A request/response record with a body that was never captured at all — the journal level for that route/direction is below `FULL`, even though traffic was non-zero — is likewise marked `WARC-Truncated: unspecified`, so it cannot be mistaken for a message that genuinely had no body. Every record also carries a per-file, monotonically increasing `WARC-X-R7-Sequence`, so a reader can tell a shorter-than-expected file apart from one that finished cleanly. All records of one exchange are written to disk as a single unit — either the whole group lands, or (on a write failure, which `R7Tailer` retries as a whole) none of it does — so a retried exchange can never produce duplicate records.
 
-**Cross-exchange deduplication.** Separately, two genuinely different exchanges (a repeated static asset, a cached response) can produce byte-identical payloads. The client request/response records participate in this via a bounded, digest-keyed cache of payloads already written in full: the first record needing a given payload (by SHA-256) is written normally, and a later record for a *different* exchange needing the same payload is written as a `revisit` record per the WARC 1.1 `identical-payload-digest` profile — headers preserved, payload omitted, `WARC-Truncated: length`, and a `WARC-Refers-To`/`-Target-URI`/`-Date` pointing back at the original record.
+**Cross-exchange deduplication.** Separately, two genuinely different exchanges (a repeated static asset, a cached response) can produce byte-identical payloads. The client request/response records participate in this via a bounded, digest-keyed cache of payloads already written in full: the first record needing a given payload (by SHA-256) is written normally, and a later record for a *different* exchange needing the same payload is written as a `revisit` record per the WARC 1.1 `identical-payload-digest` profile — headers preserved, payload omitted, `WARC-Truncated: length`, and a `WARC-Refers-To`/`-Target-URI`/`-Date` pointing back at the original record. The cache is only ever consulted or updated after a whole exchange's own records have been decided, so a request and response that happen to share a payload (e.g. both empty) within the *same* exchange are never revisited against each other.
 
 **Checksum integrity.** If the journal itself reports a body checksum mismatch for a leg (stored bytes don't match what the gateway recorded at request time), that leg's records are written without a payload or digest, marked `WARC-Truncated: unspecified` and `WARC-R7-Checksum-Mismatch: true`, instead of silently archiving corrupted bytes as an authoritative record.
 
@@ -90,7 +98,8 @@ Each WARC record is compressed as one independent Zstandard frame per the (propo
 | `JOURNAL_DIR`               | `/journals` | Directory the tailer reads binary journals from                             |
 | `OUTPUT_DIR`                | `/warc`     | Directory rotated `.warc.zst` files are written to                          |
 | `WARC_FILE_PREFIX`          | `r7`        | Filename prefix for rotated WARC files                                      |
-| `WARC_MAX_FILE_SIZE_BYTES`  | `1000000000`| Rotate to a new file once the current one reaches this size (must be positive) |
+| `WARC_MAX_FILE_SIZE_BYTES`  | `1000000000`| Rotate to a new file once the current one reaches this size (at least 65536; a size that couldn't hold a single record is refused at startup) |
+| `WARC_MAX_FILE_AGE_SECONDS` | `900`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover) |
 | `ZSTD_LEVEL`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
 | `DEDUP_CACHE_ENTRIES`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
 | `MIN_AGE_SECONDS`           | `3600`      | How old a segment must be before it is eligible for tailing/deletion        |

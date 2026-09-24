@@ -38,21 +38,27 @@ public final class WarcTailerMain
         final Path outputDir = Paths.get(env.getOrDefault("OUTPUT_DIR", "/warc"));
         final String filePrefix = env.getOrDefault("WARC_FILE_PREFIX", "r7");
         final long maxFileSizeBytes = Long.parseLong(env.getOrDefault("WARC_MAX_FILE_SIZE_BYTES", Long.toString(1_000_000_000L)));
-        if (maxFileSizeBytes <= 0)
+        if (maxFileSizeBytes < WarcFileWriter.MIN_ROLLOVER_SIZE)
         {
-            throw new IllegalArgumentException("WARC_MAX_FILE_SIZE_BYTES must be a positive number of bytes, but was '"
-                    + env.get("WARC_MAX_FILE_SIZE_BYTES") + "'");
+            throw new IllegalArgumentException("WARC_MAX_FILE_SIZE_BYTES must be at least " + WarcFileWriter.MIN_ROLLOVER_SIZE
+                    + " bytes, but was '" + env.get("WARC_MAX_FILE_SIZE_BYTES") + "'");
+        }
+        final long maxFileAgeSeconds = Long.parseLong(env.getOrDefault("WARC_MAX_FILE_AGE_SECONDS", "900"));
+        if (maxFileAgeSeconds <= 0)
+        {
+            throw new IllegalArgumentException("WARC_MAX_FILE_AGE_SECONDS must be a positive number of seconds, but was '"
+                    + env.get("WARC_MAX_FILE_AGE_SECONDS") + "'");
         }
         final int zstdLevel = Integer.parseInt(env.getOrDefault("ZSTD_LEVEL", "9"));
         final int dedupCacheEntries = Integer.parseInt(env.getOrDefault("DEDUP_CACHE_ENTRIES", "100000"));
         final Duration minAge = Duration.ofSeconds(Long.parseLong(env.getOrDefault("MIN_AGE_SECONDS", "3600")));
         final Duration pollInterval = Duration.ofMillis(Long.parseLong(env.getOrDefault("POLL_INTERVAL_MS", "1000")));
 
-        logger.info("Tailing journals from '{}' -> WARC files in '{}' (max file size {} bytes, zstd level {}, "
+        logger.info("Tailing journals from '{}' -> WARC files in '{}' (max file size {} bytes, max file age {}s, zstd level {}, "
                         + "dedup cache {} entries, min age {}, poll every {})",
-                journalDir, outputDir, maxFileSizeBytes, zstdLevel, dedupCacheEntries, minAge, pollInterval);
+                journalDir, outputDir, maxFileSizeBytes, maxFileAgeSeconds, zstdLevel, dedupCacheEntries, minAge, pollInterval);
 
-        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, zstdLevel);
+        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAgeSeconds * 1000L, zstdLevel);
         final PayloadDedupIndex dedupIndex = new PayloadDedupIndex(dedupCacheEntries);
         final WarcExchangeWriter warcWriter = new WarcExchangeWriter(warcFileWriter, dedupIndex);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
