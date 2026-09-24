@@ -51,14 +51,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # 1. Build and push the main gateway image
-      - name: Build and push Server image
+      - name: Build and push Gateway image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-jvm:latest
+          tags: ghcr.io/${{ github.repository }}-gateway:latest
 
       # 2. Build and push the JSON tailer sidecar image
       - name: Build and push JSON Tailer image
@@ -68,7 +68,7 @@ jobs:
           file: Dockerfile.tailer.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-tailer-json-jvm:latest
+          tags: ghcr.io/${{ github.repository }}-tailer-json:latest
 
       # 3. Build and push the WARC tailer sidecar image
       - name: Build and push WARC Tailer image
@@ -78,4 +78,4 @@ jobs:
           file: Dockerfile.tailer-warc.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-tailer-warc-jvm:latest
+          tags: ghcr.io/${{ github.repository }}-tailer-warc:latest

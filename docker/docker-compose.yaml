@@ -1,6 +1,6 @@
 services:
   r7-gateway:
-    image: ghcr.io/ethlo/r7-jvm:latest #ethlo-r7:latest
+    image: ghcr.io/ethlo/r7-gateway:latest #ethlo-r7:latest
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"

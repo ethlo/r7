@@ -25,7 +25,7 @@ We provide pre-built Docker images for the most common observability architectur
 
 ### 1. Standard JSON Tailer (Universal)
 
-**Image:** `ghcr.io/ethlo/r7-tailer-json-jvm:latest`
+**Image:** `ghcr.io/ethlo/r7-tailer-json:latest`
 
 This tailer converts the binary journal entries into verbose JSON and streams them to standard output (`stdout`) by default. This is the recommended approach if you use generic log forwarders like **Promtail (for Grafana Loki)**, **Fluent Bit**, or **Vector**.
 
@@ -44,13 +44,13 @@ This tailer converts the binary journal entries into verbose JSON and streams th
 ```yaml
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-jvm:latest
+    image: ghcr.io/ethlo/r7-gateway:latest
     volumes:
       - ./config:/app/config:ro
       - r7-journals:/journals:rw # Mount the shared volume
 
   r7-tailer-json:
-    image: ghcr.io/ethlo/r7-tailer-json-jvm:latest
+    image: ghcr.io/ethlo/r7-tailer-json:latest
     volumes:
       - r7-journals:/journals:ro # Mount read-only
     environment:
@@ -65,7 +65,7 @@ volumes:
 
 ### 2. WARC/zstd Tailer (Archival)
 
-**Image:** `ghcr.io/ethlo/r7-tailer-warc-jvm:latest`
+**Image:** `ghcr.io/ethlo/r7-tailer-warc:latest`
 
 This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/) records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating `.warc.zst` files. Use this when you need a durable, replayable, tool-interoperable record of actual request/response traffic (compliance archiving, incident forensics, replaying real traffic against a new backend), rather than a queryable log stream.
 
@@ -91,12 +91,12 @@ Each WARC record is compressed as one independent Zstandard frame per the (propo
 ```yaml
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-jvm:latest
+    image: ghcr.io/ethlo/r7-gateway:latest
     volumes:
       - r7-journals:/journals:rw
 
   r7-tailer-warc:
-    image: ghcr.io/ethlo/r7-tailer-warc-jvm:latest
+    image: ghcr.io/ethlo/r7-tailer-warc:latest
     volumes:
       - r7-journals:/journals:ro
       - r7-warc:/warc:rw
@@ -126,7 +126,7 @@ This tailer reads the binary journals and performs optimized, asynchronous batch
 ```yaml
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-jvm:latest
+    image: ghcr.io/ethlo/r7-gateway:latest
     volumes:
       - r7-journals:/journals:rw
 

@@ -23,7 +23,7 @@ Create `docker-compose.yaml`. This includes the r7 gateway configured with ZGC a
 ```yaml
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-jvm:latest
+    image: ghcr.io/ethlo/r7-gateway:latest
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"   # Main gateway port

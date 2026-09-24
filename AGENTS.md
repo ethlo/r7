@@ -47,7 +47,7 @@ Recommended JVM flags (used by benchmarks, docs and CI images):
 Data plane defaults to `:8888`, management/status/dashboard to `:18888`.
 
 Integration tests in `r7-undertow` pick their target via `-Dr7.test.mode=in-process` (default),
-`jvm-docker` or `native-docker`; the Docker modes need locally built `r7-jvm` / `r7-native` images.
+`jvm-docker` or `native-docker`; the Docker modes need locally built `r7-gateway` / `r7-gateway-native` images.
 
 Benchmarks live in `benchmark/` (`./run.sh --quick`); read `benchmark/README.md` before quoting
 any number — only the `vs r7` (passthrough-relative) deltas are meaningful, and `--repeat 3`

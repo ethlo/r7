@@ -140,7 +140,7 @@ conclude the wrong thing.
 
 ```bash
 ./run.sh --mode jvm-local     # default: java -jar on the host
-./run.sh --mode docker        # the shipped ghcr.io/ethlo/r7-jvm image
+./run.sh --mode docker        # the shipped ghcr.io/ethlo/r7-gateway image
 ```
 
 `jvm-local` gives the cleanest numbers — no container, no cgroup accounting.
