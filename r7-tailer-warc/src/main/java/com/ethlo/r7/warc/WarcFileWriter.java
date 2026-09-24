@@ -143,11 +143,16 @@ public final class WarcFileWriter implements AutoCloseable
      * Writes a batch of records - e.g. the up-to-four records of one exchange group - as a
      * single durable unit: every frame in the batch is built in memory first (pure computation,
      * nothing written yet), then appended to the file in one {@code write} call and fsync'd via
-     * the normal flush path. If any exception is thrown before this method returns, nothing in
-     * the batch has been written, so a caller that retries the same batch (as
-     * {@code R7Tailer} does on a thrown exception) cannot produce duplicate records - unlike
-     * writing each record as it is decided, where an earlier record in the group can already be
-     * on disk by the time a later one in the same group fails.
+     * the normal flush path. Building the frames first keeps every business-logic failure
+     * (digest computation, field construction) from ever touching disk, which is the common
+     * case; the underlying {@code write} call itself is not transactional, though — a
+     * {@link BufferedOutputStream} can still copy part of {@code combined} before an
+     * {@link IOException} (a full disk partway through). Since a torn write can leave a
+     * corrupt trailing frame that a retry would otherwise write past, any failure here discards
+     * the entire current {@code .open} file rather than trying to salvage the good prefix: it
+     * was never sealed, so nothing has been exposed to a reader as durable yet, and the next
+     * call opens a fresh, empty file for the retried batch to land in cleanly. See
+     * {@link #discardCurrentFile()}.
      * <p>
      * The IDs are supplied rather than generated here because the records of a four-record
      * exchange group must each carry the <em>others'</em> IDs in {@code WARC-Concurrent-To}
@@ -160,6 +165,13 @@ public final class WarcFileWriter implements AutoCloseable
         if (records.isEmpty())
         {
             return;
+        }
+
+        // A prior failure may have discarded the file without opening a replacement (to avoid
+        // recursing back into this same failure path) - open one now if so.
+        if (out == null)
+        {
+            rotate();
         }
 
         // Roll before the batch, never inside it: a group stays in one file, and an oversized
@@ -187,8 +199,16 @@ public final class WarcFileWriter implements AutoCloseable
             offset += frame.length;
         }
 
-        out.write(combined);
-        out.flush();
+        try
+        {
+            out.write(combined);
+            out.flush();
+        }
+        catch (final IOException e)
+        {
+            discardCurrentFile();
+            throw e;
+        }
         bytesWrittenToCurrentFile += totalBytes;
         hasRecordsSinceRotate = true;
     }
@@ -302,6 +322,61 @@ public final class WarcFileWriter implements AutoCloseable
             openPath = null;
             sealedPath = null;
         }
+    }
+
+    /**
+     * Closes and deletes the current {@code .open} file outright, without sealing it - the
+     * response to a write failing partway through {@link #writeRecords}, where the file may now
+     * hold a truncated trailing frame. Every record written to this file so far, including any
+     * earlier successful exchange groups, is discarded along with it: none of it was ever
+     * sealed, so none of it was durable or exposed to a reader yet, and salvaging "the good
+     * prefix" of a stream whose exact failure point is not reliably knowable (a
+     * {@link BufferedOutputStream} does not report how many bytes of a failed {@code write}
+     * actually reached the channel) risks leaving a corrupt frame in the middle of a file that
+     * later gets sealed. Leaves the writer with no open file - the next {@link #writeRecords}
+     * call opens a fresh one.
+     */
+    private void discardCurrentFile()
+    {
+        if (compressor != null)
+        {
+            try
+            {
+                compressor.close();
+            }
+            catch (final RuntimeException e)
+            {
+                logger.warn("Failed to close the Zstandard context of a discarded WARC file", e);
+            }
+            compressor = null;
+        }
+        if (out != null)
+        {
+            try
+            {
+                out.close();
+            }
+            catch (final IOException e)
+            {
+                logger.warn("Failed to close a discarded WARC file's stream", e);
+            }
+            out = null;
+            channel = null;
+        }
+        if (openPath != null)
+        {
+            try
+            {
+                Files.deleteIfExists(openPath);
+            }
+            catch (final IOException e)
+            {
+                logger.warn("Failed to delete WARC file '{}' after a partial write - it may contain a truncated frame", openPath, e);
+            }
+            logger.warn("Discarded WARC file after a partial/failed write: {}", openPath);
+        }
+        openPath = null;
+        sealedPath = null;
     }
 
     @Override

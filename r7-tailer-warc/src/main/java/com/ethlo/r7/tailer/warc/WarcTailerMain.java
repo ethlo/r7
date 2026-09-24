@@ -82,8 +82,13 @@ public final class WarcTailerMain
             {
                 tailer.runTick();
             }
-            catch (IOException e)
+            catch (final IOException | RuntimeException e)
             {
+                // WarcExchangeWriter reports a delivery failure as an unchecked
+                // UncheckedIOException (ExchangeCompletionListener.onComplete cannot declare a
+                // checked one) - R7Tailer deliberately re-offers that entry on the next tick, so
+                // catching only IOException here would let that same failure kill the process
+                // instead of reaching the retry it was designed for.
                 logger.error("Error while tailing journals in {}", journalDir, e);
             }
             Thread.sleep(pollInterval.toMillis());
