@@ -3,9 +3,13 @@ package com.ethlo.r7.warc;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -24,6 +28,14 @@ import org.slf4j.LoggerFactory;
  * two properties gzip WARC readers already rely on: a tool can decompress-and-concatenate the
  * whole file to recover a plain WARC file, and — given an external index of frame offsets — a
  * single record can be located and decompressed without touching the rest of the file.
+ * <p>
+ * <b>Open/sealed lifecycle</b>, the same protocol the journal uses for {@code .flux} -&gt;
+ * {@code .r7f} (see {@code design/warc.md}): a file is written under a {@code .open} suffix and
+ * only fsync'd and atomically renamed to its final {@code .warc.zst} name once nothing more will
+ * be written to it (on rotation, or on {@link #close()}). Without this, a consumer watching the
+ * output directory for finished files could see a "final" name while the last frame was still
+ * buffered, and a crash mid-write would leave a truncated file with no way to tell it apart from
+ * one that finished cleanly.
  */
 public final class WarcFileWriter implements AutoCloseable
 {
@@ -34,14 +46,20 @@ public final class WarcFileWriter implements AutoCloseable
     private final long maxFileSizeBytes;
     private final int zstdLevel;
 
+    private FileChannel channel;
     private OutputStream out;
     private ZstdCompressCtx compressor;
-    private Path currentPath;
+    private Path openPath;
+    private Path sealedPath;
     private long bytesWrittenToCurrentFile;
     private String currentWarcinfoId;
 
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final int zstdLevel) throws IOException
     {
+        if (maxFileSizeBytes <= 0)
+        {
+            throw new IllegalArgumentException("maxFileSizeBytes must be positive, but was " + maxFileSizeBytes);
+        }
         this.directory = directory;
         this.filePrefix = filePrefix;
         this.maxFileSizeBytes = maxFileSizeBytes;
@@ -108,11 +126,13 @@ public final class WarcFileWriter implements AutoCloseable
 
     private void rotate() throws IOException
     {
-        close();
+        seal();
 
         final String fileName = filePrefix + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID() + ".warc.zst";
-        this.currentPath = directory.resolve(fileName);
-        this.out = new BufferedOutputStream(Files.newOutputStream(currentPath));
+        this.sealedPath = directory.resolve(fileName);
+        this.openPath = directory.resolve(fileName + ".open");
+        this.channel = FileChannel.open(openPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        this.out = new BufferedOutputStream(Channels.newOutputStream(channel));
         this.compressor = new ZstdCompressCtx();
         compressor.setLevel(zstdLevel);
         compressor.setChecksum(true);
@@ -126,7 +146,7 @@ public final class WarcFileWriter implements AutoCloseable
         final String warcinfoId = WarcFields.newRecordId();
         writeRecord(warcinfoId, "warcinfo", warcinfoFields, warcinfoBlock());
         this.currentWarcinfoId = warcinfoId;
-        logger.info("Rotated to new WARC file: {}", currentPath);
+        logger.info("Rotated to new WARC file: {}", openPath);
     }
 
     private static byte[] warcinfoBlock()
@@ -137,8 +157,12 @@ public final class WarcFileWriter implements AutoCloseable
         return body.getBytes(StandardCharsets.UTF_8);
     }
 
-    @Override
-    public synchronized void close() throws IOException
+    /**
+     * Flushes, fsyncs and atomically renames the current file from its {@code .open} name to
+     * its final {@code .warc.zst} name, so a consumer watching the directory never observes a
+     * final name before every byte behind it is durable. A no-op if nothing is currently open.
+     */
+    private void seal() throws IOException
     {
         if (compressor != null)
         {
@@ -147,8 +171,24 @@ public final class WarcFileWriter implements AutoCloseable
         }
         if (out != null)
         {
+            out.flush();
+            channel.force(true);
             out.close();
             out = null;
+            channel = null;
         }
+        if (openPath != null)
+        {
+            Files.move(openPath, sealedPath, StandardCopyOption.ATOMIC_MOVE);
+            logger.info("Sealed WARC file: {}", sealedPath);
+            openPath = null;
+            sealedPath = null;
+        }
+    }
+
+    @Override
+    public synchronized void close() throws IOException
+    {
+        seal();
     }
 }

@@ -4,13 +4,17 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 
@@ -42,6 +46,16 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     private final WarcFileWriter fileWriter;
     private final PayloadDedupIndex dedupIndex;
 
+    /**
+     * Body kinds {@link #onChecksumMismatch} reported for the exchange currently being
+     * completed, keyed by request id. Populated here and consumed/cleared in {@link #onComplete}
+     * for the same exchange: {@code R7Tailer}'s reassembler calls both on the same thread, for
+     * the same exchange, in the same reassembly step, so no further synchronization is needed —
+     * {@link ConcurrentHashMap} is cheap insurance against that assumption changing, not a
+     * requirement of it.
+     */
+    private final Map<String, Set<ExchangeCompletionListener.BodyKind>> checksumMismatches = new ConcurrentHashMap<>();
+
     public WarcExchangeWriter(final WarcFileWriter fileWriter, final PayloadDedupIndex dedupIndex)
     {
         this.fileWriter = fileWriter;
@@ -49,14 +63,26 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     }
 
     @Override
+    public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind, final BodyChecksum journaled, final BodyChecksum observed)
+    {
+        logger.warn("Checksum mismatch for {} body of exchange {}: journaled={}, observed={} - archiving without payload",
+                kind, exchange.getRequestId(), journaled, observed);
+        checksumMismatches.computeIfAbsent(exchange.getRequestId(), id -> EnumSet.noneOf(BodyKind.class)).add(kind);
+    }
+
+    @Override
     public void onComplete(final JournalExchange exchange)
     {
         try
         {
-            final String requestDigest = PayloadDigest.of(exchange.getRequestBodyFragments());
-            final String responseDigest = PayloadDigest.of(exchange.getResponseBodyFragments());
+            final Set<BodyKind> mismatched = checksumMismatches.remove(exchange.getRequestId());
+            final boolean requestMismatch = mismatched != null && mismatched.contains(BodyKind.REQUEST);
+            final boolean responseMismatch = mismatched != null && mismatched.contains(BodyKind.RESPONSE);
 
-            writePair(exchange, requestDigest, responseDigest,
+            final String requestDigest = requestMismatch ? null : PayloadDigest.of(exchange.getRequestBodyFragments());
+            final String responseDigest = responseMismatch ? null : PayloadDigest.of(exchange.getResponseBodyFragments());
+
+            writePair(exchange, requestDigest, responseDigest, requestMismatch, responseMismatch,
                     exchange.getClientRequestStartLine(), exchange.getClientRequestHeaders(),
                     exchange.getClientResponseStartLine(), exchange.getClientResponseHeaders(),
                     exchange.getRequestBodyFragments(), exchange.getResponseBodyFragments(),
@@ -64,7 +90,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
 
             if (exchange.wasProxied())
             {
-                writePair(exchange, requestDigest, responseDigest,
+                writePair(exchange, requestDigest, responseDigest, requestMismatch, responseMismatch,
                         exchange.getUpstreamRequestStartLine(), exchange.getUpstreamRequestHeaders(),
                         exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(),
                         exchange.getRequestBodyFragments(), exchange.getResponseBodyFragments(),
@@ -80,10 +106,12 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     @Override
     public void onIncomplete(final JournalExchange exchange, final ExchangeCompletionListener.IncompleteReason reason)
     {
+        checksumMismatches.remove(exchange.getRequestId());
         logger.warn("Skipping incomplete exchange {}: {}", exchange.getRequestId(), reason);
     }
 
     private void writePair(final JournalExchange exchange, final String requestDigest, final String responseDigest,
+                            final boolean requestMismatch, final boolean responseMismatch,
                             final String reqStartLine, final GatewayHeaders reqHeaders,
                             final String respStartLine, final GatewayHeaders respHeaders,
                             final List<ByteBuffer> requestBody, final List<ByteBuffer> responseBody,
@@ -105,21 +133,30 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         if (reqStartLine != null)
         {
             writeMessageRecord("request", reqRecordId, respRecordId, targetUri, requestId,
-                    reqStartLine, reqHeaders, requestBody, requestDigest, clientAddress);
+                    reqStartLine, reqHeaders, requestBody, requestDigest, requestMismatch, clientAddress);
         }
         if (respStartLine != null)
         {
             writeMessageRecord("response", respRecordId, reqRecordId, targetUri, requestId,
-                    respStartLine, respHeaders, responseBody, responseDigest, clientAddress);
+                    respStartLine, respHeaders, responseBody, responseDigest, responseMismatch, clientAddress);
         }
     }
 
     private void writeMessageRecord(final String msgType, final String ownRecordId, final String concurrentToRecordId,
                                      final String targetUri, final String requestId,
                                      final String startLine, final GatewayHeaders headers,
-                                     final List<ByteBuffer> body, final String payloadDigest,
+                                     final List<ByteBuffer> body, final String payloadDigest, final boolean checksumMismatch,
                                      final InetAddress clientAddress) throws IOException
     {
+        if (checksumMismatch)
+        {
+            final byte[] block = HttpMessageBlock.headersOnly(startLine, headers);
+            final Map<String, String> fields = WarcFields.requestOrResponseWithChecksumMismatch(msgType, targetUri, concurrentToRecordId, requestId);
+            addClientAddress(fields, clientAddress);
+            fileWriter.writeRecord(ownRecordId, msgType, fields, block);
+            return;
+        }
+
         final PayloadDedupIndex.RevisitTarget existing = payloadDigest != null ? dedupIndex.find(payloadDigest) : null;
         if (existing != null)
         {

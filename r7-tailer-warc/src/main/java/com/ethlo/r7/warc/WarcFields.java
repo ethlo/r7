@@ -55,6 +55,23 @@ final class WarcFields
     }
 
     /**
+     * A {@code request} or {@code response} record for a body the journal itself reports as
+     * corrupt: {@link com.ethlo.r7.journal.api.ExchangeCompletionListener#onChecksumMismatch}
+     * fired for it. The payload is never written and never digested — a digest here would only
+     * validate whatever bytes survived, not the payload that actually crossed the wire — and
+     * {@code WARC-Truncated: unspecified} plus a custom flag make the corruption visible to a
+     * reader instead of silently archiving damaged bytes as an authoritative record.
+     */
+    static Map<String, String> requestOrResponseWithChecksumMismatch(final String msgType, final String targetUri,
+                                                                       final String concurrentToRecordId, final String requestId)
+    {
+        final Map<String, String> fields = requestOrResponse(msgType, targetUri, concurrentToRecordId, requestId, null);
+        fields.put("WARC-Truncated", "unspecified");
+        fields.put("WARC-R7-Checksum-Mismatch", "true");
+        return fields;
+    }
+
+    /**
      * A {@code revisit} record: same envelope as {@link #requestOrResponse}, but pointing back
      * at the record that already carries this exact payload, per the WARC 1.1
      * "identical payload digest" profile (Clause 6.7.2). The header block itself is still

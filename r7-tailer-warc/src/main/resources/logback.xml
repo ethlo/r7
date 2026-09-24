@@ -1,0 +1,18 @@
+<configuration>
+    <!--
+      Same rationale as r7-tailer-jsonld's config: keep logging off stdout by default. This
+      module's primary output is .warc.zst files, not stdout, but a plain ConsoleAppender falls
+      back to stdout, and container log drivers / operators watching `docker logs` should get
+      only actual log lines there — not a mix that depends on which appender happened to win.
+    -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDERR"/>
+    </root>
+</configuration>
