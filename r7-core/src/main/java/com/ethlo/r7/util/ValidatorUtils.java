@@ -154,6 +154,42 @@ public class ValidatorUtils
     }
 
     /**
+     * Characters permitted in an HTTP token (RFC 9110 §5.6.2) beyond letters and digits.
+     */
+    private static final String TOKEN_SPECIALS = "!#$%&'*+-.^_`|~";
+
+    /**
+     * Rejects a header or cookie name that is not a valid HTTP token: letters, digits, and
+     * {@code !#$%&'*+-.^_`|~} only. Unlike {@link #safeHeaderText}, this also rejects spaces,
+     * colons, and other structurally invalid characters that {@code HttpString.tryFromString}
+     * would otherwise accept, producing a malformed header line at request time.
+     */
+    public ValidatorUtils httpToken(final String property, final String value)
+    {
+        if (value == null || value.isEmpty())
+        {
+            return this;
+        }
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char character = value.charAt(i);
+            final boolean isTokenChar = (character >= 'a' && character <= 'z')
+                    || (character >= 'A' && character <= 'Z')
+                    || (character >= '0' && character <= '9')
+                    || TOKEN_SPECIALS.indexOf(character) >= 0;
+            if (!isTokenChar)
+            {
+                invalid(property, value, String.format(
+                        "character '%s' at index %d is not a valid HTTP token character; "
+                                + "names may only contain letters, digits, and !#$%%&'*+-.^_`|~",
+                        character, i));
+                return this;
+            }
+        }
+        return this;
+    }
+
+    /**
      * Rejects a value containing the given character, e.g. a {@code ;} in a cookie attribute,
      * which would otherwise let a config value inject additional {@code Set-Cookie} attributes
      * when the header is built by string concatenation.

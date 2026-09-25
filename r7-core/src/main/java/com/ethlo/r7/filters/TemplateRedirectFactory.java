@@ -64,6 +64,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             new ValidatorUtils(result)
                     .requiredRegexp("source", this.source())
                     .notBlank("target", this.target())
+                    .safeHeaderText("target", this.target())
                     .validRegexReplacement("target", this.source(), this.target());
         }
     }
