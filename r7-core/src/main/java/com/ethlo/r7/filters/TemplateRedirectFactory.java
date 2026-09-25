@@ -138,10 +138,12 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
         private static boolean isSafeLocation(final String location)
         {
+            // Unlike a header value, a Location carries a URI-reference; RFC 3986 has no
+            // "obs-fold" concept, so unlike safeHeaderText, HTAB is not treated as safe here.
             for (int i = 0, len = location.length(); i < len; i++)
             {
                 final char character = location.charAt(i);
-                if (character > TextValues.MAX_STORABLE || character == 0x7F || (character < 0x20 && character != '\t'))
+                if (character > TextValues.MAX_STORABLE || character == 0x7F || character < 0x20)
                 {
                     return false;
                 }
