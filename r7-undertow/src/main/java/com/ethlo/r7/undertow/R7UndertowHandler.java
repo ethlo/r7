@@ -1,8 +1,11 @@
 package com.ethlo.r7.undertow;
 
 import java.net.URI;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
@@ -77,6 +80,15 @@ import io.undertow.util.HttpString;
 
 public final class R7UndertowHandler implements HttpHandler
 {
+    /**
+     * Caches the resource handler for a static content directory alongside the directory's
+     * identity (inode/device) at the time it was built, so a delete+recreate, atomic rename, or
+     * symlink retarget of the directory can be detected and the handler rebuilt.
+     */
+    private record CachedStaticHandler(Object directoryIdentity, ResourceHandler handler)
+    {
+    }
+
     public static final AttachmentKey<UndertowGatewayExchange> GATEWAY_EXCHANGE_KEY = AttachmentKey.create(UndertowGatewayExchange.class);
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
@@ -86,7 +98,7 @@ public final class R7UndertowHandler implements HttpHandler
     private static final String SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
     private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
     private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
-    private static final ConcurrentHashMap<String, ResourceHandler> staticHandlers = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, CachedStaticHandler> staticHandlers = new ConcurrentHashMap<>();
     private final Map<String, RouteUpstreamContext> routeProxyCache = new ConcurrentHashMap<>();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -199,14 +211,62 @@ public final class R7UndertowHandler implements HttpHandler
         {
             try
             {
-                // Retrieve or build the Undertow ResourceHandler for this directory
-                final ResourceHandler handler = staticHandlers.computeIfAbsent(staticBasePath, path ->
-                        new ResourceHandler(new PathResourceManager(Paths.get(path), 100))
-                                .setDirectoryListingEnabled(false)
-                );
+                final boolean followSymlinks = Boolean.parseBoolean(gatewayExchange.attributes().getFirst(StaticContentFactory.STATIC_CONTENT_FOLLOW_SYMLINKS_KEY));
+                final boolean listDirectory = Boolean.parseBoolean(gatewayExchange.attributes().getFirst(StaticContentFactory.STATIC_CONTENT_LIST_DIRECTORY_KEY));
+
+                final Object directoryIdentity;
+                try
+                {
+                    // fileKey() reflects the underlying inode/device, so it changes whenever the
+                    // directory is deleted+recreated, atomically renamed, or reached via a re-pointed
+                    // symlink, even though the configured path string stays the same.
+                    directoryIdentity = Files.readAttributes(Paths.get(staticBasePath), BasicFileAttributes.class).fileKey();
+                }
+                catch (final IOException e)
+                {
+                    // The directory is momentarily missing, e.g. mid atomic swap - fail fast instead
+                    // of handing a stale/broken handler a request that may hang.
+                    logger.debug("Static content directory '{}' is not currently accessible: {}", staticBasePath, e.getMessage());
+                    exchange.setStatusCode(HttpStatuses.NOT_FOUND);
+                    exchange.getResponseSender().send("Static content directory unavailable");
+                    return;
+                }
+
+                // Different routes may point at the same base directory with different options,
+                // so the options are folded into the cache key alongside the path.
+                final String handlerCacheKey = staticBasePath + "|followSymlinks=" + followSymlinks + "|listDirectory=" + listDirectory;
+
+                // Retrieve or (re)build the Undertow ResourceHandler for this directory, discarding
+                // any cached handler whose captured identity no longer matches the directory on
+                // disk. A null directoryIdentity means the filesystem provider can't supply one
+                // (fileKey() is allowed to return null), so never treat it as "unchanged" - always
+                // rebuild rather than risk caching a stale handler forever.
+                final CachedStaticHandler cached = staticHandlers.compute(handlerCacheKey, (key, existing) ->
+                {
+                    if (existing != null && directoryIdentity != null && Objects.equals(existing.directoryIdentity(), directoryIdentity))
+                    {
+                        return existing;
+                    }
+                    if (existing != null)
+                    {
+                        logger.debug("Static content directory '{}' was replaced, rebuilding resource handler", staticBasePath);
+                    }
+                    // With followSymlinks enabled and no safe-path restriction, Undertow follows
+                    // any symlink under the base directory unconditionally (PathResourceManager's
+                    // "followAll" behaviour). With it disabled, use the plain 2-arg constructor,
+                    // which resolves to caseSensitive=true, followLinks=false - passing `false`
+                    // as a 3rd positional arg would instead bind to the (base, transferMinSize,
+                    // caseSensitive) overload and silently disable case-sensitive matching instead.
+                    final PathResourceManager resourceManager = followSymlinks
+                            ? new PathResourceManager(Paths.get(staticBasePath), 100, true, new String[0])
+                            : new PathResourceManager(Paths.get(staticBasePath), 100);
+                    final ResourceHandler handler = new ResourceHandler(resourceManager)
+                            .setDirectoryListingEnabled(listDirectory);
+                    return new CachedStaticHandler(directoryIdentity, handler);
+                });
 
                 // Let Undertow handle the file streaming, MIME types, and zero-copy IO
-                handler.handleRequest(exchange);
+                cached.handler().handleRequest(exchange);
                 return;
             }
             catch (Exception e)

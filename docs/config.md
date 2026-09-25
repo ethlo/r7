@@ -615,6 +615,8 @@ Short-circuits the pipeline to serve static files directly from the disk using a
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `base_directory` | String | Yes | The absolute physical path on the disk (e.g., `/var/www/html/`) containing the static assets. |
+| `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped `current` release symlink). |
+| `list_directory` | Boolean | No (default `false`) | Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. `index.html`) is found there. When disabled, such a request is rejected with `403 Forbidden`. |
 
 #### SetStatus
 
