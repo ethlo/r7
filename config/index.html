@@ -3162,6 +3162,18 @@
 <td>Yes</td>
 <td>The absolute physical path on the disk (e.g., <code>/var/www/html/</code>) containing the static assets.</td>
 </tr>
+<tr>
+<td><code>follow_symlinks</code></td>
+<td>Boolean</td>
+<td>No (default <code>false</code>)</td>
+<td>Follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped <code>current</code> release symlink).</td>
+</tr>
+<tr>
+<td><code>list_directory</code></td>
+<td>Boolean</td>
+<td>No (default <code>false</code>)</td>
+<td>Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. <code>index.html</code>) is found there. When disabled, such a request is rejected with <code>403 Forbidden</code>.</td>
+</tr>
 </tbody>
 </table>
 <h4 id="setstatus">SetStatus</h4>
