@@ -263,8 +263,10 @@ public abstract class AbstractR7IntegrationTest
     {
         if (R7_GATEWAY != null)
         {
-            final String parent = Paths.get(absolutePath).getParent().toString();
-            execContainerOrHost("mkdir", "-p", parent);
+            // copyFileToContainer extracts a tar archive server-side (Docker's putArchive API),
+            // which creates any missing intermediate directories itself - no exec of `mkdir`
+            // needed, which matters because the gateway images used here are distroless and
+            // have no shell or coreutils available to exec.
             R7_GATEWAY.copyFileToContainer(Transferable.of(content), absolutePath);
         }
         else
@@ -276,43 +278,57 @@ public abstract class AbstractR7IntegrationTest
     }
 
     /**
-     * Recursively removes a path, working against either the Docker container filesystem or
-     * the host filesystem depending on the active test mode.
+     * Recursively removes a path on the host filesystem. Only supported in in-process test mode:
+     * the Docker gateway images are distroless and have no shell/coreutils to exec `rm` against,
+     * so tests relying on this must skip themselves (via {@code Assumptions.assumeTrue}) when
+     * {@link #R7_GATEWAY} is non-null.
      */
     protected static void deleteContainerOrHostPath(final String absolutePath) throws Exception
     {
-        execContainerOrHost("rm", "-rf", absolutePath);
+        final Path path = Paths.get(absolutePath);
+        if (Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        {
+            deleteRecursively(path);
+        }
+    }
+
+    private static void deleteRecursively(final Path path) throws Exception
+    {
+        if (Files.isDirectory(path) && !Files.isSymbolicLink(path))
+        {
+            try (final var entries = Files.list(path))
+            {
+                for (final Path entry : entries.toList())
+                {
+                    deleteRecursively(entry);
+                }
+            }
+        }
+        Files.delete(path);
     }
 
     /**
      * Atomically (re)points a symlink at a new target - the same primitive a build tool would
-     * use to publish a new release directory - working against either the Docker container
-     * filesystem or the host filesystem depending on the active test mode.
+     * use to publish a new release directory. Creates the new symlink at a temporary sibling
+     * path and moves it into place with {@code ATOMIC_MOVE}, so there is no window where
+     * {@code linkPath} is missing or points at neither the old nor the new target. Only
+     * supported in in-process test mode; see {@link #deleteContainerOrHostPath} for why.
      */
     protected static void symlinkAtomic(final String linkPath, final String target) throws Exception
     {
-        execContainerOrHost("ln", "-sfn", target, linkPath);
-    }
-
-    private static void execContainerOrHost(final String... command) throws Exception
-    {
-        if (R7_GATEWAY != null)
+        final Path link = Paths.get(linkPath);
+        Files.createDirectories(link.getParent());
+        final Path temp = link.resolveSibling(link.getFileName() + ".tmp-" + System.nanoTime());
+        Files.createSymbolicLink(temp, Paths.get(target));
+        try
         {
-            final var result = R7_GATEWAY.execInContainer(command);
-            if (result.getExitCode() != 0)
-            {
-                throw new IllegalStateException("Command failed (" + String.join(" ", command) + "): " + result.getStderr());
-            }
+            Files.move(temp, link, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
-        else
+        catch (final Exception e)
         {
-            final Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            final String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            final int exit = process.waitFor();
-            if (exit != 0)
-            {
-                throw new IllegalStateException("Command failed (" + String.join(" ", command) + "): " + output);
-            }
+            Files.deleteIfExists(temp);
+            throw e;
         }
     }
 

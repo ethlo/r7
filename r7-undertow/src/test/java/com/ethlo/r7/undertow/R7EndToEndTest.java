@@ -13,6 +13,7 @@ import io.restassured.path.json.JsonPath;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -116,6 +117,9 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     @Test
     public void testFollowSymlinksDisabledByDefaultBlocksNestedSymlinks() throws Exception
     {
+        // symlinkAtomic needs host filesystem access, unavailable against the distroless
+        // Docker gateway images used by jvm-docker/native-docker test modes.
+        Assumptions.assumeTrue(R7_GATEWAY == null, "requires host filesystem access for symlink creation");
         writeContainerOrHostFile("/tmp/static-symlink-target/content.txt", "symlinked-content");
         symlinkAtomic("/tmp/static-symlink-test/linked", "/tmp/static-symlink-target");
 
@@ -131,6 +135,7 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     @Test
     public void testFollowSymlinksEnabledServesNestedSymlinks() throws Exception
     {
+        Assumptions.assumeTrue(R7_GATEWAY == null, "requires host filesystem access for symlink creation");
         writeContainerOrHostFile("/tmp/static-symlink-target/content.txt", "symlinked-content");
         symlinkAtomic("/tmp/static-symlink-test/linked", "/tmp/static-symlink-target");
 
@@ -170,6 +175,7 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     @Test
     public void testStaticContentSurvivesDirectoryReplacement() throws Exception
     {
+        Assumptions.assumeTrue(R7_GATEWAY == null, "requires host filesystem access for directory deletion/symlink swap");
         final String root = "/tmp/static-swap-test";
         final String current = root + "/current";
 

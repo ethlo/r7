@@ -237,10 +237,13 @@ public final class R7UndertowHandler implements HttpHandler
                 final String handlerCacheKey = staticBasePath + "|followSymlinks=" + followSymlinks + "|listDirectory=" + listDirectory;
 
                 // Retrieve or (re)build the Undertow ResourceHandler for this directory, discarding
-                // any cached handler whose captured identity no longer matches the directory on disk.
+                // any cached handler whose captured identity no longer matches the directory on
+                // disk. A null directoryIdentity means the filesystem provider can't supply one
+                // (fileKey() is allowed to return null), so never treat it as "unchanged" - always
+                // rebuild rather than risk caching a stale handler forever.
                 final CachedStaticHandler cached = staticHandlers.compute(handlerCacheKey, (key, existing) ->
                 {
-                    if (existing != null && Objects.equals(existing.directoryIdentity(), directoryIdentity))
+                    if (existing != null && directoryIdentity != null && Objects.equals(existing.directoryIdentity(), directoryIdentity))
                     {
                         return existing;
                     }
@@ -250,10 +253,13 @@ public final class R7UndertowHandler implements HttpHandler
                     }
                     // With followSymlinks enabled and no safe-path restriction, Undertow follows
                     // any symlink under the base directory unconditionally (PathResourceManager's
-                    // "followAll" behaviour).
+                    // "followAll" behaviour). With it disabled, use the plain 2-arg constructor,
+                    // which resolves to caseSensitive=true, followLinks=false - passing `false`
+                    // as a 3rd positional arg would instead bind to the (base, transferMinSize,
+                    // caseSensitive) overload and silently disable case-sensitive matching instead.
                     final PathResourceManager resourceManager = followSymlinks
-                            ? new PathResourceManager(Paths.get(staticBasePath), 1024, true, new String[0])
-                            : new PathResourceManager(Paths.get(staticBasePath), 1024, true);
+                            ? new PathResourceManager(Paths.get(staticBasePath), 100, true, new String[0])
+                            : new PathResourceManager(Paths.get(staticBasePath), 100);
                     final ResourceHandler handler = new ResourceHandler(resourceManager)
                             .setDirectoryListingEnabled(listDirectory);
                     return new CachedStaticHandler(directoryIdentity, handler);
