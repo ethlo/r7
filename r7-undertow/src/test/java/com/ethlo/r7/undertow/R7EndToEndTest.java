@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
+import org.testcontainers.images.builder.Transferable;
+
 public class R7EndToEndTest extends AbstractR7IntegrationTest
 {
     @BeforeAll
@@ -64,7 +66,14 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         // size only. Below 1024 bytes Undertow buffers through write() instead, so the
         // fixture must exceed that threshold to exercise the sendfile path.
         final String largeContent = "x".repeat(4096);
-        java.nio.file.Files.writeString(Path.of("/tmp/large-test.txt"), largeContent, StandardCharsets.UTF_8);
+        if (R7_GATEWAY != null)
+        {
+            R7_GATEWAY.copyFileToContainer(Transferable.of(largeContent), "/tmp/large-test.txt");
+        }
+        else
+        {
+            java.nio.file.Files.writeString(Path.of("/tmp/large-test.txt"), largeContent, StandardCharsets.UTF_8);
+        }
 
         given()
                 .when()
