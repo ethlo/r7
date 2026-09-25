@@ -91,7 +91,7 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
             final String statusJson = given()
                     .accept("application/json")
                     .baseUri("http://localhost")
-                    .port(18888)
+.port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888))
                     .when()
                     .get("/")
                     .then()
