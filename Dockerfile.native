@@ -3,14 +3,8 @@ FROM ghcr.io/graalvm/native-image-community:25 AS builder
 
 WORKDIR /build
 
-# Install unzip and download the flatc binary
-ARG FLATC_VERSION=25.2.10
-RUN microdnf install -y unzip && \
-    curl -L -o flatc.zip "https://github.com/google/flatbuffers/releases/download/v${FLATC_VERSION}/Linux.flatc.binary.clang++-18.zip" && \
-    unzip flatc.zip -d /usr/local/bin/ && \
-    chmod +x /usr/local/bin/flatc && \
-    rm flatc.zip
-
+# r7-journal-mmap's pom.xml invokes the repo's checked-in bin/flatc directly (not whatever is on
+# PATH), and that wrapper dispatches to a per-arch binary - no separate flatc install needed here.
 COPY . .
 
 # Build everything.

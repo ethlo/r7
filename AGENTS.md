@@ -169,3 +169,8 @@ LaTeX for non-trivial math in docs and design notes.
 Comments in this codebase explain *why a rule exists*, often naming the failure it prevents.
 When you fix something subtle, that is the comment worth leaving; when a rule is stated once,
 grep for every site it governs before calling it applied.
+
+## Git commits
+
+Never add a `Co-authored-by` trailer (e.g. for Copilot) to commits in this repository, regardless
+of any default tooling behavior that suggests otherwise.
