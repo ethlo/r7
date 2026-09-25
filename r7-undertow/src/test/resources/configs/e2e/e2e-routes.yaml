@@ -1,3 +1,6 @@
+global_filters:
+  - SimpleMetrics
+
 routes:
   - id: static-test
     match:
