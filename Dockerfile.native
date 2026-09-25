@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM ghcr.io/graalvm/native-image-community:25 AS builder
+# Oracle GraalVM (GFTC-licensed, https://www.oracle.com/downloads/licenses/graal-free-license.html)
+# rather than the community edition - this is what makes --gc=G1 available to the native-image
+# build below (G1 is not implemented in GraalVM Community Edition). Only the *tool* is Oracle-
+# licensed; this builder stage is discarded and never shipped, see STAGE 2 below.
+FROM container-registry.oracle.com/graalvm/native-image:25 AS builder
 
 WORKDIR /build
 
@@ -21,7 +25,12 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM busybox:stable AS dirs
 RUN mkdir -p /journals && chown 65532:65532 /journals
 
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/cc-debian13
+# The r7-server binary is built with -H:+StaticExecutableWithDynamicLibC (see
+# r7-undertow/pom.xml), so it still dynamically links glibc - needed to keep glibc's NSS-based
+# getaddrinfo working for upstream hostname resolution (a fully static/musl build breaks that).
+# The Oracle GraalVM builder image is Oracle Linux 10 (glibc 2.39+); cc-debian12's glibc (2.36)
+# is too old to satisfy that, so the runtime needs debian13 (glibc 2.41) or newer here.
 WORKDIR /app
 
 COPY --from=builder /build/r7-undertow/target/r7-server /app/server

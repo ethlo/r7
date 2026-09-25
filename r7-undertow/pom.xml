@@ -160,6 +160,10 @@
                                 <enabled>true</enabled>
                             </metadataRepository>
                             <buildArgs>
+                                <!-- G1 is Oracle GraalVM-only (unavailable in the community edition); it trades
+                                     some memory footprint for far shorter stop-the-world pauses than the default
+                                     Serial GC, which matters for this gateway's p99 latency target. -->
+                                <buildArg>--gc=G1</buildArg>
                                 <buildArg>-H:IncludeResources=dashboard/.*</buildArg>
                                 <buildArg>-H:+SharedArenaSupport</buildArg>
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
