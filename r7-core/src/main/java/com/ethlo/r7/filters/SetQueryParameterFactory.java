@@ -47,7 +47,7 @@ public final class SetQueryParameterFactory implements GatewayFilterFactory<SetQ
         public void validate(final ValidationResult result)
         {
             new ValidatorUtils(result)
-                    .required("name", this.name())
+                    .notBlank("name", this.name())
                     .required("value", this.value());
         }
     }

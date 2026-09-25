@@ -47,7 +47,7 @@ public final class AddQueryParameterFactory implements GatewayFilterFactory<AddQ
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result);
-            validator.required("name", this.name());
+            validator.notBlank("name", this.name());
             validator.required("value", this.value());
         }
     }

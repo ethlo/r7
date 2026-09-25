@@ -166,8 +166,13 @@ public class ValidatorUtils
      */
     public ValidatorUtils httpToken(final String property, final String value)
     {
-        if (value == null || value.isEmpty())
+        if (value == null)
         {
+            return this;
+        }
+        if (value.isEmpty())
+        {
+            invalid(property, value, "must not be empty; an HTTP token requires at least one character");
             return this;
         }
         for (int i = 0, len = value.length(); i < len; i++)
