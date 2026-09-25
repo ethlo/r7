@@ -114,6 +114,101 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     }
 
     @Test
+    public void testFollowSymlinksDisabledByDefaultBlocksNestedSymlinks() throws Exception
+    {
+        writeContainerOrHostFile("/tmp/static-symlink-target/content.txt", "symlinked-content");
+        symlinkAtomic("/tmp/static-symlink-test/linked", "/tmp/static-symlink-target");
+
+        // The symlink lives *inside* the base directory (not at the base directory level
+        // itself), so without follow_symlinks it must not be resolved
+        given()
+                .when()
+                .get("/static-symlink-blocked/linked/content.txt")
+                .then()
+                .statusCode(404);
+    }
+
+    @Test
+    public void testFollowSymlinksEnabledServesNestedSymlinks() throws Exception
+    {
+        writeContainerOrHostFile("/tmp/static-symlink-target/content.txt", "symlinked-content");
+        symlinkAtomic("/tmp/static-symlink-test/linked", "/tmp/static-symlink-target");
+
+        given()
+                .when()
+                .get("/static-symlink-followed/linked/content.txt")
+                .then()
+                .statusCode(200)
+                .body(Matchers.equalTo("symlinked-content"));
+    }
+
+    @Test
+    public void testListDirectoryDisabledByDefaultForbidsListing() throws Exception
+    {
+        writeContainerOrHostFile("/tmp/static-listing-test/sub/data.txt", "listing-data");
+
+        given()
+                .when()
+                .get("/static-listing-off/sub/")
+                .then()
+                .statusCode(403);
+    }
+
+    @Test
+    public void testListDirectoryEnabledRendersListing() throws Exception
+    {
+        writeContainerOrHostFile("/tmp/static-listing-test/sub/data.txt", "listing-data");
+
+        given()
+                .when()
+                .get("/static-listing-on/sub/")
+                .then()
+                .statusCode(200)
+                .body(containsString("data.txt"));
+    }
+
+    @Test
+    public void testStaticContentSurvivesDirectoryReplacement() throws Exception
+    {
+        final String root = "/tmp/static-swap-test";
+        final String current = root + "/current";
+
+        // The directory is removed before the very first request for this route, so the
+        // gateway has never built (and cached) a resource handler for it yet. It must fail
+        // fast with a clean 404 while the directory is momentarily missing, not a 500 or a hang.
+        deleteContainerOrHostPath(current);
+
+        given()
+                .when()
+                .get("/static-swap/content.txt")
+                .then()
+                .statusCode(404);
+
+        // The site builder then publishes its output by replacing the whole directory in
+        // place (recreating a plain directory at the exact same path)
+        writeContainerOrHostFile(current + "/content.txt", "v2-content");
+
+        given()
+                .when()
+                .get("/static-swap/content.txt")
+                .then()
+                .statusCode(200)
+                .body(Matchers.equalTo("v2-content"));
+
+        // ... and again via an atomic symlink swap to a new release directory
+        deleteContainerOrHostPath(current);
+        writeContainerOrHostFile(root + "/v3/content.txt", "v3-content");
+        symlinkAtomic(current, "v3");
+
+        given()
+                .when()
+                .get("/static-swap/content.txt")
+                .then()
+                .statusCode(200)
+                .body(Matchers.equalTo("v3-content"));
+    }
+
+    @Test
     public void testQueryParameterModification()
     {
         UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/query-modify"))

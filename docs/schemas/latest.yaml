@@ -661,6 +661,20 @@ $defs:
             base_directory:
               type: string
               description: The absolute path to the directory containing static files.
+            follow_symlinks:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether to follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped 'current' release symlink)."
+              default: false
+            list_directory:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether to render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. index.html) is found there. Disabled by default, in which case such a request is rejected with 403 Forbidden."
+              default: false
           required:
           - base_directory
           additionalProperties: false

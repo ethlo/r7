@@ -33,6 +33,7 @@ import io.restassured.RestAssured;
 public abstract class AbstractR7IntegrationTest
 {
     public static final String STATIC_CONTENT_SERVED_SUCCESSFULLY = "Static content served successfully!";
+    public static final String STATIC_SWAP_TEST_INITIAL_CONTENT = "v0-content";
     protected static final Logger logger = LoggerFactory.getLogger(AbstractR7IntegrationTest.class);
     // We bind in-process to 8888 to match the internal container port for consistency
     protected static final int GATEWAY_PORT = 8888;
@@ -124,6 +125,23 @@ public abstract class AbstractR7IntegrationTest
                         Transferable.of(STATIC_CONTENT_SERVED_SUCCESSFULLY),
                         "/tmp/test.txt"
                 )
+                // Seed the directory-replacement test fixture; StaticContent validates that its
+                // base_directory exists at config load time, so it must already be present here.
+                .withCopyToContainer(
+                        Transferable.of(STATIC_SWAP_TEST_INITIAL_CONTENT),
+                        "/tmp/static-swap-test/current/content.txt"
+                )
+                // Base directories for the follow_symlinks/list_directory option tests; their
+                // content is populated after the gateway is up, but the directories themselves
+                // must exist for StaticContent's startup validation to pass.
+                .withCopyToContainer(
+                        Transferable.of(new byte[0]),
+                        "/tmp/static-symlink-test/.keep"
+                )
+                .withCopyToContainer(
+                        Transferable.of(new byte[0]),
+                        "/tmp/static-listing-test/.keep"
+                )
                 .withEnv("WIREMOCK_PORT", String.valueOf(UPSTREAM_SERVER.port()))
                 .withEnv("UPSTREAM_HOST", "${UPSTREAM_HOST}")
                 .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
@@ -168,6 +186,18 @@ public abstract class AbstractR7IntegrationTest
         }
 
         Files.writeString(Paths.get("/tmp/test.txt"), STATIC_CONTENT_SERVED_SUCCESSFULLY, StandardOpenOption.CREATE);
+
+        // Seed the directory-replacement test fixture; StaticContent validates that its
+        // base_directory exists at config load time, so it must already be present here.
+        final Path staticSwapCurrent = Paths.get("/tmp/static-swap-test/current");
+        Files.createDirectories(staticSwapCurrent);
+        Files.writeString(staticSwapCurrent.resolve("content.txt"), STATIC_SWAP_TEST_INITIAL_CONTENT, StandardOpenOption.CREATE);
+
+        // Base directories for the follow_symlinks/list_directory option tests; their content is
+        // populated after the gateway is up, but the directories themselves must exist for
+        // StaticContent's startup validation to pass.
+        Files.createDirectories(Paths.get("/tmp/static-symlink-test"));
+        Files.createDirectories(Paths.get("/tmp/static-listing-test"));
 
         IN_PROCESS_SERVER = new R7Main(IN_PROCESS_CONFIG_FILE, IN_PROCESS_SERVER_FILE);
     }
@@ -222,6 +252,67 @@ public abstract class AbstractR7IntegrationTest
         {
             // Overwrite the physical file on the host OS to trigger java.nio.file.WatchService
             Files.writeString(IN_PROCESS_CONFIG_FILE, configContent, StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Writes a static file at the given absolute path, transparently working against either
+     * the Docker container filesystem or the host filesystem depending on the active test mode.
+     */
+    protected static void writeContainerOrHostFile(final String absolutePath, final String content) throws Exception
+    {
+        if (R7_GATEWAY != null)
+        {
+            final String parent = Paths.get(absolutePath).getParent().toString();
+            execContainerOrHost("mkdir", "-p", parent);
+            R7_GATEWAY.copyFileToContainer(Transferable.of(content), absolutePath);
+        }
+        else
+        {
+            final Path path = Paths.get(absolutePath);
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, content, StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Recursively removes a path, working against either the Docker container filesystem or
+     * the host filesystem depending on the active test mode.
+     */
+    protected static void deleteContainerOrHostPath(final String absolutePath) throws Exception
+    {
+        execContainerOrHost("rm", "-rf", absolutePath);
+    }
+
+    /**
+     * Atomically (re)points a symlink at a new target - the same primitive a build tool would
+     * use to publish a new release directory - working against either the Docker container
+     * filesystem or the host filesystem depending on the active test mode.
+     */
+    protected static void symlinkAtomic(final String linkPath, final String target) throws Exception
+    {
+        execContainerOrHost("ln", "-sfn", target, linkPath);
+    }
+
+    private static void execContainerOrHost(final String... command) throws Exception
+    {
+        if (R7_GATEWAY != null)
+        {
+            final var result = R7_GATEWAY.execInContainer(command);
+            if (result.getExitCode() != 0)
+            {
+                throw new IllegalStateException("Command failed (" + String.join(" ", command) + "): " + result.getStderr());
+            }
+        }
+        else
+        {
+            final Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            final String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            final int exit = process.waitFor();
+            if (exit != 0)
+            {
+                throw new IllegalStateException("Command failed (" + String.join(" ", command) + "): " + output);
+            }
         }
     }
 

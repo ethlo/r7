@@ -13,6 +13,63 @@ routes:
           base_directory: /tmp
     upstream: null
 
+  - id: static-swap-test
+    match:
+      - PathPrefix:
+          prefix: /static-swap/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp/static-swap-test/current
+    upstream: null
+
+  - id: static-symlink-blocked-test
+    match:
+      - PathPrefix:
+          prefix: /static-symlink-blocked/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp/static-symlink-test
+    upstream: null
+
+  - id: static-symlink-followed-test
+    match:
+      - PathPrefix:
+          prefix: /static-symlink-followed/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp/static-symlink-test
+          follow_symlinks: true
+    upstream: null
+
+  - id: static-listing-off-test
+    match:
+      - PathPrefix:
+          prefix: /static-listing-off/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp/static-listing-test
+    upstream: null
+
+  - id: static-listing-on-test
+    match:
+      - PathPrefix:
+          prefix: /static-listing-on/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp/static-listing-test
+          list_directory: true
+    upstream: null
+
   - id: query-modify-test
     match:
       - PathPrefix:
