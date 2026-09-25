@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.xnio.channels.StreamSourceChannel;
 import org.xnio.conduits.AbstractStreamSinkConduit;
 import org.xnio.conduits.AbstractStreamSourceConduit;
 import org.xnio.conduits.StreamSinkConduit;
@@ -252,6 +253,31 @@ public final class TrafficMetricsHandler implements HttpHandler
                 this.counter.addAndGet(written);
             }
             return written;
+        }
+
+        @Override
+        public long transferFrom(final FileChannel src, final long position, final long count) throws IOException
+        {
+            // ResourceHandler (static file serving) uses zero-copy sendfile, which bypasses
+            // write()/write(ByteBuffer[]) entirely. Without counting here, response_body_bytes
+            // would only ever reflect the header size for static content.
+            final long transferred = this.next.transferFrom(src, position, count);
+            if (transferred > 0)
+            {
+                this.counter.addAndGet(transferred);
+            }
+            return transferred;
+        }
+
+        @Override
+        public long transferFrom(final StreamSourceChannel source, final long count, final ByteBuffer throughBuffer) throws IOException
+        {
+            final long transferred = this.next.transferFrom(source, count, throughBuffer);
+            if (transferred > 0)
+            {
+                this.counter.addAndGet(transferred);
+            }
+            return transferred;
         }
     }
 }

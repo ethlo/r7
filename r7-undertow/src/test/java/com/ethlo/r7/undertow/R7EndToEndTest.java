@@ -9,8 +9,15 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
 
+import io.restassured.path.json.JsonPath;
+
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 public class R7EndToEndTest extends AbstractR7IntegrationTest
 {
@@ -45,6 +52,56 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
                 .then()
                 .statusCode(200)
                 .body(containsString("Static content served successfully!"));
+    }
+
+    @Test
+    public void testStaticContentBodyBytesAreCounted() throws Exception
+    {
+        // Undertow's ResourceHandler streams static files >= 1024 bytes via zero-copy
+        // sendfile (StreamSinkConduit#transferFrom), bypassing write(). If
+        // CountingSinkConduit only overrides write(), the file body never reaches the
+        // byte counters and route_metrics.traffic_flow.egress.body_bytes reports header
+        // size only. Below 1024 bytes Undertow buffers through write() instead, so the
+        // fixture must exceed that threshold to exercise the sendfile path.
+        final String largeContent = "x".repeat(4096);
+        java.nio.file.Files.writeString(Path.of("/tmp/large-test.txt"), largeContent, StandardCharsets.UTF_8);
+
+        given()
+                .when()
+                .get("/static/large-test.txt")
+                .then()
+                .statusCode(200)
+                .body(Matchers.equalTo(largeContent));
+
+        final int fileSize = largeContent.getBytes(StandardCharsets.UTF_8).length;
+
+        // Telemetry is flushed to the readable snapshot on a background 2s tick, not synchronously.
+        int bodyBytes = -1;
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            final String statusJson = given()
+                    .accept("application/json")
+                    .baseUri("http://localhost")
+                    .port(18888)
+                    .when()
+                    .get("/")
+                    .then()
+                    .statusCode(200)
+                    .extract()
+                    .asString();
+
+            final Object value = JsonPath.from(statusJson)
+                    .get("route_metrics.find { it.id == 'static-test' }.traffic_flow.egress.body_bytes");
+            if (value != null)
+            {
+                bodyBytes = ((Number) value).intValue();
+                break;
+            }
+            Thread.sleep(250);
+        }
+
+        Assertions.assertTrue(bodyBytes >= fileSize,
+                "Expected egress body_bytes (" + bodyBytes + ") to include the served file size (" + fileSize + ")");
     }
 
     @Test
