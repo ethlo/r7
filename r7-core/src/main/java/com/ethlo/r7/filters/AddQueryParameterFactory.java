@@ -46,6 +46,9 @@ public final class AddQueryParameterFactory implements GatewayFilterFactory<AddQ
         @Override
         public void validate(final ValidationResult result)
         {
+            // Unlike headers/cookies, name and value are not restricted to ISO-8859-1/HTTP-token
+            // characters: UndertowMutableQueryParams percent-encodes both as UTF-8 before they
+            // reach the wire (or the journal), so arbitrary Unicode is safe here by construction.
             final ValidatorUtils validator = new ValidatorUtils(result);
             validator.notBlank("name", this.name());
             validator.required("value", this.value());
