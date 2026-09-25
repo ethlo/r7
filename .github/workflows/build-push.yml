@@ -81,7 +81,17 @@ jobs:
           tags: ghcr.io/${{ github.repository }}-tailer-warc:latest
 
   build-native:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
       contents: read
@@ -90,9 +100,8 @@ jobs:
 
       # Dockerfile.native does its own Maven/native-image build inside the container
       # (COPY . . + mvnw native:compile), so this job needs no host-side Java/flatc setup.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
+      # Each arch builds natively on its own runner (no QEMU) - GraalVM native-image is
+      # CPU/memory heavy and was previously several times slower for arm64 under emulation.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -103,14 +112,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # GraalVM native-image compilation is CPU/memory heavy, and linux/arm64 here runs under
-      # QEMU emulation (this runner is amd64) - expect this job to take substantially longer
-      # than the JVM build above.
-      - name: Build and push Native Gateway image
+      - name: Build and push Native Gateway image (${{ matrix.platform }})
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile.native
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository }}-gateway-native:latest
+          tags: ghcr.io/${{ github.repository }}-gateway-native:latest-${{ matrix.suffix }}
+
+  publish-native-manifest:
+    needs: build-native
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Merge the per-arch images built above into a single multi-arch manifest under
+      # the ':latest' tag, matching the previous QEMU-built image's tag/behavior.
+      - name: Create and push multi-arch manifest
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository }}-gateway-native:latest \
+            ghcr.io/${{ github.repository }}-gateway-native:latest-amd64 \
+            ghcr.io/${{ github.repository }}-gateway-native:latest-arm64
