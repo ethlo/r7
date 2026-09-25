@@ -66,6 +66,19 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
                     .required("name", this.name())
                     .required("value", this.value());
 
+            // Each attribute is concatenated raw into the Set-Cookie header value; a control
+            // character (CR/LF) would split the response, and a ';' would inject an extra
+            // cookie attribute the operator did not intend.
+            validator.safeHeaderText("name", this.name())
+                    .safeHeaderText("value", this.value())
+                    .safeHeaderText("domain", this.domain())
+                    .safeHeaderText("path", this.path())
+                    .safeHeaderText("sameSite", this.sameSite())
+                    .excludesChar("name", this.name(), ';', "cookie name cannot contain ';'")
+                    .excludesChar("value", this.value(), ';', "cookie value cannot contain ';'")
+                    .excludesChar("domain", this.domain(), ';', "cookie domain cannot contain ';'")
+                    .excludesChar("path", this.path(), ';', "cookie path cannot contain ';'");
+
             if (this.sameSite() != null)
             {
                 if (!this.sameSite().equalsIgnoreCase("Strict") &&

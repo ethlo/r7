@@ -105,8 +105,8 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 headers.set(HttpHeaders.LOCATION, location);
 
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
+                        headers,
                         this.responseStatus,
-                        null,
                         EMPTY_BODY.slice()
                 ));
             }

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -118,6 +119,50 @@ public class ValidatorUtils
         if (value == null || value.bytes() <= 0)
         {
             result.addError(property, "'" + property + "' must be a positive data size, got: " + value);
+        }
+        return this;
+    }
+
+    /**
+     * Rejects a value that a filter would later refuse to store as a header, cookie, or query
+     * parameter: any character above ISO-8859-1, DEL, or a C0 control character other than tab
+     * (this includes CR and LF, which would otherwise allow header/response splitting).
+     * <p>
+     * Filters set values like this on every matching request via {@code TextValues.requireStorable},
+     * which throws rather than returning a boolean. Catching an unstorable value here, at config
+     * validation time, turns a per-request 500 into a startup error that names the offending field.
+     * A {@code null} value is not reported here; use {@link #required(String, Object)} for that.
+     */
+    public ValidatorUtils safeHeaderText(final String property, final String value)
+    {
+        if (value == null)
+        {
+            return this;
+        }
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char character = value.charAt(i);
+            if (character > TextValues.MAX_STORABLE || character == 0x7F || (character < 0x20 && character != '\t'))
+            {
+                invalid(property, value, String.format(
+                        "character U+%04X at index %d cannot appear in an HTTP header, cookie, or query "
+                                + "parameter value; use printable ISO-8859-1 text", (int) character, i));
+                return this;
+            }
+        }
+        return this;
+    }
+
+    /**
+     * Rejects a value containing the given character, e.g. a {@code ;} in a cookie attribute,
+     * which would otherwise let a config value inject additional {@code Set-Cookie} attributes
+     * when the header is built by string concatenation.
+     */
+    public ValidatorUtils excludesChar(final String property, final String value, final char forbidden, final String reason)
+    {
+        if (value != null && value.indexOf(forbidden) >= 0)
+        {
+            invalid(property, value, reason);
         }
         return this;
     }
