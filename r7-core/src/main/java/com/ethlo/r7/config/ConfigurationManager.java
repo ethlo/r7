@@ -408,7 +408,7 @@ public final class ConfigurationManager
 
             if (!matcher.matches())
             {
-                throw new ConfigurationException("Invalid duration format: '" + text + "'. Supported formats: 10ms, 5s, 2m, 1h");
+                throw new ConfigurationException("Invalid duration format: '" + text + "'. Supported formats: 10ms, 5s, 2m, 1h, 3d");
             }
 
             final long amount = Long.parseLong(matcher.group(1));
@@ -420,6 +420,7 @@ public final class ConfigurationManager
                 case "s" -> Duration.ofSeconds(amount);
                 case "m" -> Duration.ofMinutes(amount);
                 case "h" -> Duration.ofHours(amount);
+                case "d" -> Duration.ofDays(amount);
                 default -> throw new ConfigurationException("Unknown duration unit: " + unit);
             };
 

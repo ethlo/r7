@@ -8,19 +8,26 @@ To ingest these logs into your observability stack (like Grafana, ELK, or ClickH
 
 In containerized environments, the gateway and the tailer share a volume. The gateway writes the binary journals, and the tailer reads them.
 
-!!! warning "The journal mount must be read-write on the tailer side too"
-    A tailer does more than read: it deletes segments once they are fully processed and persists
-    a `.r7_checkpoints` file under the same directory so it can resume where it left off after a
-    restart. Mounting `/journals` read-only on the tailer will not fail loudly — it fails as
-    segments silently piling up and the checkpoint file never being written.
+!!! warning "The journal mount must be read-write for whichever tailer owns retention"
+    A tailer does more than read: the one responsible for retention deletes segments once they
+    are fully processed (or once `TTL` expires, see below). Checkpoints no longer live under
+    the journal directory by default (see `CHECKPOINT_DIR` below), so a *secondary* tailer that
+    is not meant to own retention can safely mount `/journals` read-only — its deletion
+    attempts are then refused by the filesystem and skipped, not fatal. The tailer that does
+    own retention still needs `/journals` read-write, or segments simply pile up forever.
 
-!!! warning "Only one tailer may consume a given journal directory"
-    `R7Tailer` always deletes segments once fully processed and always persists its own
-    `.r7_checkpoints` file — there is no "read-only" or "best-effort" mode today. Two tailer
-    containers pointed at the same `/journals` (say, one JSON and one WARC) race on both, and
-    one of them will silently lose records to the other's deletions and checkpoint writes. Run
-    exactly one tailer per journal directory; if you need both JSON and WARC output from the
-    same traffic, that is not yet supported by a single gateway journal.
+!!! note "Running more than one tailer against the same journal directory"
+    Each tailer keeps its own checkpoint under its own `CHECKPOINT_DIR` (a dedicated directory
+    outside `JOURNAL_DIR` by default — see the env var tables below for exactly where), so two
+    different tailers (say, one JSON and one WARC) no longer overwrite each other's progress.
+    Deletion is still a shared resource, though: by default a tailer deletes a segment as soon
+    as *it* has fully read it, which would delete it out from under a second, slower tailer. To
+    run more than one tailer against the same directory, set `TTL` on every tailer involved to
+    a value comfortably longer than the slowest tailer's expected catch-up time (for example
+    `24h`), and rely on `TTL` rather than per-tailer completion for retention — a segment is
+    then kept for at least that long regardless of which tailer has read it, and removed once
+    every tailer has had a fair chance to. Mount `JOURNAL_DIR` read-only (`:ro`) on every tailer
+    except the one you want to actually own deletion.
 
 ```mermaid
 graph LR
@@ -48,9 +55,11 @@ This tailer converts the binary journal entries into verbose JSON and streams th
 | Variable          | Default     | Meaning                                                                 |
 |-------------------|-------------|--------------------------------------------------------------------------|
 | `JOURNAL_DIR`     | `/journals` | Directory the tailer reads binary journals from                          |
+| `CHECKPOINT_DIR`  | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside `JOURNAL_DIR`, so `JOURNAL_DIR` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `JOURNAL_DIR` |
 | `OUTPUT_PATH`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
-| `MIN_AGE_SECONDS` | `3600`      | How old a segment must be before it is eligible for tailing/deletion     |
-| `POLL_INTERVAL_MS`| `1000`      | Delay between tailer ticks                                                |
+| `GRACE_PERIOD`    | `1h`        | Minimum segment age (from its last-modified time, not from when this tailer finished reading it) before a fully-read segment is deleted; `null`/unset means "delete as soon as read". Supports `ms`, `s`, `m`, `h`, `d`. Mutually exclusive with `TTL` |
+| `TTL`             | disabled    | Hard retention ceiling: a segment older than this is deleted whether or not it was fully read, which is what lets more than one tailer follow the same journal directory (see the note above). Same units as `GRACE_PERIOD` |
+| `POLL_INTERVAL`   | `1s`        | Delay between tailer ticks. Same units as `GRACE_PERIOD`                 |
 | `PRETTY_PRINT`    | `false`     | Pretty-print the JSON output                                              |
 
 **Example Docker Compose Integration:**
@@ -66,7 +75,8 @@ services:
   r7-tailer-json:
     image: ghcr.io/ethlo/r7-tailer-json:latest
     volumes:
-      - r7-journals:/journals:rw # r7Tailer deletes completed segments and writes its checkpoint file here
+      - r7-journals:/journals:rw # r7Tailer deletes completed segments here when this tailer owns retention
+      - r7-checkpoints:/checkpoints:rw # .r7_checkpoints lives here by default
     environment:
       - JOURNAL_DIR=/journals
     # The output of this container goes to Docker's stdout, 
@@ -74,6 +84,7 @@ services:
 
 volumes:
   r7-journals:
+  r7-checkpoints:
 
 ```
 
@@ -96,14 +107,16 @@ Each WARC record is compressed as one independent Zstandard frame per the (propo
 | Variable                   | Default     | Meaning                                                                    |
 |----------------------------|-------------|-----------------------------------------------------------------------------|
 | `JOURNAL_DIR`               | `/journals` | Directory the tailer reads binary journals from                             |
+| `CHECKPOINT_DIR`            | `<OUTPUT_DIR>/.checkpoints` | Directory `.r7_checkpoints` is read from and written to; a subdirectory of `OUTPUT_DIR` (not `JOURNAL_DIR`), so `JOURNAL_DIR` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `JOURNAL_DIR` |
 | `OUTPUT_DIR`                | `/warc`     | Directory rotated `.warc.zst` files are written to                          |
 | `WARC_FILE_PREFIX`          | `r7`        | Filename prefix for rotated WARC files                                      |
-| `WARC_MAX_FILE_SIZE_BYTES`  | `1000000000`| Rotate to a new file once the current one reaches this size (at least 65536; a size that couldn't hold a single record is refused at startup) |
-| `WARC_MAX_FILE_AGE_SECONDS` | `900`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover) |
+| `WARC_MAX_FILE_SIZE`        | `1gb`       | Rotate to a new file once the current one reaches this size (at least `64kb`; a size that couldn't hold a single record is refused at startup). Supports `b`, `kb`, `mb`, `gb` |
+| `WARC_MAX_FILE_AGE`         | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
 | `ZSTD_LEVEL`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
 | `DEDUP_CACHE_ENTRIES`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
-| `MIN_AGE_SECONDS`           | `3600`      | How old a segment must be before it is eligible for tailing/deletion        |
-| `POLL_INTERVAL_MS`          | `1000`      | Delay between tailer ticks                                                   |
+| `GRACE_PERIOD`              | `1h`        | Minimum segment age (from its last-modified time, not from when this tailer finished reading it) before a fully-read segment is deleted; `null`/unset means "delete as soon as read". Same units as `WARC_MAX_FILE_AGE`. Mutually exclusive with `TTL` |
+| `TTL`                       | disabled    | Hard retention ceiling: a segment older than this is deleted whether or not it was fully read, which is what lets more than one tailer follow the same journal directory (see the note above). Same units as `WARC_MAX_FILE_AGE` |
+| `POLL_INTERVAL`             | `1s`        | Delay between tailer ticks. Same units as `WARC_MAX_FILE_AGE`               |
 
 **Example Docker Compose Integration:**
 
@@ -159,7 +172,7 @@ services:
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=secret
       - BATCH_SIZE=10000
-      - FLUSH_INTERVAL_MS=1000
+      - FLUSH_INTERVAL=1s
 
 volumes:
   r7-journals:

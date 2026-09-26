@@ -10,7 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
+import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
+import com.ethlo.r7.tailer.EnvConfig;
 import com.ethlo.r7.warc.PayloadDedupIndex;
 import com.ethlo.r7.warc.WarcExchangeWriter;
 import com.ethlo.r7.warc.WarcFileWriter;
@@ -36,33 +38,41 @@ public final class WarcTailerMain
 
         final Path journalDir = Paths.get(env.getOrDefault("JOURNAL_DIR", "/journals"));
         final Path outputDir = Paths.get(env.getOrDefault("OUTPUT_DIR", "/warc"));
+        // Not under JOURNAL_DIR: a secondary tailer (one not responsible for deletion, see
+        // R7Tailer's ttl/gracePeriod semantics) must be free to mount JOURNAL_DIR read-only,
+        // which a checkpoint file living inside it would rule out. OUTPUT_DIR is always a
+        // real, already-writable directory for this tailer, so it is a safe default parent.
+        final Path checkpointDir = Paths.get(env.getOrDefault("CHECKPOINT_DIR", outputDir.resolve(".checkpoints").toString()));
         final String filePrefix = env.getOrDefault("WARC_FILE_PREFIX", "r7");
-        final long maxFileSizeBytes = Long.parseLong(env.getOrDefault("WARC_MAX_FILE_SIZE_BYTES", Long.toString(1_000_000_000L)));
+        final long maxFileSizeBytes = EnvConfig.dataSizeBytes(env, "WARC_MAX_FILE_SIZE", "1gb");
         if (maxFileSizeBytes < WarcFileWriter.MIN_ROLLOVER_SIZE)
         {
-            throw new IllegalArgumentException("WARC_MAX_FILE_SIZE_BYTES must be at least " + WarcFileWriter.MIN_ROLLOVER_SIZE
-                    + " bytes, but was '" + env.get("WARC_MAX_FILE_SIZE_BYTES") + "'");
+            throw new IllegalArgumentException("WARC_MAX_FILE_SIZE must be at least " + WarcFileWriter.MIN_ROLLOVER_SIZE
+                    + " bytes, but was '" + env.get("WARC_MAX_FILE_SIZE") + "'");
         }
-        final long maxFileAgeSeconds = Long.parseLong(env.getOrDefault("WARC_MAX_FILE_AGE_SECONDS", "900"));
-        if (maxFileAgeSeconds <= 0)
-        {
-            throw new IllegalArgumentException("WARC_MAX_FILE_AGE_SECONDS must be a positive number of seconds, but was '"
-                    + env.get("WARC_MAX_FILE_AGE_SECONDS") + "'");
-        }
+        final Duration maxFileAge = EnvConfig.duration(env, "WARC_MAX_FILE_AGE", "15m");
         final int zstdLevel = Integer.parseInt(env.getOrDefault("ZSTD_LEVEL", "9"));
         final int dedupCacheEntries = Integer.parseInt(env.getOrDefault("DEDUP_CACHE_ENTRIES", "100000"));
-        final Duration minAge = Duration.ofSeconds(Long.parseLong(env.getOrDefault("MIN_AGE_SECONDS", "3600")));
-        final Duration pollInterval = Duration.ofMillis(Long.parseLong(env.getOrDefault("POLL_INTERVAL_MS", "1000")));
+        final String ttlText = env.get("TTL");
+        final Duration ttl = ttlText != null ? EnvConfig.parseDuration(ttlText) : null;
+        // ttl and gracePeriod are mutually exclusive (R7Tailer fails fast if both are set), so
+        // the "1h" default below must not silently reappear once ttl is configured - only
+        // apply it when GRACE_PERIOD was not left to fall back onto ttl instead.
+        final Duration gracePeriod = ttl == null || env.containsKey("GRACE_PERIOD")
+                ? EnvConfig.duration(env, "GRACE_PERIOD", "1h")
+                : null;
+        final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
 
-        logger.info("Tailing journals from '{}' -> WARC files in '{}' (max file size {} bytes, max file age {}s, zstd level {}, "
-                        + "dedup cache {} entries, min age {}, poll every {})",
-                journalDir, outputDir, maxFileSizeBytes, maxFileAgeSeconds, zstdLevel, dedupCacheEntries, minAge, pollInterval);
+        logger.info("Tailing journals from '{}' -> WARC files in '{}' (checkpoints in '{}', max file size {} bytes, max file age {}, "
+                        + "zstd level {}, dedup cache {} entries, grace period {}, ttl {}, poll every {})",
+                journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, gracePeriod,
+                ttl != null ? ttl : "disabled", pollInterval);
 
-        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAgeSeconds * 1000L, zstdLevel);
+        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAge.toMillis(), zstdLevel);
         final PayloadDedupIndex dedupIndex = new PayloadDedupIndex(dedupCacheEntries);
         final WarcExchangeWriter warcWriter = new WarcExchangeWriter(warcFileWriter, dedupIndex);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
-        final R7Tailer tailer = new R7Tailer(journalDir, minAge, warcWriter, integrity);
+        final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, gracePeriod, ttl, warcWriter, integrity, ReassemblyOptions.DEFAULTS);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {

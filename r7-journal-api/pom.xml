@@ -10,7 +10,7 @@
     <artifactId>r7-journal-api</artifactId>
     <packaging>jar</packaging>
 
-    <name>r7-logger-api</name>
+    <name>r7-journal-api</name>
     <url>http://maven.apache.org</url>
 
     <properties>
