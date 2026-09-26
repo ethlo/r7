@@ -66,6 +66,24 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
                     .required("name", this.name())
                     .required("value", this.value());
 
+            // Each attribute is concatenated raw into the Set-Cookie header value; a control
+            // character (CR/LF) would split the response, and a ';' would inject an extra
+            // cookie attribute the operator did not intend. The cookie name is additionally a
+            // token (RFC 6265 §4.1.1), so it cannot contain '=' or whitespace either.
+            // safeHeaderText permits tab (it is valid in a folded header value), but RFC 6265
+            // cookie-octet excludes all whitespace, so it is rejected here explicitly.
+            validator.httpToken("name", this.name())
+                    .safeHeaderText("value", this.value())
+                    .safeHeaderText("domain", this.domain())
+                    .safeHeaderText("path", this.path())
+                    .safeHeaderText("sameSite", this.sameSite())
+                    .excludesChar("value", this.value(), ';', "cookie value cannot contain ';'")
+                    .excludesChar("domain", this.domain(), ';', "cookie domain cannot contain ';'")
+                    .excludesChar("path", this.path(), ';', "cookie path cannot contain ';'")
+                    .excludesChar("value", this.value(), '\t', "cookie value cannot contain a tab character")
+                    .excludesChar("domain", this.domain(), '\t', "cookie domain cannot contain a tab character")
+                    .excludesChar("path", this.path(), '\t', "cookie path cannot contain a tab character");
+
             if (this.sameSite() != null)
             {
                 if (!this.sameSite().equalsIgnoreCase("Strict") &&

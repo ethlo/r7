@@ -49,7 +49,9 @@ public final class AddResponseHeaderFactory implements GatewayFilterFactory<AddR
         {
             new ValidatorUtils(result)
                     .required("name", this.name())
-                    .required("value", this.value());
+                    .required("value", this.value())
+                    .httpToken("name", this.name())
+                    .safeHeaderText("value", this.value());
         }
     }
 

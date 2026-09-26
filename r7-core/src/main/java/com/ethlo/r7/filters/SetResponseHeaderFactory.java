@@ -49,7 +49,9 @@ public final class SetResponseHeaderFactory implements GatewayFilterFactory<SetR
         {
             new ValidatorUtils(result)
                     .required("name", this.name())
-                    .required("value", this.value());
+                    .required("value", this.value())
+                    .httpToken("name", this.name())
+                    .safeHeaderText("value", this.value());
         }
     }
 
