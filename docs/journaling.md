@@ -75,7 +75,8 @@ services:
   r7-tailer-json:
     image: ghcr.io/ethlo/r7-tailer-json:latest
     volumes:
-      - r7-journals:/journals:rw # r7Tailer deletes completed segments and writes its checkpoint file here
+      - r7-journals:/journals:rw # r7Tailer deletes completed segments here when this tailer owns retention
+      - r7-checkpoints:/checkpoints:rw # .r7_checkpoints lives here by default
     environment:
       - JOURNAL_DIR=/journals
     # The output of this container goes to Docker's stdout, 
@@ -83,6 +84,7 @@ services:
 
 volumes:
   r7-journals:
+  r7-checkpoints:
 
 ```
 
