@@ -57,7 +57,7 @@ This tailer converts the binary journal entries into verbose JSON and streams th
 | `JOURNAL_DIR`     | `/journals` | Directory the tailer reads binary journals from                          |
 | `CHECKPOINT_DIR`  | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside `JOURNAL_DIR`, so `JOURNAL_DIR` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `JOURNAL_DIR` |
 | `OUTPUT_PATH`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
-| `GRACE_PERIOD`    | `1h`        | How old a segment must be, after this tailer has fully read it, before it is eligible for deletion. Supports `ms`, `s`, `m`, `h`, `d`. Mutually exclusive with `TTL` |
+| `GRACE_PERIOD`    | `1h`        | Minimum segment age (from its last-modified time, not from when this tailer finished reading it) before a fully-read segment is deleted; `null`/unset means "delete as soon as read". Supports `ms`, `s`, `m`, `h`, `d`. Mutually exclusive with `TTL` |
 | `TTL`             | disabled    | Hard retention ceiling: a segment older than this is deleted whether or not it was fully read, which is what lets more than one tailer follow the same journal directory (see the note above). Same units as `GRACE_PERIOD` |
 | `POLL_INTERVAL`   | `1s`        | Delay between tailer ticks. Same units as `GRACE_PERIOD`                 |
 | `PRETTY_PRINT`    | `false`     | Pretty-print the JSON output                                              |
@@ -114,7 +114,7 @@ Each WARC record is compressed as one independent Zstandard frame per the (propo
 | `WARC_MAX_FILE_AGE`         | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
 | `ZSTD_LEVEL`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
 | `DEDUP_CACHE_ENTRIES`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
-| `GRACE_PERIOD`              | `1h`        | How old a segment must be, after this tailer has fully read it, before it is eligible for deletion. Same units as `WARC_MAX_FILE_AGE`. Mutually exclusive with `TTL` |
+| `GRACE_PERIOD`              | `1h`        | Minimum segment age (from its last-modified time, not from when this tailer finished reading it) before a fully-read segment is deleted; `null`/unset means "delete as soon as read". Same units as `WARC_MAX_FILE_AGE`. Mutually exclusive with `TTL` |
 | `TTL`                       | disabled    | Hard retention ceiling: a segment older than this is deleted whether or not it was fully read, which is what lets more than one tailer follow the same journal directory (see the note above). Same units as `WARC_MAX_FILE_AGE` |
 | `POLL_INTERVAL`             | `1s`        | Delay between tailer ticks. Same units as `WARC_MAX_FILE_AGE`               |
 
