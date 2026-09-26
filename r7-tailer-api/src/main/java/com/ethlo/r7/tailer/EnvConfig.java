@@ -70,9 +70,9 @@ public final class EnvConfig
         return switch (unit)
         {
             case "b" -> amount;
-            case "kb" -> amount * 1024L;
-            case "mb" -> amount * 1024L * 1024L;
-            case "gb" -> amount * 1024L * 1024L * 1024L;
+            case "kb" -> Math.multiplyExact(amount, 1024L);
+            case "mb" -> Math.multiplyExact(amount, 1024L * 1024L);
+            case "gb" -> Math.multiplyExact(amount, 1024L * 1024L * 1024L);
             default -> throw new IllegalArgumentException("Unknown data size unit in '" + text + "'");
         };
     }

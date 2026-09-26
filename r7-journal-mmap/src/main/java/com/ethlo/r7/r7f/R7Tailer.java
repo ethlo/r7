@@ -712,7 +712,28 @@ public final class R7Tailer
             return;
         }
 
-        final long ageMillis = System.currentTimeMillis() - Files.getLastModifiedTime(path).toMillis();
+        // ttl is a hard ceiling on how long a segment may exist on disk, but it must never
+        // reach into an active (.flux) segment the writer may still be appending to and this
+        // tailer may still have mapped - only a sealed (.r7f) segment is ever a deletion
+        // candidate, regardless of which policy (ttl or completion+gracePeriod) drives it.
+        if (path.toString().endsWith(ACTIVE_FILE_EXTENSION))
+        {
+            return;
+        }
+
+        final long ageMillis;
+        try
+        {
+            ageMillis = System.currentTimeMillis() - Files.getLastModifiedTime(path).toMillis();
+        }
+        catch (final NoSuchFileException e)
+        {
+            // Another tailer sharing this directory (see the ttl/checkpointDir javadoc) can
+            // delete the segment between this tick listing it and reaching here; that is not
+            // this tailer's problem to report, just to notice and move on from.
+            checkpoints.remove(key);
+            return;
+        }
 
         // Configuring a ttl is what lets more than one tailer follow the same journal
         // directory: each keeps its own checkpoint (see the checkpointDir constructor

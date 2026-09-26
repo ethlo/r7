@@ -53,10 +53,15 @@ public final class WarcTailerMain
         final Duration maxFileAge = EnvConfig.duration(env, "WARC_MAX_FILE_AGE", "15m");
         final int zstdLevel = Integer.parseInt(env.getOrDefault("ZSTD_LEVEL", "9"));
         final int dedupCacheEntries = Integer.parseInt(env.getOrDefault("DEDUP_CACHE_ENTRIES", "100000"));
-        final Duration gracePeriod = EnvConfig.duration(env, "GRACE_PERIOD", "1h");
-        final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
         final String ttlText = env.get("TTL");
         final Duration ttl = ttlText != null ? EnvConfig.parseDuration(ttlText) : null;
+        // ttl and gracePeriod are mutually exclusive (R7Tailer fails fast if both are set), so
+        // the "1h" default below must not silently reappear once ttl is configured - only
+        // apply it when GRACE_PERIOD was not left to fall back onto ttl instead.
+        final Duration gracePeriod = ttl == null || env.containsKey("GRACE_PERIOD")
+                ? EnvConfig.duration(env, "GRACE_PERIOD", "1h")
+                : null;
+        final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
 
         logger.info("Tailing journals from '{}' -> WARC files in '{}' (checkpoints in '{}', max file size {} bytes, max file age {}, "
                         + "zstd level {}, dedup cache {} entries, min age {}, ttl {}, poll every {})",
