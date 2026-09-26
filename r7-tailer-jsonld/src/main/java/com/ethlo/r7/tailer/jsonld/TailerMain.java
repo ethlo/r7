@@ -15,7 +15,9 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.json.DebugJsonWriter;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
+import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
+import com.ethlo.r7.tailer.EnvConfig;
 
 /**
  * Entry point for the standalone JSON tailer image (see {@code docs/journaling.md}).
@@ -38,10 +40,18 @@ public final class TailerMain
         final Map<String, String> env = System.getenv();
 
         final Path journalDir = Paths.get(env.getOrDefault("JOURNAL_DIR", "/journals"));
+        // Not under JOURNAL_DIR: a secondary tailer (one not responsible for deletion, see
+        // R7Tailer's ttl/gracePeriod semantics) must be free to mount JOURNAL_DIR read-only,
+        // which a checkpoint file living inside it would rule out. OUTPUT_PATH is not a
+        // reliable fallback directory either - it defaults to stdout - so this gets its own
+        // dedicated, always-writable location instead.
+        final Path checkpointDir = Paths.get(env.getOrDefault("CHECKPOINT_DIR", "/checkpoints"));
         final String outputPath = env.getOrDefault("OUTPUT_PATH", "-");
         final boolean prettyPrint = Boolean.parseBoolean(env.getOrDefault("PRETTY_PRINT", "false"));
-        final Duration minAge = Duration.ofSeconds(Long.parseLong(env.getOrDefault("MIN_AGE_SECONDS", "3600")));
-        final Duration pollInterval = Duration.ofMillis(Long.parseLong(env.getOrDefault("POLL_INTERVAL_MS", "1000")));
+        final Duration gracePeriod = EnvConfig.duration(env, "GRACE_PERIOD", "1h");
+        final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
+        final String ttlText = env.get("TTL");
+        final Duration ttl = ttlText != null ? EnvConfig.parseDuration(ttlText) : null;
 
         final boolean toStdOut = "-".equals(outputPath) || "stdout".equalsIgnoreCase(outputPath);
         final OutputStream out;
@@ -60,12 +70,12 @@ public final class TailerMain
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND));
         }
 
-        logger.info("Tailing journals from '{}' -> '{}' (min age {}, poll every {})",
-                journalDir, toStdOut ? "stdout" : outputPath, minAge, pollInterval);
+        logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', min age {}, ttl {}, poll every {})",
+                journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, gracePeriod, ttl != null ? ttl : "disabled", pollInterval);
 
         final DebugJsonWriter jsonWriter = new DebugJsonWriter(out, prettyPrint);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
-        final R7Tailer tailer = new R7Tailer(journalDir, minAge, jsonWriter, integrity);
+        final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, gracePeriod, ttl, jsonWriter, integrity, ReassemblyOptions.DEFAULTS);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {

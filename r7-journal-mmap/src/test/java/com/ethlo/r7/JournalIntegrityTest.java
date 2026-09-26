@@ -13,13 +13,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.CRC32C;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -1028,6 +1032,108 @@ class JournalIntegrityTest
 
         assertThat(second.completed).as("a kept segment must not be re-read. sink: %s", second).isEmpty();
         assertThat(Files.exists(segment)).isTrue();
+    }
+
+    /**
+     * A ttl is the escape hatch from the test above: it bounds how long a segment this
+     * tailer never finished reading is kept, so that more than one tailer can follow the
+     * same journal directory without any of them gating deletion on its own completion (see
+     * the {@code checkpointDir} constructor parameter for the other half of that story).
+     */
+    @Test
+    void ttlExpiresASegmentRegardlessOfWhetherItWasFullyDelivered() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, null, null, Duration.ZERO, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
+        assertThat(Files.exists(segment))
+                .as("a ttl of zero expires the segment even though this tailer never finished reading it")
+                .isFalse();
+    }
+
+    /**
+     * Each tailer's own progress can live outside the shared journal directory, which is
+     * what lets a second, independently checkpointed tailer follow the same journal
+     * directory without the two overwriting each other's {@code .r7_checkpoints}.
+     */
+    @Test
+    void checkpointsCanLiveInADedicatedDirectory(@TempDir final Path checkpointDir) throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, checkpointDir, null, null, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
+        assertThat(Files.exists(checkpointDir.resolve(CHECKPOINT_FILE)))
+                .as("progress is persisted in the dedicated checkpoint directory")
+                .isTrue();
+        assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
+                .as("and never in the shared journal directory, so it cannot collide with another tailer's own checkpoint file")
+                .isFalse();
+    }
+
+    /**
+     * ttl and gracePeriod are mutually exclusive by design (see the constructor's javadoc):
+     * configuring both must not silently add up, pick whichever fires first, or quietly
+     * ignore one of them - it is refused at startup so the operator fixes the config
+     * instead of discovering the ambiguity from deleted (or undeleted) segments later.
+     */
+    @Test
+    void configuringBothTtlAndGracePeriodFailsFastAtConstruction()
+    {
+        final CollectingSink sink = new CollectingSink();
+        assertThatThrownBy(() -> new R7Tailer(journalDir, null, Duration.ofHours(1), Duration.ZERO, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))))
+                .as("both ttl and gracePeriod configured together is refused rather than silently resolved")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mutually exclusive");
+    }
+
+    /**
+     * A secondary tailer following a journal directory it does not own retention for is
+     * meant to have that directory mounted read-only (see docs/journaling.md); this is what
+     * makes that safe rather than merely documented - a delete refused by the filesystem
+     * must not fail the tick, lose the checkpoint, or stop the segment being read.
+     */
+    @Test
+    void aReadOnlyJournalDirectoryIsNeverDeletedFromAndDoesNotFailTheTick(@TempDir final Path checkpointDir) throws IOException
+    {
+        Assumptions.assumeFalse("root".equals(System.getProperty("user.name")),
+                "root bypasses file permissions, so a read-only directory cannot be observed as such");
+
+        writeExchanges(3);
+
+        final Set<PosixFilePermission> writable = Files.getPosixFilePermissions(journalDir);
+        Files.setPosixFilePermissions(journalDir, PosixFilePermissions.fromString("r-xr-xr-x"));
+        try
+        {
+            final CollectingSink sink = new CollectingSink();
+            new R7Tailer(journalDir, checkpointDir, null, null, sink, sink,
+                    ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+            assertThat(sink.completed).as("a read-only directory can still be read from").hasSize(3);
+            assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+                    .as("a delete refused by the filesystem must leave the segment in place")
+                    .hasSize(1);
+        }
+        finally
+        {
+            Files.setPosixFilePermissions(journalDir, writable);
+        }
     }
 
     /**

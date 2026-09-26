@@ -6,7 +6,7 @@
 # r7-journals volume writable by the nonroot user below instead of root:root. Bind-mounted host
 # directories are not affected by this - their ownership is the operator's responsibility.
 FROM busybox:stable AS dirs
-RUN mkdir -p /journals && chown 65532:65532 /journals
+RUN mkdir -p /journals /checkpoints && chown 65532:65532 /journals /checkpoints
 
 FROM gcr.io/distroless/java25-debian13:nonroot
 WORKDIR /app
@@ -14,17 +14,24 @@ WORKDIR /app
 # Copy the tailer fat JAR
 COPY r7-tailer-jsonld/target/r7-tailer-jsonld-*.jar /app/tailer.jar
 COPY --from=dirs --chown=65532:65532 /journals /journals
+COPY --from=dirs --chown=65532:65532 /checkpoints /checkpoints
 
 # Ensure the tailer has read-write access to the shared journal mount
 # Both the gateway container and tailer container must mount the same volume to this path
-VOLUME ["/journals"]
+VOLUME ["/journals", "/checkpoints"]
 
-# JOURNAL_DIR: where the gateway's binary journals are read from (the shared volume above).
-# OUTPUT_PATH: where completed exchanges are written as JSON Lines. "-" (the default) means
-#              standard output, ready to be scraped by whatever log forwarder or Docker
-#              logging driver the deployment already runs; any other value is treated as a
-#              file path and appended to, with parent directories created if missing.
+# JOURNAL_DIR:    where the gateway's binary journals are read from (the shared volume above).
+#                 Mount this read-only if a different tailer instance already owns retention
+#                 for this directory (see docs/journaling.md).
+# CHECKPOINT_DIR: where this tailer's own progress is persisted. Deliberately separate from
+#                 JOURNAL_DIR, so mounting that read-only never prevents this from being
+#                 written.
+# OUTPUT_PATH:    where completed exchanges are written as JSON Lines. "-" (the default) means
+#                 standard output, ready to be scraped by whatever log forwarder or Docker
+#                 logging driver the deployment already runs; any other value is treated as a
+#                 file path and appended to, with parent directories created if missing.
 ENV JOURNAL_DIR=/journals
+ENV CHECKPOINT_DIR=/checkpoints
 ENV OUTPUT_PATH=-
 
 USER 65532:65532
