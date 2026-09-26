@@ -64,7 +64,7 @@ public final class WarcTailerMain
         final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
 
         logger.info("Tailing journals from '{}' -> WARC files in '{}' (checkpoints in '{}', max file size {} bytes, max file age {}, "
-                        + "zstd level {}, dedup cache {} entries, min age {}, ttl {}, poll every {})",
+                        + "zstd level {}, dedup cache {} entries, grace period {}, ttl {}, poll every {})",
                 journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, gracePeriod,
                 ttl != null ? ttl : "disabled", pollInterval);
 
