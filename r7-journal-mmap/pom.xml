@@ -10,7 +10,7 @@
     <artifactId>r7-journal-mmap</artifactId>
     <packaging>jar</packaging>
 
-    <name>r7-logger-mmap</name>
+    <name>r7-journal-mmap</name>
     <url>http://maven.apache.org</url>
 
     <properties>
