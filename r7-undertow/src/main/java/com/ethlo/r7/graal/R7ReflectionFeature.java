@@ -9,6 +9,8 @@ import org.graalvm.nativeimage.hosted.RuntimeResourceAccess;
 import com.ethlo.r7.config.JournalDefinition;
 import com.ethlo.r7.config.JournalDirectionConfig;
 import com.ethlo.r7.config.JournalDirectionDefinition;
+import com.ethlo.r7.config.model.DataSize;
+import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.status.SparklineRingBuffer;
@@ -109,6 +111,10 @@ public final class R7ReflectionFeature implements Feature
                 JournalDefinition.class,
                 JournalDirectionConfig.class,
                 JournalDirectionDefinition.class,
+                // Not a record component of the classes above by itself, so it needs its own
+                // registration - otherwise Jackson can't reflectively serialize JournalDto's
+                // JournalLevel fields (dashboard JSON output) under native image.
+                JournalLevel.class,
                 com.ethlo.r7.config.TargetConfig.class,
                 com.ethlo.r7.config.RouteJournalConfig.class,
                 com.ethlo.r7.config.JournalDirectionConfig.class,
@@ -129,6 +135,10 @@ public final class R7ReflectionFeature implements Feature
                 ServerConfig.StorageConfig.class,
                 ServerConfig.ProxyConfig.class,
                 ServerConfig.ManagementConfig.class,
+                // Nested record type of LimitsConfig/StorageConfig fields (max_header_size,
+                // max_entity_size, shard_size) - reached when ServerConfig is serialized
+                // directly for the dashboard's JSON output.
+                DataSize.class,
 
                 // Logback / Logging Infrastructure
                 ch.qos.logback.classic.joran.JoranConfigurator.class,
