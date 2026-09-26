@@ -75,7 +75,7 @@ public final class TailerMain
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND));
         }
 
-        logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', min age {}, ttl {}, poll every {})",
+        logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', grace period {}, ttl {}, poll every {})",
                 journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, gracePeriod, ttl != null ? ttl : "disabled", pollInterval);
 
         final DebugJsonWriter jsonWriter = new DebugJsonWriter(out, prettyPrint);
