@@ -109,9 +109,12 @@ public final class R7Tailer
      *                      own directory (outside the shared journal mount) is what lets more
      *                      than one tailer follow the same journal directory without the
      *                      tailers overwriting each other's progress file.
-     * @param gracePeriod   grace period after <em>this</em> tailer has fully read a segment
-     *                      before it deletes it; {@code null} deletes as soon as read. Ignored
-     *                      when {@code ttl} is set.
+     * @param gracePeriod   minimum segment age, measured from the segment's last-modified
+     *                      time, before <em>this</em> tailer deletes a segment it has fully
+     *                      read; {@code null} deletes as soon as read. It is not a timer started
+     *                      when reading completes, so a backlog segment already older than this
+     *                      is deleted right after its first full read. Must be {@code null}
+     *                      when {@code ttl} is set; construction fails otherwise.
      * @param ttl           hard retention ceiling; {@code null} disables it and deletion works
      *                      exactly as {@code gracePeriod} describes. Setting it switches this
      *                      tailer's deletion from "as soon as I finished reading it" to "once
