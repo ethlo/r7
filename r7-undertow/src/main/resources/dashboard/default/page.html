@@ -536,8 +536,20 @@
     const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
     let previousGcTime = null;
-    let lastUpdateTime = null;
-    let currentGcRate = 0;
+    let lastGcDelta = 0;
+    let lastGcChangeAt = null;
+
+    // Renders a recency-based GC activity indicator instead of an instantaneous "ms/s" rate,
+    // which reads as permanently "+0 ms/s" (and therefore looks broken/frozen) with modern
+    // low-pause collectors like ZGC that rarely accumulate measurable collection time between
+    // polls. Ticks every second the details panel is open, so it visibly stays "live" even
+    // when no new collection has happened.
+    function formatGcActivity() {
+        if (lastGcChangeAt == null) return '<span class="text-dim">NO GC YET</span>';
+        const secsAgo = Math.max(0, Math.round((performance.now() - lastGcChangeAt) / 1000));
+        const cls = lastGcDelta > 200 ? 'text-err' : (lastGcDelta > 50 ? 'text-warn' : 'text-dim');
+        return `<span class="${cls}">+${lastGcDelta} ms, ${secsAgo}s AGO</span>`;
+    }
 
     function getUnitIndex(b) {
         if (b === 0 || b == null) return 0;
@@ -571,15 +583,22 @@
 
     function formatUptime(iso) {
         if (!iso) return "--";
-        const match = iso.match(/P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?/);
+        // java.time.Duration#toString() never emits a "D" component - even a multi-day
+        // uptime is rendered as e.g. "PT127H46M40S" - so deriving days from a "D" group (as
+        // this used to) never matched and large uptimes showed as an ever-growing hour count
+        // instead of "5d 07:46:40". Parse the raw H/M/S components and re-derive days here.
+        const match = iso.match(/^PT(?:([\d.]+)H)?(?:([\d.]+)M)?(?:([\d.]+)S)?$/);
         if (!match) return iso;
 
-        const d = match[1] ? `${match[1]}d ` : '';
-        const h = (match[2] || '0').padStart(2, '0');
-        const m = (match[3] || '0').padStart(2, '0');
-        const s = (match[4] || '0').padStart(2, '0');
+        const totalHours = parseFloat(match[1] || '0');
+        const totalSeconds = Math.floor(totalHours * 3600 + parseFloat(match[2] || '0') * 60 + parseFloat(match[3] || '0'));
 
-        return `${d}${h}:${m}:${s}`;
+        const days = Math.floor(totalSeconds / 86400);
+        const h = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0');
+        const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+        const s = String(totalSeconds % 60).padStart(2, '0');
+
+        return `${days > 0 ? days + 'd ' : ''}${h}:${m}:${s}`;
     }
 
     function parseDurationMs(iso) {
@@ -594,6 +613,23 @@
         if (s) ms += parseFloat(s[1]) * 1000;
 
         return ms;
+    }
+
+    // Renders an ISO-8601 duration config value ("PT2S", "PT1M", "PT500MS" wouldn't occur since
+    // Jackson emits sub-second precision as fractional seconds, e.g. "PT0.5S") as a compact
+    // human string, instead of showing the raw ISO literal next to already-formatted rows.
+    function formatDuration(iso) {
+        if (!iso) return '--';
+        const ms = parseDurationMs(iso);
+        if (ms === 0) return '0s';
+        if (ms % 1000 !== 0) return (ms / 1000).toFixed(FRACTION_DIGITS) + 's';
+        const totalSeconds = ms / 1000;
+        if (totalSeconds < 60) return totalSeconds + 's';
+        if (totalSeconds % 60 === 0 && totalSeconds < 3600) return (totalSeconds / 60) + 'm';
+        if (totalSeconds % 3600 === 0) return (totalSeconds / 3600) + 'h';
+        const m = Math.floor(totalSeconds / 60);
+        const s = totalSeconds % 60;
+        return `${m}m ${s}s`;
     }
 
     function parseTimestamp(iso) {
@@ -701,12 +737,16 @@
         const cfg = sys.configuration || {};
         const mem = sys.memory || data.memory || null;
 
-        // Helper to handle strings ("10MB"), raw bytes, or empty objects ({}) from the backend
+        // Helper to handle strings ("10MB"), raw bytes, DataSize objects ({"bytes": N} - see
+        // com.ethlo.r7.config.model.DataSize), or empty objects ({}) from the backend
         const formatConfigSize = (val) => {
             if (val == null) return '--';
             if (typeof val === 'string') return val;
             if (typeof val === 'number') return formatBytes(val);
-            if (typeof val === 'object' && Object.keys(val).length === 0) return 'DEFAULT';
+            if (typeof val === 'object') {
+                if (typeof val.bytes === 'number') return formatBytes(val.bytes);
+                if (Object.keys(val).length === 0) return 'DEFAULT';
+            }
             return String(val);
         };
 
@@ -734,7 +774,7 @@
             <div class="panel-section-title">HTTP & Limits</div>
             ${mRow('HTTP/2 ENABLED', formatPrimitive(cfg.http?.enable_http2), true)}
             ${mRow('ALWAYS KEEP-ALIVE', formatPrimitive(cfg.http?.always_set_keep_alive), false)}
-            ${mRow('PARSE TIMEOUT', cfg.http?.request_parse_timeout, false)}
+            ${mRow('PARSE TIMEOUT', formatDuration(cfg.http?.request_parse_timeout), false)}
             <div class="spacer-sm"></div>
             ${mRow('MAX HEADER COUNT', cfg.limits?.max_header_count, false)}
             ${mRow('MAX HEADER SIZE', formatConfigSize(cfg.limits?.max_header_size), false)}
@@ -747,8 +787,8 @@
             <div class="panel-section-title">Proxy Pool</div>
             ${mRow('CONNS / THREAD', cfg.proxy?.connections_per_thread?.toLocaleString(), true)}
             ${mRow('MAX QUEUE SIZE', cfg.proxy?.max_queue_size?.toLocaleString(), false)}
-            ${mRow('MAX REQUEST TIME', cfg.proxy?.max_request_time, false)}
-            ${mRow('TTL', cfg.proxy?.ttl, false)}
+            ${mRow('MAX REQUEST TIME', formatDuration(cfg.proxy?.max_request_time), false)}
+            ${mRow('TTL', formatDuration(cfg.proxy?.ttl), false)}
         </div>
 
         <div class="panel-section">
@@ -761,7 +801,7 @@
             ${mRow('TCP NODELAY', formatPrimitive(cfg.advanced?.tcp_no_delay), false)}
             ${mRow('REUSE ADDRESSES', formatPrimitive(cfg.advanced?.reuse_addresses), false)}
             ${mRow('SOCKET BACKLOG', cfg.advanced?.socket_backlog?.toLocaleString(), false)}
-            ${mRow('READ TIMEOUT', cfg.advanced?.socket_read_timeout, false)}
+            ${mRow('READ TIMEOUT', formatDuration(cfg.advanced?.socket_read_timeout), false)}
             ${mRow('DIRECT BUFFERS', formatPrimitive(cfg.advanced?.direct_buffers), false)}
         </div>
 
@@ -791,9 +831,7 @@
             mem.gc_time_ms.toLocaleString() + ' ms',
             false,
             '',
-            `<span class="${currentGcRate > 50 ? 'text-warn' : (currentGcRate > 200 ? 'text-err' : 'text-dim')}">
-           +${currentGcRate} ms/s
-       </span>`)}
+            formatGcActivity())}
             ` : `<div class="sub text-dim" style="padding: 4px;">Resource data pending...</div>`}
         </div>
         `;
@@ -1516,16 +1554,16 @@
             const now = performance.now();
 
             if (mem && mem.gc_time_ms !== undefined) {
-                if (previousGcTime !== null && lastUpdateTime !== null) {
-                    const timeDeltaMs = now - lastUpdateTime;
+                if (previousGcTime !== null)
+                {
                     const gcDelta = mem.gc_time_ms - previousGcTime;
-                    if (timeDeltaMs > 0) {
-                        currentGcRate = Math.round((gcDelta / timeDeltaMs) * 1000); // Scale to ms per second
+                    if (gcDelta > 0) {
+                        lastGcDelta = gcDelta;
+                        lastGcChangeAt = now;
                     }
                 }
                 previousGcTime = mem.gc_time_ms;
             }
-            lastUpdateTime = now;
 
             const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
             const activeConns = data.connector_statistics?.active_connections || 0;
