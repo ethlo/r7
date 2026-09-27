@@ -2919,7 +2919,7 @@
 <p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Short-circuits requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.
 <em>This filter requires no configuration parameters.</em></p>
 <h4 id="basicauth">BasicAuth</h4>
-<p>Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with <code>401 Unauthorized</code> and a <code>WWW-Authenticate</code> challenge when they are missing or wrong. On success the authenticated username is recorded in the <code>gateway.auth.basic.user</code> attribute for journaling.</p>
+<p>Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with <code>401 Unauthorized</code> and a <code>WWW-Authenticate</code> challenge when they are missing or wrong. On success a fingerprint of the authenticated username (not the username itself) is recorded in the <code>gateway.auth.basic.user</code> attribute for journaling, the same convention used for redacted request headers.</p>
 <table>
 <thead>
 <tr>
