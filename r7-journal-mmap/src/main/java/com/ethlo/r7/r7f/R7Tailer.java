@@ -3,6 +3,7 @@ package com.ethlo.r7.r7f;
 import static com.ethlo.r7.r7f.R7fConstants.ACTIVE_FILE_EXTENSION;
 import static com.ethlo.r7.r7f.R7fConstants.R7F_FILE_EXTENSION;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -442,6 +443,15 @@ public final class R7Tailer
             }
 
             return isFinished;
+        }
+        catch (final FileNotFoundException e)
+        {
+            // The segment vanished between the Files.size() check above and this open. An
+            // external reaper can delete a fully-read segment at any time now, so this window
+            // is an expected, recurring race rather than a rare hypothetical - handle it the
+            // same way as the Files.size race above: skip it for this tick and let the next
+            // tick's file listing settle whether it is really gone.
+            return false;
         }
     }
 

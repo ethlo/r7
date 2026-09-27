@@ -15,10 +15,10 @@ import com.ethlo.r7.validation.ValidationResult;
  * journal_dir: ${JOURNAL_DIR:/journals}} - rather than reading them directly in code.
  * <p>
  * There is deliberately no {@code ttl}/{@code grace_period} here: this tailer never deletes a
- * segment (see {@code TailerMain}, which always constructs {@code R7Tailer} with both {@code
- * null}). Retention is a dedicated reaper's job, applied uniformly to every format-specific
- * tailer sharing the journal directory; mount {@code journal_dir} read-only here to make that
- * enforced rather than merely intended.
+ * segment (see {@code TailerMain}, which constructs {@code R7Tailer} with no retention
+ * parameters at all - the class has none). Retention is a dedicated reaper's job, applied
+ * uniformly to every format-specific tailer sharing the journal directory; mount {@code
+ * journal_dir} read-only here to make that enforced rather than merely intended.
  */
 public record JsonldTailerConfig(
         String journalDir,
@@ -42,11 +42,11 @@ public record JsonldTailerConfig(
     @Override
     public String checkpointDir()
     {
-        // Not under journalDir(): a secondary tailer (one not responsible for deletion, see
-        // R7Tailer's ttl/gracePeriod semantics) must be free to mount journalDir read-only,
-        // which a checkpoint file living inside it would rule out. outputPath() is not a
-        // reliable fallback directory either - it defaults to stdout - so this gets its own
-        // dedicated, always-writable location instead.
+        // Not under journalDir(): a secondary tailer (one not responsible for retention -
+        // R7Tailer itself never deletes anything, see the class javadoc) must be free to
+        // mount journalDir read-only, which a checkpoint file living inside it would rule
+        // out. outputPath() is not a reliable fallback directory either - it defaults to
+        // stdout - so this gets its own dedicated, always-writable location instead.
         return Optional.ofNullable(this.checkpointDir).orElse("/checkpoints");
     }
 

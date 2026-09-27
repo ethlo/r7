@@ -65,7 +65,9 @@ public final class ValidationResult
         if (this.hasErrors())
         {
             final String report = String.join("\n - ", this.errors);
-            throw new ConfigurationException("Gateway configuration is invalid:\n - " + report);
+            // Generic wording: this class is shared by the gateway and every tailer's own
+            // config loading, so it must not name "Gateway" specifically.
+            throw new ConfigurationException("Configuration is invalid:\n - " + report);
         }
     }
 
