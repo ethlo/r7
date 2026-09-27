@@ -645,10 +645,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-visualizing-your-data" class="md-nav__link">
+  <a href="#4-retention-the-reaper" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        4. Visualizing your data
+        4. Retention: The Reaper
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-visualizing-your-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Visualizing your data
       </span>
     </span>
   </a>
@@ -791,11 +802,12 @@ controls where and how those journals are written on disk.</p>
 <div class="admonition warning">
 <p class="admonition-title">Mount <code>journal_dir</code> read-only on every tailer</p>
 <p><code>R7Tailer</code> never deletes a segment — it only reads. Deciding when a fully-read segment is
-safe to remove is a separate reaper process you run yourself; it's the only thing that
-needs write access to <code>journal_dir</code>. Give each tailer its own <code>checkpoint_dir</code> (see the
-tables below) so running JSON and WARC tailers side by side doesn't clash — neither can
-delete a segment out from under the other, and a reaper just waits until every tailer has
-had a fair chance at a segment before removing it.</p>
+safe to remove is the reaper's job (<code>ghcr.io/ethlo/r7-reaper</code>, see
+<a href="#4-retention-the-reaper">§4 below</a>); it's the only container that needs write access to
+<code>journal_dir</code>. Give each tailer its own <code>checkpoint_dir</code> (see the tables below) so running
+JSON and WARC tailers side by side doesn't clash — neither can delete a segment out from
+under the other, and the reaper does not read either checkpoint (it is a plain <code>ttl</code>, not
+a "wait for every tailer" policy — see §4 for what that means for you).</p>
 </div>
 <hr />
 <h2 id="3-tailer-images">3. Tailer images</h2>
@@ -983,11 +995,88 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 </span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="nt">volumes</span><span class="p">:</span>
 </span><span id="True-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
 </span></code></pre></div>
-<h2 id="4-visualizing-your-data">4. Visualizing your data</h2>
+<h2 id="4-retention-the-reaper">4. Retention: The Reaper</h2>
+<p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-reaper:latest</code></p>
+<p>Every tailer above is read-only by design (see §2's warning) — something else has to delete a
+sealed segment once it is no longer needed, or <code>journal_dir</code> grows without bound. That something
+is the reaper: a small standalone process whose only job is deleting old segments from a shared
+journal volume.</p>
+<div class="admonition warning">
+<p class="admonition-title">This is a dumb, age-only policy</p>
+<p>The reaper does not look at any tailer's checkpoint, and does not confirm anything was
+actually read. A sealed (<code>.r7f</code>) segment is deleted once it has existed for longer than
+<code>ttl</code>, whether every tailer sharing the directory has read it or not. Set <code>ttl</code> comfortably
+longer than the slowest tailer's realistic lag — including time to recover from a restart —
+or a slow or temporarily-down tailer will lose data it never got a chance to read. A
+quarantined segment (<code>*.corrupt</code>, see <code>docs/journaling.md</code>'s tailer sections and
+<code>design/journal-invariants.md</code>) is reaped under the same <code>ttl</code>, since nothing will ever read
+it. Active (<code>.flux</code>) segments are never reaped, at any age — they belong exclusively to the
+gateway process that may still be writing to them.</p>
+<p>Age is read from the timestamp embedded in the segment's own filename, never from the
+file's filesystem last-modified time: mtime is reset by a backup restore, an <code>rsync</code> run
+without <code>-a</code>, or a volume migration, any of which would otherwise silently defeat <code>ttl</code>. A
+segment whose name the reaper cannot parse is left alone rather than guessed at from
+mtime — it is simply never a deletion candidate.</p>
+</div>
+<p><strong>Configuration:</strong> same YAML config mechanism as the tailers — <code>config/reaper.yaml</code> by default,
+overridable via the <code>REAPER_CONFIG</code> env var.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>journal_dir</code></td>
+<td><code>/journals</code></td>
+<td>Directory the reaper scans (and deletes from) — mount this read-write, unlike every tailer</td>
+</tr>
+<tr>
+<td><code>ttl</code></td>
+<td><code>7d</code></td>
+<td>How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (not the file's filesystem mtime — see below), before it is deleted. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
+</tr>
+<tr>
+<td><code>poll_interval</code></td>
+<td><code>1m</code></td>
+<td>Delay between sweeps. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example <code>config/reaper.yaml</code>:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7d</span>
+</span></code></pre></div>
+<p><strong>Example Docker Compose Integration:</strong></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="True-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
+</span><span id="True-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
+</span><span id="True-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is the reaper's job</span>
+</span><span id="True-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>
+</span><span id="True-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="nt">r7-reaper</span><span class="p">:</span>
+</span><span id="True-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-reaper:latest</span>
+</span><span id="True-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/reaper.yaml:/app/config/reaper.yaml:ro</span>
+</span><span id="True-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># the only container that needs write access to this volume</span>
+</span><span id="True-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>
+</span><span id="True-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span></code></pre></div>
+<h2 id="5-visualizing-your-data">5. Visualizing your data</h2>
 <p>Once your data is routed through a tailer:</p>
 <ul>
 <li><strong>If using the JSON Tailer with Promtail/Loki:</strong> You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like <code>duration</code>, <code>status</code>, or specific headers).</li>
 <li><strong>If using the WARC Tailer:</strong> WARC files are for archival/replay, not dashboards — feed them to a WARC-aware tool (e.g. <a href="https://github.com/webrecorder/pywb">pywb</a>) to replay captured traffic, or to an indexer for forensic search.</li>
+<li><strong>If using the ClickHouse Tailer:</strong> Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the <code>r7_logs</code> table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.</li>
 <li><strong>If using the ClickHouse Tailer:</strong> Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the <code>r7_logs</code> table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.</li>
 </ul>
 
