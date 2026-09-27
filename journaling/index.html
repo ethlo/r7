@@ -853,6 +853,11 @@ to their defaults below (so a bare container with no config volume still starts 
 <td><code>false</code></td>
 <td>Pretty-print the JSON output</td>
 </tr>
+<tr>
+<td><code>hide_empty_fields</code></td>
+<td><code>true</code></td>
+<td>Omit fields that are <code>null</code> or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out explicitly. Set to <code>false</code> to always emit every field with the same schema on every line, e.g. for consumers that require a fixed columnar schema</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Example <code>config/jsonld-tailer.yaml</code>:</strong></p>
