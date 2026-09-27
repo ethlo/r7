@@ -601,7 +601,7 @@ class JournalIntegrityTest
         // One tailer across both ticks: the reassembler holds the half-seen exchange, which
         // is exactly how this runs in production.
         final CollectingSink sink = new CollectingSink();
-        final R7Tailer tailer = new R7Tailer(journalDir, Duration.ofHours(1), sink, sink,
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
 
         tailer.runTick();
@@ -669,6 +669,11 @@ class JournalIntegrityTest
      * The other half of the same problem: pruning a checkpoint when its segment is deleted
      * does nothing if emptying the map skips the save entirely and leaves the previous file
      * in place. A restart then loads checkpoints for segments that no longer exist.
+     * <p>
+     * The tailer never deletes a segment itself any more - that is a dedicated reaper's job
+     * - so this simulates the reaper removing a fully-read segment by hand, the same way it
+     * would on disk, and checks the tailer's next tick still notices and drops the stale
+     * checkpoint.
      */
     @Test
     void checkpointFileIsRemovedOnceEverySegmentHasBeenReadAndDeleted() throws IOException
@@ -676,15 +681,24 @@ class JournalIntegrityTest
         writeExchanges(3);
 
         final CollectingSink sink = new CollectingSink();
-        // No minimum age: a segment is deleted as soon as it has been fully read.
-        new R7Tailer(journalDir, null, sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.completed).hasSize(3);
-        assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
-                .as("a fully read segment is deleted").isEmpty();
         assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
-                .as("no segments left means no checkpoints to keep")
+                .as("a fully read segment still keeps its checkpoint - this tailer never deletes it")
+                .isTrue();
+
+        for (final Path segment : filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+        {
+            Files.delete(segment);
+        }
+
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
+                .as("once the reaper's deletion is visible on disk, no segments left means no checkpoints to keep")
                 .isFalse();
     }
 
@@ -998,7 +1012,8 @@ class JournalIntegrityTest
     }
 
     /**
-     * A segment the reader gave up on must survive, even under eager retention.
+     * A segment the reader gave up on must never be replayed, and (regardless of retention,
+     * which this tailer no longer performs at all) must never be reported as fully read.
      * <p>
      * A sequence regression is the one case where the reader stops on bytes it could still
      * have decoded — the segment is no longer a valid append-only log, so it refuses to
@@ -1015,9 +1030,8 @@ class JournalIntegrityTest
         final List<EntryRef> entries = entriesOf(segment);
         rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
 
-        // No minimum age: retention would remove this the moment it was marked processed.
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, null, sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
@@ -1027,36 +1041,11 @@ class JournalIntegrityTest
 
         // And it is not read again: a second tick must not replay what it did deliver.
         final CollectingSink second = new CollectingSink();
-        new R7Tailer(journalDir, null, second, second,
+        new R7Tailer(journalDir, second, second,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(second.completed).as("a kept segment must not be re-read. sink: %s", second).isEmpty();
         assertThat(Files.exists(segment)).isTrue();
-    }
-
-    /**
-     * A ttl is the escape hatch from the test above: it bounds how long a segment this
-     * tailer never finished reading is kept, so that more than one tailer can follow the
-     * same journal directory without any of them gating deletion on its own completion (see
-     * the {@code checkpointDir} constructor parameter for the other half of that story).
-     */
-    @Test
-    void ttlExpiresASegmentRegardlessOfWhetherItWasFullyDelivered() throws IOException
-    {
-        writeExchanges(6);
-        final Path segment = onlySealedSegment();
-
-        final List<EntryRef> entries = entriesOf(segment);
-        rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
-
-        final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, null, null, Duration.ZERO, sink, sink,
-                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
-
-        assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
-        assertThat(Files.exists(segment))
-                .as("a ttl of zero expires the segment even though this tailer never finished reading it")
-                .isFalse();
     }
 
     /**
@@ -1074,7 +1063,7 @@ class JournalIntegrityTest
         rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
 
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, checkpointDir, null, null, sink, sink,
+        new R7Tailer(journalDir, checkpointDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
@@ -1087,30 +1076,13 @@ class JournalIntegrityTest
     }
 
     /**
-     * ttl and gracePeriod are mutually exclusive by design (see the constructor's javadoc):
-     * configuring both must not silently add up, pick whichever fires first, or quietly
-     * ignore one of them - it is refused at startup so the operator fixes the config
-     * instead of discovering the ambiguity from deleted (or undeleted) segments later.
+     * Every observability tailer is meant to have the journal directory mounted read-only
+     * (see docs/journaling.md) — the tailer itself never deletes a segment (a dedicated
+     * reaper does), but it still needs to actually read a directory it has no write access
+     * to, and do so without failing the tick or losing the checkpoint.
      */
     @Test
-    void configuringBothTtlAndGracePeriodFailsFastAtConstruction()
-    {
-        final CollectingSink sink = new CollectingSink();
-        assertThatThrownBy(() -> new R7Tailer(journalDir, null, Duration.ofHours(1), Duration.ZERO, sink, sink,
-                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))))
-                .as("both ttl and gracePeriod configured together is refused rather than silently resolved")
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("mutually exclusive");
-    }
-
-    /**
-     * A secondary tailer following a journal directory it does not own retention for is
-     * meant to have that directory mounted read-only (see docs/journaling.md); this is what
-     * makes that safe rather than merely documented - a delete refused by the filesystem
-     * must not fail the tick, lose the checkpoint, or stop the segment being read.
-     */
-    @Test
-    void aReadOnlyJournalDirectoryIsNeverDeletedFromAndDoesNotFailTheTick(@TempDir final Path checkpointDir) throws IOException
+    void aReadOnlyJournalDirectoryIsStillFullyReadable(@TempDir final Path checkpointDir) throws IOException
     {
         Assumptions.assumeFalse("root".equals(System.getProperty("user.name")),
                 "root bypasses file permissions, so a read-only directory cannot be observed as such");
@@ -1122,12 +1094,12 @@ class JournalIntegrityTest
         try
         {
             final CollectingSink sink = new CollectingSink();
-            new R7Tailer(journalDir, checkpointDir, null, null, sink, sink,
+            new R7Tailer(journalDir, checkpointDir, sink, sink,
                     ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
             assertThat(sink.completed).as("a read-only directory can still be read from").hasSize(3);
             assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
-                    .as("a delete refused by the filesystem must leave the segment in place")
+                    .as("this tailer never attempts to delete a segment, whatever its mount permissions")
                     .hasSize(1);
         }
         finally
@@ -1137,14 +1109,16 @@ class JournalIntegrityTest
     }
 
     /**
-     * A segment that merely lost bytes is still deleted once read.
+     * A segment that merely lost bytes is reported as damaged, and (like every other
+     * segment) is never deleted by the tailer itself - only quarantined if its identity or
+     * preamble is unreadable, which a corrupt-but-parseable region in the middle is not.
      * <p>
      * The counterpart to the test above, and the reason the two are separated: a hole is
      * unreadable to anyone, so keeping the file preserves forensics and nothing else. Only
      * abandonment holds data that deleting would destroy.
      */
     @Test
-    void aSegmentWithDamageIsStillDeletedOnceRead() throws IOException
+    void aSegmentWithDamageIsReportedAndKept() throws IOException
     {
         writeExchanges(6);
         final Path segment = onlySealedSegment();
@@ -1156,23 +1130,24 @@ class JournalIntegrityTest
         overwrite(segment, victim.offset(), rubbish);
 
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, null, sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.corruptRegions).as("sink: %s", sink).isNotEmpty();
         assertThat(sink.sequenceRegressions).as("damage, not abandonment").isEmpty();
         assertThat(Files.exists(segment))
-                .as("the lost bytes are lost whatever we do with the file")
-                .isFalse();
+                .as("the tailer itself never deletes a segment - a lossy read is reported, not destroyed")
+                .isTrue();
     }
 
     /**
      * A consumer that refuses an entry must not lose it.
      * <p>
      * Skipping the entry looks like tolerance and is destruction: the tailer checkpoints
-     * past a record nobody received, the segment then reads as fully processed, and the
-     * next tick deletes it. A sink that was unavailable for one tick would cost an
-     * exchange, permanently, with nothing left to recover it from.
+     * past a record nobody received, marking the segment fully read - and a fully read
+     * segment reported to a reaper as reap-eligible is one it would delete. A sink that
+     * was unavailable for one tick would cost an exchange, permanently, with nothing left
+     * to recover it from.
      * <p>
      * So the reader stops on the refused entry and offers it again. Everything after it in
      * that segment waits — head-of-line blocking on purpose, because an audit log may stall
@@ -1185,9 +1160,7 @@ class JournalIntegrityTest
         final Path segment = onlySealedSegment();
 
         final RefusingSink sink = new RefusingSink("req-2");
-        // No minimum age: if the segment is ever considered finished it goes immediately,
-        // which is the failure this test exists to catch.
-        final R7Tailer tailer = new R7Tailer(journalDir, null, sink, sink,
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
 
         tailer.runTick();
@@ -1214,8 +1187,9 @@ class JournalIntegrityTest
                 .as("the exchange state gathered before the refusal must survive it. sink: %s", sink)
                 .isEmpty();
         assertThat(Files.exists(segment))
-                .as("and only now, with everything delivered, may the segment go")
-                .isFalse();
+                .as("the tailer itself never deletes a segment - only a dedicated reaper does, once "
+                        + "delivery is complete")
+                .isTrue();
     }
 
     /**
@@ -1330,7 +1304,7 @@ class JournalIntegrityTest
         Files.move(sealed, restored);
 
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, null, sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
@@ -1375,17 +1349,19 @@ class JournalIntegrityTest
     }
 
     /**
-     * A sealed segment that lost its tail must be reported, not quietly deleted.
+     * A sealed segment that lost its tail must be reported, not silently treated as clean.
      * <p>
-     * The tailer treated "the file is no longer than where I stopped reading" as "I read all
-     * of it" and went straight to finished, which under eager retention is a delete. The two
-     * are the same statement only while nothing shrinks a file — and a sealed segment losing
-     * its tail is precisely the loss the seal record was added to expose, because nothing
-     * inside the file can show it. So the shortcut skipped past the seal record in order to
-     * destroy the evidence it was holding.
+     * The tailer used to treat "the file is no longer than where I stopped reading" as "I
+     * read all of it", which used to feed straight into deletion under eager retention. The
+     * two are the same statement only while nothing shrinks a file — and a sealed segment
+     * losing its tail is precisely the loss the seal record was added to expose, because
+     * nothing inside the file can show it. Deletion is no longer the tailer's call at all,
+     * but the shortcut this test guards against would still destroy the evidence by
+     * reporting a lossy read as a clean one, which is just as fatal to a reaper deciding
+     * whether the segment is safe to remove.
      */
     @Test
-    void aSealedSegmentThatLostItsTailIsReportedBeforeItIsDeleted() throws IOException
+    void aSealedSegmentThatLostItsTailIsReportedNotSilentlyAcceptedAsClean() throws IOException
     {
         writeExchanges(6);
         final Path segment = onlySealedSegment();
@@ -1405,10 +1381,8 @@ class JournalIntegrityTest
                 "journal-0-" + sequenceOfOnlySegment() + "="
                         + entries.get(entries.size() - 1).offset() + ":" + cut.sequence() + "\n");
 
-        // No minimum age: if it is ever called finished it goes immediately, which is the
-        // outcome this test exists to make impossible without a report first.
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, null, sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.isClean())
@@ -1496,7 +1470,7 @@ class JournalIntegrityTest
         }
 
         final RefusingSink sink = RefusingSink.refusingTheNextMismatchReport();
-        final R7Tailer tailer = new R7Tailer(journalDir, null, sink, sink,
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
 
         tailer.runTick();
@@ -1605,7 +1579,7 @@ class JournalIntegrityTest
                 .isNotZero();
 
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, null, sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(sink.isClean())
@@ -1617,7 +1591,7 @@ class JournalIntegrityTest
 
         // Nor may it read it again: finished is finished, it is only not disposable.
         final CollectingSink second = new CollectingSink();
-        new R7Tailer(journalDir, null, second, second,
+        new R7Tailer(journalDir, second, second,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
 
         assertThat(second.completed).as("a kept segment must not be replayed. sink: %s", second).isEmpty();
@@ -1639,7 +1613,7 @@ class JournalIntegrityTest
         writeExchanges(1);
 
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, Duration.ofHours(1), sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)).withMaxInFlight(1)).runTick();
 
         assertThat(sink.isClean()).as("sink: %s", sink).isTrue();
@@ -1765,7 +1739,7 @@ class JournalIntegrityTest
     private CollectingSink tail() throws IOException
     {
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, Duration.ofHours(1), sink, sink,
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
         return sink;
     }

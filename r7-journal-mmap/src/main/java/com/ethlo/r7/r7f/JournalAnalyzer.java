@@ -2,7 +2,6 @@ package com.ethlo.r7.r7f;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,7 +35,7 @@ public class JournalAnalyzer implements ExchangeCompletionListener, JournalInteg
     public Stats analyze() throws IOException
     {
         final long started = System.nanoTime();
-        final R7Tailer tailer = new R7Tailer(journalDir, Duration.ofMinutes(1), this, this);
+        final R7Tailer tailer = new R7Tailer(journalDir, this, this);
         tailer.runTick();
 
         logger.info("Analyzed {} full exchanges in {}ms",

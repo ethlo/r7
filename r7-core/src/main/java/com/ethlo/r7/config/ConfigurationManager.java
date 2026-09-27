@@ -1,21 +1,14 @@
 package com.ethlo.r7.config;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
@@ -25,20 +18,14 @@ import com.ethlo.r7.util.PredicateRegistry;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
-import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;
-import tools.jackson.core.TokenStreamLocation;
 import tools.jackson.databind.DeserializationContext;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.deser.std.StdDeserializer;
 import tools.jackson.databind.exc.InvalidFormatException;
-import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
 import tools.jackson.databind.module.SimpleModule;
 import tools.jackson.dataformat.yaml.JacksonYAMLParseException;
-import tools.jackson.dataformat.yaml.YAMLMapper;
 
 public final class ConfigurationManager
 {
@@ -46,15 +33,12 @@ public final class ConfigurationManager
 
     static
     {
+        // Layers the one gateway-specific deserializer (routes.yaml's HTTP status fields) on
+        // top of the shared, engine-agnostic YAML conventions every r7 config file uses.
         final SimpleModule r7Module = new SimpleModule();
-        r7Module.addDeserializer(Duration.class, new HumanDurationDeserializer());
-        r7Module.addDeserializer(DataSize.class, new HumanDataSizeDeserializer());
         r7Module.addDeserializer(HttpStatus.class, new HttpStatusDeserializer());
 
-        mapper = YAMLMapper.builder()
-                .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-                .enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
-                .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        mapper = YamlConfigSupport.baseMapperBuilder()
                 .addModule(r7Module)
                 .build();
     }
@@ -76,175 +60,7 @@ public final class ConfigurationManager
 
     public static <T> T load(Path yamlFile, Class<T> type)
     {
-        final String contents;
-        try
-        {
-            contents = Files.readString(yamlFile);
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
-        }
-        final String interpolated = EnvInterpolator.interpolate(contents);
-
-        try
-        {
-            return mapper.readValue(interpolated, type);
-        }
-        catch (JacksonYAMLParseException e)
-        {
-            throw new ConfigurationException(formatYamlSyntaxError(yamlFile, e));
-        }
-        catch (UnrecognizedPropertyException e)
-        {
-            throw new ConfigurationException(formatUnknownProperty(yamlFile, e));
-        }
-        catch (InvalidFormatException e)
-        {
-            throw new ConfigurationException(formatMappingError(yamlFile, e));
-        }
-    }
-
-    private static String formatYamlSyntaxError(
-            final Path file,
-            final JacksonYAMLParseException e)
-    {
-        final TokenStreamLocation loc = e.getLocation();
-
-        // Extract the highly readable SnakeYAML explanation, cutting off Jackson's internal trace info
-        String cleanMessage = e.getMessage();
-        final int sourceTraceIndex = cleanMessage.indexOf("\n at [Source");
-        if (sourceTraceIndex != -1)
-        {
-            cleanMessage = cleanMessage.substring(0, sourceTraceIndex);
-        }
-
-        final StringBuilder sb = new StringBuilder();
-
-        sb.append("Invalid YAML syntax in configuration file: ")
-                .append(file)
-                .append(System.lineSeparator())
-                .append(System.lineSeparator());
-
-        sb.append(cleanMessage)
-                .append(System.lineSeparator())
-                .append(System.lineSeparator());
-
-        if (loc != null)
-        {
-            sb.append("Fix the structural error around line ")
-                    .append(loc.getLineNr())
-                    .append(", column ")
-                    .append(loc.getColumnNr())
-                    .append(".");
-        }
-
-        return sb.toString();
-    }
-
-    private static String formatMappingError(
-            final Path file,
-            final MismatchedInputException e)
-    {
-        final TokenStreamLocation loc = e.getLocation();
-
-        final StringBuilder sb = new StringBuilder();
-
-        sb.append("Configuration mapping error in ")
-                .append(file);
-
-        if (loc != null)
-        {
-            sb.append(" at line ")
-                    .append(loc.getLineNr())
-                    .append(", column ")
-                    .append(loc.getColumnNr());
-        }
-
-        sb.append(System.lineSeparator());
-
-        if (!e.getPath().isEmpty())
-        {
-            sb.append("Property path: ");
-
-            for (JacksonException.Reference ref : e.getPath())
-            {
-                sb.append(ref.getPropertyName()).append(".");
-            }
-
-            sb.setLength(sb.length() - 1);
-
-            sb.append(System.lineSeparator());
-        }
-
-        sb.append(e.getOriginalMessage());
-
-        return sb.toString();
-    }
-
-    private static String formatUnknownProperty(
-            final Path file,
-            final UnrecognizedPropertyException e)
-    {
-        final TokenStreamLocation loc = e.getLocation();
-        final StringBuilder sb = new StringBuilder();
-
-        sb.append("Invalid configuration file: ")
-                .append(file)
-                .append(System.lineSeparator())
-                .append(System.lineSeparator());
-
-        sb.append("Unknown configuration option: '")
-                .append(e.getPropertyName())
-                .append("'");
-
-        if (!e.getPath().isEmpty())
-        {
-            sb.append(" at [");
-            final StringBuilder pathBuilder = new StringBuilder();
-
-            for (final JacksonException.Reference ref : e.getPath())
-            {
-                if (ref.getPropertyName() != null)
-                {
-                    if (!pathBuilder.isEmpty() && pathBuilder.charAt(pathBuilder.length() - 1) != ']')
-                    {
-                        pathBuilder.append(".");
-                    }
-                    pathBuilder.append(ref.getPropertyName());
-                }
-                else if (ref.getIndex() >= 0)
-                {
-                    pathBuilder.append("[").append(ref.getIndex()).append("]");
-                }
-            }
-            sb.append(pathBuilder).append("]");
-        }
-
-        sb.append(System.lineSeparator());
-
-        if (loc != null)
-        {
-            sb.append("Location: line ")
-                    .append(loc.getLineNr())
-                    .append(", column ")
-                    .append(loc.getColumnNr())
-                    .append(System.lineSeparator());
-        }
-
-        sb.append(System.lineSeparator());
-
-        if (e.getKnownPropertyIds() != null && !e.getKnownPropertyIds().isEmpty())
-        {
-            sb.append("Known properties are: ")
-                    .append(e.getKnownPropertyIds())
-                    .append(System.lineSeparator())
-                    .append(System.lineSeparator());
-        }
-
-        sb.append("Remove the option or check for spelling mistakes.");
-
-        return sb.toString();
+        return YamlConfigSupport.load(mapper, yamlFile, type);
     }
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
@@ -379,85 +195,15 @@ public final class ConfigurationManager
         }
         catch (JacksonYAMLParseException e)
         {
-            throw new ConfigurationException(formatYamlSyntaxError(null, e));
+            throw new ConfigurationException(YamlConfigSupport.formatYamlSyntaxError(null, e));
         }
         catch (UnrecognizedPropertyException e)
         {
-            throw new ConfigurationException(formatUnknownProperty(null, e));
+            throw new ConfigurationException(YamlConfigSupport.formatUnknownProperty(null, e));
         }
         catch (InvalidFormatException e)
         {
-            throw new ConfigurationException(formatMappingError(null, e));
-        }
-    }
-
-    public static final class HumanDurationDeserializer extends StdDeserializer<Duration>
-    {
-        private static final Pattern PATTERN = Pattern.compile("^(\\d+)(ms|s|m|h|d)?$");
-
-        public HumanDurationDeserializer()
-        {
-            super(Duration.class);
-        }
-
-        @Override
-        public Duration deserialize(final JsonParser p, final DeserializationContext ctxt)
-        {
-            final String text = p.getString().trim().toLowerCase();
-            final Matcher matcher = PATTERN.matcher(text);
-
-            if (!matcher.matches())
-            {
-                throw new ConfigurationException("Invalid duration format: '" + text + "'. Supported formats: 10ms, 5s, 2m, 1h, 3d");
-            }
-
-            final long amount = Long.parseLong(matcher.group(1));
-            final String unit = matcher.group(2);
-
-            return switch (unit)
-            {
-                case "ms" -> Duration.ofMillis(amount);
-                case "s" -> Duration.ofSeconds(amount);
-                case "m" -> Duration.ofMinutes(amount);
-                case "h" -> Duration.ofHours(amount);
-                case "d" -> Duration.ofDays(amount);
-                default -> throw new ConfigurationException("Unknown duration unit: " + unit);
-            };
-
-        }
-    }
-
-    public static final class HumanDataSizeDeserializer extends StdDeserializer<DataSize>
-    {
-        // Adjust the regex if you want to support spaces (e.g., "200 MB")
-        private static final Pattern PATTERN = Pattern.compile("^(\\d+)(b|kb|mb|gb)?$", Pattern.CASE_INSENSITIVE);
-
-        public HumanDataSizeDeserializer()
-        {
-            super(DataSize.class);
-        }
-
-        @Override
-        public DataSize deserialize(final JsonParser p, final DeserializationContext ctxt)
-        {
-            final String text = p.getString().trim();
-            final Matcher matcher = PATTERN.matcher(text);
-            if (!matcher.matches())
-            {
-                throw new ConfigurationException("Invalid data size format: '" + text + "'. Supported formats: 1024, 8kb, 200mb, 1gb");
-            }
-
-            final long amount = Long.parseLong(matcher.group(1));
-            final String unit = matcher.group(2) != null ? matcher.group(2).toLowerCase() : "b";
-
-            return switch (unit)
-            {
-                case "b" -> DataSize.ofBytes(amount);
-                case "kb" -> DataSize.ofKilobytes(amount);
-                case "mb" -> DataSize.ofMegabytes(amount);
-                case "gb" -> DataSize.ofGigabytes(amount);
-                default -> throw new ConfigurationException("Unknown data size unit: " + unit);
-            };
+            throw new ConfigurationException(YamlConfigSupport.formatMappingError(null, e));
         }
     }
 

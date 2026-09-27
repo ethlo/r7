@@ -11,6 +11,7 @@
         <module>r7-api</module>
         <module>r7-undertow</module>
         <module>r7-core</module>
+        <module>r7-config</module>
         <module>r7-journal-api</module>
         <module>r7-journal-mmap</module>
         <module>r7-tailer-api</module>

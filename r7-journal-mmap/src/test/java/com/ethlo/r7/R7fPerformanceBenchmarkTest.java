@@ -101,7 +101,7 @@ public final class R7fPerformanceBenchmarkTest
             // 3. Measure Decoding Speed using the high-water mark
             final AtomicLong totalReceived = new AtomicLong();
             final ExchangeCompletionListener noopListener = exchange -> totalReceived.addAndGet(exchange.getRequestTotalBytes());
-            final R7Tailer tailer = new R7Tailer(finalPath.getParent(), Duration.ZERO, noopListener);
+            final R7Tailer tailer = new R7Tailer(finalPath.getParent(), noopListener);
             final long totalBytesRead = chronograph.time("Decode " + iterations, () ->
                     {
                         try

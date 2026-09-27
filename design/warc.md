@@ -23,6 +23,36 @@ journaled?". WARC is text headers with a blank-line terminator, so `grep`, `tail
 `less +F` and the entire archiving ecosystem (`warcio`, `jwarc`, `warcat`, replay tooling)
 work on it. That is a real capability at 3am, not an aesthetic preference.
 
+**r7f is effective short-term storage, not a long-term archival format, and that's by
+design.** It's the closest thing to Java object serialization this system has — fast to
+produce, tightly coupled to the exact reader that produced it, and readable only by code that
+tracks its framing and its FlatBuffers schema precisely. That coupling is a fair trade for a
+format whose entire job is being written and read within minutes by processes on the same
+machine, sharing the same schema version. It stops being a fair trade the moment the horizon
+is years and the reader might not even be this codebase anymore — at that point the same
+properties that make r7f cheap to write become exactly what make it brittle to keep: any drift
+in the decoder, the schema, or the framing between when a segment was written and when someone
+needs it back is a real risk to data nobody can outsource to a third-party tool the way a WARC
+reader can be. A **compressed long-term archive built directly from r7f segments** — copy the
+sealed `.r7f` bytes, compress, keep — was considered for exactly that reason (it would be
+smaller than WARC; no per-record envelope, no verbose text headers) and rejected: it would
+sit next to WARC claiming to also be "the archive," reintroducing the same bespoke-format
+lock-in this whole document exists to get away from, just with compression bolted on. WARC is
+the only thing this design calls the archive of record. r7f's job ends once WARC — or any
+other sidecar — has read it.
+
+### Other formats considered
+
+- **HAR** — widest existing tooling, but a single JSON document, not an append/rotate/seal
+  stream; no second-hop record; no truncation/digest convention. A trace-export format, not a
+  continuous archival one.
+- **PCAP** — wrong layer: packets, not reconstructed HTTP, and the gateway already did the
+  TLS/reassembly work a packet capture would force every reader to redo.
+- **mbox/MIME multipart** — same concatenated-text shape as WARC, but none of WARC's archiving
+  conventions (digest, truncation, concurrent linking); adopting it means reinventing them.
+- **Publishing r7f's schema openly** — doesn't buy interoperability; the point was an
+  *existing* ecosystem of readers, not merely a non-secret one.
+
 ---
 
 ## Shape
@@ -241,8 +271,36 @@ fires today. Well inside "see live traffic".
 
 `tail -F` (follow the *name*, so it survives rotation) gives a human the live view. Caveats:
 `tail` does not respect record boundaries, so it will show half a record — fine for eyes,
-misleading into a parser; binary bodies will wreck a terminal, so filter on `WARC-Type` first;
-and per-record gzip is the WARC convention that takes greppability away, so keep the live file
-uncompressed and let an archiver compress on rotation. That is the same position already taken
-when compression left the gateway: it is a consumer's job, and its output belongs to that
-consumer.
+misleading into a parser; binary bodies will wreck a terminal, so filter on `WARC-Type` first.
+
+**Compression ended up deviating from the position above, on purpose.** "Keep the live file
+uncompressed, let a downstream consumer compress on rotation" was the same precedent r7f
+already set — `journal-invariants.md`: "Compression is not a phase... its output belongs to
+that consumer, not this directory" — applied here by analogy, and it was the right default to
+start from. The implementation departed from it anyway: it compresses per record, live, as
+independent Zstandard frames — `.warc.zst`, following the (proposed) IIPC "Zstandard
+Compression for WARC Files 1.0" convention, each record exactly one self-contained frame with
+its own content size and checksum, concatenated like `.warc.gz` has done per-record since
+WARC/1.0. The reason it's worth deviating here where it wasn't for r7f: compressing a whole
+rotated file after the fact would cost the two properties per-record framing keeps — a tool
+can still decompress-and-concatenate the whole file to recover a plain WARC file, and — given
+an external offset index — a single record can be picked out and decompressed without
+touching the rest of the file. Whole-file compression on rotation loses per-record random
+access entirely; `grep` on the live file is lost either way (compression is compression), but
+`zstdcat | grep` or an offset-aware tool still works record-by-record only with this shape.
+
+**No shared dictionary, deliberately.** Per-record frames with an empty dictionary leave real
+compression on the table — this format's small records (~1-2 KB) are mostly WARC-envelope
+boilerplate and repeated HTTP header names, exactly what a trained dictionary is good at, and
+a shared dictionary would likely buy another ~2x on top of what independent frames achieve.
+Rejected anyway: a dictionary is external state the archive would depend on forever — every
+reader, at any future date, needs the *exact matching dictionary version* alongside the file
+to decode anything. That converts "the archive of record" into "the archive of record, provided
+this specific dictionary blob wasn't lost or mismatched" — real, permanent risk for what's
+supposed to be self-contained evidence, in exchange for a one-time storage win on bytes that
+were already modest (headers/metadata-only WARC output for typical web traffic runs in the
+low hundreds of MB per 100k exchanges, uncompressed; zstd without a dictionary already gets
+this to roughly a third of that). Same principle invariant #4 in `journal-invariants.md`
+argues for elsewhere: a decision that makes the archive unreadable without something outside
+the file itself is a cost paid by every future reader, not just the one who saved the disk
+space today.

@@ -90,7 +90,7 @@ class HeaderDeltaRoundTripTest
 
             final Map<String, JournalExchange> read = new HashMap<>();
             final ExchangeCompletionListener collector = exchange -> read.put(exchange.getRequestId(), exchange);
-            new R7Tailer(dir, Duration.ZERO, collector).runTick();
+            new R7Tailer(dir, collector).runTick();
 
             assertThat(read).as("every exchange came back").hasSize(EXCHANGES);
 

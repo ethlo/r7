@@ -1,28 +1,32 @@
 package com.ethlo.r7.tailer.warc;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.r7.config.YamlConfigSupport;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
-import com.ethlo.r7.tailer.EnvConfig;
+import com.ethlo.r7.validation.ValidationResult;
 import com.ethlo.r7.warc.PayloadDedupIndex;
 import com.ethlo.r7.warc.WarcExchangeWriter;
 import com.ethlo.r7.warc.WarcFileWriter;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Entry point for the standalone WARC/zstd tailer image (see {@code docs/journaling.md}).
  * <p>
- * Reads binary journals written by the gateway from {@code JOURNAL_DIR} and writes them as
+ * Reads binary journals written by the gateway from {@code journal_dir} and writes them as
  * {@code .warc.zst} files (WARC 1.1, one independent Zstandard frame per record) to
- * {@code OUTPUT_DIR}, rotating by size.
+ * {@code output_dir}, rotating by size. Configured by {@code warc-tailer.yaml} (path
+ * overridable via {@code WARC_TAILER_CONFIG}), the same YAML conventions as the gateway's
+ * {@code routes.yaml}/{@code server.yaml}.
  */
 public final class WarcTailerMain
 {
@@ -34,45 +38,30 @@ public final class WarcTailerMain
 
     public static void main(final String[] args) throws Exception
     {
-        final Map<String, String> env = System.getenv();
+        final Path configFile = Paths.get(System.getenv().getOrDefault("WARC_TAILER_CONFIG", "config/warc-tailer.yaml"));
+        final WarcTailerConfig config = loadConfig(configFile);
 
-        final Path journalDir = Paths.get(env.getOrDefault("JOURNAL_DIR", "/journals"));
-        final Path outputDir = Paths.get(env.getOrDefault("OUTPUT_DIR", "/warc"));
-        // Not under JOURNAL_DIR: a secondary tailer (one not responsible for deletion, see
-        // R7Tailer's ttl/gracePeriod semantics) must be free to mount JOURNAL_DIR read-only,
-        // which a checkpoint file living inside it would rule out. OUTPUT_DIR is always a
-        // real, already-writable directory for this tailer, so it is a safe default parent.
-        final Path checkpointDir = Paths.get(env.getOrDefault("CHECKPOINT_DIR", outputDir.resolve(".checkpoints").toString()));
-        final String filePrefix = env.getOrDefault("WARC_FILE_PREFIX", "r7");
-        final long maxFileSizeBytes = EnvConfig.dataSizeBytes(env, "WARC_MAX_FILE_SIZE", "1gb");
-        if (maxFileSizeBytes < WarcFileWriter.MIN_ROLLOVER_SIZE)
-        {
-            throw new IllegalArgumentException("WARC_MAX_FILE_SIZE must be at least " + WarcFileWriter.MIN_ROLLOVER_SIZE
-                    + " bytes, but was '" + env.get("WARC_MAX_FILE_SIZE") + "'");
-        }
-        final Duration maxFileAge = EnvConfig.duration(env, "WARC_MAX_FILE_AGE", "15m");
-        final int zstdLevel = Integer.parseInt(env.getOrDefault("ZSTD_LEVEL", "9"));
-        final int dedupCacheEntries = Integer.parseInt(env.getOrDefault("DEDUP_CACHE_ENTRIES", "100000"));
-        final String ttlText = env.get("TTL");
-        final Duration ttl = ttlText != null ? EnvConfig.parseDuration(ttlText) : null;
-        // ttl and gracePeriod are mutually exclusive (R7Tailer fails fast if both are set), so
-        // the "1h" default below must not silently reappear once ttl is configured - only
-        // apply it when GRACE_PERIOD was not left to fall back onto ttl instead.
-        final Duration gracePeriod = ttl == null || env.containsKey("GRACE_PERIOD")
-                ? EnvConfig.duration(env, "GRACE_PERIOD", "1h")
-                : null;
-        final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
+        final Path journalDir = Paths.get(config.journalDir());
+        final Path outputDir = Paths.get(config.outputDir());
+        final Path checkpointDir = Paths.get(config.checkpointDir());
+        final String filePrefix = config.filePrefix();
+        final long maxFileSizeBytes = config.maxFileSize().bytes();
+        final Duration maxFileAge = config.maxFileAge();
+        final int zstdLevel = config.zstdLevel();
+        final int dedupCacheEntries = config.dedupCacheEntries();
+        final Duration pollInterval = config.pollInterval();
 
         logger.info("Tailing journals from '{}' -> WARC files in '{}' (checkpoints in '{}', max file size {} bytes, max file age {}, "
-                        + "zstd level {}, dedup cache {} entries, grace period {}, ttl {}, poll every {})",
-                journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, gracePeriod,
-                ttl != null ? ttl : "disabled", pollInterval);
+                        + "zstd level {}, dedup cache {} entries, poll every {})",
+                journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, pollInterval);
 
         final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAge.toMillis(), zstdLevel);
         final PayloadDedupIndex dedupIndex = new PayloadDedupIndex(dedupCacheEntries);
         final WarcExchangeWriter warcWriter = new WarcExchangeWriter(warcFileWriter, dedupIndex);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
-        final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, gracePeriod, ttl, warcWriter, integrity, ReassemblyOptions.DEFAULTS);
+        // Retention is a dedicated reaper's job, applied uniformly across every format-specific
+        // tailer sharing the journal directory - this tailer never deletes a segment itself.
+        final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, warcWriter, integrity, ReassemblyOptions.DEFAULTS);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
@@ -103,6 +92,28 @@ public final class WarcTailerMain
             }
             Thread.sleep(pollInterval.toMillis());
         }
+    }
+
+    private static WarcTailerConfig loadConfig(final Path configFile)
+    {
+        if (!Files.exists(configFile))
+        {
+            logger.info("No warc-tailer.yaml file found at {}. Using defaults", configFile.toAbsolutePath());
+            return WarcTailerConfig.standard();
+        }
+
+        logger.info("Loading WARC tailer settings from {}", configFile.toAbsolutePath());
+        final ObjectMapper mapper = YamlConfigSupport.baseMapperBuilder().build();
+        WarcTailerConfig config = YamlConfigSupport.load(mapper, configFile, WarcTailerConfig.class);
+        if (config == null)
+        {
+            logger.warn("No settings found in warc-tailer.yaml, using only defaults");
+            config = WarcTailerConfig.standard();
+        }
+        final ValidationResult result = new ValidationResult();
+        config.validate(result);
+        result.throwIfInvalid();
+        return config;
     }
 
     /**

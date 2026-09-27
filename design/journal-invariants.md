@@ -184,7 +184,7 @@ discarded journal content reported itself clean. Both now include it.
 `stampedSegmentWithUnreadableDataIsQuarantinedNotDeleted`,
 `activeSegmentsAreNeverQuarantinedByTheTailer`,
 `aSegmentRecoveryShortenedAroundARegressionIsNeverDeleted`,
-`aSealedSegmentThatLostItsTailIsReportedBeforeItIsDeleted`,
+`aSealedSegmentThatLostItsTailIsReportedNotSilentlyAcceptedAsClean`,
 `recoveryReportsOnlyTheContentItCouldNotRead`,
 `checksumsRoundTripThroughTheJournal`,
 `aChecksumOfAllOnesIsNotMistakenForAnAbsentOne` and

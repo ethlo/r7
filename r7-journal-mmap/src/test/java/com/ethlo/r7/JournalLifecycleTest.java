@@ -448,10 +448,10 @@ class JournalLifecycleTest
         JournalInvariants.assertSealedSegmentsDescribeThemselves(journalDir);
 
         final CollectingSink sink = new CollectingSink();
-        // A large gracePeriod keeps the tailer from deleting segments once it has read them,
-        // so assertions can still inspect the files. A null gracePeriod would delete them
-        // immediately. maxAge is generous so nothing ages out mid-test.
-        new R7Tailer(journalDir, Duration.ofHours(1), sink, sink,
+        // maxAge is generous so nothing ages out mid-test; the tailer itself never deletes
+        // anything (that's a dedicated reaper's job), so the segments stay put for
+        // assertions to inspect regardless.
+        new R7Tailer(journalDir, sink, sink,
                 ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
         return sink;
     }

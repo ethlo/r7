@@ -8,26 +8,20 @@ To ingest these logs into your observability stack (like Grafana, ELK, or ClickH
 
 In containerized environments, the gateway and the tailer share a volume. The gateway writes the binary journals, and the tailer reads them.
 
-!!! warning "The journal mount must be read-write for whichever tailer owns retention"
-    A tailer does more than read: the one responsible for retention deletes segments once they
-    are fully processed (or once `TTL` expires, see below). Checkpoints no longer live under
-    the journal directory by default (see `CHECKPOINT_DIR` below), so a *secondary* tailer that
-    is not meant to own retention can safely mount `/journals` read-only — its deletion
-    attempts are then refused by the filesystem and skipped, not fatal. The tailer that does
-    own retention still needs `/journals` read-write, or segments simply pile up forever.
+!!! warning "Retention is not this tailer's job"
+    `R7Tailer` (the component every tailer here is built on) never deletes a segment itself —
+    it only reads. Retention (deciding when a fully-read segment is safe to remove) belongs to
+    a dedicated reaper process, external to any tailer, that is the single place operators
+    configure how long segments are kept. This means the journal mount can — and should — be
+    read-only (`:ro`) for every tailer; only the reaper needs write access to `journal_dir`.
 
 !!! note "Running more than one tailer against the same journal directory"
-    Each tailer keeps its own checkpoint under its own `CHECKPOINT_DIR` (a dedicated directory
-    outside `JOURNAL_DIR` by default — see the env var tables below for exactly where), so two
-    different tailers (say, one JSON and one WARC) no longer overwrite each other's progress.
-    Deletion is still a shared resource, though: by default a tailer deletes a segment as soon
-    as *it* has fully read it, which would delete it out from under a second, slower tailer. To
-    run more than one tailer against the same directory, set `TTL` on every tailer involved to
-    a value comfortably longer than the slowest tailer's expected catch-up time (for example
-    `24h`), and rely on `TTL` rather than per-tailer completion for retention — a segment is
-    then kept for at least that long regardless of which tailer has read it, and removed once
-    every tailer has had a fair chance to. Mount `JOURNAL_DIR` read-only (`:ro`) on every tailer
-    except the one you want to actually own deletion.
+    Each tailer keeps its own checkpoint under its own `checkpoint_dir` (a dedicated directory
+    outside `journal_dir` by default — see the config tables below for exactly where), so two
+    different tailers (say, one JSON and one WARC) never overwrite each other's progress, and
+    since neither one deletes anything, neither can delete a segment out from under the other.
+    A shared reaper simply waits until every tailer following the directory has had a fair
+    chance to read a segment (or a bounded ceiling elapses) before removing it.
 
 ```mermaid
 graph LR
@@ -50,17 +44,27 @@ We provide pre-built Docker images for the most common observability architectur
 
 This tailer converts the binary journal entries into verbose JSON and streams them to standard output (`stdout`) by default. This is the recommended approach if you use generic log forwarders like **Promtail (for Grafana Loki)**, **Fluent Bit**, or **Vector**.
 
-**Configuration (environment variables):**
+**Configuration:** like the gateway, this tailer reads a YAML file — `config/jsonld-tailer.yaml`
+by default, overridable via the `JSONLD_TAILER_CONFIG` env var — with the same `${VAR:default}`
+interpolation support as `routes.yaml`/`server.yaml`. If the file is missing, all fields fall back
+to their defaults below (so a bare container with no config volume still starts and tails
+`/journals` to stdout).
 
-| Variable          | Default     | Meaning                                                                 |
-|-------------------|-------------|--------------------------------------------------------------------------|
-| `JOURNAL_DIR`     | `/journals` | Directory the tailer reads binary journals from                          |
-| `CHECKPOINT_DIR`  | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside `JOURNAL_DIR`, so `JOURNAL_DIR` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `JOURNAL_DIR` |
-| `OUTPUT_PATH`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
-| `GRACE_PERIOD`    | `1h`        | Minimum segment age (from its last-modified time, not from when this tailer finished reading it) before a fully-read segment is deleted; `null`/unset means "delete as soon as read". Supports `ms`, `s`, `m`, `h`, `d`. Mutually exclusive with `TTL` |
-| `TTL`             | disabled    | Hard retention ceiling: a segment older than this is deleted whether or not it was fully read, which is what lets more than one tailer follow the same journal directory (see the note above). Same units as `GRACE_PERIOD` |
-| `POLL_INTERVAL`   | `1s`        | Delay between tailer ticks. Same units as `GRACE_PERIOD`                 |
-| `PRETTY_PRINT`    | `false`     | Pretty-print the JSON output                                              |
+| Field           | Default     | Meaning                                                                 |
+|------------------|-------------|--------------------------------------------------------------------------|
+| `journal_dir`     | `/journals` | Directory the tailer reads binary journals from                          |
+| `checkpoint_dir`  | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside `journal_dir`, so `journal_dir` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `journal_dir` |
+| `output_path`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
+| `poll_interval`   | `1s`        | Delay between tailer ticks. Supports `ms`, `s`, `m`, `h`, `d`             |
+| `pretty_print`    | `false`     | Pretty-print the JSON output                                              |
+
+**Example `config/jsonld-tailer.yaml`:**
+
+```yaml
+journal_dir: /journals
+checkpoint_dir: /checkpoints
+output_path: "-"
+```
 
 **Example Docker Compose Integration:**
 
@@ -75,10 +79,9 @@ services:
   r7-tailer-json:
     image: ghcr.io/ethlo/r7-tailer-json:latest
     volumes:
-      - r7-journals:/journals:rw # r7Tailer deletes completed segments here when this tailer owns retention
+      - ./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro
+      - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
       - r7-checkpoints:/checkpoints:rw # .r7_checkpoints lives here by default
-    environment:
-      - JOURNAL_DIR=/journals
     # The output of this container goes to Docker's stdout, 
     # ready to be scraped by your infrastructure's logging driver.
 
@@ -102,21 +105,27 @@ Each WARC record is compressed as one independent Zstandard frame per the (propo
 
 **Checksum integrity.** If the journal itself reports a body checksum mismatch for a leg (stored bytes don't match what the gateway recorded at request time), that leg's records are written without a payload or digest, marked `WARC-Truncated: unspecified` and `WARC-R7-Checksum-Mismatch: true`, instead of silently archiving corrupted bytes as an authoritative record.
 
-**Configuration (environment variables):**
+**Configuration:** same YAML config mechanism as the JSON tailer above — `config/warc-tailer.yaml`
+by default, overridable via the `WARC_TAILER_CONFIG` env var.
 
-| Variable                   | Default     | Meaning                                                                    |
+| Field                      | Default     | Meaning                                                                    |
 |----------------------------|-------------|-----------------------------------------------------------------------------|
-| `JOURNAL_DIR`               | `/journals` | Directory the tailer reads binary journals from                             |
-| `CHECKPOINT_DIR`            | `<OUTPUT_DIR>/.checkpoints` | Directory `.r7_checkpoints` is read from and written to; a subdirectory of `OUTPUT_DIR` (not `JOURNAL_DIR`), so `JOURNAL_DIR` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `JOURNAL_DIR` |
-| `OUTPUT_DIR`                | `/warc`     | Directory rotated `.warc.zst` files are written to                          |
-| `WARC_FILE_PREFIX`          | `r7`        | Filename prefix for rotated WARC files                                      |
-| `WARC_MAX_FILE_SIZE`        | `1gb`       | Rotate to a new file once the current one reaches this size (at least `64kb`; a size that couldn't hold a single record is refused at startup). Supports `b`, `kb`, `mb`, `gb` |
-| `WARC_MAX_FILE_AGE`         | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
-| `ZSTD_LEVEL`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
-| `DEDUP_CACHE_ENTRIES`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
-| `GRACE_PERIOD`              | `1h`        | Minimum segment age (from its last-modified time, not from when this tailer finished reading it) before a fully-read segment is deleted; `null`/unset means "delete as soon as read". Same units as `WARC_MAX_FILE_AGE`. Mutually exclusive with `TTL` |
-| `TTL`                       | disabled    | Hard retention ceiling: a segment older than this is deleted whether or not it was fully read, which is what lets more than one tailer follow the same journal directory (see the note above). Same units as `WARC_MAX_FILE_AGE` |
-| `POLL_INTERVAL`             | `1s`        | Delay between tailer ticks. Same units as `WARC_MAX_FILE_AGE`               |
+| `journal_dir`               | `/journals` | Directory the tailer reads binary journals from                             |
+| `checkpoint_dir`            | `<output_dir>/.checkpoints` | Directory `.r7_checkpoints` is read from and written to; a subdirectory of `output_dir` (not `journal_dir`), so `journal_dir` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `journal_dir` |
+| `output_dir`                | `/warc`     | Directory rotated `.warc.zst` files are written to                          |
+| `file_prefix`               | `r7`        | Filename prefix for rotated WARC files                                      |
+| `max_file_size`             | `1gb`       | Rotate to a new file once the current one reaches this size (at least `64kb`; a size that couldn't hold a single record is refused at startup). Supports `b`, `kb`, `mb`, `gb` |
+| `max_file_age`              | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
+| `zstd_level`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
+| `dedup_cache_entries`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
+| `poll_interval`             | `1s`        | Delay between tailer ticks. Supports `ms`, `s`, `m`, `h`, `d`           |
+
+**Example `config/warc-tailer.yaml`:**
+
+```yaml
+journal_dir: /journals
+output_dir: /warc
+```
 
 **Example Docker Compose Integration:**
 
@@ -130,11 +139,9 @@ services:
   r7-tailer-warc:
     image: ghcr.io/ethlo/r7-tailer-warc:latest
     volumes:
-      - r7-journals:/journals:rw
+      - ./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro
+      - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
       - r7-warc:/warc:rw
-    environment:
-      - JOURNAL_DIR=/journals
-      - OUTPUT_DIR=/warc
 
 volumes:
   r7-journals:
@@ -165,7 +172,7 @@ services:
   r7-tailer-clickhouse:
     image: ghcr.io/ethlo/r7-tailer-clickhouse:latest
     volumes:
-      - r7-journals:/journals:rw
+      - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
     environment:
       - JOURNAL_DIR=/journals
       - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs

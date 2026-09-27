@@ -12,15 +12,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.time.Duration;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -46,12 +43,13 @@ public final class R7Tailer
     /**
      * Read to the end, but the reader gave up on entries it could still have decoded — a
      * sequence regression, where the segment stops being a valid append-only log partway
-     * through. Such a segment is never re-read and never deleted.
+     * through. Such a segment is never re-read, and (like every segment this tailer reads)
+     * never deleted by this tailer regardless of the outcome.
      * <p>
-     * Damage is deleted; abandonment is kept. Bytes lost to a hole or a bad CRC are gone
-     * whoever looks at them, so keeping the file preserves nothing but forensics. Bytes
-     * after a regression are still there and still decodable — deleting the segment is the
-     * only thing that would actually destroy them.
+     * The distinction still matters to whatever external reaper owns retention: bytes lost
+     * to a hole or a bad CRC are gone whoever looks at them, so keeping the file preserves
+     * nothing but forensics. Bytes after a regression are still there and still decodable —
+     * deleting the segment is the only thing that would actually destroy them.
      */
     private static final long FULLY_READ_UNDELIVERED = -2L;
 
@@ -63,8 +61,6 @@ public final class R7Tailer
      */
     private final Map<Path, FileMeta> metaCache = new HashMap<>();
     private final Path logDir;
-    private final Duration gracePeriod;
-    private final Duration ttl;
     private final ExchangeReassembler reassembler;
     private final JournalIntegrityListener integrity;
     private final Path checkpointPath;
@@ -73,20 +69,19 @@ public final class R7Tailer
     private long totalMissingEntries = 0;
     private long totalCorruptEntries = 0;
 
-    public R7Tailer(final Path logDir, final Duration gracePeriod, final ExchangeCompletionListener output)
+    public R7Tailer(final Path logDir, final ExchangeCompletionListener output)
     {
-        this(logDir, gracePeriod, output, JournalIntegrityListener.NOOP, ReassemblyOptions.DEFAULTS);
+        this(logDir, output, JournalIntegrityListener.NOOP, ReassemblyOptions.DEFAULTS);
     }
 
     /**
      * @param integrity receives damage and loss events for the segments read
      */
     public R7Tailer(final Path logDir,
-                    final Duration gracePeriod,
                     final ExchangeCompletionListener output,
                     final JournalIntegrityListener integrity)
     {
-        this(logDir, gracePeriod, output, integrity, ReassemblyOptions.DEFAULTS);
+        this(logDir, output, integrity, ReassemblyOptions.DEFAULTS);
     }
 
     /**
@@ -95,54 +90,35 @@ public final class R7Tailer
      *                  of each setting
      */
     public R7Tailer(final Path logDir,
-                    final Duration gracePeriod,
                     final ExchangeCompletionListener output,
                     final JournalIntegrityListener integrity,
                     final ReassemblyOptions options)
     {
-        this(logDir, null, gracePeriod, null, output, integrity, options);
+        this(logDir, null, output, integrity, options);
     }
 
     /**
+     * This tailer never deletes a segment - retention is a dedicated reaper's job, applied
+     * uniformly across every tailer sharing the journal directory, not a concern of a class
+     * whose only job is reading and delivering exchanges. Mount {@code logDir} read-only for
+     * every tailer here for that to be enforced rather than merely intended.
+     *
      * @param checkpointDir where {@code .r7_checkpoints} is read from and written to; defaults
      *                      to {@code logDir} when {@code null}. Giving each tailer process its
      *                      own directory (outside the shared journal mount) is what lets more
      *                      than one tailer follow the same journal directory without the
      *                      tailers overwriting each other's progress file.
-     * @param gracePeriod   minimum segment age, measured from the segment's last-modified
-     *                      time, before <em>this</em> tailer deletes a segment it has fully
-     *                      read; {@code null} deletes as soon as read. It is not a timer started
-     *                      when reading completes, so a backlog segment already older than this
-     *                      is deleted right after its first full read. Must be {@code null}
-     *                      when {@code ttl} is set; construction fails otherwise.
-     * @param ttl           hard retention ceiling; {@code null} disables it and deletion works
-     *                      exactly as {@code gracePeriod} describes. Setting it switches this
-     *                      tailer's deletion from "as soon as I finished reading it" to "once
-     *                      it is this old, whoever else may still be reading it" — a segment
-     *                      older than {@code ttl} is deleted even if this tailer never
-     *                      finished it, the same way rotation, clean close and recovery
-     *                      already delete segments a checkpoint pointed at (see
-     *                      {@link #forgetCheckpointsWithoutSegments}): the guarantee of
-     *                      delivery expires on a timer instead of running forever. This is
-     *                      what lets more than one tailer follow the same journal directory
-     *                      without racing each other to delete: set the same generous
-     *                      {@code ttl}, comfortably above the slowest tailer's expected
-     *                      catch-up time, on every tailer sharing the directory.
      * @param integrity     receives damage and loss events for the segments read
      * @param options       reassembly tuning; see {@code README.md} §11 for the side-effects
      *                      of each setting
      */
     public R7Tailer(final Path logDir,
                     final Path checkpointDir,
-                    final Duration gracePeriod,
-                    final Duration ttl,
                     final ExchangeCompletionListener output,
                     final JournalIntegrityListener integrity,
                     final ReassemblyOptions options)
     {
         this.logDir = logDir;
-        this.gracePeriod = gracePeriod;
-        this.ttl = ttl;
         this.reassembler = new ExchangeReassembler(output, options, integrity);
         this.integrity = integrity;
         final Path resolvedCheckpointDir = checkpointDir != null ? checkpointDir : logDir;
@@ -156,46 +132,6 @@ public final class R7Tailer
         }
         this.checkpointPath = resolvedCheckpointDir.resolve(CHECKPOINT_FILE);
         loadCheckpoints();
-        logRetentionConfig();
-    }
-
-    /**
-     * Logs, once at startup, exactly what this tailer will and will not delete - the
-     * combination of {@code gracePeriod}, {@code ttl} and whether {@code logDir} is even
-     * writable is easy to get wrong silently (a segment nobody ever deletes, or two tailers
-     * quietly racing on deletion) and every one of those failure modes looks identical at
-     * runtime: nothing in the logs until disk fills up or a tailer loses records it should
-     * have kept. Said once here, plainly, instead.
-     */
-    private void logRetentionConfig()
-    {
-        if (ttl != null && gracePeriod != null)
-        {
-            throw new IllegalArgumentException("Both ttl (" + ttl + ") and gracePeriod (" + gracePeriod + ") are "
-                    + "configured for " + logDir + "; the two are mutually exclusive by design (see the constructor's "
-                    + "javadoc) - configure only one of them.");
-        }
-
-        final boolean writable = Files.isWritable(logDir);
-        if (!writable)
-        {
-            logger.info("{} is not writable by this process: this tailer will never delete a segment, whatever ttl or "
-                            + "gracePeriod says - retention is left entirely to whichever other tailer (or process) does "
-                            + "have write access.",
-                    logDir);
-        }
-        else if (ttl != null)
-        {
-            logger.info("{} is writable; this tailer deletes a segment once it is older than ttl {}, whether or not it "
-                            + "was ever fully read. Give every tailer sharing this directory the same ttl, comfortably "
-                            + "above the slowest one's expected catch-up time.",
-                    logDir, ttl);
-        }
-        else
-        {
-            logger.info("{} is writable; this tailer deletes each segment as soon as it has fully read it{}.",
-                    logDir, gracePeriod != null ? " (after waiting " + gracePeriod + ")" : "");
-        }
     }
 
     public long runTick() throws IOException
@@ -204,11 +140,10 @@ public final class R7Tailer
         totalMissingEntries = 0;
         totalCorruptEntries = 0;
         metaCache.clear();
-        final Set<String> fullyProcessedKeys = new HashSet<>();
 
         try
         {
-            runTickBody(fullyProcessedKeys);
+            runTickBody();
         }
         finally
         {
@@ -227,7 +162,7 @@ public final class R7Tailer
         return totalBytesRead;
     }
 
-    private void runTickBody(final Set<String> fullyProcessedKeys) throws IOException
+    private void runTickBody() throws IOException
     {
         try (final Stream<Path> s = Files.list(logDir))
         {
@@ -269,12 +204,7 @@ public final class R7Tailer
                     .forEach(path -> {
                         try
                         {
-                            final boolean isFinished = processFile(path);
-                            if (isFinished)
-                            {
-                                fullyProcessedKeys.add(getStableKey(path));
-                            }
-                            checkDelete(path, fullyProcessedKeys);
+                            processFile(path);
                         }
                         catch (final IOException e)
                         {
@@ -283,11 +213,13 @@ public final class R7Tailer
                     });
 
             // Only here, where the listing completed and every file in it was processed, do
-            // we know which segments still exist. Rotation, clean close and recovery all
-            // delete segments the tailer may hold a checkpoint for — an empty segment, an
-            // unused pre-allocation — and nothing else would ever remove those entries. They
-            // are not merely a leak: a checkpoint outliving its segment is what lets a reused
-            // (shard, sequence) resume a brand-new segment at a dead one's offset.
+            // we know which segments still exist. Rotation, clean close, recovery and the
+            // reaper that owns retention for this journal directory all delete segments the
+            // tailer may hold a checkpoint for — an empty segment, an unused pre-allocation,
+            // a segment whose retention window elapsed — and nothing else would ever remove
+            // those entries. They are not merely a leak: a checkpoint outliving its segment
+            // is what lets a reused (shard, sequence) resume a brand-new segment at a dead
+            // one's offset.
             forgetCheckpointsWithoutSegments(resolvedFiles.keySet());
         }
     }
@@ -366,8 +298,8 @@ public final class R7Tailer
         if (checkpoint.offset() == FULLY_READ_UNDELIVERED)
         {
             // Finished, but holding entries this reader declined to deliver. Reporting it
-            // "not finished" is what keeps checkDelete away from it, for as long as it is
-            // here — deliberately, until someone decides what to do with it.
+            // "not finished" leaves it out of a future reap-eligible accounting, for as long
+            // as it is here — deliberately, until someone decides what to do with it.
             return false;
         }
 
@@ -401,13 +333,14 @@ public final class R7Tailer
             }
 
             // A sealed segment takes no shortcut, whatever its size. "The file is no longer
-            // than where I stopped reading" was treated as "I read all of it", and runTick
-            // turns that into a delete — but the two are the same statement only while
-            // nothing shrinks a file. A sealed segment that lost its tail is exactly the
-            // case the seal record was added to expose, and this exit skipped past the seal
-            // record to delete the evidence. Everything below — preamble validation, the
-            // declared Data End, the comparison against the recorded last sequence — has to
-            // run before this file can be called finished.
+            // than where I stopped reading" is not the same as "I read all of it", and the
+            // checkpoint this method leaves behind is what an external reaper trusts before
+            // it deletes anything — the two statements are only equivalent while nothing
+            // shrinks a file. A sealed segment that lost its tail is exactly the case the
+            // seal record was added to expose, and this exit would skip past the seal
+            // record and report the loss as a clean, reap-eligible read. Everything below —
+            // preamble validation, the declared Data End, the comparison against the
+            // recorded last sequence — has to run before this file can be called finished.
             final ByteBuffer processingBuffer = mappedBuffer;
 
             // Clamped, because the resume offset can now legitimately lie past the end of a
@@ -431,7 +364,7 @@ public final class R7Tailer
 
                 // A sealed file is nobody's to write any more. Without this
                 // check it would be decoded as whatever its bytes happened to look like,
-                // and then deleted as "processed".
+                // and then checkpointed as "processed" for a reaper to act on.
                 quarantine(path, preambleProblem);
                 checkpoints.remove(key);
                 return false;
@@ -489,9 +422,10 @@ public final class R7Tailer
                     // Recovery stopped short of the end and said so. What it left behind lies
                     // past Data End, so this reader never saw it and its own stats are
                     // perfectly clean — which is precisely the trap: a clean read of a
-                    // deliberately shortened segment would be a delete, and the entries
-                    // recovery preserved would be destroyed by the one component whose own
-                    // regression handling exists to preserve them.
+                    // deliberately shortened segment would be checkpointed as reap-eligible,
+                    // and the entries recovery preserved would be destroyed by whichever
+                    // reaper trusted that checkpoint, the one component whose own regression
+                    // handling exists to preserve them.
                     logger.error("Segment {} was sealed by recovery with content past its data end that "
                                     + "is readable but not replayable; it will not be deleted. Inspect it and "
                                     + "remove it by hand once the contents have been accounted for.",
@@ -663,7 +597,7 @@ public final class R7Tailer
 
     /**
      * Sets aside a file the tailer cannot read, rather than decoding its bytes as whatever
-     * they resemble and then deleting it.
+     * they resemble and then checkpointing it as processed.
      */
     private void quarantine(final Path path, final String reason)
     {
@@ -705,78 +639,6 @@ public final class R7Tailer
         return totalCorruptEntries;
     }
 
-    private void checkDelete(final Path path, final Set<String> fullyProcessedKeys) throws IOException
-    {
-        final String key = getStableKey(path);
-        final boolean processedByThisTailer = fullyProcessedKeys.contains(key);
-
-        if (!processedByThisTailer && ttl == null)
-        {
-            return;
-        }
-
-        // ttl is a hard ceiling on how long a segment may exist on disk, but it must never
-        // reach into an active (.flux) segment the writer may still be appending to and this
-        // tailer may still have mapped - only a sealed (.r7f) segment is ever a deletion
-        // candidate, regardless of which policy (ttl or completion+gracePeriod) drives it.
-        if (path.toString().endsWith(ACTIVE_FILE_EXTENSION))
-        {
-            return;
-        }
-
-        final long ageMillis;
-        try
-        {
-            ageMillis = System.currentTimeMillis() - Files.getLastModifiedTime(path).toMillis();
-        }
-        catch (final NoSuchFileException e)
-        {
-            // Another tailer sharing this directory (see the ttl/checkpointDir javadoc) can
-            // delete the segment between this tick listing it and reaching here; that is not
-            // this tailer's problem to report, just to notice and move on from.
-            checkpoints.remove(key);
-            return;
-        }
-
-        // Configuring a ttl is what lets more than one tailer follow the same journal
-        // directory: each keeps its own checkpoint (see the checkpointDir constructor
-        // parameter), and setting a ttl switches *this* tailer's deletion from "as soon as I
-        // finished reading it" to "once it is this old, whoever else may still be reading
-        // it" - the two are mutually exclusive, or the faster tailer would still race the
-        // slower one to delete. A tailer still lagging behind when ttl elapses loses that
-        // segment's undelivered entries the same way it already loses ones behind a dropped,
-        // segment-less checkpoint (see forgetCheckpointsWithoutSegments): bounded loss,
-        // chosen by the operator's ttl, not unbounded retention.
-        final boolean delete = ttl != null
-                ? ageMillis >= ttl.toMillis()
-                : processedByThisTailer && (gracePeriod == null || ageMillis >= gracePeriod.toMillis());
-
-        if (delete)
-        {
-            try
-            {
-                final boolean deleted = Files.deleteIfExists(path);
-                checkpoints.remove(key);
-                if (deleted)
-                {
-                    logger.info("Deleted {} segment: {}", ttl != null ? "expired" : "completed", path.getFileName());
-                }
-            }
-            catch (final AccessDeniedException e)
-            {
-                // A tailer that is not the one responsible for retention is meant to be
-                // mounted read-only on the journal directory - the deletion above is then
-                // refused by the filesystem rather than by this tailer's own logic. The
-                // checkpoint must be kept, not forgotten: the segment is still there, so its
-                // offset is still valid, and forgetting it now would make the next tick
-                // re-read the whole segment from the start and re-deliver every exchange in
-                // it. Nothing else here needs to change - the tailer that does own retention
-                // still deletes it once its own ttl/grace period is satisfied.
-                logger.debug("No permission to delete {} (read-only journal mount?); leaving it for the tailer that owns retention",
-                        path.getFileName());
-            }
-        }
-    }
 
     /**
      * Parses a segment file name.
@@ -788,9 +650,9 @@ public final class R7Tailer
      */
     private FileMeta parseMeta(final Path path)
     {
-        // Every tick parses each name several times over — once per comparison in the sort,
-        // once per stable key, once per delete check. The result cannot change while a tick
-        // runs, because a rename produces a different Path.
+        // Every tick parses each name several times over — once per comparison in the sort
+        // and once per stable key. The result cannot change while a tick runs, because a
+        // rename produces a different Path.
         return metaCache.computeIfAbsent(path, this::parseMetaUncached);
     }
 
@@ -907,10 +769,11 @@ public final class R7Tailer
         {
             // Returning here would leave the previous file on disk with every entry it had
             // — which is precisely the state that makes a reused segment sequence
-            // dangerous. Once the last segment has been read and deleted there is nothing
-            // left to resume, and a stale "journal-0-1 → offset 60000000" would be applied
-            // to whatever new segment takes that key next, skipping it or, if the offset is
-            // past its data, marking it fully read and deleting it unread.
+            // dangerous. Once the last segment for a key is gone (rotated away, or removed
+            // by whatever reaper owns retention) there is nothing left to resume, and a
+            // stale "journal-0-1 → offset 60000000" would be applied to whatever new segment
+            // takes that key next, skipping it or, if the offset is past its data, marking
+            // it fully read and reap-eligible unread.
             try
             {
                 Files.deleteIfExists(checkpointPath);

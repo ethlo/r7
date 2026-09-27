@@ -58,7 +58,7 @@ class ReassemblerHeapBenchmarkTest
 
             final long before = settledHeap();
 
-            final R7Tailer tailer = new R7Tailer(dir, Duration.ZERO, noop());
+            final R7Tailer tailer = new R7Tailer(dir, noop());
             tailer.runTick();
 
             final long after = settledHeap();

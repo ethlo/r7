@@ -8,24 +8,27 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.r7.config.YamlConfigSupport;
 import com.ethlo.r7.json.DebugJsonWriter;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
-import com.ethlo.r7.tailer.EnvConfig;
+import com.ethlo.r7.validation.ValidationResult;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Entry point for the standalone JSON tailer image (see {@code docs/journaling.md}).
  * <p>
- * Reads binary journals written by the gateway from {@code JOURNAL_DIR} and streams one
- * JSON object per completed exchange to {@code OUTPUT_PATH}, which defaults to standard
+ * Reads binary journals written by the gateway from {@code journal_dir} and streams one
+ * JSON object per completed exchange to {@code output_path}, which defaults to standard
  * output so it can be picked up by whatever log forwarder the deployment already runs
- * (Promtail, Fluent Bit, Vector, a Docker logging driver, ...).
+ * (Promtail, Fluent Bit, Vector, a Docker logging driver, ...). Configured by {@code
+ * jsonld-tailer.yaml} (path overridable via {@code JSONLD_TAILER_CONFIG}), the same YAML
+ * conventions as the gateway's {@code routes.yaml}/{@code server.yaml}.
  */
 public final class TailerMain
 {
@@ -37,26 +40,14 @@ public final class TailerMain
 
     public static void main(final String[] args) throws Exception
     {
-        final Map<String, String> env = System.getenv();
+        final Path configFile = Paths.get(System.getenv().getOrDefault("JSONLD_TAILER_CONFIG", "config/jsonld-tailer.yaml"));
+        final JsonldTailerConfig config = loadConfig(configFile);
 
-        final Path journalDir = Paths.get(env.getOrDefault("JOURNAL_DIR", "/journals"));
-        // Not under JOURNAL_DIR: a secondary tailer (one not responsible for deletion, see
-        // R7Tailer's ttl/gracePeriod semantics) must be free to mount JOURNAL_DIR read-only,
-        // which a checkpoint file living inside it would rule out. OUTPUT_PATH is not a
-        // reliable fallback directory either - it defaults to stdout - so this gets its own
-        // dedicated, always-writable location instead.
-        final Path checkpointDir = Paths.get(env.getOrDefault("CHECKPOINT_DIR", "/checkpoints"));
-        final String outputPath = env.getOrDefault("OUTPUT_PATH", "-");
-        final boolean prettyPrint = Boolean.parseBoolean(env.getOrDefault("PRETTY_PRINT", "false"));
-        final String ttlText = env.get("TTL");
-        final Duration ttl = ttlText != null ? EnvConfig.parseDuration(ttlText) : null;
-        // ttl and gracePeriod are mutually exclusive (R7Tailer fails fast if both are set), so
-        // the "1h" default below must not silently reappear once ttl is configured - only
-        // apply it when GRACE_PERIOD was not left to fall back onto ttl instead.
-        final Duration gracePeriod = ttl == null || env.containsKey("GRACE_PERIOD")
-                ? EnvConfig.duration(env, "GRACE_PERIOD", "1h")
-                : null;
-        final Duration pollInterval = EnvConfig.duration(env, "POLL_INTERVAL", "1s");
+        final Path journalDir = Paths.get(config.journalDir());
+        final Path checkpointDir = Paths.get(config.checkpointDir());
+        final String outputPath = config.outputPath();
+        final boolean prettyPrint = config.prettyPrint();
+        final Duration pollInterval = config.pollInterval();
 
         final boolean toStdOut = "-".equals(outputPath) || "stdout".equalsIgnoreCase(outputPath);
         final OutputStream out;
@@ -75,12 +66,14 @@ public final class TailerMain
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND));
         }
 
-        logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', grace period {}, ttl {}, poll every {})",
-                journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, gracePeriod, ttl != null ? ttl : "disabled", pollInterval);
+        logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', poll every {})",
+                journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, pollInterval);
 
         final DebugJsonWriter jsonWriter = new DebugJsonWriter(out, prettyPrint);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
-        final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, gracePeriod, ttl, jsonWriter, integrity, ReassemblyOptions.DEFAULTS);
+        // Retention is a dedicated reaper's job, applied uniformly across every format-specific
+        // tailer sharing the journal directory - this tailer never deletes a segment itself.
+        final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, jsonWriter, integrity, ReassemblyOptions.DEFAULTS);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
@@ -106,6 +99,28 @@ public final class TailerMain
             }
             Thread.sleep(pollInterval.toMillis());
         }
+    }
+
+    private static JsonldTailerConfig loadConfig(final Path configFile)
+    {
+        if (!Files.exists(configFile))
+        {
+            logger.info("No jsonld-tailer.yaml file found at {}. Using defaults", configFile.toAbsolutePath());
+            return JsonldTailerConfig.standard();
+        }
+
+        logger.info("Loading JSON tailer settings from {}", configFile.toAbsolutePath());
+        final ObjectMapper mapper = YamlConfigSupport.baseMapperBuilder().build();
+        JsonldTailerConfig config = YamlConfigSupport.load(mapper, configFile, JsonldTailerConfig.class);
+        if (config == null)
+        {
+            logger.warn("No settings found in jsonld-tailer.yaml, using only defaults");
+            config = JsonldTailerConfig.standard();
+        }
+        final ValidationResult result = new ValidationResult();
+        config.validate(result);
+        result.throwIfInvalid();
+        return config;
     }
 
     /**
