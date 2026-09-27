@@ -205,14 +205,15 @@ public final class R7UndertowHandler implements HttpHandler
     private static void sendResponse(HttpServerExchange exchange, UndertowGatewayExchange gatewayExchange)
     {
         // Check if the core filter requested a native static handoff
-        final String staticBasePath = gatewayExchange.attributes().getFirst(StaticContentFactory.STATIC_CONTENT_PATH_KEY);
+        final StaticContentFactory.StaticServeRequest staticServeRequest = gatewayExchange.getAttachment(StaticContentFactory.STATIC_SERVE_REQUEST_KEY);
 
-        if (staticBasePath != null)
+        if (staticServeRequest != null)
         {
+            final String staticBasePath = staticServeRequest.baseDirectory().toString();
             try
             {
-                final boolean followSymlinks = Boolean.parseBoolean(gatewayExchange.attributes().getFirst(StaticContentFactory.STATIC_CONTENT_FOLLOW_SYMLINKS_KEY));
-                final boolean listDirectory = Boolean.parseBoolean(gatewayExchange.attributes().getFirst(StaticContentFactory.STATIC_CONTENT_LIST_DIRECTORY_KEY));
+                final boolean followSymlinks = staticServeRequest.followSymlinks();
+                final boolean listDirectory = staticServeRequest.listDirectory();
 
                 final Object directoryIdentity;
                 try
