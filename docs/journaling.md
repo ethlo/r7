@@ -41,11 +41,12 @@ Gateway and tailer share the `journal_dir` volume: the gateway writes, the taile
 
 !!! warning "Mount `journal_dir` read-only on every tailer"
     `R7Tailer` never deletes a segment — it only reads. Deciding when a fully-read segment is
-    safe to remove is a separate reaper process you run yourself; it's the only thing that
-    needs write access to `journal_dir`. Give each tailer its own `checkpoint_dir` (see the
-    tables below) so running JSON and WARC tailers side by side doesn't clash — neither can
-    delete a segment out from under the other, and a reaper just waits until every tailer has
-    had a fair chance at a segment before removing it.
+    safe to remove is the reaper's job (`ghcr.io/ethlo/r7-reaper`, see
+    [§4 below](#4-retention-the-reaper)); it's the only container that needs write access to
+    `journal_dir`. Give each tailer its own `checkpoint_dir` (see the tables below) so running
+    JSON and WARC tailers side by side doesn't clash — neither can delete a segment out from
+    under the other, and the reaper does not read either checkpoint (it is a plain `ttl`, not
+    a "wait for every tailer" policy — see §4 for what that means for you).
 
 ---
 
@@ -193,10 +194,72 @@ volumes:
 
 ```
 
-## 4. Visualizing your data
+## 4. Retention: The Reaper
+
+**Image:** `ghcr.io/ethlo/r7-reaper:latest`
+
+Every tailer above is read-only by design (see §2's warning) — something else has to delete a
+sealed segment once it is no longer needed, or `journal_dir` grows without bound. That something
+is the reaper: a small standalone process whose only job is deleting old segments from a shared
+journal volume.
+
+!!! warning "This is a dumb, age-only policy"
+    The reaper does not look at any tailer's checkpoint, and does not confirm anything was
+    actually read. A sealed (`.r7f`) segment is deleted once it has existed for longer than
+    `ttl`, whether every tailer sharing the directory has read it or not. Set `ttl` comfortably
+    longer than the slowest tailer's realistic lag — including time to recover from a restart —
+    or a slow or temporarily-down tailer will lose data it never got a chance to read. A
+    quarantined segment (`*.corrupt`, see `docs/journaling.md`'s tailer sections and
+    `design/journal-invariants.md`) is reaped under the same `ttl`, since nothing will ever read
+    it. Active (`.flux`) segments are never reaped, at any age — they belong exclusively to the
+    gateway process that may still be writing to them.
+
+**Configuration:** same YAML config mechanism as the tailers — `config/reaper.yaml` by default,
+overridable via the `REAPER_CONFIG` env var.
+
+| Field           | Default     | Meaning                                                                 |
+|------------------|-------------|--------------------------------------------------------------------------|
+| `journal_dir`     | `/journals` | Directory the reaper scans (and deletes from) — mount this read-write, unlike every tailer |
+| `ttl`             | `7d`        | How long a sealed segment is kept, counted from its last modification, before it is deleted. Supports `ms`, `s`, `m`, `h`, `d` |
+| `poll_interval`   | `1m`        | Delay between sweeps. Supports `ms`, `s`, `m`, `h`, `d`                  |
+
+**Example `config/reaper.yaml`:**
+
+```yaml
+journal_dir: /journals
+ttl: 7d
+```
+
+**Example Docker Compose Integration:**
+
+```yaml
+services:
+  r7-api:
+    image: ghcr.io/ethlo/r7-gateway:latest
+    volumes:
+      - r7-journals:/journals:rw
+
+  r7-tailer-json:
+    image: ghcr.io/ethlo/r7-tailer-json:latest
+    volumes:
+      - r7-journals:/journals:ro # this tailer only ever reads; retention is the reaper's job
+
+  r7-reaper:
+    image: ghcr.io/ethlo/r7-reaper:latest
+    volumes:
+      - ./config/reaper.yaml:/app/config/reaper.yaml:ro
+      - r7-journals:/journals:rw # the only container that needs write access to this volume
+
+volumes:
+  r7-journals:
+
+```
+
+## 5. Visualizing your data
 
 Once your data is routed through a tailer:
 
 * **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like `duration`, `status`, or specific headers).
 * **If using the WARC Tailer:** WARC files are for archival/replay, not dashboards — feed them to a WARC-aware tool (e.g. [pywb](https://github.com/webrecorder/pywb)) to replay captured traffic, or to an indexer for forensic search.
+* **If using the ClickHouse Tailer:** Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the `r7_logs` table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.
 * **If using the ClickHouse Tailer:** Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the `r7_logs` table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.

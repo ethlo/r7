@@ -18,6 +18,7 @@
         <module>r7-utils</module>
         <module>r7-tailer-jsonld</module>
         <module>r7-tailer-warc</module>
+        <module>r7-reaper</module>
     </modules>
     <properties>
         <maven.compiler.release>25</maven.compiler.release>

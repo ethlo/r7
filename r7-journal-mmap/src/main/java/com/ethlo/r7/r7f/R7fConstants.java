@@ -1,5 +1,7 @@
 package com.ethlo.r7.r7f;
 
+import com.ethlo.r7.journal.api.R7fFileNaming;
+
 public final class R7fConstants
 {
     // --- File Header / Preamble ---
@@ -113,8 +115,11 @@ public final class R7fConstants
     public static final int SEAL_FLAG_RETAIN = 0x1;
 
     // --- File extensions ---
-    public static final String R7F_FILE_EXTENSION = ".r7f";
-    public static final String ACTIVE_FILE_EXTENSION = ".flux";
+    // Re-exposed from r7-journal-api's R7fFileNaming, the single source of truth shared with
+    // tools (like the reaper) that recognize a segment's lifecycle stage without depending on
+    // this engine module.
+    public static final String R7F_FILE_EXTENSION = R7fFileNaming.SEALED_FILE_EXTENSION;
+    public static final String ACTIVE_FILE_EXTENSION = R7fFileNaming.ACTIVE_FILE_EXTENSION;
     /**
      * Not part of a segment's life. A segment goes {@code .flux} → {@code .r7f} and stops
      * there; compression is one thing a consumer may choose to do with a sealed segment,
@@ -122,7 +127,7 @@ public final class R7fConstants
      * conventional suffix for consumer-produced compressed output.
      */
     public static final String COMPRESSED_FILE_EXTENSION = ".zst";
-    public static final String CORRUPT_FILE_EXTENSION = ".corrupt";
+    public static final String CORRUPT_FILE_EXTENSION = R7fFileNaming.CORRUPT_FILE_EXTENSION;
 
     private R7fConstants()
     {
