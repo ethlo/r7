@@ -23,6 +23,7 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -57,7 +58,7 @@ class BasicAuthFactoryTest
         filter(ALICE, BOB).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, "alice");
+        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, RedactUtil.fingerprint("alice"));
     }
 
     /**
@@ -72,7 +73,7 @@ class BasicAuthFactoryTest
         filter(ALICE, CAROL).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, "carol");
+        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, RedactUtil.fingerprint("carol"));
     }
 
     /**
@@ -201,7 +202,7 @@ class BasicAuthFactoryTest
             final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
             filter.onClientRequest(exchange);
             verify(exchange, never()).shortCircuit(any());
-            verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, "alice");
+            verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, RedactUtil.fingerprint("alice"));
         }
     }
 

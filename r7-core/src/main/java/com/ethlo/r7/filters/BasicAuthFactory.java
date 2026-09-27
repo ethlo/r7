@@ -23,6 +23,7 @@ import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -41,8 +42,13 @@ import com.google.auto.service.AutoService;
 public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFactory.Config>
 {
     /**
-     * Attribute holding the username that authenticated the request, for journaling and access logs.
-     * Only ever set after the password has been verified.
+     * Attribute holding a fingerprint of the username that authenticated the request, for
+     * journaling and access logs. Only ever set after the password has been verified.
+     * <p>
+     * The username itself is not journaled - like a redacted request header, only
+     * {@link RedactUtil#fingerprint(String)} of it is - so the same operator convention applies:
+     * two log lines with the same fingerprint were the same user, but the value on its own does
+     * not disclose who that was.
      */
     public static final String AUTHENTICATED_USER_KEY = "gateway.auth.basic.user";
 
@@ -280,7 +286,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             final String cachedUser = this.verifiedCredentials.getIfPresent(cacheKey);
             if (cachedUser != null)
             {
-                exchange.attributes().set(AUTHENTICATED_USER_KEY, cachedUser);
+                exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(cachedUser));
                 return;
             }
 
@@ -316,7 +322,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             }
 
             this.verifiedCredentials.put(cacheKey, username);
-            exchange.attributes().set(AUTHENTICATED_USER_KEY, username);
+            exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(username));
         }
 
         /**
