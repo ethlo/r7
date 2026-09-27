@@ -628,10 +628,11 @@ public final class R7Tailer
 
     private void logStats()
     {
-        if (totalBytesRead > 0)
+        if (totalBytesRead > 0 && logger.isDebugEnabled())
         {
-            logger.info("Tailer Stats: Processed {}", DiskSpaceUtils.formatBytes(totalBytesRead));
+            logger.debug("Tailer Stats: Processed {}", DiskSpaceUtils.formatBytes(totalBytesRead));
         }
+
         if (totalMissingEntries > 0 || totalCorruptEntries > 0)
         {
             logger.error("Tailer Stats: {} entries missing and {} corrupt regions skipped this tick.",

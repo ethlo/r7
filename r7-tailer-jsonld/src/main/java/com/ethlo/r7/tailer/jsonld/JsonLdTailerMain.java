@@ -13,7 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.config.YamlConfigSupport;
-import com.ethlo.r7.json.DebugJsonWriter;
+import com.ethlo.r7.json.JsonLdWriter;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
@@ -30,11 +30,11 @@ import tools.jackson.databind.ObjectMapper;
  * jsonld-tailer.yaml} (path overridable via {@code JSONLD_TAILER_CONFIG}), the same YAML
  * conventions as the gateway's {@code routes.yaml}/{@code server.yaml}.
  */
-public final class TailerMain
+public final class JsonLdTailerMain
 {
-    private static final Logger logger = LoggerFactory.getLogger(TailerMain.class);
+    private static final Logger logger = LoggerFactory.getLogger(JsonLdTailerMain.class);
 
-    private TailerMain()
+    private JsonLdTailerMain()
     {
     }
 
@@ -69,7 +69,7 @@ public final class TailerMain
         logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', poll every {})",
                 journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, pollInterval);
 
-        final DebugJsonWriter jsonWriter = new DebugJsonWriter(out, prettyPrint);
+        final JsonLdWriter jsonWriter = new JsonLdWriter(out, prettyPrint);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
         // Retention is a dedicated reaper's job, applied uniformly across every format-specific
         // tailer sharing the journal directory - this tailer never deletes a segment itself.
