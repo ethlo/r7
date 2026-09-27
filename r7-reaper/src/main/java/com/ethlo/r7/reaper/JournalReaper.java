@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +23,8 @@ import com.ethlo.r7.journal.api.R7fFileNaming;
  * trades away and what the operator has to guarantee instead.
  * <p>
  * Only two kinds of file are ever candidates for deletion: sealed segments ({@code .r7f})
- * and quarantined segments ({@code .r7f.corrupt} / {@code .flux.corrupt}). An active segment
+ * and quarantined segments ({@code .r7f.corrupt} / {@code .flux.corrupt}, optionally with a
+ * further {@code .<n>} suffix - see {@link #QUARANTINE_SUFFIX}). An active segment
  * ({@code .flux}) is never touched, regardless of age - it belongs exclusively to the
  * gateway process still writing it, and this reaper has no way to know whether an old
  * {@code .flux} file is still being written to (a low-traffic shard) or abandoned (a crashed
@@ -41,6 +44,17 @@ import com.ethlo.r7.journal.api.R7fFileNaming;
 public final class JournalReaper
 {
     private static final Logger logger = LoggerFactory.getLogger(JournalReaper.class);
+
+    /**
+     * Matches the {@code .corrupt} suffix {@code R7Tailer.nonCollidingQuarantinePath} appends,
+     * including the {@code .corrupt.<n>} shape it falls back to when an earlier quarantine of
+     * the same name already exists (recovery partially succeeding twice, or an operator
+     * restoring an old copy). A plain {@code name.endsWith(".corrupt")} check misses that
+     * numbered form entirely, which would otherwise leave those files permanently unreapable
+     * - exactly the "grows without bound" failure this reaper exists to prevent.
+     */
+    private static final Pattern QUARANTINE_SUFFIX =
+            Pattern.compile(Pattern.quote(R7fFileNaming.CORRUPT_FILE_EXTENSION) + "(\\.\\d+)?$");
 
     private final Path journalDir;
     private final Duration ttl;
@@ -89,10 +103,10 @@ public final class JournalReaper
         {
             return false;
         }
-        // A quarantined active segment (name ending ".flux.corrupt") is also fair game: it
-        // was already set aside as unreadable by a tailer, so nothing is ever going to read
-        // it, sealed or not.
-        return name.endsWith(R7fFileNaming.SEALED_FILE_EXTENSION) || name.endsWith(R7fFileNaming.CORRUPT_FILE_EXTENSION);
+        // A quarantined active segment (name ending ".flux.corrupt"[.<n>]) is also fair
+        // game: it was already set aside as unreadable by a tailer, so nothing is ever
+        // going to read it, sealed or not.
+        return name.endsWith(R7fFileNaming.SEALED_FILE_EXTENSION) || QUARANTINE_SUFFIX.matcher(name).find();
     }
 
     private boolean isExpired(final Path path, final Instant cutoff)
@@ -122,9 +136,10 @@ public final class JournalReaper
     private Instant segmentTimestamp(final Path path)
     {
         String name = path.getFileName().toString();
-        if (name.endsWith(R7fFileNaming.CORRUPT_FILE_EXTENSION))
+        final Matcher quarantine = QUARANTINE_SUFFIX.matcher(name);
+        if (quarantine.find())
         {
-            name = name.substring(0, name.length() - R7fFileNaming.CORRUPT_FILE_EXTENSION.length());
+            name = name.substring(0, quarantine.start());
         }
         name = name.replace(R7fFileNaming.ACTIVE_FILE_EXTENSION, "").replace(R7fFileNaming.SEALED_FILE_EXTENSION, "");
 

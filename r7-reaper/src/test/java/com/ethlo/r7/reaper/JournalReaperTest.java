@@ -82,6 +82,39 @@ class JournalReaperTest
     }
 
     @Test
+    void reapsQuarantinedActiveSegmentByItsCreatedTimestamp() throws IOException
+    {
+        // A quarantined .flux has no sealed time-bound fields, only shardId/created/sequence
+        // - segmentTimestamp must fall back to the created-at field for this shape.
+        final long tenDaysAgo = ageMillis(Duration.ofDays(10));
+        final Path oldQuarantinedActive = touch("shard-0-" + tenDaysAgo + "-1.flux.corrupt");
+
+        final JournalReaper reaper = new JournalReaper(journalDir, Duration.ofDays(7));
+        reaper.sweep();
+
+        assertThat(oldQuarantinedActive).doesNotExist();
+    }
+
+    @Test
+    void reapsRepeatedlyQuarantinedSegmentsWithANumericSuffix() throws IOException
+    {
+        // R7Tailer.nonCollidingQuarantinePath appends ".<n>" rather than overwrite an
+        // existing quarantine of the same name (recovery partially succeeding twice, or an
+        // operator restoring an old copy) - these numbered files must be just as reapable as
+        // a plain ".corrupt" one, or they accumulate forever.
+        final long tenDaysAgo = ageMillis(Duration.ofDays(10));
+        final Path numberedSealedQuarantine = touch(
+                "shard-0-" + tenDaysAgo + "-1-" + tenDaysAgo + "-" + tenDaysAgo + ".r7f.corrupt.2");
+        final Path numberedActiveQuarantine = touch("shard-0-" + tenDaysAgo + "-2.flux.corrupt.7");
+
+        final JournalReaper reaper = new JournalReaper(journalDir, Duration.ofDays(7));
+        reaper.sweep();
+
+        assertThat(numberedSealedQuarantine).doesNotExist();
+        assertThat(numberedActiveQuarantine).doesNotExist();
+    }
+
+    @Test
     void toleratesMissingJournalDirectory() throws IOException
     {
         final JournalReaper reaper = new JournalReaper(journalDir.resolve("does-not-exist"), Duration.ofDays(1));

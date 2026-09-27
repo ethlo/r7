@@ -51,6 +51,10 @@ public record ReaperConfig(
     @Override
     public void validate(final ValidationResult result)
     {
+        if (this.journalDir != null && this.journalDir.isBlank())
+        {
+            result.addError("journal_dir", "must not be blank");
+        }
         if (!ttl().isPositive())
         {
             result.addError("ttl", "must be positive, was " + ttl());
