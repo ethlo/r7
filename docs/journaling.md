@@ -214,13 +214,19 @@ journal volume.
     it. Active (`.flux`) segments are never reaped, at any age — they belong exclusively to the
     gateway process that may still be writing to them.
 
+    Age is read from the timestamp embedded in the segment's own filename, never from the
+    file's filesystem last-modified time: mtime is reset by a backup restore, an `rsync` run
+    without `-a`, or a volume migration, any of which would otherwise silently defeat `ttl`. A
+    segment whose name the reaper cannot parse is left alone rather than guessed at from
+    mtime — it is simply never a deletion candidate.
+
 **Configuration:** same YAML config mechanism as the tailers — `config/reaper.yaml` by default,
 overridable via the `REAPER_CONFIG` env var.
 
 | Field           | Default     | Meaning                                                                 |
 |------------------|-------------|--------------------------------------------------------------------------|
 | `journal_dir`     | `/journals` | Directory the reaper scans (and deletes from) — mount this read-write, unlike every tailer |
-| `ttl`             | `7d`        | How long a sealed segment is kept, counted from its last modification, before it is deleted. Supports `ms`, `s`, `m`, `h`, `d` |
+| `ttl`             | `7d`        | How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (not the file's filesystem mtime — see below), before it is deleted. Supports `ms`, `s`, `m`, `h`, `d` |
 | `poll_interval`   | `1m`        | Delay between sweeps. Supports `ms`, `s`, `m`, `h`, `d`                  |
 
 **Example `config/reaper.yaml`:**

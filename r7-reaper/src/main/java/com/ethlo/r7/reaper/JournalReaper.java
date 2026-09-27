@@ -27,6 +27,16 @@ import com.ethlo.r7.journal.api.R7fFileNaming;
  * {@code .flux} file is still being written to (a low-traffic shard) or abandoned (a crashed
  * writer); either way, deleting or renaming it out from under a writer that might resume is
  * not this component's call to make.
+ * <p>
+ * Age is measured from the timestamp embedded in the segment's own filename - the last event
+ * epoch millis a sealed segment records, or its created-at millis otherwise - not the
+ * filesystem's last-modified time. A file's mtime is not the segment's age, it is an
+ * incidental fact about whatever last touched the file on this particular filesystem: a
+ * backup restore, an `rsync` run without `-a`, a volume migration, or a bind mount recreated
+ * by a container runtime all reset it, silently extending or shortening retention regardless
+ * of how old the traffic inside the segment actually is. The filename is written once by the
+ * gateway that created the segment and never touched again, so it survives every one of
+ * those operations unchanged.
  */
 public final class JournalReaper
 {
@@ -87,17 +97,56 @@ public final class JournalReaper
 
     private boolean isExpired(final Path path, final Instant cutoff)
     {
+        final Instant timestamp = segmentTimestamp(path);
+        return timestamp != null && timestamp.isBefore(cutoff);
+    }
+
+    /**
+     * Segments are named {@code shard-<shardId>-<createdEpochMillis>-<segmentSequence>} while
+     * active, with {@code -<firstEventEpochMillis>-<lastEventEpochMillis>} appended once
+     * sealed (see {@code R7fJournalProvider}); a quarantined segment carries a
+     * {@link R7fFileNaming#CORRUPT_FILE_EXTENSION} suffix on top of either shape. This uses
+     * the last field present - the last event the segment actually recorded, falling back to
+     * when it was created - as the one piece of information about a segment's age that
+     * cannot have been reset by anything other than the writer.
+     * <p>
+     * There is deliberately no filesystem-mtime fallback: {@link #isReapable} already
+     * restricts candidates to the two recognized name shapes, and a name that still fails to
+     * parse is one this reaper does not understand well enough to age at all - guessing from
+     * mtime would silently reintroduce the exact unreliability the filename was chosen to
+     * avoid. Such a file is simply left alone, logged once, and never becomes a deletion
+     * candidate until whatever produced it is fixed.
+     *
+     * @return the segment's age anchor, or {@code null} if the name could not be parsed
+     */
+    private Instant segmentTimestamp(final Path path)
+    {
+        String name = path.getFileName().toString();
+        if (name.endsWith(R7fFileNaming.CORRUPT_FILE_EXTENSION))
+        {
+            name = name.substring(0, name.length() - R7fFileNaming.CORRUPT_FILE_EXTENSION.length());
+        }
+        name = name.replace(R7fFileNaming.ACTIVE_FILE_EXTENSION, "").replace(R7fFileNaming.SEALED_FILE_EXTENSION, "");
+
+        final String[] parts = name.split("-");
         try
         {
-            return Files.getLastModifiedTime(path).toInstant().isBefore(cutoff);
+            if (parts.length > 5)
+            {
+                return Instant.ofEpochMilli(Long.parseLong(parts[5])); // lastEventEpochMillis
+            }
+            if (parts.length > 2)
+            {
+                return Instant.ofEpochMilli(Long.parseLong(parts[2])); // createdEpochMillis
+            }
         }
-        catch (final IOException e)
+        catch (final NumberFormatException e)
         {
-            // Gone already (raced with something else removing it, e.g. an operator, or
-            // another reaper instance) - not expired, simply no longer a candidate.
-            logger.debug("Could not read last-modified time of {}, skipping this sweep", path, e);
-            return false;
+            // Fall through - logged below, treated as unparsable either way.
         }
+
+        logger.warn("Could not determine an age for {} from its filename; leaving it alone", path.getFileName());
+        return null;
     }
 
     private void deleteQuietly(final Path path)

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,11 +21,14 @@ class JournalReaperTest
     @Test
     void reapsOnlyExpiredSealedAndQuarantinedSegments() throws IOException
     {
-        final Path oldSealed = touch("shard-0-1-1.r7f", Duration.ofDays(10));
-        final Path oldQuarantined = touch("shard-0-1-2.r7f.corrupt", Duration.ofDays(10));
-        final Path freshSealed = touch("shard-0-1-3.r7f", Duration.ofMinutes(1));
-        final Path oldActive = touch("shard-0-1-4.flux", Duration.ofDays(10));
-        final Path unrelatedOldFile = touch(".r7_checkpoints", Duration.ofDays(10));
+        final long tenDaysAgo = ageMillis(Duration.ofDays(10));
+        final long oneMinuteAgo = ageMillis(Duration.ofMinutes(1));
+
+        final Path oldSealed = touch("shard-0-" + tenDaysAgo + "-1-" + tenDaysAgo + "-" + tenDaysAgo + ".r7f");
+        final Path oldQuarantined = touch("shard-0-" + tenDaysAgo + "-2-" + tenDaysAgo + "-" + tenDaysAgo + ".r7f.corrupt");
+        final Path freshSealed = touch("shard-0-" + oneMinuteAgo + "-3-" + oneMinuteAgo + "-" + oneMinuteAgo + ".r7f");
+        final Path oldActive = touch("shard-0-" + tenDaysAgo + "-4.flux");
+        final Path unrelatedOldFile = touch(".r7_checkpoints");
 
         final JournalReaper reaper = new JournalReaper(journalDir, Duration.ofDays(7));
         final int deleted = reaper.sweep();
@@ -40,18 +44,65 @@ class JournalReaperTest
     }
 
     @Test
+    void agesByFilenameTimestampRatherThanFilesystemMtime() throws IOException
+    {
+        // The filename says this segment's last event was ten days ago, but the file itself
+        // was just (re)created on this filesystem - e.g. restored from a backup, or copied by
+        // a volume migration that did not preserve mtime. It must still be reaped: reading
+        // the name instead of mtime exists precisely so this is not missed.
+        final long tenDaysAgo = ageMillis(Duration.ofDays(10));
+        final Path restoredButOld = touchWithMtime(
+                "shard-0-" + tenDaysAgo + "-1-" + tenDaysAgo + "-" + tenDaysAgo + ".r7f", Duration.ZERO);
+
+        // The inverse: a fresh segment whose mtime some backup tool happened to set far in
+        // the past must not be reaped early on that basis.
+        final long justNow = ageMillis(Duration.ZERO);
+        final Path freshButMtimeIsOld = touchWithMtime(
+                "shard-0-" + justNow + "-2-" + justNow + "-" + justNow + ".r7f", Duration.ofDays(10));
+
+        final JournalReaper reaper = new JournalReaper(journalDir, Duration.ofDays(7));
+        reaper.sweep();
+
+        assertThat(restoredButOld).doesNotExist();
+        assertThat(freshButMtimeIsOld).exists();
+    }
+
+    @Test
+    void leavesAnUnparsableNameAlone() throws IOException
+    {
+        // Not the recognized shape at all (no created-epoch field) - there is no age to
+        // determine, and no mtime fallback to guess one from, so this must never be reaped,
+        // no matter how old the file is on disk.
+        final Path unparsable = touchWithMtime("shard-not-a-timestamp.r7f", Duration.ofDays(365));
+
+        final JournalReaper reaper = new JournalReaper(journalDir, Duration.ofDays(7));
+        reaper.sweep();
+
+        assertThat(unparsable).exists();
+    }
+
+    @Test
     void toleratesMissingJournalDirectory() throws IOException
     {
         final JournalReaper reaper = new JournalReaper(journalDir.resolve("does-not-exist"), Duration.ofDays(1));
         assertThat(reaper.sweep()).isZero();
     }
 
-    private Path touch(final String name, final Duration age) throws IOException
+    private static long ageMillis(final Duration age)
     {
-        final Path path = journalDir.resolve(name);
-        Files.createFile(path);
-        Files.getFileAttributeView(path, java.nio.file.attribute.BasicFileAttributeView.class)
-                .setTimes(FileTime.from(Instant.now().minus(age)), null, null);
+        return System.currentTimeMillis() - age.toMillis();
+    }
+
+    private Path touch(final String name) throws IOException
+    {
+        return Files.createFile(journalDir.resolve(name));
+    }
+
+    private Path touchWithMtime(final String name, final Duration mtimeAge) throws IOException
+    {
+        final Path path = touch(name);
+        Files.getFileAttributeView(path, BasicFileAttributeView.class)
+                .setTimes(FileTime.from(Instant.now().minus(mtimeAge)), null, null);
         return path;
     }
 }
