@@ -25,12 +25,13 @@ public record JsonldTailerConfig(
         String checkpointDir,
         String outputPath,
         Boolean prettyPrint,
+        Boolean hideEmptyFields,
         Duration pollInterval
 ) implements ValidatableConfig
 {
     public static JsonldTailerConfig standard()
     {
-        return new JsonldTailerConfig(null, null, null, null, null);
+        return new JsonldTailerConfig(null, null, null, null, null, null);
     }
 
     @Override
@@ -64,6 +65,17 @@ public record JsonldTailerConfig(
     public Boolean prettyPrint()
     {
         return Optional.ofNullable(this.prettyPrint).orElse(false);
+    }
+
+    /**
+     * Omitting {@code null}/empty fields (checksums that were never recorded, absent bodies,
+     * headers not journaled, ...) cuts the typical line size dramatically for high-traffic
+     * routes; defaults to {@code true} since most consumers only care about populated fields
+     * and can tolerate a field being absent rather than explicitly {@code null}.
+     */
+    public Boolean hideEmptyFields()
+    {
+        return Optional.ofNullable(this.hideEmptyFields).orElse(true);
     }
 
     @Override

@@ -71,6 +71,7 @@ to their defaults below (so a bare container with no config volume still starts 
 | `output_path`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
 | `poll_interval`   | `1s`        | Delay between tailer ticks. Supports `ms`, `s`, `m`, `h`, `d`             |
 | `pretty_print`    | `false`     | Pretty-print the JSON output                                              |
+| `hide_empty_fields` | `true`    | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out explicitly. Set to `false` to always emit every field with the same schema on every line, e.g. for consumers that require a fixed columnar schema |
 
 **Example `config/jsonld-tailer.yaml`:**
 

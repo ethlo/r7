@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.ethlo.r7.api.GatewayHeaders;
@@ -30,10 +31,24 @@ public class JsonLdWriter implements ExchangeCompletionListener
     private static final byte[] NEWLINE = "\n".getBytes(StandardCharsets.UTF_8);
     private final JsonGenerator generator;
     private final OutputStream out;
+    private final boolean hideEmptyFields;
 
     public JsonLdWriter(OutputStream out, boolean prettyPrint)
     {
+        this(out, prettyPrint, true);
+    }
+
+    /**
+     * @param hideEmptyFields omit fields whose value is {@code null} or an empty map/collection
+     *                        (unrecorded checksums, absent bodies, headers that were not
+     *                        journaled, ...) instead of writing them out explicitly. Cuts line
+     *                        size substantially on high-traffic routes where most of these
+     *                        fields are empty on every request.
+     */
+    public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields)
+    {
         this.out = out;
+        this.hideEmptyFields = hideEmptyFields;
         final JsonMapper mapper = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, false) // Ensure numbers stay as numbers
@@ -60,8 +75,8 @@ public class JsonLdWriter implements ExchangeCompletionListener
 
             // --- Metadata ---
             generator.writeStringProperty("gateway_request_id", exchange.getRequestId());
-            generator.writeStringProperty("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
-            generator.writeStringProperty("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
+            writeString("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
+            writeString("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
             generator.writeStringProperty("start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientStartTs())));
             writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
             generator.writeStringProperty("end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientEndTs())));
@@ -127,7 +142,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
             writeBody("response_body", exchange.getResponseBodyFragments());
 
             // --- Context ---
-            generator.writePOJOProperty("attributes", GatewayUtils.toMap(exchange.getAttributes()));
+            writeMap("attributes", GatewayUtils.toMap(exchange.getAttributes()));
 
             generator.writeEndObject();
             generator.flush();
@@ -156,19 +171,20 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
         else
         {
-            // Maintain strict JSON schema consistency for columnar databases
-            generator.writeNullProperty("method");
-            generator.writeNullProperty("path");
-            generator.writeNullProperty("query_string");
-            generator.writeNullProperty("request_protocol");
+            // Maintain strict JSON schema consistency for columnar databases, unless the
+            // caller has opted into hiding empty fields
+            writeNull("method");
+            writeNull("path");
+            writeNull("query_string");
+            writeNull("request_protocol");
         }
 
-        generator.writePOJOProperty("request_headers", GatewayUtils.toMap(reqHeaders));
+        writeMap("request_headers", GatewayUtils.toMap(reqHeaders));
 
         // Response half
         generator.writeStringProperty("response_journal_level", resLevel != null ? resLevel.name() : "NONE");
-        generator.writePOJOProperty("response_headers", GatewayUtils.toMap(resHeaders));
-        generator.writeStringProperty("content_type", getHeader(resHeaders, HttpHeaders.CONTENT_TYPE));
+        writeMap("response_headers", GatewayUtils.toMap(resHeaders));
+        writeString("content_type", getHeader(resHeaders, HttpHeaders.CONTENT_TYPE));
 
         writeResponseLine(generator, resLine);
 
@@ -184,9 +200,9 @@ public class JsonLdWriter implements ExchangeCompletionListener
         // and get no prefix, same as "method"/"path"/"query_string" on the request side.
         if (resLine == null)
         {
-            generator.writeNullProperty("response_protocol");
-            generator.writeNullProperty("status_code");
-            generator.writeNullProperty("reason");
+            writeNull("response_protocol");
+            writeNull("status_code");
+            writeNull("reason");
             return;
         }
 
@@ -212,15 +228,15 @@ public class JsonLdWriter implements ExchangeCompletionListener
             {
                 // Fallback if there is no reason phrase
                 writeStatusCode(resLine.substring(firstSpace + 1));
-                generator.writeNullProperty("reason");
+                writeNull("reason");
             }
         }
         else
         {
             // Graceful fallback for completely malformed lines
-            generator.writeNullProperty("response_protocol");
+            writeNull("response_protocol");
             writeStatusCode(resLine);
-            generator.writeNullProperty("reason");
+            writeNull("reason");
         }
     }
 
@@ -237,7 +253,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
         catch (final NumberFormatException e)
         {
-            generator.writeNullProperty("status_code");
+            writeNull("status_code");
         }
     }
 
@@ -270,16 +286,16 @@ public class JsonLdWriter implements ExchangeCompletionListener
             else
             {
                 generator.writeStringProperty("path", fullUri);
-                generator.writeNullProperty("query_string");
+                writeNull("query_string");
             }
         }
         else
         {
             // Graceful fallback for completely malformed start lines
-            generator.writeNullProperty("method");
+            writeNull("method");
             generator.writeStringProperty("path", reqLine);
-            generator.writeNullProperty("query_string");
-            generator.writeNullProperty("request_protocol");
+            writeNull("query_string");
+            writeNull("request_protocol");
         }
     }
 
@@ -296,7 +312,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
         else
         {
-            generator.writeNullProperty(name);
+            writeNull(name);
         }
     }
 
@@ -309,7 +325,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
         else
         {
-            generator.writeNullProperty(fieldName);
+            writeNull(fieldName);
         }
     }
 
@@ -320,5 +336,47 @@ public class JsonLdWriter implements ExchangeCompletionListener
             return null;
         }
         return Optional.ofNullable(headers.getFirst(key)).map(String::toString).orElse(null);
+    }
+
+    /**
+     * Writes {@code name: null}, unless {@link #hideEmptyFields} is set, in which case the
+     * property is omitted entirely rather than written as an explicit {@code null}.
+     */
+    private void writeNull(String name)
+    {
+        if (!hideEmptyFields)
+        {
+            generator.writeNullProperty(name);
+        }
+    }
+
+    /**
+     * Writes {@code name: value} for a non-null value, {@code name: null} for a null one, or
+     * (when {@link #hideEmptyFields} is set) omits the property entirely instead of writing
+     * the {@code null}.
+     */
+    private void writeString(String name, String value)
+    {
+        if (value != null)
+        {
+            generator.writeStringProperty(name, value);
+        }
+        else
+        {
+            writeNull(name);
+        }
+    }
+
+    /**
+     * Writes {@code name} as a JSON object, or (when {@link #hideEmptyFields} is set) omits the
+     * property entirely when the map is null/empty, rather than writing an empty {@code {}}.
+     */
+    private void writeMap(String name, Map<?, ?> value)
+    {
+        if (hideEmptyFields && (value == null || value.isEmpty()))
+        {
+            return;
+        }
+        generator.writePOJOProperty(name, value);
     }
 }
