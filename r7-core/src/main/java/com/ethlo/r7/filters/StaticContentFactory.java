@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.doc.DefaultValue;
@@ -24,10 +25,23 @@ import com.google.auto.service.AutoService;
 @Description("Serves static files from a local directory.")
 public final class StaticContentFactory implements GatewayFilterFactory<StaticContentFactory.Config>
 {
-    public static final String STATIC_CONTENT_PATH_KEY = "gateway.internal.serve_static.path";
-    public static final String STATIC_CONTENT_FOLLOW_SYMLINKS_KEY = "gateway.internal.serve_static.follow_symlinks";
-    public static final String STATIC_CONTENT_LIST_DIRECTORY_KEY = "gateway.internal.serve_static.list_directory";
+    /**
+     * Functional handoff to {@code R7UndertowHandler}, telling it which base directory (and
+     * options) to serve the response from natively. Deliberately a {@link StateKey} attachment,
+     * not an {@code attributes()} entry - this is routing state, not telemetry, and must not
+     * leak the server's filesystem layout into the journal/log output.
+     */
+    public static final StateKey<StaticServeRequest> STATIC_SERVE_REQUEST_KEY = new StateKey<>("serve_static.request");
     private static final String FILTER_NAME = "StaticContent";
+
+    /**
+     * @param baseDirectory  the directory to serve files from
+     * @param followSymlinks whether to follow symbolic links when resolving files
+     * @param listDirectory  whether to render an HTML directory listing when no welcome file is found
+     */
+    public record StaticServeRequest(Path baseDirectory, boolean followSymlinks, boolean listDirectory)
+    {
+    }
 
     @Override
     public String name()
@@ -116,9 +130,8 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            exchange.attributes().set(STATIC_CONTENT_PATH_KEY, this.config.baseDirectory().toString());
-            exchange.attributes().set(STATIC_CONTENT_FOLLOW_SYMLINKS_KEY, this.config.followSymlinks().toString());
-            exchange.attributes().set(STATIC_CONTENT_LIST_DIRECTORY_KEY, this.config.listDirectory().toString());
+            exchange.setAttachment(STATIC_SERVE_REQUEST_KEY,
+                    new StaticServeRequest(this.config.baseDirectory(), this.config.followSymlinks(), this.config.listDirectory()));
             exchange.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.OK, null, null));
         }
     }

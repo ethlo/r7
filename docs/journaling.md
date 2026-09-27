@@ -1,27 +1,9 @@
 # Journal Tailing and Observability
 
-ethlo r7 is designed for absolute minimum latency. Instead of serializing logs to text or establishing network connections to logging databases on the request thread, r7 writes raw traffic data directly to memory-mapped binary files (journals) on disk.
-
-To ingest these logs into your observability stack (like Grafana, ELK, or ClickHouse), r7 uses **Tailers**. Tailers run as separate processes or sidecar containers, reading the binary journals asynchronously without impacting the gateway's performance.
-
-## The Sidecar Deployment Pattern
-
-In containerized environments, the gateway and the tailer share a volume. The gateway writes the binary journals, and the tailer reads them.
-
-!!! warning "Retention is not this tailer's job"
-    `R7Tailer` (the component every tailer here is built on) never deletes a segment itself —
-    it only reads. Retention (deciding when a fully-read segment is safe to remove) belongs to
-    a dedicated reaper process, external to any tailer, that is the single place operators
-    configure how long segments are kept. This means the journal mount can — and should — be
-    read-only (`:ro`) for every tailer; only the reaper needs write access to `journal_dir`.
-
-!!! note "Running more than one tailer against the same journal directory"
-    Each tailer keeps its own checkpoint under its own `checkpoint_dir` (a dedicated directory
-    outside `journal_dir` by default — see the config tables below for exactly where), so two
-    different tailers (say, one JSON and one WARC) never overwrite each other's progress, and
-    since neither one deletes anything, neither can delete a segment out from under the other.
-    A shared reaper simply waits until every tailer following the directory has had a fair
-    chance to read a segment (or a bounded ceiling elapses) before removing it.
+r7 writes request/response traffic straight to memory-mapped binary files (journals) on disk
+instead of serializing logs to text or making network calls on the request thread — that's what
+keeps the hot path fast. To get that data into Grafana, ELK, ClickHouse or a WARC archive, you
+run a **Tailer**: a separate process/sidecar that reads the journals asynchronously.
 
 ```mermaid
 graph LR
@@ -32,13 +14,44 @@ graph LR
 
 ```
 
+## 1. Turn on journaling
+
+Tailers only see what the gateway actually writes. Set the level per route (and optionally
+override it by response status) in `routes.yaml`:
+
+```yaml
+routes:
+  - id: my-route
+    journal:
+      request:
+        level: METADATA
+      response:
+        level: METADATA
+        status_overrides:
+          5xx: FULL   # capture bodies when things break
+```
+
+`NONE` / `METADATA` / `HEADERS` / `FULL` — see [Configuration §7](config.md#7-journaling-storage)
+for the full table and the `storage` block (`work_dir`, `shard_size`, `shard_count`) that
+controls where and how those journals are written on disk.
+
+## 2. Pick a sidecar and mount the shared volume
+
+Gateway and tailer share the `journal_dir` volume: the gateway writes, the tailer only reads.
+
+!!! warning "Mount `journal_dir` read-only on every tailer"
+    `R7Tailer` never deletes a segment — it only reads. Deciding when a fully-read segment is
+    safe to remove is a separate reaper process you run yourself; it's the only thing that
+    needs write access to `journal_dir`. Give each tailer its own `checkpoint_dir` (see the
+    tables below) so running JSON and WARC tailers side by side doesn't clash — neither can
+    delete a segment out from under the other, and a reaper just waits until every tailer has
+    had a fair chance at a segment before removing it.
+
 ---
 
-## Tailer Implementations
+## 3. Tailer images
 
-We provide pre-built Docker images for the most common observability architectures.
-
-### 1. Standard JSON Tailer (Universal)
+### JSON Tailer (Universal)
 
 **Image:** `ghcr.io/ethlo/r7-tailer-json:latest`
 
@@ -91,19 +104,13 @@ volumes:
 
 ```
 
-### 2. WARC/zstd Tailer (Archival)
+### WARC/zstd Tailer (Archival)
 
 **Image:** `ghcr.io/ethlo/r7-tailer-warc:latest`
 
-This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/) records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating `.warc.zst` files. Use this when you need a durable, replayable, tool-interoperable record of actual request/response traffic (compliance archiving, incident forensics, replaying real traffic against a new backend), rather than a queryable log stream.
+This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/) records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating `.warc.zst` files (one independent Zstandard frame per record, so `zstd -d` alone decompresses a file back to plain WARC). Use this when you need a durable, replayable, tool-interoperable record of actual traffic (compliance archiving, incident forensics, replaying traffic against a new backend), rather than a queryable log stream — feed the output to [pywb](https://github.com/webrecorder/pywb) or any WARC-aware tool.
 
-Each WARC record is compressed as one independent Zstandard frame per the (proposed) IIPC "Zstandard Compression for WARC Files" convention — the same "record-at-a-time" approach `.warc.gz` has used for gzip since WARC/1.0. `zstd -d` (or any zstd-aware WARC tool) decompresses the whole file back to a plain WARC stream.
-
-**Record shape.** Every exchange is written as up to four records, in the order they occurred: the client request, the forwarded upstream request, the upstream response, and the client response — linked to each other by repeated `WARC-Concurrent-To` fields (see [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full rationale). The gateway's journal stores exactly one copy of a request body and one copy of a response body per exchange — not one per network leg — so the upstream request/response records never have a payload of their own to write: each carries `WARC-Truncated: unspecified` plus the `WARC-Payload-Digest` of the payload the corresponding client-side record actually stores. This is deliberately not a `revisit` record — `revisit` means "unchanged since it was previously archived", which the second hop of one exchange is not. A request/response record with a body that was never captured at all — the journal level for that route/direction is below `FULL`, even though traffic was non-zero — is likewise marked `WARC-Truncated: unspecified`, so it cannot be mistaken for a message that genuinely had no body. Every record also carries a per-file, monotonically increasing `WARC-X-R7-Sequence`, so a reader can tell a shorter-than-expected file apart from one that finished cleanly. All records of one exchange are written to disk as a single batch, but the underlying write is not guaranteed atomic (a full disk can fail partway through). If it fails, the writer never seals the file it was writing to — it deletes the whole `.open` file, including any earlier, successfully written groups, and opens a fresh one for the retried exchange, so a sealed `.warc.zst` file is never left with a truncated trailing frame. `R7Tailer` re-delivers the failed exchange on its next tick, and the tailer process itself survives the failure to retry it.
-
-**Cross-exchange deduplication.** Separately, two genuinely different exchanges (a repeated static asset, a cached response) can produce byte-identical payloads. The client request/response records participate in this via a bounded, digest-keyed cache of payloads already written in full: the first record needing a given payload (by SHA-256) is written normally, and a later record for a *different* exchange needing the same payload is written as a `revisit` record per the WARC 1.1 `identical-payload-digest` profile — headers preserved, payload omitted, `WARC-Truncated: length`, and a `WARC-Refers-To`/`-Target-URI`/`-Date` pointing back at the original record. The cache is only ever consulted or updated after a whole exchange's own records have been decided, so a request and response that happen to share a payload (e.g. both empty) within the *same* exchange are never revisited against each other.
-
-**Checksum integrity.** If the journal itself reports a body checksum mismatch for a leg (stored bytes don't match what the gateway recorded at request time), that leg's records are written without a payload or digest, marked `WARC-Truncated: unspecified` and `WARC-R7-Checksum-Mismatch: true`, instead of silently archiving corrupted bytes as an authoritative record.
+Each exchange becomes up to four linked records (client request, upstream request, upstream response, client response); duplicate payloads across exchanges are deduplicated as WARC `revisit` records; and a checksum mismatch on read is marked rather than silently archived. See [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full record-shape and dedup rationale.
 
 **Configuration:** same YAML config mechanism as the JSON tailer above — `config/warc-tailer.yaml`
 by default, overridable via the `WARC_TAILER_CONFIG` env var.
@@ -149,7 +156,7 @@ volumes:
 
 ```
 
-### 3. ClickHouse Tailer
+### ClickHouse Tailer
 
 !!! important
     Not yet ready!
@@ -186,7 +193,7 @@ volumes:
 
 ```
 
-## Visualizing in Grafana
+## 4. Visualizing your data
 
 Once your data is routed through a tailer:
 
