@@ -519,7 +519,7 @@ Validates that incoming requests contain an `Authorization` header starting with
 
 #### BasicAuth
 
-Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the authenticated username is recorded in the `gateway.auth.basic.user` attribute for journaling.
+Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success a fingerprint of the authenticated username (not the username itself) is recorded in the `gateway.auth.basic.user` attribute for journaling, the same convention used for redacted request headers.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
