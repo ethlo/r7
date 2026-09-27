@@ -573,10 +573,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-sidecar-deployment-pattern" class="md-nav__link">
+  <a href="#1-turn-on-journaling" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        The Sidecar Deployment Pattern
+        1. Turn on journaling
       </span>
     </span>
   </a>
@@ -584,22 +584,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tailer-implementations" class="md-nav__link">
+  <a href="#2-pick-a-sidecar-and-mount-the-shared-volume" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Tailer Implementations
+        2. Pick a sidecar and mount the shared volume
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Tailer Implementations">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-tailer-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Tailer images
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Tailer images">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-standard-json-tailer-universal" class="md-nav__link">
+  <a href="#json-tailer-universal" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        1. Standard JSON Tailer (Universal)
+        JSON Tailer (Universal)
       </span>
     </span>
   </a>
@@ -607,10 +618,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-warczstd-tailer-archival" class="md-nav__link">
+  <a href="#warczstd-tailer-archival" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        2. WARC/zstd Tailer (Archival)
+        WARC/zstd Tailer (Archival)
       </span>
     </span>
   </a>
@@ -618,10 +629,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-clickhouse-tailer" class="md-nav__link">
+  <a href="#clickhouse-tailer" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        3. ClickHouse Tailer
+        ClickHouse Tailer
       </span>
     </span>
   </a>
@@ -634,10 +645,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#visualizing-in-grafana" class="md-nav__link">
+  <a href="#4-visualizing-your-data" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Visualizing in Grafana
+        4. Visualizing your data
       </span>
     </span>
   </a>
@@ -749,37 +760,46 @@
 
 
 <h1 id="journal-tailing-and-observability">Journal Tailing and Observability</h1>
-<p>ethlo r7 is designed for absolute minimum latency. Instead of serializing logs to text or establishing network connections to logging databases on the request thread, r7 writes raw traffic data directly to memory-mapped binary files (journals) on disk.</p>
-<p>To ingest these logs into your observability stack (like Grafana, ELK, or ClickHouse), r7 uses <strong>Tailers</strong>. Tailers run as separate processes or sidecar containers, reading the binary journals asynchronously without impacting the gateway's performance.</p>
-<h2 id="the-sidecar-deployment-pattern">The Sidecar Deployment Pattern</h2>
-<p>In containerized environments, the gateway and the tailer share a volume. The gateway writes the binary journals, and the tailer reads them.</p>
-<div class="admonition warning">
-<p class="admonition-title">Retention is not this tailer's job</p>
-<p><code>R7Tailer</code> (the component every tailer here is built on) never deletes a segment itself —
-it only reads. Retention (deciding when a fully-read segment is safe to remove) belongs to
-a dedicated reaper process, external to any tailer, that is the single place operators
-configure how long segments are kept. This means the journal mount can — and should — be
-read-only (<code>:ro</code>) for every tailer; only the reaper needs write access to <code>journal_dir</code>.</p>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Running more than one tailer against the same journal directory</p>
-<p>Each tailer keeps its own checkpoint under its own <code>checkpoint_dir</code> (a dedicated directory
-outside <code>journal_dir</code> by default — see the config tables below for exactly where), so two
-different tailers (say, one JSON and one WARC) never overwrite each other's progress, and
-since neither one deletes anything, neither can delete a segment out from under the other.
-A shared reaper simply waits until every tailer following the directory has had a fair
-chance to read a segment (or a bounded ceiling elapses) before removing it.</p>
-</div>
+<p>r7 writes request/response traffic straight to memory-mapped binary files (journals) on disk
+instead of serializing logs to text or making network calls on the request thread — that's what
+keeps the hot path fast. To get that data into Grafana, ELK, ClickHouse or a WARC archive, you
+run a <strong>Tailer</strong>: a separate process/sidecar that reads the journals asynchronously.</p>
 <pre class="mermaid"><code>graph LR
     Client --&gt;|HTTP| R7[r7 gateway Container]
     R7 --&gt;|Binary Write| Vol[(Shared Volume: /journals)]
     Vol --&gt;|Binary Read| Tailer[r7 Tailer Container]
     Tailer --&gt;|JSON / Batch Insert| Ops[Observability Stack]
 </code></pre>
+<h2 id="1-turn-on-journaling">1. Turn on journaling</h2>
+<p>Tailers only see what the gateway actually writes. Set the level per route (and optionally
+override it by response status) in <code>routes.yaml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">routes</span><span class="p">:</span>
+</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-route</span>
+</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
+</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span><span class="w">   </span><span class="c1"># capture bodies when things break</span>
+</span></code></pre></div>
+<p><code>NONE</code> / <code>METADATA</code> / <code>HEADERS</code> / <code>FULL</code> — see <a href="../config/#7-journaling-storage">Configuration §7</a>
+for the full table and the <code>storage</code> block (<code>work_dir</code>, <code>shard_size</code>, <code>shard_count</code>) that
+controls where and how those journals are written on disk.</p>
+<h2 id="2-pick-a-sidecar-and-mount-the-shared-volume">2. Pick a sidecar and mount the shared volume</h2>
+<p>Gateway and tailer share the <code>journal_dir</code> volume: the gateway writes, the tailer only reads.</p>
+<div class="admonition warning">
+<p class="admonition-title">Mount <code>journal_dir</code> read-only on every tailer</p>
+<p><code>R7Tailer</code> never deletes a segment — it only reads. Deciding when a fully-read segment is
+safe to remove is a separate reaper process you run yourself; it's the only thing that
+needs write access to <code>journal_dir</code>. Give each tailer its own <code>checkpoint_dir</code> (see the
+tables below) so running JSON and WARC tailers side by side doesn't clash — neither can
+delete a segment out from under the other, and a reaper just waits until every tailer has
+had a fair chance at a segment before removing it.</p>
+</div>
 <hr />
-<h2 id="tailer-implementations">Tailer Implementations</h2>
-<p>We provide pre-built Docker images for the most common observability architectures.</p>
-<h3 id="1-standard-json-tailer-universal">1. Standard JSON Tailer (Universal)</h3>
+<h2 id="3-tailer-images">3. Tailer images</h2>
+<h3 id="json-tailer-universal">JSON Tailer (Universal)</h3>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-tailer-json:latest</code></p>
 <p>This tailer converts the binary journal entries into verbose JSON and streams them to standard output (<code>stdout</code>) by default. This is the recommended approach if you use generic log forwarders like <strong>Promtail (for Grafana Loki)</strong>, <strong>Fluent Bit</strong>, or <strong>Vector</strong>.</p>
 <p><strong>Configuration:</strong> like the gateway, this tailer reads a YAML file — <code>config/jsonld-tailer.yaml</code>
@@ -824,38 +844,35 @@ to their defaults below (so a bare container with no config volume still starts 
 </tbody>
 </table>
 <p><strong>Example <code>config/jsonld-tailer.yaml</code>:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
-</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">checkpoint_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints</span>
-</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="s">"-"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">checkpoint_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints</span>
+</span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="s">"-"</span>
 </span></code></pre></div>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
-</span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># Mount the shared volume</span>
-</span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-</span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
-</span><span id="True-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
-</span><span id="True-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro</span>
-</span><span id="True-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
-</span><span id="True-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-checkpoints:/checkpoints:rw</span><span class="w"> </span><span class="c1"># .r7_checkpoints lives here by default</span>
-</span><span id="True-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="c1"># The output of this container goes to Docker's stdout, </span>
-</span><span id="True-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="c1"># ready to be scraped by your infrastructure's logging driver.</span>
-</span><span id="True-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
-</span><span id="True-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
-</span><span id="True-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">  </span><span class="nt">r7-checkpoints</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
+</span><span id="True-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># Mount the shared volume</span>
+</span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
+</span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
+</span><span id="True-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro</span>
+</span><span id="True-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
+</span><span id="True-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-checkpoints:/checkpoints:rw</span><span class="w"> </span><span class="c1"># .r7_checkpoints lives here by default</span>
+</span><span id="True-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="c1"># The output of this container goes to Docker's stdout, </span>
+</span><span id="True-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="c1"># ready to be scraped by your infrastructure's logging driver.</span>
+</span><span id="True-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>
+</span><span id="True-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="nt">r7-checkpoints</span><span class="p">:</span>
 </span></code></pre></div>
-<h3 id="2-warczstd-tailer-archival">2. WARC/zstd Tailer (Archival)</h3>
+<h3 id="warczstd-tailer-archival">WARC/zstd Tailer (Archival)</h3>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-tailer-warc:latest</code></p>
-<p>This tailer writes completed exchanges as <a href="https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/">WARC 1.1</a> records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating <code>.warc.zst</code> files. Use this when you need a durable, replayable, tool-interoperable record of actual request/response traffic (compliance archiving, incident forensics, replaying real traffic against a new backend), rather than a queryable log stream.</p>
-<p>Each WARC record is compressed as one independent Zstandard frame per the (proposed) IIPC "Zstandard Compression for WARC Files" convention — the same "record-at-a-time" approach <code>.warc.gz</code> has used for gzip since WARC/1.0. <code>zstd -d</code> (or any zstd-aware WARC tool) decompresses the whole file back to a plain WARC stream.</p>
-<p><strong>Record shape.</strong> Every exchange is written as up to four records, in the order they occurred: the client request, the forwarded upstream request, the upstream response, and the client response — linked to each other by repeated <code>WARC-Concurrent-To</code> fields (see <a href="https://github.com/ethlo/r7/blob/main/design/warc.md"><code>design/warc.md</code></a> for the full rationale). The gateway's journal stores exactly one copy of a request body and one copy of a response body per exchange — not one per network leg — so the upstream request/response records never have a payload of their own to write: each carries <code>WARC-Truncated: unspecified</code> plus the <code>WARC-Payload-Digest</code> of the payload the corresponding client-side record actually stores. This is deliberately not a <code>revisit</code> record — <code>revisit</code> means "unchanged since it was previously archived", which the second hop of one exchange is not. A request/response record with a body that was never captured at all — the journal level for that route/direction is below <code>FULL</code>, even though traffic was non-zero — is likewise marked <code>WARC-Truncated: unspecified</code>, so it cannot be mistaken for a message that genuinely had no body. Every record also carries a per-file, monotonically increasing <code>WARC-X-R7-Sequence</code>, so a reader can tell a shorter-than-expected file apart from one that finished cleanly. All records of one exchange are written to disk as a single batch, but the underlying write is not guaranteed atomic (a full disk can fail partway through). If it fails, the writer never seals the file it was writing to — it deletes the whole <code>.open</code> file, including any earlier, successfully written groups, and opens a fresh one for the retried exchange, so a sealed <code>.warc.zst</code> file is never left with a truncated trailing frame. <code>R7Tailer</code> re-delivers the failed exchange on its next tick, and the tailer process itself survives the failure to retry it.</p>
-<p><strong>Cross-exchange deduplication.</strong> Separately, two genuinely different exchanges (a repeated static asset, a cached response) can produce byte-identical payloads. The client request/response records participate in this via a bounded, digest-keyed cache of payloads already written in full: the first record needing a given payload (by SHA-256) is written normally, and a later record for a <em>different</em> exchange needing the same payload is written as a <code>revisit</code> record per the WARC 1.1 <code>identical-payload-digest</code> profile — headers preserved, payload omitted, <code>WARC-Truncated: length</code>, and a <code>WARC-Refers-To</code>/<code>-Target-URI</code>/<code>-Date</code> pointing back at the original record. The cache is only ever consulted or updated after a whole exchange's own records have been decided, so a request and response that happen to share a payload (e.g. both empty) within the <em>same</em> exchange are never revisited against each other.</p>
-<p><strong>Checksum integrity.</strong> If the journal itself reports a body checksum mismatch for a leg (stored bytes don't match what the gateway recorded at request time), that leg's records are written without a payload or digest, marked <code>WARC-Truncated: unspecified</code> and <code>WARC-R7-Checksum-Mismatch: true</code>, instead of silently archiving corrupted bytes as an authoritative record.</p>
+<p>This tailer writes completed exchanges as <a href="https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/">WARC 1.1</a> records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating <code>.warc.zst</code> files (one independent Zstandard frame per record, so <code>zstd -d</code> alone decompresses a file back to plain WARC). Use this when you need a durable, replayable, tool-interoperable record of actual traffic (compliance archiving, incident forensics, replaying traffic against a new backend), rather than a queryable log stream — feed the output to <a href="https://github.com/webrecorder/pywb">pywb</a> or any WARC-aware tool.</p>
+<p>Each exchange becomes up to four linked records (client request, upstream request, upstream response, client response); duplicate payloads across exchanges are deduplicated as WARC <code>revisit</code> records; and a checksum mismatch on read is marked rather than silently archived. See <a href="https://github.com/ethlo/r7/blob/main/design/warc.md"><code>design/warc.md</code></a> for the full record-shape and dedup rationale.</p>
 <p><strong>Configuration:</strong> same YAML config mechanism as the JSON tailer above — <code>config/warc-tailer.yaml</code>
 by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 <table>
@@ -915,28 +932,28 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 </tbody>
 </table>
 <p><strong>Example <code>config/warc-tailer.yaml</code>:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
-</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">output_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/warc</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">output_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/warc</span>
 </span></code></pre></div>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
-</span><span id="True-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-</span><span id="True-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">r7-tailer-warc</span><span class="p">:</span>
-</span><span id="True-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-warc:latest</span>
-</span><span id="True-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro</span>
-</span><span id="True-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
-</span><span id="True-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
-</span><span id="True-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
-</span><span id="True-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
-</span><span id="True-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+</span><span id="True-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">r7-tailer-warc</span><span class="p">:</span>
+</span><span id="True-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-warc:latest</span>
+</span><span id="True-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro</span>
+</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
+</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
+</span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
+</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
 </span></code></pre></div>
-<h3 id="3-clickhouse-tailer">3. ClickHouse Tailer</h3>
+<h3 id="clickhouse-tailer">ClickHouse Tailer</h3>
 <div class="admonition important">
 <p class="admonition-title">Important</p>
 <p>Not yet ready!</p>
@@ -945,28 +962,28 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 <p>For extremely high-throughput environments, storing access logs in a standard inverted-index database (like Elasticsearch) becomes prohibitively expensive. ClickHouse is a columnar database uniquely suited for this scale.</p>
 <p>This tailer reads the binary journals and performs optimized, asynchronous batch inserts directly into ClickHouse using the <code>JSONEachRow</code> format.</p>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
-</span><span id="True-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-</span><span id="True-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">r7-tailer-clickhouse</span><span class="p">:</span>
-</span><span id="True-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-clickhouse:latest</span>
-</span><span id="True-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
-</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
-</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JOURNAL_DIR=/journals</span>
-</span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs</span>
-</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_USER=default</span>
-</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_PASSWORD=secret</span>
-</span><span id="True-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BATCH_SIZE=10000</span>
-</span><span id="True-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FLUSH_INTERVAL=1s</span>
-</span><span id="True-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>
-</span><span id="True-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">r7-tailer-clickhouse</span><span class="p">:</span>
+</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-clickhouse:latest</span>
+</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
+</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JOURNAL_DIR=/journals</span>
+</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs</span>
+</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_USER=default</span>
+</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_PASSWORD=secret</span>
+</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BATCH_SIZE=10000</span>
+</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FLUSH_INTERVAL=1s</span>
+</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
+</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
 </span></code></pre></div>
-<h2 id="visualizing-in-grafana">Visualizing in Grafana</h2>
+<h2 id="4-visualizing-your-data">4. Visualizing your data</h2>
 <p>Once your data is routed through a tailer:</p>
 <ul>
 <li><strong>If using the JSON Tailer with Promtail/Loki:</strong> You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like <code>duration</code>, <code>status</code>, or specific headers).</li>
