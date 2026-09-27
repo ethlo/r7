@@ -25,13 +25,13 @@ import tools.jackson.core.json.JsonWriteFeature;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
-public class DebugJsonWriter implements ExchangeCompletionListener
+public class JsonLdWriter implements ExchangeCompletionListener
 {
     private static final byte[] NEWLINE = "\n".getBytes(StandardCharsets.UTF_8);
     private final JsonGenerator generator;
     private final OutputStream out;
 
-    public DebugJsonWriter(OutputStream out, boolean prettyPrint)
+    public JsonLdWriter(OutputStream out, boolean prettyPrint)
     {
         this.out = out;
         final JsonMapper mapper = JsonMapper.builder()
@@ -90,10 +90,12 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             // --- Checksums ---
             // "Journaled" is what the gateway recorded to disk; "observed" is what this reader
             // actually saw. A mismatch between the two means the segment was damaged in transit.
-            writeChecksum("journaled_request_crc32", exchange.getJournaledRequestChecksum());
-            writeChecksum("journaled_response_crc32", exchange.getJournaledResponseChecksum());
-            writeChecksum("observed_request_crc32", exchange.getObservedRequestChecksum());
-            writeChecksum("observed_response_crc32", exchange.getObservedResponseChecksum());
+            // Named "checksum", not "crc32": the algorithm is CRC32C (see BodyChecksum), a
+            // different polynomial than CRC-32, and the field name must not claim otherwise.
+            writeChecksum("journaled_request_checksum", exchange.getJournaledRequestChecksum());
+            writeChecksum("journaled_response_checksum", exchange.getJournaledResponseChecksum());
+            writeChecksum("observed_request_checksum", exchange.getObservedRequestChecksum());
+            writeChecksum("observed_response_checksum", exchange.getObservedResponseChecksum());
 
             // --- Client Object ---
             generator.writeName("client");
@@ -158,7 +160,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             generator.writeNullProperty("method");
             generator.writeNullProperty("path");
             generator.writeNullProperty("query_string");
-            generator.writeNullProperty("protocol");
+            generator.writeNullProperty("request_protocol");
         }
 
         generator.writePOJOProperty("request_headers", GatewayUtils.toMap(reqHeaders));
@@ -177,11 +179,14 @@ public class DebugJsonWriter implements ExchangeCompletionListener
     {
         // Expected format: "{PROTOCOL} {CODE} {REASON}"
         // Example: "HTTP/1.1 503 Service Unavailable"
+        // Only "protocol" needs a request_/response_ prefix here: it is the one field that
+        // exists on both start lines. "status_code" and "reason" are response-only concepts
+        // and get no prefix, same as "method"/"path"/"query_string" on the request side.
         if (resLine == null)
         {
             generator.writeNullProperty("response_protocol");
-            generator.writeNullProperty("response_status_code");
-            generator.writeNullProperty("response_reason");
+            generator.writeNullProperty("status_code");
+            generator.writeNullProperty("reason");
             return;
         }
 
@@ -198,24 +203,41 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             if (secondSpace != -1)
             {
                 // 2. Status Code
-                generator.writeStringProperty("response_status_code", resLine.substring(firstSpace + 1, secondSpace));
+                writeStatusCode(resLine.substring(firstSpace + 1, secondSpace));
 
                 // 3. Reason Phrase (everything after the second space)
-                generator.writeStringProperty("response_reason", resLine.substring(secondSpace + 1));
+                generator.writeStringProperty("reason", resLine.substring(secondSpace + 1));
             }
             else
             {
                 // Fallback if there is no reason phrase
-                generator.writeStringProperty("response_status_code", resLine.substring(firstSpace + 1));
-                generator.writeNullProperty("response_reason");
+                writeStatusCode(resLine.substring(firstSpace + 1));
+                generator.writeNullProperty("reason");
             }
         }
         else
         {
             // Graceful fallback for completely malformed lines
             generator.writeNullProperty("response_protocol");
-            generator.writeStringProperty("response_status_code", resLine);
-            generator.writeNullProperty("response_reason");
+            writeStatusCode(resLine);
+            generator.writeNullProperty("reason");
+        }
+    }
+
+    /**
+     * Writes {@code status_code} as a number, matching the top-level {@code status} field's
+     * type. A start line that fails to parse is malformed, not merely absent, so it is
+     * reported as null rather than silently smuggled through as a string.
+     */
+    private void writeStatusCode(final String code)
+    {
+        try
+        {
+            generator.writeNumberProperty("status_code", Integer.parseInt(code));
+        }
+        catch (final NumberFormatException e)
+        {
+            generator.writeNullProperty("status_code");
         }
     }
 
@@ -232,7 +254,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             generator.writeStringProperty("method", reqLine.substring(0, firstSpace));
 
             // 2. Protocol
-            generator.writeStringProperty("protocol", reqLine.substring(lastSpace + 1));
+            generator.writeStringProperty("request_protocol", reqLine.substring(lastSpace + 1));
 
             // 3. Path & Query String
             final String fullUri = reqLine.substring(firstSpace + 1, lastSpace);
@@ -257,7 +279,7 @@ public class DebugJsonWriter implements ExchangeCompletionListener
             generator.writeNullProperty("method");
             generator.writeStringProperty("path", reqLine);
             generator.writeNullProperty("query_string");
-            generator.writeNullProperty("protocol");
+            generator.writeNullProperty("request_protocol");
         }
     }
 
