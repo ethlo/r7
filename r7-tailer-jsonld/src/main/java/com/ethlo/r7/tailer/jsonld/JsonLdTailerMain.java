@@ -47,6 +47,7 @@ public final class JsonLdTailerMain
         final Path checkpointDir = Paths.get(config.checkpointDir());
         final String outputPath = config.outputPath();
         final boolean prettyPrint = config.prettyPrint();
+        final boolean hideEmptyFields = config.hideEmptyFields();
         final Duration pollInterval = config.pollInterval();
 
         final boolean toStdOut = "-".equals(outputPath) || "stdout".equalsIgnoreCase(outputPath);
@@ -69,7 +70,7 @@ public final class JsonLdTailerMain
         logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', poll every {})",
                 journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, pollInterval);
 
-        final JsonLdWriter jsonWriter = new JsonLdWriter(out, prettyPrint);
+        final JsonLdWriter jsonWriter = new JsonLdWriter(out, prettyPrint, hideEmptyFields);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
         // Retention is a dedicated reaper's job, applied uniformly across every format-specific
         // tailer sharing the journal directory - this tailer never deletes a segment itself.
