@@ -1,0 +1,34 @@
+# Dockerfile.reaper.jvm
+
+# distroless has no shell, so a directory can't be chown'd in the final stage - prepare it here
+# instead. Docker copies an image's pre-existing directory (including ownership) into a *named*
+# volume the first time that volume is created empty, so this is what makes a freshly created
+# r7-journals volume writable by the nonroot user below instead of root:root. Bind-mounted host
+# directories are not affected by this - their ownership is the operator's responsibility.
+FROM busybox:stable AS dirs
+RUN mkdir -p /journals && chown 65532:65532 /journals
+
+FROM gcr.io/distroless/java25-debian13:nonroot
+WORKDIR /app
+
+# Copy the reaper fat JAR
+COPY r7-reaper/target/r7-reaper-*.jar /app/reaper.jar
+COPY --from=dirs --chown=65532:65532 /journals /journals
+
+# Unlike every tailer image, this one needs read-write access to the shared journal volume -
+# it is the one process in this deployment whose job is to delete from it.
+VOLUME ["/journals"]
+
+# JOURNAL_DIR: where the gateway's binary journals live (the shared volume above). Mount this
+#              read-write here - every tailer sharing the same volume should mount it :ro
+#              instead, so this is the only container that can delete a segment.
+# TTL:         how long a sealed segment is kept after it stops being written to, before this
+#              reaper deletes it. This is a dumb, age-only policy with no awareness of any
+#              tailer's read progress - set it well beyond the slowest tailer's realistic lag
+#              (restart time included), see docs/journaling.md.
+ENV JOURNAL_DIR=/journals
+ENV TTL=7d
+
+USER 65532:65532
+
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/reaper.jar"]
