@@ -303,9 +303,13 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
             // new name in place over an empty file. That one at least fails closed —
             // readPersistedSequence refuses to start on an unparsable marker — but there is
             // no reason to rely on it.
+            // Created fresh every time: the permissions only apply to a file being created, and a
+            // .tmp an older version left behind after a crash would otherwise keep its wider mode
+            // and hand it on to the marker through the rename.
+            Files.deleteIfExists(tmp);
             try (final FileChannel channel = FileChannel.open(tmp,
-                    Set.of(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE),
-                    JournalFiles.fileAttributes(tmp.getParent())))
+                    Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
+                    JournalFiles.fileAttributes(this.tempDir)))
             {
                 channel.write(ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII)));
                 channel.force(true);
