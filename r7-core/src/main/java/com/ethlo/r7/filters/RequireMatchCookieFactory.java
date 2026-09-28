@@ -11,8 +11,10 @@ import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -50,6 +52,7 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
             @Description("The name of the cookie.")
             String name,
 
+            @Sensitive
             @Description("The regular expression pattern the cookie value must match.")
             String regexp,
 
@@ -113,7 +116,8 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.config.name() + " ~= " + this.config.regexp();
+            // The pattern can be a shared secret (^Bearer abc$); the summary is shown on the management page.
+            return FILTER_NAME + ": " + this.config.name() + " ~= " + RedactUtil.fingerprint(this.config.regexp());
         }
     }
 }

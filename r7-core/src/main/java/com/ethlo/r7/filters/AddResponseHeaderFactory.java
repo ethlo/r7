@@ -5,6 +5,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -41,6 +42,7 @@ public final class AddResponseHeaderFactory implements GatewayFilterFactory<AddR
             @Description("The name of the header.")
             String name,
 
+            @Sensitive(unlessSafeHeaderIn = "name", responseHeader = true)
             @Description("The value of the header.")
             String value) implements ValidatableConfig
     {
