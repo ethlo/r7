@@ -363,6 +363,18 @@ public final class R7UndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
+        // Before any route is consulted: a path the upstream could resolve differently from
+        // how the predicates read it would let a request match one route and reach another.
+        final RequestPathGuard.Violation pathViolation = RequestPathGuard.check(exchange.getRequestPath());
+        if (pathViolation != null)
+        {
+            logger.debug("Rejecting ambiguous request path ({}): {}", pathViolation, exchange.getRequestURI());
+            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send(ErrorMessages.AMBIGUOUS_PATH.duplicate());
+            return;
+        }
+
         final RemoteAddressResolver.RemoteInfo remoteInfo = this.remoteAddressResolver.resolve(exchange);
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange, remoteInfo.address(), remoteInfo.source());
         final DefaultGatewayRoute route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
