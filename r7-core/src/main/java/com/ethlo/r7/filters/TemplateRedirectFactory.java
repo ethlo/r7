@@ -80,7 +80,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             {
                 validator.invalid("target", target, "a redirect target must not start or end with whitespace, which browsers strip before following it");
             }
-            else if (schemeSeparator > 0 && target.substring(0, schemeSeparator).indexOf('$') >= 0)
+            else if (schemeSeparator > 0 && isInSchemePosition(target, schemeSeparator) && target.substring(0, schemeSeparator).indexOf('$') >= 0)
             {
                 validator.invalid("target", target, "the scheme of a redirect target must be literal: "
                         + "a capture group there lets any request choose where it is redirected to");
@@ -145,6 +145,23 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             }
         }
         return end > start ? end : NO_AUTHORITY;
+    }
+
+    /**
+     * Whether "://" at {@code separator} ends a scheme, rather than appearing later in a path,
+     * query or fragment ({@code /go/$1://fixed} is a path).
+     */
+    private static boolean isInSchemePosition(final String target, final int separator)
+    {
+        for (int i = 0; i < separator; i++)
+        {
+            final char c = target.charAt(i);
+            if (c == '/' || c == '?' || c == '#' || c == '\\')
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean isAsciiWhitespace(final char c)

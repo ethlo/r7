@@ -133,4 +133,20 @@ class TemplateRedirectFactoryTest
         assertThat(redirect("^/x/(.*)$", "//\\\\$1", "/x/evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
         assertThat(redirect("^/x/(.*)$", "javascript://fixed.example/%0A$1", "/x/alert(1)").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
     }
+
+    /**
+     * "://" after the path has started is data, not a scheme: such a path template is valid, and
+     * the request-time check keeps what it produces on site.
+     */
+    @Test
+    void aSchemeSeparatorInThePathIsNotAScheme()
+    {
+        final ValidationResult result = new ValidationResult();
+        new TemplateRedirectFactory.Config("^/go/(.*)$", "/go/$1://fixed", null).validate(result);
+        assertThat(result.hasErrors()).isFalse();
+
+        final ShortCircuitGatewayResponse response = redirect("^/go/(.*)$", "/go/$1://fixed", "/go/a");
+        assertThat(response.status()).isEqualTo(HttpStatuses.FOUND);
+        assertThat(response.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("/go/a://fixed");
+    }
 }
