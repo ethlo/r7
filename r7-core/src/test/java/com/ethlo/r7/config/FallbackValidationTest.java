@@ -116,4 +116,35 @@ class FallbackValidationTest
         assertThat(a.asFallbackOfThis(b)).isSameAs(bAfterA);
         assertThat(b.beforeCommitGatewayFilters()[0]).isNotSameAs(a.beforeCommitGatewayFilters()[0]);
     }
+
+    /**
+     * The matched route's own filters: one whose request phase ran (Cors) must still get its
+     * response phase after a fallback, on the same instance; one that only has an upstream phase
+     * (AddRequestHeader) must not run at all, since it shaped a request for a different upstream.
+     */
+    @Test
+    void fallbackKeepsTheLaterPhasesOfTheMatchedRoutesStartedFilters() throws IOException
+    {
+        final String primaryWithOwnFilters = route("a", "b").replace("    upstream:",
+                "    filters:\n      - Cors:\n          allowed_origins:\n            - https://app.example\n      - AddRequestHeader:\n          name: X-Primary\n          value: \"1\"\n    upstream:");
+        final RouteRegistry registry = loadWithGlobals("", primaryWithOwnFilters, route("b", null));
+        final DefaultGatewayRoute a = (DefaultGatewayRoute) registry.findRoute("a").orElseThrow();
+        final DefaultGatewayRoute b = (DefaultGatewayRoute) registry.findRoute("b").orElseThrow();
+
+        final DefaultGatewayRoute bAfterA = a.asFallbackOfThis(b);
+
+        final Object cors = a.clientRequestFilters()[0];
+        assertThat(bAfterA.clientRequestFilters()).isEmpty();
+        assertThat(bAfterA.beforeUpstreamGatewayFilters()).isEmpty();
+        assertThat(bAfterA.beforeCommitGatewayFilters()).containsExactly((com.ethlo.r7.api.ClientResponseGatewayFilter) cors);
+
+        // Carried on down a chain: c after (b after a) still owes a's Cors its response phase
+        final String c = route("c", null);
+        final RouteRegistry chain = loadWithGlobals("", primaryWithOwnFilters.replace("route_id: b", "route_id: b"), route("b", "c"), c);
+        final DefaultGatewayRoute ca = (DefaultGatewayRoute) chain.findRoute("a").orElseThrow();
+        final DefaultGatewayRoute cb = (DefaultGatewayRoute) chain.findRoute("b").orElseThrow();
+        final DefaultGatewayRoute cc = (DefaultGatewayRoute) chain.findRoute("c").orElseThrow();
+        final DefaultGatewayRoute cAfterBAfterA = ca.asFallbackOfThis(cb).asFallbackOfThis(cc);
+        assertThat(cAfterBAfterA.beforeCommitGatewayFilters()).containsExactly((com.ethlo.r7.api.ClientResponseGatewayFilter) ca.clientRequestFilters()[0]);
+    }
 }

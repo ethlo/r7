@@ -27,9 +27,11 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final CompletedGatewayFilter[] completedGatewayFilters;
     private final ClientResponseGatewayFilter[] beforeCommitGatewayFilters;
     private final UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters;
-    private final int globalFilterCount;
+    private final List<GatewayFilter> globalFilters;
+    private final List<GatewayFilter> carriedFilters;
+    private final List<GatewayFilter> ownFilters;
     private final int globalClientRequestFilterCount;
-    private final Map<String, DefaultGatewayRoute> fallbacksWithOurGlobals = new ConcurrentHashMap<>();
+    private final Map<String, DefaultGatewayRoute> fallbacksOfThis = new ConcurrentHashMap<>();
 
     public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
@@ -41,38 +43,52 @@ public class DefaultGatewayRoute implements GatewayRoute
      */
     public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final int globalFilterCount, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
+        this(uri, predicate, filters.subList(0, globalFilterCount), List.of(), filters.subList(globalFilterCount, filters.size()), journal, routeDefinition);
+    }
+
+    /**
+     * @param globalFilters  the global filter instances, run in every phase
+     * @param carriedFilters filters of routes the request already passed through before falling
+     *                       back to this one: their request phase has run, so only their response
+     *                       and completion phases remain
+     * @param ownFilters     this route's own filters, run in every phase
+     */
+    private DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> globalFilters, final List<GatewayFilter> carriedFilters, final List<GatewayFilter> ownFilters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    {
         this.id = routeDefinition.id();
         this.uri = uri;
         this.predicate = predicate;
-        this.filters = filters;
         this.journal = journal;
         this.routeDefinition = routeDefinition;
+        this.globalFilters = List.copyOf(globalFilters);
+        this.carriedFilters = List.copyOf(carriedFilters);
+        this.ownFilters = List.copyOf(ownFilters);
 
-        this.clientRequestFilters = filters.stream().filter(f -> f instanceof ClientRequestGatewayFilter)
-                .map(ClientRequestGatewayFilter.class::cast)
-                .toList()
-                .toArray(new ClientRequestGatewayFilter[0]);
+        final List<GatewayFilter> requestPhases = concat(this.globalFilters, this.ownFilters);
+        final List<GatewayFilter> allPhases = concat(concat(this.globalFilters, this.carriedFilters), this.ownFilters);
+        this.filters = allPhases;
 
-        this.beforeUpstreamGatewayFilters = filters.stream().filter(f -> f instanceof UpstreamRequestGatewayFilter)
-                .map(UpstreamRequestGatewayFilter.class::cast)
-                .toList()
-                .toArray(new UpstreamRequestGatewayFilter[0]);
+        this.clientRequestFilters = ofType(requestPhases, ClientRequestGatewayFilter.class, new ClientRequestGatewayFilter[0]);
+        this.beforeUpstreamGatewayFilters = ofType(requestPhases, UpstreamRequestGatewayFilter.class, new UpstreamRequestGatewayFilter[0]);
+        this.beforeCommitGatewayFilters = ofType(allPhases, ClientResponseGatewayFilter.class, new ClientResponseGatewayFilter[0]);
+        this.completedGatewayFilters = ofType(allPhases, CompletedGatewayFilter.class, new CompletedGatewayFilter[0]);
 
-
-        this.beforeCommitGatewayFilters = filters.stream().filter(f -> f instanceof ClientResponseGatewayFilter)
-                .map(ClientResponseGatewayFilter.class::cast)
-                .toList()
-                .toArray(new ClientResponseGatewayFilter[0]);
-
-        this.completedGatewayFilters = filters.stream().filter(f -> f instanceof CompletedGatewayFilter)
-                .map(CompletedGatewayFilter.class::cast)
-                .toList()
-                .toArray(new CompletedGatewayFilter[0]);
-
-        this.globalFilterCount = globalFilterCount;
-        this.globalClientRequestFilterCount = (int) filters.subList(0, globalFilterCount).stream()
+        this.globalClientRequestFilterCount = (int) this.globalFilters.stream()
                 .filter(f -> f instanceof ClientRequestGatewayFilter)
                 .count();
+    }
+
+    private static List<GatewayFilter> concat(final List<GatewayFilter> a, final List<GatewayFilter> b)
+    {
+        final List<GatewayFilter> result = new ArrayList<>(a.size() + b.size());
+        result.addAll(a);
+        result.addAll(b);
+        return List.copyOf(result);
+    }
+
+    private static <T> T[] ofType(final List<GatewayFilter> filters, final Class<T> type, final T[] empty)
+    {
+        return filters.stream().filter(type::isInstance).map(type::cast).toList().toArray(empty);
     }
 
     /**
@@ -87,24 +103,33 @@ public class DefaultGatewayRoute implements GatewayRoute
     }
 
     /**
-     * {@code fallback} as it must run for a request that first matched this route: the
-     * fallback's own filters, but this route's instances of the global filters.
+     * {@code fallback} as it must run for a request that first matched this route.
      * <p>
-     * Global filters are instantiated per route, and several keep state across phases -
-     * SimpleMetrics counts a request active in its request phase and done in its completion
-     * phase, CircuitBreaker and RateLimiter pair a request decision with a response. Their
-     * request phase has already run on this route's instances, so the response and completion
-     * phases must run on the same ones; the fallback's copies would see a request end that never
-     * began. Built once per fallback and kept with this route, so a reload discards it along
-     * with the route, and a chain a -> b -> c carries a's instances all the way down.
+     * The rule: every filter whose request phase ran gets its later phases, on the same instance,
+     * and no filter gets a later phase without its request phase. Several filters keep state
+     * across phases - SimpleMetrics counts a request active when it starts and done when it
+     * completes, CircuitBreaker and RateLimiter pair a decision with a response - so a response
+     * or completion phase on a different instance, or with no request phase before it, corrupts
+     * that state. Hence:
+     * <ul>
+     *   <li>global filters: this route's instances, in every phase (global filters are
+     *   instantiated per route, and their request phase ran on these);</li>
+     *   <li>this route's own request filters, and whatever this route already carried: response
+     *   and completion phases only. This route's upstream-phase filters never run: they shaped
+     *   the request for this route's upstream, which is exactly what must not reach another;</li>
+     *   <li>the fallback's own filters: every phase.</li>
+     * </ul>
+     * Built once per fallback and kept with this route, so a reload discards it along with the
+     * route, and a chain a -> b -> c carries everything that started along the way.
      */
     public DefaultGatewayRoute asFallbackOfThis(final DefaultGatewayRoute fallback)
     {
-        return this.fallbacksWithOurGlobals.computeIfAbsent(fallback.id(), ignored ->
+        return this.fallbacksOfThis.computeIfAbsent(fallback.id(), ignored ->
         {
-            final List<GatewayFilter> combined = new ArrayList<>(this.filters.subList(0, this.globalFilterCount));
-            combined.addAll(fallback.filters.subList(fallback.globalFilterCount, fallback.filters.size()));
-            return new DefaultGatewayRoute(fallback.uri, fallback.predicate, combined, this.globalFilterCount, fallback.journal, fallback.routeDefinition);
+            final List<GatewayFilter> started = this.ownFilters.stream()
+                    .filter(f -> f instanceof ClientRequestGatewayFilter)
+                    .toList();
+            return new DefaultGatewayRoute(fallback.uri, fallback.predicate, this.globalFilters, concat(this.carriedFilters, started), fallback.ownFilters, fallback.journal, fallback.routeDefinition);
         });
     }
 
