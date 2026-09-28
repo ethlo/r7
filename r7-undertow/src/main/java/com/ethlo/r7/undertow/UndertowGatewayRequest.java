@@ -99,8 +99,40 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     public void uri(final String uri)
     {
         final String newUri = TextValues.requireNoControlCharacters("uri", uri);
-        // Only an absolute URI carries a host; a bare path and the asterisk-form ("*") do not.
-        this.exchange.setRequestURI(newUri, newUri.contains("://"));
+        this.exchange.setRequestURI(newUri, isAbsoluteForm(newUri));
+    }
+
+    /**
+     * Whether the target starts with {@code scheme "://"} (RFC 3986 §3.1: a letter, then letters,
+     * digits, '+', '-' or '.'). Only then does it carry a host; a bare path - even one with
+     * "://" further on, as in {@code /redirect?next=http://a/} - and the asterisk-form do not,
+     * and flagging them would have ProxyHandler cut the path at the embedded authority.
+     */
+    static boolean isAbsoluteForm(final String uri)
+    {
+        final int len = uri.length();
+        if (len == 0 || !isAsciiLetter(uri.charAt(0)))
+        {
+            return false;
+        }
+        for (int i = 1; i < len; i++)
+        {
+            final char c = uri.charAt(i);
+            if (c == ':')
+            {
+                return uri.startsWith("//", i + 1);
+            }
+            if (!isAsciiLetter(c) && !(c >= '0' && c <= '9') && c != '+' && c != '-' && c != '.')
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAsciiLetter(final char c)
+    {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
     }
 
     @Override
