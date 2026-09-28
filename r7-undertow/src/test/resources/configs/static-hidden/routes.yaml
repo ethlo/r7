@@ -1,0 +1,25 @@
+version: static-hidden-test
+
+routes:
+  - id: static-default
+    match:
+      - PathPrefix:
+          prefix: /static/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp
+    upstream: null
+
+  - id: static-hidden-allowed
+    match:
+      - PathPrefix:
+          prefix: /static-hidden/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          base_directory: /tmp
+          serve_hidden_files: true
+    upstream: null

@@ -7,14 +7,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * StaticContent against the e2e /static/ route, whose base directory is /tmp.
+ * StaticContent over /tmp, with hidden files refused by default (/static/) and served on a
+ * route that opts in (/static-hidden/).
  */
 public class StaticContentHiddenFilesE2ETest extends AbstractR7IntegrationTest
 {
     @BeforeAll
     public static void setupTopology() throws Exception
     {
-        startGateway("configs/e2e/e2e-routes.yaml");
+        startGateway("configs/static-hidden/routes.yaml");
         writeContainerOrHostFile("/tmp/.r7-hidden-test", "SECRET=1");
         writeContainerOrHostFile("/tmp/.well-known/r7-test.txt", "well-known content");
     }
@@ -29,5 +30,11 @@ public class StaticContentHiddenFilesE2ETest extends AbstractR7IntegrationTest
     public void wellKnownIsStillServed()
     {
         given().when().get("/static/.well-known/r7-test.txt").then().statusCode(200).body(equalTo("well-known content"));
+    }
+
+    @Test
+    public void aDotfileIsServedWhenTheRouteOptsIn()
+    {
+        given().when().get("/static-hidden/.r7-hidden-test").then().statusCode(200).body(equalTo("SECRET=1"));
     }
 }
