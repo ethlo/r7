@@ -76,6 +76,10 @@ Route predicates match the decoded request path, while the upstream receives the
 
 The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
 
+### Transfer-Encoding
+
+A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked, identity`, `gzip, chunked`, or the header repeated) is refused with `400 Bad Request` before routing. RFC 9112 §6.3 requires rejecting a request whose final coding is not `chunked`, and a list that r7 and an upstream read differently would make them disagree on where the body ends.
+
 ### Phase-Aware Filters
 
 Filters are inherently phase-aware. Although they are declared in a single, unified list (either in `global_filters` or a route's `filters` block), they automatically participate only in the lifecycle phases relevant to their behavior.

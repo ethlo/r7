@@ -334,6 +334,21 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
     }
 
+    /**
+     * Undertow accepts "chunked, identity" and the proxy used to copy it upstream verbatim, where
+     * a backend reading the list differently would frame the body differently (RFC 9112 §6.3).
+     */
+    @Test
+    public void nonCanonicalTransferEncodingIsRejectedBeforeRouting() throws IOException
+    {
+        UPSTREAM_SERVER.resetRequests();
+
+        final String statusLine = sendRaw("POST /te-test HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nTransfer-Encoding: chunked, identity\r\n\r\n3\r\nabc\r\n0\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 400"), statusLine);
+        UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
+    }
+
     private static String sendRaw(final String request) throws IOException
     {
         try (final Socket socket = new Socket("localhost", RestAssured.port))

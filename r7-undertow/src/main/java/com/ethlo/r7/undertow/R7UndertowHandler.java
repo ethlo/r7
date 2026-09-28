@@ -375,6 +375,18 @@ public final class R7UndertowHandler implements HttpHandler
             return;
         }
 
+        // Same reasoning for framing: a Transfer-Encoding the upstream may parse differently
+        // from Undertow would let the two disagree on where this request's body ends.
+        if (!TransferEncodingGuard.isAcceptable(exchange.getRequestHeaders()))
+        {
+            logger.debug("Rejecting non-canonical Transfer-Encoding: {}", exchange.getRequestHeaders().get(Headers.TRANSFER_ENCODING));
+            exchange.setPersistent(false);
+            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send(ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate());
+            return;
+        }
+
         final RemoteAddressResolver.RemoteInfo remoteInfo = this.remoteAddressResolver.resolve(exchange);
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange, remoteInfo.address(), remoteInfo.source());
         final DefaultGatewayRoute route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
