@@ -85,7 +85,7 @@ class TemplateRedirectFactoryTest
     }
 
     @ParameterizedTest
-    @CsvSource({"https://$1/", "//$1.example.com/", "https://good.example$1", "https://$1@good.example/", "javascript:$1", "https:\\\\$1", "mailto:$1"})
+    @CsvSource(delimiter = '|', value = {"https://$1/", "//$1.example.com/", "https://good.example$1", "https://$1@good.example/", "javascript:$1", "https:\\\\$1", "mailto:$1", "javascript://fixed.example/%0A$1", "///$1", "//\\\\$1", "$1://good.example/", "h$1://good.example/", "https:///$1", "' /x/$1'"})
     void aCaptureGroupInTheOriginIsRejectedAtStartup(final String target)
     {
         final ValidationResult result = new ValidationResult();
@@ -110,5 +110,27 @@ class TemplateRedirectFactoryTest
     {
         assertThat(redirect("^/x/(.*)$", "https:\\\\$1", "/x/evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
         assertThat(redirect("^/x/(.*)$", "javascript:$1", "/x/alert(1)").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+    }
+
+    /**
+     * Browsers strip leading whitespace from a Location before parsing it: a decoded %20 in
+     * front of //evil must not get past the path-template check.
+     */
+    @Test
+    void leadingWhitespaceCannotSmuggleAHost()
+    {
+        assertThat(redirect("^/go(.*)$", "$1", "/go //evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+        assertThat(redirect("^/go(.*)$", "$1", "/go\t//evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+    }
+
+    /**
+     * Refused at request time as well, for configs built without validation.
+     */
+    @Test
+    void emptyAuthoritiesAndNonWebSchemesNeverRedirect()
+    {
+        assertThat(redirect("^/x/(.*)$", "///$1", "/x/evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+        assertThat(redirect("^/x/(.*)$", "//\\\\$1", "/x/evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+        assertThat(redirect("^/x/(.*)$", "javascript://fixed.example/%0A$1", "/x/alert(1)").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
     }
 }
