@@ -71,6 +71,11 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
+            // Enforced while the body streams: a chunked or HTTP/2 body declares no length, so the
+            // header check below alone let any such body through regardless of size.
+            exchange.limitRequestBody(this.maxSize.bytes());
+
+            // A declared length can be refused up front with a proper 413.
             final String contentLengthHeader = exchange.clientRequest().headers().getFirst(HttpHeaders.CONTENT_LENGTH);
 
             if (contentLengthHeader == null)
