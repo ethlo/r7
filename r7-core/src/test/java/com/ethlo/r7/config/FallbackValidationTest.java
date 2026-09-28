@@ -126,7 +126,7 @@ class FallbackValidationTest
     void fallbackKeepsTheLaterPhasesOfTheMatchedRoutesStartedFilters() throws IOException
     {
         final String primaryWithOwnFilters = route("a", "b").replace("    upstream:",
-                "    filters:\n      - Cors:\n          allowed_origins:\n            - https://app.example\n      - AddRequestHeader:\n          name: X-Primary\n          value: \"1\"\n    upstream:");
+                "    filters:\n      - Cors:\n          allowed_origins:\n            - https://app.example\n          allowed_methods:\n            - GET\n      - AddRequestHeader:\n          name: X-Primary\n          value: \"1\"\n    upstream:");
         final RouteRegistry registry = loadWithGlobals("", primaryWithOwnFilters, route("b", null));
         final DefaultGatewayRoute a = (DefaultGatewayRoute) registry.findRoute("a").orElseThrow();
         final DefaultGatewayRoute b = (DefaultGatewayRoute) registry.findRoute("b").orElseThrow();
@@ -140,7 +140,7 @@ class FallbackValidationTest
 
         // Carried on down a chain: c after (b after a) still owes a's Cors its response phase
         final String c = route("c", null);
-        final RouteRegistry chain = loadWithGlobals("", primaryWithOwnFilters.replace("route_id: b", "route_id: b"), route("b", "c"), c);
+        final RouteRegistry chain = loadWithGlobals("", primaryWithOwnFilters, route("b", "c"), c);
         final DefaultGatewayRoute ca = (DefaultGatewayRoute) chain.findRoute("a").orElseThrow();
         final DefaultGatewayRoute cb = (DefaultGatewayRoute) chain.findRoute("b").orElseThrow();
         final DefaultGatewayRoute cc = (DefaultGatewayRoute) chain.findRoute("c").orElseThrow();
