@@ -467,6 +467,8 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 | `target` | String | Yes | The destination URL template. Regex capture groups can be referenced using `{{name}}` or `{{index}}`. |
 | `status` | Integer | No | The HTTP redirect status code. Defaults to `302` (Found). |
 
+The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path `target` (`/new/$1`) must produce a path: a location starting with `//`, `/\`, `\` or a scheme is refused with `400`, because a browser would leave the site for it (`/go//evil.example` would otherwise redirect to `//evil.example`). An absolute `target` must spell out its scheme and host literally, with any capture group only after the host's `/`, `?` or `#`; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.
+
 ---
 
 ### Security & Validation

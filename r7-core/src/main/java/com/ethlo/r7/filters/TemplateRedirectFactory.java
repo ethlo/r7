@@ -64,12 +64,101 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         @Override
         public void validate(final ValidationResult result)
         {
-            new ValidatorUtils(result)
+            final ValidatorUtils validator = new ValidatorUtils(result)
                     .requiredRegexp("source", this.source())
                     .notBlank("target", this.target())
                     .safeHeaderText("target", this.target())
                     .validRegexReplacement("target", this.source(), this.target());
+
+            final String target = this.target();
+            if (target != null && originEnd(target) >= 0 && target.substring(0, originEnd(target)).indexOf('$') >= 0)
+            {
+                validator.invalid("target", target, "the scheme and host of a redirect target must be literal: "
+                        + "a capture group there lets any request choose where it is redirected to");
+            }
         }
+    }
+
+    /**
+     * End of the origin ({@code scheme://authority} or {@code //authority}) at the start of a
+     * target, or -1 when it has none - that is, when it is a path. A target with a scheme but no
+     * authority ({@code mailto:}) counts its scheme as the origin.
+     */
+    static int originEnd(final String target)
+    {
+        int start;
+        if (target.startsWith("//"))
+        {
+            start = 2;
+        }
+        else
+        {
+            final int schemeEnd = schemeEnd(target);
+            if (schemeEnd < 0)
+            {
+                return -1;
+            }
+            if (!target.startsWith("//", schemeEnd + 1))
+            {
+                return schemeEnd + 1;
+            }
+            start = schemeEnd + 3;
+        }
+        for (int i = start; i < target.length(); i++)
+        {
+            final char c = target.charAt(i);
+            if (c == '/' || c == '?' || c == '#' || c == '\\')
+            {
+                return i;
+            }
+        }
+        return target.length();
+    }
+
+    /**
+     * Index of the ':' ending a leading RFC 3986 scheme, or -1.
+     */
+    private static int schemeEnd(final String value)
+    {
+        if (value.isEmpty() || !Character.isLetter(value.charAt(0)) || value.charAt(0) > 0x7F)
+        {
+            return -1;
+        }
+        for (int i = 1; i < value.length(); i++)
+        {
+            final char c = value.charAt(i);
+            if (c == ':')
+            {
+                return i;
+            }
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.'))
+            {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether a computed location stays where its template says it goes. A capture group is filled
+     * in from the request path, so {@code /old/(.*)} to {@code /$1} turns a request for
+     * {@code /old//evil.example} into {@code Location: //evil.example} - off-site. A path
+     * template must therefore yield a path (no scheme, and not {@code //} or {@code /\}, which
+     * browsers read as a host), and a template with a literal origin must keep exactly that origin.
+     */
+    static boolean staysOnTemplateOrigin(final String template, final String location)
+    {
+        final int templateOriginEnd = originEnd(template);
+        if (templateOriginEnd < 0)
+        {
+            return schemeEnd(location) < 0
+                    && !location.startsWith("//")
+                    && !location.startsWith("/\\")
+                    && !location.startsWith("\\");
+        }
+        final int locationOriginEnd = originEnd(location);
+        return locationOriginEnd == templateOriginEnd
+                && location.regionMatches(true, 0, template, 0, templateOriginEnd);
     }
 
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
@@ -114,8 +203,9 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 // A crafted path can therefore inject a control character into the computed
                 // location; MutableFastGatewayHeaders.set only rejects code points above
                 // ISO-8859-1, not CR/LF, so that would otherwise reach the wire as response
-                // splitting. Reject the request instead of emitting a malformed Location.
-                if (!isSafeLocation(location))
+                // splitting. Reject the request instead of emitting a malformed Location - and
+                // likewise one the capture group has moved off the template's origin.
+                if (!isSafeLocation(location) || !staysOnTemplateOrigin(this.targetTemplate, location))
                 {
                     exchange.shortCircuit(new ShortCircuitGatewayResponse(
                             HttpStatuses.BAD_REQUEST,
