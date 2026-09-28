@@ -155,11 +155,10 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
                 return;
             }
 
-            final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(6);
-            if (!this.isAnyOrigin)
-            {
-                headers.set(VARY, ORIGIN);
-            }
+            // No Vary here: the short-circuit response's headers are applied over the response
+            // filters' work, so a Vary set here would replace what they added. onClientResponse
+            // runs for this response too and merges Vary: Origin into whatever is there.
+            final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(5);
             // A preflight from an origin that is not allowed learns nothing: no methods, headers
             // or credentials policy, only the absence of an Allow-Origin.
             if (this.isAllowed(origin))
@@ -234,20 +233,52 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
             return this.isAnyOrigin || this.specificOrigins.contains(origin);
         }
 
+        /**
+         * Runs on every response when origins are listed, so the existing Vary list is scanned in
+         * place rather than split: no array, no substrings.
+         */
         private static void addVaryOrigin(final MutableGatewayHeaders headers)
         {
             for (final String line : headers.getAll(VARY))
             {
-                for (final String token : line.split(","))
+                if (namesOriginOrAny(line))
                 {
-                    final String name = token.strip();
-                    if (name.equals("*") || name.equalsIgnoreCase(ORIGIN))
-                    {
-                        return;
-                    }
+                    return;
                 }
             }
             headers.add(VARY, ORIGIN);
+        }
+
+        private static boolean namesOriginOrAny(final String line)
+        {
+            final int len = line.length();
+            int start = 0;
+            while (start < len)
+            {
+                int end = line.indexOf(',', start);
+                if (end < 0)
+                {
+                    end = len;
+                }
+                int from = start;
+                int to = end;
+                while (from < to && (line.charAt(from) == ' ' || line.charAt(from) == '\t'))
+                {
+                    from++;
+                }
+                while (to > from && (line.charAt(to - 1) == ' ' || line.charAt(to - 1) == '\t'))
+                {
+                    to--;
+                }
+                final int length = to - from;
+                if ((length == 1 && line.charAt(from) == '*')
+                        || (length == ORIGIN.length() && line.regionMatches(true, from, ORIGIN, 0, length)))
+                {
+                    return true;
+                }
+                start = end + 1;
+            }
+            return false;
         }
 
         @Override

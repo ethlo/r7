@@ -80,7 +80,22 @@ class CorsFactoryTest
         assertThat(response.status()).isEqualTo(HttpStatuses.NO_CONTENT);
         assertThat(response.headers().getFirst("Access-Control-Allow-Origin")).isEqualTo(ALLOWED);
         assertThat(response.headers().getFirst("Access-Control-Allow-Credentials")).isEqualTo("true");
-        assertThat(response.headers().getFirst("Vary")).isEqualTo("Origin");
+        // Vary is left to the response phase, which merges it (below)
+        assertThat(response.headers().getFirst("Vary")).isNull();
+    }
+
+    /**
+     * A preflight's short-circuit headers are applied over the response filters' work, so Vary
+     * must come from the response phase, where it merges with what other filters added.
+     */
+    @Test
+    void aPreflightResponseMergesVaryWithOtherFilters()
+    {
+        final Object filter = filter(Set.of(ALLOWED), false);
+        final GatewayRequest preflight = request("OPTIONS", "Origin", ALLOWED, "Access-Control-Request-Method", "POST");
+
+        assertThat(preflight(filter, preflight).headers().getFirst("Vary")).isNull();
+        assertThat(respond(filter, preflight, "Vary", "Accept-Encoding").getAll("Vary")).containsExactly("Accept-Encoding", "Origin");
     }
 
     @Test
@@ -121,6 +136,9 @@ class CorsFactoryTest
                 .containsExactly("Accept-Encoding", "Origin");
         assertThat(respond(filter(Set.of(ALLOWED), false), request("GET"), "Vary", "accept, origin").getAll("Vary"))
                 .containsExactly("accept, origin");
+        assertThat(respond(filter(Set.of(ALLOWED), false), request("GET"), "Vary", " *").getAll("Vary")).containsExactly(" *");
+        assertThat(respond(filter(Set.of(ALLOWED), false), request("GET"), "Vary", "origins, x-origin").getAll("Vary"))
+                .containsExactly("origins, x-origin", "Origin");
         assertThat(respond(filter(Set.of("*"), false), request("GET", "Origin", ALLOWED)).getAll("Vary")).isEmpty();
     }
 
