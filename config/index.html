@@ -3591,7 +3591,7 @@
 <tr>
 <td><code>work_dir</code></td>
 <td>String</td>
-<td>The directory path where the memory-mapped journal files are stored.</td>
+<td>The directory path where the memory-mapped journal files are stored. Created with mode <code>0750</code>, and journal segments with <code>0640</code> (owner read-write, group read): a sidecar tailer running as another user needs to share the gateway's group. The umask can only narrow these; an existing directory or file keeps its mode.</td>
 </tr>
 <tr>
 <td><code>shard_size</code></td>
