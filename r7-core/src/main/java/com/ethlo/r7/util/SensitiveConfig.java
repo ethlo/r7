@@ -74,7 +74,12 @@ public final class SensitiveConfig
         return text == null ? null : URL_USERINFO.matcher(text).replaceAll("$1" + MASK + "@");
     }
 
-    private static final Pattern URL_USERINFO = Pattern.compile("([A-Za-z][A-Za-z0-9+.-]*://)[^/@\\s,\\]\\[]+@");
+    /**
+     * Userinfo may contain any sub-delim, commas included; it may not contain '/', '@',
+     * whitespace or brackets, and a bracket or whitespace is also what ends a URL inside a
+     * rendered list, so a match never runs from one URL into the next.
+     */
+    private static final Pattern URL_USERINFO = Pattern.compile("([A-Za-z][A-Za-z0-9+.-]*://)[^/@\\s\\]\\[]+@");
 
     static String snakeCase(final String camelCase)
     {

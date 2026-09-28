@@ -67,6 +67,10 @@ class SensitiveConfigTest
     {
         assertThat(SensitiveConfig.redactUrlCredentials("[TargetConfig[url=http://svc:p4ss@api:8080/x], TargetConfig[url=https://token@b]]"))
                 .isEqualTo("[TargetConfig[url=http://******@api:8080/x], TargetConfig[url=https://******@b]]");
+        assertThat(SensitiveConfig.redactUrlCredentials("[TargetConfig[url=http://svc:p,ass@backend], TargetConfig[url=http://c:1]]"))
+                .isEqualTo("[TargetConfig[url=http://******@backend], TargetConfig[url=http://c:1]]");
+        assertThat(SensitiveConfig.redactUrlCredentials("[TargetConfig[url=http://a:1], TargetConfig[url=http://u:p@b]]"))
+                .isEqualTo("[TargetConfig[url=http://a:1], TargetConfig[url=http://******@b]]");
         assertThat(SensitiveConfig.redactUrlCredentials("http://api:8080/a@b")).isEqualTo("http://api:8080/a@b");
         assertThat(SensitiveConfig.redactUrlCredentials("http://api:8080")).isEqualTo("http://api:8080");
         assertThat(SensitiveConfig.redactUrlCredentials(null)).isNull();
