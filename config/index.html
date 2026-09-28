@@ -644,6 +644,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#transfer-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Transfer-Encoding
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#phase-aware-filters" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1839,7 +1850,7 @@
 <h2 id="3-execution-semantics">3. Execution Semantics</h2>
 <p>Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:</p>
 <ol>
-<li><strong>Path Validation:</strong> Requests whose path an upstream could resolve differently from how route predicates read it are rejected with <code>400 Bad Request</code> before anything else runs (see <a href="#ambiguous-paths">Ambiguous Paths</a>).</li>
+<li><strong>Request Validation:</strong> Before anything else runs, a request <code>Transfer-Encoding</code> other than exactly <code>chunked</code> is rejected with <code>400 Bad Request</code> and the connection closed (see <a href="#transfer-encoding">Transfer-Encoding</a>); then a path an upstream could resolve differently from how route predicates read it is rejected with <code>400 Bad Request</code> (see <a href="#ambiguous-paths">Ambiguous Paths</a>).</li>
 <li><strong>Global Request Filters:</strong> Executed on every incoming request.</li>
 <li><strong>Route Predicate Evaluation:</strong> Routes are evaluated in declaration order.</li>
 <li><strong>Route Match &amp; Halt:</strong> The <em>first</em> route whose predicates evaluate to <code>true</code> is selected. <strong>Once a route is matched, no further routes are evaluated.</strong> If no route matches, a <code>404 Not Found</code> is returned.</li>
@@ -1858,6 +1869,8 @@
 <li>percent-encoding of <code>.</code>, <code>/</code>, <code>\</code> or <code>%</code> that is still present after decoding — an encoded slash (<code>%2F</code>) or double-encoding such as <code>%252e</code>.</li>
 </ul>
 <p>The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as <code>/a/../b</code> is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.</p>
+<h3 id="transfer-encoding">Transfer-Encoding</h3>
+<p>A request <code>Transfer-Encoding</code> other than exactly <code>chunked</code> (for example <code>chunked, identity</code>, <code>gzip, chunked</code>, or the header repeated) is refused with <code>400 Bad Request</code> before routing. RFC 9112 §6.3 requires rejecting a request whose final coding is not <code>chunked</code>, and a list that r7 and an upstream read differently would make them disagree on where the body ends.</p>
 <h3 id="phase-aware-filters">Phase-Aware Filters</h3>
 <p>Filters are inherently phase-aware. Although they are declared in a single, unified list (either in <code>global_filters</code> or a route's <code>filters</code> block), they automatically participate only in the lifecycle phases relevant to their behavior.</p>
 <ul>
