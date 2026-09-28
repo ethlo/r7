@@ -64,9 +64,43 @@ class CidrRangeTest
     }
 
     @Test
+    void aHostnameIsRejectedRatherThanResolvedViaDns()
+    {
+        // A literal-only parse: never a hostname, and therefore never a DNS lookup.
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("localhost"));
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("localhost/8"));
+    }
+
+    @Test
     void aPrefixLengthOutsideTheAddressFamilyRangeIsRejected()
     {
         assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("10.0.0.0/33"));
         assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("10.0.0.0/-1"));
+    }
+
+    @Test
+    void aTrailingSlashWithNoPrefixIsRejectedRatherThanDefaultingToNoMask()
+    {
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("10.0.0.1/"));
+    }
+
+    @Test
+    void extraSegmentsAfterThePrefixAreRejectedRatherThanIgnored()
+    {
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("10.0.0.1/24/extra"));
+    }
+
+    @Test
+    void aLeadingSlashWithNoAddressIsRejected()
+    {
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("/24"));
+    }
+
+    @Test
+    void blankAndNullAreRejected()
+    {
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse(""));
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse("   "));
+        assertThatIllegalArgumentException().isThrownBy(() -> CidrRange.parse(null));
     }
 }

@@ -795,7 +795,7 @@ Configures boundaries and payload restrictions for incoming HTTP requests to pre
 | `max_entity_size` | Size | The maximum allowed request payload/entity size (e.g., `2MB`). |
 | `max_parameter_count` | Integer | The maximum number of parameters allowed per request. |
 | `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
-| `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. |
+| `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When `X-Forwarded-For` is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in `trusted_proxies`; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended. |
 
 ### Proxy Client (`proxy`)
 
