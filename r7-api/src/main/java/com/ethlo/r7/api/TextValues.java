@@ -109,6 +109,57 @@ public final class TextValues
     }
 
     /**
+     * Index of the first C0 control character or DEL in the value, or {@code -1} if there
+     * is none. Unlike {@link #firstUnstorableIndex(String)}, this also catches CR/LF and
+     * other control characters that are perfectly storable in ISO-8859-1 but are never
+     * legitimate inside a single header value, path segment or URI component — letting one
+     * through lets an attacker smuggle a line break into text that is later written
+     * verbatim onto the wire (e.g. request/response splitting).
+     */
+    public static int firstControlCharacterIndex(final String value)
+    {
+        if (value == null)
+        {
+            return -1;
+        }
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char c = value.charAt(i);
+            if (c < 0x20 || c == 0x7F)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the value unchanged, or throws if it contains a C0 control character or DEL.
+     *
+     * @param field the header, attribute or path field name, used in the error message
+     * @throws InvalidTextValueException if {@code value} is {@code null} or contains a
+     *                                    control character
+     */
+    public static String requireNoControlCharacters(final String field, final String value)
+    {
+        if (value == null)
+        {
+            throw new InvalidTextValueException(
+                    "Cannot set '" + field + "' to null.", field, ABSENT);
+        }
+
+        final int index = firstControlCharacterIndex(value);
+        if (index < 0)
+        {
+            return value;
+        }
+
+        throw new InvalidTextValueException(String.format(
+                "Cannot set '%s': control character U+%04X at index %d is not permitted here.",
+                field, (int) value.charAt(index), index), field, index);
+    }
+
+    /**
      * As {@link #requireStorable(String, String)}, for the name itself.
      */
     public static String requireStorableName(final String name)
