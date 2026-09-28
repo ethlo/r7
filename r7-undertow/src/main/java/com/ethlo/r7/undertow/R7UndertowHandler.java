@@ -620,6 +620,7 @@ public final class R7UndertowHandler implements HttpHandler
         // then the configured baseline answer (503) is the right one.
         return this.routeRegistry.findRoute(fallbackConfig.routeId())
                 .map(DefaultGatewayRoute.class::cast)
+                .map(route::asFallbackOfThis)
                 .orElse(null);
     }
 
