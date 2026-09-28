@@ -610,7 +610,7 @@ Handles Cross-Origin Resource Sharing (CORS). Intercepts `OPTIONS` preflight req
 
 #### RateLimiter
 
-Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the TCP peer IP address.**
+Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the client's resolved address** (the TCP peer, or the `X-Forwarded-For`/`X-Real-IP` client behind a trusted proxy): an IPv4 address as is, an IPv6 address by its leading `ipv6_prefix_length` bits (a `/64` by default). A filter that sets the `rate_limit_key` attachment overrides this.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

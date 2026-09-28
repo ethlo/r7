@@ -190,7 +190,7 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: The maximum number of tokens the bucket can hold. This defines the absolute burst limit.
-            ipv6prefix_length:
+            ipv6_prefix_length:
               anyOf:
               - type: integer
               - type: string
