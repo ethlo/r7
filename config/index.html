@@ -2982,9 +2982,17 @@
 <td>No</td>
 <td>The authentication realm presented to the client. Defaults to <code>Secure Area</code>.</td>
 </tr>
+<tr>
+<td><code>forward_credentials</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>Whether the client's verified <code>Authorization</code> header is passed on to the upstream. Defaults to <code>false</code>. A header another filter set in its place (such as <code>InjectBasicAuth</code>) is always kept.</td>
+</tr>
 </tbody>
 </table>
 <p>Only bcrypt hashes are accepted (<code>$2a$</code>, <code>$2b$</code>, <code>$2x$</code> or <code>$2y$</code>, cost 4-31); htpasswd's MD5, SHA-1 and crypt formats are rejected at startup, as are duplicate usernames and malformed entries.</p>
+<p>A request carrying more than one <code>Authorization</code> value is refused with <code>401</code>: the field is a singleton, and only one value could be verified.</p>
+<p>bcrypt is deliberately expensive, so the number of verifications running at once is capped at the number of CPU cores, shared by every <code>BasicAuth</code> filter. A request that cannot get a slot within 250 ms is answered with <code>503 Service Unavailable</code> and <code>Retry-After: 1</code>. Credentials that already verified are cached and skip bcrypt, so a flood of wrong passwords sheds its own requests rather than starving the gateway. The listener is plaintext HTTP, so Basic credentials are visible to anyone on the network path between client and gateway: use this filter only on a trusted network segment.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BasicAuth</span>
 </span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">realm</span><span class="p">:</span><span class="w"> </span><span class="s">"Admin</span><span class="nv"> </span><span class="s">API"</span>
