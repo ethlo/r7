@@ -281,7 +281,7 @@ Matches the HTTP method of the incoming request against a list of allowed method
 
 #### RemoteAddr
 
-Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the physical TCP peer address**; it does not read `X-Forwarded-For` to prevent IP spoofing behind untrusted proxies.
+Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the resolved remote address**, which is the physical TCP peer address unless that peer is listed in `limits.trusted_proxies` in `server.yaml`, in which case `X-Forwarded-For`/`X-Real-IP` is honored instead. By default `trusted_proxies` is empty, so `X-Forwarded-For` is never read and this predicate cannot be bypassed by a spoofed header.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -795,6 +795,7 @@ Configures boundaries and payload restrictions for incoming HTTP requests to pre
 | `max_entity_size` | Size | The maximum allowed request payload/entity size (e.g., `2MB`). |
 | `max_parameter_count` | Integer | The maximum number of parameters allowed per request. |
 | `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
+| `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. |
 
 ### Proxy Client (`proxy`)
 

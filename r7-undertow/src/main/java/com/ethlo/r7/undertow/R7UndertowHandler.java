@@ -60,6 +60,7 @@ import com.ethlo.r7.status.UpstreamHealthMonitor;
 import com.ethlo.r7.status.UpstreamTargetObserver;
 import com.ethlo.r7.time.ClockSource;
 import com.ethlo.r7.undertow.config.ServerConfig;
+import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
@@ -107,6 +108,7 @@ public final class R7UndertowHandler implements HttpHandler
     private final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final GatewayScheduler scheduler;
+    private final RemoteAddressResolver remoteAddressResolver;
     private UndertowXnioSsl xnioSsl;
 
     public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
@@ -116,6 +118,12 @@ public final class R7UndertowHandler implements HttpHandler
         this.gatewayExchangeDataWriter = gatewayExchangeDataWriter;
         this.errorHandler = errorHandler;
         this.scheduler = scheduler;
+
+        // server.yaml is loaded once at startup (unlike routes.yaml, it is not hot-reloaded),
+        // so parsing the configured CIDRs here means every request reuses the same immutable
+        // resolver instead of re-parsing it.
+        this.remoteAddressResolver = new RemoteAddressResolver(
+                serverConfig.limits().trustedProxies().stream().map(CidrRange::parse).toList());
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -342,7 +350,8 @@ public final class R7UndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
-        final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange);
+        final RemoteAddressResolver.RemoteInfo remoteInfo = this.remoteAddressResolver.resolve(exchange);
+        final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange, remoteInfo.address(), remoteInfo.source());
         final DefaultGatewayRoute route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
 
         if (route == null)

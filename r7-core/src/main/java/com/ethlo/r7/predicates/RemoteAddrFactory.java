@@ -1,13 +1,11 @@
 package com.ethlo.r7.predicates;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -49,22 +47,9 @@ public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAd
             {
                 try
                 {
-                    final String[] parts = this.source().split("/");
-
-                    // Resolve the IP to determine if it is IPv4 (32 bits) or IPv6 (128 bits)
-                    final InetAddress address = InetAddress.getByName(parts[0]);
-                    final int maxMask = address.getAddress().length * 8;
-
-                    if (parts.length > 1)
-                    {
-                        final int mask = Integer.parseInt(parts[1]);
-                        if (mask < 0 || mask > maxMask)
-                        {
-                            validator.invalid("source", this.source(), "Subnet mask must be between 0 and " + maxMask + " for this IP type");
-                        }
-                    }
+                    CidrRange.parse(this.source());
                 }
-                catch (final UnknownHostException | NumberFormatException e)
+                catch (final IllegalArgumentException e)
                 {
                     validator.invalid("source", this.source(), "Invalid IP or CIDR notation");
                 }
@@ -74,71 +59,19 @@ public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAd
 
     private static final class GP implements GatewayPredicate, ShortInfo
     {
-        private final byte[] networkBytes;
-        private final byte[] maskBytes;
+        private final CidrRange range;
         private final String cidr;
 
         public GP(final Config config)
         {
             this.cidr = config.source();
-            final String[] parts = this.cidr.split("/");
-
-            try
-            {
-                final InetAddress address = InetAddress.getByName(parts[0]);
-                this.networkBytes = address.getAddress();
-
-                final int prefixLength = parts.length > 1 ? Integer.parseInt(parts[1]) : (this.networkBytes.length * 8);
-
-                this.maskBytes = new byte[this.networkBytes.length];
-
-                // Generate the bitwise mask array
-                for (int i = 0; i < prefixLength; i++)
-                {
-                    this.maskBytes[i / 8] |= (byte) (1 << (7 - (i % 8)));
-                }
-
-                // Apply the mask to the network bytes to ensure strict subnet alignment
-                for (int i = 0; i < this.networkBytes.length; i++)
-                {
-                    this.networkBytes[i] = (byte) (this.networkBytes[i] & this.maskBytes[i]);
-                }
-            }
-            catch (final UnknownHostException e)
-            {
-                // This is mathematically unreachable if the validation phase passed,
-                // but required by the compiler for the checked UnknownHostException.
-                throw new IllegalArgumentException("Invalid CIDR format during instantiation: " + this.cidr, e);
-            }
+            this.range = CidrRange.parse(this.cidr);
         }
 
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final InetAddress remoteAddress = request.remoteAddress();
-
-            if (remoteAddress == null || remoteAddress.getAddress() == null)
-            {
-                return false;
-            }
-
-            final byte[] clientBytes = remoteAddress.getAddress();
-
-            // Fail fast if evaluating IPv4 against an IPv6 mask or vice versa
-            if (clientBytes.length != this.networkBytes.length)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < this.networkBytes.length; i++)
-            {
-                if ((clientBytes[i] & this.maskBytes[i]) != this.networkBytes[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return this.range.contains(request.remoteAddress());
         }
 
         @Override
