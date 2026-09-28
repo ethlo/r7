@@ -107,4 +107,13 @@ class JournalFilePermissionsTest
         assertThat(relative.resolve("shard-0.seq").getParent()).isNull();
         assertThat(JournalFiles.fileAttributes(relative)).isNotNull();
     }
+
+    @Test
+    void thePermissionSetsCannotBeWidened()
+    {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> JournalFiles.FILE_PERMISSIONS.add(PosixFilePermission.OTHERS_READ))
+                .isInstanceOf(UnsupportedOperationException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> JournalFiles.DIRECTORY_PERMISSIONS.add(PosixFilePermission.OTHERS_READ))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

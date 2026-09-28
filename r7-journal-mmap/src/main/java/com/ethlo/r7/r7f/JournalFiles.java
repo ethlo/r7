@@ -20,8 +20,10 @@ import java.util.Set;
  */
 public final class JournalFiles
 {
-    public static final Set<PosixFilePermission> FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-r-----");
-    public static final Set<PosixFilePermission> DIRECTORY_PERMISSIONS = PosixFilePermissions.fromString("rwxr-x---");
+    // Immutable: fromString returns a mutable set, and a public one could be widened by anything
+    // in the JVM for every file created after.
+    public static final Set<PosixFilePermission> FILE_PERMISSIONS = Set.copyOf(PosixFilePermissions.fromString("rw-r-----"));
+    public static final Set<PosixFilePermission> DIRECTORY_PERMISSIONS = Set.copyOf(PosixFilePermissions.fromString("rwxr-x---"));
 
     private static final FileAttribute<?>[] NONE = new FileAttribute<?>[0];
 
