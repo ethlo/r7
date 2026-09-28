@@ -5,6 +5,7 @@ import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.core.SimpleCookie;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -41,6 +42,7 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
             @Description("The name of the cookie.")
             String name,
 
+            @Sensitive
             @Description("The value of the cookie.")
             String value) implements ValidatableConfig
     {

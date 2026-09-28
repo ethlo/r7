@@ -1,0 +1,20 @@
+version: management-test
+
+routes:
+  - id: with-secrets
+    match:
+      - PathPrefix:
+          prefix: /secrets
+    filters:
+      - InjectBasicAuth:
+          username: upstream-svc
+          password: upstream-s3cret-value
+      - SetRequestHeader:
+          name: Authorization
+          value: Bearer header-s3cret-token
+      - SetRequestHeader:
+          name: Accept
+          value: application/visible+json
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

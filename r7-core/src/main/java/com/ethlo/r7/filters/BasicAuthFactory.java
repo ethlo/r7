@@ -19,6 +19,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -73,6 +74,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
     }
 
     public record Config(
+            @Sensitive
             @Description("List of users in htpasswd format (username:bcrypt-hash), as produced by 'htpasswd -B'.")
             List<String> users,
             @Description("The authentication realm presented to the client.")

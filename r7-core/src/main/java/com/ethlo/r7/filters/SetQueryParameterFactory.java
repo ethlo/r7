@@ -4,6 +4,7 @@ import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -40,6 +41,7 @@ public final class SetQueryParameterFactory implements GatewayFilterFactory<SetQ
             @Description("The name of the query parameter.")
             String name,
 
+            @Sensitive
             @Description("The value to set.")
             String value) implements ValidatableConfig
     {

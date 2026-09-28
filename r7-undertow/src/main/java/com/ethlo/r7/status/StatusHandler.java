@@ -23,6 +23,8 @@ import io.undertow.server.ConnectorStatistics;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
+import io.undertow.util.Methods;
+import io.undertow.util.StatusCodes;
 
 public final class StatusHandler implements HttpHandler
 {
@@ -70,6 +72,22 @@ public final class StatusHandler implements HttpHandler
             exchange.dispatch(this);
             return;
         }
+
+        // Read-only: nothing here changes state, so nothing but a read is accepted.
+        if (!Methods.GET.equals(exchange.getRequestMethod()) && !Methods.HEAD.equals(exchange.getRequestMethod()))
+        {
+            exchange.setStatusCode(StatusCodes.METHOD_NOT_ALLOWED);
+            exchange.getResponseHeaders().put(Headers.ALLOW, "GET, HEAD");
+            exchange.endExchange();
+            return;
+        }
+
+        // The dashboard shows gateway internals: never cache it, frame it, sniff it or leak its
+        // URL to other origins.
+        exchange.getResponseHeaders().put(Headers.CACHE_CONTROL, "no-store");
+        exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, "nosniff");
+        exchange.getResponseHeaders().put(Headers.X_FRAME_OPTIONS, "DENY");
+        exchange.getResponseHeaders().put(Headers.REFERRER_POLICY, "no-referrer");
 
         final String accept = exchange.getRequestHeaders().getFirst(Headers.ACCEPT);
         if (accept != null && accept.contains("application/json"))
