@@ -3259,6 +3259,12 @@
 <td>No (default <code>false</code>)</td>
 <td>Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. <code>index.html</code>) is found there. When disabled, such a request is rejected with <code>403 Forbidden</code>.</td>
 </tr>
+<tr>
+<td><code>serve_hidden_files</code></td>
+<td>Boolean</td>
+<td>No (default <code>false</code>)</td>
+<td>Serve files and directories whose name starts with <code>.</code> (e.g. <code>.env</code>, <code>.git/</code>, <code>.htpasswd</code>). When disabled, such a request is answered <code>404 Not Found</code>; <code>.well-known/</code> is always served. A directory listing, if enabled, still shows their names.</td>
+</tr>
 </tbody>
 </table>
 <h4 id="setstatus">SetStatus</h4>
