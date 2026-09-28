@@ -4,10 +4,13 @@
         <loc>https://r7.ethlo.com/</loc>
       </url>
       <url>
-        <loc>https://r7.ethlo.com/quickstart/</loc>
+        <loc>https://r7.ethlo.com/benchmarks/</loc>
       </url>
       <url>
         <loc>https://r7.ethlo.com/config/</loc>
+      </url>
+      <url>
+        <loc>https://r7.ethlo.com/editor/</loc>
       </url>
       <url>
         <loc>https://r7.ethlo.com/extensibility/</loc>
@@ -16,12 +19,9 @@
         <loc>https://r7.ethlo.com/journaling/</loc>
       </url>
       <url>
-        <loc>https://r7.ethlo.com/benchmarks/</loc>
-      </url>
-      <url>
         <loc>https://r7.ethlo.com/licensing/</loc>
       </url>
       <url>
-        <loc>https://r7.ethlo.com/editor/</loc>
+        <loc>https://r7.ethlo.com/quickstart/</loc>
       </url>
 </urlset>
