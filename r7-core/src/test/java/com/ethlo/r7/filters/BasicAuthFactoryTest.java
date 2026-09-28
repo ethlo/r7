@@ -22,6 +22,9 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.api.MutableGatewayRequest;
+import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
@@ -150,7 +153,7 @@ class BasicAuthFactoryTest
     {
         final ClientRequestGatewayExchange exchange = exchange(null);
 
-        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip()), null)
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip(), null), null)
                 .onClientRequest(exchange);
 
         assertThat(captureRejection(exchange).headers().getFirst(HttpHeaders.WWW_AUTHENTICATE))
@@ -167,7 +170,7 @@ class BasicAuthFactoryTest
     {
         final ValidationResult result = new ValidationResult();
 
-        new BasicAuthFactory.Config(List.of(ALICE), realm).validate(result);
+        new BasicAuthFactory.Config(List.of(ALICE), realm, null).validate(result);
 
         assertThat(result.hasErrors()).isTrue();
     }
@@ -178,7 +181,7 @@ class BasicAuthFactoryTest
     {
         final ValidationResult result = new ValidationResult();
 
-        new BasicAuthFactory.Config(List.of(ALICE), realm).validate(result);
+        new BasicAuthFactory.Config(List.of(ALICE), realm, null).validate(result);
 
         assertThat(result.hasErrors()).isFalse();
     }
@@ -254,21 +257,21 @@ class BasicAuthFactoryTest
     @Test
     void theRealmDefaultsWhenAbsentOrBlank()
     {
-        assertThat(new BasicAuthFactory.Config(List.of(), null).realm()).isEqualTo("Secure Area");
-        assertThat(new BasicAuthFactory.Config(List.of(), "  ").realm()).isEqualTo("Secure Area");
-        assertThat(new BasicAuthFactory.Config(List.of(), "Admin").realm()).isEqualTo("Admin");
+        assertThat(new BasicAuthFactory.Config(List.of(), null, null).realm()).isEqualTo("Secure Area");
+        assertThat(new BasicAuthFactory.Config(List.of(), "  ", null).realm()).isEqualTo("Secure Area");
+        assertThat(new BasicAuthFactory.Config(List.of(), "Admin", null).realm()).isEqualTo("Admin");
     }
 
     private List<String> validate(final List<String> users)
     {
         final ValidationResult result = new ValidationResult();
-        new BasicAuthFactory.Config(users, null).validate(result);
+        new BasicAuthFactory.Config(users, null, null).validate(result);
         return result.getErrors();
     }
 
     private ClientRequestGatewayFilter filter(final String... users)
     {
-        return factory.create(new BasicAuthFactory.Config(List.of(users), null), null);
+        return factory.create(new BasicAuthFactory.Config(List.of(users), null, null), null);
     }
 
     private void assertRejected(final ClientRequestGatewayExchange exchange)
@@ -306,5 +309,86 @@ class BasicAuthFactoryTest
         when(exchange.clientRequest()).thenReturn(request);
         when(exchange.attributes()).thenReturn(mock(MutableGatewayAttributes.class));
         return exchange;
+    }
+
+    private static UpstreamRequestGatewayExchange upstreamExchange(final String clientAuthorization, final String upstreamAuthorization)
+    {
+        final MutableGatewayHeaders clientHeaders = new MutableFastGatewayHeaders();
+        clientHeaders.set(HttpHeaders.AUTHORIZATION, clientAuthorization);
+        final GatewayRequest client = mock(GatewayRequest.class);
+        when(client.headers()).thenReturn(clientHeaders);
+
+        final MutableGatewayHeaders upstreamHeaders = new MutableFastGatewayHeaders();
+        upstreamHeaders.set(HttpHeaders.AUTHORIZATION, upstreamAuthorization);
+        final MutableGatewayRequest upstream = mock(MutableGatewayRequest.class);
+        when(upstream.headers()).thenReturn(upstreamHeaders);
+
+        final UpstreamRequestGatewayExchange exchange = mock(UpstreamRequestGatewayExchange.class);
+        when(exchange.clientRequest()).thenReturn(client);
+        when(exchange.upstreamRequest()).thenReturn(upstream);
+        return exchange;
+    }
+
+    /**
+     * The client's password is the gateway's to check; passing it on hands every user's
+     * credentials to the upstream.
+     */
+    @Test
+    void theClientsCredentialsAreNotForwardedByDefault()
+    {
+        final String credentials = "Basic " + encode("alice:secret");
+        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
+
+        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
+
+        assertThat(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)).isNull();
+    }
+
+    @Test
+    void credentialsAreForwardedWhenConfigured()
+    {
+        final String credentials = "Basic " + encode("alice:secret");
+        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
+
+        ((UpstreamRequestGatewayFilter) factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), null)).onUpstreamRequest(exchange);
+
+        assertThat(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo(credentials);
+    }
+
+    /**
+     * InjectBasicAuth declared before BasicAuth has already replaced the header by the time this
+     * runs; that value is the upstream's and must survive.
+     */
+    @Test
+    void anAuthorizationSetByAnotherFilterIsKept()
+    {
+        final UpstreamRequestGatewayExchange exchange = upstreamExchange("Basic " + encode("alice:secret"), "Basic " + encode("service:token"));
+
+        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
+
+        assertThat(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Basic " + encode("service:token"));
+    }
+
+    /**
+     * With every permit taken, a verification that needs bcrypt is shed with 503 instead of
+     * queueing another CPU-bound round.
+     */
+    @Test
+    void verificationIsShedWhenEveryBcryptPermitIsTaken()
+    {
+        final int permits = BasicAuthFactory.BCRYPT_PERMITS.drainPermits();
+        try
+        {
+            final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("mallory:guess-" + System.nanoTime()));
+            filter(ALICE).onClientRequest(exchange);
+
+            final ArgumentCaptor<ShortCircuitGatewayResponse> response = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+            verify(exchange).shortCircuit(response.capture());
+            assertThat(response.getValue().status()).isEqualTo(HttpStatuses.SERVICE_UNAVAILABLE);
+        }
+        finally
+        {
+            BasicAuthFactory.BCRYPT_PERMITS.release(permits);
+        }
     }
 }
