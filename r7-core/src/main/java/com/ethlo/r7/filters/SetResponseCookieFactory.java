@@ -7,8 +7,10 @@ import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -44,6 +46,7 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
             @Description("The cookie name.")
             String name,
             @Description("The cookie value.")
+            @Sensitive
             String value,
             @Nullable @Description("The cookie domain.")
             String domain,
@@ -99,10 +102,14 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
     private static final class GF implements ClientResponseGatewayFilter, ShortInfo
     {
         private final String cookieString;
+        private final String summary;
 
         public GF(final Config config)
         {
             this.cookieString = buildSetCookieString(config);
+            // A cookie set on every response is typically a token; the summary is shown on the
+            // management page, so the value is fingerprinted like the other value-setting filters.
+            this.summary = FILTER_NAME + ": " + config.name() + "=" + RedactUtil.fingerprint(config.value());
         }
 
         private static String buildSetCookieString(final Config config)
@@ -155,7 +162,7 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.cookieString;
+            return this.summary;
         }
     }
 }

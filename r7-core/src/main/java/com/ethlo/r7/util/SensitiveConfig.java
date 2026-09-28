@@ -3,6 +3,7 @@ package com.ethlo.r7.util;
 import java.lang.reflect.RecordComponent;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.journal.HeaderNameSet;
@@ -62,6 +63,18 @@ public final class SensitiveConfig
         final Object headerName = args.get(snakeCase(sensitive.unlessSafeHeaderIn()));
         return headerName instanceof String name && safeHeaders.contains(name);
     }
+
+    /**
+     * Upstream target URLs may carry credentials as userinfo ({@code http://user:pass@host});
+     * this replaces the userinfo of every URL in {@code text} with {@link #MASK}. Works on any
+     * rendering - a single URL or a record's toString - so no field that embeds a URL is missed.
+     */
+    public static String redactUrlCredentials(final String text)
+    {
+        return text == null ? null : URL_USERINFO.matcher(text).replaceAll("$1" + MASK + "@");
+    }
+
+    private static final Pattern URL_USERINFO = Pattern.compile("([A-Za-z][A-Za-z0-9+.-]*://)[^/@\\s,\\]\\[]+@");
 
     static String snakeCase(final String camelCase)
     {

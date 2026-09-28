@@ -21,6 +21,9 @@ routes:
       - AddQueryParameter:
           name: api_key
           value: query-s3cret-value
+      - SetResponseCookie:
+          name: tracking
+          value: response-cookie-s3cret
     upstream:
       targets:
-        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+        - url: http://svc-user:url-s3cret-pass@${UPSTREAM_HOST}:${WIREMOCK_PORT}

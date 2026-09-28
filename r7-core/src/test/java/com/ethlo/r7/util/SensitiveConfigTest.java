@@ -54,4 +54,21 @@ class SensitiveConfigTest
         assertThat(SensitiveConfig.snakeCase("maxSize")).isEqualTo("max_size");
         assertThat(SensitiveConfig.snakeCase("password")).isEqualTo("password");
     }
+
+    @Test
+    void masksAResponseCookieValue()
+    {
+        assertThat(mask(com.ethlo.r7.filters.SetResponseCookieFactory.Config.class, Map.of("name", "session", "value", "tok")))
+                .isEqualTo(Map.of("name", "session", "value", SensitiveConfig.MASK));
+    }
+
+    @Test
+    void redactsCredentialsInUrlsWhereverTheyAreRendered()
+    {
+        assertThat(SensitiveConfig.redactUrlCredentials("[TargetConfig[url=http://svc:p4ss@api:8080/x], TargetConfig[url=https://token@b]]"))
+                .isEqualTo("[TargetConfig[url=http://******@api:8080/x], TargetConfig[url=https://******@b]]");
+        assertThat(SensitiveConfig.redactUrlCredentials("http://api:8080/a@b")).isEqualTo("http://api:8080/a@b");
+        assertThat(SensitiveConfig.redactUrlCredentials("http://api:8080")).isEqualTo("http://api:8080");
+        assertThat(SensitiveConfig.redactUrlCredentials(null)).isNull();
+    }
 }

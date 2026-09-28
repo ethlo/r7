@@ -42,7 +42,7 @@ public class ModelMapper
                 def.id(),
                 toPredicateNode(route.predicate()),
                 journal,
-                def.upstream() != null ? def.upstream().targets().toString() : null,
+                def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
                 filters,
                 PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]))
         );
