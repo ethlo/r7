@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -19,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
@@ -416,9 +418,41 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
                 return;
             }
             final String clientValue = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
-            if (clientValue != null && clientValue.equals(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)))
+            if (clientValue == null)
             {
-                exchange.upstreamRequest().headers().remove(HttpHeaders.AUTHORIZATION);
+                return;
+            }
+
+            // Headers are multi-valued: AddRequestHeader may have appended a configured value
+            // next to the client's. Only the client's own value goes; anything else is kept, in
+            // order. The common case - the client's value alone - allocates nothing extra.
+            final MutableGatewayHeaders upstreamHeaders = exchange.upstreamRequest().headers();
+            List<String> kept = null;
+            boolean removed = false;
+            for (final String value : upstreamHeaders.getAll(HttpHeaders.AUTHORIZATION))
+            {
+                if (!removed && clientValue.equals(value))
+                {
+                    removed = true;
+                    continue;
+                }
+                if (kept == null)
+                {
+                    kept = new ArrayList<>(2);
+                }
+                kept.add(value);
+            }
+            if (!removed)
+            {
+                return;
+            }
+            if (kept == null)
+            {
+                upstreamHeaders.remove(HttpHeaders.AUTHORIZATION);
+            }
+            else
+            {
+                upstreamHeaders.set(HttpHeaders.AUTHORIZATION, kept);
             }
         }
 

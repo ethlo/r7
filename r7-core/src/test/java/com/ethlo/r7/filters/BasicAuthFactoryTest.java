@@ -370,6 +370,22 @@ class BasicAuthFactoryTest
     }
 
     /**
+     * AddRequestHeader may have appended a configured Authorization next to the client's; only
+     * the client's value is removed, the configured one stays.
+     */
+    @Test
+    void aConfiguredValueAddedBesideTheClientsIsKept()
+    {
+        final String credentials = "Basic " + encode("alice:secret");
+        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
+        exchange.upstreamRequest().headers().add(HttpHeaders.AUTHORIZATION, "Bearer configured");
+
+        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
+
+        assertThat(exchange.upstreamRequest().headers().getAll(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer configured");
+    }
+
+    /**
      * With every permit taken, a verification that needs bcrypt is shed with 503 instead of
      * queueing another CPU-bound round.
      */
