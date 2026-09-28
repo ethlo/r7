@@ -19,6 +19,8 @@ public final class StatefulJournal implements Journal
     private final Journal delegate;
     private final RouteJournalConfig config;
     private final CompletedGatewayExchange exchange;
+    private final HeaderNameSet safeRequestHeaders;
+    private final HeaderNameSet safeResponseHeaders;
     /**
      * Checksums of the body bytes this journal actually passed to the delegate, created on
      * the first fragment of that direction.
@@ -71,11 +73,24 @@ public final class StatefulJournal implements Journal
     private InetAddress remoteAddress;
     private IpSource remoteAddressSource;
 
+    /**
+     * Uses the built-in header-redaction policy, unmodified. For production use where an
+     * operator may have overridden {@code server.yaml -> storage.journal_security}, use
+     * {@link #StatefulJournal(Journal, RouteJournalConfig, CompletedGatewayExchange, HeaderNameSet, HeaderNameSet)}.
+     */
     public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange)
+    {
+        this(delegate, config, exchange, JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS);
+    }
+
+    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
+                            final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
         this.delegate = delegate;
         this.config = config;
         this.exchange = exchange;
+        this.safeRequestHeaders = safeRequestHeaders;
+        this.safeResponseHeaders = safeResponseHeaders;
     }
 
     @Override
@@ -241,7 +256,7 @@ public final class StatefulJournal implements Journal
     {
         if (!upstreamReqFlushed && upstreamReqLine != null)
         {
-            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
+            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamReqHeaders, safeRequestHeaders);
             final int written = delegate.upstreamRequest(effectiveLevel, requestId, upstreamReqLine, headers, clientRequestBase);
             this.bytesWritten += written;
             this.upstreamReqFlushed = true;
@@ -255,7 +270,7 @@ public final class StatefulJournal implements Journal
     {
         if (!clientReqFlushed && clientReqLine != null)
         {
-            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, JournalSecurity.SAFE_REQUEST_HEADERS);
+            final GatewayHeaders headers = effectiveLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientReqHeaders, safeRequestHeaders);
             this.clientRequestBase = headers;
             final int written = delegate.clientRequest(effectiveLevel, requestId, clientReqLine, headers, remoteAddress, remoteAddressSource);
             this.bytesWritten += written;
@@ -284,7 +299,7 @@ public final class StatefulJournal implements Journal
     {
         if (!clientResFlushed && clientResLine != null)
         {
-            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
+            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(clientResHeaders, safeResponseHeaders);
             final int written = delegate.clientResponse(resLevel, requestId, clientStatusCode, clientResLine, headers, upstreamResponseBase);
             this.bytesWritten += written;
             this.clientResFlushed = true;
@@ -298,7 +313,7 @@ public final class StatefulJournal implements Journal
     {
         if (!upstreamResFlushed && upstreamResLine != null)
         {
-            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, JournalSecurity.SAFE_RESPONSE_HEADERS);
+            final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, safeResponseHeaders);
             this.upstreamResponseBase = headers;
             final int written = delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers);
             this.bytesWritten += written;

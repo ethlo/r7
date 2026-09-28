@@ -49,6 +49,8 @@ import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
 import com.ethlo.r7.filters.StaticContentFactory;
+import com.ethlo.r7.journal.HeaderNameSet;
+import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
@@ -109,6 +111,8 @@ public final class R7UndertowHandler implements HttpHandler
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final GatewayScheduler scheduler;
     private final RemoteAddressResolver remoteAddressResolver;
+    private final HeaderNameSet safeRequestHeaders;
+    private final HeaderNameSet safeResponseHeaders;
     private UndertowXnioSsl xnioSsl;
 
     public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
@@ -124,6 +128,15 @@ public final class R7UndertowHandler implements HttpHandler
         // resolver instead of re-parsing it.
         this.remoteAddressResolver = new RemoteAddressResolver(
                 serverConfig.limits().trustedProxies().stream().map(CidrRange::parse).toList());
+
+        // Same reasoning: the safe-header whitelist is resolved once against the built-in
+        // policy here, so every exchange's StatefulJournal reuses the same HeaderNameSet
+        // instead of rebuilding it per request.
+        final ServerConfig.JournalSecurityConfig journalSecurity = serverConfig.storage().journalSecurity();
+        this.safeRequestHeaders = JournalSecurity.resolveSafeRequestHeaders(
+                journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
+        this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
+                journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -388,7 +401,7 @@ public final class R7UndertowHandler implements HttpHandler
         exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
 
         final R7fJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
-        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange);
+        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange, safeRequestHeaders, safeResponseHeaders);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
 
         executeRequestFilters(exchange, route, gatewayExchange, statefulJournal, 0);

@@ -818,3 +818,46 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 | `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). |
 | `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. |
 | `pre_fault` | Boolean | When `true`, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. |
+| `journal_security` | Object | Shapes the whitelist of header names journaled in plain text. See below. |
+
+#### Journal Header Redaction (`storage.journal_security`)
+
+At `HEADERS`/`FULL` journal levels, r7 journals every header name but only writes a header's
+*value* verbatim when the name is on a built-in whitelist (things like `host`, `user-agent`,
+`content-type`, `etag`, `x-forwarded-for`, `sec-fetch-site`, `sec-fetch-mode`); everything else —
+`authorization`, `cookie`, `set-cookie`, custom API keys, and so on — is written as a
+fingerprint of its value instead of the value itself. This list is separate per direction
+(request headers vs. response headers).
+
+`journal_security` shapes that whitelist in one of two ways, per direction:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `additional_safe_request_headers` | List of Strings | Request header names to add on top of the built-in whitelist, so their values are journaled in plain text. |
+| `additional_safe_response_headers` | List of Strings | Response header names to add on top of the built-in whitelist. |
+| `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list. |
+| `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response whitelist entirely. |
+
+Header names are matched case-insensitively. There is no way to remove a single header from the
+built-in whitelist while keeping the rest — use `safe_*_headers` to replace the whole list if
+you need exact control. Setting both `additional_safe_*_headers` and `safe_*_headers` for the
+same direction is a validation error: a full replacement and an addition to the defaults it
+replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
+is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
+are sent to clients or upstreams.
+
+```yaml
+storage:
+  journal_security:
+    # Add a couple of names to the built-in defaults:
+    additional_safe_request_headers:
+      - x-api-key
+    additional_safe_response_headers:
+      - x-internal-build-id
+
+    # ...or replace the response whitelist entirely (mutually exclusive with
+    # additional_safe_response_headers above):
+    # safe_response_headers:
+    #   - content-type
+    #   - etag
+```

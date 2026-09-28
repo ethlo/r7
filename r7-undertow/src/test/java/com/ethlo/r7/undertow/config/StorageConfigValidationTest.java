@@ -111,17 +111,17 @@ class StorageConfigValidationTest
     @Test
     void theDefaultShardCountAndSizeAreValid()
     {
-        assertEquals(List.of(), errorsForConfig(new ServerConfig.StorageConfig("journals", null, null, null)));
+        assertEquals(List.of(), errorsForConfig(new ServerConfig.StorageConfig("journals", null, null, null, null)));
     }
 
     private static List<String> errorsFor(final int shardCount)
     {
-        return errorsForConfig(new ServerConfig.StorageConfig("journals", shardCount, null, null));
+        return errorsForConfig(new ServerConfig.StorageConfig("journals", shardCount, null, null, null));
     }
 
     private static List<String> errorsForSize(final DataSize shardSize)
     {
-        return errorsForConfig(new ServerConfig.StorageConfig("journals", null, shardSize, null));
+        return errorsForConfig(new ServerConfig.StorageConfig("journals", null, shardSize, null, null));
     }
 
     private static List<String> errorsForConfig(final ServerConfig.StorageConfig config)
