@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -302,8 +303,13 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
             // new name in place over an empty file. That one at least fails closed —
             // readPersistedSequence refuses to start on an unparsable marker — but there is
             // no reason to rely on it.
+            // Created fresh every time: the permissions only apply to a file being created, and a
+            // .tmp an older version left behind after a crash would otherwise keep its wider mode
+            // and hand it on to the marker through the rename.
+            Files.deleteIfExists(tmp);
             try (final FileChannel channel = FileChannel.open(tmp,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE))
+                    Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
+                    JournalFiles.fileAttributes(this.tempDir)))
             {
                 channel.write(ByteBuffer.wrap(Long.toString(sequence).getBytes(StandardCharsets.US_ASCII)));
                 channel.force(true);
@@ -381,7 +387,9 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
         // mid-creation whenever it lands — so without this a clean stop leaves a pre-allocated
         // orphan behind, which is both clutter and something the next startup has to reason
         // about.
-        try (FileChannel channel = FileChannel.open(nextPath, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE))
+        try (FileChannel channel = FileChannel.open(nextPath,
+                Set.of(StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE),
+                JournalFiles.fileAttributes(tempDir)))
         {
             // A shared arena: created by the warmer thread, written to by the gateway
             // threads, and closed by whichever thread retires the segment.

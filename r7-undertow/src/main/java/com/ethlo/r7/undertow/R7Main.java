@@ -29,6 +29,7 @@ import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
+import com.ethlo.r7.r7f.JournalFiles;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.r7f.R7fRecoveryManager;
@@ -67,7 +68,7 @@ public final class R7Main
 
         final ServerConfig.StorageConfig storage = serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());
-        Files.createDirectories(workDir);
+        JournalFiles.createDirectories(workDir);
 
         final MetricsRegistry metricsRegistry = setupMetricsRegistry(workDir, scheduler);
         final EngineContext engineContext = new EngineContext(Map.of(
