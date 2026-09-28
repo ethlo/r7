@@ -386,6 +386,37 @@ class BasicAuthFactoryTest
     }
 
     /**
+     * Authorization is a singleton field: with two values only the first would be verified, and
+     * the second would be passed on unchecked.
+     */
+    @Test
+    void aRequestWithTwoAuthorizationValuesIsRefused()
+    {
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
+        ((MutableGatewayHeaders) exchange.clientRequest().headers()).add(HttpHeaders.AUTHORIZATION, "Bearer smuggled");
+
+        filter(ALICE).onClientRequest(exchange);
+
+        final ArgumentCaptor<ShortCircuitGatewayResponse> response = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+        verify(exchange).shortCircuit(response.capture());
+        assertThat(response.getValue().status()).isEqualTo(HttpStatuses.UNAUTHORIZED);
+    }
+
+    @Test
+    void everyClientValueIsStrippedEvenIfSeveralReachTheUpstream()
+    {
+        final String credentials = "Basic " + encode("alice:secret");
+        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
+        ((MutableGatewayHeaders) exchange.clientRequest().headers()).add(HttpHeaders.AUTHORIZATION, "Bearer smuggled");
+        exchange.upstreamRequest().headers().add(HttpHeaders.AUTHORIZATION, "Bearer smuggled");
+        exchange.upstreamRequest().headers().add(HttpHeaders.AUTHORIZATION, "Bearer configured");
+
+        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
+
+        assertThat(exchange.upstreamRequest().headers().getAll(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer configured");
+    }
+
+    /**
      * With every permit taken, a verification that needs bcrypt is shed with 503 instead of
      * queueing another CPU-bound round.
      */

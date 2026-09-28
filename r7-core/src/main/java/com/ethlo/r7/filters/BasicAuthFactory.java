@@ -308,6 +308,15 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         {
             final String authHeader = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
 
+            // Authorization is a singleton field (RFC 9110 11.6.2). With two, only the first is
+            // checked here, and a second would ride along to whatever reads the request next -
+            // so an ambiguous request is refused rather than half-verified.
+            if (authHeader != null && hasMoreThanOne(exchange.clientRequest().headers().getAll(HttpHeaders.AUTHORIZATION)))
+            {
+                this.rejectUnauthorized(exchange);
+                return;
+            }
+
             if (authHeader == null || !authHeader.regionMatches(true, 0, SCHEME, 0, SCHEME.length()))
             {
                 this.rejectUnauthorized(exchange);
@@ -424,14 +433,16 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             }
 
             // Headers are multi-valued: AddRequestHeader may have appended a configured value
-            // next to the client's. Only the client's own value goes; anything else is kept, in
+            // next to the client's. Every value the client sent goes (a request with more than
+            // one was already refused, but this does not rely on it); anything else is kept, in
             // order. The common case - the client's value alone - allocates nothing extra.
+            final Iterable<String> clientValues = exchange.clientRequest().headers().getAll(HttpHeaders.AUTHORIZATION);
             final MutableGatewayHeaders upstreamHeaders = exchange.upstreamRequest().headers();
             List<String> kept = null;
             boolean removed = false;
             for (final String value : upstreamHeaders.getAll(HttpHeaders.AUTHORIZATION))
             {
-                if (!removed && clientValue.equals(value))
+                if (contains(clientValues, value))
                 {
                     removed = true;
                     continue;
@@ -454,6 +465,31 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             {
                 upstreamHeaders.set(HttpHeaders.AUTHORIZATION, kept);
             }
+        }
+
+        private static boolean hasMoreThanOne(final Iterable<String> values)
+        {
+            int count = 0;
+            for (final String ignored : values)
+            {
+                if (++count > 1)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static boolean contains(final Iterable<String> values, final String candidate)
+        {
+            for (final String value : values)
+            {
+                if (value.equals(candidate))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void rejectBusy(final ClientRequestGatewayExchange exchange)
