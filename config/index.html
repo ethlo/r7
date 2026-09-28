@@ -3047,7 +3047,13 @@
 </tbody>
 </table>
 <h4 id="requestsizelimit">RequestSizeLimit</h4>
-<p>Evaluates the <code>Content-Length</code> header of incoming requests. If the header is missing or the request uses chunked transfer encoding, r7 actively monitors the streamed byte count. Terminates the connection immediately with <code>413 Payload Too Large</code> if the limit is exceeded.</p>
+<p>Limits the size of request bodies.</p>
+<ul>
+<li><strong>Declared length</strong> (<code>Content-Length</code>): a request declaring more than <code>max_size</code> is refused with <code>413 Payload Too Large</code> before anything is sent upstream; a malformed or negative length is refused with <code>400</code>.</li>
+<li><strong>Undeclared length</strong> (chunked, or HTTP/2 without <code>Content-Length</code>): the body is counted as it streams. Once it crosses <code>max_size</code>, r7 closes both the client connection and the upstream connection mid-body, so the upstream never receives the request as complete. The response headers may already have been impossible to send, so the client sees the connection close rather than a <code>413</code>.</li>
+</ul>
+<p>The server-wide <code>limits.max_entity_size</code> applies on top of this and cannot be raised by it.</p>
+<p>Independently of this filter, r7 never hands an upstream a chunked request body that was cut short (client disconnect, malformed chunk, or <code>max_entity_size</code>) as if it were complete: the upstream connection is closed mid-body instead.</p>
 <table>
 <thead>
 <tr>
