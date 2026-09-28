@@ -60,7 +60,7 @@ public record ServerConfig(
     @Override
     public StorageConfig storage()
     {
-        return Optional.ofNullable(this.storage).orElse(new StorageConfig(null, null, null, null));
+        return Optional.ofNullable(this.storage).orElse(new StorageConfig(null, null, null, null, null));
     }
 
     @Override
@@ -317,7 +317,8 @@ public record ServerConfig(
             String workDir,
             Integer shardCount,
             DataSize shardSize,
-            Boolean preFault
+            Boolean preFault,
+            JournalSecurityConfig journalSecurity
     ) implements ValidatableConfig
     {
         @Override
@@ -325,6 +326,7 @@ public record ServerConfig(
         {
             final ValidatorUtils v = new ValidatorUtils(result);
             v.required("work_dir", this.workDir());
+            this.journalSecurity().validate(result.nested("journal_security"));
 
             final int shardCount = this.shardCount();
             if (shardCount < 1)
@@ -399,6 +401,100 @@ public record ServerConfig(
         public Boolean preFault()
         {
             return Optional.ofNullable(this.preFault).orElse(false);
+        }
+
+        @Override
+        public JournalSecurityConfig journalSecurity()
+        {
+            return Optional.ofNullable(this.journalSecurity).orElse(new JournalSecurityConfig(null, null, null, null));
+        }
+    }
+
+    /**
+     * Controls the whitelist of header names journaled in plain text (see
+     * {@link com.ethlo.r7.journal.JournalSecurity}). Anything not on the resulting list is
+     * fingerprinted, no exceptions. Two independent ways to shape it, per direction:
+     * <ul>
+     *     <li>{@code additional_safe_*_headers} adds names on top of the built-in defaults.</li>
+     *     <li>{@code safe_*_headers}, if non-empty, replaces the built-in defaults entirely —
+     *     the resulting whitelist is exactly this list, and nothing else.</li>
+     * </ul>
+     * Setting both for the same direction is rejected: a full replacement and an addition to
+     * the defaults it replaces is a contradiction, not a merge to guess at.
+     */
+    public record JournalSecurityConfig(
+            List<String> additionalSafeRequestHeaders,
+            List<String> additionalSafeResponseHeaders,
+            List<String> safeRequestHeaders,
+            List<String> safeResponseHeaders
+    ) implements ValidatableConfig
+    {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            requireValidHeaderTokens(result, "additional_safe_request_headers", this.additionalSafeRequestHeaders());
+            requireValidHeaderTokens(result, "additional_safe_response_headers", this.additionalSafeResponseHeaders());
+            requireValidHeaderTokens(result, "safe_request_headers", this.safeRequestHeaders());
+            requireValidHeaderTokens(result, "safe_response_headers", this.safeResponseHeaders());
+
+            if (!this.safeRequestHeaders().isEmpty() && !this.additionalSafeRequestHeaders().isEmpty())
+            {
+                result.addError("safe_request_headers", "must not be set together with additional_safe_request_headers: "
+                        + "safe_request_headers replaces the whitelist entirely, so adding to it is ambiguous");
+            }
+            if (!this.safeResponseHeaders().isEmpty() && !this.additionalSafeResponseHeaders().isEmpty())
+            {
+                result.addError("safe_response_headers", "must not be set together with additional_safe_response_headers: "
+                        + "safe_response_headers replaces the whitelist entirely, so adding to it is ambiguous");
+            }
+        }
+
+        /**
+         * A name that is not a valid HTTP token (RFC 9110 §5.6.2) can never match a wire
+         * header, so it would silently make the configured entry a no-op rather than the
+         * error it should be. {@link ValidatorUtils#httpToken} treats {@code null} as a
+         * no-op (it is meant for optional single values), so a {@code null} list element
+         * is rejected explicitly here before it can reach {@code JournalSecurity.resolve}
+         * and blow up on {@code name.toLowerCase(...)}.
+         */
+        private static void requireValidHeaderTokens(final ValidationResult result, final String field, final List<String> names)
+        {
+            final ValidatorUtils v = new ValidatorUtils(result);
+            for (final String name : names)
+            {
+                if (name == null)
+                {
+                    result.addError(field, "header names must not be null");
+                }
+                else
+                {
+                    v.httpToken(field, name);
+                }
+            }
+        }
+
+        @Override
+        public List<String> additionalSafeRequestHeaders()
+        {
+            return Optional.ofNullable(this.additionalSafeRequestHeaders).orElse(List.of());
+        }
+
+        @Override
+        public List<String> additionalSafeResponseHeaders()
+        {
+            return Optional.ofNullable(this.additionalSafeResponseHeaders).orElse(List.of());
+        }
+
+        @Override
+        public List<String> safeRequestHeaders()
+        {
+            return Optional.ofNullable(this.safeRequestHeaders).orElse(List.of());
+        }
+
+        @Override
+        public List<String> safeResponseHeaders()
+        {
+            return Optional.ofNullable(this.safeResponseHeaders).orElse(List.of());
         }
     }
 
