@@ -56,4 +56,34 @@ public class BasicAuthFallbackTest extends AbstractR7IntegrationTest
     {
         given().when().get("/protected/data").then().statusCode(401);
     }
+
+    private static String alice()
+    {
+        return "Basic " + Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void verifiedCredentialsAreNotForwardedOnTheMatchedRoute()
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/direct/data")).willReturn(aResponse().withStatus(200)));
+
+        given().header("Authorization", alice()).when().get("/direct/data").then().statusCode(200);
+
+        UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/direct/data")).withHeader("Authorization", absent()));
+    }
+
+    /**
+     * InjectBasicAuth set the very same value the client sent, before BasicAuth ran: it is the
+     * upstream's credential and must arrive, which no comparison of values could guarantee.
+     */
+    @Test
+    public void anInjectedCredentialIdenticalToTheClientsStillReachesTheUpstream()
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/direct-inject/data")).willReturn(aResponse().withStatus(200)));
+
+        given().header("Authorization", alice()).when().get("/direct-inject/data").then().statusCode(200);
+
+        UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/direct-inject/data"))
+                .withHeader("Authorization", com.github.tomakehurst.wiremock.client.WireMock.equalTo(alice())));
+    }
 }

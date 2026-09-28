@@ -46,6 +46,7 @@ import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.config.UpstreamConfig;
+import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
@@ -452,6 +453,14 @@ public final class R7UndertowHandler implements HttpHandler
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id() + "'");
             return;
+        }
+
+        // Before any upstream filter, so whatever a filter sets afterwards is untouched - there is
+        // no telling the client's value from a filter's by comparing them. Runs again for a
+        // fallback route, harmlessly: by then the client's value is already gone.
+        if (Boolean.TRUE.equals(gatewayExchange.getAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED)))
+        {
+            exchange.getRequestHeaders().remove(Headers.AUTHORIZATION);
         }
 
         for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())

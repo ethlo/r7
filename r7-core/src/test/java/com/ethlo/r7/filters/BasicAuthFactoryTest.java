@@ -22,9 +22,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayHeaders;
-import com.ethlo.r7.api.MutableGatewayRequest;
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
@@ -311,78 +309,38 @@ class BasicAuthFactoryTest
         return exchange;
     }
 
-    private static UpstreamRequestGatewayExchange upstreamExchange(final String clientAuthorization, final String upstreamAuthorization)
-    {
-        final MutableGatewayHeaders clientHeaders = new MutableFastGatewayHeaders();
-        clientHeaders.set(HttpHeaders.AUTHORIZATION, clientAuthorization);
-        final GatewayRequest client = mock(GatewayRequest.class);
-        when(client.headers()).thenReturn(clientHeaders);
-
-        final MutableGatewayHeaders upstreamHeaders = new MutableFastGatewayHeaders();
-        upstreamHeaders.set(HttpHeaders.AUTHORIZATION, upstreamAuthorization);
-        final MutableGatewayRequest upstream = mock(MutableGatewayRequest.class);
-        when(upstream.headers()).thenReturn(upstreamHeaders);
-
-        final UpstreamRequestGatewayExchange exchange = mock(UpstreamRequestGatewayExchange.class);
-        when(exchange.clientRequest()).thenReturn(client);
-        when(exchange.upstreamRequest()).thenReturn(upstream);
-        return exchange;
-    }
-
     /**
-     * The client's password is the gateway's to check; passing it on hands every user's
-     * credentials to the upstream.
+     * The client's password is the gateway's to check: once verified it is marked consumed, and
+     * the gateway removes it before any upstream filter runs.
      */
     @Test
-    void theClientsCredentialsAreNotForwardedByDefault()
+    void verifiedCredentialsAreMarkedConsumedByDefault()
     {
-        final String credentials = "Basic " + encode("alice:secret");
-        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
 
-        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
+        filter(ALICE).onClientRequest(exchange);
 
-        assertThat(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)).isNull();
+        verify(exchange).setAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED, Boolean.TRUE);
     }
 
     @Test
-    void credentialsAreForwardedWhenConfigured()
+    void credentialsAreNotConsumedWhenForwardingIsConfigured()
     {
-        final String credentials = "Basic " + encode("alice:secret");
-        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
 
-        ((UpstreamRequestGatewayFilter) factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), null)).onUpstreamRequest(exchange);
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), null).onClientRequest(exchange);
 
-        assertThat(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo(credentials);
+        verify(exchange, never()).setAttachment(any(), any());
     }
 
-    /**
-     * InjectBasicAuth declared before BasicAuth has already replaced the header by the time this
-     * runs; that value is the upstream's and must survive.
-     */
     @Test
-    void anAuthorizationSetByAnotherFilterIsKept()
+    void rejectedCredentialsAreNotMarkedConsumed()
     {
-        final UpstreamRequestGatewayExchange exchange = upstreamExchange("Basic " + encode("alice:secret"), "Basic " + encode("service:token"));
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:wrong"));
 
-        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
+        filter(ALICE).onClientRequest(exchange);
 
-        assertThat(exchange.upstreamRequest().headers().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Basic " + encode("service:token"));
-    }
-
-    /**
-     * AddRequestHeader may have appended a configured Authorization next to the client's; only
-     * the client's value is removed, the configured one stays.
-     */
-    @Test
-    void aConfiguredValueAddedBesideTheClientsIsKept()
-    {
-        final String credentials = "Basic " + encode("alice:secret");
-        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
-        exchange.upstreamRequest().headers().add(HttpHeaders.AUTHORIZATION, "Bearer configured");
-
-        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
-
-        assertThat(exchange.upstreamRequest().headers().getAll(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer configured");
+        verify(exchange, never()).setAttachment(any(), any());
     }
 
     /**
@@ -402,20 +360,6 @@ class BasicAuthFactoryTest
         assertThat(response.getValue().status()).isEqualTo(HttpStatuses.UNAUTHORIZED);
     }
 
-    @Test
-    void everyClientValueIsStrippedEvenIfSeveralReachTheUpstream()
-    {
-        final String credentials = "Basic " + encode("alice:secret");
-        final UpstreamRequestGatewayExchange exchange = upstreamExchange(credentials, credentials);
-        ((MutableGatewayHeaders) exchange.clientRequest().headers()).add(HttpHeaders.AUTHORIZATION, "Bearer smuggled");
-        exchange.upstreamRequest().headers().add(HttpHeaders.AUTHORIZATION, "Bearer smuggled");
-        exchange.upstreamRequest().headers().add(HttpHeaders.AUTHORIZATION, "Bearer configured");
-
-        ((UpstreamRequestGatewayFilter) filter(ALICE)).onUpstreamRequest(exchange);
-
-        assertThat(exchange.upstreamRequest().headers().getAll(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer configured");
-    }
-
     /**
      * With every permit taken, a verification that needs bcrypt is shed with 503 instead of
      * queueing another CPU-bound round.
@@ -432,6 +376,7 @@ class BasicAuthFactoryTest
             final ArgumentCaptor<ShortCircuitGatewayResponse> response = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
             verify(exchange).shortCircuit(response.capture());
             assertThat(response.getValue().status()).isEqualTo(HttpStatuses.SERVICE_UNAVAILABLE);
+            assertThat(response.getValue().headers().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("1");
         }
         finally
         {

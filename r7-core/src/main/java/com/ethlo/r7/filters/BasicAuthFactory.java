@@ -6,7 +6,6 @@ import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -20,11 +19,9 @@ import java.util.concurrent.TimeUnit;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
-import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.TextValues;
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
@@ -210,7 +207,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
      */
     private static final long BCRYPT_PERMIT_WAIT_MILLIS = 250;
 
-    private static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ShortInfo
+    private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
         private static final byte[] UNAUTHORIZED_PAYLOAD = "Unauthorized".getBytes(UTF_8);
         private static final byte[] BUSY_PAYLOAD = "Service Unavailable: too many authentication attempts in progress".getBytes(UTF_8);
@@ -333,7 +330,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             final String cachedUser = this.verifiedCredentials.getIfPresent(cacheKey);
             if (cachedUser != null)
             {
-                exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(cachedUser));
+                this.accept(exchange, cachedUser);
                 return;
             }
 
@@ -393,7 +390,22 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             }
 
             this.verifiedCredentials.put(cacheKey, username);
+            this.accept(exchange, username);
+        }
+
+        /**
+         * The client's credentials are the gateway's to check. Unless configured to forward them,
+         * they are marked consumed, and the gateway removes them from the upstream request before
+         * any upstream filter runs - on a fallback route too - so every user's password does not
+         * travel on to the upstream, while an Authorization a filter sets afterwards is kept.
+         */
+        private void accept(final ClientRequestGatewayExchange exchange, final String username)
+        {
             exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(username));
+            if (!this.forwardCredentials)
+            {
+                exchange.setAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED, Boolean.TRUE);
+            }
         }
 
         /**
@@ -413,78 +425,12 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             }
         }
 
-        /**
-         * Removes the client's credentials from the upstream request once they are verified,
-         * unless configured to forward them. Only the client's own value is removed: a header a
-         * filter set in its place, such as InjectBasicAuth's, is the upstream's to receive,
-         * whichever order the two are declared in.
-         */
-        @Override
-        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
-        {
-            if (this.forwardCredentials)
-            {
-                return;
-            }
-            final String clientValue = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
-            if (clientValue == null)
-            {
-                return;
-            }
-
-            // Headers are multi-valued: AddRequestHeader may have appended a configured value
-            // next to the client's. Every value the client sent goes (a request with more than
-            // one was already refused, but this does not rely on it); anything else is kept, in
-            // order. The common case - the client's value alone - allocates nothing extra.
-            final Iterable<String> clientValues = exchange.clientRequest().headers().getAll(HttpHeaders.AUTHORIZATION);
-            final MutableGatewayHeaders upstreamHeaders = exchange.upstreamRequest().headers();
-            List<String> kept = null;
-            boolean removed = false;
-            for (final String value : upstreamHeaders.getAll(HttpHeaders.AUTHORIZATION))
-            {
-                if (contains(clientValues, value))
-                {
-                    removed = true;
-                    continue;
-                }
-                if (kept == null)
-                {
-                    kept = new ArrayList<>(2);
-                }
-                kept.add(value);
-            }
-            if (!removed)
-            {
-                return;
-            }
-            if (kept == null)
-            {
-                upstreamHeaders.remove(HttpHeaders.AUTHORIZATION);
-            }
-            else
-            {
-                upstreamHeaders.set(HttpHeaders.AUTHORIZATION, kept);
-            }
-        }
-
         private static boolean hasMoreThanOne(final Iterable<String> values)
         {
             int count = 0;
             for (final String ignored : values)
             {
                 if (++count > 1)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static boolean contains(final Iterable<String> values, final String candidate)
-        {
-            for (final String value : values)
-            {
-                if (value.equals(candidate))
                 {
                     return true;
                 }
