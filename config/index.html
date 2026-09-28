@@ -2745,6 +2745,7 @@
 </tr>
 </tbody>
 </table>
+<p>Both filters work on the <strong>decoded</strong> path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (<code>/api/a%3Fb</code> stripped by one part reaches the upstream as <code>/a%3Fb</code>, never as <code>/a?b</code>). Needless encoding of ordinary characters is normalised (<code>%41</code> is sent as <code>A</code>). Write a <code>replacement</code> in decoded form too: a literal <code>%20</code> in it is sent as <code>%2520</code>.</p>
 <h4 id="templateredirect">TemplateRedirect</h4>
 <p>Intercepts the request and immediately issues an HTTP redirect (3xx) based on a regex match of the path and a substitution template.</p>
 <table>
