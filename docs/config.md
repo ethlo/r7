@@ -120,7 +120,9 @@ Configures background probes to automatically evict and restore nodes.
 
 ### Fallback (`fallback`)
 
-Configures behavior if the upstream connection fails completely. **Fallback recursion is not permitted; cyclic references are rejected at startup.**
+Configures behavior when none of the route's upstream targets is available (all marked down by `health_check`). **Cyclic references (`a -> b -> a`) are rejected at startup**; a chain `a -> b -> c` is allowed, and each route in it falls back only when its own targets are down.
+
+The request is handed to the fallback route **before** the first route's upstream-phase filters run, and is then processed as if it had matched the fallback route: its request filters, its upstream filters, its upstream (or its own fallback), and its response filters. Upstream-phase filters of the first route (`InjectBasicAuth`, `SetRequestHeader`, rewrites) therefore never reach the fallback's upstream. Global filters run once per request, not again for the fallback. The exchange is journaled at the first route's journal levels and tagged with `gateway.fallback.id`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

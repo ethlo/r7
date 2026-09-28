@@ -98,6 +98,35 @@ routes:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
 
+  # Primary upstream is a closed port, so the health check marks it down and requests fall
+  # back. The fallback upstream is WireMock, which must never see the primary's credentials.
+  - id: fallback-primary-test
+    match:
+      - PathPrefix:
+          prefix: /fallback-primary
+    filters:
+      - InjectBasicAuth:
+          username: primary-only
+          password: primary-secret
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:1
+      health_check:
+        path: /health
+        interval: 200ms
+        fall: 1
+      fallback:
+        route_id: fallback-target-test
+
+  - id: fallback-target-test
+    filters:
+      - AddRequestHeader:
+          name: X-Fallback-Route
+          value: applied
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
   - id: e2e-passthrough
     match:
       - PathPrefix:

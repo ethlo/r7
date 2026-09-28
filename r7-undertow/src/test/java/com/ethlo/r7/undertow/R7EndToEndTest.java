@@ -253,4 +253,32 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
                 .withCookie("kept_c", equalTo("should_remain")));
         // TODO: //.withoutCookie("removed_c"));
     }
+
+    /**
+     * When the primary upstream is down, the request is handed to the fallback route before the
+     * primary's upstream filters run: the fallback's upstream must see neither the primary's
+     * injected credentials nor miss the fallback route's own request filters.
+     */
+    @Test
+    public void fallbackRunsItsOwnPipelineAndNeverCarriesThePrimarysCredentials() throws InterruptedException
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/fallback-primary/charge")).willReturn(aResponse().withStatus(200)));
+
+        // The health check needs a probe or two to mark the closed port down; until then the
+        // request is proxied to the dead primary and fails.
+        int status = -1;
+        for (int attempt = 0; attempt < 50 && status != 200; attempt++)
+        {
+            status = given().when().get("/fallback-primary/charge").then().extract().statusCode();
+            if (status != 200)
+            {
+                Thread.sleep(200);
+            }
+        }
+        Assertions.assertEquals(200, status, "request never reached the fallback route");
+
+        UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/fallback-primary/charge"))
+                .withHeader("X-Fallback-Route", equalTo("applied"))
+                .withoutHeader("Authorization"));
+    }
 }

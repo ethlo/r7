@@ -24,8 +24,17 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final CompletedGatewayFilter[] completedGatewayFilters;
     private final ClientResponseGatewayFilter[] beforeCommitGatewayFilters;
     private final UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters;
+    private final int globalClientRequestFilterCount;
 
     public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    {
+        this(uri, predicate, filters, 0, journal, routeDefinition);
+    }
+
+    /**
+     * @param globalFilterCount how many leading entries of {@code filters} are the global filters
+     */
+    public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final int globalFilterCount, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
         this.id = routeDefinition.id();
         this.uri = uri;
@@ -55,6 +64,20 @@ public class DefaultGatewayRoute implements GatewayRoute
                 .toList()
                 .toArray(new CompletedGatewayFilter[0]);
 
+        this.globalClientRequestFilterCount = (int) filters.subList(0, globalFilterCount).stream()
+                .filter(f -> f instanceof ClientRequestGatewayFilter)
+                .count();
+    }
+
+    /**
+     * Number of leading {@link #clientRequestFilters()} that are the global filters. A request
+     * that reaches this route as a fallback has already been through the global filters of the
+     * route it first matched, so it starts after these: running them twice would, for example,
+     * charge a global rate limit twice for one request.
+     */
+    public int globalClientRequestFilterCount()
+    {
+        return globalClientRequestFilterCount;
     }
 
 
