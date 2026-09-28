@@ -12,6 +12,8 @@ import java.util.Map;
 
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteRegistry;
+import com.ethlo.r7.journal.HeaderNameSet;
+import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
@@ -30,6 +32,7 @@ public final class StatusHandler implements HttpHandler
 {
     private final MetricsRegistry metricsRegistry;
     private final ServerConfig serverConfig;
+    private final HeaderNameSet safeRequestHeaders;
     private final RouteRegistry routeRegistry;
     private final String combinedHtml;
     private ConnectorStatistics connectorStatistics;
@@ -38,6 +41,11 @@ public final class StatusHandler implements HttpHandler
     {
         this.metricsRegistry = metricsRegistry;
         this.serverConfig = serverConfig;
+        // The journal's effective whitelist, overrides included: a header value it would redact is
+        // not shown here either.
+        final ServerConfig.JournalSecurityConfig journalSecurity = serverConfig.storage().journalSecurity();
+        this.safeRequestHeaders = JournalSecurity.resolveSafeRequestHeaders(
+                journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
         this.routeRegistry = routeRegistry;
         this.combinedHtml = loadResource("page.html");
     }
@@ -73,6 +81,13 @@ public final class StatusHandler implements HttpHandler
             return;
         }
 
+        // The dashboard shows gateway internals: never cache it, frame it, sniff it or leak its
+        // URL to other origins.
+        exchange.getResponseHeaders().put(Headers.CACHE_CONTROL, "no-store");
+        exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, "nosniff");
+        exchange.getResponseHeaders().put(Headers.X_FRAME_OPTIONS, "DENY");
+        exchange.getResponseHeaders().put(Headers.REFERRER_POLICY, "no-referrer");
+
         // Read-only: nothing here changes state, so nothing but a read is accepted.
         if (!Methods.GET.equals(exchange.getRequestMethod()) && !Methods.HEAD.equals(exchange.getRequestMethod()))
         {
@@ -81,13 +96,6 @@ public final class StatusHandler implements HttpHandler
             exchange.endExchange();
             return;
         }
-
-        // The dashboard shows gateway internals: never cache it, frame it, sniff it or leak its
-        // URL to other origins.
-        exchange.getResponseHeaders().put(Headers.CACHE_CONTROL, "no-store");
-        exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, "nosniff");
-        exchange.getResponseHeaders().put(Headers.X_FRAME_OPTIONS, "DENY");
-        exchange.getResponseHeaders().put(Headers.REFERRER_POLICY, "no-referrer");
 
         final String accept = exchange.getRequestHeaders().getFirst(Headers.ACCEPT);
         if (accept != null && accept.contains("application/json"))
@@ -118,7 +126,7 @@ public final class StatusHandler implements HttpHandler
 
         final List<RouteConfigDto> routeConfigs = routeRegistry.getRoutes().stream()
                 .map(DefaultGatewayRoute.class::cast)
-                .map(ModelMapper::mapRouteConfig)
+                .map(route -> ModelMapper.mapRouteConfig(route, this.safeRequestHeaders))
                 .toList();
         root.put("route_version", routeRegistry.getConfigVersion());
         root.put("route_configs", routeConfigs);

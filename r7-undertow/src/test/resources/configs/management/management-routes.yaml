@@ -15,6 +15,12 @@ routes:
       - SetRequestHeader:
           name: Accept
           value: application/visible+json
+      - SetRequestCookie:
+          name: session
+          value: cookie-s3cret-value
+      - AddQueryParameter:
+          name: api_key
+          value: query-s3cret-value
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

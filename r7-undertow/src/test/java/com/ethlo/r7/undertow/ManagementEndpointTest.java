@@ -39,6 +39,8 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .statusCode(200)
                 .body(not(containsString("upstream-s3cret-value")))
                 .body(not(containsString("header-s3cret-token")))
+                .body(not(containsString("cookie-s3cret-value")))
+                .body(not(containsString("query-s3cret-value")))
                 .body(containsString("upstream-svc"))
                 .body(containsString("application/visible+json"))
                 .body(containsString("******"));
@@ -52,7 +54,11 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .post("/")
                 .then()
                 .statusCode(405)
-                .header("Allow", equalTo("GET, HEAD"));
+                .header("Allow", equalTo("GET, HEAD"))
+                .header("X-Content-Type-Options", equalTo("nosniff"))
+                .header("X-Frame-Options", equalTo("DENY"))
+                .header("Cache-Control", equalTo("no-store"))
+                .header("Referrer-Policy", equalTo("no-referrer"));
     }
 
     @Test

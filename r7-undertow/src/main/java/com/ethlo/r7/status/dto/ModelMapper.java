@@ -1,6 +1,6 @@
 package com.ethlo.r7.status.dto;
 
-import com.ethlo.r7.journal.JournalSecurity;
+import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.util.FilterRegistry;
 import com.ethlo.r7.util.SensitiveConfig;
 
@@ -23,7 +23,7 @@ public class ModelMapper
 {
     private static final FilterRegistry FILTER_REGISTRY = new FilterRegistry();
 
-    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route)
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final HeaderNameSet safeRequestHeaders)
     {
         final RouteDefinition def = route.routeDefinition();
 
@@ -35,7 +35,7 @@ public class ModelMapper
         );
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
-                .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args())))
+                .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders)))
                 .toList() : Collections.emptyList();
 
         return new RouteConfigDto(
@@ -49,13 +49,14 @@ public class ModelMapper
     }
 
     /**
-     * The management endpoint renders filter configuration verbatim otherwise, which put upstream
+     * Without this the management endpoint renders filter configuration verbatim, putting upstream
      * credentials (InjectBasicAuth), password hashes (BasicAuth) and injected tokens on any page
-     * that could reach it.
+     * that can reach it. Header values are shown by the same whitelist the journal uses - the
+     * effective one, including any override in server.yaml.
      */
-    static Object maskedArgs(final String filterName, final Object args)
+    static Object maskedArgs(final String filterName, final Object args, final HeaderNameSet safeRequestHeaders)
     {
-        return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, JournalSecurity.SAFE_REQUEST_HEADERS);
+        return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, safeRequestHeaders);
     }
 
     private static MatchDto toPredicateNode(final GatewayPredicate predicate)

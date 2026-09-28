@@ -7,6 +7,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -83,7 +84,8 @@ public final class AddQueryParameterFactory implements GatewayFilterFactory<AddQ
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.paramName + "=" + this.paramValue;
+            // Fingerprinted like the header filters: the summary is shown on the management page.
+            return FILTER_NAME + ": " + this.paramName + "=" + RedactUtil.fingerprint(this.paramValue);
         }
     }
 }

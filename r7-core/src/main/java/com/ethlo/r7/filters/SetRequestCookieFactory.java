@@ -8,6 +8,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -79,7 +80,8 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.cookie.name() + "=" + this.cookie.value();
+            // Fingerprinted like the header filters: the summary is shown on the management page.
+            return FILTER_NAME + ": " + this.cookie.name() + "=" + RedactUtil.fingerprint(this.cookie.value());
         }
     }
 }
