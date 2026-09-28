@@ -103,12 +103,57 @@ class RemoteAddressResolverTest
     @Test
     void aChainOfOnlyTrustedProxiesFallsBackToTheLeftmostEntry() throws Exception
     {
+        // Both hops must be in trusted_proxies for this scenario, otherwise 203.0.113.9 is
+        // resolved via the ordinary "first untrusted entry from the right" branch instead of
+        // exercising the all-trusted fallback.
+        final RemoteAddressResolver.RemoteInfo result = send(
+                List.of(CidrRange.parse("127.0.0.1/32"), CidrRange.parse("203.0.113.9/32")),
+                List.of("X-Forwarded-For", "198.51.100.1, 203.0.113.9, 127.0.0.1"));
+
+        assertThat(result.source()).isEqualTo(IpSource.X_FORWARDED_FOR);
+        assertThat(result.address()).isEqualTo(InetAddress.getByName("198.51.100.1"));
+    }
+
+    @Test
+    void multipleForwardedForFieldLinesAreCombinedInOrderRatherThanOnlyTheFirstBeingRead() throws Exception
+    {
+        // Per RFC 9110 5.3, several field-lines of a list header are equivalent to one
+        // comma-joined line in the order received. A client sending its own forged line
+        // ahead of the line a trusted proxy appends must not get to hide the proxy's line
+        // from the walk by relying on only the first field-line being read.
         final RemoteAddressResolver.RemoteInfo result = send(
                 List.of(CidrRange.parse("127.0.0.1/32")),
-                List.of("X-Forwarded-For", "203.0.113.9, 127.0.0.1"));
+                List.of("X-Forwarded-For", "198.51.100.1", "X-Forwarded-For", "203.0.113.9"));
 
         assertThat(result.source()).isEqualTo(IpSource.X_FORWARDED_FOR);
         assertThat(result.address()).isEqualTo(InetAddress.getByName("203.0.113.9"));
+    }
+
+    @Test
+    void aMalformedForwardedForDoesNotFallThroughToXRealIp() throws Exception
+    {
+        // A malformed XFF alongside a forged X-Real-IP must not resolve to the forged
+        // X-Real-IP: a trusted proxy that only ever touches XFF for this deployment would
+        // never explain why X-Real-IP should suddenly be trusted just because XFF broke.
+        final RemoteAddressResolver.RemoteInfo result = send(
+                List.of(CidrRange.parse("127.0.0.1/32")),
+                List.of("X-Forwarded-For", "not-an-ip", "X-Real-IP", "203.0.113.9"));
+
+        assertThat(result.source()).isEqualTo(IpSource.SOCKET);
+        assertThat(result.address()).isEqualTo(InetAddress.getByName("127.0.0.1"));
+    }
+
+    @Test
+    void duplicateXRealIpFieldLinesAreRejectedRatherThanTakingTheFirst() throws Exception
+    {
+        // X-Real-IP is single-valued by contract; two field-lines are ambiguous and must not
+        // let a client's own line be believed just because it arrived first.
+        final RemoteAddressResolver.RemoteInfo result = send(
+                List.of(CidrRange.parse("127.0.0.1/32")),
+                List.of("X-Real-IP", "203.0.113.9", "X-Real-IP", "198.51.100.1"));
+
+        assertThat(result.source()).isEqualTo(IpSource.SOCKET);
+        assertThat(result.address()).isEqualTo(InetAddress.getByName("127.0.0.1"));
     }
 
     @Test

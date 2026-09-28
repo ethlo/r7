@@ -7,7 +7,9 @@ import java.util.List;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.util.CidrRange;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.util.HeaderValues;
 import io.undertow.util.Headers;
+import io.undertow.util.HttpString;
 
 /**
  * Decides which address a request is attributed to. Holds the trusted-proxy configuration and
@@ -16,6 +18,8 @@ import io.undertow.util.Headers;
  */
 public final class RemoteAddressResolver
 {
+    private static final HttpString X_REAL_IP = HttpString.tryFromString("X-Real-IP");
+
     private final List<CidrRange> trustedProxies;
 
     public RemoteAddressResolver(final List<CidrRange> trustedProxies)
@@ -37,25 +41,43 @@ public final class RemoteAddressResolver
             return toRemoteInfo(socketAddress, IpSource.SOCKET);
         }
 
-        final String xff = exchange.getRequestHeaders().getFirst(Headers.X_FORWARDED_FOR);
-        if (xff != null && !xff.isBlank())
+        // A header can legally arrive as several field-lines; per RFC 9110 §5.3 that is
+        // equivalent to one comma-joined list in the order received, so all lines must be
+        // combined before walking the chain. Using only the first line would let a client
+        // supply its own forged line ahead of the one line a trusted proxy appends.
+        final HeaderValues xffLines = exchange.getRequestHeaders().get(Headers.X_FORWARDED_FOR);
+        if (xffLines != null && !xffLines.isEmpty())
         {
-            final RemoteInfo fromChain = resolveFromForwardedFor(xff);
-            if (fromChain != null)
+            final String joined = String.join(",", xffLines);
+            if (!joined.isBlank())
             {
-                return fromChain;
+                final RemoteInfo fromChain = resolveFromForwardedFor(joined);
+                if (fromChain != null)
+                {
+                    return fromChain;
+                }
+                // The chain is present but unparsable: fail closed to the socket address
+                // rather than consult X-Real-IP. Otherwise a client could pair a malformed
+                // XFF with a forged X-Real-IP and have the latter accepted even though a
+                // trusted proxy only ever touched XFF for this request.
+                return toRemoteInfo(socketAddress, IpSource.SOCKET);
             }
-            // A chain containing something that isn't a literal address is not evidence of
-            // anything; fall through to X-Real-IP/socket rather than guess at it.
         }
 
-        final String xRealIp = exchange.getRequestHeaders().getFirst("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isBlank())
+        // X-Real-IP is single-valued by contract; more than one field-line is ambiguous (a
+        // client-supplied line could be preserved alongside one a trusted proxy adds) and is
+        // rejected outright rather than guessing which line to believe.
+        final HeaderValues xRealIpLines = exchange.getRequestHeaders().get(X_REAL_IP);
+        if (xRealIpLines != null && xRealIpLines.size() == 1)
         {
-            final InetAddress candidate = parseLiteral(xRealIp.trim());
-            if (candidate != null)
+            final String xRealIp = xRealIpLines.getFirst();
+            if (xRealIp != null && !xRealIp.isBlank())
             {
-                return new RemoteInfo(candidate, IpSource.X_REAL_IP);
+                final InetAddress candidate = parseLiteral(xRealIp.trim());
+                if (candidate != null)
+                {
+                    return new RemoteInfo(candidate, IpSource.X_REAL_IP);
+                }
             }
         }
 
