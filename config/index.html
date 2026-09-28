@@ -633,6 +633,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#ambiguous-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Ambiguous Paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#phase-aware-filters" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1811,6 +1822,7 @@
 <h2 id="3-execution-semantics">3. Execution Semantics</h2>
 <p>Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:</p>
 <ol>
+<li><strong>Path Validation:</strong> Requests whose path an upstream could resolve differently from how route predicates read it are rejected with <code>400 Bad Request</code> before anything else runs (see <a href="#ambiguous-paths">Ambiguous Paths</a>).</li>
 <li><strong>Global Request Filters:</strong> Executed on every incoming request.</li>
 <li><strong>Route Predicate Evaluation:</strong> Routes are evaluated in declaration order.</li>
 <li><strong>Route Match &amp; Halt:</strong> The <em>first</em> route whose predicates evaluate to <code>true</code> is selected. <strong>Once a route is matched, no further routes are evaluated.</strong> If no route matches, a <code>404 Not Found</code> is returned.</li>
@@ -1820,6 +1832,15 @@
 <li><strong>Global Response Filters:</strong> Final global response mutations.</li>
 <li><strong>Async Journaling:</strong> The request/response pair is dispatched to disk.</li>
 </ol>
+<h3 id="ambiguous-paths">Ambiguous Paths</h3>
+<p>Route predicates match the decoded request path, while the upstream receives the raw URI and applies its own normalisation. If the two disagree, a request can match a permissive route yet reach a resource that another route protects — <code>/public/../admin</code> matches <code>PathPrefix: /public</code>, and most upstreams serve it as <code>/admin</code>. r7 therefore refuses, with <code>400 Bad Request</code>, any request whose decoded path contains:</p>
+<ul>
+<li>a <code>.</code> or <code>..</code> segment, including with path parameters (<code>..;x</code>, which Tomcat and Spring treat as <code>..</code>);</li>
+<li>a backslash (<code>\</code>), which some servers treat as <code>/</code>;</li>
+<li>a control character (for example from <code>%00</code> or <code>%0a</code>);</li>
+<li>percent-encoding of <code>.</code>, <code>/</code>, <code>\</code> or <code>%</code> that is still present after decoding — an encoded slash (<code>%2F</code>) or double-encoding such as <code>%252e</code>.</li>
+</ul>
+<p>The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as <code>/a/../b</code> is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.</p>
 <h3 id="phase-aware-filters">Phase-Aware Filters</h3>
 <p>Filters are inherently phase-aware. Although they are declared in a single, unified list (either in <code>global_filters</code> or a route's <code>filters</code> block), they automatically participate only in the lifecycle phases relevant to their behavior.</p>
 <ul>
