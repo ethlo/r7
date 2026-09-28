@@ -86,13 +86,18 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         final int fileSize = largeContent.getBytes(StandardCharsets.UTF_8).length;
 
         // Telemetry is flushed to the readable snapshot on a background 2s tick, not synchronously.
+        // The first non-null value is not enough: static-test's counters are cumulative across
+        // the class, so an earlier request (e.g. testStaticContentServing's /static/test.txt)
+        // can leave a stale snapshot that predates this response. Keep polling until the
+        // snapshot has caught up, or the deadline passes and the assertion reports the last value.
         int bodyBytes = -1;
-        for (int attempt = 0; attempt < 20; attempt++)
+        final long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline)
         {
             final String statusJson = given()
                     .accept("application/json")
                     .baseUri("http://localhost")
-.port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888))
+                    .port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888))
                     .when()
                     .get("/")
                     .then()
@@ -105,7 +110,10 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
             if (value != null)
             {
                 bodyBytes = ((Number) value).intValue();
-                break;
+                if (bodyBytes >= fileSize)
+                {
+                    break;
+                }
             }
             Thread.sleep(250);
         }
