@@ -19,18 +19,30 @@ public final class StartLineBuilder
      */
     public static ByteBuffer buildRequestLine(final GatewayRequest request)
     {
-        final ByteBuffer buffer = BUFFER.get();
+        final String method = request.method();
+        final String uri = request.uri();
+        final String queryString = request.queryParams().toQueryString();
+        final String protocol = request.protocol();
+        final boolean hasQuery = queryString != null && !queryString.isEmpty();
+
+        // The request line is bounded by the listener's max_header_size (8KB by default), not by
+        // this buffer, and a rewritten path grows further once percent-encoded. A line that does
+        // not fit gets a one-off buffer of its own size rather than a BufferOverflowException that
+        // fails the request; the per-thread buffer is not grown, so one long URI does not pin a
+        // large direct buffer to every thread that ever served one.
+        final int required = length(method) + length(uri) + (hasQuery ? 1 + queryString.length() : 0) + length(protocol) + 2 * SPACE.length;
+        final ByteBuffer threadBuffer = BUFFER.get();
+        final ByteBuffer buffer = required <= threadBuffer.capacity() ? threadBuffer : ByteBuffer.allocate(required);
         buffer.clear();
 
         // 1. Method
-        putAscii(buffer, request.method());
+        putAscii(buffer, method);
         buffer.put(SPACE);
 
         // 2. URI and Query String
-        putAscii(buffer, request.uri());
+        putAscii(buffer, uri);
 
-        final String queryString = request.queryParams().toQueryString();
-        if (queryString != null && !queryString.isEmpty())
+        if (hasQuery)
         {
             buffer.put((byte) '?');
             putAscii(buffer, queryString);
@@ -39,7 +51,7 @@ public final class StartLineBuilder
         buffer.put(SPACE);
 
         // 3. Protocol
-        putAscii(buffer, request.protocol());
+        putAscii(buffer, protocol);
 
         buffer.flip();
         return buffer;
@@ -66,6 +78,11 @@ public final class StartLineBuilder
 
         buffer.flip();
         return buffer;
+    }
+
+    private static int length(final String s)
+    {
+        return s == null ? 0 : s.length();
     }
 
     /**
