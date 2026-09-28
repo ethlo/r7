@@ -1,0 +1,20 @@
+version: regex-budget-test
+
+routes:
+  # A pattern that backtracks super-linearly on a near-miss: a request for /aaaa...a! would pin an
+  # I/O thread for seconds per request, without a budget.
+  - id: catastrophic
+    match:
+      - MatchPath:
+          regexp: "^/(.*a){12}$"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  - id: ok
+    match:
+      - PathPrefix:
+          prefix: /ok
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

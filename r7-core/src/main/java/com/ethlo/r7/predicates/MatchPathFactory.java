@@ -10,6 +10,7 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RegexBudget;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -60,7 +61,7 @@ public final class MatchPathFactory implements GatewayPredicateFactory<MatchPath
         @Override
         public boolean test(final GatewayRequest request)
         {
-            return this.pattern.matcher(request.path()).matches();
+            return RegexBudget.matcher(this.pattern, request.path()).matches();
         }
 
         @Override
