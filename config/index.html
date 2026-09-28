@@ -1589,6 +1589,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Storage &amp; Journaling (storage)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#journal-header-redaction-storagejournal_security" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Journal Header Redaction (<code>storage.journal_security</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -3515,8 +3532,74 @@
 <td>Boolean</td>
 <td>When <code>true</code>, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency.</td>
 </tr>
+<tr>
+<td><code>journal_security</code></td>
+<td>Object</td>
+<td>Shapes the whitelist of header names journaled in plain text. See below.</td>
+</tr>
 </tbody>
 </table>
+<h4 id="journal-header-redaction-storagejournal_security">Journal Header Redaction (<code>storage.journal_security</code>)</h4>
+<p>At <code>HEADERS</code>/<code>FULL</code> journal levels, r7 journals every header name but only writes a header's
+<em>value</em> verbatim when the name is on a built-in whitelist (things like <code>host</code>, <code>user-agent</code>,
+<code>content-type</code>, <code>etag</code>, <code>x-forwarded-for</code>, <code>sec-fetch-site</code>, <code>sec-fetch-mode</code>); everything else —
+<code>authorization</code>, <code>cookie</code>, <code>set-cookie</code>, custom API keys, and so on — is written as a
+fingerprint of its value instead of the value itself. This list is separate per direction
+(request headers vs. response headers).</p>
+<p><code>journal_security</code> shapes that whitelist in one of two ways, per direction:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>additional_safe_request_headers</code></td>
+<td>List of Strings</td>
+<td>Request header names to add on top of the built-in whitelist, so their values are journaled in plain text.</td>
+</tr>
+<tr>
+<td><code>additional_safe_response_headers</code></td>
+<td>List of Strings</td>
+<td>Response header names to add on top of the built-in whitelist.</td>
+</tr>
+<tr>
+<td><code>safe_request_headers</code></td>
+<td>List of Strings</td>
+<td>If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list.</td>
+</tr>
+<tr>
+<td><code>safe_response_headers</code></td>
+<td>List of Strings</td>
+<td>If non-empty, replaces the built-in response whitelist entirely.</td>
+</tr>
+</tbody>
+</table>
+<p>Header names are matched case-insensitively. There is no way to remove a single header from the
+built-in whitelist while keeping the rest — use <code>safe_*_headers</code> to replace the whole list if
+you need exact control. Setting both <code>additional_safe_*_headers</code> and <code>safe_*_headers</code> for the
+same direction is a validation error: a full replacement and an addition to the defaults it
+replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
+is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
+are sent to clients or upstreams.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">storage</span><span class="p">:</span>
+</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
+</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="c1"># Add a couple of names to the built-in defaults. Only ever add headers whose values</span>
+</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="c1"># are not secrets or credentials - anything on this list is journaled in plain text.</span>
+</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">additional_safe_request_headers</span><span class="p">:</span>
+</span><span id="True-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-tenant-id</span>
+</span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">additional_safe_response_headers</span><span class="p">:</span>
+</span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-internal-build-id</span>
+</span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+</span><span id="True-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="c1"># ...or replace the response whitelist entirely (mutually exclusive with</span>
+</span><span id="True-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="c1"># additional_safe_response_headers above):</span>
+</span><span id="True-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="c1"># safe_response_headers:</span>
+</span><span id="True-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="c1">#   - content-type</span>
+</span><span id="True-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="c1">#   - etag</span>
+</span></code></pre></div>
 
 
 
