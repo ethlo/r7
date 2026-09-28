@@ -346,7 +346,8 @@ class JournalLifecycleTest
         final int exchangeCount = 20;
 
         // Deliberately not closed: this is what an unclean stop leaves on disk.
-        final R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true));
+        final R7fJournalProvider provider = new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true);
+        final R7fJournal journal = new R7fJournal(provider);
         for (int i = 0; i < exchangeCount; i++)
         {
             final String reqId = "crash-" + i;
@@ -364,6 +365,16 @@ class JournalLifecycleTest
                 assertThat(Files.size(p))
                         .as("segments are pre-allocated at full size before recovery")
                         .isEqualTo(SEGMENT_SIZE));
+
+        // A crash stops every thread at once. Left running, the warmer can pre-allocate its next
+        // spare after recovery has swept the directory, and the check below would find an
+        // active segment that no crash left behind - the source of this test's intermittent
+        // failures. Stopping only the warmer, without the discards a clean close does, is the
+        // faithful simulation. Taken after the snapshot above, so the spares it already made
+        // are still what recovery has to handle.
+        haltWarmer(provider);
+        final List<Path> activeAtCrash = segmentsWithSuffix(R7fConstants.ACTIVE_FILE_EXTENSION);
+        assertThat(activeAtCrash).isNotEmpty();
 
         final CollectingSink sink = new CollectingSink();
         R7fRecoveryManager.cleanAndRecover(journalDir, sink);
@@ -517,4 +528,25 @@ class JournalLifecycleTest
      */
     @SuppressWarnings("unused")
     private static final ExchangeCompletionListener TYPE_CHECK = new CollectingSink();
+
+    /**
+     * Stops the provider's warmer thread the way a process crash would: no clean close, no
+     * discarding of the segments it pre-allocated.
+     */
+    private static void haltWarmer(final R7fJournalProvider provider)
+    {
+        try
+        {
+            final java.lang.reflect.Field field = R7fJournalProvider.class.getDeclaredField("warmerThread");
+            field.setAccessible(true);
+            final Thread warmer = (Thread) field.get(provider);
+            warmer.interrupt();
+            warmer.join(5_000L);
+            assertThat(warmer.isAlive()).as("warmer thread stopped").isFalse();
+        }
+        catch (final ReflectiveOperationException | InterruptedException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
 }
