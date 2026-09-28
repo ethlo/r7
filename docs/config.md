@@ -576,7 +576,11 @@ Evaluates the `Content-Length` header of incoming requests. If the header is mis
 
 #### Cors
 
-Handles Cross-Origin Resource Sharing (CORS). Intercepts `OPTIONS` preflight requests returning `204 No Content`, and decorates standard responses with appropriate Access-Control headers.
+Handles Cross-Origin Resource Sharing (CORS). Answers CORS preflights (`OPTIONS` carrying both `Origin` and `Access-Control-Request-Method`) with `204 No Content`, and decorates other responses with the appropriate Access-Control headers. Any other `OPTIONS` request is passed to the upstream.
+
+* A preflight from an origin that is not allowed gets `204` with no Access-Control headers at all, so it learns nothing about the policy.
+* When `allowed_origins` is a list rather than `*`, every response carries `Vary: Origin` (added to any existing `Vary`), so a shared cache never serves one origin's answer to another.
+* The filter's policy is authoritative: if the upstream sends `Access-Control-Allow-Origin` or `Access-Control-Allow-Credentials` for an origin the filter does not allow, they are removed.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
