@@ -116,7 +116,19 @@ class JournalSecurityTest
                 "transfer-encoding", "priority",
                 "content-range", "accept-ranges", "last-modified", "allow",
                 "referrer-policy", "x-xss-protection", "x-permitted-cross-domain-policies",
-                "cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy",
-                "server-timing", "x-runtime");
+                "cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy");
+    }
+
+    /**
+     * Server-Timing allows server-defined metric names plus arbitrary quoted descriptions, and
+     * X-Runtime's value is unconstrained; unlike the fixed-vocabulary policy headers above,
+     * either could carry internal detail. Redaction does not validate value grammar, so these
+     * stay fingerprinted by default.
+     */
+    @Test
+    void serverTimingAndXRuntimeAreNotSafeByDefault()
+    {
+        assertThat(JournalSecurity.SAFE_RESPONSE_HEADERS.contains("server-timing")).isFalse();
+        assertThat(JournalSecurity.SAFE_RESPONSE_HEADERS.contains("x-runtime")).isFalse();
     }
 }

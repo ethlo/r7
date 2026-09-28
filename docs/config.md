@@ -849,9 +849,10 @@ are sent to clients or upstreams.
 ```yaml
 storage:
   journal_security:
-    # Add a couple of names to the built-in defaults:
+    # Add a couple of names to the built-in defaults. Only ever add headers whose values
+    # are not secrets or credentials - anything on this list is journaled in plain text.
     additional_safe_request_headers:
-      - x-api-key
+      - x-tenant-id
     additional_safe_response_headers:
       - x-internal-build-id
 

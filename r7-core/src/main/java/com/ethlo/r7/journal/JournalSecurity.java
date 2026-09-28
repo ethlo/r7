@@ -127,9 +127,14 @@ public final class JournalSecurity
                     "x-permitted-cross-domain-policies",
                     "cross-origin-opener-policy",
                     "cross-origin-embedder-policy",
-                    "cross-origin-resource-policy",
-                    "server-timing",
-                    "x-runtime"
+                    "cross-origin-resource-policy"
+                    // server-timing and x-runtime are deliberately not on this list:
+                    // Server-Timing allows server-defined metric names plus arbitrary quoted
+                    // descriptions, and X-Runtime's value is unconstrained. Since redaction
+                    // does not validate value grammar, either could carry internal detail
+                    // that this list is supposed to keep out of plain text. An operator who
+                    // wants them journaled verbatim can opt in via
+                    // storage.journal_security.additional_safe_response_headers.
             )
     ).collect(Collectors.toUnmodifiableSet());
 

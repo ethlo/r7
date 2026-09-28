@@ -432,10 +432,10 @@ public record ServerConfig(
         @Override
         public void validate(final ValidationResult result)
         {
-            requireNonBlankNames(result, "additional_safe_request_headers", this.additionalSafeRequestHeaders());
-            requireNonBlankNames(result, "additional_safe_response_headers", this.additionalSafeResponseHeaders());
-            requireNonBlankNames(result, "safe_request_headers", this.safeRequestHeaders());
-            requireNonBlankNames(result, "safe_response_headers", this.safeResponseHeaders());
+            requireValidHeaderTokens(result, "additional_safe_request_headers", this.additionalSafeRequestHeaders());
+            requireValidHeaderTokens(result, "additional_safe_response_headers", this.additionalSafeResponseHeaders());
+            requireValidHeaderTokens(result, "safe_request_headers", this.safeRequestHeaders());
+            requireValidHeaderTokens(result, "safe_response_headers", this.safeResponseHeaders());
 
             if (!this.safeRequestHeaders().isEmpty() && !this.additionalSafeRequestHeaders().isEmpty())
             {
@@ -449,15 +449,18 @@ public record ServerConfig(
             }
         }
 
-        private static void requireNonBlankNames(final ValidationResult result, final String field, final List<String> names)
+        /**
+         * A name that is not a valid HTTP token (RFC 9110 §5.6.2) can never match a wire
+         * header, so it would silently make the configured entry a no-op rather than the
+         * error it should be. {@link ValidatorUtils#httpToken} rejects blank/whitespace-only
+         * and empty entries as well, since neither is a valid token.
+         */
+        private static void requireValidHeaderTokens(final ValidationResult result, final String field, final List<String> names)
         {
+            final ValidatorUtils v = new ValidatorUtils(result);
             for (final String name : names)
             {
-                if (name == null || name.isBlank())
-                {
-                    result.addError(field, "header names must not be blank");
-                    return;
-                }
+                v.httpToken(field, name);
             }
         }
 

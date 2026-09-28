@@ -79,6 +79,46 @@ class JournalSecurityConfigValidationTest
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_response_headers"));
     }
 
+    /**
+     * A name that is not a valid HTTP token can never match a wire header (RFC 9110 §5.6.2),
+     * so it would otherwise pass validation while silently making the entry a no-op.
+     */
+    @Test
+    void aStructurallyInvalidAdditionalSafeRequestHeaderIsRejected()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                List.of("bad name"), null, null, null);
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("additional_safe_request_headers"));
+    }
+
+    @Test
+    void aColonInAHeaderNameIsRejected()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                null, null, List.of("x:y"), null);
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_request_headers"));
+    }
+
+    @Test
+    void aNonAsciiHeaderNameIsRejected()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                null, null, null, List.of("x-\u00e9tag"));
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_response_headers"));
+    }
+
+    @Test
+    void aStructurallyValidHeaderNameIsAccepted()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                List.of("x-tenant-id"), null, null, null);
+
+        assertThat(errorsFor(config)).isEmpty();
+    }
+
     @Test
     void settingBothRequestFormsTogetherIsRejected()
     {

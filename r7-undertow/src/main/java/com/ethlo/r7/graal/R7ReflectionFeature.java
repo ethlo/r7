@@ -133,6 +133,7 @@ public final class R7ReflectionFeature implements Feature
                 ServerConfig.AdvancedConfig.class,
                 ServerConfig.LimitsConfig.class,
                 ServerConfig.StorageConfig.class,
+                ServerConfig.JournalSecurityConfig.class,
                 ServerConfig.ProxyConfig.class,
                 ServerConfig.ManagementConfig.class,
                 // Nested record type of LimitsConfig/StorageConfig fields (max_header_size,
