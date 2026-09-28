@@ -1,10 +1,13 @@
 package com.ethlo.r7.undertow.config;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 import com.ethlo.r7.config.model.DataSize;
+import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.r7f.R7fJournalProvider;
+import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -51,7 +54,7 @@ public record ServerConfig(
     @Override
     public LimitsConfig limits()
     {
-        return Optional.ofNullable(this.limits).orElse(new LimitsConfig(null, null, null, null, null));
+        return Optional.ofNullable(this.limits).orElse(new LimitsConfig(null, null, null, null, null, null));
     }
 
     @Override
@@ -226,7 +229,12 @@ public record ServerConfig(
             Integer maxHeaderCount,
             DataSize maxEntitySize,
             Integer maxParameterCount,
-            Integer maxCookieCount
+            Integer maxCookieCount,
+
+            @Description("CIDR ranges of reverse proxies allowed to set X-Forwarded-For/X-Real-IP. "
+                    + "Empty by default: the socket address is always used unless the immediate peer is in this list, "
+                    + "so a direct client cannot spoof its own address by sending either header.")
+            List<String> trustedProxies
     ) implements ValidatableConfig
     {
         @Override
@@ -251,6 +259,17 @@ public record ServerConfig(
             if (this.maxCookieCount() < 1)
             {
                 result.addError("max_cookies", "must be >= 1");
+            }
+            for (final String cidr : this.trustedProxies())
+            {
+                try
+                {
+                    CidrRange.parse(cidr);
+                }
+                catch (final IllegalArgumentException e)
+                {
+                    result.addError("trusted_proxies", "invalid IP or CIDR notation: '" + cidr + "'");
+                }
             }
         }
 
@@ -282,6 +301,12 @@ public record ServerConfig(
         public Integer maxCookieCount()
         {
             return Optional.ofNullable(this.maxCookieCount).orElse(200);
+        }
+
+        @Override
+        public List<String> trustedProxies()
+        {
+            return Optional.ofNullable(this.trustedProxies).orElse(List.of());
         }
     }
 
