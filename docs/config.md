@@ -55,7 +55,7 @@ r7 supports zero-downtime configuration reloads.
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
-0. **Path Validation:** Requests whose path an upstream could resolve differently from how route predicates read it are rejected with `400 Bad Request` before anything else runs (see [Ambiguous Paths](#ambiguous-paths)).
+0. **Request Validation:** Before anything else runs, a request `Transfer-Encoding` other than exactly `chunked` is rejected with `400 Bad Request` and the connection closed (see [Transfer-Encoding](#transfer-encoding)); then a path an upstream could resolve differently from how route predicates read it is rejected with `400 Bad Request` (see [Ambiguous Paths](#ambiguous-paths)).
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
 3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
