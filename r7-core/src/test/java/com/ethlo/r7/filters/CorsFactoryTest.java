@@ -148,4 +148,14 @@ class CorsFactoryTest
         assertThat(headers.getFirst("Access-Control-Allow-Origin")).isEqualTo(ALLOWED);
         assertThat(headers.getFirst("Access-Control-Allow-Credentials")).isEqualTo("true");
     }
+
+    @Test
+    void anUpstreamCannotEnableCredentialsTheFilterDisallows()
+    {
+        final MutableGatewayHeaders headers = respond(filter(Set.of(ALLOWED), false), request("GET", "Origin", ALLOWED),
+                "Access-Control-Allow-Credentials", "true");
+
+        assertThat(headers.getFirst("Access-Control-Allow-Origin")).isEqualTo(ALLOWED);
+        assertThat(headers.getFirst("Access-Control-Allow-Credentials")).isNull();
+    }
 }

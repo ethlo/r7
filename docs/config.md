@@ -580,7 +580,7 @@ Handles Cross-Origin Resource Sharing (CORS). Answers CORS preflights (`OPTIONS`
 
 * A preflight from an origin that is not allowed gets `204` with no Access-Control headers at all, so it learns nothing about the policy.
 * When `allowed_origins` is a list rather than `*`, every response carries `Vary: Origin` (added to any existing `Vary`), so a shared cache never serves one origin's answer to another.
-* The filter's policy is authoritative: if the upstream sends `Access-Control-Allow-Origin` or `Access-Control-Allow-Credentials` for an origin the filter does not allow, they are removed.
+* The filter's policy is authoritative: if the upstream sends `Access-Control-Allow-Origin` or `Access-Control-Allow-Credentials` for an origin the filter does not allow, they are removed, and with `allow_credentials` off an upstream `Access-Control-Allow-Credentials` is removed for allowed origins too.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

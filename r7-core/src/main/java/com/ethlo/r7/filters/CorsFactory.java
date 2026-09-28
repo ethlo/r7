@@ -214,6 +214,11 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
                 {
                     responseHeaders.set(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
                 }
+                else
+                {
+                    // Credentials off is part of the policy too: an upstream may not turn them on.
+                    responseHeaders.remove(ACCESS_CONTROL_ALLOW_CREDENTIALS);
+                }
             }
             else
             {
