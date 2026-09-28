@@ -452,15 +452,24 @@ public record ServerConfig(
         /**
          * A name that is not a valid HTTP token (RFC 9110 §5.6.2) can never match a wire
          * header, so it would silently make the configured entry a no-op rather than the
-         * error it should be. {@link ValidatorUtils#httpToken} rejects blank/whitespace-only
-         * and empty entries as well, since neither is a valid token.
+         * error it should be. {@link ValidatorUtils#httpToken} treats {@code null} as a
+         * no-op (it is meant for optional single values), so a {@code null} list element
+         * is rejected explicitly here before it can reach {@code JournalSecurity.resolve}
+         * and blow up on {@code name.toLowerCase(...)}.
          */
         private static void requireValidHeaderTokens(final ValidationResult result, final String field, final List<String> names)
         {
             final ValidatorUtils v = new ValidatorUtils(result);
             for (final String name : names)
             {
-                v.httpToken(field, name);
+                if (name == null)
+                {
+                    result.addError(field, "header names must not be null");
+                }
+                else
+                {
+                    v.httpToken(field, name);
+                }
             }
         }
 

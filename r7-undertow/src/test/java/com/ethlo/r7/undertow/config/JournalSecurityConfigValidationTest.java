@@ -120,6 +120,17 @@ class JournalSecurityConfigValidationTest
     }
 
     @Test
+    void aNullHeaderNameIsRejected()
+    {
+        final List<String> withNull = new java.util.ArrayList<>();
+        withNull.add(null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                withNull, null, null, null);
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("additional_safe_request_headers"));
+    }
+
+    @Test
     void settingBothRequestFormsTogetherIsRejected()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(

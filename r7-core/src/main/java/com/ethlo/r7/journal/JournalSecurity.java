@@ -78,7 +78,10 @@ public final class JournalSecurity
                     "max-forwards",
                     "upgrade-insecure-requests",
                     "early-data",
-                    "x-requested-with",
+                    // x-requested-with is not on this list: frameworks conventionally set it
+                    // to "XMLHttpRequest", but it is not a fixed-vocabulary header and
+                    // client-side script can set it to anything. Opt in via
+                    // additional_safe_request_headers if your deployment constrains it.
                     "x-forwarded-for",
                     "x-forwarded-proto",
                     "x-forwarded-host",

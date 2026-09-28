@@ -102,8 +102,19 @@ class JournalSecurityTest
                 "sec-fetch-dest", "sec-fetch-user",
                 "sec-ch-ua-arch", "sec-ch-ua-bitness", "sec-ch-ua-full-version", "sec-ch-ua-full-version-list",
                 "sec-ch-ua-model", "sec-ch-ua-platform-version", "sec-ch-ua-wow64",
-                "sec-ch-prefers-color-scheme", "sec-ch-prefers-reduced-motion", "save-data",
-                "x-requested-with");
+                "sec-ch-prefers-color-scheme", "sec-ch-prefers-reduced-motion", "save-data");
+    }
+
+    /**
+     * X-Requested-With is conventionally set to "XMLHttpRequest" by frameworks, but is not a
+     * fixed-vocabulary header: client-side script can set it to anything, so it stays
+     * fingerprinted by default rather than being treated like the true fixed-vocabulary
+     * headers above.
+     */
+    @Test
+    void xRequestedWithIsNotSafeByDefault()
+    {
+        assertThat(JournalSecurity.SAFE_REQUEST_HEADERS.contains("x-requested-with")).isFalse();
     }
 
     /**
