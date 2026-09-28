@@ -1,11 +1,12 @@
 package com.ethlo.r7.undertow;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
@@ -281,10 +282,14 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     })
     public void ambiguousPathsAreRejectedBeforeRouting(final String rawPath) throws IOException
     {
+        // Only this request's traffic may count: anything at all reaching the upstream means the
+        // guard let it through, whichever route it then matched.
+        UPSTREAM_SERVER.resetRequests();
+
         final String statusLine = sendRaw("GET " + rawPath + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
 
         Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 400"), "Expected 400 for " + rawPath + " but got: " + statusLine);
-        UPSTREAM_SERVER.verify(0, getRequestedFor(urlMatching(".*admin.*|.*a.b")));
+        UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
     }
 
     private static String sendRaw(final String request) throws IOException
