@@ -830,7 +830,7 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `work_dir` | String | The directory path where the memory-mapped journal files are stored. |
+| `work_dir` | String | The directory path where the memory-mapped journal files are stored. Created with mode `0750`, and journal segments with `0640` (owner read-write, group read): a sidecar tailer running as another user needs to share the gateway's group. The umask can only narrow these; an existing directory or file keeps its mode. |
 | `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). |
 | `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. |
 | `pre_fault` | Boolean | When `true`, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. |
