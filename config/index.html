@@ -3086,7 +3086,12 @@
 </tbody>
 </table>
 <h4 id="cors">Cors</h4>
-<p>Handles Cross-Origin Resource Sharing (CORS). Intercepts <code>OPTIONS</code> preflight requests returning <code>204 No Content</code>, and decorates standard responses with appropriate Access-Control headers.</p>
+<p>Handles Cross-Origin Resource Sharing (CORS). Answers CORS preflights (<code>OPTIONS</code> carrying both <code>Origin</code> and <code>Access-Control-Request-Method</code>) with <code>204 No Content</code>, and decorates other responses with the appropriate Access-Control headers. Any other <code>OPTIONS</code> request is passed to the upstream.</p>
+<ul>
+<li>A preflight from an origin that is not allowed gets <code>204</code> with no Access-Control headers at all, so it learns nothing about the policy.</li>
+<li>When <code>allowed_origins</code> is a list rather than <code>*</code>, every response carries <code>Vary: Origin</code> (added to any existing <code>Vary</code>), so a shared cache never serves one origin's answer to another.</li>
+<li>The filter's policy is authoritative: if the upstream sends <code>Access-Control-Allow-Origin</code> or <code>Access-Control-Allow-Credentials</code> for an origin the filter does not allow, they are removed, and with <code>allow_credentials</code> off an upstream <code>Access-Control-Allow-Credentials</code> is removed for allowed origins too.</li>
+</ul>
 <table>
 <thead>
 <tr>
