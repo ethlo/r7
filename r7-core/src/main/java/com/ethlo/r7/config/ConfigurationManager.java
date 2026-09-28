@@ -2,8 +2,10 @@ package com.ethlo.r7.config;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.ethlo.r7.api.GatewayFilter;
@@ -130,7 +132,7 @@ public final class ConfigurationManager
                     }
 
                     final List<String> urls = upstreamTargets.stream().map(TargetConfig::url).toList();
-                    return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, journalConfig, routeDefinition);
+                    return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, globalFilters.size(), journalConfig, routeDefinition);
                 })
                 .toList();
 
@@ -170,6 +172,44 @@ public final class ConfigurationManager
                         throw new ConfigurationException("Configuration error: Route '" + r.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that does not exist.");
                     }
                 }
+            }
+        }
+        validateAcyclicFallbacks(routes);
+    }
+
+    /**
+     * A fallback route is run as if the request had matched it, including its own fallback, so
+     * a cycle such as a -> b -> a would recurse until the stack overflows the moment every
+     * upstream in it is down.
+     */
+    private void validateAcyclicFallbacks(final List<RouteDefinition> routes)
+    {
+        final Map<String, String> fallbackOf = new HashMap<>();
+        for (final RouteDefinition r : routes)
+        {
+            if (r.upstream() != null && r.upstream().fallback() != null)
+            {
+                final String target = r.upstream().fallback().routeId();
+                if (target != null && !target.isBlank())
+                {
+                    fallbackOf.put(r.id(), target);
+                }
+            }
+        }
+
+        for (final String start : fallbackOf.keySet())
+        {
+            final List<String> chain = new ArrayList<>();
+            String current = start;
+            while (current != null)
+            {
+                if (chain.contains(current))
+                {
+                    chain.add(current);
+                    throw new ConfigurationException("Configuration error: fallback.route_id references form a cycle: " + String.join(" -> ", chain.subList(chain.indexOf(current), chain.size())));
+                }
+                chain.add(current);
+                current = fallbackOf.get(current);
             }
         }
     }
