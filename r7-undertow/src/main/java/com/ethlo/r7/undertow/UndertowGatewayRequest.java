@@ -8,6 +8,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.api.TextValues;
+import com.ethlo.r7.undertow.util.PathEncoder;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.HttpString;
 
@@ -86,13 +87,19 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
         final String newPath = TextValues.requireNoControlCharacters("path", path);
         this.exchange.setRequestPath(newPath);     // The general path
         this.exchange.setRelativePath(newPath);    // Used by ProxyHandler to build upstream URL
-        this.exchange.setRequestURI(newPath);      // The full URI used for logging/matching
+        // The request URI is what ProxyHandler writes to the upstream verbatim, so it must be
+        // the encoded form: the decoded path would turn a client's %3F into a query and its
+        // %25 into a second round of decoding. It is also a bare path now, so the absolute-form
+        // flag has to go - left set, ProxyHandler skips past the first "//" it finds in this
+        // path looking for a host that is no longer there.
+        this.exchange.setRequestURI(PathEncoder.encode(newPath), false);
     }
 
     @Override
     public void uri(final String uri)
     {
-        this.exchange.setRequestURI(TextValues.requireNoControlCharacters("uri", uri));
+        final String newUri = TextValues.requireNoControlCharacters("uri", uri);
+        this.exchange.setRequestURI(newUri, !newUri.startsWith("/"));
     }
 
     @Override

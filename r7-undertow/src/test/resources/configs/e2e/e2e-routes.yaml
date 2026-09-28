@@ -98,6 +98,17 @@ routes:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
 
+  - id: strip-prefix-encoding-test
+    match:
+      - PathPrefix:
+          prefix: /strip-encoding/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
   - id: e2e-passthrough
     match:
       - PathPrefix:
