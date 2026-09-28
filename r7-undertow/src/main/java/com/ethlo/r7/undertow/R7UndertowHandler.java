@@ -375,10 +375,10 @@ public final class R7UndertowHandler implements HttpHandler
             return;
         }
 
-        execute(exchange, req, route);
+        execute(exchange, req, route, remoteInfo.trustedPeer());
     }
 
-    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route)
+    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route, final boolean trustedPeer)
     {
         final String requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(exchange.getProtocol().toString(),
@@ -391,6 +391,9 @@ public final class R7UndertowHandler implements HttpHandler
                 incomingRequest.remoteAddress(),
                 incomingRequest.getRemoteAddressSource()
         );
+        // After the snapshot: filters and the journal keep seeing what the client sent, while
+        // the live headers - which are what the proxy copies upstream - lose what must not pass.
+        UpstreamHeaderSanitizer.sanitize(exchange.getRequestHeaders(), trustedPeer);
         final MutableGatewayResponse clientResponse = new UndertowGatewayResponse(exchange);
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
@@ -501,7 +504,10 @@ public final class R7UndertowHandler implements HttpHandler
                     final HttpHandler handler = ProxyHandler.builder()
                             .setProxyClient(client)
                             .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
-                            .setReuseXForwarded(false)
+                            // Safe only because UpstreamHeaderSanitizer has removed every
+                            // X-Forwarded-* header an untrusted peer sent: what is left to
+                            // reuse came from a trusted proxy, whose chain is extended.
+                            .setReuseXForwarded(true)
                             .setRewriteHostHeader(true)
                             .build();
 
