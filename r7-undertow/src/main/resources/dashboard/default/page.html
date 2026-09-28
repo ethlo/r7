@@ -683,8 +683,20 @@
     </div>`;
     };
 
+    // Everything below builds HTML strings from what the gateway reports - route ids, predicate
+    // and filter summaries, upstream URLs, override keys. Those come from routes.yaml, and may be
+    // written by people other than those viewing this page, so every such value goes through esc()
+    // before it becomes markup or an attribute. Numbers and the page's own markup do not need it.
+    const esc = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/`/g, '&#96;');
+
     const jBadge = (lvl) => {
-        const l = (lvl || 'NONE').toUpperCase();
+        const l = esc((lvl || 'NONE').toUpperCase());
         return `<span class="journal-active-${l.toLowerCase()} j-badge">${l.charAt(0)}</span>`;
     };
 
@@ -701,6 +713,15 @@
         window.scrollTo({top: 0, behavior: 'smooth'});
         showDetails(routeId);
     }
+
+    // Route rows carry their id as data, not inside an inline onclick: an id is config text, and
+    // inside a JavaScript string literal in an attribute a quote in it would end the string.
+    document.addEventListener('click', (event) => {
+        const row = event.target.closest('tr[data-route-id]');
+        if (row) {
+            handleRowClick(row.dataset.routeId);
+        }
+    });
 
     function handleSystemClick() {
         window.currentOpenRoute = '__SYSTEM__';
@@ -762,12 +783,12 @@
 
         <div class="panel-section">
             <div class="panel-section-title">Environment Info</div>
-            ${mRow('VERSION', sys.version, true)}
+            ${mRow('VERSION', esc(sys.version), true)}
             ${mRow('STARTED AT', new Date(sys.started_at).toLocaleString(), false)}
             ${mRow('UPTIME', formatUptime(sys.uptime), false)}
             <div class="spacer-sm"></div>
-            ${mRow('SERVER BIND', `${cfg.server?.host}:${cfg.server?.port}`, false)}
-            ${mRow('MANAGEMENT BIND', `${cfg.management?.host}:${cfg.management?.port}`, false)}
+            ${mRow('SERVER BIND', esc(`${cfg.server?.host}:${cfg.server?.port}`), false)}
+            ${mRow('MANAGEMENT BIND', esc(`${cfg.management?.host}:${cfg.management?.port}`), false)}
         </div>
 
         <div class="panel-section">
@@ -1025,8 +1046,8 @@
     <div style="margin-left: 8px; padding-left: 16px; border-left: 2px solid rgba(128,128,128,0.2); margin-top: 6px; position: relative;">
         <div style="position: absolute; left: 0; top: 10px; width: 12px; border-top: 2px solid rgba(128,128,128,0.2);"></div>
         <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-weight: 300; font-size: 0.8rem; background: rgba(0, 168, 255, 0.08); padding: 2px 6px; border-radius: 4px;">${node.name}</span>
-            ${displayText ? `<span class="text-dim text-truncate" title="${displayText}">${displayText}</span>` : ''}
+            <span style="font-weight: 300; font-size: 0.8rem; background: rgba(0, 168, 255, 0.08); padding: 2px 6px; border-radius: 4px;">${esc(node.name)}</span>
+            ${displayText ? `<span class="text-dim text-truncate" title="${esc(displayText)}">${esc(displayText)}</span>` : ''}
         </div>`;
 
         if (node.children && node.children.length > 0) {
@@ -1075,7 +1096,7 @@
             items.forEach((item) => {
                 html += `
             <div style="padding-left: 12px; margin-top: 6px; margin-bottom: 6px;">
-                <span style="color: #ccc; font-weight: 300; background: ${bgColor}; padding: 2px 6px; border-radius: 4px; display: inline-block;">${item}</span>
+                <span style="color: #ccc; font-weight: 300; background: ${bgColor}; padding: 2px 6px; border-radius: 4px; display: inline-block;">${esc(item)}</span>
             </div>`;
             });
             html += `</div>`;
@@ -1090,7 +1111,7 @@
         html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 600; font-size: 0.8em; letter-spacing: 0.5px;">◆ TARGET</div>`;
         html += `
     <div style="padding-left: 12px; margin-top: 6px; margin-bottom: 6px;">
-        <span style="font-weight: 600; background: rgba(232, 65, 24, 0.08); padding: 2px 6px; border-radius: 4px; display: inline-block;">${cleanDest}</span>
+        <span style="font-weight: 600; background: rgba(232, 65, 24, 0.08); padding: 2px 6px; border-radius: 4px; display: inline-block;">${esc(cleanDest)}</span>
     </div>`;
         html += `</div>`;
 
@@ -1153,9 +1174,9 @@
             let ovHtml = '<div style="margin-top: 6px; padding-left: 8px; border-left: 2px solid rgba(128,128,128,0.2);">';
             Object.entries(overrides).forEach(([codes, lvl]) => {
                 ovHtml += `<div class="sub text-dim" style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
-                <span style="font-size: 0.85em; width: 45px;">${codes}</span>
+                <span style="font-size: 0.85em; width: 45px;">${esc(codes)}</span>
                 ${jBadge(lvl)}
-                <span style="font-size: 0.85em;">${lvl}</span>
+                <span style="font-size: 0.85em;">${esc(lvl)}</span>
             </div>`;
             });
             ovHtml += '</div>';
@@ -1176,7 +1197,7 @@
         const content = `
         <div class="panel-header-container">
             <div class="panel-title">
-                <span style="color: var(--dim); font-weight: 300;">ROUTE //</span> ${routeId}
+                <span style="color: var(--dim); font-weight: 300;">ROUTE //</span> ${esc(routeId)}
             </div>
             <button class="panel-close-btn" onclick="closeDetails()">
                 <span class="panel-close-icon">←</span> BACK
@@ -1189,7 +1210,7 @@
                 <span class="text-dim" style="font-size: 0.8em; letter-spacing: 0;">SMOOTHED (WMA)</span>
             </div>
             <div style="width: 100%; height: 180px; position: relative; margin-bottom: 1rem;">
-                <canvas id="detail-canvas-${routeId}" style="width: 100%; height: 100%; display: block;"></canvas>
+                <canvas id="detail-canvas-${esc(routeId)}" style="width: 100%; height: 100%; display: block;"></canvas>
             </div>
         </div>
 
@@ -1458,15 +1479,15 @@
             const rRpsTotal = r2xxRps + r4xxRps + r5xxRps;
 
             html += `
-        <tr class="clickable-row" onclick="handleRowClick('${config.id}')">
+        <tr class="clickable-row" data-route-id="${esc(config.id)}">
             <td class="col-route">
-                ${mRow('ROUTE', config.id, true)}
+                ${mRow('ROUTE', esc(config.id), true)}
                 ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
                 ${mRow('ACTIVE REQUESTS', s.active, false, rActiveHttpStyle)}
                 ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
             </td>
             <td class="col-active">
-               <canvas id="canvas_${config.id}" width="200" height="60" style="margin-top: 8px;"></canvas>
+               <canvas id="canvas_${esc(config.id)}" width="200" height="60" style="margin-top: 8px;"></canvas>
             </td>
             <td class="col-totals">
                 ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)) + PER_SEC)}
