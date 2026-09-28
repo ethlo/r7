@@ -85,7 +85,7 @@ class TemplateRedirectFactoryTest
     }
 
     @ParameterizedTest
-    @CsvSource({"https://$1/", "//$1.example.com/", "https://good.example$1", "https://$1@good.example/"})
+    @CsvSource({"https://$1/", "//$1.example.com/", "https://good.example$1", "https://$1@good.example/", "javascript:$1", "https:\\\\$1", "mailto:$1"})
     void aCaptureGroupInTheOriginIsRejectedAtStartup(final String target)
     {
         final ValidationResult result = new ValidationResult();
@@ -99,5 +99,16 @@ class TemplateRedirectFactoryTest
         final ValidationResult result = new ValidationResult();
         new TemplateRedirectFactory.Config("^/(.*)$", "https://good.example/$1", null).validate(result);
         assertThat(result.hasErrors()).isFalse();
+    }
+
+    /**
+     * A scheme without '//' has no host to keep: browsers read https:\\evil as https://evil,
+     * and javascript: executes. Refused at request time too, for a config built without validation.
+     */
+    @Test
+    void aSchemeOnlyTemplateNeverRedirects()
+    {
+        assertThat(redirect("^/x/(.*)$", "https:\\\\$1", "/x/evil.example").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+        assertThat(redirect("^/x/(.*)$", "javascript:$1", "/x/alert(1)").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
     }
 }

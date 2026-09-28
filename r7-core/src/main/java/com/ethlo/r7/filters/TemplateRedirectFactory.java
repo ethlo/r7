@@ -71,7 +71,12 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     .validRegexReplacement("target", this.source(), this.target());
 
             final String target = this.target();
-            if (target != null && originEnd(target) >= 0 && target.substring(0, originEnd(target)).indexOf('$') >= 0)
+            if (target != null && originEnd(target) == NO_AUTHORITY)
+            {
+                validator.invalid("target", target, "a redirect target must be a path or scheme://host...: "
+                        + "a scheme without '//' and a host (javascript:, https:\\...) is not a safe origin");
+            }
+            else if (target != null && originEnd(target) >= 0 && target.substring(0, originEnd(target)).indexOf('$') >= 0)
             {
                 validator.invalid("target", target, "the scheme and host of a redirect target must be literal: "
                         + "a capture group there lets any request choose where it is redirected to");
@@ -80,9 +85,15 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
     }
 
     /**
+     * {@link #originEnd} of a value that starts with a scheme but not {@code scheme://}: no host
+     * that could be kept, and forms like {@code https:\\evil} or {@code javascript:} that
+     * browsers act on.
+     */
+    static final int NO_AUTHORITY = -2;
+
+    /**
      * End of the origin ({@code scheme://authority} or {@code //authority}) at the start of a
-     * target, or -1 when it has none - that is, when it is a path. A target with a scheme but no
-     * authority ({@code mailto:}) counts its scheme as the origin.
+     * target, -1 when it has none - that is, when it is a path - or {@link #NO_AUTHORITY}.
      */
     static int originEnd(final String target)
     {
@@ -100,7 +111,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             }
             if (!target.startsWith("//", schemeEnd + 1))
             {
-                return schemeEnd + 1;
+                return NO_AUTHORITY;
             }
             start = schemeEnd + 3;
         }
@@ -149,6 +160,10 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
     static boolean staysOnTemplateOrigin(final String template, final String location)
     {
         final int templateOriginEnd = originEnd(template);
+        if (templateOriginEnd == NO_AUTHORITY)
+        {
+            return false;
+        }
         if (templateOriginEnd < 0)
         {
             return schemeEnd(location) < 0
