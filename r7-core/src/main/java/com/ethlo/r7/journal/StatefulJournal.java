@@ -74,6 +74,14 @@ public final class StatefulJournal implements Journal
     private IpSource remoteAddressSource;
 
     /**
+     * The journal levels this exchange is recorded with, fixed when the journal was opened.
+     */
+    public RouteJournalConfig routeJournalConfig()
+    {
+        return this.config;
+    }
+
+    /**
      * Uses the built-in header-redaction policy, unmodified. For production use where an
      * operator may have overridden {@code server.yaml -> storage.journal_security}, use
      * {@link #StatefulJournal(Journal, RouteJournalConfig, CompletedGatewayExchange, HeaderNameSet, HeaderNameSet)}.
