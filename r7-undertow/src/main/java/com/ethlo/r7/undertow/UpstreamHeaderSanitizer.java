@@ -37,13 +37,6 @@ public final class UpstreamHeaderSanitizer
      */
     private static final HttpString[] FORWARDING_HEADERS = {
             Headers.FORWARDED,
-            Headers.X_FORWARDED_FOR,
-            Headers.X_FORWARDED_HOST,
-            Headers.X_FORWARDED_PROTO,
-            Headers.X_FORWARDED_PORT,
-            Headers.X_FORWARDED_SERVER,
-            new HttpString("X-Forwarded-Prefix"),
-            new HttpString("X-Forwarded-Ssl"),
             new HttpString("X-Real-IP"),
             new HttpString("X-Client-IP"),
             new HttpString("True-Client-IP"),
@@ -51,6 +44,13 @@ public final class UpstreamHeaderSanitizer
             new HttpString("X-Original-URL"),
             new HttpString("X-Rewrite-URL")
     };
+
+    /**
+     * Every {@code X-Forwarded-*} header is a claim about an earlier hop, including extensions
+     * such as {@code X-Forwarded-User} that some backends trust for identity, so the whole
+     * family is matched by prefix rather than listed.
+     */
+    private static final String X_FORWARDED_PREFIX = "X-Forwarded-";
 
     private UpstreamHeaderSanitizer()
     {
@@ -66,16 +66,9 @@ public final class UpstreamHeaderSanitizer
         final HeaderValues connection = headers.get(Headers.CONNECTION);
         if (connection != null)
         {
-            for (final String line : connection.toArray())
+            for (int i = 0; i < connection.size(); i++)
             {
-                for (final String token : line.split(","))
-                {
-                    final String name = token.strip();
-                    if (!name.isEmpty() && !isProtected(name, webSocket))
-                    {
-                        headers.remove(name);
-                    }
-                }
+                removeNamedIn(connection.get(i), headers, webSocket);
             }
         }
 
@@ -110,14 +103,90 @@ public final class UpstreamHeaderSanitizer
             {
                 headers.remove(name);
             }
+            removeXForwardedFamily(headers);
         }
     }
 
-    private static boolean isProtected(final String name, final boolean webSocket)
+    /**
+     * Removes the headers a Connection field line names. Scans the comma-separated list in place:
+     * this runs before every proxied request, and the usual tokens ({@code keep-alive},
+     * {@code close}, {@code upgrade}) are handled without allocating - only a token naming some
+     * other header costs the substring needed to remove it.
+     */
+    private static void removeNamedIn(final String line, final HeaderMap headers, final boolean webSocket)
     {
-        return name.equalsIgnoreCase(Headers.HOST_STRING)
-                || name.equalsIgnoreCase(Headers.CONTENT_LENGTH_STRING)
-                || name.equalsIgnoreCase(Headers.TRANSFER_ENCODING_STRING)
-                || (webSocket && name.equalsIgnoreCase(Headers.UPGRADE_STRING));
+        final int len = line.length();
+        int start = 0;
+        while (start < len)
+        {
+            int end = line.indexOf(',', start);
+            if (end < 0)
+            {
+                end = len;
+            }
+            int from = start;
+            int to = end;
+            while (from < to && isOws(line.charAt(from)))
+            {
+                from++;
+            }
+            while (to > from && isOws(line.charAt(to - 1)))
+            {
+                to--;
+            }
+            if (to > from
+                    && !regionIs(line, from, to, "keep-alive")
+                    && !regionIs(line, from, to, "close")
+                    && !isProtected(line, from, to, webSocket))
+            {
+                headers.remove(line.substring(from, to));
+            }
+            start = end + 1;
+        }
+    }
+
+    /**
+     * Collects matches before removing them, since the map cannot be changed while it is being
+     * iterated; the array is only allocated once a match is found, which an ordinary request
+     * from an untrusted client never has.
+     */
+    private static void removeXForwardedFamily(final HeaderMap headers)
+    {
+        HttpString[] matches = null;
+        int count = 0;
+        for (long cookie = headers.fastIterateNonEmpty(); cookie != -1L; cookie = headers.fiNextNonEmpty(cookie))
+        {
+            final HttpString name = headers.fiCurrent(cookie).getHeaderName();
+            if (name.length() > X_FORWARDED_PREFIX.length() && name.toString().regionMatches(true, 0, X_FORWARDED_PREFIX, 0, X_FORWARDED_PREFIX.length()))
+            {
+                if (matches == null)
+                {
+                    matches = new HttpString[headers.size()];
+                }
+                matches[count++] = name;
+            }
+        }
+        for (int i = 0; i < count; i++)
+        {
+            headers.remove(matches[i]);
+        }
+    }
+
+    private static boolean isOws(final char c)
+    {
+        return c == ' ' || c == '\t';
+    }
+
+    private static boolean regionIs(final String line, final int from, final int to, final String token)
+    {
+        return to - from == token.length() && line.regionMatches(true, from, token, 0, token.length());
+    }
+
+    private static boolean isProtected(final String line, final int from, final int to, final boolean webSocket)
+    {
+        return regionIs(line, from, to, Headers.HOST_STRING)
+                || regionIs(line, from, to, Headers.CONTENT_LENGTH_STRING)
+                || regionIs(line, from, to, Headers.TRANSFER_ENCODING_STRING)
+                || (webSocket && regionIs(line, from, to, Headers.UPGRADE_STRING));
     }
 }

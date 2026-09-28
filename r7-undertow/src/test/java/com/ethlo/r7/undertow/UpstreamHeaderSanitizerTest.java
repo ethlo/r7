@@ -95,6 +95,8 @@ class UpstreamHeaderSanitizerTest
                 "X-Real-IP", "6.6.6.6",
                 "True-Client-IP", "6.6.6.6",
                 "X-Original-URL", "/admin",
+                "X-Forwarded-User", "admin",
+                "x-forwarded-by", "6.6.6.6",
                 "Accept", "*/*");
 
         UpstreamHeaderSanitizer.sanitize(map, false);
@@ -115,5 +117,19 @@ class UpstreamHeaderSanitizerTest
         assertThat(map.getFirst("X-Forwarded-For")).isEqualTo("203.0.113.9");
         assertThat(map.getFirst("X-Forwarded-Proto")).isEqualTo("https");
         assertThat(map.getFirst("X-Real-IP")).isEqualTo("203.0.113.9");
+    }
+
+    @Test
+    void parsesConnectionTokensWithOptionalWhitespaceAndEmptyEntries()
+    {
+        final HeaderMap map = headers(
+                "Connection", " ,\tX-A ,, keep-alive,X-B\t",
+                "X-A", "1",
+                "X-B", "2",
+                "X-C", "3");
+
+        UpstreamHeaderSanitizer.sanitize(map, true);
+
+        assertThat(map.getHeaderNames()).extracting(HttpString::toString).containsExactly("X-C");
     }
 }
