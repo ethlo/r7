@@ -237,6 +237,15 @@ public final class R7UndertowHandler implements HttpHandler
                 final boolean followSymlinks = staticServeRequest.followSymlinks();
                 final boolean listDirectory = staticServeRequest.listDirectory();
 
+                // Dotfiles in a web root are usually deployment leftovers - .env, .git/, .htpasswd -
+                // and ResourceHandler serves them like any other file. Answered as if absent.
+                if (!staticServeRequest.serveHiddenFiles() && StaticContentFactory.StaticServeRequest.isHidden(exchange.getRelativePath()))
+                {
+                    exchange.setStatusCode(HttpStatuses.NOT_FOUND);
+                    exchange.endExchange();
+                    return;
+                }
+
                 final Object directoryIdentity;
                 try
                 {

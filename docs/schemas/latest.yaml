@@ -675,6 +675,13 @@ $defs:
                 pattern: "^\\$\\{.*\\}$"
               description: "Whether to render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. index.html) is found there. Disabled by default, in which case such a request is rejected with 403 Forbidden."
               default: false
+            serve_hidden_files:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether to serve files and directories whose name starts with '.' (e.g. .env, .git/). Disabled by default, in which case such a request is answered 404; .well-known/ is always served."
+              default: false
           required:
           - base_directory
           additionalProperties: false
