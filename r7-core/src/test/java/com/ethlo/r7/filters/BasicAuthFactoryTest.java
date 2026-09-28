@@ -22,6 +22,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
@@ -150,7 +151,7 @@ class BasicAuthFactoryTest
     {
         final ClientRequestGatewayExchange exchange = exchange(null);
 
-        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip()), null)
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip(), null), null)
                 .onClientRequest(exchange);
 
         assertThat(captureRejection(exchange).headers().getFirst(HttpHeaders.WWW_AUTHENTICATE))
@@ -167,7 +168,7 @@ class BasicAuthFactoryTest
     {
         final ValidationResult result = new ValidationResult();
 
-        new BasicAuthFactory.Config(List.of(ALICE), realm).validate(result);
+        new BasicAuthFactory.Config(List.of(ALICE), realm, null).validate(result);
 
         assertThat(result.hasErrors()).isTrue();
     }
@@ -178,7 +179,7 @@ class BasicAuthFactoryTest
     {
         final ValidationResult result = new ValidationResult();
 
-        new BasicAuthFactory.Config(List.of(ALICE), realm).validate(result);
+        new BasicAuthFactory.Config(List.of(ALICE), realm, null).validate(result);
 
         assertThat(result.hasErrors()).isFalse();
     }
@@ -254,21 +255,21 @@ class BasicAuthFactoryTest
     @Test
     void theRealmDefaultsWhenAbsentOrBlank()
     {
-        assertThat(new BasicAuthFactory.Config(List.of(), null).realm()).isEqualTo("Secure Area");
-        assertThat(new BasicAuthFactory.Config(List.of(), "  ").realm()).isEqualTo("Secure Area");
-        assertThat(new BasicAuthFactory.Config(List.of(), "Admin").realm()).isEqualTo("Admin");
+        assertThat(new BasicAuthFactory.Config(List.of(), null, null).realm()).isEqualTo("Secure Area");
+        assertThat(new BasicAuthFactory.Config(List.of(), "  ", null).realm()).isEqualTo("Secure Area");
+        assertThat(new BasicAuthFactory.Config(List.of(), "Admin", null).realm()).isEqualTo("Admin");
     }
 
     private List<String> validate(final List<String> users)
     {
         final ValidationResult result = new ValidationResult();
-        new BasicAuthFactory.Config(users, null).validate(result);
+        new BasicAuthFactory.Config(users, null, null).validate(result);
         return result.getErrors();
     }
 
     private ClientRequestGatewayFilter filter(final String... users)
     {
-        return factory.create(new BasicAuthFactory.Config(List.of(users), null), null);
+        return factory.create(new BasicAuthFactory.Config(List.of(users), null, null), null);
     }
 
     private void assertRejected(final ClientRequestGatewayExchange exchange)
@@ -306,5 +307,80 @@ class BasicAuthFactoryTest
         when(exchange.clientRequest()).thenReturn(request);
         when(exchange.attributes()).thenReturn(mock(MutableGatewayAttributes.class));
         return exchange;
+    }
+
+    /**
+     * The client's password is the gateway's to check: once verified it is marked consumed, and
+     * the gateway removes it before any upstream filter runs.
+     */
+    @Test
+    void verifiedCredentialsAreMarkedConsumedByDefault()
+    {
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
+
+        filter(ALICE).onClientRequest(exchange);
+
+        verify(exchange).setAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED, Boolean.TRUE);
+    }
+
+    @Test
+    void credentialsAreNotConsumedWhenForwardingIsConfigured()
+    {
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
+
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), null).onClientRequest(exchange);
+
+        verify(exchange, never()).setAttachment(any(), any());
+    }
+
+    @Test
+    void rejectedCredentialsAreNotMarkedConsumed()
+    {
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:wrong"));
+
+        filter(ALICE).onClientRequest(exchange);
+
+        verify(exchange, never()).setAttachment(any(), any());
+    }
+
+    /**
+     * Authorization is a singleton field: with two values only the first would be verified, and
+     * the second would be passed on unchecked.
+     */
+    @Test
+    void aRequestWithTwoAuthorizationValuesIsRefused()
+    {
+        final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
+        ((MutableGatewayHeaders) exchange.clientRequest().headers()).add(HttpHeaders.AUTHORIZATION, "Bearer smuggled");
+
+        filter(ALICE).onClientRequest(exchange);
+
+        final ArgumentCaptor<ShortCircuitGatewayResponse> response = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+        verify(exchange).shortCircuit(response.capture());
+        assertThat(response.getValue().status()).isEqualTo(HttpStatuses.UNAUTHORIZED);
+    }
+
+    /**
+     * With every permit taken, a verification that needs bcrypt is shed with 503 instead of
+     * queueing another CPU-bound round.
+     */
+    @Test
+    void verificationIsShedWhenEveryBcryptPermitIsTaken()
+    {
+        final int permits = BasicAuthFactory.BCRYPT_PERMITS.drainPermits();
+        try
+        {
+            final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("mallory:guess-" + System.nanoTime()));
+            filter(ALICE).onClientRequest(exchange);
+
+            final ArgumentCaptor<ShortCircuitGatewayResponse> response = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+            verify(exchange).shortCircuit(response.capture());
+            assertThat(response.getValue().status()).isEqualTo(HttpStatuses.SERVICE_UNAVAILABLE);
+            assertThat(response.getValue().headers().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("1");
+        }
+        finally
+        {
+            BasicAuthFactory.BCRYPT_PERMITS.release(permits);
+        }
     }
 }

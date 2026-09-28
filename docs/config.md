@@ -541,8 +541,13 @@ Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, 
 | --- | --- | --- | --- |
 | `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
+| `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
 Only bcrypt hashes are accepted (`$2a$`, `$2b$`, `$2x$` or `$2y$`, cost 4-31); htpasswd's MD5, SHA-1 and crypt formats are rejected at startup, as are duplicate usernames and malformed entries.
+
+A request carrying more than one `Authorization` value is refused with `401`: the field is a singleton, and only one value could be verified.
+
+bcrypt is deliberately expensive, so the number of verifications running at once is capped at the number of CPU cores, shared by every `BasicAuth` filter. A request that cannot get a slot within 250 ms is answered with `503 Service Unavailable` and `Retry-After: 1`. Credentials that already verified are cached and skip bcrypt, so a flood of wrong passwords sheds its own requests rather than starving the gateway. The listener is plaintext HTTP, so Basic credentials are visible to anyone on the network path between client and gateway: use this filter only on a trusted network segment.
 
 ```yaml
 filters:

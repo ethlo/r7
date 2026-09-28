@@ -69,6 +69,13 @@ $defs:
         BasicAuth:
           type: object
           properties:
+            forward_credentials:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether the client's own Authorization header is passed on to the upstream after it has been verified. Off by default: the credentials are the gateway's to check, and forwarding them hands every client password to the upstream. A header set by another filter, such as InjectBasicAuth, is never removed."
+              default: false
             realm:
               type: string
               description: The authentication realm presented to the client.
