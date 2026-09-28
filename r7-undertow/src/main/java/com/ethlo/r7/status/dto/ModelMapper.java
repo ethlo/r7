@@ -23,7 +23,7 @@ public class ModelMapper
 {
     private static final FilterRegistry FILTER_REGISTRY = new FilterRegistry();
 
-    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final HeaderNameSet safeRequestHeaders)
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
         final RouteDefinition def = route.routeDefinition();
 
@@ -35,7 +35,7 @@ public class ModelMapper
         );
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
-                .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders)))
+                .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders, safeResponseHeaders)))
                 .toList() : Collections.emptyList();
 
         return new RouteConfigDto(
@@ -54,9 +54,9 @@ public class ModelMapper
      * that can reach it. Header values are shown by the same whitelist the journal uses - the
      * effective one, including any override in server.yaml.
      */
-    static Object maskedArgs(final String filterName, final Object args, final HeaderNameSet safeRequestHeaders)
+    static Object maskedArgs(final String filterName, final Object args, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
-        return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, safeRequestHeaders);
+        return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, safeRequestHeaders, safeResponseHeaders);
     }
 
     private static MatchDto toPredicateNode(final GatewayPredicate predicate)

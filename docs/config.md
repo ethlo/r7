@@ -788,7 +788,7 @@ Defines the interfaces for the internal status and metrics endpoints.
 | `host` | String | The interface for the internal management server. Defaults to `0.0.0.0`; bind it to a private interface, since the endpoint has no authentication. |
 | `port` | Integer | The port for the internal management server. |
 
-The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), and request header values set by filters unless the header is one the journal records as safe (see `journal_security`).
+The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
 
 ### HTTP Options (`http`)
 

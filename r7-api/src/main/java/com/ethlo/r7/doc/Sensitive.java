@@ -20,4 +20,10 @@ public @interface Sensitive
      * Empty (the default) masks the value always.
      */
     String unlessSafeHeaderIn() default "";
+
+    /**
+     * Whether the header named by {@link #unlessSafeHeaderIn()} is a response header, judged by
+     * the journal's response whitelist rather than its request whitelist.
+     */
+    boolean responseHeader() default false;
 }

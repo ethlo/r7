@@ -22,10 +22,11 @@ public final class SensitiveConfig
     /**
      * @param configClass the filter's configuration record
      * @param args        the filter's arguments as parsed from YAML (snake_case keys)
-     * @param safeHeaders request headers whose values may be shown
+     * @param safeRequestHeaders  request headers whose values may be shown
+     * @param safeResponseHeaders response headers whose values may be shown
      * @return {@code args} itself when nothing needs masking, otherwise a masked copy
      */
-    public static Object mask(final Class<?> configClass, final Object args, final HeaderNameSet safeHeaders)
+    public static Object mask(final Class<?> configClass, final Object args, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
         if (!(args instanceof Map<?, ?> map) || configClass == null || !configClass.isRecord())
         {
@@ -41,7 +42,7 @@ public final class SensitiveConfig
                 continue;
             }
             final String key = snakeCase(component.getName());
-            if (!map.containsKey(key) || isShownHeaderValue(sensitive, map, safeHeaders))
+            if (!map.containsKey(key) || isShownHeaderValue(sensitive, map, sensitive.responseHeader() ? safeResponseHeaders : safeRequestHeaders))
             {
                 continue;
             }

@@ -33,6 +33,7 @@ public final class StatusHandler implements HttpHandler
     private final MetricsRegistry metricsRegistry;
     private final ServerConfig serverConfig;
     private final HeaderNameSet safeRequestHeaders;
+    private final HeaderNameSet safeResponseHeaders;
     private final RouteRegistry routeRegistry;
     private final String combinedHtml;
     private ConnectorStatistics connectorStatistics;
@@ -46,6 +47,8 @@ public final class StatusHandler implements HttpHandler
         final ServerConfig.JournalSecurityConfig journalSecurity = serverConfig.storage().journalSecurity();
         this.safeRequestHeaders = JournalSecurity.resolveSafeRequestHeaders(
                 journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
+        this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
+                journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
         this.routeRegistry = routeRegistry;
         this.combinedHtml = loadResource("page.html");
     }
@@ -126,7 +129,7 @@ public final class StatusHandler implements HttpHandler
 
         final List<RouteConfigDto> routeConfigs = routeRegistry.getRoutes().stream()
                 .map(DefaultGatewayRoute.class::cast)
-                .map(route -> ModelMapper.mapRouteConfig(route, this.safeRequestHeaders))
+                .map(route -> ModelMapper.mapRouteConfig(route, this.safeRequestHeaders, this.safeResponseHeaders))
                 .toList();
         root.put("route_version", routeRegistry.getConfigVersion());
         root.put("route_configs", routeConfigs);

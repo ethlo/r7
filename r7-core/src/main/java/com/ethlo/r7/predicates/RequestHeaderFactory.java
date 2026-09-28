@@ -1,5 +1,6 @@
 package com.ethlo.r7.predicates;
 
+import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
@@ -84,7 +85,9 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
         @Override
         public String summary()
         {
-            return PREDICATE_NAME + ": " + this.headerName + " == " + this.targetValue;
+            // The configured value can be a shared secret (a token or session id), and the summary
+            // is shown on the management page: fingerprinted, which still shows when two routes match alike.
+            return PREDICATE_NAME + ": " + this.headerName + " == " + RedactUtil.fingerprint(this.targetValue);
         }
     }
 }

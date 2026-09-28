@@ -5,6 +5,9 @@ routes:
     match:
       - PathPrefix:
           prefix: /secrets
+      - RequestHeader:
+          name: X-Route-Token
+          value: predicate-s3cret-value
     filters:
       - InjectBasicAuth:
           username: upstream-svc
@@ -21,6 +24,12 @@ routes:
       - AddQueryParameter:
           name: api_key
           value: query-s3cret-value
+      - SetResponseHeader:
+          name: X-Api-Key
+          value: response-header-s3cret
+      - RequireMatchRequestHeader:
+          name: X-Client-Token
+          regexp: ^require-s3cret-pattern$
       - SetResponseCookie:
           name: tracking
           value: response-cookie-s3cret

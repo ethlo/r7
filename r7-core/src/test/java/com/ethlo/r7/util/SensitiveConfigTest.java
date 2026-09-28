@@ -17,7 +17,7 @@ class SensitiveConfigTest
 {
     private static Object mask(final Class<?> configClass, final Object args)
     {
-        return SensitiveConfig.mask(configClass, args, JournalSecurity.SAFE_REQUEST_HEADERS);
+        return SensitiveConfig.mask(configClass, args, JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS);
     }
 
     @Test
@@ -74,5 +74,22 @@ class SensitiveConfigTest
         assertThat(SensitiveConfig.redactUrlCredentials("http://api:8080/a@b")).isEqualTo("http://api:8080/a@b");
         assertThat(SensitiveConfig.redactUrlCredentials("http://api:8080")).isEqualTo("http://api:8080");
         assertThat(SensitiveConfig.redactUrlCredentials(null)).isNull();
+    }
+
+    @Test
+    void judgesResponseHeaderValuesByTheResponseWhitelist()
+    {
+        assertThat(mask(com.ethlo.r7.filters.SetResponseHeaderFactory.Config.class, Map.of("name", "X-Api-Key", "value", "k")))
+                .isEqualTo(Map.of("name", "X-Api-Key", "value", SensitiveConfig.MASK));
+        // Safe for responses, though not a request header
+        assertThat(mask(com.ethlo.r7.filters.AddResponseHeaderFactory.Config.class, Map.of("name", "X-Frame-Options", "value", "DENY")))
+                .isEqualTo(Map.of("name", "X-Frame-Options", "value", "DENY"));
+    }
+
+    @Test
+    void masksRequiredMatchPatterns()
+    {
+        assertThat(mask(com.ethlo.r7.filters.RequireMatchRequestHeaderFactory.Config.class, Map.of("name", "X-Token", "regexp", "^s3cret$")))
+                .isEqualTo(Map.of("name", "X-Token", "regexp", SensitiveConfig.MASK));
     }
 }

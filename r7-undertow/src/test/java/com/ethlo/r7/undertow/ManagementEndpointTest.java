@@ -43,6 +43,9 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .body(not(containsString("query-s3cret-value")))
                 .body(not(containsString("response-cookie-s3cret")))
                 .body(not(containsString("url-s3cret-pass")))
+                .body(not(containsString("predicate-s3cret-value")))
+                .body(not(containsString("response-header-s3cret")))
+                .body(not(containsString("require-s3cret-pattern")))
                 .body(containsString("upstream-svc"))
                 .body(containsString("application/visible+json"))
                 .body(containsString("******"));
