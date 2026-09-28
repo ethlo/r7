@@ -2796,6 +2796,7 @@
 </tr>
 </tbody>
 </table>
+<p>The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path <code>target</code> (<code>/new/$1</code>) must produce a path: a location starting with <code>//</code>, <code>/\</code>, <code>\</code>, a scheme or whitespace is refused with <code>400</code>, because a browser would leave the site for it (<code>/go//evil.example</code> would otherwise redirect to <code>//evil.example</code>). An absolute <code>target</code> must have the form <code>http://host...</code>, <code>https://host...</code> or <code>//host...</code> with a non-empty host; any other scheme (<code>javascript:</code>, <code>data:</code>, even written with <code>//</code>), a scheme without <code>//</code>, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's <code>/</code>, <code>?</code> or <code>#</code>; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.</p>
 <hr />
 <h3 id="security-validation">Security &amp; Validation</h3>
 <h4 id="requirerequestheader">RequireRequestHeader</h4>
