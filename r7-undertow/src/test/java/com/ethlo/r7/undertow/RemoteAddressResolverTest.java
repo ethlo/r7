@@ -107,7 +107,10 @@ class RemoteAddressResolverTest
         // resolved via the ordinary "first untrusted entry from the right" branch instead of
         // exercising the all-trusted fallback.
         final RemoteAddressResolver.RemoteInfo result = send(
-                List.of(CidrRange.parse("127.0.0.1/32"), CidrRange.parse("203.0.113.9/32")),
+                List.of(
+                        CidrRange.parse("127.0.0.1/32"),
+                        CidrRange.parse("203.0.113.9/32"),
+                        CidrRange.parse("198.51.100.1/32")),
                 List.of("X-Forwarded-For", "198.51.100.1, 203.0.113.9, 127.0.0.1"));
 
         assertThat(result.source()).isEqualTo(IpSource.X_FORWARDED_FOR);
