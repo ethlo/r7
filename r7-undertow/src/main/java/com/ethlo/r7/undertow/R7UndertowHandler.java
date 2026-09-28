@@ -368,6 +368,19 @@ public final class R7UndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
+        // First of all, framing: a Transfer-Encoding the upstream may parse differently from
+        // Undertow would let the two disagree on where this request's body ends. Checked before
+        // anything else can answer, so no other rejection keeps such a connection alive.
+        if (!TransferEncodingGuard.isAcceptable(exchange.getRequestHeaders()))
+        {
+            logger.debug("Rejecting non-canonical Transfer-Encoding: {}", exchange.getRequestHeaders().get(Headers.TRANSFER_ENCODING));
+            exchange.setPersistent(false);
+            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send(ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate());
+            return;
+        }
+
         // Before any route is consulted: a path the upstream could resolve differently from
         // how the predicates read it would let a request match one route and reach another.
         final RequestPathGuard.Violation pathViolation = RequestPathGuard.check(exchange.getRequestPath());

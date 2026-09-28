@@ -55,7 +55,7 @@ r7 supports zero-downtime configuration reloads.
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
-0. **Path Validation:** Requests whose path an upstream could resolve differently from how route predicates read it are rejected with `400 Bad Request` before anything else runs (see [Ambiguous Paths](#ambiguous-paths)).
+0. **Request Validation:** Before anything else runs, a request `Transfer-Encoding` other than exactly `chunked` is rejected with `400 Bad Request` and the connection closed (see [Transfer-Encoding](#transfer-encoding)); then a path an upstream could resolve differently from how route predicates read it is rejected with `400 Bad Request` (see [Ambiguous Paths](#ambiguous-paths)).
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
 3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
@@ -75,6 +75,10 @@ Route predicates match the decoded request path, while the upstream receives the
 * percent-encoding of `.`, `/`, `\` or `%` that is still present after decoding — an encoded slash (`%2F`) or double-encoding such as `%252e`.
 
 The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
+
+### Transfer-Encoding
+
+A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked, identity`, `gzip, chunked`, or the header repeated) is refused with `400 Bad Request` before routing. RFC 9112 §6.3 requires rejecting a request whose final coding is not `chunked`, and a list that r7 and an upstream read differently would make them disagree on where the body ends.
 
 ### Phase-Aware Filters
 
