@@ -15,14 +15,17 @@ import java.util.regex.Pattern;
  * than guessing whether the text would have matched.
  * <p>
  * The budget is far above what a linear match needs on any input the listener admits (headers are
- * bounded by {@code max_header_size}), so only a pattern that has gone super-linear reaches it.
+ * bounded by {@code max_header_size}), so only a pattern that has gone super-linear reaches it -
+ * and a match that does is stopped within a few milliseconds.
  */
 public final class RegexBudget
 {
     /**
-     * Character reads allowed per match: tens of milliseconds at most.
+     * Character reads allowed per match. Exhausting it takes about 4 ms, so a malicious request
+     * costs an I/O thread no more than that; a linear pattern needs about one read per character,
+     * 8,000 on the largest header the listener admits, which leaves more than a hundredfold headroom.
      */
-    public static final long MAX_CHARACTER_READS = 10_000_000L;
+    public static final long MAX_CHARACTER_READS = 1_000_000L;
 
     private RegexBudget()
     {

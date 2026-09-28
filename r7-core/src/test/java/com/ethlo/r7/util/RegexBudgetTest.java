@@ -24,12 +24,19 @@ class RegexBudgetTest
         final Pattern evil = Pattern.compile("^(.*a){12}$");
         final String input = "a".repeat(40) + "!";
 
-        final long start = System.nanoTime();
+        // Warm-up, so JIT compilation does not count against the bound below
         assertThatThrownBy(() -> RegexBudget.matcher(evil, input).matches())
                 .isInstanceOf(RegexBudget.RegexBudgetExceededException.class)
                 .hasMessageContaining("budget")
                 .hasMessageNotContaining("(.*a)");
-        assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(2));
+
+        for (int i = 0; i < 10; i++)
+        {
+            final long start = System.nanoTime();
+            assertThatThrownBy(() -> RegexBudget.matcher(evil, input).matches())
+                    .isInstanceOf(RegexBudget.RegexBudgetExceededException.class);
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofMillis(100));
+        }
     }
 
     @Test
@@ -41,7 +48,8 @@ class RegexBudgetTest
     }
 
     /**
-     * Linear patterns on the largest input the listener admits stay far inside the budget.
+     * Linear patterns on the largest input the listener admits stay far inside the budget:
+     * about one read per character, against a budget of a million.
      */
     @Test
     void ordinaryPatternsOnLargeInputsAreUnaffected()

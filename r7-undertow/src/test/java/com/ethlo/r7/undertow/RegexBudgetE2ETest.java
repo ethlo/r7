@@ -31,11 +31,15 @@ public class RegexBudgetE2ETest extends AbstractR7IntegrationTest
         UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/ok")).willReturn(aResponse().withStatus(200)));
         final String evil = "/" + "a".repeat(40) + "!";
 
+        // Warm-up request, so class loading and JIT compilation do not count against the bound
+        given().when().get(evil).then().statusCode(500);
+
         for (int i = 0; i < 16; i++)
         {
             final long start = System.nanoTime();
             given().when().get(evil).then().statusCode(500);
-            Assertions.assertTrue(Duration.ofNanos(System.nanoTime() - start).compareTo(Duration.ofSeconds(2)) < 0);
+            final Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
+            Assertions.assertTrue(elapsed.compareTo(Duration.ofMillis(100)) < 0, "request took " + elapsed.toMillis() + " ms");
         }
 
         given().when().get("/ok").then().statusCode(200);
