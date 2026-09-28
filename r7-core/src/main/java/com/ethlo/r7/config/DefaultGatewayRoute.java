@@ -49,8 +49,8 @@ public class DefaultGatewayRoute implements GatewayRoute
     /**
      * @param globalFilters  the global filter instances, run in every phase
      * @param carriedFilters filters of routes the request already passed through before falling
-     *                       back to this one: their request phase has run, so only their response
-     *                       and completion phases remain
+     *                       back to this one: their request phase has run, so their upstream,
+     *                       response and completion phases remain
      * @param ownFilters     this route's own filters, run in every phase
      */
     private DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> globalFilters, final List<GatewayFilter> carriedFilters, final List<GatewayFilter> ownFilters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
@@ -69,7 +69,7 @@ public class DefaultGatewayRoute implements GatewayRoute
         this.filters = allPhases;
 
         this.clientRequestFilters = ofType(requestPhases, ClientRequestGatewayFilter.class, new ClientRequestGatewayFilter[0]);
-        this.beforeUpstreamGatewayFilters = ofType(requestPhases, UpstreamRequestGatewayFilter.class, new UpstreamRequestGatewayFilter[0]);
+        this.beforeUpstreamGatewayFilters = ofType(allPhases, UpstreamRequestGatewayFilter.class, new UpstreamRequestGatewayFilter[0]);
         this.beforeCommitGatewayFilters = ofType(allPhases, ClientResponseGatewayFilter.class, new ClientResponseGatewayFilter[0]);
         this.completedGatewayFilters = ofType(allPhases, CompletedGatewayFilter.class, new CompletedGatewayFilter[0]);
 
@@ -114,9 +114,13 @@ public class DefaultGatewayRoute implements GatewayRoute
      * <ul>
      *   <li>global filters: this route's instances, in every phase (global filters are
      *   instantiated per route, and their request phase ran on these);</li>
-     *   <li>this route's own request filters, and whatever this route already carried: response
-     *   and completion phases only. This route's upstream-phase filters never run: they shaped
-     *   the request for this route's upstream, which is exactly what must not reach another;</li>
+     *   <li>this route's own request filters, and whatever this route already carried: every
+     *   later phase - upstream, response, completion. A filter that started on the request owns
+     *   what follows from it: BasicAuth, for one, removes the client's verified credentials in
+     *   its upstream phase, and must do so whichever upstream the request ends up at;</li>
+     *   <li>this route's filters that only begin at the upstream phase never run: they shaped the
+     *   request for this route's upstream (InjectBasicAuth, SetRequestHeader, rewrites), which is
+     *   exactly what must not reach another;</li>
      *   <li>the fallback's own filters: every phase.</li>
      * </ul>
      * Built once per fallback and kept with this route, so a reload discards it along with the
