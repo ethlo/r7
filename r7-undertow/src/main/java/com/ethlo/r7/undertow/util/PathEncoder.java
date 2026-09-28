@@ -12,8 +12,10 @@ import java.nio.charset.StandardCharsets;
  * space that splits the request line.
  * <p>
  * Everything outside RFC 3986 {@code pchar} and {@code /} is encoded as UTF-8, the charset
- * Undertow decoded the path with, so a path that is only stripped or rewritten round-trips to
- * the bytes the client sent.
+ * Undertow decoded the path with. This canonicalises rather than restores: the input is already
+ * decoded, so a client's needless encoding of a {@code pchar} ({@code %41}, {@code %3B}) comes
+ * out as the plain character. That is the same resource by RFC 3986 §6.2.2.2; what must not
+ * change, and does not, is which characters are data and which are syntax.
  */
 public final class PathEncoder
 {

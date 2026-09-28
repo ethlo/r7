@@ -99,7 +99,8 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     public void uri(final String uri)
     {
         final String newUri = TextValues.requireNoControlCharacters("uri", uri);
-        this.exchange.setRequestURI(newUri, !newUri.startsWith("/"));
+        // Only an absolute URI carries a host; a bare path and the asterisk-form ("*") do not.
+        this.exchange.setRequestURI(newUri, newUri.contains("://"));
     }
 
     @Override

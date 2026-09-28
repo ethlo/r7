@@ -441,7 +441,7 @@ Transforms the upstream request path using regular expressions. Uses standard Ja
 | `regexp` | String | Yes | The regular expression pattern to match against the request path. |
 | `replacement` | String | Yes | The replacement string applied to the matched path. |
 
-Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded stay encoded (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
+Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Needless encoding of ordinary characters is normalised (`%41` is sent as `A`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
 
 #### TemplateRedirect
 
