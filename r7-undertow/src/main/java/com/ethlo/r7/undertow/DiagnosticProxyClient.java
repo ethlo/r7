@@ -78,6 +78,7 @@ public class DiagnosticProxyClient implements ProxyClient
                     @Override
                     public void completed(HttpServerExchange exchange, ProxyConnection result)
                     {
+                        UpstreamAbort.track(exchange, result.getConnection());
                         callback.completed(exchange, result);
                     }
 

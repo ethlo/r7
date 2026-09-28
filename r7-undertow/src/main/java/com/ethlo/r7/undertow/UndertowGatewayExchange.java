@@ -26,6 +26,7 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     // Start with a reasonable size, it will grow automatically if needed
     private static volatile AttachmentKey<?>[] KEY_REGISTRY = new AttachmentKey<?>[32];
 
+    static final AttachmentKey<Long> REQUEST_BODY_LIMIT = AttachmentKey.create(Long.class);
     private final HttpServerExchange undertowExchange;
     private final String requestId;
     private final GatewayRequest request;
@@ -79,6 +80,19 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
     public void shortCircuit(final ShortCircuitGatewayResponse response)
     {
         shortCircuitGatewayResponse = response;
+    }
+
+    @Override
+    public void limitRequestBody(final long maxBytes)
+    {
+        // Recorded here and enforced by RequestBodyGuardConduit where the proxy reads the body:
+        // setMaxEntitySize cannot do it, as HTTP/1.1 fixes the limit at parse time. Only ever
+        // tightens; Undertow still enforces max_entity_size.
+        final Long current = this.undertowExchange.getAttachment(REQUEST_BODY_LIMIT);
+        if (current == null || maxBytes < current)
+        {
+            this.undertowExchange.putAttachment(REQUEST_BODY_LIMIT, maxBytes);
+        }
     }
 
     @Override

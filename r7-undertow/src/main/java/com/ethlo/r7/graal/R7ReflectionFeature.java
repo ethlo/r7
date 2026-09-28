@@ -22,6 +22,7 @@ public final class R7ReflectionFeature implements Feature
     public void beforeAnalysis(final BeforeAnalysisAccess access)
     {
         registerJBossLoggers();
+        registerUndertowInternals();
 
         registerExplicitConfigClasses();
 
@@ -208,6 +209,21 @@ public final class R7ReflectionFeature implements Feature
             {
                 // Safely ignore if a specific version of Undertow/XNIO drops one of these classes
             }
+        }
+    }
+
+    /**
+     * Private Undertow state r7 reads by reflection; see {@code UpstreamAbort}.
+     */
+    private void registerUndertowInternals()
+    {
+        try
+        {
+            RuntimeReflection.register(Class.forName("io.undertow.client.http.HttpClientConnection").getDeclaredField("connection"));
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException("Undertow's HttpClientConnection no longer has the 'connection' field UpstreamAbort relies on", e);
         }
     }
 }

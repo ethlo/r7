@@ -492,6 +492,7 @@ public final class R7UndertowHandler implements HttpHandler
             {
                 throw new IllegalStateException("Route '" + route.id() + "' has no upstream and no filter answered the request");
             }
+            guardChunkedRequestBody(exchange);
             upstreamContext.getProxyHandler().handleRequest(exchange);
         }
         catch (final Exception e)
@@ -616,6 +617,26 @@ public final class R7UndertowHandler implements HttpHandler
                     }
                 }
         );
+    }
+
+    /**
+     * A body without Content-Length is sent to the upstream chunked, and if reading it fails
+     * part-way the proxy closes the upstream request off with a terminating chunk, handing the
+     * upstream a truncated body as a complete one (see {@link UpstreamAbort}). Such bodies get a
+     * guard that aborts the upstream first, and that also enforces any RequestSizeLimit - which
+     * a body of undeclared length could otherwise only be held to after the fact. A body with a
+     * Content-Length needs neither: the upstream request is fixed-length, so a short body fails
+     * rather than completes, and an oversized declared length was refused up front.
+     */
+    private static void guardChunkedRequestBody(final HttpServerExchange exchange)
+    {
+        if (exchange.isRequestComplete() || exchange.getRequestHeaders().contains(Headers.CONTENT_LENGTH))
+        {
+            return;
+        }
+        final Long limit = exchange.getAttachment(UndertowGatewayExchange.REQUEST_BODY_LIMIT);
+        final long maxBytes = limit != null ? limit : Long.MAX_VALUE;
+        exchange.addRequestWrapper((factory, ex) -> new RequestBodyGuardConduit(factory.create(), ex, maxBytes));
     }
 
     /**

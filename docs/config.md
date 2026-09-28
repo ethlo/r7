@@ -575,7 +575,14 @@ Generates a Base64 encoded Basic Authentication string and injects it into the `
 
 #### RequestSizeLimit
 
-Evaluates the `Content-Length` header of incoming requests. If the header is missing or the request uses chunked transfer encoding, r7 actively monitors the streamed byte count. Terminates the connection immediately with `413 Payload Too Large` if the limit is exceeded.
+Limits the size of request bodies.
+
+* **Declared length** (`Content-Length`): a request declaring more than `max_size` is refused with `413 Payload Too Large` before anything is sent upstream; a malformed or negative length is refused with `400`.
+* **Undeclared length** (chunked, or HTTP/2 without `Content-Length`): the body is counted as it streams. Once it crosses `max_size`, r7 closes both the client connection and the upstream connection mid-body, so the upstream never receives the request as complete. The response headers may already have been impossible to send, so the client sees the connection close rather than a `413`.
+
+The server-wide `limits.max_entity_size` applies on top of this and cannot be raised by it.
+
+Independently of this filter, r7 never hands an upstream a chunked request body that was cut short (client disconnect, malformed chunk, or `max_entity_size`) as if it were complete: the upstream connection is closed mid-body instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
