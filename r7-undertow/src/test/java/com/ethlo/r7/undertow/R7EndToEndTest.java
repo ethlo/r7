@@ -1,11 +1,14 @@
 package com.ethlo.r7.undertow;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
 
@@ -16,9 +19,19 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+
+import io.restassured.RestAssured;
 
 import org.testcontainers.images.builder.Transferable;
 
@@ -86,13 +99,18 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         final int fileSize = largeContent.getBytes(StandardCharsets.UTF_8).length;
 
         // Telemetry is flushed to the readable snapshot on a background 2s tick, not synchronously.
+        // The first non-null value is not enough: static-test's counters are cumulative across
+        // the class, so an earlier request (e.g. testStaticContentServing's /static/test.txt)
+        // can leave a stale snapshot that predates this response. Keep polling until the
+        // snapshot has caught up, or the deadline passes and the assertion reports the last value.
         int bodyBytes = -1;
-        for (int attempt = 0; attempt < 20; attempt++)
+        final long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline)
         {
             final String statusJson = given()
                     .accept("application/json")
                     .baseUri("http://localhost")
-.port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888))
+                    .port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888))
                     .when()
                     .get("/")
                     .then()
@@ -105,7 +123,10 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
             if (value != null)
             {
                 bodyBytes = ((Number) value).intValue();
-                break;
+                if (bodyBytes >= fileSize)
+                {
+                    break;
+                }
             }
             Thread.sleep(250);
         }
@@ -280,5 +301,83 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/fallback-primary/charge"))
                 .withHeader("X-Fallback-Route", equalTo("applied"))
                 .withoutHeader("Authorization"));
+    }
+
+    /**
+     * A rewrite hands the proxy a decoded path; the client's percent-encoding must survive into
+     * the upstream request line, or %3F turns into a query string, %25 into a second decode and
+     * %20 into a space that splits the request line.
+     */
+    @Test
+    public void strippedPathKeepsTheClientsPercentEncoding() throws IOException
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathMatching("/users.*")).willReturn(aResponse().withStatus(200)));
+
+        final String statusLine = sendRaw("GET /strip-encoding/users%3Fadmin=true%23x%20y%25z HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 200"), statusLine);
+        UPSTREAM_SERVER.verify(getRequestedFor(urlEqualTo("/users%3Fadmin=true%23x%20y%25z")));
+        UPSTREAM_SERVER.verify(0, getRequestedFor(urlPathEqualTo("/users")).withQueryParam("admin", equalTo("true")));
+    }
+
+    /**
+     * Absolute-form request (RFC 9112 §3.2.2) followed by a rewrite: the rewritten URI is a bare
+     * path, so ProxyHandler must not go looking for a scheme and host inside it.
+     */
+    @Test
+    public void strippedAbsoluteFormPathIsNotCutAtADoubleSlash() throws IOException
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathMatching("/a//.*")).willReturn(aResponse().withStatus(200)));
+
+        final String statusLine = sendRaw("GET http://localhost:" + RestAssured.port + "/strip-encoding/a//b/c HTTP/1.1\r\nHost: localhost:" + RestAssured.port + "\r\nConnection: close\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 200"), statusLine);
+        UPSTREAM_SERVER.verify(getRequestedFor(urlEqualTo("/a//b/c")));
+    }
+
+    /**
+     * Sent over a raw socket: HTTP clients normalise dot-segments before sending, which would
+     * hide exactly the requests this guards against. The e2e-passthrough route matches every
+     * path, so anything that got past the guard would be proxied to the upstream.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/public/../admin/secret",
+            "/public/%2e%2e/admin/secret",
+            "/public/..%2fadmin/secret",
+            "/public/..;/admin/secret",
+            "/public/%252e%252e/admin/secret",
+            "/public/..%5cadmin/secret",
+            "/public/a%00b"
+    })
+    public void ambiguousPathsAreRejectedBeforeRouting(final String rawPath) throws IOException
+    {
+        // Only this request's traffic may count: anything at all reaching the upstream means the
+        // guard let it through, whichever route it then matched.
+        UPSTREAM_SERVER.resetRequests();
+
+        final String statusLine = sendRaw("GET " + rawPath + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 400"), "Expected 400 for " + rawPath + " but got: " + statusLine);
+        UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
+    }
+
+    private static String sendRaw(final String request) throws IOException
+    {
+        try (final Socket socket = new Socket("localhost", RestAssured.port))
+        {
+            socket.setSoTimeout(5_000);
+            final OutputStream out = socket.getOutputStream();
+            out.write(request.getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+            final InputStream in = socket.getInputStream();
+            final StringBuilder line = new StringBuilder();
+            int b;
+            while ((b = in.read()) != -1 && b != '\r')
+            {
+                line.append((char) b);
+            }
+            return line.toString();
+        }
     }
 }

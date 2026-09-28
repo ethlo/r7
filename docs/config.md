@@ -55,6 +55,7 @@ r7 supports zero-downtime configuration reloads.
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
+0. **Path Validation:** Requests whose path an upstream could resolve differently from how route predicates read it are rejected with `400 Bad Request` before anything else runs (see [Ambiguous Paths](#ambiguous-paths)).
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
 3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
@@ -63,6 +64,17 @@ Understanding the exact pipeline order is critical for operating r7. For a given
 6. **Route Response Filters:** Post-upstream mutations execute.
 7. **Global Response Filters:** Final global response mutations.
 8. **Async Journaling:** The request/response pair is dispatched to disk.
+
+### Ambiguous Paths
+
+Route predicates match the decoded request path, while the upstream receives the raw URI and applies its own normalisation. If the two disagree, a request can match a permissive route yet reach a resource that another route protects — `/public/../admin` matches `PathPrefix: /public`, and most upstreams serve it as `/admin`. r7 therefore refuses, with `400 Bad Request`, any request whose decoded path contains:
+
+* a `.` or `..` segment, including with path parameters (`..;x`, which Tomcat and Spring treat as `..`);
+* a backslash (`\`), which some servers treat as `/`;
+* a control character (for example from `%00` or `%0a`);
+* percent-encoding of `.`, `/`, `\` or `%` that is still present after decoding — an encoded slash (`%2F`) or double-encoding such as `%252e`.
+
+The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
 
 ### Phase-Aware Filters
 
@@ -442,6 +454,8 @@ Transforms the upstream request path using regular expressions. Uses standard Ja
 | --- | --- | --- | --- |
 | `regexp` | String | Yes | The regular expression pattern to match against the request path. |
 | `replacement` | String | Yes | The replacement string applied to the matched path. |
+
+Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Needless encoding of ordinary characters is normalised (`%41` is sent as `A`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
 
 #### TemplateRedirect
 
