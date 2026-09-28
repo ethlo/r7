@@ -1979,7 +1979,8 @@
 </tbody>
 </table>
 <h3 id="fallback-fallback">Fallback (<code>fallback</code>)</h3>
-<p>Configures behavior if the upstream connection fails completely. <strong>Fallback recursion is not permitted; cyclic references are rejected at startup.</strong></p>
+<p>Configures behavior when none of the route's upstream targets is available (all marked down by <code>health_check</code>). <strong>Cyclic references (<code>a -&gt; b -&gt; a</code>) are rejected at startup</strong>; a chain <code>a -&gt; b -&gt; c</code> is allowed, and each route in it falls back only when its own targets are down.</p>
+<p>The request is handed to the fallback route <strong>before</strong> the first route's upstream-phase filters run, and is then processed as if it had matched the fallback route: its request filters, its upstream filters, its upstream (or its own fallback), and its response filters. Upstream-phase filters of the first route (<code>InjectBasicAuth</code>, <code>SetRequestHeader</code>, rewrites) therefore never reach the fallback's upstream. Filters whose request phase already ran for the first route - global filters and that route's own request filters such as <code>Cors</code> or <code>RateLimiter</code> - are not run again, but still receive their later phases (upstream, response and completion) on the same instances, so their state stays balanced and their clean-up applies to the fallback upstream too. Global filters run once per request. The exchange is journaled at the first route's journal levels and tagged with <code>gateway.fallback.id</code>.</p>
 <table>
 <thead>
 <tr>
