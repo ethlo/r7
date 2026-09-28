@@ -52,6 +52,33 @@ class TextValuesTest
     }
 
     @Test
+    void controlCharactersAreDetectedByIndex()
+    {
+        assertThat(TextValues.firstControlCharacterIndex("safe")).isEqualTo(-1);
+        assertThat(TextValues.firstControlCharacterIndex("ok\r\nsplit")).isEqualTo(2);
+        assertThat(TextValues.firstControlCharacterIndex("del\u007Fhere")).isEqualTo(3);
+        assertThat(TextValues.firstControlCharacterIndex(null)).isEqualTo(-1);
+    }
+
+    @Test
+    void requireNoControlCharactersRefusesCrLf()
+    {
+        assertThatExceptionOfType(InvalidTextValueException.class)
+                .isThrownBy(() -> TextValues.requireNoControlCharacters("path", "/api/\r\nGET /admin"))
+                .satisfies(e -> {
+                    assertThat(e.getField()).isEqualTo("path");
+                    assertThat(e.getIndex()).isEqualTo(5);
+                });
+    }
+
+    @Test
+    void requireNoControlCharactersAcceptsPlainText()
+    {
+        assertThatCode(() -> TextValues.requireNoControlCharacters("path", "/api/plain-value"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void settingAnUnstorableHeaderValueIsRefused()
     {
         final MutableGatewayHeaders headers = new MutableFastGatewayHeaders();

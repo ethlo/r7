@@ -9,6 +9,7 @@ import com.ethlo.r7.api.MutableCookies;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableQueryParams;
+import com.ethlo.r7.api.TextValues;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
@@ -128,7 +129,7 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     @Override
     public void path(final String path)
     {
-        final String newPath = path.toString();
+        final String newPath = TextValues.requireNoControlCharacters("path", path);
         this.exchange.setRequestPath(newPath);     // The general path
         this.exchange.setRelativePath(newPath);    // Used by ProxyHandler to build upstream URL
         this.exchange.setRequestURI(newPath);      // The full URI used for logging/matching
@@ -137,7 +138,7 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     @Override
     public void uri(final String uri)
     {
-        this.exchange.setRequestURI(uri.toString());
+        this.exchange.setRequestURI(TextValues.requireNoControlCharacters("uri", uri));
     }
 
     @Override
