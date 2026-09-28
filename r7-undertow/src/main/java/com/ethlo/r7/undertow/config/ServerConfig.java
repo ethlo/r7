@@ -127,11 +127,27 @@ public record ServerConfig(
             }
         }
 
+        /**
+         * Loopback unless configured otherwise: the management endpoint has no authentication and
+         * shows the gateway's configuration, so reaching it from elsewhere has to be a decision.
+         * {@code R7_MANAGEMENT_HOST} sets the default without a server.yaml - the container images
+         * use it to listen on all interfaces, which their port mapping needs - and an explicit
+         * {@code management.host} in server.yaml takes precedence over both.
+         */
         @Override
         public String host()
         {
-            return Optional.ofNullable(this.host).orElse("0.0.0.0");
+            return Optional.ofNullable(this.host).orElseGet(ManagementConfig::defaultHost);
         }
+
+        static String defaultHost()
+        {
+            final String fromEnvironment = System.getenv(HOST_ENVIRONMENT_VARIABLE);
+            return fromEnvironment != null && !fromEnvironment.isBlank() ? fromEnvironment.strip() : DEFAULT_HOST;
+        }
+
+        static final String HOST_ENVIRONMENT_VARIABLE = "R7_MANAGEMENT_HOST";
+        static final String DEFAULT_HOST = "127.0.0.1";
 
         @Override
         public Integer port()
