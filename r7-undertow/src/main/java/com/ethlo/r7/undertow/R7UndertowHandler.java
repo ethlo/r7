@@ -46,6 +46,7 @@ import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.config.UpstreamConfig;
+import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
@@ -237,6 +238,15 @@ public final class R7UndertowHandler implements HttpHandler
                 final boolean followSymlinks = staticServeRequest.followSymlinks();
                 final boolean listDirectory = staticServeRequest.listDirectory();
 
+                // Dotfiles in a web root are usually deployment leftovers - .env, .git/, .htpasswd -
+                // and ResourceHandler serves them like any other file. Answered as if absent.
+                if (!staticServeRequest.serveHiddenFiles() && StaticContentFactory.StaticServeRequest.isHidden(exchange.getRelativePath()))
+                {
+                    exchange.setStatusCode(HttpStatuses.NOT_FOUND);
+                    exchange.endExchange();
+                    return;
+                }
+
                 final Object directoryIdentity;
                 try
                 {
@@ -367,6 +377,19 @@ public final class R7UndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
+        // First of all, framing: a Transfer-Encoding the upstream may parse differently from
+        // Undertow would let the two disagree on where this request's body ends. Checked before
+        // anything else can answer, so no other rejection keeps such a connection alive.
+        if (!TransferEncodingGuard.isAcceptable(exchange.getRequestHeaders()))
+        {
+            logger.debug("Rejecting non-canonical Transfer-Encoding: {}", exchange.getRequestHeaders().get(Headers.TRANSFER_ENCODING));
+            exchange.setPersistent(false);
+            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send(ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate());
+            return;
+        }
+
         // Before any route is consulted: a path the upstream could resolve differently from
         // how the predicates read it would let a request match one route and reach another.
         final RequestPathGuard.Violation pathViolation = RequestPathGuard.check(exchange.getRequestPath());
@@ -391,10 +414,10 @@ public final class R7UndertowHandler implements HttpHandler
             return;
         }
 
-        execute(exchange, req, route);
+        execute(exchange, req, route, remoteInfo.trustedPeer());
     }
 
-    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route)
+    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route, final boolean trustedPeer)
     {
         final String requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(exchange.getProtocol().toString(),
@@ -407,6 +430,9 @@ public final class R7UndertowHandler implements HttpHandler
                 incomingRequest.remoteAddress(),
                 incomingRequest.getRemoteAddressSource()
         );
+        // After the snapshot: filters and the journal keep seeing what the client sent, while
+        // the live headers - which are what the proxy copies upstream - lose what must not pass.
+        UpstreamHeaderSanitizer.sanitize(exchange.getRequestHeaders(), trustedPeer);
         final MutableGatewayResponse clientResponse = new UndertowGatewayResponse(exchange);
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
@@ -454,6 +480,14 @@ public final class R7UndertowHandler implements HttpHandler
             return;
         }
 
+        // Before any upstream filter, so whatever a filter sets afterwards is untouched - there is
+        // no telling the client's value from a filter's by comparing them. Runs again for a
+        // fallback route, harmlessly: by then the client's value is already gone.
+        if (Boolean.TRUE.equals(gatewayExchange.getAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED)))
+        {
+            exchange.getRequestHeaders().remove(Headers.AUTHORIZATION);
+        }
+
         for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())
         {
             filter.onUpstreamRequest(gatewayExchange);
@@ -480,6 +514,7 @@ public final class R7UndertowHandler implements HttpHandler
             {
                 throw new IllegalStateException("Route '" + route.id() + "' has no upstream and no filter answered the request");
             }
+            guardChunkedRequestBody(exchange);
             upstreamContext.getProxyHandler().handleRequest(exchange);
         }
         catch (final Exception e)
@@ -562,7 +597,10 @@ public final class R7UndertowHandler implements HttpHandler
                     final HttpHandler handler = ProxyHandler.builder()
                             .setProxyClient(client)
                             .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
-                            .setReuseXForwarded(false)
+                            // Safe only because UpstreamHeaderSanitizer has removed every
+                            // X-Forwarded-* header an untrusted peer sent: what is left to
+                            // reuse came from a trusted proxy, whose chain is extended.
+                            .setReuseXForwarded(true)
                             .setRewriteHostHeader(true)
                             .build();
 
@@ -601,6 +639,26 @@ public final class R7UndertowHandler implements HttpHandler
                     }
                 }
         );
+    }
+
+    /**
+     * A body without Content-Length is sent to the upstream chunked, and if reading it fails
+     * part-way the proxy closes the upstream request off with a terminating chunk, handing the
+     * upstream a truncated body as a complete one (see {@link UpstreamAbort}). Such bodies get a
+     * guard that aborts the upstream first, and that also enforces any RequestSizeLimit - which
+     * a body of undeclared length could otherwise only be held to after the fact. A body with a
+     * Content-Length needs neither: the upstream request is fixed-length, so a short body fails
+     * rather than completes, and an oversized declared length was refused up front.
+     */
+    private static void guardChunkedRequestBody(final HttpServerExchange exchange)
+    {
+        if (exchange.isRequestComplete() || exchange.getRequestHeaders().contains(Headers.CONTENT_LENGTH))
+        {
+            return;
+        }
+        final Long limit = exchange.getAttachment(UndertowGatewayExchange.REQUEST_BODY_LIMIT);
+        final long maxBytes = limit != null ? limit : Long.MAX_VALUE;
+        exchange.addRequestWrapper((factory, ex) -> new RequestBodyGuardConduit(factory.create(), ex, maxBytes));
     }
 
     /**

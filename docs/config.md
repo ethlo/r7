@@ -55,7 +55,7 @@ r7 supports zero-downtime configuration reloads.
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
-0. **Path Validation:** Requests whose path an upstream could resolve differently from how route predicates read it are rejected with `400 Bad Request` before anything else runs (see [Ambiguous Paths](#ambiguous-paths)).
+0. **Request Validation:** Before anything else runs, a request `Transfer-Encoding` other than exactly `chunked` is rejected with `400 Bad Request` and the connection closed (see [Transfer-Encoding](#transfer-encoding)); then a path an upstream could resolve differently from how route predicates read it is rejected with `400 Bad Request` (see [Ambiguous Paths](#ambiguous-paths)).
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
 3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
@@ -75,6 +75,10 @@ Route predicates match the decoded request path, while the upstream receives the
 * percent-encoding of `.`, `/`, `\` or `%` that is still present after decoding — an encoded slash (`%2F`) or double-encoding such as `%252e`.
 
 The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
+
+### Transfer-Encoding
+
+A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked, identity`, `gzip, chunked`, or the header repeated) is refused with `400 Bad Request` before routing. RFC 9112 §6.3 requires rejecting a request whose final coding is not `chunked`, and a list that r7 and an upstream read differently would make them disagree on where the body ends.
 
 ### Phase-Aware Filters
 
@@ -467,6 +471,8 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 | `target` | String | Yes | The destination URL template. Regex capture groups can be referenced using `{{name}}` or `{{index}}`. |
 | `status` | Integer | No | The HTTP redirect status code. Defaults to `302` (Found). |
 
+The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path `target` (`/new/$1`) must produce a path: a location starting with `//`, `/\`, `\`, a scheme or whitespace is refused with `400`, because a browser would leave the site for it (`/go//evil.example` would otherwise redirect to `//evil.example`). An absolute `target` must have the form `http://host...`, `https://host...` or `//host...` with a non-empty host; any other scheme (`javascript:`, `data:`, even written with `//`), a scheme without `//`, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's `/`, `?` or `#`; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.
+
 ---
 
 ### Security & Validation
@@ -541,8 +547,13 @@ Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, 
 | --- | --- | --- | --- |
 | `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
+| `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
 Only bcrypt hashes are accepted (`$2a$`, `$2b$`, `$2x$` or `$2y$`, cost 4-31); htpasswd's MD5, SHA-1 and crypt formats are rejected at startup, as are duplicate usernames and malformed entries.
+
+A request carrying more than one `Authorization` value is refused with `401`: the field is a singleton, and only one value could be verified.
+
+bcrypt is deliberately expensive, so the number of verifications running at once is capped at the number of CPU cores, shared by every `BasicAuth` filter. A request that cannot get a slot within 250 ms is answered with `503 Service Unavailable` and `Retry-After: 1`. Credentials that already verified are cached and skip bcrypt, so a flood of wrong passwords sheds its own requests rather than starving the gateway. The listener is plaintext HTTP, so Basic credentials are visible to anyone on the network path between client and gateway: use this filter only on a trusted network segment.
 
 ```yaml
 filters:
@@ -568,7 +579,14 @@ Generates a Base64 encoded Basic Authentication string and injects it into the `
 
 #### RequestSizeLimit
 
-Evaluates the `Content-Length` header of incoming requests. If the header is missing or the request uses chunked transfer encoding, r7 actively monitors the streamed byte count. Terminates the connection immediately with `413 Payload Too Large` if the limit is exceeded.
+Limits the size of request bodies.
+
+* **Declared length** (`Content-Length`): a request declaring more than `max_size` is refused with `413 Payload Too Large` before anything is sent upstream; a malformed or negative length is refused with `400`.
+* **Undeclared length** (chunked, or HTTP/2 without `Content-Length`): the body is counted as it streams. Once it crosses `max_size`, r7 closes both the client connection and the upstream connection mid-body, so the upstream never receives the request as complete. The response headers may already have been impossible to send, so the client sees the connection close rather than a `413`.
+
+The server-wide `limits.max_entity_size` applies on top of this and cannot be raised by it.
+
+Independently of this filter, r7 never hands an upstream a chunked request body that was cut short (client disconnect, malformed chunk, or `max_entity_size`) as if it were complete: the upstream connection is closed mid-body instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -634,6 +652,7 @@ Short-circuits the pipeline to serve static files directly from the disk using a
 | `base_directory` | String | Yes | The absolute physical path on the disk (e.g., `/var/www/html/`) containing the static assets. |
 | `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped `current` release symlink). |
 | `list_directory` | Boolean | No (default `false`) | Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. `index.html`) is found there. When disabled, such a request is rejected with `403 Forbidden`. |
+| `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`; `.well-known/` is always served. A directory listing, if enabled, still shows their names. |
 
 #### SetStatus
 
@@ -788,8 +807,10 @@ Defines the interfaces for the internal status and metrics endpoints.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `host` | String | The interface for the internal management server. |
+| `host` | String | The interface for the internal management server. Defaults to `127.0.0.1`, or to the `R7_MANAGEMENT_HOST` environment variable when set; the container images set it to `0.0.0.0` so the published status port works. The endpoint has no authentication: publish it only on a private network. |
 | `port` | Integer | The port for the internal management server. |
+
+The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
 
 ### HTTP Options (`http`)
 
@@ -814,6 +835,15 @@ Configures boundaries and payload restrictions for incoming HTTP requests to pre
 | `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
 | `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When `X-Forwarded-For` is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in `trusted_proxies`; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended. |
 
+#### Headers forwarded to the upstream
+
+Before a request is proxied, r7 removes the client headers an upstream must not receive as written. The journal and filters still see the client's original headers.
+
+* **Hop-by-hop headers** (RFC 9110 §7.6.1): `Connection`, `Keep-Alive`, `Proxy-Connection`, `Proxy-Authorization`, `Upgrade`, `TE` (except `TE: trailers`), and every header named in `Connection`. A WebSocket upgrade keeps `Upgrade: websocket` and is sent with `Connection: Upgrade`. `Host`, `Content-Length` and `Transfer-Encoding` are never removed because a client named them in `Connection`.
+* **Forwarding and identity claims**, unless the peer is in `trusted_proxies`: `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `X-Cluster-Client-IP`, and the path overrides `X-Original-URL` and `X-Rewrite-URL`.
+
+r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself. For a trusted proxy it extends that proxy's values (its client's address stays in `X-Forwarded-For`, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the `X-Forwarded-*` headers they receive from r7.
+
 ### Proxy Client (`proxy`)
 
 Configures the behavior of the internal reverse proxy client that connects to upstream targets.
@@ -831,7 +861,7 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `work_dir` | String | The directory path where the memory-mapped journal files are stored. |
+| `work_dir` | String | The directory path where the memory-mapped journal files are stored. Created with mode `0750`, and journal segments with `0640` (owner read-write, group read): a sidecar tailer running as another user needs to share the gateway's group. The umask can only narrow these; an existing directory or file keeps its mode. |
 | `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). |
 | `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. |
 | `pre_fault` | Boolean | When `true`, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. |

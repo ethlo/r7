@@ -69,6 +69,13 @@ $defs:
         BasicAuth:
           type: object
           properties:
+            forward_credentials:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether the client's own Authorization header is passed on to the upstream after it has been verified. Off by default: the credentials are the gateway's to check, and forwarding them hands every client password to the upstream. A header set by another filter, such as InjectBasicAuth, is never removed."
+              default: false
             realm:
               type: string
               description: The authentication realm presented to the client.
@@ -681,6 +688,13 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: "Whether to render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. index.html) is found there. Disabled by default, in which case such a request is rejected with 403 Forbidden."
+              default: false
+            serve_hidden_files:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether to serve files and directories whose name starts with '.' (e.g. .env, .git/). Disabled by default, in which case such a request is answered 404; .well-known/ is always served."
               default: false
           required:
           - base_directory

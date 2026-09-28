@@ -1,5 +1,9 @@
 package com.ethlo.r7.status.dto;
 
+import com.ethlo.r7.journal.HeaderNameSet;
+import com.ethlo.r7.util.FilterRegistry;
+import com.ethlo.r7.util.SensitiveConfig;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,7 +21,9 @@ import io.undertow.server.ConnectorStatistics;
 
 public class ModelMapper
 {
-    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route)
+    private static final FilterRegistry FILTER_REGISTRY = new FilterRegistry();
+
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
         final RouteDefinition def = route.routeDefinition();
 
@@ -29,17 +35,28 @@ public class ModelMapper
         );
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
-                .map(f -> new FilterDto(f.name(), f.args()))
+                .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders, safeResponseHeaders)))
                 .toList() : Collections.emptyList();
 
         return new RouteConfigDto(
                 def.id(),
                 toPredicateNode(route.predicate()),
                 journal,
-                def.upstream() != null ? def.upstream().targets().toString() : null,
+                def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
                 filters,
                 PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]))
         );
+    }
+
+    /**
+     * Without this the management endpoint renders filter configuration verbatim, putting upstream
+     * credentials (InjectBasicAuth), password hashes (BasicAuth) and injected tokens on any page
+     * that can reach it. Header values are shown by the same whitelist the journal uses - the
+     * effective one, including any override in server.yaml.
+     */
+    static Object maskedArgs(final String filterName, final Object args, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
+    {
+        return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, safeRequestHeaders, safeResponseHeaders);
     }
 
     private static MatchDto toPredicateNode(final GatewayPredicate predicate)

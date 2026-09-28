@@ -12,13 +12,19 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.TextValues;
+import com.ethlo.r7.core.GatewayContextKeys;
+import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -73,12 +79,25 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
     }
 
     public record Config(
+            @Sensitive
             @Description("List of users in htpasswd format (username:bcrypt-hash), as produced by 'htpasswd -B'.")
             List<String> users,
             @Description("The authentication realm presented to the client.")
-            @Nullable String realm) implements ValidatableConfig
+            @Nullable String realm,
+            @Description("Whether the client's own Authorization header is passed on to the upstream after it has been verified. "
+                    + "Off by default: the credentials are the gateway's to check, and forwarding them hands every client password to the upstream. "
+                    + "A header set by another filter, such as InjectBasicAuth, is never removed.")
+            @Nullable
+            @DefaultValue("false")
+            Boolean forwardCredentials) implements ValidatableConfig
     {
         private static final String DEFAULT_REALM = "Secure Area";
+
+        @Override
+        public Boolean forwardCredentials()
+        {
+            return Optional.ofNullable(this.forwardCredentials).orElse(false);
+        }
 
         @Override
         public String realm()
@@ -175,9 +194,25 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         }
     }
 
+    /**
+     * bcrypt is deliberately CPU-bound, and every failed guess costs a full round - a cache hit
+     * is only possible for credentials that already verified. Without a bound, a flood of wrong
+     * passwords runs as many rounds in parallel as it has requests, on virtual threads with no
+     * limit, and takes every core from the rest of the gateway. Shared by every BasicAuth filter,
+     * since the cores are.
+     */
+    static final Semaphore BCRYPT_PERMITS = new Semaphore(Math.max(1, Runtime.getRuntime().availableProcessors()));
+
+    /**
+     * How long a verification waits for a permit before answering 503. Long enough to ride out a
+     * burst of legitimate logins, short enough that a flood is shed rather than queued.
+     */
+    private static final long BCRYPT_PERMIT_WAIT_MILLIS = 250;
+
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
         private static final byte[] UNAUTHORIZED_PAYLOAD = "Unauthorized".getBytes(UTF_8);
+        private static final byte[] BUSY_PAYLOAD = "Service Unavailable: too many authentication attempts in progress".getBytes(UTF_8);
         private static final String SCHEME = "Basic ";
 
         /**
@@ -202,6 +237,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         private final String realm;
         private final String challenge;
         private final String dummyHash;
+        private final boolean forwardCredentials;
 
         GF(final Config config)
         {
@@ -213,6 +249,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
                     .expireAfterAccess(CACHE_TTL)
                     .build();
             this.dummyHash = buildDummyHash(this.credentials.values());
+            this.forwardCredentials = config.forwardCredentials();
         }
 
         /**
@@ -270,6 +307,15 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         {
             final String authHeader = exchange.clientRequest().headers().getFirst(HttpHeaders.AUTHORIZATION);
 
+            // Authorization is a singleton field (RFC 9110 11.6.2). With two, only the first is
+            // checked here, and a second would ride along to whatever reads the request next -
+            // so an ambiguous request is refused rather than half-verified.
+            if (authHeader != null && hasMoreThanOne(exchange.clientRequest().headers().getAll(HttpHeaders.AUTHORIZATION)))
+            {
+                this.rejectUnauthorized(exchange);
+                return;
+            }
+
             if (authHeader == null || !authHeader.regionMatches(true, 0, SCHEME, 0, SCHEME.length()))
             {
                 this.rejectUnauthorized(exchange);
@@ -286,7 +332,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             final String cachedUser = this.verifiedCredentials.getIfPresent(cacheKey);
             if (cachedUser != null)
             {
-                exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(cachedUser));
+                this.accept(exchange, cachedUser);
                 return;
             }
 
@@ -315,14 +361,53 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
 
             // An unknown username is still run through bcrypt, otherwise the response time alone
             // tells an attacker which usernames exist.
-            if (!BCrypt.checkPassword(password, storedHash != null ? storedHash : this.dummyHash) || storedHash == null)
+            final boolean verified;
+            try
+            {
+                if (!BCRYPT_PERMITS.tryAcquire(BCRYPT_PERMIT_WAIT_MILLIS, TimeUnit.MILLISECONDS))
+                {
+                    this.rejectBusy(exchange);
+                    return;
+                }
+            }
+            catch (final InterruptedException exception)
+            {
+                Thread.currentThread().interrupt();
+                this.rejectBusy(exchange);
+                return;
+            }
+            try
+            {
+                verified = BCrypt.checkPassword(password, storedHash != null ? storedHash : this.dummyHash) && storedHash != null;
+            }
+            finally
+            {
+                BCRYPT_PERMITS.release();
+            }
+
+            if (!verified)
             {
                 this.rejectUnauthorized(exchange);
                 return;
             }
 
             this.verifiedCredentials.put(cacheKey, username);
+            this.accept(exchange, username);
+        }
+
+        /**
+         * The client's credentials are the gateway's to check. Unless configured to forward them,
+         * they are marked consumed, and the gateway removes them from the upstream request before
+         * any upstream filter runs - on a fallback route too - so every user's password does not
+         * travel on to the upstream, while an Authorization a filter sets afterwards is kept.
+         */
+        private void accept(final ClientRequestGatewayExchange exchange, final String username)
+        {
             exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(username));
+            if (!this.forwardCredentials)
+            {
+                exchange.setAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED, Boolean.TRUE);
+            }
         }
 
         /**
@@ -340,6 +425,30 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             {
                 throw new IllegalStateException("SHA-256 is required by every Java platform", exception);
             }
+        }
+
+        private static boolean hasMoreThanOne(final Iterable<String> values)
+        {
+            int count = 0;
+            for (final String ignored : values)
+            {
+                if (++count > 1)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void rejectBusy(final ClientRequestGatewayExchange exchange)
+        {
+            final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
+            headers.set(HttpHeaders.RETRY_AFTER, "1");
+            headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(headers,
+                    HttpStatuses.SERVICE_UNAVAILABLE,
+                    ByteBuffer.wrap(BUSY_PAYLOAD)
+            ));
         }
 
         private void rejectUnauthorized(final ClientRequestGatewayExchange exchange)

@@ -38,9 +38,36 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
      * @param baseDirectory  the directory to serve files from
      * @param followSymlinks whether to follow symbolic links when resolving files
      * @param listDirectory  whether to render an HTML directory listing when no welcome file is found
+     * @param serveHiddenFiles whether a path segment starting with '.' may be served
      */
-    public record StaticServeRequest(Path baseDirectory, boolean followSymlinks, boolean listDirectory)
+    public record StaticServeRequest(Path baseDirectory, boolean followSymlinks, boolean listDirectory, boolean serveHiddenFiles)
     {
+        /**
+         * Whether {@code relativePath} names a hidden file or directory: any segment starting with
+         * '.', such as {@code .env} or {@code .git/config}. {@code .well-known/} is not hidden -
+         * RFC 8615 puts ACME challenges and security.txt there.
+         */
+        private static final String WELL_KNOWN = ".well-known";
+
+        public static boolean isHidden(final String relativePath)
+        {
+            int segmentStart = 0;
+            final int len = relativePath.length();
+            for (int i = 0; i <= len; i++)
+            {
+                if (i == len || relativePath.charAt(i) == '/')
+                {
+                    final int length = i - segmentStart;
+                    final boolean wellKnown = length == WELL_KNOWN.length() && relativePath.startsWith(WELL_KNOWN, segmentStart);
+                    if (length > 0 && relativePath.charAt(segmentStart) == '.' && !wellKnown)
+                    {
+                        return true;
+                    }
+                    segmentStart = i + 1;
+                }
+            }
+            return false;
+        }
     }
 
     @Override
@@ -77,8 +104,20 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
                     "and no welcome file (e.g. index.html) is found there. Disabled by default, in which case " +
                     "such a request is rejected with 403 Forbidden.")
             @DefaultValue("false")
-            Boolean listDirectory) implements ValidatableConfig
+            Boolean listDirectory,
+
+            @Nullable
+            @Description("Whether to serve files and directories whose name starts with '.' (e.g. .env, .git/). " +
+                    "Disabled by default, in which case such a request is answered 404; .well-known/ is always served.")
+            @DefaultValue("false")
+            Boolean serveHiddenFiles) implements ValidatableConfig
     {
+        @Override
+        public Boolean serveHiddenFiles()
+        {
+            return Optional.ofNullable(this.serveHiddenFiles).orElse(false);
+        }
+
         @Override
         public Boolean followSymlinks()
         {
@@ -131,7 +170,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
             exchange.setAttachment(STATIC_SERVE_REQUEST_KEY,
-                    new StaticServeRequest(this.config.baseDirectory(), this.config.followSymlinks(), this.config.listDirectory()));
+                    new StaticServeRequest(this.config.baseDirectory(), this.config.followSymlinks(), this.config.listDirectory(), this.config.serveHiddenFiles()));
             exchange.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.OK, null, null));
         }
     }

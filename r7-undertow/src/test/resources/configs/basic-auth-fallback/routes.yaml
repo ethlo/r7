@@ -1,0 +1,61 @@
+version: basic-auth-fallback-test
+
+routes:
+  - id: direct
+    match:
+      - PathPrefix:
+          prefix: /direct/
+    filters:
+      - BasicAuth:
+          users:
+            - "alice:$2y$04$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # The injected credentials are byte-for-byte the client's, and declared before BasicAuth:
+  # only provenance, not value, can tell them apart.
+  - id: direct-inject
+    match:
+      - PathPrefix:
+          prefix: /direct-inject/
+    filters:
+      - InjectBasicAuth:
+          username: alice
+          password: secret
+      - BasicAuth:
+          users:
+            - "alice:$2y$04$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # The primary upstream is a closed port, so the health check marks it down and verified
+  # requests fall back to WireMock - which must never receive the client's credentials.
+  - id: protected
+    match:
+      - PathPrefix:
+          prefix: /protected
+    filters:
+      - BasicAuth:
+          users:
+            # htpasswd -nbBC 4 alice secret
+            - "alice:$2y$04$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:1
+      health_check:
+        path: /health
+        interval: 200ms
+        fall: 1
+      fallback:
+        route_id: protected-fallback
+
+  - id: protected-fallback
+    filters:
+      - AddRequestHeader:
+          name: X-Fallback
+          value: "yes"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
