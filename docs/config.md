@@ -818,6 +818,15 @@ Configures boundaries and payload restrictions for incoming HTTP requests to pre
 | `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
 | `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When `X-Forwarded-For` is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in `trusted_proxies`; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended. |
 
+#### Headers forwarded to the upstream
+
+Before a request is proxied, r7 removes the client headers an upstream must not receive as written. The journal and filters still see the client's original headers.
+
+* **Hop-by-hop headers** (RFC 9110 §7.6.1): `Connection`, `Keep-Alive`, `Proxy-Connection`, `Proxy-Authorization`, `Upgrade`, `TE` (except `TE: trailers`), and every header named in `Connection`. A WebSocket upgrade keeps `Upgrade: websocket` and is sent with `Connection: Upgrade`. `Host`, `Content-Length` and `Transfer-Encoding` are never removed because a client named them in `Connection`.
+* **Forwarding and identity claims**, unless the peer is in `trusted_proxies`: `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `X-Cluster-Client-IP`, and the path overrides `X-Original-URL` and `X-Rewrite-URL`.
+
+r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself. For a trusted proxy it extends that proxy's values (its client's address stays in `X-Forwarded-For`, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the `X-Forwarded-*` headers they receive from r7.
+
 ### Proxy Client (`proxy`)
 
 Configures the behavior of the internal reverse proxy client that connects to upstream targets.

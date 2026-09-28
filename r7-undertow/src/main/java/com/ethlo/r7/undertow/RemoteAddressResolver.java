@@ -30,15 +30,16 @@ public final class RemoteAddressResolver
     public RemoteInfo resolve(final HttpServerExchange exchange)
     {
         final InetAddress socketAddress = socketAddress(exchange);
+        final boolean trustedPeer = isTrustedProxy(socketAddress);
 
         // X-Forwarded-For/X-Real-IP are client-controlled: anything can put whatever it
         // likes in them. Only a request whose immediate peer is a configured, trusted proxy
         // gets to have those headers believed; otherwise a direct client could spoof its own
         // address and bypass IP-based access control (RemoteAddr predicate) or rotate rate
         // limit buckets by lying about who it is.
-        if (!isTrustedProxy(socketAddress))
+        if (!trustedPeer)
         {
-            return toRemoteInfo(socketAddress, IpSource.SOCKET);
+            return toRemoteInfo(socketAddress, IpSource.SOCKET, false);
         }
 
         // A header can legally arrive as several field-lines; per RFC 9110 §5.3 that is
@@ -60,7 +61,7 @@ public final class RemoteAddressResolver
                 // rather than consult X-Real-IP. Otherwise a client could pair a malformed
                 // XFF with a forged X-Real-IP and have the latter accepted even though a
                 // trusted proxy only ever touched XFF for this request.
-                return toRemoteInfo(socketAddress, IpSource.SOCKET);
+                return toRemoteInfo(socketAddress, IpSource.SOCKET, true);
             }
         }
 
@@ -76,12 +77,12 @@ public final class RemoteAddressResolver
                 final InetAddress candidate = parseLiteral(xRealIp.trim());
                 if (candidate != null)
                 {
-                    return new RemoteInfo(candidate, IpSource.X_REAL_IP);
+                    return new RemoteInfo(candidate, IpSource.X_REAL_IP, true);
                 }
             }
         }
 
-        return toRemoteInfo(socketAddress, IpSource.SOCKET);
+        return toRemoteInfo(socketAddress, IpSource.SOCKET, true);
     }
 
     /**
@@ -117,13 +118,13 @@ public final class RemoteAddressResolver
         {
             if (!isTrustedProxy(parsed[i]))
             {
-                return new RemoteInfo(parsed[i], IpSource.X_FORWARDED_FOR);
+                return new RemoteInfo(parsed[i], IpSource.X_FORWARDED_FOR, true);
             }
         }
 
         // Every hop in the chain is itself a trusted proxy: there is nothing further to peel
         // back, so the original (leftmost) claim is the closest thing to a client address.
-        return new RemoteInfo(parsed[0], IpSource.X_FORWARDED_FOR);
+        return new RemoteInfo(parsed[0], IpSource.X_FORWARDED_FOR, true);
     }
 
     private boolean isTrustedProxy(final InetAddress address)
@@ -164,9 +165,9 @@ public final class RemoteAddressResolver
         }
     }
 
-    private static RemoteInfo toRemoteInfo(final InetAddress address, final IpSource source)
+    private static RemoteInfo toRemoteInfo(final InetAddress address, final IpSource source, final boolean trustedPeer)
     {
-        return address != null ? new RemoteInfo(address, source) : new RemoteInfo(null, IpSource.UNKNOWN);
+        return address != null ? new RemoteInfo(address, source, trustedPeer) : new RemoteInfo(null, IpSource.UNKNOWN, trustedPeer);
     }
 
     private static InetAddress socketAddress(final HttpServerExchange exchange)
@@ -175,7 +176,11 @@ public final class RemoteAddressResolver
         return sourceAddress != null ? sourceAddress.getAddress() : null;
     }
 
-    public record RemoteInfo(InetAddress address, IpSource source)
+    /**
+     * @param trustedPeer whether the immediate peer is a configured trusted proxy, which is what
+     *                    entitles the request to carry forwarding headers onward to the upstream
+     */
+    public record RemoteInfo(InetAddress address, IpSource source, boolean trustedPeer)
     {
     }
 }
