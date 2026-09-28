@@ -9,7 +9,10 @@ public interface MutableGatewayRequest extends GatewayRequest
     MutableGatewayHeaders headers();
 
     /**
-     * Updates the path component
+     * Updates the path component. Takes the <em>decoded</em> path, the same form
+     * {@link #path()} returns: the gateway percent-encodes it for the wire, so a {@code ?},
+     * {@code #}, {@code %} or space in it stays part of the path. Passing an already-encoded
+     * path encodes it a second time.
      */
     void path(final String newPath);
 
@@ -26,7 +29,8 @@ public interface MutableGatewayRequest extends GatewayRequest
     MutableCookies cookies();
 
     /**
-     * Updates the full target URI
+     * Updates the full target URI. Sent to the upstream exactly as given, so it must already be
+     * percent-encoded.
      */
     void uri(final String uri);
 

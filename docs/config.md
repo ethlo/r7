@@ -55,6 +55,7 @@ r7 supports zero-downtime configuration reloads.
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
+0. **Path Validation:** Requests whose path an upstream could resolve differently from how route predicates read it are rejected with `400 Bad Request` before anything else runs (see [Ambiguous Paths](#ambiguous-paths)).
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
 3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
@@ -63,6 +64,17 @@ Understanding the exact pipeline order is critical for operating r7. For a given
 6. **Route Response Filters:** Post-upstream mutations execute.
 7. **Global Response Filters:** Final global response mutations.
 8. **Async Journaling:** The request/response pair is dispatched to disk.
+
+### Ambiguous Paths
+
+Route predicates match the decoded request path, while the upstream receives the raw URI and applies its own normalisation. If the two disagree, a request can match a permissive route yet reach a resource that another route protects — `/public/../admin` matches `PathPrefix: /public`, and most upstreams serve it as `/admin`. r7 therefore refuses, with `400 Bad Request`, any request whose decoded path contains:
+
+* a `.` or `..` segment, including with path parameters (`..;x`, which Tomcat and Spring treat as `..`);
+* a backslash (`\`), which some servers treat as `/`;
+* a control character (for example from `%00` or `%0a`);
+* percent-encoding of `.`, `/`, `\` or `%` that is still present after decoding — an encoded slash (`%2F`) or double-encoding such as `%252e`.
+
+The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
 
 ### Phase-Aware Filters
 
@@ -120,7 +132,9 @@ Configures background probes to automatically evict and restore nodes.
 
 ### Fallback (`fallback`)
 
-Configures behavior if the upstream connection fails completely. **Fallback recursion is not permitted; cyclic references are rejected at startup.**
+Configures behavior when none of the route's upstream targets is available (all marked down by `health_check`). **Cyclic references (`a -> b -> a`) are rejected at startup**; a chain `a -> b -> c` is allowed, and each route in it falls back only when its own targets are down.
+
+The request is handed to the fallback route **before** the first route's upstream-phase filters run, and is then processed as if it had matched the fallback route: its request filters, its upstream filters, its upstream (or its own fallback), and its response filters. Upstream-phase filters of the first route (`InjectBasicAuth`, `SetRequestHeader`, rewrites) therefore never reach the fallback's upstream. Filters whose request phase already ran for the first route - global filters and that route's own request filters such as `Cors` or `RateLimiter` - are not run again, but still receive their later phases (upstream, response and completion) on the same instances, so their state stays balanced and their clean-up applies to the fallback upstream too. Global filters run once per request. The exchange is journaled at the first route's journal levels and tagged with `gateway.fallback.id`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -441,6 +455,8 @@ Transforms the upstream request path using regular expressions. Uses standard Ja
 | `regexp` | String | Yes | The regular expression pattern to match against the request path. |
 | `replacement` | String | Yes | The replacement string applied to the matched path. |
 
+Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Needless encoding of ordinary characters is normalised (`%41` is sent as `A`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
+
 #### TemplateRedirect
 
 Intercepts the request and immediately issues an HTTP redirect (3xx) based on a regex match of the path and a substitution template.
@@ -450,6 +466,8 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 | `source` | String | Yes | The regular expression pattern to match against the request path. |
 | `target` | String | Yes | The destination URL template. Regex capture groups can be referenced using `{{name}}` or `{{index}}`. |
 | `status` | Integer | No | The HTTP redirect status code. Defaults to `302` (Found). |
+
+The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path `target` (`/new/$1`) must produce a path: a location starting with `//`, `/\`, `\`, a scheme or whitespace is refused with `400`, because a browser would leave the site for it (`/go//evil.example` would otherwise redirect to `//evil.example`). An absolute `target` must have the form `http://host...`, `https://host...` or `//host...` with a non-empty host; any other scheme (`javascript:`, `data:`, even written with `//`), a scheme without `//`, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's `/`, `?` or `#`; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.
 
 ---
 
@@ -525,8 +543,13 @@ Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, 
 | --- | --- | --- | --- |
 | `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
+| `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
 Only bcrypt hashes are accepted (`$2a$`, `$2b$`, `$2x$` or `$2y$`, cost 4-31); htpasswd's MD5, SHA-1 and crypt formats are rejected at startup, as are duplicate usernames and malformed entries.
+
+A request carrying more than one `Authorization` value is refused with `401`: the field is a singleton, and only one value could be verified.
+
+bcrypt is deliberately expensive, so the number of verifications running at once is capped at the number of CPU cores, shared by every `BasicAuth` filter. A request that cannot get a slot within 250 ms is answered with `503 Service Unavailable` and `Retry-After: 1`. Credentials that already verified are cached and skip bcrypt, so a flood of wrong passwords sheds its own requests rather than starving the gateway. The listener is plaintext HTTP, so Basic credentials are visible to anyone on the network path between client and gateway: use this filter only on a trusted network segment.
 
 ```yaml
 filters:
@@ -803,6 +826,15 @@ Configures boundaries and payload restrictions for incoming HTTP requests to pre
 | `max_parameter_count` | Integer | The maximum number of parameters allowed per request. |
 | `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
 | `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When `X-Forwarded-For` is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in `trusted_proxies`; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended. |
+
+#### Headers forwarded to the upstream
+
+Before a request is proxied, r7 removes the client headers an upstream must not receive as written. The journal and filters still see the client's original headers.
+
+* **Hop-by-hop headers** (RFC 9110 §7.6.1): `Connection`, `Keep-Alive`, `Proxy-Connection`, `Proxy-Authorization`, `Upgrade`, `TE` (except `TE: trailers`), and every header named in `Connection`. A WebSocket upgrade keeps `Upgrade: websocket` and is sent with `Connection: Upgrade`. `Host`, `Content-Length` and `Transfer-Encoding` are never removed because a client named them in `Connection`.
+* **Forwarding and identity claims**, unless the peer is in `trusted_proxies`: `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `X-Cluster-Client-IP`, and the path overrides `X-Original-URL` and `X-Rewrite-URL`.
+
+r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself. For a trusted proxy it extends that proxy's values (its client's address stays in `X-Forwarded-For`, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the `X-Forwarded-*` headers they receive from r7.
 
 ### Proxy Client (`proxy`)
 

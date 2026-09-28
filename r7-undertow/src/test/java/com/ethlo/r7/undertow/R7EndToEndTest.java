@@ -1,11 +1,14 @@
 package com.ethlo.r7.undertow;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
 
@@ -16,9 +19,19 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+
+import io.restassured.RestAssured;
 
 import org.testcontainers.images.builder.Transferable;
 
@@ -260,5 +273,111 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
                 .withCookie("added_c", equalTo("injected_cookie"))
                 .withCookie("kept_c", equalTo("should_remain")));
         // TODO: //.withoutCookie("removed_c"));
+    }
+
+    /**
+     * When the primary upstream is down, the request is handed to the fallback route before the
+     * primary's upstream filters run: the fallback's upstream must see neither the primary's
+     * injected credentials nor miss the fallback route's own request filters.
+     */
+    @Test
+    public void fallbackRunsItsOwnPipelineAndNeverCarriesThePrimarysCredentials() throws InterruptedException
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/fallback-primary/charge")).willReturn(aResponse().withStatus(200)));
+
+        // The health check needs a probe or two to mark the closed port down; until then the
+        // request is proxied to the dead primary and fails.
+        int status = -1;
+        for (int attempt = 0; attempt < 50 && status != 200; attempt++)
+        {
+            status = given().when().get("/fallback-primary/charge").then().extract().statusCode();
+            if (status != 200)
+            {
+                Thread.sleep(200);
+            }
+        }
+        Assertions.assertEquals(200, status, "request never reached the fallback route");
+
+        UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/fallback-primary/charge"))
+                .withHeader("X-Fallback-Route", equalTo("applied"))
+                .withoutHeader("Authorization"));
+    }
+
+    /**
+     * A rewrite hands the proxy a decoded path; the client's percent-encoding must survive into
+     * the upstream request line, or %3F turns into a query string, %25 into a second decode and
+     * %20 into a space that splits the request line.
+     */
+    @Test
+    public void strippedPathKeepsTheClientsPercentEncoding() throws IOException
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathMatching("/users.*")).willReturn(aResponse().withStatus(200)));
+
+        final String statusLine = sendRaw("GET /strip-encoding/users%3Fadmin=true%23x%20y%25z HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 200"), statusLine);
+        UPSTREAM_SERVER.verify(getRequestedFor(urlEqualTo("/users%3Fadmin=true%23x%20y%25z")));
+        UPSTREAM_SERVER.verify(0, getRequestedFor(urlPathEqualTo("/users")).withQueryParam("admin", equalTo("true")));
+    }
+
+    /**
+     * Absolute-form request (RFC 9112 §3.2.2) followed by a rewrite: the rewritten URI is a bare
+     * path, so ProxyHandler must not go looking for a scheme and host inside it.
+     */
+    @Test
+    public void strippedAbsoluteFormPathIsNotCutAtADoubleSlash() throws IOException
+    {
+        UPSTREAM_SERVER.stubFor(get(urlPathMatching("/a//.*")).willReturn(aResponse().withStatus(200)));
+
+        final String statusLine = sendRaw("GET http://localhost:" + RestAssured.port + "/strip-encoding/a//b/c HTTP/1.1\r\nHost: localhost:" + RestAssured.port + "\r\nConnection: close\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 200"), statusLine);
+        UPSTREAM_SERVER.verify(getRequestedFor(urlEqualTo("/a//b/c")));
+    }
+
+    /**
+     * Sent over a raw socket: HTTP clients normalise dot-segments before sending, which would
+     * hide exactly the requests this guards against. The e2e-passthrough route matches every
+     * path, so anything that got past the guard would be proxied to the upstream.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/public/../admin/secret",
+            "/public/%2e%2e/admin/secret",
+            "/public/..%2fadmin/secret",
+            "/public/..;/admin/secret",
+            "/public/%252e%252e/admin/secret",
+            "/public/..%5cadmin/secret",
+            "/public/a%00b"
+    })
+    public void ambiguousPathsAreRejectedBeforeRouting(final String rawPath) throws IOException
+    {
+        // Only this request's traffic may count: anything at all reaching the upstream means the
+        // guard let it through, whichever route it then matched.
+        UPSTREAM_SERVER.resetRequests();
+
+        final String statusLine = sendRaw("GET " + rawPath + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        Assertions.assertTrue(statusLine.startsWith("HTTP/1.1 400"), "Expected 400 for " + rawPath + " but got: " + statusLine);
+        UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
+    }
+
+    private static String sendRaw(final String request) throws IOException
+    {
+        try (final Socket socket = new Socket("localhost", RestAssured.port))
+        {
+            socket.setSoTimeout(5_000);
+            final OutputStream out = socket.getOutputStream();
+            out.write(request.getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+            final InputStream in = socket.getInputStream();
+            final StringBuilder line = new StringBuilder();
+            int b;
+            while ((b = in.read()) != -1 && b != '\r')
+            {
+                line.append((char) b);
+            }
+            return line.toString();
+        }
     }
 }

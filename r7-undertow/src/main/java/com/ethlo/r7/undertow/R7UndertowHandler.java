@@ -45,6 +45,8 @@ import com.ethlo.r7.config.HealthCheckConfig;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.TimeoutConfig;
+import com.ethlo.r7.config.UpstreamConfig;
+import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
@@ -324,7 +326,10 @@ public final class R7UndertowHandler implements HttpHandler
     {
         exchange.addExchangeCompleteListener((serverExchange, next) ->
         {
-            handleCompleted(statefulJournal, exchange, gatewayExchange, route.journal(), gatewayExchange.requestId(), serverExchange);
+            // The journal's own config, not route.journal(): after a fallback the route here is
+            // the fallback route, but the journal was opened, and its client request recorded,
+            // under the route the request first matched.
+            handleCompleted(statefulJournal, exchange, gatewayExchange, statefulJournal.routeJournalConfig(), gatewayExchange.requestId(), serverExchange);
 
             try
             {
@@ -363,6 +368,18 @@ public final class R7UndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
+        // Before any route is consulted: a path the upstream could resolve differently from
+        // how the predicates read it would let a request match one route and reach another.
+        final RequestPathGuard.Violation pathViolation = RequestPathGuard.check(exchange.getRequestPath());
+        if (pathViolation != null)
+        {
+            logger.debug("Rejecting ambiguous request path ({}): {}", pathViolation, exchange.getRequestURI());
+            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send(ErrorMessages.AMBIGUOUS_PATH.duplicate());
+            return;
+        }
+
         final RemoteAddressResolver.RemoteInfo remoteInfo = this.remoteAddressResolver.resolve(exchange);
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange, remoteInfo.address(), remoteInfo.source());
         final DefaultGatewayRoute route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
@@ -375,10 +392,10 @@ public final class R7UndertowHandler implements HttpHandler
             return;
         }
 
-        execute(exchange, req, route);
+        execute(exchange, req, route, remoteInfo.trustedPeer());
     }
 
-    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route)
+    private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route, final boolean trustedPeer)
     {
         final String requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(exchange.getProtocol().toString(),
@@ -391,6 +408,9 @@ public final class R7UndertowHandler implements HttpHandler
                 incomingRequest.remoteAddress(),
                 incomingRequest.getRemoteAddressSource()
         );
+        // After the snapshot: filters and the journal keep seeing what the client sent, while
+        // the live headers - which are what the proxy copies upstream - lose what must not pass.
+        UpstreamHeaderSanitizer.sanitize(exchange.getRequestHeaders(), trustedPeer);
         final MutableGatewayResponse clientResponse = new UndertowGatewayResponse(exchange);
         final MutableGatewayAttributes attrs = new FastGatewayAttributes();
         final UndertowGatewayExchange gatewayExchange = new UndertowGatewayExchange(exchange, requestId, requestCopy, incomingRequest, clientResponse, UnproxiedUpstreamResponse.INSTANCE, attrs, route);
@@ -409,6 +429,43 @@ public final class R7UndertowHandler implements HttpHandler
 
     private void continueUpstream(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
+        // Decided before this route's upstream filters run, never after: they shape the request
+        // for this route's upstream (InjectBasicAuth, SetRequestHeader, rewrites), and a
+        // request already carrying those changes must not be handed to a different upstream.
+        // A route without an upstream (static content, canned responses) is finished by its
+        // upstream-phase filters short-circuiting, so it has no targets to check.
+        final boolean hasUpstream = route.routeDefinition().upstream() != null;
+        final RouteUpstreamContext upstreamContext = hasUpstream ? this.upstreamContext(route) : null;
+        if (upstreamContext != null && !upstreamContext.hasAvailableTargets())
+        {
+            final DefaultGatewayRoute fallbackRoute = this.fallbackRouteOf(route);
+            if (fallbackRoute != null)
+            {
+                logger.debug("Routing to fallback route: {}", fallbackRoute.id());
+                gatewayExchange.attributes().set("gateway.fallback.id", fallbackRoute.id());
+
+                // The fallback route runs as if the request had matched it: its own request
+                // filters (dispatching where they need to), then its own upstream filters and
+                // upstream, or its own fallback. Global filters already ran once for this request.
+                executeRequestFilters(exchange, fallbackRoute, gatewayExchange, statefulJournal, fallbackRoute.globalClientRequestFilterCount());
+                return;
+            }
+
+            registerResponseListeners(exchange, route, gatewayExchange, statefulJournal);
+            exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id() + "'");
+            return;
+        }
+
+        // Before any upstream filter, so whatever a filter sets afterwards is untouched - there is
+        // no telling the client's value from a filter's by comparing them. Runs again for a
+        // fallback route, harmlessly: by then the client's value is already gone.
+        if (Boolean.TRUE.equals(gatewayExchange.getAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED)))
+        {
+            exchange.getRequestHeaders().remove(Headers.AUTHORIZATION);
+        }
+
         for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())
         {
             filter.onUpstreamRequest(gatewayExchange);
@@ -420,6 +477,32 @@ public final class R7UndertowHandler implements HttpHandler
             }
         }
 
+        registerResponseListeners(exchange, route, gatewayExchange, statefulJournal);
+
+        exchange.putAttachment(PROXY_START_TS_KEY, ClockSource.now());
+
+        if (gatewayExchange.isWebsocketUpgraded())
+        {
+            attachWebSocketLifecycleTracking(exchange, gatewayExchange, statefulJournal, gatewayExchange.requestId());
+        }
+
+        try
+        {
+            if (upstreamContext == null)
+            {
+                throw new IllegalStateException("Route '" + route.id() + "' has no upstream and no filter answered the request");
+            }
+            guardChunkedRequestBody(exchange);
+            upstreamContext.getProxyHandler().handleRequest(exchange);
+        }
+        catch (final Exception e)
+        {
+            this.errorHandler.handleError(gatewayExchange, e);
+        }
+    }
+
+    private static void registerResponseListeners(final HttpServerExchange exchange, final DefaultGatewayRoute route, final UndertowGatewayExchange gatewayExchange, final StatefulJournal statefulJournal)
+    {
         exchange.addResponseCommitListener(ex ->
         {
             if (gatewayExchange.wasProxied())
@@ -435,22 +518,13 @@ public final class R7UndertowHandler implements HttpHandler
         });
 
         setupCompletionHandler(exchange, route, gatewayExchange, statefulJournal);
-
-        exchange.putAttachment(PROXY_START_TS_KEY, ClockSource.now());
-
-        if (gatewayExchange.isWebsocketUpgraded())
-        {
-            attachWebSocketLifecycleTracking(exchange, gatewayExchange, statefulJournal, gatewayExchange.requestId());
-        }
-
-        proxyCall(route, exchange, gatewayExchange);
     }
 
-    private void proxyCall(final DefaultGatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
+    private RouteUpstreamContext upstreamContext(final DefaultGatewayRoute route)
     {
         final ServerConfig.ProxyConfig pConfig = this.serverConfig.proxy();
 
-        final RouteUpstreamContext upstreamContext = this.routeProxyCache.computeIfAbsent(route.id(), uri ->
+        return this.routeProxyCache.computeIfAbsent(route.id(), uri ->
                 {
                     final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
                             .setConnectionsPerThread(pConfig.connectionsPerThread())
@@ -501,7 +575,10 @@ public final class R7UndertowHandler implements HttpHandler
                     final HttpHandler handler = ProxyHandler.builder()
                             .setProxyClient(client)
                             .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
-                            .setReuseXForwarded(false)
+                            // Safe only because UpstreamHeaderSanitizer has removed every
+                            // X-Forwarded-* header an untrusted peer sent: what is left to
+                            // reuse came from a trusted proxy, whose chain is extended.
+                            .setReuseXForwarded(true)
                             .setRewriteHostHeader(true)
                             .build();
 
@@ -540,22 +617,6 @@ public final class R7UndertowHandler implements HttpHandler
                     }
                 }
         );
-
-        if (!upstreamContext.hasAvailableTargets())
-        {
-            executeFallback(route, exchange, gatewayExchange);
-            return;
-        }
-
-        try
-        {
-            guardChunkedRequestBody(exchange);
-            upstreamContext.getProxyHandler().handleRequest(exchange);
-        }
-        catch (final Exception e)
-        {
-            this.errorHandler.handleError(gatewayExchange, e);
-        }
     }
 
     /**
@@ -595,46 +656,20 @@ public final class R7UndertowHandler implements HttpHandler
         staticHandlers.clear();
     }
 
-    private void executeFallback(final DefaultGatewayRoute route, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange)
+    private DefaultGatewayRoute fallbackRouteOf(final DefaultGatewayRoute route)
     {
-        final FallbackConfig fallbackConfig = route.routeDefinition().upstream().fallback();
-
-        if (fallbackConfig != null && fallbackConfig.routeId() != null && !fallbackConfig.routeId().isBlank())
+        final UpstreamConfig upstream = route.routeDefinition().upstream();
+        final FallbackConfig fallbackConfig = upstream != null ? upstream.fallback() : null;
+        if (fallbackConfig == null || fallbackConfig.routeId() == null || fallbackConfig.routeId().isBlank())
         {
-            final String fallbackRouteId = fallbackConfig.routeId();
-            final DefaultGatewayRoute fallbackRoute = (DefaultGatewayRoute) this.routeRegistry.findRoute(fallbackRouteId).orElseThrow();
-
-            logger.debug("Routing to fallback route: {}", fallbackRouteId);
-            gatewayExchange.attributes().set("gateway.fallback.id", fallbackRouteId);
-
-            // Execute the fallback route's request filter chain
-            for (final ClientRequestGatewayFilter filter : fallbackRoute.clientRequestFilters())
-            {
-                filter.onClientRequest(gatewayExchange);
-
-                if (gatewayExchange.isShortCircuited())
-                {
-                    exchange.putAttachment(REASON_FILTER_KEY, filter);
-
-                    for (final ClientResponseGatewayFilter responseFilter : fallbackRoute.beforeCommitGatewayFilters())
-                    {
-                        responseFilter.onClientResponse(gatewayExchange);
-                    }
-
-                    sendResponse(exchange, gatewayExchange);
-                    return;
-                }
-            }
-
-            // If no short-circuit, proxy to the fallback's upstream targets
-            proxyCall(fallbackRoute, exchange, gatewayExchange);
-            return;
+            return null;
         }
-
-        // Baseline default if no fallback is configured or found
-        exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-        exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id() + "'");
+        // Validated to exist at load time; absent only if a reload removed it mid-request, and
+        // then the configured baseline answer (503) is the right one.
+        return this.routeRegistry.findRoute(fallbackConfig.routeId())
+                .map(DefaultGatewayRoute.class::cast)
+                .map(route::asFallbackOfThis)
+                .orElse(null);
     }
 
     private void setupJournaling(final Journal journal, final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final RouteJournalConfig journalConfig, final String requestId, final boolean isWebSocket)
