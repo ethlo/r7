@@ -1,8 +1,11 @@
 package com.ethlo.r7.filters;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
@@ -79,8 +82,23 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
                          @Nullable
                          @Description("How long a bucket remains in memory after its last access before being purged.")
                          @DefaultValue("10m")
-                         Duration maxBucketTTL) implements ValidatableConfig
+                         Duration maxBucketTTL,
+
+                         @Nullable
+                         @Description("How many leading bits of an IPv6 client address identify one client. "
+                                 + "A single subscriber is typically assigned a whole /64 and can use any address in it, "
+                                 + "so limiting per full address lets one client take as many buckets as it likes.")
+                         @DefaultValue("64")
+                         Integer ipv6PrefixLength) implements ValidatableConfig
     {
+        private static final int DEFAULT_IPV6_PREFIX_LENGTH = 64;
+
+        @Override
+        public Integer ipv6PrefixLength()
+        {
+            return Optional.ofNullable(this.ipv6PrefixLength).orElse(DEFAULT_IPV6_PREFIX_LENGTH);
+        }
+
         private static final long DEFAULT_MAX_BUCKETS = 10_000L;
         private static final long MINIMUM_EXPIRY_TIME_MILLIS = Duration.ofSeconds(30).toMillis();
 
@@ -117,6 +135,10 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         @Override
         public void validate(final ValidationResult result)
         {
+            if (this.ipv6PrefixLength() < 1 || this.ipv6PrefixLength() > 128)
+            {
+                result.addError("ipv6_prefix_length", "must be between 1 and 128");
+            }
             new ValidatorUtils(result)
                     .requirePositive("capacity", capacity())
                     .requirePositive("refill_tokens", refillTokens())
@@ -168,6 +190,35 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         }
     }
 
+    /**
+     * The bucket key for a client address: an IPv4 address as is, an IPv6 address by its
+     * leading {@code ipv6PrefixLength} bits. A client with no known address shares one bucket
+     * rather than failing the request.
+     */
+    static String clientKey(final InetAddress address, final int ipv6PrefixLength)
+    {
+        if (address == null)
+        {
+            return "unknown";
+        }
+        if (!(address instanceof Inet6Address))
+        {
+            return address.getHostAddress();
+        }
+        final byte[] bytes = address.getAddress();
+        final int fullBytes = ipv6PrefixLength / 8;
+        final int remainingBits = ipv6PrefixLength % 8;
+        if (fullBytes < bytes.length)
+        {
+            bytes[fullBytes] &= (byte) (0xFF << (8 - remainingBits));
+            for (int i = fullBytes + 1; i < bytes.length; i++)
+            {
+                bytes[i] = 0;
+            }
+        }
+        return HexFormat.of().formatHex(bytes) + "/" + ipv6PrefixLength;
+    }
+
     private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
     {
         private final Bandwidth limit; // Calculate this once
@@ -194,7 +245,7 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             final String customKey = exchange.getAttachment(GatewayContextKeys.RATE_LIMIT_KEY);
-            final String key = (customKey != null) ? customKey : exchange.clientRequest().remoteAddress().getHostAddress();
+            final String key = (customKey != null) ? customKey : RateLimiterFactory.clientKey(exchange.clientRequest().remoteAddress(), this.config.ipv6PrefixLength());
 
             final Bucket bucket = this.buckets.get(key, this::createNewBucket);
             final ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1L);

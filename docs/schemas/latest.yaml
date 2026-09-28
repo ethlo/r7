@@ -183,6 +183,13 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: The maximum number of tokens the bucket can hold. This defines the absolute burst limit.
+            ipv6prefix_length:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "How many leading bits of an IPv6 client address identify one client. A single subscriber is typically assigned a whole /64 and can use any address in it, so limiting per full address lets one client take as many buckets as it likes."
+              default: 64
             max_bucket_ttl:
               type: string
               pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
