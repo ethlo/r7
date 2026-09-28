@@ -349,6 +349,55 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
         UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
     }
 
+    /**
+     * The framing of a request with a non-canonical Transfer-Encoding is suspect, so the
+     * connection must not carry another request - even when its path is also ambiguous, which
+     * is rejected by a different check. No "Connection: close": the server has to close it.
+     */
+    @Test
+    public void nonCanonicalTransferEncodingClosesThePersistentConnection() throws IOException
+    {
+        UPSTREAM_SERVER.resetRequests();
+
+        final String responses = sendRawUntilClosed(
+                "POST /public/../admin HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked, identity\r\n\r\n3\r\nabc\r\n0\r\n\r\n"
+                        + "GET /after HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+        Assertions.assertTrue(responses.startsWith("HTTP/1.1 400"), responses);
+        Assertions.assertEquals(1, responses.split("HTTP/1\\.1 ", -1).length - 1, "a second request was served on the same connection: " + responses);
+        UPSTREAM_SERVER.verify(0, anyRequestedFor(anyUrl()));
+    }
+
+    /**
+     * @return everything the server sent before closing the connection; fails if it is still
+     * open after the timeout
+     */
+    private static String sendRawUntilClosed(final String request) throws IOException
+    {
+        try (final Socket socket = new Socket("localhost", RestAssured.port))
+        {
+            socket.setSoTimeout(5_000);
+            final OutputStream out = socket.getOutputStream();
+            out.write(request.getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+            final InputStream in = socket.getInputStream();
+            final StringBuilder all = new StringBuilder();
+            int b;
+            try
+            {
+                while ((b = in.read()) != -1)
+                {
+                    all.append((char) b);
+                }
+            }
+            catch (final java.net.SocketTimeoutException stillOpen)
+            {
+                Assertions.fail("the server kept the connection open: " + all);
+            }
+            return all.toString();
+        }
+    }
+
     private static String sendRaw(final String request) throws IOException
     {
         try (final Socket socket = new Socket("localhost", RestAssured.port))
