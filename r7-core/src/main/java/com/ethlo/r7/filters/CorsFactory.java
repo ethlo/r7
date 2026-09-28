@@ -34,6 +34,8 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
     private static final String ACCESS_CONTROL_ALLOW_HEADERS = "Access-Control-Allow-Headers";
     private static final String ACCESS_CONTROL_MAX_AGE = "Access-Control-Max-Age";
     private static final String ACCESS_CONTROL_ALLOW_CREDENTIALS = "Access-Control-Allow-Credentials";
+    private static final String ACCESS_CONTROL_REQUEST_METHOD = "Access-Control-Request-Method";
+    private static final String VARY = "Vary";
 
     @Override
     public String name()
@@ -140,72 +142,143 @@ public final class CorsFactory implements GatewayFilterFactory<CorsFactory.Confi
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String method = exchange.clientRequest().method();
-
-            if ("OPTIONS".equals(method))
+            // Only a CORS preflight is answered here: OPTIONS with an Origin *and* an
+            // Access-Control-Request-Method. Any other OPTIONS request - a client asking what the
+            // upstream supports - goes through to the upstream like any other request.
+            if (!"OPTIONS".equals(exchange.clientRequest().method()))
             {
-                final String origin = exchange.clientRequest().headers().getFirst(ORIGIN);
-                if (origin != null)
+                return;
+            }
+            final String origin = exchange.clientRequest().headers().getFirst(ORIGIN);
+            if (origin == null || exchange.clientRequest().headers().getFirst(ACCESS_CONTROL_REQUEST_METHOD) == null)
+            {
+                return;
+            }
+
+            // No Vary here: the short-circuit response's headers are applied over the response
+            // filters' work, so a Vary set here would replace what they added. onClientResponse
+            // runs for this response too and merges Vary: Origin into whatever is there.
+            final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(5);
+            // A preflight from an origin that is not allowed learns nothing: no methods, headers
+            // or credentials policy, only the absence of an Allow-Origin.
+            if (this.isAllowed(origin))
+            {
+                headers.set(ACCESS_CONTROL_ALLOW_ORIGIN, this.isAnyOrigin ? "*" : origin);
+                if (this.allowedMethodsString != null)
                 {
-                    final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(5);
-                    if (this.isAnyOrigin)
-                    {
-                        headers.set(ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-                    }
-                    else if (this.specificOrigins.contains(origin))
-                    {
-                        headers.set(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-                    }
-
-                    if (this.allowedMethodsString != null)
-                    {
-                        headers.set(ACCESS_CONTROL_ALLOW_METHODS, this.allowedMethodsString);
-                    }
-                    if (this.allowedHeadersString != null)
-                    {
-                        headers.set(ACCESS_CONTROL_ALLOW_HEADERS, this.allowedHeadersString);
-                    }
-                    if (this.maxAge != null)
-                    {
-                        headers.set(ACCESS_CONTROL_MAX_AGE, this.maxAge);
-                    }
-                    if (this.allowCredentials)
-                    {
-                        headers.set(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
-                    }
-
-                    exchange.shortCircuit(new ShortCircuitGatewayResponse(
-                            headers,
-                            HttpStatuses.NO_CONTENT,
-                            EMPTY_BODY.slice()
-                    ));
+                    headers.set(ACCESS_CONTROL_ALLOW_METHODS, this.allowedMethodsString);
+                }
+                if (this.allowedHeadersString != null)
+                {
+                    headers.set(ACCESS_CONTROL_ALLOW_HEADERS, this.allowedHeadersString);
+                }
+                if (this.maxAge != null)
+                {
+                    headers.set(ACCESS_CONTROL_MAX_AGE, this.maxAge);
+                }
+                if (this.allowCredentials)
+                {
+                    headers.set(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
                 }
             }
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(
+                    headers,
+                    HttpStatuses.NO_CONTENT,
+                    EMPTY_BODY.slice()
+            ));
         }
 
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            final String origin = exchange.clientRequest().headers().getFirst(ORIGIN);
+            final MutableGatewayHeaders responseHeaders = exchange.clientResponse().headers();
 
-            if (origin != null)
+            // With a list of origins the response differs by Origin, so every response - also one
+            // to a request without Origin - must say so, or a shared cache hands one origin's
+            // Allow-Origin (or its absence) to another.
+            if (!this.isAnyOrigin)
             {
-                final MutableGatewayHeaders responseHeaders = exchange.clientResponse().headers();
+                addVaryOrigin(responseHeaders);
+            }
 
-                if (this.isAnyOrigin)
-                {
-                    responseHeaders.set(ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-                }
-                else if (this.specificOrigins.contains(origin))
-                {
-                    responseHeaders.set(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-                }
-
+            final String origin = exchange.clientRequest().headers().getFirst(ORIGIN);
+            if (origin == null)
+            {
+                return;
+            }
+            if (this.isAllowed(origin))
+            {
+                responseHeaders.set(ACCESS_CONTROL_ALLOW_ORIGIN, this.isAnyOrigin ? "*" : origin);
                 if (this.allowCredentials)
                 {
                     responseHeaders.set(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
                 }
+                else
+                {
+                    // Credentials off is part of the policy too: an upstream may not turn them on.
+                    responseHeaders.remove(ACCESS_CONTROL_ALLOW_CREDENTIALS);
+                }
             }
+            else
+            {
+                // The gateway's policy is the one in force: an upstream that grants the origin
+                // anyway must not override it.
+                responseHeaders.remove(ACCESS_CONTROL_ALLOW_ORIGIN);
+                responseHeaders.remove(ACCESS_CONTROL_ALLOW_CREDENTIALS);
+            }
+        }
+
+        private boolean isAllowed(final String origin)
+        {
+            return this.isAnyOrigin || this.specificOrigins.contains(origin);
+        }
+
+        /**
+         * Runs on every response when origins are listed, so the existing Vary list is scanned in
+         * place rather than split: no array, no substrings.
+         */
+        private static void addVaryOrigin(final MutableGatewayHeaders headers)
+        {
+            for (final String line : headers.getAll(VARY))
+            {
+                if (namesOriginOrAny(line))
+                {
+                    return;
+                }
+            }
+            headers.add(VARY, ORIGIN);
+        }
+
+        private static boolean namesOriginOrAny(final String line)
+        {
+            final int len = line.length();
+            int start = 0;
+            while (start < len)
+            {
+                int end = line.indexOf(',', start);
+                if (end < 0)
+                {
+                    end = len;
+                }
+                int from = start;
+                int to = end;
+                while (from < to && (line.charAt(from) == ' ' || line.charAt(from) == '\t'))
+                {
+                    from++;
+                }
+                while (to > from && (line.charAt(to - 1) == ' ' || line.charAt(to - 1) == '\t'))
+                {
+                    to--;
+                }
+                final int length = to - from;
+                if ((length == 1 && line.charAt(from) == '*')
+                        || (length == ORIGIN.length() && line.regionMatches(true, from, ORIGIN, 0, length)))
+                {
+                    return true;
+                }
+                start = end + 1;
+            }
+            return false;
         }
 
         @Override
