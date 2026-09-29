@@ -86,7 +86,7 @@ public final class RequireQueryParameterFactory implements GatewayFilterFactory<
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),
-                        MediaTypes.TEXT_PLAIN,
+                        MediaTypes.TEXT_PLAIN_UTF8,
                         this.errorBody.asReadOnlyBuffer()
                 ));
             }

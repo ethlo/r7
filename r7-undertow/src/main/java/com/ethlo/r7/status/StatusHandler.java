@@ -6,6 +6,9 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +39,7 @@ public final class StatusHandler implements HttpHandler
     private final HeaderNameSet safeResponseHeaders;
     private final RouteRegistry routeRegistry;
     private final String combinedHtml;
+    private final String contentSecurityPolicy;
     private ConnectorStatistics connectorStatistics;
 
     public StatusHandler(final MetricsRegistry metricsRegistry, ServerConfig serverConfig, RouteRegistry routeRegistry)
@@ -51,6 +55,34 @@ public final class StatusHandler implements HttpHandler
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
         this.routeRegistry = routeRegistry;
         this.combinedHtml = loadResource("page.html");
+        this.contentSecurityPolicy = contentSecurityPolicy(this.combinedHtml);
+    }
+
+    /**
+     * The page's one inline script is allowed by its hash, computed from the page as loaded, so
+     * the policy cannot drift from the markup; any other script - injected or not - is refused.
+     * Styles stay inline-permitted: CSS cannot run code, and the page styles its markup inline.
+     */
+    static String contentSecurityPolicy(final String html)
+    {
+        final int open = html.indexOf("<script>");
+        final int close = html.indexOf("</script>", open);
+        if (open < 0 || close < 0 || html.indexOf("<script", open + 1) >= 0)
+        {
+            throw new IllegalStateException("The dashboard must contain exactly one inline <script> block");
+        }
+        final String script = html.substring(open + "<script>".length(), close);
+        final String hash;
+        try
+        {
+            hash = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256").digest(script.getBytes(StandardCharsets.UTF_8)));
+        }
+        catch (final NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException(e);
+        }
+        return "default-src 'none'; script-src 'sha256-" + hash + "'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; "
+                + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     }
 
     private String loadResource(final String... paths)
@@ -90,6 +122,7 @@ public final class StatusHandler implements HttpHandler
         exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, "nosniff");
         exchange.getResponseHeaders().put(Headers.X_FRAME_OPTIONS, "DENY");
         exchange.getResponseHeaders().put(Headers.REFERRER_POLICY, "no-referrer");
+        exchange.getResponseHeaders().put(Headers.CONTENT_SECURITY_POLICY, this.contentSecurityPolicy);
 
         // Read-only: nothing here changes state, so nothing but a read is accepted.
         if (!Methods.GET.equals(exchange.getRequestMethod()) && !Methods.HEAD.equals(exchange.getRequestMethod()))

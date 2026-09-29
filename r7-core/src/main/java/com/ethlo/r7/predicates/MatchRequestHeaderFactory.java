@@ -10,7 +10,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidationResult;
-import com.ethlo.r7.util.RegexBudget;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -63,14 +63,8 @@ public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final String headerValue = request.headers().getFirst(this.headerName);
-
-            if (headerValue == null)
-            {
-                return false;
-            }
-
-            return RegexBudget.matcher(this.pattern, headerValue).matches();
+            // Every occurrence, not the first: see RepeatedValues.
+            return RepeatedValues.allMatch(request.headers(), this.headerName, this.pattern);
         }
 
         @Override

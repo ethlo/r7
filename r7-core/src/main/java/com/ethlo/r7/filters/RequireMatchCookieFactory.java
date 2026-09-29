@@ -6,7 +6,6 @@ import java.util.regex.Pattern;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
-import com.ethlo.r7.api.Cookie;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
@@ -21,7 +20,7 @@ import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
-import com.ethlo.r7.util.RegexBudget;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -96,13 +95,12 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final Cookie cookie = exchange.clientRequest().cookies().get(this.config.name());
-
-            if (cookie == null || cookie.value() == null || !RegexBudget.matcher(this.compiledPattern, cookie.value()).matches())
+            // Every occurrence, not the first: see RepeatedValues.
+            if (!RepeatedValues.allCookiesMatch(exchange.clientRequest().headers(), this.config.name(), this.compiledPattern))
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),
-                        MediaTypes.TEXT_PLAIN,
+                        MediaTypes.TEXT_PLAIN_UTF8,
                         this.errorBody.asReadOnlyBuffer()
                 ));
             }

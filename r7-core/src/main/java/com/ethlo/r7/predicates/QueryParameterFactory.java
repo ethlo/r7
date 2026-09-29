@@ -9,6 +9,7 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -66,14 +67,8 @@ public final class QueryParameterFactory implements GatewayPredicateFactory<Quer
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final String paramValue = request.queryParams().getFirst(this.paramName);
-
-            if (paramValue == null)
-            {
-                return false;
-            }
-
-            return this.targetValue.equals(paramValue);
+            // Every occurrence, not the first: see RepeatedValues.
+            return RepeatedValues.allEqual(request.queryParams(), this.paramName, this.targetValue);
         }
 
         @Override

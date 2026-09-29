@@ -5,10 +5,10 @@
 # volume the first time that volume is created empty, so this is what makes a freshly created
 # r7-journals volume writable by the nonroot user below instead of root:root. Bind-mounted host
 # directories are not affected by this - their ownership is the operator's responsibility.
-FROM busybox:stable AS dirs
+FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
 RUN mkdir -p /journals /checkpoints && chown 65532:65532 /journals /checkpoints
 
-FROM gcr.io/distroless/java25-debian13:nonroot
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
 WORKDIR /app
 
 # Copy the tailer fat JAR

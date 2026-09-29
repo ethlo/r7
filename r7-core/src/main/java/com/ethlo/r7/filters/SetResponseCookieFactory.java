@@ -1,10 +1,12 @@
 package com.ethlo.r7.filters;
 
 import java.time.Duration;
+import java.util.Optional;
 
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.doc.Sensitive;
@@ -54,11 +56,11 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
             String path,
             @Nullable @Description("The cookie max-age duration.")
             Duration maxAge,
-            @Nullable @Description("Whether the cookie is secure.")
+            @Nullable @DefaultValue("true") @Description("Whether the cookie is sent over HTTPS only. Defaults to true.")
             Boolean secure,
-            @Nullable @Description("Whether the cookie is HttpOnly.")
+            @Nullable @DefaultValue("true") @Description("Whether client-side script is denied access to the cookie. Defaults to true.")
             Boolean httpOnly,
-            @Nullable @Description("The SameSite policy (Strict, Lax, None).")
+            @Nullable @DefaultValue("Lax") @Description("The SameSite policy (Strict, Lax, None). Defaults to Lax.")
             String sameSite
     ) implements ValidatableConfig
     {
@@ -87,15 +89,39 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
                     .excludesChar("domain", this.domain(), '\t', "cookie domain cannot contain a tab character")
                     .excludesChar("path", this.path(), '\t', "cookie path cannot contain a tab character");
 
-            if (this.sameSite() != null)
+            if (!this.sameSite().equalsIgnoreCase("Strict") &&
+                    !this.sameSite().equalsIgnoreCase("Lax") &&
+                    !this.sameSite().equalsIgnoreCase("None"))
             {
-                if (!this.sameSite().equalsIgnoreCase("Strict") &&
-                        !this.sameSite().equalsIgnoreCase("Lax") &&
-                        !this.sameSite().equalsIgnoreCase("None"))
-                {
-                    validator.invalid("sameSite", this.sameSite(), "Must be Strict, Lax, or None");
-                }
+                validator.invalid("sameSite", this.sameSite(), "Must be Strict, Lax, or None");
             }
+            // Browsers drop a SameSite=None cookie that is not also Secure, so the operator would
+            // get no cookie at all rather than a cross-site one.
+            else if (this.sameSite().equalsIgnoreCase("None") && !this.secure())
+            {
+                validator.invalid("sameSite", this.sameSite(), "SameSite=None requires secure: true");
+            }
+        }
+
+        // Safe unless opted out: a cookie set by the gateway is typically a token, and each
+        // attribute is what keeps it off plaintext connections, away from script and out of
+        // cross-site requests. Behind TLS termination the browser sees HTTPS, so Secure holds.
+        @Override
+        public Boolean secure()
+        {
+            return Optional.ofNullable(this.secure).orElse(true);
+        }
+
+        @Override
+        public Boolean httpOnly()
+        {
+            return Optional.ofNullable(this.httpOnly).orElse(true);
+        }
+
+        @Override
+        public String sameSite()
+        {
+            return Optional.ofNullable(this.sameSite).orElse("Lax");
         }
     }
 
@@ -129,18 +155,15 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
             {
                 builder.append("; Max-Age=").append(config.maxAge().toSeconds());
             }
-            if (config.secure() != null && config.secure())
+            if (config.secure())
             {
                 builder.append("; Secure");
             }
-            if (config.httpOnly() != null && config.httpOnly())
+            if (config.httpOnly())
             {
                 builder.append("; HttpOnly");
             }
-            if (config.sameSite() != null)
-            {
-                builder.append("; SameSite=").append(config.sameSite());
-            }
+            builder.append("; SameSite=").append(config.sameSite());
 
             return builder.toString();
         }

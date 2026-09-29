@@ -57,7 +57,7 @@ public final class RequireAuthorizationHeaderFactory implements GatewayFilterFac
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         HttpStatuses.UNAUTHORIZED,
-                        MediaTypes.TEXT_PLAIN,
+                        MediaTypes.TEXT_PLAIN_UTF8,
                         UNAUTHORIZED_BODY.slice()
                 ));
             }

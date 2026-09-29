@@ -10,6 +10,7 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -67,14 +68,8 @@ public final class CookieFactory implements GatewayPredicateFactory<CookieFactor
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final Cookie cookie = request.cookies().get(this.cookieName);
-
-            if (cookie == null)
-            {
-                return false;
-            }
-
-            return this.targetValue.equals(cookie.value());
+            // Every occurrence, not the first: see RepeatedValues.
+            return RepeatedValues.allCookiesEqual(request.headers(), this.cookieName, this.targetValue);
         }
 
         @Override

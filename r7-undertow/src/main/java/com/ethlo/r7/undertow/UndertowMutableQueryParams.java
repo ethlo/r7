@@ -54,6 +54,13 @@ public final class UndertowMutableQueryParams implements MutableQueryParams
     }
 
     @Override
+    public int count(final String name)
+    {
+        final Deque<String> values = this.exchange.getQueryParameters().get(name);
+        return values != null ? values.size() : 0;
+    }
+
+    @Override
     public List<String> getAll(final String name)
     {
         final Deque<String> values = this.exchange.getQueryParameters().get(name);

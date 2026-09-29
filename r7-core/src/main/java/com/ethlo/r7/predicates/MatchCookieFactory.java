@@ -3,13 +3,12 @@ package com.ethlo.r7.predicates;
 import java.util.regex.Pattern;
 
 import com.ethlo.r7.util.RedactUtil;
-import com.ethlo.r7.api.Cookie;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.util.RegexBudget;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -61,14 +60,8 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final Cookie cookie = request.cookies().get(this.cookieName);
-
-            if (cookie == null || cookie.value() == null)
-            {
-                return false;
-            }
-
-            return RegexBudget.matcher(this.pattern, cookie.value()).matches();
+            // Every occurrence, not the first: see RepeatedValues.
+            return RepeatedValues.allCookiesMatch(request.headers(), this.cookieName, this.pattern);
         }
 
         @Override
