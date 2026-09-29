@@ -48,9 +48,22 @@ public final class UpstreamHeaderSanitizer
     /**
      * Every {@code X-Forwarded-*} header is a claim about an earlier hop, including extensions
      * such as {@code X-Forwarded-User} that some backends trust for identity, so the whole
-     * family is matched by prefix rather than listed.
+     * family is matched by prefix rather than listed. The separators are checked individually
+     * as {@code -} or {@code _} rather than as one literal string: CGI-derived environments
+     * (classic CGI, FastCGI, and frameworks that read headers out of a CGI-style environment,
+     * e.g. some PHP and WSGI/Rack stacks) fold a header name to an environment variable by
+     * turning every non-alphanumeric character, {@code -} included, into {@code _}. Such a
+     * backend reads {@code X_Forwarded_For} exactly as it would read {@code X-Forwarded-For}, so
+     * a client sending the underscore (or mixed) form would otherwise sail past a check written
+     * only against hyphens and have its forged claim believed downstream.
      */
-    private static final String X_FORWARDED_PREFIX = "X-Forwarded-";
+    private static final byte[] FORWARDED_BYTES = {'f', 'o', 'r', 'w', 'a', 'r', 'd', 'e', 'd'};
+
+    /**
+     * Length of {@code X-Forwarded-}: 1 ({@code x}) + 1 (separator) + 9 ({@code forwarded}) + 1
+     * (separator), the shortest a name in the family can be before whatever it forwards.
+     */
+    private static final int X_FORWARDED_PREFIX_LENGTH = 1 + 1 + FORWARDED_BYTES.length + 1;
 
     private UpstreamHeaderSanitizer()
     {
@@ -157,7 +170,7 @@ public final class UpstreamHeaderSanitizer
         for (long cookie = headers.fastIterateNonEmpty(); cookie != -1L; cookie = headers.fiNextNonEmpty(cookie))
         {
             final HttpString name = headers.fiCurrent(cookie).getHeaderName();
-            if (name.length() > X_FORWARDED_PREFIX.length() && name.toString().regionMatches(true, 0, X_FORWARDED_PREFIX, 0, X_FORWARDED_PREFIX.length()))
+            if (isForwardedFamilyName(name))
             {
                 if (matches == null)
                 {
@@ -170,6 +183,44 @@ public final class UpstreamHeaderSanitizer
         {
             headers.remove(matches[i]);
         }
+    }
+
+    /**
+     * Whether {@code name} is {@code X-Forwarded-*} in any casing, with either {@code -} or
+     * {@code _} (independently) at the two separator positions - see {@link #FORWARDED_BYTES}
+     * for why both must be accepted. Reads bytes directly off the {@link HttpString} rather than
+     * allocating a {@code String}, so a header that is not even long enough to be a candidate
+     * costs nothing beyond the length check.
+     */
+    private static boolean isForwardedFamilyName(final HttpString name)
+    {
+        if (name.length() <= X_FORWARDED_PREFIX_LENGTH || !isByteIgnoreCase(name.byteAt(0), (byte) 'x') || !isSeparator(name.byteAt(1)))
+        {
+            return false;
+        }
+        for (int i = 0; i < FORWARDED_BYTES.length; i++)
+        {
+            if (!isByteIgnoreCase(name.byteAt(2 + i), FORWARDED_BYTES[i]))
+            {
+                return false;
+            }
+        }
+        return isSeparator(name.byteAt(X_FORWARDED_PREFIX_LENGTH - 1));
+    }
+
+    private static boolean isSeparator(final byte b)
+    {
+        return b == '-' || b == '_';
+    }
+
+    /**
+     * ASCII-only case-insensitive compare: header names are ASCII, and folding the 0x20 bit
+     * this way is only valid for letters, which is all {@link #FORWARDED_BYTES} and the leading
+     * {@code x} ever are.
+     */
+    private static boolean isByteIgnoreCase(final byte b, final byte lower)
+    {
+        return (byte) (b | 0x20) == lower;
     }
 
     private static boolean isOws(final char c)

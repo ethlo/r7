@@ -93,6 +93,7 @@ import io.undertow.server.handlers.resource.ResourceHandler;
 import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
 import io.undertow.util.Methods;
+import io.undertow.util.StatusCodes;
 
 public final class R7UndertowHandler implements HttpHandler, RouteGenerationListener
 {
@@ -109,6 +110,16 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     public static final AttachmentKey<Long> PROXY_START_TS_KEY = AttachmentKey.create(Long.class);
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
     static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
+    /**
+     * Whether the upstream actually answered {@code 101 Switching Protocols}, set from the
+     * response-commit listener once the status is known. {@link #IS_WEBSOCKET_KEY} only records
+     * that the client asked for an upgrade, which an upstream is free to refuse by answering
+     * with an ordinary status; treating every such attempt as a live websocket left the request's
+     * journal entry uncompleted (it was deferred to a connection-close listener that fires only
+     * when the persistent connection eventually closes) and the active-websocket gauge
+     * incremented with no matching decrement until then.
+     */
+    static final AttachmentKey<Boolean> WEBSOCKET_UPGRADED_KEY = AttachmentKey.create(Boolean.class);
     private static final String ROUTE_ID_KEY = "gateway.route.id";
     static final String UNROUTED_REASON_KEY = "gateway.unrouted.reason";
     private static final String UPSTREAM_TARGET_KEY = "gateway.target";
@@ -200,7 +211,10 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
 
         journal.clientResponse(journalConfig.response().level(), requestId, gatewayExchange.clientResponse().status(), StartLineBuilder.buildResponseLine(exchange.getProtocol().toString(), gatewayExchange.clientResponse()), gatewayExchange.clientResponse().headers(), null);
 
-        final boolean isWebSocket = Boolean.TRUE.equals(exchange.getAttachment(IS_WEBSOCKET_KEY));
+        // The actual outcome, not the client's ask: a request that asked to upgrade and was
+        // refused is an ordinary completed exchange and must be journaled here like any other,
+        // not left for the connection-close listener that only a genuine upgrade registers.
+        final boolean isWebSocket = gatewayExchange.isWebsocketUpgraded();
         if (isWebSocket)
         {
             final long journalBytes = journal.getBytesWritten();
@@ -648,10 +662,8 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
 
         exchange.putAttachment(PROXY_START_TS_KEY, ClockSource.now());
 
-        if (gatewayExchange.isWebsocketUpgraded())
-        {
-            attachWebSocketLifecycleTracking(exchange, gatewayExchange, statefulJournal, gatewayExchange.requestId());
-        }
+        // Lifecycle tracking for a genuine upgrade is attached from the response-commit
+        // listener above, once the upstream's status is known to actually be 101.
 
         try
         {
@@ -675,6 +687,18 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
             if (gatewayExchange.wasProxied())
             {
                 gatewayExchange.setUpstreamResponse(new ImmutableGatewayResponse(exchange.getProtocol().toString(), new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true));
+            }
+
+            // Only now, with the upstream's actual status known, can "upgraded" be answered
+            // truthfully. Gating on the client's Upgrade header alone (checked before the
+            // request was even proxied) would call every rejected upgrade attempt a live
+            // websocket, including ones the upstream answered with a plain error.
+            final boolean upgraded = exchange.getStatusCode() == StatusCodes.SWITCHING_PROTOCOLS
+                    && Boolean.TRUE.equals(exchange.getAttachment(IS_WEBSOCKET_KEY));
+            exchange.putAttachment(WEBSOCKET_UPGRADED_KEY, upgraded);
+            if (upgraded)
+            {
+                attachWebSocketLifecycleTracking(exchange, gatewayExchange, statefulJournal, gatewayExchange.requestId());
             }
 
             final ClientResponseGatewayFilter[] beforeCommitFilters = route.beforeCommitGatewayFilters();
@@ -991,7 +1015,7 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
         continueUpstream(exchange, route, gatewayExchange, statefulJournal);
     }
 
-    private void attachWebSocketLifecycleTracking(final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final Journal journal, final String requestId)
+    private static void attachWebSocketLifecycleTracking(final HttpServerExchange exchange, final UndertowGatewayExchange gatewayExchange, final Journal journal, final String requestId)
     {
         exchange.getConnection().addCloseListener(connection -> {
             final long requestEndTs = ClockSource.now();

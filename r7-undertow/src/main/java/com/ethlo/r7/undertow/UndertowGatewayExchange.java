@@ -236,9 +236,15 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         return System.nanoTime() - getRequestStartNanos();
     }
 
+    /**
+     * Whether the upstream actually answered {@code 101 Switching Protocols} for this exchange,
+     * not merely whether the client asked to upgrade. Unset (e.g. before the response commits,
+     * or for an exchange with no upstream at all) reads as {@code false} rather than unboxing a
+     * {@code null} attachment.
+     */
     public boolean isWebsocketUpgraded()
     {
-        return undertowExchange.getAttachment(R7UndertowHandler.IS_WEBSOCKET_KEY);
+        return Boolean.TRUE.equals(undertowExchange.getAttachment(R7UndertowHandler.WEBSOCKET_UPGRADED_KEY));
     }
 
     public void onWebSocketClose(Runnable closeListener)
