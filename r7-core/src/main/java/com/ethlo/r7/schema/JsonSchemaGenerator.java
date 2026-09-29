@@ -27,6 +27,7 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonValue;
+import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.SerializationContext;
@@ -552,38 +553,14 @@ public final class JsonSchemaGenerator
         return true;
     }
 
+    /**
+     * The name the YAML mapper binds a component to. Delegates to Jackson's own SNAKE_CASE rather
+     * than reimplementing it: a copy drifts ("ipv6PrefixLength" came out "ipv6prefix_length"),
+     * and then the schema documents a key the gateway rejects as unknown.
+     */
     private String toSnakeCase(final String camelCase)
     {
-        if (camelCase == null || camelCase.isEmpty())
-        {
-            return camelCase;
-        }
-
-        final StringBuilder result = new StringBuilder();
-        for (int i = 0; i < camelCase.length(); i++)
-        {
-            final char c = camelCase.charAt(i);
-
-            if (Character.isUpperCase(c))
-            {
-                if (i > 0)
-                {
-                    final char prev = camelCase.charAt(i - 1);
-                    final boolean isNextLower = (i < camelCase.length() - 1) && Character.isLowerCase(camelCase.charAt(i + 1));
-
-                    if (Character.isLowerCase(prev) || (Character.isUpperCase(prev) && isNextLower))
-                    {
-                        result.append('_');
-                    }
-                }
-                result.append(Character.toLowerCase(c));
-            }
-            else
-            {
-                result.append(c);
-            }
-        }
-        return result.toString();
+        return PropertyNamingStrategies.SNAKE_CASE.nameForField(null, null, camelCase);
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

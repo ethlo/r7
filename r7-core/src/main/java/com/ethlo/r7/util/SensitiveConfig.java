@@ -5,6 +5,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import tools.jackson.databind.PropertyNamingStrategies;
+
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.journal.HeaderNameSet;
 
@@ -82,21 +84,12 @@ public final class SensitiveConfig
      */
     private static final Pattern URL_USERINFO = Pattern.compile("([A-Za-z][A-Za-z0-9+.-]*://)[^/@\\s\\]\\[]+@");
 
+    /**
+     * The key the YAML mapper binds a component to - Jackson's own SNAKE_CASE, so the two cannot
+     * disagree about names such as maxBucketTTL or ipv6PrefixLength.
+     */
     static String snakeCase(final String camelCase)
     {
-        final StringBuilder sb = new StringBuilder(camelCase.length() + 4);
-        for (int i = 0; i < camelCase.length(); i++)
-        {
-            final char c = camelCase.charAt(i);
-            if (Character.isUpperCase(c))
-            {
-                sb.append('_').append(Character.toLowerCase(c));
-            }
-            else
-            {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
+        return PropertyNamingStrategies.SNAKE_CASE.nameForField(null, null, camelCase);
     }
 }

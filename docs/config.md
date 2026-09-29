@@ -614,7 +614,7 @@ Handles Cross-Origin Resource Sharing (CORS). Answers CORS preflights (`OPTIONS`
 
 #### RateLimiter
 
-Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the TCP peer IP address.**
+Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the client's resolved address** (the TCP peer, or the `X-Forwarded-For`/`X-Real-IP` client behind a trusted proxy): an IPv4 address as is, an IPv6 address by its leading `ipv6_prefix_length` bits (a `/64` by default). A filter that sets the `rate_limit_key` attachment overrides this.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -623,6 +623,7 @@ Provides token-bucket rate limiting. Requests exceeding the limit are rejected w
 | `refill_period` | Duration | Yes | The time interval (e.g., `2s`) for the token refill. |
 | `max_buckets` | Long | No | Maximum number of unique identities/buckets to track. Defaults to `10000`. |
 | `max_bucket_ttl` | Duration | No | Time-to-live for idle buckets. Defaults to `max(refill_period * 10, 30s)`. |
+| `ipv6_prefix_length` | Integer | No | How many leading bits identify one IPv6 client (1-128). Defaults to `64`: a subscriber is typically assigned a whole `/64` and can use any address in it, so limiting per full address would give one client unlimited buckets. IPv4 clients are keyed by their full address. |
 
 #### CircuitBreaker
 
