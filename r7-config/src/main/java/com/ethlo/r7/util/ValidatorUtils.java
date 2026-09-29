@@ -180,6 +180,29 @@ public class ValidatorUtils
     }
 
     /**
+     * Rejects a value the journal cannot record: any character above ISO-8859-1.
+     * <p>
+     * For configuration the gateway copies into every exchange's journal attributes itself —
+     * a route id, a target URL. The attribute containers refuse such a value when it is set,
+     * and they are set in the completion listener, after the response has gone: a route id
+     * outside ISO-8859-1 therefore served every request and journaled none of them to the end,
+     * with one log line per request and nothing at startup. Catching it here turns that into a
+     * startup error that names the field.
+     */
+    public ValidatorUtils journalText(final String property, final String value)
+    {
+        final int index = TextValues.firstUnstorableIndex(value);
+        if (index >= 0)
+        {
+            invalid(property, value, String.format(
+                    "character U+%04X at index %d is outside ISO-8859-1; this value is recorded in the journal, "
+                            + "which stores ISO-8859-1 text only (percent-encode it, or use an ASCII name)",
+                    (int) value.charAt(index), index));
+        }
+        return this;
+    }
+
+    /**
      * Characters permitted in an HTTP token (RFC 9110 §5.6.2) beyond letters and digits.
      */
     private static final String TOKEN_SPECIALS = "!#$%&'*+-.^_`|~";

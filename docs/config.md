@@ -1005,13 +1005,15 @@ fingerprint of its value instead of the value itself. This list is separate per 
 | `additional_safe_response_headers` | List of Strings | Response header names to add on top of the built-in whitelist. |
 | `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list. |
 | `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response whitelist entirely. |
+| `fingerprint_key` | String | Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (`id:hmac:` + 16 hex digits) rather than the default unkeyed SHA-256 (`id:sha256:` + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with `${VAR}` interpolation. See [Journaling: redacted header values](journaling.md#redacted-header-values). |
 
 Header names are matched case-insensitively. There is no way to remove a single header from the
 built-in whitelist while keeping the rest — use `safe_*_headers` to replace the whole list if
 you need exact control. Setting both `additional_safe_*_headers` and `safe_*_headers` for the
 same direction is a validation error: a full replacement and an addition to the defaults it
 replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
-is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
+is fingerprinted, no exceptions (unkeyed unless `fingerprint_key` is set, which it should be
+in production). This affects only journaling; it has no effect on what headers
 are sent to clients or upstreams.
 
 ```yaml

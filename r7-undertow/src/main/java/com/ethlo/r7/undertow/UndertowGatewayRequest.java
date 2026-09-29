@@ -98,7 +98,13 @@ public final class UndertowGatewayRequest implements MutableGatewayRequest
     @Override
     public void uri(final String uri)
     {
-        final String newUri = TextValues.requireNoControlCharacters("uri", uri);
+        // Storable as well as free of control characters. The URI is journaled as the upstream
+        // request's start line, and StartLineBuilder copies each char's low byte — so a
+        // character above ISO-8859-1 was not refused here but silently rewritten there (an em
+        // dash became 0x14, a control character) in the audit record. path(String) cannot hit
+        // this, because it percent-encodes; this setter takes an already-encoded URI, where
+        // such a character has no business being in the first place.
+        final String newUri = TextValues.requireNoControlCharacters("uri", TextValues.requireStorable("uri", uri));
         this.exchange.setRequestURI(newUri, isAbsoluteForm(newUri));
     }
 
