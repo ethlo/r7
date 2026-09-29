@@ -891,10 +891,10 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <h2 id="live-dashboard">Live Dashboard</h2>
 <p>r7 includes a built-in dashboard for live system introspection:</p>
 <ul>
-<li>Route-level inspection</li>
-<li>Request and response journaling</li>
-<li>Error-level filtering and escalation</li>
-<li>Real-time traffic visibility</li>
+<li>Route-level inspection: match order, predicates, filters with their configuration, upstream targets and their health</li>
+<li>Current performance per route: request rate, error share and p50/p95/p99 response time over a sliding window</li>
+<li>Request and response journaling levels and overrides</li>
+<li>The effective <code>server.yaml</code>, with changes from the defaults marked, and whether the last <code>routes.yaml</code> edit loaded</li>
 </ul>
 <p><img alt="r7 Dashboard Snapshot" src="assets/overview.png" /></p>
 <hr />

@@ -3501,6 +3501,14 @@
 </tbody>
 </table>
 <p>The management endpoint is read-only (<code>GET</code>/<code>HEAD</code>; anything else gets <code>405</code>) and sends <code>Cache-Control: no-store</code>, <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>, and a <code>Content-Security-Policy</code> that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with <code>******</code>: <code>InjectBasicAuth</code> passwords, <code>BasicAuth</code> user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (<code>http://user:pass@host</code>), request and response header values set by filters unless the header is one the journal records as safe in that direction (see <code>journal_security</code>), and the patterns of <code>RequireMatch*</code> filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.</p>
+<p>What the dashboard shows beyond the configuration itself:</p>
+<ul>
+<li><strong>Response time</strong> per route as p50/p95/p99 over the <code>SimpleMetrics</code> window (<code>period</code>, default 2 minutes), alongside the lifetime average. Percentiles come from a fixed histogram with four buckets per power of two and are reported as the bucket's upper bound, so they read at most 25% high; the window starts empty after a restart.</li>
+<li><strong>Reload status</strong> of <code>routes.yaml</code>: when the running routes were loaded, and when the most recent edit was rejected. A rejected edit leaves the previous routes running; the dashboard says so but not why, since validation messages can quote configured values - the reason is in the gateway log.</li>
+<li><strong>Upstream target health</strong> for routes with a <code>health_check</code>. The monitor starts with a route's first request, so a route that has not been used yet shows no state.</li>
+<li><strong>Requests no route matched</strong>, which are answered <code>404</code> and are not part of any route's figures.</li>
+<li><strong><code>server.yaml</code> as in effect</strong>, with every value that differs from the built-in default marked.</li>
+</ul>
 <h3 id="http-options-http">HTTP Options (<code>http</code>)</h3>
 <p>Configures the HTTP server layer, including protocol support and request parsing behaviors.</p>
 <table>
