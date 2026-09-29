@@ -40,10 +40,10 @@ This is a working document, not yet a claim. It becomes one when every **Gap** a
 | V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
 | V13 Configuration | 7 | 1 | 1 |  | 4 |  |
 | V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
-| V15 Secure Coding and Architecture | 8 | 4 | 1 |  |  |  |
+| V15 Secure Coding and Architecture | 10 | 3 |  |  |  |  |
 | V16 Security Logging and Error Handling | 10 | 3 |  |  | 3 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **75** | **16** | **2** | **7** | **23** | **130** |
+| **Total** | **77** | **15** | **1** | **7** | **23** | **130** |
 
 ## Gaps
 
@@ -55,7 +55,7 @@ The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed 
 4. ~~Log timestamps with date and zone~~ (V16.2.2). Closed by [#74](https://github.com/ethlo/r7/pull/74): ISO-8601 in UTC.
 5. ~~Cookie defaults~~ (V3.3.1, V3.3.2, V3.3.4). Closed by [#74](https://github.com/ethlo/r7/pull/74): `Secure`, `HttpOnly` and `SameSite=Lax` unless configured otherwise.
 6. ~~Brute-force guidance for BasicAuth~~ (V6.1.1, V6.3.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the docs cover the missing lockout, pairing with a `RateLimiter`, bcrypt cost, and journaling failed logins.
-7. **Security documentation** (V2.1.3, V11.1.2, V13.1.1, V14.1.x, V15.1.1, V15.1.3, V16.1.1). `SECURITY.md` (disclosure address, supported versions, remediation time frames), plus a `docs/security.md` covering data classification, every connection r7 makes, the cryptographic inventory, the log and journal inventory, resource-demanding features and every limit.
+7. **Security documentation** (V2.1.3, V11.1.2, V13.1.1, V14.1.x, V15.1.3, V15.2.2, V16.1.1). `SECURITY.md` is done ([#75](https://github.com/ethlo/r7/pull/75)). Still to write: a `docs/security.md` covering data classification, every connection r7 makes, the cryptographic inventory, the log and journal inventory, resource-demanding features and every limit.
 8. ~~Repeated parameters and headers~~ (V15.3.7). Closed by [#76](https://github.com/ethlo/r7/pull/76): every occurrence of a repeated name must pass a value check.
 9. **Refusals before routing are not journaled** (V16.3.3). Ambiguous paths, bad `Transfer-Encoding` and TRACE are refused before a route is chosen, so no journal records them, and the log line is at DEBUG. Journal them, or log them at INFO through a dedicated logger.
 10. ~~Route ID in the no-upstream 503~~ (V16.5.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the body is generic; the route ID is logged and journaled.
@@ -378,10 +378,10 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 
 | ID | L | Requirement | Status | Evidence |
 |---|---|---|---|---|
-| V15.1.1 | 1 | Documented remediation time frames | Gap | No policy yet; `SECURITY.md` (gap 7). |
+| V15.1.1 | 1 | Documented remediation time frames | Met | `SECURITY.md` sets fix deadlines by severity (Critical 7 days, High 30, Medium 90, Low next release) for r7 and its reachable dependencies ([#75](https://github.com/ethlo/r7/pull/75)). |
 | V15.1.2 | 2 | SBOM and trusted component sources | Partial | A CycloneDX SBOM is built on every CI run and scanned by OSV-Scanner ([#59](https://github.com/ethlo/r7/pull/59)); dependencies come from Maven Central, base images are pinned by digest ([#72](https://github.com/ethlo/r7/pull/72)), and `flatc` is verified by checksum ([#60](https://github.com/ethlo/r7/pull/60)). The SBOM is not yet published with each image (roadmap). |
 | V15.1.3 | 2 | Documented resource-demanding functionality | Partial | Known expensive paths: bcrypt, regex matching, FULL body journaling, static content. Each is bounded in code ([#47](https://github.com/ethlo/r7/pull/47), [#53](https://github.com/ethlo/r7/pull/53), backpressure), but they are not listed in one place (gap 7). |
-| V15.2.1 | 1 | No components past remediation time frames | Partial | OSV-Scanner fails CI on any advisory not accepted, with an expiry, in `osv-scanner.toml` ([#59](https://github.com/ethlo/r7/pull/59)), and Dependabot proposes updates weekly ([#58](https://github.com/ethlo/r7/pull/58)). No documented time frames to measure against yet (V15.1.1, gap 7). |
+| V15.2.1 | 1 | No components past remediation time frames | Met | OSV-Scanner fails CI on any advisory not accepted, with an expiry, in `osv-scanner.toml` ([#59](https://github.com/ethlo/r7/pull/59)); Dependabot proposes updates weekly ([#58](https://github.com/ethlo/r7/pull/58)); `SECURITY.md` sets the time frames they are measured against ([#75](https://github.com/ethlo/r7/pull/75)). |
 | V15.2.2 | 2 | Defences against resource exhaustion | Partial | In code: regex budget ([#53](https://github.com/ethlo/r7/pull/53), shared per check since [#76](https://github.com/ethlo/r7/pull/76)), bcrypt semaphore ([#47](https://github.com/ethlo/r7/pull/47)), listener limits (header size and count, parse timeout, entity size), `RateLimiter`, `CircuitBreaker`, journal backpressure. ASVS asks for these to follow documented decisions, and that documentation is gap 7 (V15.1.3). |
 | V15.2.3 | 2 | No extraneous functionality in production | Met | Distroless images hold only the jar or native binary; test code is not packaged. |
 | V15.3.1 | 1 | Only the required fields returned | Met | Management summaries mask `@Sensitive` values and fingerprint secrets ([#46](https://github.com/ethlo/r7/pull/46)). |
