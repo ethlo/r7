@@ -337,6 +337,35 @@ class JournalLifecycleTest
     }
 
     /**
+     * A sequence marker write that fails must take its temp file with it, as a half-created
+     * segment does. The routine way to fail it is close() interrupting the warmer mid-write,
+     * which left a zero-length {@code shard-0.seq.tmp} behind after roughly one clean shutdown
+     * in six. That timing cannot be forced, so the rename is made to fail instead: a non-empty
+     * directory where the marker belongs refuses to be replaced, on every attempt.
+     */
+    @Test
+    void aFailedSequenceMarkerWriteLeavesNoTempFileBehind() throws IOException
+    {
+        final Path squatter = journalDir.resolve("shard-0.seq");
+        Files.createDirectories(squatter);
+        Files.writeString(squatter.resolve("keep"), "x");
+
+        final R7fJournalProvider provider = new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, false);
+        try
+        {
+            // Returns only once the warmer has given up, so every attempt has run
+            org.assertj.core.api.Assertions.assertThatThrownBy(provider::getNextSegment)
+                    .hasMessageContaining("warming it has failed permanently");
+        }
+        finally
+        {
+            provider.close();
+        }
+
+        assertThat(journalDir.resolve("shard-0.seq.tmp")).doesNotExist();
+    }
+
+    /**
      * A journal abandoned without close leaves an active segment behind. Recovery must
      * seal it, cut it back to the last intact entry, and lose nothing that was written.
      */

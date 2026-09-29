@@ -324,6 +324,19 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
         }
         catch (final IOException e)
         {
+            // The .tmp has to go with the failure, as a half-created segment does. close()
+            // interrupts the warmer, and an interrupt landing on the channel above is a routine
+            // ClosedByInterruptException - often between CREATE_NEW and the write, leaving a
+            // zero-length .tmp beside the marker after every such shutdown. Only the .tmp: the
+            // marker itself is either the old value or the new one, and both are valid.
+            try
+            {
+                Files.deleteIfExists(tmp);
+            }
+            catch (final IOException cleanupFailed)
+            {
+                e.addSuppressed(cleanupFailed);
+            }
             throw new UncheckedIOException("Cannot persist segment sequence marker " + sequenceMarkerPath
                     + "; refusing to create a segment with an unrecorded key", e);
         }
