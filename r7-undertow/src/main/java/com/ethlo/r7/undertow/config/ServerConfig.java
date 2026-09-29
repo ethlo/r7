@@ -174,10 +174,16 @@ public record ServerConfig(
             }
         }
 
+        /**
+         * Off unless asked for. The listener is plaintext only, so HTTP/2 here means h2c (prior
+         * knowledge or {@code Upgrade: h2c}): a second, far more complex parser exposed to every
+         * client, and the protocol behind the rapid-reset and CONTINUATION-flood attacks, for a
+         * benefit most deployments behind a load balancer never see.
+         */
         @Override
         public Boolean enableHttp2()
         {
-            return Optional.ofNullable(this.enableHttp2).orElse(true);
+            return Optional.ofNullable(this.enableHttp2).orElse(false);
         }
 
         @Override
