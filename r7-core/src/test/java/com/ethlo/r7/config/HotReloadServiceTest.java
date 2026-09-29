@@ -107,6 +107,30 @@ class HotReloadServiceTest
         assertThat(service.status().rejectedAt()).isNull();
     }
 
+    /**
+     * L2: a rollback restores an older file - e.g. `cp -p old-routes.yaml routes.yaml`, which
+     * carries the source file's mtime along with it. A poll that only asks "is the timestamp
+     * newer" never notices the file went backwards, and the gateway keeps running the config it
+     * had before the rollback.
+     */
+    @Test
+    void aRollbackWithAnOlderTimestampIsStillDetectedAndReloaded() throws IOException
+    {
+        final HotReloadService service = this.start("first");
+
+        this.write("second");
+        service.pollForChanges();
+        assertThat(this.routeIds()).containsExactly("second");
+
+        // Simulate `cp -p` restoring the original file: older content, older mtime.
+        this.write("first");
+        Files.setLastModifiedTime(this.dir.resolve("routes.yaml"),
+                java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)));
+        service.pollForChanges();
+
+        assertThat(this.routeIds()).containsExactly("first");
+    }
+
     @Test
     void aReloadPublishesTheUnroutedPolicyWithTheRoutes() throws IOException
     {
