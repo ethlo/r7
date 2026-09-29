@@ -274,7 +274,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 {
                     exchange.shortCircuit(new ShortCircuitGatewayResponse(
                             HttpStatuses.BAD_REQUEST,
-                            MediaTypes.TEXT_PLAIN,
+                            MediaTypes.TEXT_PLAIN_UTF8,
                             this.invalidLocationBody.asReadOnlyBuffer()
                     ));
                     return;

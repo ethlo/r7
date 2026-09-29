@@ -89,7 +89,7 @@ public final class RequireCookieFactory implements GatewayFilterFactory<RequireC
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),
-                        MediaTypes.TEXT_PLAIN,
+                        MediaTypes.TEXT_PLAIN_UTF8,
                         this.errorBody.asReadOnlyBuffer()
                 ));
             }

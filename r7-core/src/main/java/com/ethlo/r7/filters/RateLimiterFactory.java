@@ -30,6 +30,7 @@ import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.constants.MediaTypes;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.auto.service.AutoService;
@@ -256,7 +257,8 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
                 final long waitNanos = probe.getNanosToWaitForRefill();
                 final long waitSeconds = TimeUnit.NANOSECONDS.toSeconds(waitNanos) + 1L;
 
-                final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(3)
+                final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(4)
+                        .set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8)
                         .set(HttpHeaders.RETRY_AFTER, String.valueOf(waitSeconds))
                         .set(HttpHeaders.X_RATELIMIT_LIMIT, this.capacityString)
                         .set(HttpHeaders.X_RATELIMIT_REMAINING, "0");

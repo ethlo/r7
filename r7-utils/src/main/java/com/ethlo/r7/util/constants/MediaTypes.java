@@ -17,6 +17,11 @@ public final class MediaTypes
     public static final String APPLICATION_GRPC = "application/grpc"; // Common in modern microservices
     // --- Text Types ---
     public static final String TEXT_PLAIN = "text/plain";
+    /**
+     * For bodies r7 writes itself, all encoded as UTF-8: without the charset a client has to
+     * guess, and a guess is what content-sniffing attacks exploit.
+     */
+    public static final String TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8";
     public static final String TEXT_HTML = "text/html";
     public static final String TEXT_CSS = "text/css";
     public static final String TEXT_CSV = "text/csv";

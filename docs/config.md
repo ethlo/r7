@@ -558,14 +558,37 @@ bcrypt is deliberately expensive, so the number of verifications running at once
 
 ```yaml
 filters:
-  - type: BasicAuth
-    realm: "Admin API"
-    users:
-      - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
-      - "bob:${BOB_HTPASSWD_ENTRY}"
+  - BasicAuth:
+      realm: "Admin API"
+      users:
+        - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+        - "bob:${BOB_HTPASSWD_ENTRY}"
 ```
 
-Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash. That cost is also a denial-of-service lever: put a `RateLimiter` in front of `BasicAuth` on any route exposed to untrusted clients.
+Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash.
+
+**Password guessing.** `BasicAuth` has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a `RateLimiter` before `BasicAuth`, so a client is refused before its guess costs a bcrypt:
+
+```yaml
+filters:
+  - RateLimiter:
+      capacity: 20
+      refill_tokens: 5
+      refill_period: 1m
+  - BasicAuth:
+      users:
+        - "alice:${ALICE_HTPASSWD_ENTRY}"
+journal:
+  request:
+    status_overrides:
+      401: METADATA   # every failed login is journaled, even when the route journals nothing else
+```
+
+The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
+
+Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nbB -C 12 <user> <password>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
+
+**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time. `status_overrides` (above) records it even on a route that otherwise journals nothing.
 
 A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
 
@@ -641,7 +664,7 @@ Monitors upstream responses and temporarily blocks routing **for the entire rout
 
 #### ReturnResponse
 
-Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain; charset=utf-8` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -815,7 +838,7 @@ Defines the interfaces for the internal status and metrics endpoints.
 | `host` | String | The interface for the internal management server. Defaults to `127.0.0.1`, or to the `R7_MANAGEMENT_HOST` environment variable when set; the container images set it to `0.0.0.0` so the published status port works. The endpoint has no authentication: publish it only on a private network. |
 | `port` | Integer | The port for the internal management server. |
 
-The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
+The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
 
 ### HTTP Options (`http`)
 

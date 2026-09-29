@@ -77,6 +77,10 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .header("X-Content-Type-Options", equalTo("nosniff"))
                 .header("X-Frame-Options", equalTo("DENY"))
                 .header("Cache-Control", equalTo("no-store"))
-                .header("Referrer-Policy", equalTo("no-referrer"));
+                .header("Referrer-Policy", equalTo("no-referrer"))
+                .header("Content-Security-Policy", containsString("script-src 'sha256-"))
+                .header("Content-Security-Policy", containsString("frame-ancestors 'none'"))
+                .header("Content-Security-Policy", containsString("base-uri 'none'"))
+                .header("Content-Security-Policy", not(containsString("unsafe-inline' 'sha")));
     }
 }

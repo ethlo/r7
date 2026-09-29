@@ -498,7 +498,7 @@
             <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
-            <button class="sys-btn" onclick="handleConfigClick()">CONFIG</button>
+            <button class="sys-btn" data-action="config">CONFIG</button>
             <div class="sys-info" id="last-update">CONNECTING...</div>
         </div>
     </header>
@@ -716,7 +716,15 @@
 
     // Route rows carry their id as data, not inside an inline onclick: an id is config text, and
     // inside a JavaScript string literal in an attribute a quote in it would end the string.
+    // No inline handlers at all, static ones included: the Content-Security-Policy allows this
+    // page's one script block by hash, and inline handlers would need 'unsafe-inline'.
+    const actions = {config: handleConfigClick, close: closeDetails, system: handleSystemClick};
     document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]');
+        if (action && actions[action.dataset.action]) {
+            actions[action.dataset.action]();
+            return;
+        }
         const row = event.target.closest('tr[data-route-id]');
         if (row) {
             handleRowClick(row.dataset.routeId);
@@ -776,7 +784,7 @@
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> CONFIGURATION
             </div>
-            <button class="panel-close-btn" onclick="closeDetails()">
+            <button class="panel-close-btn" data-action="close">
                 <span class="panel-close-icon">←</span> BACK
             </button>
         </div>
@@ -1199,7 +1207,7 @@
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">ROUTE //</span> ${esc(routeId)}
             </div>
-            <button class="panel-close-btn" onclick="closeDetails()">
+            <button class="panel-close-btn" data-action="close">
                 <span class="panel-close-icon">←</span> BACK
             </button>
         </div>
@@ -1326,7 +1334,7 @@
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> RAW TRAFFIC
             </div>
-            <button class="panel-close-btn" onclick="closeDetails()">
+            <button class="panel-close-btn" data-action="close">
                 <span class="panel-close-icon">←</span> BACK
             </button>
         </div>
@@ -1429,7 +1437,7 @@
         let html = '';
 
         html += `
-        <tr class="total-row clickable-row" onclick="handleSystemClick()">
+        <tr class="total-row clickable-row" data-action="system">
             <td class="col-route">
                 ${mRow('SYSTEM TOTALS', '', true)}
                 ${mRow('LAST ACTIVE', timeAgo(totals.last_active), false)}
