@@ -3,6 +3,7 @@ package com.ethlo.r7.undertow;
 import java.net.URI;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -81,6 +82,7 @@ import io.undertow.server.handlers.resource.PathResourceManager;
 import io.undertow.server.handlers.resource.ResourceHandler;
 import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
+import io.undertow.util.Methods;
 
 public final class R7UndertowHandler implements HttpHandler
 {
@@ -114,6 +116,7 @@ public final class R7UndertowHandler implements HttpHandler
     private final RemoteAddressResolver remoteAddressResolver;
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
+    private static final String NOSNIFF = "nosniff";
     private volatile UndertowXnioSsl xnioSsl;
 
     public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
@@ -259,8 +262,7 @@ public final class R7UndertowHandler implements HttpHandler
                     // The directory is momentarily missing, e.g. mid atomic swap - fail fast instead
                     // of handing a stale/broken handler a request that may hang.
                     logger.debug("Static content directory '{}' is not currently accessible: {}", staticBasePath, e.getMessage());
-                    exchange.setStatusCode(HttpStatuses.NOT_FOUND);
-                    exchange.getResponseSender().send("Static content directory unavailable");
+                    sendOwnResponse(exchange, HttpStatuses.NOT_FOUND, "Static content directory unavailable");
                     return;
                 }
 
@@ -303,8 +305,7 @@ public final class R7UndertowHandler implements HttpHandler
             }
             catch (Exception e)
             {
-                exchange.setStatusCode(HttpStatuses.INTERNAL_SERVER_ERROR);
-                exchange.getResponseSender().send("Error serving static content");
+                sendOwnResponse(exchange, HttpStatuses.INTERNAL_SERVER_ERROR, "Error serving static content");
                 return;
             }
         }
@@ -312,7 +313,31 @@ public final class R7UndertowHandler implements HttpHandler
         final ShortCircuitGatewayResponse terminationResponse = gatewayExchange.getShortCircuitGatewayResponse();
         gatewayExchange.clientResponse().status(terminationResponse.status());
         terminationResponse.headers().forEach(((name, value) -> gatewayExchange.clientResponse().headers().set(name, value)));
+        // A short-circuit body is r7's (or its configuration's), not the upstream's: r7 vouches
+        // for its Content-Type, unless the filter that answered says otherwise.
+        if (!exchange.getResponseHeaders().contains(Headers.X_CONTENT_TYPE_OPTIONS))
+        {
+            exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, NOSNIFF);
+        }
         exchange.getResponseSender().send(terminationResponse.body());
+    }
+
+    /**
+     * Answers with a body r7 wrote itself. {@code nosniff} and an explicit charset stop a browser
+     * from reading an error that echoes nothing of the request as anything but the plain text it
+     * is. Proxied responses are the upstream's to label and are left alone.
+     */
+    private static void sendOwnResponse(final HttpServerExchange exchange, final int status, final ByteBuffer body)
+    {
+        exchange.setStatusCode(status);
+        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
+        exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, NOSNIFF);
+        exchange.getResponseSender().send(body);
+    }
+
+    private static void sendOwnResponse(final HttpServerExchange exchange, final int status, final String body)
+    {
+        sendOwnResponse(exchange, status, ByteBuffer.wrap(body.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static void shortCircuit(final GatewayFilter reasonFilter, HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
@@ -340,7 +365,7 @@ public final class R7UndertowHandler implements HttpHandler
         logger.warn("Request {} refused: {}", gatewayExchange.requestId(), e.getMessage());
         gatewayExchange.shortCircuit(new com.ethlo.r7.util.ShortCircuitGatewayResponse(
                 HttpStatuses.INTERNAL_SERVER_ERROR,
-                MediaTypes.TEXT_PLAIN,
+                MediaTypes.TEXT_PLAIN_UTF8,
                 ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate()));
     }
 
@@ -403,9 +428,16 @@ public final class R7UndertowHandler implements HttpHandler
         {
             logger.debug("Rejecting non-canonical Transfer-Encoding: {}", exchange.getRequestHeaders().get(Headers.TRANSFER_ENCODING));
             exchange.setPersistent(false);
-            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate());
+            sendOwnResponse(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate());
+            return;
+        }
+
+        // TRACE echoes the request back, cookies and credentials included, which is what
+        // cross-site tracing reads; nothing behind a gateway needs it. 501 rather than 405: no
+        // resource supports it, so there is no Allow list to send.
+        if (Methods.TRACE.equals(exchange.getRequestMethod()))
+        {
+            sendOwnResponse(exchange, HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate());
             return;
         }
 
@@ -415,9 +447,7 @@ public final class R7UndertowHandler implements HttpHandler
         if (pathViolation != null)
         {
             logger.debug("Rejecting ambiguous request path ({}): {}", pathViolation, exchange.getRequestURI());
-            exchange.setStatusCode(HttpStatuses.BAD_REQUEST);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(ErrorMessages.AMBIGUOUS_PATH.duplicate());
+            sendOwnResponse(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate());
             return;
         }
 
@@ -432,17 +462,13 @@ public final class R7UndertowHandler implements HttpHandler
         {
             // Before any exchange state exists, like the 404 below: nothing to journal yet.
             logger.warn("Route matching refused: {}", e.getMessage());
-            exchange.setStatusCode(HttpStatuses.INTERNAL_SERVER_ERROR);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate());
+            sendOwnResponse(exchange, HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate());
             return;
         }
 
         if (route == null)
         {
-            exchange.setStatusCode(HttpStatuses.NOT_FOUND);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send(ErrorMessages.NO_ROUTE.duplicate());
+            sendOwnResponse(exchange, HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate());
             return;
         }
 
@@ -506,9 +532,7 @@ public final class R7UndertowHandler implements HttpHandler
             }
 
             registerResponseListeners(exchange, route, gatewayExchange, statefulJournal);
-            exchange.setStatusCode(HttpStatuses.SERVICE_UNAVAILABLE);
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
-            exchange.getResponseSender().send("Service Unavailable: Upstream server is unavailable for route '" + route.id() + "'");
+            sendOwnResponse(exchange, HttpStatuses.SERVICE_UNAVAILABLE, "Service Unavailable: Upstream server is unavailable for route '" + route.id() + "'");
             return;
         }
 

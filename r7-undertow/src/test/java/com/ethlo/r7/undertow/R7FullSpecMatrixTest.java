@@ -61,6 +61,24 @@ public class R7FullSpecMatrixTest extends AbstractR7IntegrationTest
                 .then()
                 .statusCode(404)
                 // On the response: it was once set on the request headers, leaving the 404 untyped
-                .contentType("text/plain");
+                .header("Content-Type", equalTo("text/plain; charset=utf-8"))
+                .header("X-Content-Type-Options", equalTo("nosniff"));
+    }
+
+    /**
+     * TRACE reflects the request, cookies and credentials included; it is refused before any
+     * route is consulted, so it never reaches an upstream that would echo it.
+     */
+    @Test
+    @Order(3)
+    public void traceIsRefusedBeforeRouting()
+    {
+        given()
+                .when()
+                .request("TRACE", "/api/v1/")
+                .then()
+                .statusCode(501)
+                .header("Content-Type", equalTo("text/plain; charset=utf-8"))
+                .header("X-Content-Type-Options", equalTo("nosniff"));
     }
 }

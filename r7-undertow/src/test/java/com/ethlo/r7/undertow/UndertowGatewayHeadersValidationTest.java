@@ -86,4 +86,31 @@ class UndertowGatewayHeadersValidationTest
 
         assertIterableEquals(List.of("original"), headers.getAll("X-Subject"));
     }
+
+    /**
+     * Undertow's client writes upstream request headers verbatim, so a line break in a value a
+     * filter sets would split the request the upstream receives.
+     */
+    @Test
+    void lineBreaksAndOtherControlsAreRefusedInValues()
+    {
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X-Subject", "a\r\nInjected: yes"));
+        assertThrows(InvalidTextValueException.class, () -> headers.add("X-Subject", "a\nb"));
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X-Subject", "a\u0000b"));
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X-Subject", "a\u007Fb"));
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X-Subject", List.of("fine", "a\rb")));
+        assertEquals(null, headers.getFirst("X-Subject"), "a refused value leaves the header unset");
+    }
+
+    @Test
+    void horizontalTabIsAllowedInValues()
+    {
+        assertDoesNotThrow(() -> headers.set("X-Subject", "a\tb"));
+    }
+
+    @Test
+    void controlsAreRefusedInNames()
+    {
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X-Sub\r\nject", "fine"));
+    }
 }

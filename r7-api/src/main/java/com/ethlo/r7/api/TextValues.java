@@ -160,6 +160,48 @@ public final class TextValues
     }
 
     /**
+     * As {@link #requireStorable(String, String)}, and also refuses the control characters a
+     * header value may never carry: every C0 control except HTAB, and DEL. Undertow blanks CR
+     * and LF when it writes a response, but its client writes upstream request headers
+     * verbatim, so a line break in a value set by a filter would split the upstream request.
+     *
+     * @param field the header name, used in the error message
+     * @throws InvalidTextValueException if the value is {@code null}, has a character above
+     *                                   {@link #MAX_STORABLE}, or has a forbidden control character
+     */
+    public static String requireHeaderValue(final String field, final String value)
+    {
+        requireStorable(field, value);
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7F)
+            {
+                throw new InvalidTextValueException(String.format(
+                        "Cannot set header '%s': control character U+%04X at index %d is not permitted in a header value.",
+                        field, (int) c, i), field, i);
+            }
+        }
+        return value;
+    }
+
+    /**
+     * As {@link #requireStorableName(String)}, and also refuses any control character: a
+     * header name is a token, and a line break in one splits the message like one in a value.
+     */
+    public static String requireHeaderName(final String name)
+    {
+        requireStorableName(name);
+        final int index = firstControlCharacterIndex(name);
+        if (index >= 0)
+        {
+            throw new InvalidTextValueException(String.format(
+                    "Header name contains control character U+%04X at index %d.", (int) name.charAt(index), index), name, index);
+        }
+        return name;
+    }
+
+    /**
      * As {@link #requireStorable(String, String)}, for the name itself.
      */
     public static String requireStorableName(final String name)

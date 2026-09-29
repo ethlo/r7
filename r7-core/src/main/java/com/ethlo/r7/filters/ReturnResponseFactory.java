@@ -59,7 +59,7 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
         {
             if (contentType == null)
             {
-                contentType = MediaTypes.TEXT_PLAIN;
+                contentType = MediaTypes.TEXT_PLAIN_UTF8;
             }
         }
 
