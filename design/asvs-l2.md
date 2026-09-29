@@ -2,7 +2,7 @@
 
 This file is r7's evidence for the claim *self-assessed against OWASP ASVS 5.0.0, Level 2*. It lists every Level 1 and Level 2 requirement, 253 in total. Each row gives the requirement's status and its evidence: the control that meets it, the reason it does not apply, or what still has to happen before it is met.
 
-This is a working document, not yet a claim. It becomes one when every **Gap** and **Partial** row is closed or turned into a recorded decision, and someone outside the project has reviewed the evidence. Keep it current: a PR that removes a control, or adds a feature that brings a chapter into scope, updates the rows it touches. A JWT filter, for example, would bring V9 into scope.
+The point is transparency, not a clean sheet: an Accepted row is a legitimate outcome when its reason is written down. This is a working document, not yet a claim. It becomes one when every **Gap** and **Partial** row is closed or turned into a recorded decision, and someone outside the project has reviewed the evidence. Keep it current: a PR that removes a control, or adds a feature that brings a chapter into scope, updates the rows it touches. A JWT filter, for example, would bring V9 into scope.
 
 ## Scope and assumptions
 
@@ -28,22 +28,22 @@ This is a working document, not yet a claim. It becomes one when every **Gap** a
 |---|---:|---:|---:|---:|---:|---:|
 | V1 Encoding and Sanitization | 13 | 2 |  |  |  | 12 |
 | V2 Validation and Business Logic | 4 | 1 |  |  | 1 | 5 |
-| V3 Web Frontend Security | 10 |  |  |  | 8 | 1 |
-| V4 API and Web Service | 3 |  |  | 1 | 1 | 5 |
+| V3 Web Frontend Security | 8 |  |  |  | 10 | 1 |
+| V4 API and Web Service | 2 |  |  | 1 | 2 | 5 |
 | V5 File Handling | 3 |  |  |  |  | 6 |
-| V6 Authentication | 5 |  |  | 1 | 1 | 28 |
+| V6 Authentication | 4 |  |  | 2 | 1 | 28 |
 | V7 Session Management |  |  |  |  |  | 18 |
 | V8 Authorization | 3 |  |  |  |  | 4 |
 | V9 Self-contained Tokens |  |  |  |  |  | 7 |
 | V10 OAuth and OIDC |  |  |  |  |  | 29 |
 | V11 Cryptography | 5 | 2 |  | 1 |  | 6 |
 | V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
-| V13 Configuration | 7 | 1 | 1 |  | 4 |  |
+| V13 Configuration | 5 | 1 |  | 1 | 6 |  |
 | V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
 | V15 Secure Coding and Architecture | 10 | 3 |  |  |  |  |
-| V16 Security Logging and Error Handling | 10 | 3 |  |  | 3 |  |
+| V16 Security Logging and Error Handling | 8 | 4 |  |  | 4 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **77** | **15** | **1** | **7** | **23** | **130** |
+| **Total** | **69** | **16** | **0** | **9** | **29** | **130** |
 
 ## Gaps
 
@@ -57,16 +57,17 @@ The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed 
 6. ~~Brute-force guidance for BasicAuth~~ (V6.1.1, V6.3.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the docs cover the missing lockout, pairing with a `RateLimiter`, bcrypt cost, and journaling failed logins.
 7. **Security documentation** (V2.1.3, V11.1.2, V13.1.1, V14.1.x, V15.1.3, V15.2.2, V16.1.1). `SECURITY.md` is done ([#75](https://github.com/ethlo/r7/pull/75)). Still to write: a `docs/security.md` covering data classification, every connection r7 makes, the cryptographic inventory, the log and journal inventory, resource-demanding features and every limit.
 8. ~~Repeated parameters and headers~~ (V15.3.7). Closed by [#76](https://github.com/ethlo/r7/pull/76): every occurrence of a repeated name must pass a value check.
-9. **Refusals before routing are not journaled** (V16.3.3). Ambiguous paths, bad `Transfer-Encoding` and TRACE are refused before a route is chosen, so no journal records them, and the log line is at DEBUG. Journal them, or log them at INFO through a dedicated logger.
+9. **Refusals before routing are not journaled** (V16.3.3). Ambiguous paths, bad `Transfer-Encoding`, TRACE and requests matching no route are refused before a route is chosen, so no journal records them. The first two get a DEBUG log line; TRACE and no-route get none. Planned: an opt-in `unrouted` journal section.
 10. ~~Route ID in the no-upstream 503~~ (V16.5.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the body is generic; the route ID is logged and journaled.
 11. **bcrypt cost floor** (V11.4.2). Any cost from 4 to 31 is accepted. Refuse, or warn at load about, a cost below 10.
-12. **Short-lived credentials towards upstreams** (V13.2.1). r7 can present only static credentials to an upstream. Meeting this needs mTLS client certificates or short-lived tokens (for example an OAuth client-credentials exchange); otherwise, record it as accepted for deployments where the network is the trust boundary.
+12. ~~Short-lived credentials towards upstreams~~ (V13.2.1). Accepted: r7 presents only static credentials to upstreams, and the private network is the trust boundary. Revisit if mTLS or token exchange is ever needed.
 
 Also recorded:
 
 - **Accepted:** query strings are journaled unredacted (V14.2.1). This was a deliberate decision during the security review; revisit it if journals leave the host.
 - **Accepted:** the listener is plaintext and `BasicAuth` is single-factor (V12.2.1, V12.3.1, V4.4.1, V6.3.3); see Scope.
 - **Accepted:** `BasicAuth` caches SHA-256 digests of verified credentials in memory to avoid a bcrypt round per request (V14.2.2).
+- **Accepted:** only static credentials towards upstreams (V13.2.1), and bcrypt's 72-byte password limit (V6.2.8).
 - **Roadmap:** fuzzing the journal decoder and the request guards with Jazzer moves V1.4.1 and V1.4.2 to Met. Publishing an SBOM with each image moves V15.1.2 to Met.
 
 ## V1 Encoding and Sanitization
@@ -124,9 +125,9 @@ Also recorded:
 | V3.2.1 | 1 | Prevent rendering in the wrong context | Met | Every response r7 writes itself carries `nosniff` and an explicit `text/plain; charset=utf-8` ([#74](https://github.com/ethlo/r7/pull/74)); the management port also sends `X-Frame-Options: DENY`, `no-store` and a CSP ([#46](https://github.com/ethlo/r7/pull/46), [#74](https://github.com/ethlo/r7/pull/74)). Proxied responses are the upstream's; operators can add headers with `SetResponseHeader`. |
 | V3.2.2 | 1 | Render text with safe DOM functions | Met | Dashboard values are escaped and navigation uses `data-` attributes with one delegated listener ([#55](https://github.com/ethlo/r7/pull/55), [#74](https://github.com/ethlo/r7/pull/74)). |
 | V3.3.1 | 1 | Cookies Secure, with a `__Host-`/`__Secure-` prefix | Operator | `SetResponseCookie` sets `Secure` unless configured `secure: false` ([#74](https://github.com/ethlo/r7/pull/74)); the cookie name, and so the prefix, is the operator's. Behind TLS termination the browser sees HTTPS, so `Secure` holds. |
-| V3.3.2 | 2 | SameSite set per cookie purpose | Met | `SameSite=Lax` unless configured otherwise; `None` without `secure` is refused at load ([#74](https://github.com/ethlo/r7/pull/74), `SetResponseCookieFactoryTest`). |
+| V3.3.2 | 2 | SameSite set per cookie purpose | Operator | Only the operator knows a cookie's purpose. r7 defaults to `SameSite=Lax` and refuses `None` without `secure` at load ([#74](https://github.com/ethlo/r7/pull/74), `SetResponseCookieFactoryTest`). |
 | V3.3.3 | 2 | `__Host-` prefix | Operator | The cookie name is the operator's. |
-| V3.3.4 | 2 | HttpOnly for cookies scripts must not read | Met | `HttpOnly` unless configured `http_only: false` ([#74](https://github.com/ethlo/r7/pull/74)). |
+| V3.3.4 | 2 | HttpOnly for cookies scripts must not read | Operator | Only the operator knows whether script needs a cookie. r7 sets `HttpOnly` unless configured `http_only: false` ([#74](https://github.com/ethlo/r7/pull/74)). |
 | V3.4.1 | 1 | HSTS | Operator | Needs TLS, which r7's listener does not terminate. Set it at the TLS terminator, or with `SetResponseHeader` behind one. |
 | V3.4.2 | 1 | CORS allow-origin fixed or allowlisted | Operator | Where configured, `Cors` echoes only allowlisted origins, adds `Vary: Origin`, answers only real preflights and overrules upstream grants ([#51](https://github.com/ethlo/r7/pull/51), `CorsFactoryTest`, `CorsE2ETest`). Which routes carry it is the operator's decision. |
 | V3.4.3 | 2 | Content-Security-Policy | Met | Management: `default-src 'none'`, the one script allowed by hash, `object-src` covered by `default-src`, `base-uri 'none'` ([#74](https://github.com/ethlo/r7/pull/74), `StatusHandlerCspTest`). Proxied responses: the upstream's, or the operator's through `SetResponseHeader`. |
@@ -145,7 +146,7 @@ Also recorded:
 
 | ID | L | Requirement | Status | Evidence |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Content-Type with charset on every body | Met | r7's own bodies are `text/plain; charset=utf-8` ([#74](https://github.com/ethlo/r7/pull/74)), the dashboard is `text/html; charset=utf-8` ([#76](https://github.com/ethlo/r7/pull/76), `ManagementEndpointTest`), and management JSON is `application/json` (UTF-8 by definition). |
+| V4.1.1 | 1 | Content-Type with charset on every body | Operator | Everything r7 writes itself declares UTF-8: error and refusal bodies are `text/plain; charset=utf-8` ([#74](https://github.com/ethlo/r7/pull/74)), the dashboard is `text/html; charset=utf-8` ([#76](https://github.com/ethlo/r7/pull/76), `ManagementEndpointTest`), and management JSON is `application/json`. `StaticContent` files are typed by extension without a charset, because only the operator knows how they are encoded. |
 | V4.1.2 | 2 | HTTP-to-HTTPS redirects only on user-facing endpoints | N/A | r7 does not redirect to HTTPS. TLS is in front of it. |
 | V4.1.3 | 2 | Intermediary-set headers cannot be overridden by clients | Met | `X-Forwarded-*`, `Forwarded` and `X-Real-IP` are stripped from untrusted peers before proxying ([#43](https://github.com/ethlo/r7/pull/43), `UpstreamHeaderSanitizerTest`); the client address is taken only from `trusted_proxies` (`RemoteAddressResolverTest`). `BasicAuth` removes the consumed `Authorization` ([#47](https://github.com/ethlo/r7/pull/47)). |
 | V4.2.1 | 2 | Message boundaries (request smuggling) | Met | Non-canonical `Transfer-Encoding` refused with 400 and a closed connection ([#45](https://github.com/ethlo/r7/pull/45), `TransferEncodingGuardTest`); CL+TE, duplicate CL and bare LF rejected (report, "Already done well"); hop-by-hop headers stripped ([#43](https://github.com/ethlo/r7/pull/43)); h2c off by default ([#56](https://github.com/ethlo/r7/pull/56), `Http2DefaultTest`); truncated chunked bodies never reach the upstream as complete ([#44](https://github.com/ethlo/r7/pull/44), `RequestSizeLimitStreamingTest`). A differential test against nginx/Node is in roadmap phase 3. |
@@ -184,12 +185,12 @@ Also recorded:
 | V6.2.5 | 1 | No composition rules | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.6 | 1 | Password fields masked | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.7 | 1 | Paste and password managers allowed | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
-| V6.2.8 | 1 | Password verified exactly as received | Met | The decoded password is passed to bcrypt unmodified (`BasicAuthFactoryTest`, `BCryptTest`). |
+| V6.2.8 | 1 | Password verified exactly as received | Accepted | The decoded password reaches bcrypt unmodified (`BasicAuthFactoryTest`, `BCryptTest`), but bcrypt reads only the first 72 bytes, so two passwords that share those bytes verify alike. Accepted as bcrypt's documented limit; `BasicAuth` credentials are machine-generated and far shorter. |
 | V6.2.9 | 2 | 64-character passwords allowed | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.10 | 2 | No forced rotation | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.11 | 2 | Context-word blocklist applied | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.12 | 2 | Breached-password check | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
-| V6.3.1 | 1 | Credential stuffing and brute-force controls | Operator | Unknown users take the same time as known ones, and bcrypt concurrency is bounded ([#47](https://github.com/ethlo/r7/pull/47)). Guessing is limited per client by the `RateLimiter` the documentation requires on exposed routes ([#74](https://github.com/ethlo/r7/pull/74)). |
+| V6.3.1 | 1 | Credential stuffing and brute-force controls | Operator | bcrypt concurrency is bounded ([#47](https://github.com/ethlo/r7/pull/47)). An unknown user is checked against a dummy hash at the highest configured cost, so timing does not reveal configured usernames as long as every hash uses the same cost (documented under `BasicAuth`). Guessing is limited per client by the `RateLimiter` the documentation requires on exposed routes ([#74](https://github.com/ethlo/r7/pull/74)). |
 | V6.3.2 | 1 | No default accounts | Met | No users exist until configured. |
 | V6.3.3 | 2 | MFA for access | Accepted | `BasicAuth` is single-factor, meant for machine clients and internal tools. User-facing authentication with MFA belongs to the upstream or an identity provider in front. |
 | V6.3.4 | 2 | No undocumented authentication pathways | Met | As V6.1.3. Fallback routes run the fallback's own filters ([#41](https://github.com/ethlo/r7/pull/41), `BasicAuthFallbackTest`). |
@@ -347,14 +348,14 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | ID | L | Requirement | Status | Evidence |
 |---|---|---|---|---|
 | V13.1.1 | 2 | Communication needs documented | Partial | Upstreams are listed in `routes.yaml` and the ports in `server.yaml`/`docs/config.md`; no single page yet names every connection (data plane, management, upstreams, tailers' sinks). Gap 7. |
-| V13.2.1 | 2 | Backend communication authenticated | Gap | r7 can present only static credentials to an upstream: `InjectBasicAuth`, or a fixed header set with `SetRequestHeader`. ASVS 5.0 rules out unchanging passwords and API keys here, and r7 supports neither mTLS client certificates nor short-lived tokens towards upstreams (gap 12). |
+| V13.2.1 | 2 | Backend communication authenticated | Accepted | r7 presents only static credentials to an upstream (`InjectBasicAuth`, or a fixed header), which ASVS 5.0 does not accept here; mTLS client certificates and short-lived tokens are not supported. Accepted for deployments where the private network is the trust boundary (see Scope). |
 | V13.2.2 | 2 | Least-privilege accounts for backend communication | Operator | The accounts r7 uses towards upstreams are whatever credentials the operator configures. r7's own process runs as UID 65532 on distroless bases, with journals at 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48)). |
-| V13.2.3 | 2 | No default credentials | Met | No shipped credentials. |
+| V13.2.3 | 2 | No default credentials for backend services | Operator | r7 ships none, but it cannot tell whether an operator's `InjectBasicAuth` or header credential is a default one. |
 | V13.2.4 | 2 | Allowlist of external resources | Met | Upstream targets are an explicit list in configuration; requests cannot choose one (V1.3.6). |
 | V13.2.5 | 2 | Server-side allowlist for outbound requests | Met | As V13.2.4. |
 | V13.3.1 | 2 | Secrets management solution | Operator | `${VAR}` interpolation lets secrets come from the environment or a mounted secret rather than the YAML; the vault is the deployment's. |
 | V13.3.2 | 2 | Least privilege for secrets | Operator | Access to the YAML, the environment and mounted secrets is the deployment's. r7 keeps secrets out of its own outputs: `@Sensitive` values are masked in management output and URL credentials redacted in summaries ([#46](https://github.com/ethlo/r7/pull/46)). |
-| V13.4.1 | 1 | No source control metadata served | Met | `StaticContent` refuses dotfiles, `.git/` included, unless `serve_hidden_files` is set ([#50](https://github.com/ethlo/r7/pull/50)). |
+| V13.4.1 | 1 | No source control metadata served | Operator | `StaticContent` refuses dotfiles, `.git/` included, unless a route sets `serve_hidden_files` ([#50](https://github.com/ethlo/r7/pull/50), `StaticContentHiddenFilesE2ETest`). With it set, keeping `.git/` out of the web root is the operator's job. |
 | V13.4.2 | 2 | Debug modes off | Met | No debug endpoints. Log levels default to INFO/WARN (`default-logback.xml`). |
 | V13.4.3 | 2 | No directory listings | Met | `list_directory` defaults to false. |
 | V13.4.4 | 2 | TRACE not supported | Met | TRACE is answered `501 Not Implemented` before routing and never reaches an upstream ([#74](https://github.com/ethlo/r7/pull/74), `R7FullSpecMatrixTest`). |
@@ -398,13 +399,13 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 |---|---|---|---|---|
 | V16.1.1 | 2 | Logging inventory | Partial | `docs/journaling.md` covers journals; application logs (logback) are not inventoried (gap 7). |
 | V16.2.1 | 2 | Who/what/when/where metadata | Met | Every journaled exchange records request ID, client IP and its source, start line, status and timings (`journal.fbs` `EndExchange`). |
-| V16.2.2 | 2 | Synchronised time, UTC or explicit offset | Met | Journals record epoch timestamps. Logs are ISO-8601 in UTC with the date ([#74](https://github.com/ethlo/r7/pull/74)). Clock sync is the host's. |
-| V16.2.3 | 2 | Logs only to documented destinations | Met | Journals to `work_dir`, logs to stdout. Nothing else. |
+| V16.2.2 | 2 | Synchronised time, UTC or explicit offset | Operator | Journals record epoch timestamps and logs are ISO-8601 in UTC with the date ([#74](https://github.com/ethlo/r7/pull/74)). Synchronising the clock is the host's job. |
+| V16.2.3 | 2 | Logs only to documented destinations | Partial | Journals go to `work_dir`, logs to stdout, and nothing else, but the destinations are not yet in a logging inventory (V16.1.1, gap 7). |
 | V16.2.4 | 2 | Logs readable by the log processor | Met | The tailers convert journals to JSON-LD and ClickHouse rows. |
 | V16.2.5 | 2 | Sensitive data logged by protection level | Partial | The header allowlist and journal levels do this. Query strings are the recorded exception (Accepted, V14.2.1); upstream-failure log lines include the request URI (`StandardErrorHandler`). |
-| V16.3.1 | 2 | All authentication operations logged | Operator | Every `BasicAuth` refusal is a journaled `401` with request ID, client address and time. `status_overrides` records them on routes that otherwise journal nothing, as the `BasicAuth` docs show ([#74](https://github.com/ethlo/r7/pull/74)). Successful logins are journaled with the user's fingerprint (`gateway.auth.basic.user`) when the route is journaled. |
-| V16.3.2 | 2 | Failed authorisation logged | Operator | As V16.3.1: `Require*` refusals are journaled with their status, and `status_overrides` covers otherwise unjournaled routes. |
-| V16.3.3 | 2 | Security control bypass attempts logged | Partial | Refusals after routing (rate limits, size limits, regex budget) are journaled. Refusals before routing (ambiguous path, `Transfer-Encoding`, TRACE) have no route and so no journal, only a DEBUG log line (gap 9). |
+| V16.3.1 | 2 | All authentication operations logged | Operator | When the route journals requests, or has `status_overrides` covering 401 as the `BasicAuth` docs show ([#74](https://github.com/ethlo/r7/pull/74)), every refusal is recorded with request ID, client address and time. Route journaling defaults to `NONE`, so this depends on configuration. Successful logins carry the user's fingerprint (`gateway.auth.basic.user`) on journaled routes. |
+| V16.3.2 | 2 | Failed authorisation logged | Operator | As V16.3.1: `Require*` refusals are journaled with their status when route journaling or a matching `status_overrides` entry covers it. |
+| V16.3.3 | 2 | Security control bypass attempts logged | Partial | Refusals after routing (rate limits, size limits, regex budget) are journaled when the route journals them. Refusals before routing have no journal: ambiguous paths and bad `Transfer-Encoding` get a DEBUG log line, and TRACE gets none at all (gap 9). |
 | V16.3.4 | 2 | Unexpected errors and control failures logged | Met | `StandardErrorHandler` logs upstream failures and unexpected errors with the request ID. |
 | V16.4.1 | 2 | Log injection prevented | Met | Journals are binary with length-prefixed fields; header text is ISO-8859-1 without CR/LF. Undertow refuses raw CR/LF in the request line, so a logged URI stays on one line. |
 | V16.4.2 | 2 | Logs protected from access and modification | Met | Journals 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48), `JournalFilePermissionsTest`); sealed segments carry integrity records. |
