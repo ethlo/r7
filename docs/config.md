@@ -821,7 +821,7 @@ Configures the HTTP server layer, including protocol support and request parsing
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `enable_http2` | Boolean | Enables HTTP/2 protocol support. |
+| `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected. |
 | `always_set_keep_alive` | Boolean | Forces the server to send the `Connection: keep-alive` header to maintain persistent connections. |
 | `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. |
 

@@ -54,12 +54,20 @@ public class R7NginxHttp2IsolationTest
                     - url: "http://nginx-h2c:80"
             """;
 
+    // h2c is off by default; this test is about routing it, so it opts in
+    private static final String SERVER_YAML = """
+            http:
+              enable_http2: true
+            """;
+
     @Container
     public static final GenericContainer<?> R7_GATEWAY = new GenericContainer<>(DockerImageName.parse("docker.io/library/r7-gateway-native:latest"))
             .withNetwork(NETWORK)
             .withExposedPorts(8888)
             .withCopyToContainer(Transferable.of(ROUTES_YAML), "/app/config/routes.yaml")
+            .withCopyToContainer(Transferable.of(SERVER_YAML), "/app/config/server.yaml")
             .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
+            .withEnv("R7_SERVER_CONFIG", "/app/config/server.yaml")
             .dependsOn(NGINX_BACKEND);
 
     @Test
