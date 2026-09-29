@@ -1418,8 +1418,8 @@
 
     function healthTag(routeId, target) {
         const states = window.currentData?.upstream_health?.[routeId];
-        if (!states) return '<span class="tag" title="The health monitor starts with the route\'s first request">NOT STARTED</span>';
-        if (!(target in states)) return '<span class="tag">UNCHECKED</span>';
+        // Absent only when a reload landed between the configuration and health snapshots.
+        if (!states || !(target in states)) return '<span class="tag">UNCHECKED</span>';
         return states[target] ? '<span class="tag tag-up">UP</span>' : '<span class="tag tag-down">DOWN</span>';
     }
 

@@ -67,6 +67,14 @@ public final class ConfigurationManager
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
     {
+        routeRegistry.updateRoutes(config.version(), this.build(config));
+    }
+
+    /**
+     * Validates and instantiates the routes without publishing them.
+     */
+    public List<GatewayRoute> build(RoutesDefinition config)
+    {
         final ValidationResult validationResult = new ValidationResult();
 
         if (config.routes() == null || config.routes().isEmpty())
@@ -83,7 +91,7 @@ public final class ConfigurationManager
         validationResult.throwIfInvalid(); // Fail before any instantiation
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
-        final List<GatewayRoute> routes = config.routes().stream()
+        return config.routes().stream()
                 .map(routeDefinition ->
                 {
                     final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id(), engineContext);
@@ -135,8 +143,6 @@ public final class ConfigurationManager
                     return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, globalFilters.size(), journalConfig, routeDefinition);
                 })
                 .toList();
-
-        routeRegistry.updateRoutes(config.version(), routes);
     }
 
     private void validateUniqueRouteIds(List<RouteDefinition> routes)
