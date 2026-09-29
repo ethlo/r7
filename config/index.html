@@ -3526,7 +3526,7 @@
 <tr>
 <td><code>max_header_size</code></td>
 <td>Size</td>
-<td>The maximum allowed size for a single HTTP header (e.g., <code>8KB</code>).</td>
+<td>The maximum size of the request line and all request headers combined (e.g., <code>8KB</code>), not of each header separately. At most 62500 bytes, the longest input configured regular expressions are budgeted for.</td>
 </tr>
 <tr>
 <td><code>max_header_count</code></td>
