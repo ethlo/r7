@@ -20,6 +20,7 @@ import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RegexBudget;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -96,7 +97,7 @@ public final class RequireMatchRequestHeaderFactory implements GatewayFilterFact
         {
             final String headerValue = exchange.clientRequest().headers().getFirst(this.config.name());
 
-            if (headerValue == null || !this.compiledPattern.matcher(headerValue).matches())
+            if (headerValue == null || !RegexBudget.matcher(this.compiledPattern, headerValue).matches())
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),
