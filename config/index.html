@@ -3498,7 +3498,7 @@
 <tr>
 <td><code>enable_http2</code></td>
 <td>Boolean</td>
-<td>Enables HTTP/2 protocol support.</td>
+<td>Enables HTTP/2. Defaults to <code>false</code>. The listener is plaintext, so this means h2c (prior knowledge or <code>Upgrade: h2c</code>): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected.</td>
 </tr>
 <tr>
 <td><code>always_set_keep_alive</code></td>
