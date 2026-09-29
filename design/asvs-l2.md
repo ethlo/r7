@@ -37,13 +37,13 @@ The point is transparency, not a clean sheet: an Accepted row is a legitimate ou
 | V9 Self-contained Tokens |  |  |  |  |  | 7 |
 | V10 OAuth and OIDC |  |  |  |  |  | 29 |
 | V11 Cryptography | 5 | 2 |  | 1 |  | 6 |
-| V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
+| V12 Secure Communication |  |  |  | 3 | 5 | 1 |
 | V13 Configuration | 5 | 1 |  | 1 | 6 |  |
 | V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
 | V15 Secure Coding and Architecture | 10 | 3 |  |  |  |  |
 | V16 Security Logging and Error Handling | 7 | 3 |  |  | 6 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **65** | **15** | **0** | **9** | **34** | **130** |
+| **Total** | **64** | **15** | **0** | **10** | **34** | **130** |
 
 ## Gaps
 
@@ -68,6 +68,7 @@ Also recorded:
 - **Accepted:** the listener is plaintext and `BasicAuth` is single-factor (V12.2.1, V12.3.1, V4.4.1, V6.3.3); see Scope.
 - **Accepted:** `BasicAuth` caches SHA-256 digests of verified credentials in memory to avoid a bcrypt round per request (V14.2.2).
 - **Accepted:** only static credentials towards upstreams (V13.2.1), and bcrypt's 72-byte password limit (V6.2.8).
+- **Accepted:** upstream TLS certificates are not checked against the hostname (V12.3.2); upstreams are internal services.
 - **Roadmap:** fuzzing the journal decoder and the request guards with Jazzer moves V1.4.1 and V1.4.2 to Met. Publishing an SBOM with each image moves V15.1.2 to Met.
 
 ## V1 Encoding and Sanitization
@@ -339,7 +340,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V12.2.1 | 1 | TLS for external-facing services | Accepted | The listener is plaintext by design: r7 is deployed on private networks or behind a TLS-terminating load balancer (see Scope). |
 | V12.2.2 | 1 | Publicly trusted certificates | Operator | The listener is plaintext by design: r7 is deployed on private networks or behind a TLS-terminating load balancer (see Scope). |
 | V12.3.1 | 2 | Encryption for all inbound and outbound connections | Accepted | The listener is plaintext by design: r7 is deployed on private networks or behind a TLS-terminating load balancer (see Scope). Upstream connections use TLS when the target URL is `https`. The management port binds to 127.0.0.1 by default ([#46](https://github.com/ethlo/r7/pull/46)). |
-| V12.3.2 | 2 | TLS clients validate certificates | Met | Undertow verifies upstream certificates and hostnames by default, and r7 does not turn this off. |
+| V12.3.2 | 2 | TLS clients validate certificates | Accepted | For an `https` upstream, the certificate chain is validated against the JVM trust store, but the hostname is not checked: Undertow's client applies endpoint identification only when asked to, and r7 does not ask. Accepted because upstreams are internal services on the trusted network (see Scope). |
 | V12.3.3 | 2 | TLS between internal services | Operator | Per upstream, by using `https` target URLs. |
 | V12.3.4 | 2 | Trusted certificates between internal services | Operator | The JVM trust store decides. |
 
