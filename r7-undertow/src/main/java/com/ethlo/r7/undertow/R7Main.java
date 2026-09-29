@@ -300,11 +300,11 @@ public final class R7Main
                 .setSocketOption(Options.TCP_NODELAY, advanced.tcpNoDelay())
                 .setSocketOption(Options.REUSE_ADDRESSES, advanced.reuseAddresses())
                 .setSocketOption(Options.BACKLOG, advanced.socketBacklog())
-                .setSocketOption(Options.READ_TIMEOUT, (int) advanced.socketReadTimeout().toMillis())
+                .setSocketOption(Options.READ_TIMEOUT, Math.toIntExact(advanced.socketReadTimeout().toMillis()))
 
                 // HTTP Protocol
                 .setServerOption(UndertowOptions.MAX_HEADER_SIZE, (int) limits.maxHeaderSize().bytes())
-                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, (int) http.requestParseTimeout().toMillis())
+                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, Math.toIntExact(http.requestParseTimeout().toMillis()))
                 .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, limits.maxEntitySize().bytes())
                 .setServerOption(UndertowOptions.ENABLE_HTTP2, http.enableHttp2())
                 .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, http.alwaysSetKeepAlive())
