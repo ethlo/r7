@@ -112,7 +112,10 @@ class UpstreamContextLifecycleTest
 
     private R7UndertowHandler newHandler()
     {
-        return new R7UndertowHandler(ServerConfig.standard(), this.registry, null, new StandardErrorHandler(), this.scheduler);
+        // What HotReloadService.onReload does for the routes in service when the handler is added
+        final R7UndertowHandler handler = new R7UndertowHandler(ServerConfig.standard(), this.registry, null, new StandardErrorHandler(), this.scheduler);
+        handler.prepare(this.registry.getRoutes());
+        return handler;
     }
 
     private String route(final String id, final String extraUpstreamConfig)

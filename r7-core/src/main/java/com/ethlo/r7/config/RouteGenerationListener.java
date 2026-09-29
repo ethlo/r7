@@ -16,9 +16,10 @@ import com.ethlo.r7.api.GatewayRoute;
 public interface RouteGenerationListener
 {
     /**
-     * Called with a new generation before any request can match it. Throwing rejects the
-     * generation: the current routes stay in service, and {@link #retire} is called for the
-     * rejected ones on every listener that prepared them.
+     * Called with a new generation before any request can match it, and with the generation in
+     * service when the listener is added. Throwing rejects a new generation: the current routes
+     * stay in service, and {@link #retire} is called for the rejected ones on every listener that
+     * prepared them.
      */
     void prepare(List<GatewayRoute> routes);
 

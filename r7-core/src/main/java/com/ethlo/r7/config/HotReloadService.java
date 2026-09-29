@@ -31,13 +31,15 @@ public final class HotReloadService
 
     public HotReloadService(final GatewayScheduler scheduler, final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
     {
-        scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
         this.configFilePath = configFilePath;
         this.configManager = configManager;
         this.routeRegistry = routeRegistry;
         this.lastKnownModified = System.currentTimeMillis();
 
         reloadPipeline(true);
+
+        // Last, so the poller never sees a half-constructed service
+        scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
     }
 
     private void pollForChanges()
@@ -60,7 +62,13 @@ public final class HotReloadService
         }
     }
 
-    void reloadPipeline(boolean initial)
+    /**
+     * Synchronized with {@link #onReload}: a listener is either added before a reload starts,
+     * and prepares with it, or after it ends, and prepares the routes it published. Otherwise a
+     * listener added mid-reload misses the generation that goes live, which then runs without
+     * what the listener attaches to it.
+     */
+    synchronized void reloadPipeline(boolean initial)
     {
         try
         {
@@ -174,10 +182,12 @@ public final class HotReloadService
     }
 
     /**
-     * Routes loaded before the listener was added are not prepared for it: it does that itself.
+     * Adds the listener and prepares the routes currently in service with it, as one step with
+     * respect to reloads. A listener that fails to prepare them is not added.
      */
-    public void onReload(final RouteGenerationListener listener)
+    public synchronized void onReload(final RouteGenerationListener listener)
     {
+        listener.prepare(this.routeRegistry.getRoutes());
         this.listeners.add(listener);
     }
 }

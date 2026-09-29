@@ -1,6 +1,7 @@
 package com.ethlo.r7.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -8,6 +9,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +50,10 @@ class HotReloadServiceTest
         service.reloadPipeline(false);
 
         assertThat(this.routeIds()).containsExactly("second");
-        assertThat(recorder.events).containsExactly("prepare [second] while serving [first]", "retire [first] while serving [second]");
+        assertThat(recorder.events).containsExactly(
+                "prepare [first] while serving [first]",
+                "prepare [second] while serving [first]",
+                "retire [first] while serving [second]");
         assertThat(recorder.retired).containsExactly(first);
         assertThat(service.status().rejectedAt()).isNull();
     }
@@ -63,7 +69,10 @@ class HotReloadServiceTest
             @Override
             public void prepare(final List<GatewayRoute> routes)
             {
-                throw new IllegalStateException("cannot build upstream");
+                if (routes != registry.getRoutes())
+                {
+                    throw new IllegalStateException("cannot build upstream");
+                }
             }
         });
 
@@ -71,7 +80,10 @@ class HotReloadServiceTest
         service.reloadPipeline(false);
 
         assertThat(this.routeIds()).containsExactly("first");
-        assertThat(prepared.events).containsExactly("prepare [second] while serving [first]", "retire [second] while serving [first]");
+        assertThat(prepared.events).containsExactly(
+                "prepare [first] while serving [first]",
+                "prepare [second] while serving [first]",
+                "retire [second] while serving [first]");
         assertThat(service.status().rejectedAt()).isNotNull();
     }
 
@@ -93,6 +105,76 @@ class HotReloadServiceTest
 
         assertThat(this.routeIds()).containsExactly("second");
         assertThat(service.status().rejectedAt()).isNull();
+    }
+
+    @Test
+    void aListenerIsNotAddedWhenItCannotPrepareTheRoutesInService() throws IOException
+    {
+        final HotReloadService service = this.start("first");
+        final Recorder failing = new Recorder()
+        {
+            @Override
+            public void prepare(final List<GatewayRoute> routes)
+            {
+                super.prepare(routes);
+                throw new IllegalStateException("cannot build upstream");
+            }
+        };
+        assertThatThrownBy(() -> service.onReload(failing)).isInstanceOf(IllegalStateException.class);
+
+        this.write("second");
+        service.reloadPipeline(false);
+
+        assertThat(this.routeIds()).containsExactly("second");
+        assertThat(failing.events).containsExactly("prepare [first] while serving [first]");
+    }
+
+    @Test
+    void addingAListenerWaitsForAReloadInProgress() throws Exception
+    {
+        final HotReloadService service = this.start("first");
+        final CountDownLatch preparing = new CountDownLatch(1);
+        final CountDownLatch proceed = new CountDownLatch(1);
+        service.onReload(new Recorder()
+        {
+            @Override
+            public void prepare(final List<GatewayRoute> routes)
+            {
+                if (routes != registry.getRoutes())
+                {
+                    preparing.countDown();
+                    await(proceed);
+                }
+            }
+        });
+
+        this.write("second");
+        final Thread reload = Thread.ofVirtual().start(() -> service.reloadPipeline(false));
+        preparing.await();
+
+        // Added mid-reload, the listener would miss the generation about to go live
+        final Recorder late = new Recorder();
+        final Thread adding = Thread.ofVirtual().start(() -> service.onReload(late));
+        TimeUnit.MILLISECONDS.sleep(100);
+        assertThat(late.events).as("prepared while the reload was in progress").isEmpty();
+
+        proceed.countDown();
+        reload.join();
+        adding.join();
+        assertThat(late.events).containsExactly("prepare [second] while serving [second]");
+    }
+
+    private static void await(final CountDownLatch latch)
+    {
+        try
+        {
+            latch.await();
+        }
+        catch (final InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 
     private HotReloadService start(final String routeId) throws IOException

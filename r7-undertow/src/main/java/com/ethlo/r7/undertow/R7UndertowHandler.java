@@ -157,10 +157,6 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
                 journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
         this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
-
-        // The first generation was published before this handler existed, and before the server
-        // accepts any request: it is prepared here rather than by the reload service.
-        this.prepare(routeRegistry.getRoutes());
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
