@@ -110,7 +110,8 @@ public final class R7Main
         configureServer(builder, serverConfig);
         this.server = builder.build();
 
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
+        final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, serverConfigFile, routeRegistry, hotReloadService, r7UndertowHandler);
 
         this.managementServer = setupStatusBackend(statusHandler, serverConfig.management().port(), serverConfig.management().host(), sharedWorker);
 
