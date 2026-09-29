@@ -1648,6 +1648,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#advanced-advanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Advanced (<code>advanced</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#storage-journaling-storage" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3620,8 +3631,35 @@
 <td>Integer</td>
 <td>The port for the internal management server.</td>
 </tr>
+<tr>
+<td><code>request_parse_timeout</code></td>
+<td>Duration</td>
+<td>Time allowed to receive a complete request head. Defaults to <code>2s</code>.</td>
+</tr>
+<tr>
+<td><code>read_timeout</code></td>
+<td>Duration</td>
+<td>Closes a connection that sends nothing for this long. Defaults to <code>30s</code>.</td>
+</tr>
+<tr>
+<td><code>idle_timeout</code></td>
+<td>Duration</td>
+<td>Closes a connection that sits between requests for this long. Defaults to <code>30s</code>.</td>
+</tr>
+<tr>
+<td><code>max_connections</code></td>
+<td>Integer</td>
+<td>Connections the management port accepts at once; more wait in the accept backlog until one closes. Defaults to <code>64</code>.</td>
+</tr>
+<tr>
+<td><code>allowed_hosts</code></td>
+<td>List of Strings</td>
+<td>Host names, besides <code>localhost</code> and <code>host</code>, that a request's <code>Host</code> header may name. Empty by default.</td>
+</tr>
 </tbody>
 </table>
+<p>The management listener shares the process's file descriptors with the gateway itself, so none of its timeouts can be turned off (each must be positive and at most <code>24d</code>) and its connections are capped: without these, a client that opens connections and sends part of a request on each could use up descriptors until the gateway stops accepting traffic.</p>
+<p>A request whose <code>Host</code> names anything other than <code>localhost</code>, the configured <code>host</code>, an entry in <code>allowed_hosts</code> or an IP address gets <code>421</code>. This stops DNS rebinding, where a web page re-resolves its own name to <code>127.0.0.1</code> and so reads a loopback-only dashboard from the browser of someone on the gateway host. IP addresses are always accepted because rebinding needs a name. If you reach the management port through a DNS name, add that name to <code>allowed_hosts</code>.</p>
 <p>The management endpoint is read-only (<code>GET</code>/<code>HEAD</code>; anything else gets <code>405</code>) and sends <code>Cache-Control: no-store</code>, <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>, and a <code>Content-Security-Policy</code> that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with <code>******</code>: <code>InjectBasicAuth</code> passwords, <code>BasicAuth</code> user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (<code>http://user:pass@host</code>), request and response header values set by filters unless the header is one the journal records as safe in that direction (see <code>journal_security</code>), and the patterns of <code>RequireMatch*</code> filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.</p>
 <p>What the dashboard shows beyond the configuration itself:</p>
 <ul>
@@ -3739,6 +3777,59 @@
 <td><code>ttl</code></td>
 <td>Duration</td>
 <td>The time-to-live (e.g., <code>30s</code>) for idle upstream connections in the pool. At most <code>24d</code> (2147483647 ms).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="advanced-advanced">Advanced (<code>advanced</code>)</h3>
+<p>Worker threads and socket options of the gateway listener.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>io_threads</code></td>
+<td>Integer</td>
+<td>I/O threads. Defaults to the number of processors, at least 2.</td>
+</tr>
+<tr>
+<td><code>task_threads</code></td>
+<td>Integer</td>
+<td>Worker task threads. Defaults to <code>io_threads</code> × 8.</td>
+</tr>
+<tr>
+<td><code>connection_high_water</code></td>
+<td>Integer</td>
+<td>When this many connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to <code>20000</code>. Keep it below the process's open-file limit, less what upstream connections and journals need.</td>
+</tr>
+<tr>
+<td><code>connection_low_water</code></td>
+<td>Integer</td>
+<td>Once accepting has stopped, it resumes when open connections fall to this many. Defaults to <code>10000</code>; must be at least 1 and at most <code>connection_high_water</code>.</td>
+</tr>
+<tr>
+<td><code>tcp_no_delay</code></td>
+<td>Boolean</td>
+<td>Disables Nagle's algorithm. Defaults to <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>reuse_addresses</code></td>
+<td>Boolean</td>
+<td>Sets <code>SO_REUSEADDR</code> on the listener. Defaults to <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>socket_backlog</code></td>
+<td>Integer</td>
+<td>Length of the accept backlog. Defaults to <code>1000</code>.</td>
+</tr>
+<tr>
+<td><code>socket_read_timeout</code></td>
+<td>Duration</td>
+<td>Closes a connection that sends nothing for this long. Defaults to <code>30s</code>; at most <code>24d</code>.</td>
 </tr>
 </tbody>
 </table>
