@@ -1,0 +1,78 @@
+version: filter-runtime-test
+
+routes:
+  # M3: CircuitBreaker's onClientResponse reads clientResponse().status() to tell a refused
+  # half-open probe from one that actually reached the upstream and succeeded. RequireRequestHeader
+  # short-circuits the probe (when the header is missing) with a configurable, non-5xx-looking
+  # status the test can distinguish from a 5xx failure once fixed.
+  - id: circuit-probe-status
+    match:
+      - PathPrefix:
+          prefix: /circuit-probe
+    filters:
+      - CircuitBreaker:
+          failure_threshold: 1
+          cooldown_period: 200ms
+      - RequireRequestHeader:
+          name: X-Allow-Probe
+          reject_status_code: 503
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # L1: a refused request must run its response filters in the same onion order a proxied one
+  # would (last-declared first, first-declared last), and the refusal's own headers must not be
+  # re-applied afterwards and stomp on what a response filter just set.
+  - id: shortcircuit-onion-order
+    match:
+      - PathPrefix:
+          prefix: /onion-order
+    filters:
+      - SetResponseHeader:
+          name: X-Onion
+          value: outer
+      - RequireRequestHeader:
+          name: X-Required
+      - SetResponseHeader:
+          name: X-Onion
+          value: inner
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # M4 / M7: a cookie name with surrounding whitespace must still be matched (SetRequestCookie
+  # must overwrite it, not leave it alongside a clean duplicate), and removal must actually strip
+  # the cookie rather than send it on as a literal "name=null".
+  - id: cookie-whitespace-set
+    match:
+      - PathPrefix:
+          prefix: /cookie-whitespace-set
+    filters:
+      - SetRequestCookie:
+          name: tenant
+          value: clean
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  - id: cookie-whitespace-remove
+    match:
+      - PathPrefix:
+          prefix: /cookie-whitespace-remove
+    filters:
+      - RemoveRequestCookie:
+          name: tenant
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  - id: cookie-remove-plain
+    match:
+      - PathPrefix:
+          prefix: /cookie-remove-plain
+    filters:
+      - RemoveRequestCookie:
+          name: removed_c
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

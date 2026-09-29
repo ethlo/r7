@@ -83,9 +83,11 @@ class FallbackValidationTest
     }
 
     /**
-     * Global filters are instantiated per route. A request's global request phase runs on the
-     * instances of the route it matched, so after a fallback its response and completion phases
-     * must run on those same instances, not the fallback route's copies.
+     * Global filters are instantiated once and shared by every route (see M5 in the filter-runtime
+     * review: instantiating one per route silently multiplied a global RateLimiter's or
+     * CircuitBreaker's limit by the route count). A request's global request phase therefore runs
+     * on the very same instances regardless of which route matched, fallback or not, and that
+     * still holds after a fallback swaps in a different route's own filters alongside them.
      */
     @Test
     void fallbackRunsWithTheMatchedRoutesGlobalFilterInstances() throws IOException
@@ -115,7 +117,9 @@ class FallbackValidationTest
         assertThat(bAfterA.beforeCommitGatewayFilters()[1]).isSameAs(b.beforeCommitGatewayFilters()[1]);
         // Built once, and b itself is untouched
         assertThat(a.asFallbackOfThis(b)).isSameAs(bAfterA);
-        assertThat(b.beforeCommitGatewayFilters()[0]).isNotSameAs(a.beforeCommitGatewayFilters()[0]);
+        // A global filter is one shared instance for the whole gateway, so b's own copy of it
+        // is the same object as a's - not a fallback-specific guarantee, just what "global" means.
+        assertThat(b.beforeCommitGatewayFilters()[0]).isSameAs(a.beforeCommitGatewayFilters()[0]);
     }
 
     /**

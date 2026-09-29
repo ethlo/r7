@@ -53,6 +53,7 @@ r7 supports zero-downtime configuration reloads.
 * Swapping the `routes.yaml` configuration is an **atomic operation**.
 * In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.
 * Stateful filter data (like `CircuitBreaker` tripping states and `RateLimiter` token buckets) is intentionally reset upon reload. This is **by design and not configurable**, guaranteeing immediate, strict adherence to the new configuration parameters.
+* A filter declared in `global_filters` is instantiated **once** and that single instance is shared by every route. A `RateLimiter` in `global_filters` therefore enforces one limit across the whole gateway, drawing from one set of buckets no matter which route a request matched; a `CircuitBreaker` there tracks one upstream health state for all of them. This differs from declaring the same filter under several routes' own `filters:` blocks, where each route gets its own independent instance and state.
 
 ---
 
@@ -439,8 +440,11 @@ Deletes a specific query parameter from the URL before forwarding.
 
 #### AddCorrelationId
 
-Automatically injects the gateway's internal request ID into both the upstream request and the client response using the `X-Correlation-Id` header.
-*This filter requires no configuration parameters.*
+Automatically injects the gateway's internal request ID into both the upstream request and the client response using the `X-Correlation-Id` header. By default, an `X-Correlation-Id` the client already sent is **replaced**, never appended to: it is client-controlled, and trusting it would let a client plant an arbitrary value in upstream logs and tracing under this gateway's name.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `trust_incoming` | Boolean | No | If `true`, an `X-Correlation-Id` already present on the incoming request is kept (and echoed back to the client) instead of being replaced with r7's own request ID. Defaults to `false`. Only enable this behind a trusted edge that itself controls or strips the header before it reaches r7. |
 
 #### RemoveCacheHeaders
 
@@ -658,7 +662,7 @@ Provides token-bucket rate limiting. Requests exceeding the limit are rejected w
 | `refill_tokens` | Long | Yes | Number of tokens added to the bucket per refill period. |
 | `refill_period` | Duration | Yes | The time interval (e.g., `2s`) for the token refill. |
 | `max_buckets` | Long | No | Maximum number of unique identities/buckets to track. Defaults to `10000`. |
-| `max_bucket_ttl` | Duration | No | Time-to-live for idle buckets. Defaults to `max(refill_period * 10, 30s)`. |
+| `max_bucket_ttl` | Duration | No | Time-to-live for idle buckets. Defaults to the time a fully-drained bucket needs to refill to `capacity` (`ceil(capacity / refill_tokens) * refill_period`), floored at `30s`. A shorter TTL would evict an idle client's bucket before it could refill, handing it a fresh full bucket - effectively resetting its limit - the next time it is seen. |
 | `ipv6_prefix_length` | Integer | No | How many leading bits identify one IPv6 client (1-128). Defaults to `64`: a subscriber is typically assigned a whole `/64` and can use any address in it, so limiting per full address would give one client unlimited buckets. IPv4 clients are keyed by their full address. |
 
 #### CircuitBreaker

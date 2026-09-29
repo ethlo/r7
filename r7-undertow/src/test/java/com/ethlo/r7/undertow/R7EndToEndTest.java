@@ -1,5 +1,6 @@
 package com.ethlo.r7.undertow;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
@@ -271,8 +272,11 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
 
         UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/cookie-modify"))
                 .withCookie("added_c", equalTo("injected_cookie"))
-                .withCookie("kept_c", equalTo("should_remain")));
-        // TODO: //.withoutCookie("removed_c"));
+                .withCookie("kept_c", equalTo("should_remain"))
+                // M7: RemoveRequestCookie used to set the cookie's value to Java null and then
+                // string-concatenate it while rebuilding the header, sending "removed_c=null"
+                // upstream instead of actually removing the cookie.
+                .withCookie("removed_c", absent()));
     }
 
     /**
