@@ -51,6 +51,15 @@ public final class ConditionDefinition
                 }
             });
         }
+        else if (raw instanceof String s)
+        {
+            // Spring Cloud Gateway's 'Name=value' shorthand is not supported here: as a bare
+            // YAML scalar it carries no predicate name Jackson can bind to, so it used to be
+            // silently dropped into an empty (always-true) node instead of matching anything.
+            throw new ConfigurationException(
+                    "Invalid match entry '" + s + "': the 'Name=value' shorthand is not supported. " +
+                            "Use the map form instead, e.g. '- Path: {path: /admin/**}' or '- PathPrefix: {prefix: /admin}'.");
+        }
         return def;
     }
 

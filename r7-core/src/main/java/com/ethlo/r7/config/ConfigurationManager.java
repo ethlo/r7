@@ -145,6 +145,12 @@ public final class ConfigurationManager
                 })
                 .toList();
 
+        // Predicate/filter instantiation (step 3) reports its errors onto the same
+        // validationResult rather than throwing, so a poisoned predicate (e.g. an unknown
+        // matcher wrapped in 'not:') would otherwise load as whatever fallback the tree built -
+        // silently, and possibly inverted to match everything. Fail closed here instead.
+        validationResult.throwIfInvalid();
+
         return new RouteRegistry.Snapshot(config.version(), routes, createUnroutedRoute(config.unrouted()));
     }
 

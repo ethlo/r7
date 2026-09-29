@@ -1,14 +1,17 @@
 package com.ethlo.r7.config;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.zip.CRC32;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +28,7 @@ public final class HotReloadService
     private final ConfigurationManager configManager;
     private final RouteRegistry routeRegistry;
     private final Set<RouteGenerationListener> listeners = new LinkedHashSet<>();
-    private long lastKnownModified;
+    private FileFingerprint lastKnownFingerprint;
     private volatile Instant loadedAt;
     private volatile Instant rejectedAt;
 
@@ -34,7 +37,7 @@ public final class HotReloadService
         this.configFilePath = configFilePath;
         this.configManager = configManager;
         this.routeRegistry = routeRegistry;
-        this.lastKnownModified = System.currentTimeMillis();
+        this.lastKnownFingerprint = FileFingerprint.of(configFilePath);
 
         reloadPipeline(true);
 
@@ -42,23 +45,43 @@ public final class HotReloadService
         scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
     }
 
-    private void pollForChanges()
+    void pollForChanges()
     {
-        final long currentModified;
-        try
-        {
-            currentModified = Files.getLastModifiedTime(configFilePath).toMillis();
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
+        final FileFingerprint current = FileFingerprint.of(configFilePath);
 
-        if (currentModified > this.lastKnownModified)
+        // A newer-mtime-only check misses a `cp -p` rollback, which restores an older file's
+        // timestamp along with its content: the clock moves backwards, but it is still a change
+        // that must be picked up. Comparing the full fingerprint - mtime, size and a content hash
+        // - catches that, and any other edit a bare 'greater than' would miss (e.g. an editor that
+        // preserves mtime, or a filesystem with second-granularity timestamps).
+        if (!current.equals(this.lastKnownFingerprint))
         {
             log.debug("Detected change in configuration file {}", configFilePath.toAbsolutePath());
-            this.lastKnownModified = currentModified;
+            this.lastKnownFingerprint = current;
             reloadPipeline(false);
+        }
+    }
+
+    /**
+     * mtime, size and a checksum of the file's content, taken together, so a change is detected
+     * regardless of which of the three an edit happens to leave alone.
+     */
+    private record FileFingerprint(FileTime modifiedTime, long size, long contentHash)
+    {
+        static FileFingerprint of(final Path path)
+        {
+            try
+            {
+                final byte[] content = Files.readAllBytes(path);
+                final FileTime modifiedTime = Files.getLastModifiedTime(path);
+                final CRC32 crc = new CRC32();
+                crc.update(content);
+                return new FileFingerprint(modifiedTime, content.length, crc.getValue());
+            }
+            catch (IOException e)
+            {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 

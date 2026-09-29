@@ -12,13 +12,18 @@ import tools.jackson.core.JsonParser;
 import tools.jackson.core.TokenStreamLocation;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.deser.std.StdDeserializer;
 import tools.jackson.databind.exc.InvalidFormatException;
 import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.exc.UnrecognizedPropertyException;
+import tools.jackson.databind.exc.ValueInstantiationException;
 import tools.jackson.databind.module.SimpleModule;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.StringNode;
 import tools.jackson.dataformat.yaml.JacksonYAMLParseException;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
@@ -58,9 +63,16 @@ public final class YamlConfigSupport
     }
 
     /**
-     * Reads and interpolates ({@code ${VAR:default}}) a YAML file, then binds it to {@code type}
-     * using {@code mapper}, converting Jackson's exceptions into the same readable,
-     * field-naming {@link ConfigurationException} messages regardless of caller.
+     * Reads a YAML file, parses it, interpolates ({@code ${VAR:default}}) each scalar value in
+     * the resulting tree, then binds it to {@code type} using {@code mapper}, converting
+     * Jackson's exceptions into the same readable, field-naming {@link ConfigurationException}
+     * messages regardless of caller.
+     * <p>
+     * Interpolation deliberately happens on the parsed tree rather than the raw text: a single
+     * regex pass over the whole file would let an environment value that contains YAML
+     * metacharacters (a colon, a newline) add or rewrite nodes the author never wrote, instead of
+     * only filling in the scalar it was substituted into. Interpolating per scalar value confines
+     * a substituted value to being text, wherever in the tree it lands.
      */
     public static <T> T load(final ObjectMapper mapper, final Path yamlFile, final Class<T> type)
     {
@@ -73,11 +85,12 @@ public final class YamlConfigSupport
         {
             throw new UncheckedIOException(e);
         }
-        final String interpolated = EnvInterpolator.interpolate(contents);
 
         try
         {
-            return mapper.readValue(interpolated, type);
+            final JsonNode root = mapper.readTree(contents);
+            interpolateTree(root);
+            return mapper.treeToValue(root, type);
         }
         catch (JacksonYAMLParseException e)
         {
@@ -90,6 +103,57 @@ public final class YamlConfigSupport
         catch (InvalidFormatException e)
         {
             throw new ConfigurationException(formatMappingError(yamlFile, e));
+        }
+        catch (ValueInstantiationException e)
+        {
+            // A ConfigurationException thrown by a @JsonCreator (e.g. rejecting a malformed
+            // shorthand) arrives wrapped; unwrap it so callers see the readable message, not
+            // Jackson's construction-failure noise around it.
+            if (e.getCause() instanceof ConfigurationException configurationException)
+            {
+                throw configurationException;
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Interpolates every textual scalar in the tree in place. Object keys are left untouched -
+     * only values carry operator-supplied content that env interpolation is for.
+     */
+    private static void interpolateTree(final JsonNode node)
+    {
+        if (node instanceof ObjectNode objectNode)
+        {
+            for (final var entry : objectNode.properties())
+            {
+                interpolateChild(objectNode::set, entry.getKey(), entry.getValue());
+            }
+        }
+        else if (node instanceof ArrayNode arrayNode)
+        {
+            for (int i = 0; i < arrayNode.size(); i++)
+            {
+                final int index = i;
+                interpolateChild((key, value) -> arrayNode.set(index, value), null, arrayNode.get(i));
+            }
+        }
+    }
+
+    private interface NodeSetter
+    {
+        void set(String key, JsonNode value);
+    }
+
+    private static void interpolateChild(final NodeSetter setter, final String key, final JsonNode value)
+    {
+        if (value.isTextual())
+        {
+            setter.set(key, StringNode.valueOf(EnvInterpolator.interpolate(value.asString())));
+        }
+        else
+        {
+            interpolateTree(value);
         }
     }
 

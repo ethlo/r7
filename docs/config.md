@@ -19,6 +19,10 @@ The r7 configuration engine is strictly validated at startup. The gateway will *
 
 Configuration values support environment variable injection using the `${VAR_NAME:default_value}` syntax.
 
+* The file is parsed as YAML first, then each individual scalar value is interpolated - not the
+  raw file text. An environment value can therefore never add, remove, or restructure YAML nodes
+  (e.g. by containing a colon or a newline); it can only become part of the text of the value it
+  was substituted into.
 * Values are injected prior to type-casting.
 * If a variable is missing and no default is provided, configuration validation fails.
 
