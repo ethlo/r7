@@ -842,6 +842,14 @@ Defines the interfaces for the internal status and metrics endpoints.
 
 The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
 
+What the dashboard shows beyond the configuration itself:
+
+* **Response time** per route as p50/p95/p99 over the `SimpleMetrics` window (`period`, default 2 minutes), alongside the lifetime average. Percentiles come from a fixed histogram with four buckets per power of two and are reported as the bucket's upper bound, so they read at most 25% high; the window starts empty after a restart.
+* **Reload status** of `routes.yaml`: when the running routes were loaded, and when the most recent edit was rejected. A rejected edit leaves the previous routes running; the dashboard says so but not why, since validation messages can quote configured values - the reason is in the gateway log.
+* **Upstream target health** for routes with a `health_check`, from the moment routes are loaded (see [Health Check](#health-check-health_check)); a hot reload resets it.
+* **Requests no route matched**, which are answered `404` and are not part of any route's figures.
+* **`server.yaml` as in effect**, with every value that differs from the built-in default marked.
+
 ### HTTP Options (`http`)
 
 Configures the HTTP server layer, including protocol support and request parsing behaviors.

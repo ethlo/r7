@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -23,6 +24,8 @@ public final class HotReloadService
     private final RouteRegistry routeRegistry;
     private final Set<Runnable> listeners = new LinkedHashSet<>();
     private long lastKnownModified;
+    private volatile Instant loadedAt;
+    private volatile Instant rejectedAt;
 
     public HotReloadService(final GatewayScheduler scheduler, final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
     {
@@ -77,6 +80,8 @@ public final class HotReloadService
             }
 
             this.configManager.load(routesConfig, this.routeRegistry);
+            this.loadedAt = Instant.now();
+            this.rejectedAt = null;
             listeners.forEach(Runnable::run);
             log.info("Configuration {} successfully loaded {} routes from version {}", this.configFilePath, routesConfig.routes().size(), routesConfig.version());
         }
@@ -84,6 +89,7 @@ public final class HotReloadService
         {
             if (!initial)
             {
+                this.rejectedAt = Instant.now();
                 log.warn("Hot reload failed. Retaining current configuration: {}", e.getMessage());
             }
             else
@@ -91,6 +97,26 @@ public final class HotReloadService
                 throw e;
             }
         }
+    }
+
+    /**
+     * What the gateway is running on, for display. A rejected edit leaves the previous routes in
+     * place and says so only in the log; without this an operator looking at the dashboard sees
+     * the old routes and no sign that the file on disk says otherwise.
+     * <p>
+     * Deliberately carries no error message: validation messages can quote configured values, and
+     * this is shown on a page whose viewers are not necessarily the people who write the config.
+     *
+     * @param rejectedAt when the most recent change to the file failed to load, or null when the
+     *                   file as last read is what is running
+     */
+    public record Status(String file, Instant loadedAt, Instant rejectedAt)
+    {
+    }
+
+    public Status status()
+    {
+        return new Status(this.configFilePath.toAbsolutePath().toString(), this.loadedAt, this.rejectedAt);
     }
 
     public void onReload(Runnable onReload)

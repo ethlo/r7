@@ -103,6 +103,9 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.status.dto.MatchDto.class,
                 com.ethlo.r7.status.dto.ConnectorStatisticsDto.class,
                 com.ethlo.r7.status.dto.JournalDto.class,
+                com.ethlo.r7.status.dto.LatencyDto.class,
+                com.ethlo.r7.status.dto.UpstreamDto.class,
+                com.ethlo.r7.config.HotReloadService.Status.class,
 
                 SparklineRingBuffer.class,
                 SparklineRingBuffer.SparklineSnapshot.class,

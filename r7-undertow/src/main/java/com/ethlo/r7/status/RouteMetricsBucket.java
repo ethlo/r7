@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 import com.ethlo.r7.status.dto.EgressDto;
 import com.ethlo.r7.status.dto.IngressDto;
+import com.ethlo.r7.status.dto.LatencyDto;
 import com.ethlo.r7.status.dto.PerformanceTelemetryDto;
 import com.ethlo.r7.status.dto.RequestStatsDto;
 import com.ethlo.r7.status.dto.RouteMetricsDto;
@@ -37,12 +38,14 @@ public final class RouteMetricsBucket
     private final LongAdder totalResponseHeaderBytes = new LongAdder();
     private final LongAdder totalResponseBodyBytes = new LongAdder();
     private final SparklineRingBuffer sparklineRingBuffer;
+    private final LatencyWindow latencyWindow;
 
     public RouteMetricsBucket(final int capacity, final Duration tickInterval)
     {
         Arrays.setAll(this.clientResponseStatuses, i -> new LongAdder());
         Arrays.setAll(this.upstreamResponseStatuses, i -> new LongAdder());
         this.sparklineRingBuffer = new SparklineRingBuffer(capacity, tickInterval);
+        this.latencyWindow = new LatencyWindow(capacity);
     }
 
     public void incrementTotalRequests()
@@ -88,6 +91,7 @@ public final class RouteMetricsBucket
         this.totalResponseBodyBytes.add(resBody);
         this.totalJournalBytes.add(journalBytes);
         this.totalDurationNanos.add(durationNanos);
+        this.latencyWindow.record(durationNanos);
     }
 
     public void recordClientStatus(final int status)
@@ -105,6 +109,7 @@ public final class RouteMetricsBucket
     public void triggerSparkline()
     {
         this.sparklineRingBuffer.recordTick(getStatus2xxRequests(), getStatus4xxRequests(), getStatus5xxRequests());
+        this.latencyWindow.tick();
     }
 
     /**
@@ -123,6 +128,7 @@ public final class RouteMetricsBucket
         this.totalRequestBodyBytes.add(tempBucket.totalRequestBodyBytes.sumThenReset());
         this.totalResponseHeaderBytes.add(tempBucket.totalResponseHeaderBytes.sumThenReset());
         this.totalResponseBodyBytes.add(tempBucket.totalResponseBodyBytes.sumThenReset());
+        this.latencyWindow.merge(tempBucket.latencyWindow);
 
         for (int i = 0; i < STATUS_COUNT_ARRAY_SIZE; i++)
         {
@@ -273,6 +279,11 @@ public final class RouteMetricsBucket
         return this.sparklineRingBuffer.getSnapshot();
     }
 
+    public LatencyDto getLatency()
+    {
+        return this.latencyWindow.snapshot();
+    }
+
     public OffsetDateTime getLastActiveTime()
     {
         final long time = this.lastActiveTime.get();
@@ -325,7 +336,7 @@ public final class RouteMetricsBucket
 
     private long getStatus5xxRequests()
     {
-        return summarizeRanges(STATUS_COUNT_ARRAY_SIZE, 599);
+        return summarizeRanges(500, 599);
     }
 
     private Map<Integer, Long> toMap(final LongAdder[] statuses)

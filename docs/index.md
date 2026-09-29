@@ -84,10 +84,10 @@ See [Benchmarks](benchmarks.md) for measured results under controlled memory and
 
 r7 includes a built-in dashboard for live system introspection:
 
-- Route-level inspection
-- Request and response journaling
-- Error-level filtering and escalation
-- Real-time traffic visibility
+- Route-level inspection: match order, predicates, filters with their configuration, upstream targets and their health
+- Current performance per route: request rate, error share and p50/p95/p99 response time over a sliding window
+- Request and response journaling levels and overrides
+- The effective `server.yaml`, with changes from the defaults marked, and whether the last `routes.yaml` edit loaded
 
 ![r7 Dashboard Snapshot](assets/overview.png)
 

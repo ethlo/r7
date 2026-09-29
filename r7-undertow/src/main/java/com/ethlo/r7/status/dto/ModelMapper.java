@@ -9,11 +9,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteDefinition;
+import com.ethlo.r7.config.TimeoutConfig;
+import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.status.PipelineVisualizer;
 import com.ethlo.r7.status.RouteMetricsBucket;
@@ -23,7 +26,7 @@ public class ModelMapper
 {
     private static final FilterRegistry FILTER_REGISTRY = new FilterRegistry();
 
-    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final int order, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
         final RouteDefinition def = route.routeDefinition();
 
@@ -40,12 +43,28 @@ public class ModelMapper
 
         return new RouteConfigDto(
                 def.id(),
+                order,
                 toPredicateNode(route.predicate()),
                 journal,
                 def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
+                toUpstream(def.upstream()),
                 filters,
-                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]))
+                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]), route.globalFilterCount())
         );
+    }
+
+    private static UpstreamDto toUpstream(final UpstreamConfig upstream)
+    {
+        if (upstream == null)
+        {
+            return null;
+        }
+        final List<String> targets = upstream.targets() != null
+                ? upstream.targets().stream().map(t -> SensitiveConfig.redactUrlCredentials(t.url())).toList()
+                : List.of();
+        final Duration readTimeout = Optional.ofNullable(upstream.timeouts()).orElse(new TimeoutConfig(null)).read();
+        final String fallbackRouteId = upstream.fallback() != null ? upstream.fallback().routeId() : null;
+        return new UpstreamDto(targets, readTimeout, upstream.healthCheck(), fallbackRouteId);
     }
 
     /**
@@ -94,7 +113,7 @@ public class ModelMapper
                 gf.getUpstreamRequests()
         );
 
-        return new RouteMetricsDto(routeMetricsBucket.getKey(), stats, traffic, performance, gf.getSparklineData());
+        return new RouteMetricsDto(routeMetricsBucket.getKey(), stats, traffic, performance, gf.getSparklineData(), gf.getLatency());
     }
 
     private static TrafficFlowDto mapTraffic(RouteMetricsBucket routeMetricsBucket)

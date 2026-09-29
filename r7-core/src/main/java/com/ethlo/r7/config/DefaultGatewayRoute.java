@@ -103,6 +103,14 @@ public class DefaultGatewayRoute implements GatewayRoute
     }
 
     /**
+     * Number of leading {@link #filters()} that are instances of the global filters.
+     */
+    public int globalFilterCount()
+    {
+        return this.globalFilters.size();
+    }
+
+    /**
      * {@code fallback} as it must run for a request that first matched this route.
      * <p>
      * The rule: every filter whose request phase ran gets its later phases, on the same instance,
