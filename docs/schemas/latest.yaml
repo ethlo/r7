@@ -1219,3 +1219,57 @@ properties:
     items:
       $ref: "#/$defs/route"
     description: The routing table defining how incoming traffic is matched and forwarded.
+  unrouted:
+    type: object
+    properties:
+      journal:
+        type: object
+        properties:
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                description: The base journaling verbosity level.
+              status_overrides:
+                type: object
+                additionalProperties:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+            additionalProperties: false
+            description: Journal settings for this specific phase of the exchange.
+          response:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                description: The base journaling verbosity level.
+              status_overrides:
+                type: object
+                additionalProperties:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+            additionalProperties: false
+            description: Journal settings for this specific phase of the exchange.
+        additionalProperties: false
+        description: Journal levels for requests refused before any route is chosen. FULL is not allowed.
+    required:
+    - journal
+    additionalProperties: false
+    description: "Journaling for requests refused before routing (no route, ambiguous path, bad Transfer-Encoding, TRACE, regex budget), recorded under route ID <unrouted>."

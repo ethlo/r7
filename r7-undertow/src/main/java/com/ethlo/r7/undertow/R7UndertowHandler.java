@@ -46,6 +46,7 @@ import com.ethlo.r7.config.HealthCheckConfig;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.TimeoutConfig;
+import com.ethlo.r7.config.UnroutedDefinition;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.core.RequestIdGenerator;
@@ -100,6 +101,7 @@ public final class R7UndertowHandler implements HttpHandler
     public static final AttachmentKey<Long> PROXY_END_TS_KEY = AttachmentKey.create(Long.class);
     static final AttachmentKey<Boolean> IS_WEBSOCKET_KEY = AttachmentKey.create(Boolean.class);
     private static final String ROUTE_ID_KEY = "gateway.route.id";
+    static final String UNROUTED_REASON_KEY = "gateway.unrouted.reason";
     private static final String UPSTREAM_TARGET_KEY = "gateway.target";
     private static final String SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
     private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
@@ -432,7 +434,7 @@ public final class R7UndertowHandler implements HttpHandler
         {
             logger.debug("Rejecting non-canonical Transfer-Encoding: {}", exchange.getRequestHeaders().get(Headers.TRANSFER_ENCODING));
             exchange.setPersistent(false);
-            sendOwnResponse(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate());
+            refuseBeforeRouting(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate(), "transfer_encoding");
             return;
         }
 
@@ -441,7 +443,7 @@ public final class R7UndertowHandler implements HttpHandler
         // resource supports it, so there is no Allow list to send.
         if (Methods.TRACE.equals(exchange.getRequestMethod()))
         {
-            sendOwnResponse(exchange, HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate());
+            refuseBeforeRouting(exchange, HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate(), "trace");
             return;
         }
 
@@ -451,7 +453,7 @@ public final class R7UndertowHandler implements HttpHandler
         if (pathViolation != null)
         {
             logger.debug("Rejecting ambiguous request path ({}): {}", pathViolation, exchange.getRequestURI());
-            sendOwnResponse(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate());
+            refuseBeforeRouting(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate(), "ambiguous_path");
             return;
         }
 
@@ -464,15 +466,15 @@ public final class R7UndertowHandler implements HttpHandler
         }
         catch (final RegexBudget.RegexBudgetExceededException e)
         {
-            // Before any exchange state exists, like the 404 below: nothing to journal yet.
+            // No route was chosen, like the 404 below: journaled only under an unrouted section.
             logger.warn("Route matching refused: {}", e.getMessage());
-            sendOwnResponse(exchange, HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate());
+            refuseBeforeRouting(exchange, HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate(), "regex_budget");
             return;
         }
 
         if (route == null)
         {
-            sendOwnResponse(exchange, HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate());
+            refuseBeforeRouting(exchange, HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate(), "no_route");
             return;
         }
 
@@ -480,6 +482,20 @@ public final class R7UndertowHandler implements HttpHandler
     }
 
     private void execute(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route, final boolean trustedPeer)
+    {
+        final OpenedExchange opened = open(exchange, incomingRequest, route, trustedPeer);
+        executeRequestFilters(exchange, route, opened.gatewayExchange(), opened.journal(), 0);
+    }
+
+    private record OpenedExchange(UndertowGatewayExchange gatewayExchange, StatefulJournal journal)
+    {
+    }
+
+    /**
+     * Everything a request needs before its filters run: its ID, the snapshot filters and the
+     * journal see, the gateway exchange, and the journal entry opened at the route's levels.
+     */
+    private OpenedExchange open(final HttpServerExchange exchange, final UndertowGatewayRequest incomingRequest, final DefaultGatewayRoute route, final boolean trustedPeer)
     {
         final String requestId = requestIdGenerator.generate();
         final GatewayRequest requestCopy = new ImmutableGatewayRequest(exchange.getProtocol().toString(),
@@ -507,8 +523,30 @@ public final class R7UndertowHandler implements HttpHandler
         final R7fJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
         final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange, safeRequestHeaders, safeResponseHeaders);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
+        return new OpenedExchange(gatewayExchange, statefulJournal);
+    }
 
-        executeRequestFilters(exchange, route, gatewayExchange, statefulJournal, 0);
+    /**
+     * Answers a request refused before any route was chosen. With an {@code unrouted} section
+     * configured, the refusal goes through the same exchange, journal and short-circuit path as
+     * a route's, journaled under {@link UnroutedDefinition#ROUTE_ID} with the reason in
+     * {@value #UNROUTED_REASON_KEY}; otherwise it is answered directly and leaves no entry.
+     * These are what scanners and probes send, so they are worth an audit trail.
+     */
+    private void refuseBeforeRouting(final HttpServerExchange exchange, final int status, final ByteBuffer body, final String reason)
+    {
+        final DefaultGatewayRoute unrouted = (DefaultGatewayRoute) this.routeRegistry.unroutedRoute();
+        if (unrouted == null)
+        {
+            sendOwnResponse(exchange, status, body);
+            return;
+        }
+        final RemoteAddressResolver.RemoteInfo remoteInfo = this.remoteAddressResolver.resolve(exchange);
+        final UndertowGatewayRequest request = new UndertowGatewayRequest(exchange, remoteInfo.address(), remoteInfo.source());
+        final OpenedExchange opened = open(exchange, request, unrouted, remoteInfo.trustedPeer());
+        opened.gatewayExchange().attributes().set(UNROUTED_REASON_KEY, reason);
+        opened.gatewayExchange().shortCircuit(new com.ethlo.r7.util.ShortCircuitGatewayResponse(status, MediaTypes.TEXT_PLAIN_UTF8, body));
+        shortCircuit(null, exchange, unrouted, opened.gatewayExchange(), opened.journal());
     }
 
     private void continueUpstream(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)

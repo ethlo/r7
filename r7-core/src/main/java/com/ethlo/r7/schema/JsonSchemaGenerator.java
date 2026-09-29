@@ -79,6 +79,19 @@ public final class JsonSchemaGenerator
                 )
         );
 
+        final List<String> belowFull = List.of("NONE", "HEADERS", "METADATA");
+        properties.put("unrouted", new ObjectSchema(
+                "object",
+                new TreeMap<>(Map.of("journal", buildJournalSchema(belowFull, belowFull,
+                        "Journal levels for requests refused before any route is chosen. FULL is not allowed."))),
+                List.of("journal"),
+                new BoolProps(false),
+                null, null, null, null,
+                "Journaling for requests refused before routing (no route, ambiguous path, bad Transfer-Encoding, TRACE, regex budget), recorded under route ID <unrouted>.",
+                null,
+                null
+        ));
+
         properties.put("routes", new ArraySchema(
                         "array",
                         new RefSchema("#/$defs/route", null, null),
@@ -159,7 +172,7 @@ public final class JsonSchemaGenerator
         );
 
         properties.put("upstream", buildUpstreamSchema());
-        properties.put("journal", buildJournalSchema());
+        properties.put("journal", buildJournalSchema(List.of("NONE", "HEADERS", "METADATA", "FULL"), null, "Observability and logging configuration for this specific route."));
 
         final SchemaNode requireUpstream = new ObjectSchema(null, null, List.of("upstream"), null, null, null, null, null, null, null, null);
         final SchemaNode requireFilters = new ObjectSchema(null, null, List.of("filters"), null, null, null, null, null, null, null, null);
@@ -183,11 +196,15 @@ public final class JsonSchemaGenerator
         return buildInnerConfigSchema(UpstreamConfig.class);
     }
 
-    private SchemaNode buildJournalSchema()
+    /**
+     * @param levels         the levels allowed as a base level
+     * @param overrideLevels the levels allowed as an override value, or {@code null} for any string
+     */
+    private SchemaNode buildJournalSchema(final List<String> levels, final List<String> overrideLevels, final String description)
     {
         final SchemaNode levelSchema = new PrimitiveSchema(
                 "string",
-                List.of("NONE", "HEADERS", "METADATA", "FULL"),
+                levels,
                 null, null, null,
                 "The base journaling verbosity level.",
                 null, null, null
@@ -195,7 +212,7 @@ public final class JsonSchemaGenerator
 
         final SchemaNode overridesSchema = new ObjectSchema(
                 "object", null, null,
-                new SchemaProps(new PrimitiveSchema("string", null, null, null, null, null, null, null, null)),
+                new SchemaProps(new PrimitiveSchema("string", overrideLevels, null, null, null, null, null, null, null)),
                 null, null, null, null,
                 "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE').",
                 null,
@@ -224,7 +241,7 @@ public final class JsonSchemaGenerator
                 null,
                 new BoolProps(false),
                 null, null, null, null,
-                "Observability and logging configuration for this specific route.",
+                description,
                 null,
                 null
         );
