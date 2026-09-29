@@ -104,6 +104,27 @@ class UpstreamHeaderSanitizerTest
         assertThat(map.getHeaderNames()).extracting(HttpString::toString).containsExactly("Accept");
     }
 
+    /**
+     * CGI-derived environments (and frameworks that read headers out of a CGI-style environment)
+     * fold every non-alphanumeric character in a header name, including {@code -}, to {@code _}
+     * before an application ever sees it - so such a backend reads {@code X_Forwarded_For}
+     * exactly as it would read {@code X-Forwarded-For}. A client that sends the underscore (or
+     * a mixed-separator) form must not sail past a prefix check written only against hyphens.
+     */
+    @Test
+    void dropsUnderscoreAndMixedSeparatorForwardedVariantsFromAnUntrustedPeer()
+    {
+        final HeaderMap map = headers(
+                "X_Forwarded_For", "6.6.6.6",
+                "X-Forwarded_Proto", "https",
+                "X_Forwarded-Host", "evil.example",
+                "Accept", "*/*");
+
+        UpstreamHeaderSanitizer.sanitize(map, false);
+
+        assertThat(map.getHeaderNames()).extracting(HttpString::toString).containsExactly("Accept");
+    }
+
     @Test
     void keepsForwardingHeadersFromATrustedProxy()
     {
