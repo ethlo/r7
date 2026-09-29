@@ -1,13 +1,19 @@
 package com.ethlo.r7.json;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.journal.api.BodyChecksum;
@@ -28,10 +34,31 @@ import tools.jackson.databind.json.JsonMapper;
 
 public class JsonLdWriter implements ExchangeCompletionListener
 {
+    private static final Logger logger = LoggerFactory.getLogger(JsonLdWriter.class);
     private static final byte[] NEWLINE = "\n".getBytes(StandardCharsets.UTF_8);
-    private final JsonGenerator generator;
+
     private final OutputStream out;
     private final boolean hideEmptyFields;
+
+    /**
+     * Scratch buffer the generator writes into, never {@link #out} directly.
+     * <p>
+     * A record is built here in full - object open to object close - before a single byte
+     * reaches {@code out}. That is what keeps one transient output failure from wedging this
+     * writer for good: if the generator wrote straight to {@code out} and a write failed
+     * halfway through an object, the generator's own nesting state would be left with that
+     * object still open, and every record after it would be malformed JSON forever. A
+     * {@link ByteArrayOutputStream} cannot fail a write, so the generator bound to it can
+     * never be left in a half-written state - only the final copy to {@code out} can fail,
+     * and failing there costs this one record, not the writer.
+     */
+    private final ByteArrayOutputStream scratch = new ByteArrayOutputStream(1024);
+    private final JsonGenerator generator;
+
+    private final AtomicLong incompleteEndCount = new AtomicLong();
+    private final AtomicLong abandonedCount = new AtomicLong();
+    private final AtomicLong orphanedEndCount = new AtomicLong();
+    private final AtomicLong orphanedBodyCount = new AtomicLong();
 
     public JsonLdWriter(OutputStream out, boolean prettyPrint)
     {
@@ -57,7 +84,9 @@ public class JsonLdWriter implements ExchangeCompletionListener
                 .configure(SerializationFeature.INDENT_OUTPUT, prettyPrint)
                 .build();
 
-        this.generator = mapper.createGenerator(out);
+        // Bound to the scratch buffer for the writer's whole lifetime - see the field
+        // javadoc for why this, and not out, is what the generator is allowed to touch.
+        this.generator = mapper.createGenerator(scratch);
     }
 
     public void writePlainDouble(final JsonGenerator gen, final String fieldName, final double value) throws IOException
@@ -71,19 +100,215 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            generator.writeStartObject();
+            writeExchangeObject(exchange, null, null);
+            flushRecord();
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException("Failed to write debug JSON", e);
+        }
+    }
 
-            // --- Metadata ---
-            generator.writeStringProperty("gateway_request_id", exchange.getRequestId());
-            writeString("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
-            writeString("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
+    /**
+     * An EndExchange arrived but the exchange did not qualify as a complete record. Status,
+     * timing, traffic and the journaled checksums were all applied before this was called
+     * (see {@code ExchangeReassembler#onEnd}), so this is written the same way a complete
+     * record is, flagged with why it is not one - an operator reading the stream can still
+     * use it, rather than lose it silently.
+     */
+    @Override
+    public void onIncompleteEnd(final JournalExchange exchange, final IncompleteReason reason)
+    {
+        try
+        {
+            writeExchangeObject(exchange, "incomplete_end", reason);
+            flushRecord();
+        }
+        catch (IOException e)
+        {
+            // Counted after the call, like every other counter here and in the reassembler
+            // that calls this: a refusal is retried whole (FORMAT.md §6), and counting on
+            // every attempt would report more incomplete records than were ever actually
+            // written.
+            throw new RuntimeException("Failed to write debug JSON", e);
+        }
+
+        final long total = incompleteEndCount.incrementAndGet();
+        if (total == 1)
+        {
+            logger.warn("Exchange {} ended but was not a complete record ({}); emitted flagged as "
+                            + "\"incomplete_end\". Further occurrences are counted, not logged.",
+                    exchange.getRequestId(), reason);
+        }
+        else if (logger.isDebugEnabled())
+        {
+            logger.debug("Exchange {} ended incomplete ({}) (occurrence #{})", exchange.getRequestId(), reason, total);
+        }
+    }
+
+    /**
+     * No EndExchange ever arrived. Unlike {@link #onIncompleteEnd}, status, timing, traffic
+     * and checksums are genuinely unknown - not zero - so they are omitted rather than
+     * written as misleading zeros (README.md §11.4).
+     * <p>
+     * Not retried on failure: an abandoned exchange has no journal entry left to rewind to
+     * (see {@code ExchangeReassembler#evictIncomplete}), so an {@link IOException} here is
+     * logged and the record dropped rather than thrown.
+     */
+    @Override
+    public void onAbandoned(final JournalExchange exchange, final IncompleteReason reason)
+    {
+        try
+        {
+            writeExchangeObject(exchange, "abandoned", reason);
+            flushRecord();
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            logger.error("Failed to write abandoned exchange {} as JSON; the record is lost, there is nothing "
+                    + "left to retry it against.", exchange.getRequestId(), e);
+            return;
+        }
+
+        final long total = abandonedCount.incrementAndGet();
+        if (total == 1)
+        {
+            logger.warn("Exchange {} never received an EndExchange ({}); emitted flagged as \"abandoned\" "
+                            + "with its known fields only. Further occurrences are counted, not logged.",
+                    exchange.getRequestId(), reason);
+        }
+        else if (logger.isDebugEnabled())
+        {
+            logger.debug("Exchange {} abandoned ({}) (occurrence #{})", exchange.getRequestId(), reason, total);
+        }
+    }
+
+    @Override
+    public void onOrphanedEnd(final String requestId)
+    {
+        final long total = orphanedEndCount.incrementAndGet();
+        if (total == 1)
+        {
+            logger.warn("Received an EndExchange for '{}' with nothing in flight; expected while a tailer "
+                            + "is catching up, suspicious otherwise. Further occurrences are counted, not logged.",
+                    requestId);
+        }
+        else if (logger.isDebugEnabled())
+        {
+            logger.debug("Orphaned end for '{}' (occurrence #{})", requestId, total);
+        }
+    }
+
+    @Override
+    public void onOrphanedBody(final String requestId, final BodyKind kind)
+    {
+        final long total = orphanedBodyCount.incrementAndGet();
+        if (total == 1)
+        {
+            logger.warn("Received a {} body chunk for '{}' with no preceding start event. Further occurrences "
+                    + "are counted, not logged.", kind, requestId);
+        }
+        else if (logger.isDebugEnabled())
+        {
+            logger.debug("Orphaned {} body for '{}' (occurrence #{})", kind, requestId, total);
+        }
+    }
+
+    public long getIncompleteEndCount()
+    {
+        return incompleteEndCount.get();
+    }
+
+    public long getAbandonedCount()
+    {
+        return abandonedCount.get();
+    }
+
+    public long getOrphanedEndCount()
+    {
+        return orphanedEndCount.get();
+    }
+
+    public long getOrphanedBodyCount()
+    {
+        return orphanedBodyCount.get();
+    }
+
+    /**
+     * Flushes whatever {@link #generator} wrote into {@link #scratch} out to the real
+     * destination, and resets the scratch buffer for the next record.
+     * <p>
+     * A {@link PrintStream} - {@code System.out}, the default destination - never throws
+     * {@link IOException} from {@code write}/{@code flush}; it swallows the failure and sets
+     * an internal error flag instead. Left unchecked, a broken stdout pipe (the downstream
+     * log collector died, or the container is being torn down) would have every record
+     * silently discarded while the tailer's own checkpoint still advances, reporting
+     * everything as delivered. Checking {@link PrintStream#checkError()} after every write
+     * turns that into the same retried failure an {@link IOException} would produce for any
+     * other {@link OutputStream}.
+     */
+    private void flushRecord() throws IOException
+    {
+        generator.flush();
+        final byte[] record = scratch.toByteArray();
+        scratch.reset();
+
+        out.write(record);
+        out.write(NEWLINE);
+        out.flush();
+
+        if (out instanceof final PrintStream printStream && printStream.checkError())
+        {
+            throw new IOException("Output stream reported a write error (e.g. a broken pipe); "
+                    + "the record was not confirmed delivered");
+        }
+    }
+
+    /**
+     * Writes one exchange as a JSON object into {@link #generator} (and so into
+     * {@link #scratch}), without touching {@link #out}.
+     *
+     * @param recordType null for a complete record, otherwise {@code "incomplete_end"} or
+     *                   {@code "abandoned"}
+     * @param reason     null for a complete record, otherwise why it is not one
+     */
+    private void writeExchangeObject(final JournalExchange exchange, final String recordType, final IncompleteReason reason) throws IOException
+    {
+        // Whether the EndExchange event was ever seen - and so whether status, timing,
+        // traffic and checksums were ever applied to this exchange at all (README.md
+        // §11.4). Treating an abandoned exchange's unset fields as zero would quietly lie
+        // about response status and duration in the audit trail.
+        final boolean hasEndEvent = reason == null || reason.hasEndEvent();
+
+        generator.writeStartObject();
+
+        // --- Metadata ---
+        generator.writeStringProperty("gateway_request_id", exchange.getRequestId());
+        if (recordType != null)
+        {
+            generator.writeStringProperty("record_type", recordType);
+            generator.writeStringProperty("incomplete_reason", reason.name());
+        }
+        writeString("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
+        writeString("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
+
+        // wasProxied() reads proxyStartTs, which is only meaningful once the End event has
+        // set it; for an abandoned exchange it is still its zero default; falling back to
+        // whether an upstream leg was ever recorded avoids reporting "proxied" for a
+        // request whose proxy timing simply never arrived.
+        final boolean proxied = hasEndEvent
+                ? exchange.wasProxied()
+                : (exchange.getUpstreamRequestStartLine() != null || exchange.getUpstreamResponseStartLine() != null);
+
+        if (hasEndEvent)
+        {
             generator.writeStringProperty("start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientStartTs())));
             writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
             generator.writeStringProperty("end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientEndTs())));
 
-            generator.writeBooleanProperty("was_proxied", exchange.wasProxied());
+            generator.writeBooleanProperty("was_proxied", proxied);
 
-            if (exchange.wasProxied())
+            if (proxied)
             {
                 generator.writeStringProperty("proxy_start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyStartTs())));
                 generator.writeStringProperty("proxy_first_byte", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyFirstByteReceivedTs())));
@@ -111,49 +336,68 @@ public class JsonLdWriter implements ExchangeCompletionListener
             writeChecksum("journaled_response_checksum", exchange.getJournaledResponseChecksum());
             writeChecksum("observed_request_checksum", exchange.getObservedRequestChecksum());
             writeChecksum("observed_response_checksum", exchange.getObservedResponseChecksum());
-
-            // --- Client Object ---
-            generator.writeName("client");
-            writeExchangeNode(
-                    exchange.getClientRequestLevel(),
-                    exchange.getClientRequestStartLine(),
-                    exchange.getClientRequestHeaders(),
-                    exchange.getClientResponseLevel(),
-                    exchange.getClientResponseStartLine(),
-                    exchange.getClientResponseHeaders()
-            );
-
-            // --- Upstream Object ---
-            if (exchange.wasProxied())
-            {
-                generator.writeName("upstream");
-                writeExchangeNode(
-                        exchange.getUpstreamRequestLevel(),
-                        exchange.getUpstreamRequestStartLine(),
-                        exchange.getUpstreamRequestHeaders(),
-                        exchange.getUpstreamResponseLevel(),
-                        exchange.getUpstreamResponseStartLine(),
-                        exchange.getUpstreamResponseHeaders()
-                );
-            }
-
-            // --- Payload Debugging ---
-            writeBody("request_body", exchange.getRequestBodyFragments());
-            writeBody("response_body", exchange.getResponseBodyFragments());
-
-            // --- Context ---
-            writeMap("attributes", GatewayUtils.toMap(exchange.getAttributes()));
-
-            generator.writeEndObject();
-            generator.flush();
-
-            out.write(NEWLINE);
-            out.flush();
         }
-        catch (IOException e)
+        else
         {
-            throw new RuntimeException("Failed to write debug JSON", e);
+            // No End event: timing, status and traffic counters are unknown, not zero
+            // (README.md §11.4) - explicit nulls, subject to the same hideEmptyFields choice
+            // as every other absent field, rather than a value that never applied. The
+            // journaled checksums are equally unknown (they only ever come from the End
+            // event, and writeChecksum already renders NOT_RECORDED as null); the observed
+            // ones are still worth writing, because they reflect whatever body fragments
+            // were actually seen before the exchange was abandoned - real evidence, not a
+            // guess, for a truncated upload or download.
+            generator.writeBooleanProperty("was_proxied", proxied);
+            writeNull("start");
+            writeNull("duration");
+            writeNull("end");
+            writeNull("status");
+            writeNull("is_error");
+            writeNull("request_header_bytes");
+            writeNull("request_body_bytes");
+            writeNull("request_total_bytes");
+            writeNull("response_header_bytes");
+            writeNull("response_body_bytes");
+            writeNull("response_total_bytes");
+            writeChecksum("journaled_request_checksum", exchange.getJournaledRequestChecksum());
+            writeChecksum("journaled_response_checksum", exchange.getJournaledResponseChecksum());
+            writeChecksum("observed_request_checksum", exchange.getObservedRequestChecksum());
+            writeChecksum("observed_response_checksum", exchange.getObservedResponseChecksum());
         }
+
+        // --- Client Object ---
+        generator.writeName("client");
+        writeExchangeNode(
+                exchange.getClientRequestLevel(),
+                exchange.getClientRequestStartLine(),
+                exchange.getClientRequestHeaders(),
+                exchange.getClientResponseLevel(),
+                exchange.getClientResponseStartLine(),
+                exchange.getClientResponseHeaders()
+        );
+
+        // --- Upstream Object ---
+        if (proxied)
+        {
+            generator.writeName("upstream");
+            writeExchangeNode(
+                    exchange.getUpstreamRequestLevel(),
+                    exchange.getUpstreamRequestStartLine(),
+                    exchange.getUpstreamRequestHeaders(),
+                    exchange.getUpstreamResponseLevel(),
+                    exchange.getUpstreamResponseStartLine(),
+                    exchange.getUpstreamResponseHeaders()
+            );
+        }
+
+        // --- Payload Debugging ---
+        writeBody("request_body", exchange.getRequestBodyFragments());
+        writeBody("response_body", exchange.getResponseBodyFragments());
+
+        // --- Context ---
+        writeMap("attributes", GatewayUtils.toMap(exchange.getAttributes()));
+
+        generator.writeEndObject();
     }
 
     private void writeExchangeNode(

@@ -3,11 +3,14 @@ package com.ethlo.r7.tailer.jsonld;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +19,7 @@ import com.ethlo.r7.config.YamlConfigSupport;
 import com.ethlo.r7.json.JsonLdWriter;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.r7f.JournalFiles;
 import com.ethlo.r7.r7f.R7Tailer;
 import com.ethlo.r7.validation.ValidationResult;
 import tools.jackson.databind.ObjectMapper;
@@ -51,21 +55,7 @@ public final class JsonLdTailerMain
         final Duration pollInterval = config.pollInterval();
 
         final boolean toStdOut = "-".equals(outputPath) || "stdout".equalsIgnoreCase(outputPath);
-        final OutputStream out;
-        if (toStdOut)
-        {
-            out = System.out;
-        }
-        else
-        {
-            final Path resolvedOutputPath = Paths.get(outputPath);
-            if (resolvedOutputPath.getParent() != null)
-            {
-                Files.createDirectories(resolvedOutputPath.getParent());
-            }
-            out = new BufferedOutputStream(Files.newOutputStream(resolvedOutputPath,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND));
-        }
+        final OutputStream out = toStdOut ? System.out : openOutputFile(Paths.get(outputPath));
 
         logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', poll every {})",
                 journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, pollInterval);
@@ -78,6 +68,15 @@ public final class JsonLdTailerMain
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
+            // A container restart or rolling deploy stops this process with SIGTERM, which
+            // runs this hook - the one chance to report exchanges the reassembler still holds
+            // in flight before they are lost with no trace at all. Their segments are already
+            // checkpointed as delivered (decoding an entry and completing the exchange it
+            // belongs to are different things), so nothing revisits those bytes on the next
+            // run; only a report made now survives the restart. A hard crash (SIGKILL, a
+            // kernel panic) runs no code at all and this cannot help - that loss is inherent
+            // to in-memory reassembly state, not something this hook can fix.
+            tailer.shutdown();
             try
             {
                 out.flush();
@@ -100,6 +99,33 @@ public final class JsonLdTailerMain
             }
             Thread.sleep(pollInterval.toMillis());
         }
+    }
+
+    /**
+     * Opens {@code outputPath} for appending, with the same permissions a journal segment
+     * gets ({@link JournalFiles}) rather than whatever the process umask happens to allow.
+     * <p>
+     * This file carries the same request/response data the journals do - request lines,
+     * headers the redaction policy let through and, at {@code FULL} level, bodies - so
+     * leaving it world-readable under a permissive umask (022 is common) would undo exactly
+     * the protection the journal segments themselves are deliberately created with.
+     * {@link Files#newOutputStream} has no attribute overload, so the file is opened as a
+     * channel instead; the attributes only take effect when the channel actually creates the
+     * file - an append to one already on disk with wider permissions is deliberately not
+     * narrowed here, the same carve-out {@link JournalFiles} documents for journal segments.
+     */
+    static OutputStream openOutputFile(final Path outputPath) throws IOException
+    {
+        final Path parent = outputPath.getParent();
+        if (parent != null)
+        {
+            Files.createDirectories(parent);
+        }
+        final Path attributeSource = parent != null ? parent : outputPath;
+        return new BufferedOutputStream(Channels.newOutputStream(
+                FileChannel.open(outputPath,
+                        Set.of(StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE),
+                        JournalFiles.fileAttributes(attributeSource))));
     }
 
     private static JsonldTailerConfig loadConfig(final Path configFile)

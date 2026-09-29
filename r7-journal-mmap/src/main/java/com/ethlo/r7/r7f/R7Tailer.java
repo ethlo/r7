@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -135,6 +136,26 @@ public final class R7Tailer
         loadCheckpoints();
     }
 
+    /**
+     * Reports whatever the reassembler still holds in flight as abandoned, and persists the
+     * checkpoint state one last time.
+     * <p>
+     * A process restart otherwise loses in-flight exchanges with no trace at all: their
+     * segments are already checkpointed as delivered (decoding an entry and completing the
+     * exchange it belongs to are different things), so nothing revisits those bytes on the
+     * next run and the reassembler's in-memory state — the only place recording that an
+     * exchange was ever open — is gone with the process. Calling this from a graceful
+     * shutdown path (a caller's shutdown hook, or before an orderly stop) turns that into a
+     * reported loss instead of a silent one. It does nothing for a hard crash, which runs no
+     * code at all; that remains an inherent limit of in-memory reassembly state, not
+     * something a checkpoint file can fix.
+     */
+    public void shutdown()
+    {
+        reassembler.shutdown();
+        saveCheckpoints();
+    }
+
     public long runTick() throws IOException
     {
         totalBytesRead = 0;
@@ -192,6 +213,19 @@ public final class R7Tailer
             // Segment sequence is a monotonic counter per shard, so it orders segments
             // exactly; the creation timestamp is wall-clock and cannot be relied on for
             // ordering across a clock step.
+            //
+            // Shards whose current segment did not finish this tick must not be advanced
+            // past: the reassembler joins an exchange whose start is in one segment to its
+            // end in the next (design/journal-invariants.md #3), so reading segment N+1
+            // while segment N is still short of its end delivers N+1's events - including
+            // an END for an exchange whose START is still stuck behind whatever stopped N
+            // early - before N's own remaining events. That END then finds nothing in
+            // flight and is reported an orphan: a real, permanent loss with no damage
+            // anywhere in the journal, because the reader simply read out of order. A
+            // segment left in FULLY_READ_UNDELIVERED is the one exception - it is terminal
+            // (a sequence regression the reader will never revisit) rather than something a
+            // later tick might finish, so it must not block the shard forever.
+            final Set<Integer> blockedShards = new HashSet<>();
             resolvedFiles.values().stream()
                     .sorted((p1, p2) -> {
                         final FileMeta m1 = parseMeta(p1);
@@ -203,13 +237,25 @@ public final class R7Tailer
                         return Long.compare(m1.segmentSequence(), m2.segmentSequence());
                     })
                     .forEach(path -> {
+                        final FileMeta meta = parseMeta(path);
+                        if (blockedShards.contains(meta.shardId()))
+                        {
+                            return;
+                        }
+
+                        final boolean finished;
                         try
                         {
-                            processFile(path);
+                            finished = processFile(path);
                         }
                         catch (final IOException e)
                         {
                             throw new UncheckedIOException(e);
+                        }
+
+                        if (!finished && !isTerminallyUnfinished(path))
+                        {
+                            blockedShards.add(meta.shardId());
                         }
                     });
 
@@ -284,6 +330,24 @@ public final class R7Tailer
     {
         return newPath.toString().endsWith(R7F_FILE_EXTENSION)
                 && existingPath.toString().endsWith(ACTIVE_FILE_EXTENSION);
+    }
+
+    /**
+     * Whether a segment that {@link #processFile} just reported as not finished is done for
+     * good rather than merely waiting for a later tick.
+     * <p>
+     * {@code FULLY_READ_UNDELIVERED} means the reader already read to the end and decided,
+     * once, to keep entries back (a sequence regression) - nothing about that changes on a
+     * later tick, so it must not be allowed to block every later segment in the shard
+     * forever. Anything else that did not finish - an active segment still being written, a
+     * corrupt entry left for the segment to be sealed, a delivery stall awaiting a retry, or
+     * simply a segment that vanished mid-check - may still finish on its own, and the shard
+     * must not be advanced past it in the meantime.
+     */
+    private boolean isTerminallyUnfinished(final Path path)
+    {
+        final Checkpoint checkpoint = checkpoints.get(getStableKey(path));
+        return checkpoint != null && checkpoint.offset() == FULLY_READ_UNDELIVERED;
     }
 
     private boolean processFile(final Path path) throws IOException

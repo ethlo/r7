@@ -1716,6 +1716,123 @@ class JournalIntegrityTest
         }
     }
 
+    /**
+     * A shard whose current segment stalls must not be read ahead of. Reading segment N+1
+     * while segment N is still short of its end delivers N+1's events before N's own
+     * remaining ones — here, an EndExchange for an exchange whose ClientRequest is stuck
+     * behind the stall — and the reassembler reports it an orphan: a real, permanent loss
+     * with no damage anywhere in the journal, because the reader read out of order.
+     */
+    @Test
+    void shardIsNotAdvancedPastAStalledSegment() throws IOException
+    {
+        // Segment 1 (shard 0): "blocker" completes here (its END will be refused by the
+        // sink), then "cross-seg"'s ClientRequest follows — and must never be read this
+        // tick, because it sits after the entry the sink is about to refuse.
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            writeClientRequest(journal, "blocker");
+            writeEndExchange(journal, "blocker");
+            writeClientRequest(journal, "cross-seg");
+        }
+
+        // Segment 2 (shard 0, next sequence): only "cross-seg"'s END. If the tailer reads
+        // this segment in the same tick as the stalled segment 1, the reassembler has no
+        // record of "cross-seg" yet (its ClientRequest is still stuck in segment 1) and
+        // reports an orphan.
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            writeEndExchange(journal, "cross-seg");
+        }
+
+        final RefusingSink sink = new RefusingSink("blocker");
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+
+        assertThat(sink.stalls).as("the refusal on 'blocker' must stall segment 1. sink: %s", sink).hasSize(1);
+        assertThat(sink.orphanedEnds)
+                .as("segment 2 must not be read while segment 1 is stalled - "
+                        + "'cross-seg' has not lost anything, it just has not arrived yet. sink: %s", sink)
+                .isEmpty();
+        assertThat(sink.delivered).as("sink: %s", sink).doesNotContain("cross-seg");
+
+        // The sink recovers, segment 1 finishes, and only then is segment 2 read.
+        sink.acceptEverything();
+        tailer.runTick();
+
+        assertThat(sink.delivered)
+                .as("both exchanges complete once the shard is read in order. sink: %s", sink)
+                .contains("blocker", "cross-seg");
+        assertThat(sink.orphanedEnds).as("sink: %s", sink).isEmpty();
+    }
+
+    /**
+     * A process restart loses whatever the reassembler still holds in flight — it lives in
+     * memory only, while the segment that produced it is already checkpointed as delivered.
+     * A graceful shutdown can still report it as abandoned instead of losing it with no
+     * trace at all; that is the one thing {@link R7Tailer#shutdown()} buys, and this test
+     * pins it down against the case it does not and cannot help: a restart with no shutdown
+     * call, standing in for a hard crash.
+     */
+    @Test
+    void shutdownReportsInFlightExchangesARestartWouldOtherwiseLoseSilently() throws IOException
+    {
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            writeClientRequest(journal, "never-ends");
+        }
+
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
+
+        assertThat(sink.completed).as("sink: %s", sink).isEmpty();
+        assertThat(sink.abandoned).as("not aged out yet - maxAge is an hour. sink: %s", sink).isEmpty();
+
+        // A second tick without shutdown must not re-read the segment: its bytes were
+        // already delivered to the reassembler, whether or not the exchange they belong to
+        // ever completes.
+        tailer.runTick();
+        assertThat(sink.completed).isEmpty();
+        assertThat(sink.abandoned).isEmpty();
+
+        tailer.shutdown();
+
+        assertThat(sink.abandoned)
+                .as("a graceful shutdown reports what a restart would otherwise lose with no trace. sink: %s", sink)
+                .containsExactly("never-ends:SHUTDOWN");
+
+        // Simulating the restart: a brand-new tailer, same journal and checkpoint state.
+        // Nothing further is reported for "never-ends" - its segment was already
+        // checkpointed as delivered before the first tailer ever stopped, so there is
+        // nothing left on disk that could tell a fresh process it was ever open. That gap
+        // is exactly why shutdown() has to report it before the process actually exits.
+        final CollectingSink afterRestart = new CollectingSink();
+        new R7Tailer(journalDir, afterRestart, afterRestart,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(afterRestart.completed).isEmpty();
+        assertThat(afterRestart.abandoned).isEmpty();
+        assertThat(afterRestart.orphanedEnds).isEmpty();
+    }
+
+    private static void writeClientRequest(final R7fJournal journal, final String reqId) throws IOException
+    {
+        journal.clientRequest(JournalLevel.FULL, reqId,
+                ByteBuffer.wrap(("GET /" + reqId + " HTTP/1.1").getBytes(StandardCharsets.ISO_8859_1)),
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+    }
+
+    private static void writeEndExchange(final R7fJournal journal, final String reqId)
+    {
+        journal.endExchange(reqId, new FastGatewayAttributes(),
+                1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+    }
+
     /* ---------- journal writing ---------- */
 
     private void writeExchanges(final int count) throws IOException

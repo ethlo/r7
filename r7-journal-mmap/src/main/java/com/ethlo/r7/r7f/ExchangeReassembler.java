@@ -347,6 +347,41 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     /**
+     * Reports every exchange still in flight as abandoned, regardless of {@code maxAge}.
+     * <p>
+     * A process restart loses this reader's entire in-flight set — it lives in memory only —
+     * while the segments that produced it are already checkpointed as delivered, because
+     * decoding those bytes and completing the exchange they belong to are different things
+     * (README.md §11.4). A hard crash cannot be helped: nothing runs. A graceful stop can
+     * call this first, so a container restart or rolling deploy turns "silently lost, no
+     * trace" into "reported abandoned" for whatever was still assembling. It is called at
+     * most once, from process shutdown, so it is not on the amortised sweep path and does
+     * not affect {@code maxAge} accounting for anything still running.
+     * <p>
+     * Exchanges held in {@link #awaitingRedelivery} are deliberately left alone: they are
+     * complete records waiting on a consumer that refused them, not incomplete ones, and
+     * there is no entry left to rewind on the next run — the journal already checkpointed
+     * past them. Their count is only logged, so an operator can see what a restart is about
+     * to leave stalled.
+     */
+    public void shutdown()
+    {
+        final int evicted = inFlight.evictOlderThan(System.nanoTime(), e -> evictIncomplete(e, IncompleteReason.SHUTDOWN));
+        if (evicted > 0)
+        {
+            logger.warn("Shutting down with {} exchange(s) still in flight; reported as abandoned. "
+                    + "A hard crash instead of this graceful stop would have lost them with no report at all.",
+                    evicted);
+        }
+        if (!awaitingRedelivery.isEmpty())
+        {
+            logger.warn("Shutting down with {} exchange(s) held for redelivery to a consumer that had refused "
+                    + "them; their segments will not be re-read on restart and these records are lost.",
+                    awaitingRedelivery.size());
+        }
+    }
+
+    /**
      * Makes room for one more in-flight exchange, if there is not already room.
      * <p>
      * Only ever called when a request id that is <em>not</em> being tracked is about to be

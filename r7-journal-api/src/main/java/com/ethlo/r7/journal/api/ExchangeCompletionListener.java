@@ -120,7 +120,16 @@ public interface ExchangeCompletionListener
         /**
          * Dropped to keep the in-flight set within its ceiling, before any end arrived.
          */
-        CAPACITY_EVICTED(false);
+        CAPACITY_EVICTED(false),
+
+        /**
+         * The reader is stopping (a graceful process shutdown) with the exchange still in
+         * flight. Reported so the exchange is not simply lost with no trace: the segment
+         * holding its start has already been checkpointed as delivered by the time this
+         * fires, so a hard crash instead of a graceful stop would lose it with no report at
+         * all — this is the one case a clean shutdown can still make visible.
+         */
+        SHUTDOWN(false);
 
         private final boolean hasEndEvent;
 
