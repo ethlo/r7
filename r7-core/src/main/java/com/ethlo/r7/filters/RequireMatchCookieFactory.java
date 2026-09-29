@@ -96,7 +96,7 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            if (!RepeatedValues.allCookiesMatch(exchange.clientRequest().headers(), this.config.name(), this.compiledPattern))
+            if (!RepeatedValues.allCookiesMatch(exchange.clientRequest().cookies(), exchange.clientRequest().headers(), this.config.name(), this.compiledPattern))
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),

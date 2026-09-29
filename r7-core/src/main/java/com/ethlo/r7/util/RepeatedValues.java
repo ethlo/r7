@@ -2,6 +2,7 @@ package com.ethlo.r7.util;
 
 import java.util.regex.Pattern;
 
+import com.ethlo.r7.api.Cookies;
 import com.ethlo.r7.api.MultiAttributes;
 import com.ethlo.r7.api.QueryParams;
 
@@ -120,19 +121,23 @@ public final class RepeatedValues
      * several cookies with the same name, while many upstream parsers keep the first, so
      * {@code role=admin; role=user} would pass a check on {@code role} that the upstream reads as
      * {@code admin}.
+     * <p>
+     * The parsed cookies are consulted first, and not only as a fast path for an absent name:
+     * parsing is where Undertow enforces {@code limits.max_cookie_count}, and scanning the raw
+     * header alone would let a request over that limit through.
      */
-    public static boolean allCookiesMatch(final MultiAttributes headers, final String name, final Pattern pattern)
+    public static boolean allCookiesMatch(final Cookies cookies, final MultiAttributes headers, final String name, final Pattern pattern)
     {
-        return cookieCheck(headers, name, pattern, null);
+        return cookies.contains(name) && cookieCheck(headers, name, pattern, null);
     }
 
     /**
      * As {@link #allEqual(Iterable, String)}, over every cookie with this name; see
-     * {@link #allCookiesMatch(MultiAttributes, String, Pattern)}.
+     * {@link #allCookiesMatch(Cookies, MultiAttributes, String, Pattern)}.
      */
-    public static boolean allCookiesEqual(final MultiAttributes headers, final String name, final String expected)
+    public static boolean allCookiesEqual(final Cookies cookies, final MultiAttributes headers, final String name, final String expected)
     {
-        return cookieCheck(headers, name, null, expected);
+        return cookies.contains(name) && cookieCheck(headers, name, null, expected);
     }
 
     private static boolean cookieCheck(final MultiAttributes headers, final String name, final Pattern pattern, final String expected)

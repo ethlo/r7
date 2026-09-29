@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
+import com.ethlo.r7.api.Cookies;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.filters.RequireMatchQueryParameterFactory;
@@ -45,6 +46,26 @@ class RepeatedValuesTest
             headers.add("Cookie", line);
         }
         return headers;
+    }
+
+    private static Cookies present()
+    {
+        final Cookies cookies = mock(Cookies.class);
+        when(cookies.contains(any())).thenReturn(true);
+        return cookies;
+    }
+
+    /**
+     * The parsed view is asked first: that parse is where Undertow enforces the cookie-count
+     * limit, and a name it does not know is refused without scanning.
+     */
+    @Test
+    void theParsedCookiesAreConsultedFirst()
+    {
+        final Cookies cookies = mock(Cookies.class);
+        when(cookies.contains("role")).thenReturn(false);
+        assertThat(RepeatedValues.allCookiesMatch(cookies, cookies("role=user"), "role", USER)).isFalse();
+        verify(cookies).contains("role");
     }
 
     @Test
@@ -78,18 +99,18 @@ class RepeatedValuesTest
     @Test
     void everyCookieWithTheNameMustMatch()
     {
-        assertThat(RepeatedValues.allCookiesMatch(cookies("role=user; role=admin"), "role", USER)).isFalse();
-        assertThat(RepeatedValues.allCookiesMatch(cookies("role=admin; role=user"), "role", USER)).isFalse();
-        assertThat(RepeatedValues.allCookiesMatch(cookies("role=user", "role=admin"), "role", USER)).isFalse();
-        assertThat(RepeatedValues.allCookiesEqual(cookies("role=admin;role=user"), "role", "user")).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("role=user; role=admin"), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("role=admin; role=user"), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("role=user", "role=admin"), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesEqual(present(), cookies("role=admin;role=user"), "role", "user")).isFalse();
 
-        assertThat(RepeatedValues.allCookiesMatch(cookies("a=1; role=user; xrole=admin; role=\"user\""), "role", USER)).isTrue();
-        assertThat(RepeatedValues.allCookiesEqual(cookies("session=x; role = user "), "role", "user")).isTrue();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("a=1; role=user; xrole=admin; role=\"user\""), "role", USER)).isTrue();
+        assertThat(RepeatedValues.allCookiesEqual(present(), cookies("session=x; role = user "), "role", "user")).isTrue();
         // Not valid RFC 6265, but a lenient upstream trims the name and sees a second role.
-        assertThat(RepeatedValues.allCookiesMatch(cookies("role=user; role =admin"), "role", USER)).isFalse();
-        assertThat(RepeatedValues.allCookiesMatch(cookies("role=user;\trole=admin"), "role", USER)).isFalse();
-        assertThat(RepeatedValues.allCookiesMatch(cookies("other=user"), "role", USER)).isFalse();
-        assertThat(RepeatedValues.allCookiesMatch(new MutableFastGatewayHeaders(), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("role=user; role =admin"), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("role=user;\trole=admin"), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies("other=user"), "role", USER)).isFalse();
+        assertThat(RepeatedValues.allCookiesMatch(present(), new MutableFastGatewayHeaders(), "role", USER)).isFalse();
     }
 
     /**
@@ -150,7 +171,7 @@ class RepeatedValuesTest
     {
         final String line = "x;".repeat(30_000) + "role=user";
         final long start = System.nanoTime();
-        assertThat(RepeatedValues.allCookiesMatch(cookies(line), "role", USER)).isTrue();
+        assertThat(RepeatedValues.allCookiesMatch(present(), cookies(line), "role", USER)).isTrue();
         assertThat(System.nanoTime() - start).isLessThan(100_000_000L);
     }
 }

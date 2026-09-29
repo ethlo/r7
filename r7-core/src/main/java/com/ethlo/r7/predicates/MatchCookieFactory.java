@@ -61,7 +61,7 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
         public boolean test(final GatewayRequest request)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            return RepeatedValues.allCookiesMatch(request.headers(), this.cookieName, this.pattern);
+            return RepeatedValues.allCookiesMatch(request.cookies(), request.headers(), this.cookieName, this.pattern);
         }
 
         @Override
