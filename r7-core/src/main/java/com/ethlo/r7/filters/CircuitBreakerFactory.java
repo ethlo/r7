@@ -24,6 +24,7 @@ import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.constants.MediaTypes;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -182,7 +183,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
         private void rejectRequest(final ClientRequestGatewayExchange exchange)
         {
             final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(1)
-                    .set(HttpHeaders.CONTENT_TYPE, "text/plain");
+                    .set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
 
             exchange.shortCircuit(new ShortCircuitGatewayResponse(headers, HttpStatuses.SERVICE_UNAVAILABLE, ByteBuffer.wrap(REJECT_PAYLOAD)));
         }

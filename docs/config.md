@@ -667,7 +667,7 @@ Monitors upstream responses and temporarily blocks routing **for the entire rout
 
 #### ReturnResponse
 
-Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain; charset=utf-8` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
