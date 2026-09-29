@@ -38,16 +38,16 @@ This is a working document, not yet a claim. It becomes one when every **Gap** a
 | V10 OAuth and OIDC |  |  |  |  |  | 29 |
 | V11 Cryptography | 5 | 2 |  | 1 |  | 6 |
 | V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
-| V13 Configuration | 9 | 1 |  |  | 3 |  |
-| V14 Data Protection | 4 | 3 |  | 1 |  | 1 |
-| V15 Secure Coding and Architecture | 9 | 3 | 1 |  |  |  |
+| V13 Configuration | 9 | 1 | 1 |  | 2 |  |
+| V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
+| V15 Secure Coding and Architecture | 8 | 4 | 1 |  |  |  |
 | V16 Security Logging and Error Handling | 10 | 3 |  |  | 3 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **81** | **15** | **1** | **6** | **20** | **130** |
+| **Total** | **79** | **16** | **2** | **7** | **19** | **130** |
 
 ## Gaps
 
-The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed by #74, and gap 8 by #76.
+The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed by #74, and gap 8 by #76. This file is stacked on both, so the rows it marks Met describe the tree it ships in.
 
 1. ~~Refuse TRACE~~ (V13.4.4). Closed by [#74](https://github.com/ethlo/r7/pull/74): TRACE gets 501 before routing.
 2. ~~Harden r7's own responses~~ (V3.2.1, V3.4.4, V4.1.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): `nosniff` and `text/plain; charset=utf-8` on everything r7 writes.
@@ -60,11 +60,13 @@ The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed 
 9. **Refusals before routing are not journaled** (V16.3.3). Ambiguous paths, bad `Transfer-Encoding` and TRACE are refused before a route is chosen, so no journal records them, and the log line is at DEBUG. Journal them, or log them at INFO through a dedicated logger.
 10. ~~Route ID in the no-upstream 503~~ (V16.5.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the body is generic; the route ID is logged and journaled.
 11. **bcrypt cost floor** (V11.4.2). Any cost from 4 to 31 is accepted. Refuse, or warn at load about, a cost below 10.
+12. **Short-lived credentials towards upstreams** (V13.2.1). r7 can present only static credentials to an upstream. Meeting this needs mTLS client certificates or short-lived tokens (for example an OAuth client-credentials exchange); otherwise, record it as accepted for deployments where the network is the trust boundary.
 
 Also recorded:
 
 - **Accepted:** query strings are journaled unredacted (V14.2.1). This was a deliberate decision during the security review; revisit it if journals leave the host.
 - **Accepted:** the listener is plaintext and `BasicAuth` is single-factor (V12.2.1, V12.3.1, V4.4.1, V6.3.3); see Scope.
+- **Accepted:** `BasicAuth` caches SHA-256 digests of verified credentials in memory to avoid a bcrypt round per request (V14.2.2).
 - **Roadmap:** fuzzing the journal decoder and the request guards with Jazzer moves V1.4.1 and V1.4.2 to Met. Publishing an SBOM with each image moves V15.1.2 to Met.
 
 ## V1 Encoding and Sanitization
@@ -345,7 +347,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | ID | L | Requirement | Status | Evidence |
 |---|---|---|---|---|
 | V13.1.1 | 2 | Communication needs documented | Partial | Upstreams are listed in `routes.yaml` and the ports in `server.yaml`/`docs/config.md`; no single page yet names every connection (data plane, management, upstreams, tailers' sinks). Gap 7. |
-| V13.2.1 | 2 | Backend communication authenticated | Operator | `InjectBasicAuth` and header filters authenticate r7 to upstreams; the deployment chooses. |
+| V13.2.1 | 2 | Backend communication authenticated | Gap | r7 can present only static credentials to an upstream: `InjectBasicAuth`, or a fixed header set with `SetRequestHeader`. ASVS 5.0 rules out unchanging passwords and API keys here, and r7 supports neither mTLS client certificates nor short-lived tokens towards upstreams (gap 12). |
 | V13.2.2 | 2 | Least-privilege accounts | Met | Images run as UID 65532 on distroless bases; journals are 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48)). |
 | V13.2.3 | 2 | No default credentials | Met | No shipped credentials. |
 | V13.2.4 | 2 | Allowlist of external resources | Met | Upstream targets are an explicit list in configuration; requests cannot choose one (V1.3.6). |
@@ -365,7 +367,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V14.1.1 | 2 | Sensitive data identified and classified | Partial | In code: journal header allowlist (`RedactingHeadersTest`), `@Sensitive` config ([#46](https://github.com/ethlo/r7/pull/46)). Not written down as a classification (gap 7). |
 | V14.1.2 | 2 | Protection requirements per level | Partial | As V14.1.1. |
 | V14.2.1 | 1 | No sensitive data in URLs | Accepted | r7 cannot stop clients putting secrets in query strings. It journals the start line unredacted, a deliberate decision recorded against F10. Operators can lower the journal level, or strip parameters with `RemoveQueryParameter`. |
-| V14.2.2 | 2 | Sensitive data not cached in server components | Met | r7 has no response cache; bodies are streamed. Journals are the only copy, with permissions ([#48](https://github.com/ethlo/r7/pull/48)) and retention (reaper). |
+| V14.2.2 | 2 | Sensitive data not cached in server components | Accepted | r7 has no response cache, and bodies are streamed. One in-memory cache holds sensitive data: `BasicAuth` keeps the SHA-256 digest of each verified `Authorization` value, at most 1,024 entries, expiring 15 minutes after last use, so bcrypt does not run on every request. It is never persisted or journaled, and a reload empties it. The accepted risk: a heap dump would let someone guess the cached passwords at SHA-256 speed rather than bcrypt speed. Journals, the only persistent copy of request data, are 0640 ([#48](https://github.com/ethlo/r7/pull/48)) and retained by the reaper. |
 | V14.2.3 | 2 | No sensitive data to untrusted parties | Met | r7 sends data only to configured upstreams and local journals; the dashboard loads no third-party resources. |
 | V14.2.4 | 2 | Controls for sensitive data (retention, logging) | Partial | Journal levels per route and direction, header allowlist, reaper retention. Query values are the recorded exception (Accepted, V14.2.1). |
 | V14.3.1 | 1 | Client storage cleared on logout | N/A | No sessions. |
@@ -380,7 +382,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V15.1.2 | 2 | SBOM and trusted component sources | Partial | A CycloneDX SBOM is built on every CI run and scanned by OSV-Scanner ([#59](https://github.com/ethlo/r7/pull/59)); dependencies come from Maven Central, base images are pinned by digest ([#72](https://github.com/ethlo/r7/pull/72)), and `flatc` is verified by checksum ([#60](https://github.com/ethlo/r7/pull/60)). The SBOM is not yet published with each image (roadmap). |
 | V15.1.3 | 2 | Documented resource-demanding functionality | Partial | Known expensive paths: bcrypt, regex matching, FULL body journaling, static content. Each is bounded in code ([#47](https://github.com/ethlo/r7/pull/47), [#53](https://github.com/ethlo/r7/pull/53), backpressure), but they are not listed in one place (gap 7). |
 | V15.2.1 | 1 | No components past remediation time frames | Partial | OSV-Scanner fails CI on any advisory not accepted, with an expiry, in `osv-scanner.toml` ([#59](https://github.com/ethlo/r7/pull/59)), and Dependabot proposes updates weekly ([#58](https://github.com/ethlo/r7/pull/58)). No documented time frames to measure against yet (V15.1.1, gap 7). |
-| V15.2.2 | 2 | Defences against resource exhaustion | Met | Regex budget ([#53](https://github.com/ethlo/r7/pull/53)), bcrypt semaphore ([#47](https://github.com/ethlo/r7/pull/47)), listener limits (header size and count, parse timeout, entity size), `RateLimiter`, `CircuitBreaker`, journal backpressure. |
+| V15.2.2 | 2 | Defences against resource exhaustion | Partial | In code: regex budget ([#53](https://github.com/ethlo/r7/pull/53), shared per check since [#76](https://github.com/ethlo/r7/pull/76)), bcrypt semaphore ([#47](https://github.com/ethlo/r7/pull/47)), listener limits (header size and count, parse timeout, entity size), `RateLimiter`, `CircuitBreaker`, journal backpressure. ASVS asks for these to follow documented decisions, and that documentation is gap 7 (V15.1.3). |
 | V15.2.3 | 2 | No extraneous functionality in production | Met | Distroless images hold only the jar or native binary; test code is not packaged. |
 | V15.3.1 | 1 | Only the required fields returned | Met | Management summaries mask `@Sensitive` values and fingerprint secrets ([#46](https://github.com/ethlo/r7/pull/46)). |
 | V15.3.2 | 2 | Outbound calls do not follow redirects | Met | The proxy passes upstream 3xx responses to the client and never follows them. |
