@@ -197,7 +197,7 @@ public final class JsonSchemaGenerator
                 "object", null, null,
                 new SchemaProps(new PrimitiveSchema("string", null, null, null, null, null, null, null, null)),
                 null, null, null, null,
-                "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'FULL', '404': 'NONE'.",
+                "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '2xx': 'METADATA', '404': 'NONE'. An override may be FULL only when the base level is FULL, and on the request side may not go below FULL when the base level is FULL.",
                 null,
                 null
         );

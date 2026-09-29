@@ -13,7 +13,7 @@ The r7 configuration engine is strictly validated at startup. The gateway will *
 * Cyclic/recursive `fallback` routing loops.
 * Unresolvable environment variables without default values.
 * Duplicate Route IDs (Route IDs must be globally unique).
-* Malformed journal `status_overrides` keys (see [Status Overrides](#status-overrides-status_overrides)).
+* Malformed journal `status_overrides` keys, or overrides that request body capture the gateway cannot provide (see [Status Overrides](#status-overrides-status_overrides)).
 
 ### Environment Variable Interpolation
 
@@ -696,12 +696,14 @@ Each direction (`request`, `response`) takes an optional `status_overrides` map 
 ```yaml
 journal:
   response:
-    level: METADATA
+    level: FULL
     status_overrides:
-      5xx: FULL          # a whole status class
+      2xx: METADATA      # a whole status class
       401,403: HEADERS   # a comma-separated list of codes
       429: HEADERS       # a single code
 ```
+
+This keeps response bodies for every status except `2xx`, `401`, `403` and `429`.
 
 | Key form | Example | Matches |
 | --- | --- | --- |
@@ -710,6 +712,19 @@ journal:
 | Comma-separated list | `401,403` | Each listed code. Every entry is a single code; classes and ranges are not allowed inside a list. |
 
 Any other key (a range such as `500-599`, `999`, `6xx`, an empty list entry) is rejected at startup and on hot reload with an error naming the field, e.g. `[routes.my-route.journal.response.status_overrides] Invalid status override key '500-599'`. Avoid overlapping keys (`5xx` and `503`): which one wins for the shared codes follows map order and is not part of the contract.
+
+Overrides can only *lower* body capture, never add it. r7 streams bodies to the journal as they pass
+through rather than buffering them, and decides whether to capture them from the base level:
+
+* **No override may be `FULL` unless the base `level` of that direction is `FULL`**, in either direction.
+  To keep bodies only for some statuses, set the base to `FULL` and lower the others (as above).
+* **On the `request` side, no override may be below `FULL` when the base `level` is `FULL`.** The
+  request body is journaled while it is being read, before any status exists, so it cannot be
+  withdrawn once the status turns out to match. The `response` side has no such limit: the status is
+  known before the first response byte is written, so lowering it there works as expected.
+
+Both are rejected at startup and on hot reload with an error naming the direction, e.g.
+`[routes.my-route.journal.request.status_overrides] Cannot elevate status override '5xx' to FULL when the base level is METADATA`.
 
 ---
 
@@ -796,10 +811,13 @@ routes:
       request:
         level: METADATA
         status_overrides:
-          5xx: FULL
+          5xx: HEADERS
           401,403: HEADERS
       response:
-        level: METADATA
+        level: FULL           # keep response bodies only when something goes wrong
+        status_overrides:
+          2xx: METADATA
+          3xx: METADATA
 
   - id: fallback-stub
     match: [] # Empty match blocks are never hit naturally; used only via fallback

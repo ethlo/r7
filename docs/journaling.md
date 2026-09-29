@@ -26,10 +26,15 @@ routes:
       request:
         level: METADATA
       response:
-        level: METADATA
+        level: FULL   # capture bodies only when things break
         status_overrides:
-          5xx: FULL   # capture bodies when things break
+          2xx: METADATA
+          3xx: METADATA
 ```
+
+Overrides can lower a level but never raise one to `FULL`: body capture follows the base level, so to
+keep bodies for some statuses you start from `FULL` and lower the rest. See
+[Status Overrides](config.md#status-overrides-status_overrides) for the exact rules.
 
 `NONE` / `METADATA` / `HEADERS` / `FULL` — see [Configuration §7](config.md#7-journaling-storage)
 for the full table and the `storage` block (`work_dir`, `shard_size`, `shard_count`) that

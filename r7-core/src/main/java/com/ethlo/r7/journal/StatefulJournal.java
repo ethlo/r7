@@ -164,7 +164,7 @@ public final class StatefulJournal implements Journal
             //
             // This resolves the level rather than forcing FULL. Forcing it would override an
             // operator's status-based downgrade and journal headers they asked not to keep,
-            // and no reported mismatch is worth that. RouteJournalConfig rejects the
+            // and no reported mismatch is worth that. JournalDirectionDefinition rejects the
             // configuration that would make the two disagree — a request-side override below
             // FULL when the base is FULL — so by the time we are here, resolving cannot
             // return anything lower. If that validation is ever relaxed, this degrades to the

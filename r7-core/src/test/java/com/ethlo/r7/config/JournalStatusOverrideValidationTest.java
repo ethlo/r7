@@ -12,6 +12,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -23,6 +24,11 @@ class JournalStatusOverrideValidationTest
     Path dir;
 
     private RouteRegistry load(final String direction, final String key) throws IOException
+    {
+        return load(direction, JournalLevel.METADATA, key, JournalLevel.HEADERS);
+    }
+
+    private RouteRegistry load(final String direction, final JournalLevel base, final String key, final JournalLevel override) throws IOException
     {
         final Path file = this.dir.resolve("routes.yaml");
         Files.writeString(file, """
@@ -37,10 +43,10 @@ class JournalStatusOverrideValidationTest
                         - url: http://localhost:1
                     journal:
                       %s:
-                        level: METADATA
+                        level: %s
                         status_overrides:
-                          "%s": HEADERS
-                """.formatted(direction, key));
+                          "%s": %s
+                """.formatted(direction, base, key, override));
         final RoutesDefinition definition = ConfigurationManager.load(file, RoutesDefinition.class);
         final RouteRegistry registry = new RouteRegistry();
         new ConfigurationManager(new EngineContext(Map.of())).load(definition, registry);
@@ -98,5 +104,55 @@ class JournalStatusOverrideValidationTest
                 JournalOverrideParser.parseOverrides(Map.of("599", JournalLevel.HEADERS)));
         assertThat(config.resolve(599)).isEqualTo(JournalLevel.HEADERS);
         assertThat(config.resolve(598)).isEqualTo(JournalLevel.METADATA);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"request", "response"})
+    void rejectsElevationToFullInEitherDirectionNamingTheDirection(final String direction)
+    {
+        for (final JournalLevel base : new JournalLevel[]{JournalLevel.NONE, JournalLevel.METADATA, JournalLevel.HEADERS})
+        {
+            assertThatThrownBy(() -> load(direction, base, "5xx", JournalLevel.FULL))
+                    .as("base %s", base)
+                    .isInstanceOf(ConfigurationException.class)
+                    .hasMessageContaining("[routes.my-route.journal." + direction + ".status_overrides]")
+                    .hasMessageContaining("Cannot elevate status override '5xx' to FULL when the base level is " + base);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"request", "response"})
+    void acceptsFullOverrideWhenTheBaseIsFull(final String direction)
+    {
+        assertThatCode(() -> load(direction, JournalLevel.FULL, "5xx", JournalLevel.FULL)).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JournalLevel.class, names = {"NONE", "METADATA", "HEADERS"})
+    void rejectsLoweringARequestOverrideBelowFullWhenTheBaseIsFull(final JournalLevel override)
+    {
+        assertThatThrownBy(() -> load("request", JournalLevel.FULL, "404", override))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("[routes.my-route.journal.request.status_overrides]")
+                .hasMessageContaining("Cannot lower request status override '404' to " + override)
+                .hasMessageNotContaining("journal.response");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JournalLevel.class, names = {"NONE", "METADATA", "HEADERS"})
+    void acceptsLoweringAResponseOverrideBelowFullWhenTheBaseIsFull(final JournalLevel override)
+    {
+        // The response status is known before the first response body byte is journaled,
+        // so a downgrade on this side is honoured, unlike on the request side.
+        assertThatCode(() -> load("response", JournalLevel.FULL, "404", override)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void reportsAnInvalidKeyOnceRatherThanAlsoAsADowngrade()
+    {
+        assertThatThrownBy(() -> load("request", JournalLevel.FULL, "500-599", JournalLevel.METADATA))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("Invalid status override key '500-599'")
+                .hasMessageNotContaining("Cannot lower");
     }
 }

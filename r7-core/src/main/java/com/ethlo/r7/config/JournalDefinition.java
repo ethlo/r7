@@ -18,7 +18,9 @@ public record JournalDefinition(JournalDirectionDefinition request,
     @Override
     public void validate(final ValidationResult result)
     {
-        this.request.validate(result.nested("request"));
+        final ValidationResult requestResult = result.nested("request");
+        this.request.validate(requestResult);
+        this.request.validateRequestSide(requestResult);
         this.response.validate(result.nested("response"));
     }
 }
