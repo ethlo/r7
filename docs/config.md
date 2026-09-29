@@ -150,7 +150,8 @@ The request is handed to the fallback route **before** the first route's upstrea
 
 Predicates determine whether an incoming request matches a route.
 
-* **Regex Semantics:** All regex predicates use standard Java Regex syntax. Matching is **partial by default** unless explicitly anchored (`^`, `$`). Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Regex Semantics:** All regex predicates and `RequireMatch*` filters use standard Java Regex syntax and must match the **whole value**, as if anchored with `^` and `$`: `user` does not match `superuser`. Use `.*user.*` to match anywhere in the value. Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
 * **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of stalling an I/O thread. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.
 
@@ -477,6 +478,8 @@ The capture groups are filled in from the client's request path, so the computed
 ---
 
 ### Security & Validation
+
+The `RequireMatch*` filters follow the same regex and repeated-value rules as the predicates (see [Predicates](#5-predicates)): the whole value must match, and so must every occurrence.
 
 #### RequireRequestHeader
 
