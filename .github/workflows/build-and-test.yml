@@ -1,0 +1,44 @@
+name: Build and test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Nothing by default: each job grants only the permissions it needs.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test (all modules)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Docker-backed tests (r7-gateway / r7-gateway-native images built by build.sh /
+      # build-native.sh) are opt-in: @EnabledIfDockerImage skips them here because this runner
+      # never builds those images. Everything else, including the *BenchmarkTest /
+      # *PerformanceTest classes, runs: none of them assert an absolute threshold, they only
+      # print measured throughput, so there is nothing here that would flake on shared hardware.
+      - name: Build and test
+        run: ./mvnw -B clean install
+
+      - name: Upload surefire reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/**'
+          retention-days: 7
