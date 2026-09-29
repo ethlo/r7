@@ -1,0 +1,8 @@
+# SHA-256 of each flatc binary, checked by bin/flatc before it runs one. Update together with the
+# binaries (and flatbuffers.version in r7-journal-mmap/pom.xml).
+#
+# flatc-x86_64:  byte-identical to the upstream release asset Linux.flatc.binary.clang++-18.zip
+#                of https://github.com/google/flatbuffers/releases/tag/v25.2.10
+# flatc-aarch64: upstream publishes no aarch64 Linux build; compiled from the v25.2.10 tag
+7f440daf84bb9dbff08492a3e22db3fb7848e6c99789a989a482ada332e0c48c  flatc-x86_64
+a0d1c2a73da5a1302f77aa2c94fc0fc6b178faf099f26513d17dc2366bd28eac  flatc-aarch64

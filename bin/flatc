@@ -3,10 +3,30 @@
 # publishes an x86_64 Linux release (see https://github.com/google/flatbuffers/releases), so the
 # aarch64 binary here is compiled from the matching v${flatbuffers.version} tag (see
 # r7-journal-mmap/pom.xml) - keep it in sync when that version changes.
+#
+# The binary is checked against bin/flatc.sha256 before it runs: it is executed on every build
+# machine and in CI, so a swapped or corrupted binary must fail the build rather than run.
 set -e
 dir=$(dirname "$0")
 case "$(uname -m)" in
-    x86_64) exec "$dir/flatc-x86_64" "$@" ;;
-    aarch64|arm64) exec "$dir/flatc-aarch64" "$@" ;;
+    x86_64) binary=flatc-x86_64 ;;
+    aarch64|arm64) binary=flatc-aarch64 ;;
     *) echo "flatc: unsupported host architecture $(uname -m)" >&2; exit 1 ;;
 esac
+
+expected=$(awk -v name="$binary" '$2 == name { print $1 }' "$dir/flatc.sha256")
+if [ -z "$expected" ]; then
+    echo "flatc: no checksum for $binary in $dir/flatc.sha256" >&2
+    exit 1
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$dir/$binary" | awk '{ print $1 }')
+else
+    actual=$(shasum -a 256 "$dir/$binary" | awk '{ print $1 }')
+fi
+if [ "$actual" != "$expected" ]; then
+    echo "flatc: $dir/$binary does not match its recorded SHA-256 (expected $expected, got $actual); refusing to run it" >&2
+    exit 1
+fi
+
+exec "$dir/$binary" "$@"
