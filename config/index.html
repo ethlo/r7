@@ -3137,7 +3137,7 @@
 <hr />
 <h3 id="traffic-shaping-reliability">Traffic Shaping &amp; Reliability</h3>
 <h4 id="ratelimiter">RateLimiter</h4>
-<p>Provides token-bucket rate limiting. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Automatically injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers. <strong>Buckets are keyed by the TCP peer IP address.</strong></p>
+<p>Provides token-bucket rate limiting. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Automatically injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers. <strong>Buckets are keyed by the client's resolved address</strong> (the TCP peer, or the <code>X-Forwarded-For</code>/<code>X-Real-IP</code> client behind a trusted proxy): an IPv4 address as is, an IPv6 address by its leading <code>ipv6_prefix_length</code> bits (a <code>/64</code> by default). A filter that sets the <code>rate_limit_key</code> attachment overrides this.</p>
 <table>
 <thead>
 <tr>
@@ -3177,6 +3177,12 @@
 <td>Duration</td>
 <td>No</td>
 <td>Time-to-live for idle buckets. Defaults to <code>max(refill_period * 10, 30s)</code>.</td>
+</tr>
+<tr>
+<td><code>ipv6_prefix_length</code></td>
+<td>Integer</td>
+<td>No</td>
+<td>How many leading bits identify one IPv6 client (1-128). Defaults to <code>64</code>: a subscriber is typically assigned a whole <code>/64</code> and can use any address in it, so limiting per full address would give one client unlimited buckets. IPv4 clients are keyed by their full address.</td>
 </tr>
 </tbody>
 </table>
