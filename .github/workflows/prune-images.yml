@@ -5,6 +5,9 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+# Nothing by default: each job grants only the permissions it needs.
+permissions: {}
+
 jobs:
   clean-ghcr:
     runs-on: ubuntu-latest
@@ -12,7 +15,7 @@ jobs:
       packages: write
     steps:
       - name: Delete old images
-        uses: snok/container-retention-policy@v3.0.1 
+        uses: snok/container-retention-policy@3b0972b2276b171b212f8c4efbca59ebba26eceb # v3.0.1
         with:
           image-names: r7-gateway
           cut-off: 3 days
