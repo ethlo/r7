@@ -28,7 +28,7 @@ This is a working document, not yet a claim. It becomes one when every **Gap** a
 |---|---:|---:|---:|---:|---:|---:|
 | V1 Encoding and Sanitization | 13 | 2 |  |  |  | 12 |
 | V2 Validation and Business Logic | 4 | 1 |  |  | 1 | 5 |
-| V3 Web Frontend Security | 12 |  |  |  | 6 | 1 |
+| V3 Web Frontend Security | 10 |  |  |  | 8 | 1 |
 | V4 API and Web Service | 3 |  |  | 1 | 1 | 5 |
 | V5 File Handling | 3 |  |  |  |  | 6 |
 | V6 Authentication | 5 |  |  | 1 | 1 | 28 |
@@ -38,12 +38,12 @@ This is a working document, not yet a claim. It becomes one when every **Gap** a
 | V10 OAuth and OIDC |  |  |  |  |  | 29 |
 | V11 Cryptography | 5 | 2 |  | 1 |  | 6 |
 | V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
-| V13 Configuration | 9 | 1 | 1 |  | 2 |  |
+| V13 Configuration | 7 | 1 | 1 |  | 4 |  |
 | V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
 | V15 Secure Coding and Architecture | 8 | 4 | 1 |  |  |  |
 | V16 Security Logging and Error Handling | 10 | 3 |  |  | 3 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **79** | **16** | **2** | **7** | **19** | **130** |
+| **Total** | **75** | **16** | **2** | **7** | **23** | **130** |
 
 ## Gaps
 
@@ -123,12 +123,12 @@ Also recorded:
 |---|---|---|---|---|
 | V3.2.1 | 1 | Prevent rendering in the wrong context | Met | Every response r7 writes itself carries `nosniff` and an explicit `text/plain; charset=utf-8` ([#74](https://github.com/ethlo/r7/pull/74)); the management port also sends `X-Frame-Options: DENY`, `no-store` and a CSP ([#46](https://github.com/ethlo/r7/pull/46), [#74](https://github.com/ethlo/r7/pull/74)). Proxied responses are the upstream's; operators can add headers with `SetResponseHeader`. |
 | V3.2.2 | 1 | Render text with safe DOM functions | Met | Dashboard values are escaped and navigation uses `data-` attributes with one delegated listener ([#55](https://github.com/ethlo/r7/pull/55), [#74](https://github.com/ethlo/r7/pull/74)). |
-| V3.3.1 | 1 | Cookies Secure, with a `__Host-`/`__Secure-` prefix | Met | `SetResponseCookie` sets `Secure` unless configured `secure: false` ([#74](https://github.com/ethlo/r7/pull/74)). Behind TLS termination the browser sees HTTPS, so the attribute holds. The name prefix is the operator's (V3.3.3). |
+| V3.3.1 | 1 | Cookies Secure, with a `__Host-`/`__Secure-` prefix | Operator | `SetResponseCookie` sets `Secure` unless configured `secure: false` ([#74](https://github.com/ethlo/r7/pull/74)); the cookie name, and so the prefix, is the operator's. Behind TLS termination the browser sees HTTPS, so `Secure` holds. |
 | V3.3.2 | 2 | SameSite set per cookie purpose | Met | `SameSite=Lax` unless configured otherwise; `None` without `secure` is refused at load ([#74](https://github.com/ethlo/r7/pull/74), `SetResponseCookieFactoryTest`). |
 | V3.3.3 | 2 | `__Host-` prefix | Operator | The cookie name is the operator's. |
 | V3.3.4 | 2 | HttpOnly for cookies scripts must not read | Met | `HttpOnly` unless configured `http_only: false` ([#74](https://github.com/ethlo/r7/pull/74)). |
 | V3.4.1 | 1 | HSTS | Operator | Needs TLS, which r7's listener does not terminate. Set it at the TLS terminator, or with `SetResponseHeader` behind one. |
-| V3.4.2 | 1 | CORS allow-origin fixed or allowlisted | Met | `Cors` echoes only allowlisted origins, adds `Vary: Origin`, answers only real preflights and overrules upstream grants ([#51](https://github.com/ethlo/r7/pull/51), `CorsFactoryTest`, `CorsE2ETest`). |
+| V3.4.2 | 1 | CORS allow-origin fixed or allowlisted | Operator | Where configured, `Cors` echoes only allowlisted origins, adds `Vary: Origin`, answers only real preflights and overrules upstream grants ([#51](https://github.com/ethlo/r7/pull/51), `CorsFactoryTest`, `CorsE2ETest`). Which routes carry it is the operator's decision. |
 | V3.4.3 | 2 | Content-Security-Policy | Met | Management: `default-src 'none'`, the one script allowed by hash, `object-src` covered by `default-src`, `base-uri 'none'` ([#74](https://github.com/ethlo/r7/pull/74), `StatusHandlerCspTest`). Proxied responses: the upstream's, or the operator's through `SetResponseHeader`. |
 | V3.4.4 | 2 | `X-Content-Type-Options: nosniff` on all responses | Met | On everything r7 writes, management included ([#46](https://github.com/ethlo/r7/pull/46), [#74](https://github.com/ethlo/r7/pull/74)). Proxied responses are the upstream's. |
 | V3.4.5 | 2 | Referrer-Policy | Operator | Management sends `no-referrer` ([#46](https://github.com/ethlo/r7/pull/46)). Data-plane pages are the upstream's; `SetResponseHeader` can add one. |
@@ -145,7 +145,7 @@ Also recorded:
 
 | ID | L | Requirement | Status | Evidence |
 |---|---|---|---|---|
-| V4.1.1 | 1 | Content-Type with charset on every body | Met | r7's own bodies are `text/plain; charset=utf-8` ([#74](https://github.com/ethlo/r7/pull/74)); management JSON is `application/json` (UTF-8 by definition). |
+| V4.1.1 | 1 | Content-Type with charset on every body | Met | r7's own bodies are `text/plain; charset=utf-8` ([#74](https://github.com/ethlo/r7/pull/74)), the dashboard is `text/html; charset=utf-8` ([#76](https://github.com/ethlo/r7/pull/76), `ManagementEndpointTest`), and management JSON is `application/json` (UTF-8 by definition). |
 | V4.1.2 | 2 | HTTP-to-HTTPS redirects only on user-facing endpoints | N/A | r7 does not redirect to HTTPS. TLS is in front of it. |
 | V4.1.3 | 2 | Intermediary-set headers cannot be overridden by clients | Met | `X-Forwarded-*`, `Forwarded` and `X-Real-IP` are stripped from untrusted peers before proxying ([#43](https://github.com/ethlo/r7/pull/43), `UpstreamHeaderSanitizerTest`); the client address is taken only from `trusted_proxies` (`RemoteAddressResolverTest`). `BasicAuth` removes the consumed `Authorization` ([#47](https://github.com/ethlo/r7/pull/47)). |
 | V4.2.1 | 2 | Message boundaries (request smuggling) | Met | Non-canonical `Transfer-Encoding` refused with 400 and a closed connection ([#45](https://github.com/ethlo/r7/pull/45), `TransferEncodingGuardTest`); CL+TE, duplicate CL and bare LF rejected (report, "Already done well"); hop-by-hop headers stripped ([#43](https://github.com/ethlo/r7/pull/43)); h2c off by default ([#56](https://github.com/ethlo/r7/pull/56), `Http2DefaultTest`); truncated chunked bodies never reach the upstream as complete ([#44](https://github.com/ethlo/r7/pull/44), `RequestSizeLimitStreamingTest`). A differential test against nginx/Node is in roadmap phase 3. |
@@ -348,12 +348,12 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 |---|---|---|---|---|
 | V13.1.1 | 2 | Communication needs documented | Partial | Upstreams are listed in `routes.yaml` and the ports in `server.yaml`/`docs/config.md`; no single page yet names every connection (data plane, management, upstreams, tailers' sinks). Gap 7. |
 | V13.2.1 | 2 | Backend communication authenticated | Gap | r7 can present only static credentials to an upstream: `InjectBasicAuth`, or a fixed header set with `SetRequestHeader`. ASVS 5.0 rules out unchanging passwords and API keys here, and r7 supports neither mTLS client certificates nor short-lived tokens towards upstreams (gap 12). |
-| V13.2.2 | 2 | Least-privilege accounts | Met | Images run as UID 65532 on distroless bases; journals are 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48)). |
+| V13.2.2 | 2 | Least-privilege accounts for backend communication | Operator | The accounts r7 uses towards upstreams are whatever credentials the operator configures. r7's own process runs as UID 65532 on distroless bases, with journals at 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48)). |
 | V13.2.3 | 2 | No default credentials | Met | No shipped credentials. |
 | V13.2.4 | 2 | Allowlist of external resources | Met | Upstream targets are an explicit list in configuration; requests cannot choose one (V1.3.6). |
 | V13.2.5 | 2 | Server-side allowlist for outbound requests | Met | As V13.2.4. |
 | V13.3.1 | 2 | Secrets management solution | Operator | `${VAR}` interpolation lets secrets come from the environment or a mounted secret rather than the YAML; the vault is the deployment's. |
-| V13.3.2 | 2 | Least privilege for secrets | Met | Values marked `@Sensitive` are masked in management output ([#46](https://github.com/ethlo/r7/pull/46)); URL credentials are redacted in summaries. |
+| V13.3.2 | 2 | Least privilege for secrets | Operator | Access to the YAML, the environment and mounted secrets is the deployment's. r7 keeps secrets out of its own outputs: `@Sensitive` values are masked in management output and URL credentials redacted in summaries ([#46](https://github.com/ethlo/r7/pull/46)). |
 | V13.4.1 | 1 | No source control metadata served | Met | `StaticContent` refuses dotfiles, `.git/` included, unless `serve_hidden_files` is set ([#50](https://github.com/ethlo/r7/pull/50)). |
 | V13.4.2 | 2 | Debug modes off | Met | No debug endpoints. Log levels default to INFO/WARN (`default-logback.xml`). |
 | V13.4.3 | 2 | No directory listings | Met | `list_directory` defaults to false. |
