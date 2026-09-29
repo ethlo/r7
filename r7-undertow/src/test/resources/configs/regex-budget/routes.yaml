@@ -1,20 +1,57 @@
 version: regex-budget-test
 
 routes:
+  - id: ok
+    match:
+      - PathPrefix:
+          prefix: /ok
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # The same pattern in a request-phase filter and an upstream-phase filter: exhausting the
+  # budget must be answered through the normal short-circuit path, so response filters still run.
+  - id: request-filter
+    match:
+      - PathPrefix:
+          prefix: /header-check
+    filters:
+      - RequireMatchRequestHeader:
+          name: X-Token
+          regexp: "^(.*a){12}$"
+      - AddResponseHeader:
+          name: X-Response-Filter
+          value: ran
+    journal:
+      request:
+        level: FULL
+      response:
+        level: FULL
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  - id: upstream-filter
+    match:
+      - PathPrefix:
+          prefix: /rewrite
+    filters:
+      - RewritePath:
+          regexp: "^/rewrite/(.*a){12}$"
+          replacement: /x
+      - AddResponseHeader:
+          name: X-Response-Filter
+          value: ran
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
   # A pattern that backtracks super-linearly on a near-miss: a request for /aaaa...a! would pin an
   # I/O thread for seconds per request, without a budget.
   - id: catastrophic
     match:
       - MatchPath:
           regexp: "^/(.*a){12}$"
-    upstream:
-      targets:
-        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
-
-  - id: ok
-    match:
-      - PathPrefix:
-          prefix: /ok
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

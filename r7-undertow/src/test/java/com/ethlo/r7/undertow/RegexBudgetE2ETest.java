@@ -44,4 +44,26 @@ public class RegexBudgetE2ETest extends AbstractR7IntegrationTest
 
         given().when().get("/ok").then().statusCode(200);
     }
+
+    /**
+     * Exhausting the budget in a filter is a deliberate refusal: a 500 that still goes through the
+     * short-circuit path, so response filters run (and the journal entry is completed).
+     */
+    @Test
+    @Timeout(20)
+    public void aBudgetExhaustedInARequestFilterStillRunsResponseFilters()
+    {
+        given().header("X-Token", "a".repeat(40) + "!").when().get("/header-check")
+                .then().statusCode(500)
+                .header("X-Response-Filter", org.hamcrest.Matchers.equalTo("ran"));
+    }
+
+    @Test
+    @Timeout(20)
+    public void aBudgetExhaustedInAnUpstreamFilterStillRunsResponseFilters()
+    {
+        given().when().get("/rewrite/" + "a".repeat(40) + "!")
+                .then().statusCode(500)
+                .header("X-Response-Filter", org.hamcrest.Matchers.equalTo("ran"));
+    }
 }
