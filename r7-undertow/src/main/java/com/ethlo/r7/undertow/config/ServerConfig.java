@@ -117,14 +117,38 @@ public record ServerConfig(
     // =========================================================
     // Management (Control Plane)
     // =========================================================
-    public record ManagementConfig(String host, Integer port) implements ValidatableConfig
+    public record ManagementConfig(
+            String host,
+            Integer port,
+            Duration requestParseTimeout,
+            Duration readTimeout,
+            Duration idleTimeout,
+            Integer maxConnections,
+            List<String> allowedHosts
+    ) implements ValidatableConfig
     {
+        public ManagementConfig(final String host, final Integer port)
+        {
+            this(host, port, null, null, null, null, null);
+        }
+
         @Override
         public void validate(final ValidationResult result)
         {
             if (this.port() < 1 || this.port() > 65535)
             {
                 result.addError("port", "must be between 1 and 65535");
+            }
+            // All three go to Undertow/XNIO as int milliseconds, and none may be off: a management
+            // connection that is never timed out holds a file descriptor the data plane shares.
+            final ValidatorUtils v = new ValidatorUtils(result);
+            v.requirePositive("request_parse_timeout", this.requestParseTimeout(), ValidatorUtils.MAX_INT_MILLIS);
+            v.requirePositive("read_timeout", this.readTimeout(), ValidatorUtils.MAX_INT_MILLIS);
+            v.requirePositive("idle_timeout", this.idleTimeout(), ValidatorUtils.MAX_INT_MILLIS);
+            v.requirePositive("max_connections", this.maxConnections());
+            for (final String allowedHost : this.allowedHosts())
+            {
+                v.notBlank("allowed_hosts", allowedHost);
             }
         }
 
@@ -154,6 +178,52 @@ public record ServerConfig(
         public Integer port()
         {
             return Optional.ofNullable(this.port).orElse(18888);
+        }
+
+        /**
+         * Time allowed to receive a complete request head. Without it a client that sends part
+         * of a header block and then nothing keeps its connection open indefinitely.
+         */
+        @Override
+        public Duration requestParseTimeout()
+        {
+            return Optional.ofNullable(this.requestParseTimeout).orElse(Duration.ofSeconds(2));
+        }
+
+        @Override
+        public Duration readTimeout()
+        {
+            return Optional.ofNullable(this.readTimeout).orElse(Duration.ofSeconds(30));
+        }
+
+        /**
+         * How long a connection may sit between requests before it is closed.
+         */
+        @Override
+        public Duration idleTimeout()
+        {
+            return Optional.ofNullable(this.idleTimeout).orElse(Duration.ofSeconds(30));
+        }
+
+        /**
+         * The dashboard polls from a handful of browsers; this cap keeps the management port from
+         * being able to take file descriptors the data plane needs. Connections past it wait in
+         * the kernel's accept backlog instead of being accepted.
+         */
+        @Override
+        public Integer maxConnections()
+        {
+            return Optional.ofNullable(this.maxConnections).orElse(64);
+        }
+
+        /**
+         * Host names, besides {@code localhost} and the bind host, that requests may name in
+         * {@code Host}. IP literals are always accepted: DNS rebinding needs a name.
+         */
+        @Override
+        public List<String> allowedHosts()
+        {
+            return Optional.ofNullable(this.allowedHosts).orElse(List.of());
         }
     }
 
@@ -566,6 +636,14 @@ public record ServerConfig(
             }
             // XNIO's READ_TIMEOUT is an int of milliseconds
             new ValidatorUtils(result).fitsIntMillis("socket_read_timeout", this.socketReadTimeout());
+            if (this.connectionLowWater() < 1)
+            {
+                result.addError("connection_low_water", "must be >= 1");
+            }
+            if (this.connectionHighWater() < this.connectionLowWater())
+            {
+                result.addError("connection_high_water", "must be >= connection_low_water (" + this.connectionLowWater() + ")");
+            }
         }
 
         @Override

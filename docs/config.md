@@ -898,6 +898,15 @@ Defines the interfaces for the internal status and metrics endpoints.
 | --- | --- | --- |
 | `host` | String | The interface for the internal management server. Defaults to `127.0.0.1`, or to the `R7_MANAGEMENT_HOST` environment variable when set; the container images set it to `0.0.0.0` so the published status port works. The endpoint has no authentication: publish it only on a private network. |
 | `port` | Integer | The port for the internal management server. |
+| `request_parse_timeout` | Duration | Time allowed to receive a complete request head. Defaults to `2s`. |
+| `read_timeout` | Duration | Closes a connection that sends nothing for this long. Defaults to `30s`. |
+| `idle_timeout` | Duration | Closes a connection that sits between requests for this long. Defaults to `30s`. |
+| `max_connections` | Integer | Connections the management port accepts at once; more wait in the accept backlog until one closes. Defaults to `64`. |
+| `allowed_hosts` | List of Strings | Host names, besides `localhost` and `host`, that a request's `Host` header may name. Empty by default. |
+
+The management listener shares the process's file descriptors with the gateway itself, so none of its timeouts can be turned off (each must be positive and at most `24d`) and its connections are capped: without these, a client that opens connections and sends part of a request on each could use up descriptors until the gateway stops accepting traffic.
+
+A request whose `Host` names anything other than `localhost`, the configured `host`, an entry in `allowed_hosts` or an IP address gets `421`. This stops DNS rebinding, where a web page re-resolves its own name to `127.0.0.1` and so reads a loopback-only dashboard from the browser of someone on the gateway host. IP addresses are always accepted because rebinding needs a name. If you reach the management port through a DNS name, add that name to `allowed_hosts`.
 
 The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
 
@@ -951,6 +960,21 @@ Configures the behavior of the internal reverse proxy client that connects to up
 | `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
 | `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. At most `24d` (2147483647 ms). |
 | `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. At most `24d` (2147483647 ms). |
+
+### Advanced (`advanced`)
+
+Worker threads and socket options of the gateway listener.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `io_threads` | Integer | I/O threads. Defaults to the number of processors, at least 2. |
+| `task_threads` | Integer | Worker task threads. Defaults to `io_threads` × 8. |
+| `connection_high_water` | Integer | When this many connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to `20000`. Keep it below the process's open-file limit, less what upstream connections and journals need. |
+| `connection_low_water` | Integer | Once accepting has stopped, it resumes when open connections fall to this many. Defaults to `10000`; must be at least 1 and at most `connection_high_water`. |
+| `tcp_no_delay` | Boolean | Disables Nagle's algorithm. Defaults to `true`. |
+| `reuse_addresses` | Boolean | Sets `SO_REUSEADDR` on the listener. Defaults to `true`. |
+| `socket_backlog` | Integer | Length of the accept backlog. Defaults to `1000`. |
+| `socket_read_timeout` | Duration | Closes a connection that sends nothing for this long. Defaults to `30s`; at most `24d`. |
 
 ### Storage & Journaling (`storage`)
 

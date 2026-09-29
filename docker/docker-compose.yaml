@@ -4,7 +4,11 @@ services:
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"
-      - "19999:18888"
+      # The management port is unauthenticated and shows the gateway's configuration. The image
+      # listens on all interfaces inside the container, so this mapping is what limits who can
+      # reach it: keep it on loopback (a bare "19999:18888" publishes it on every host interface,
+      # past host firewalls such as ufw).
+      - "127.0.0.1:19999:18888"
     volumes:
       - ./config:/app/config:ro
       - ./journals:/journals:rw

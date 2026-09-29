@@ -27,7 +27,7 @@ services:
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"   # Main gateway port
-      - "19999:18888" # Status and metrics port
+      - "127.0.0.1:19999:18888" # Status and metrics port, on loopback only (see below)
     volumes:
       - ./config:/app/config:ro
       - ./journals:/journals:rw
@@ -59,6 +59,14 @@ services:
     restart: unless-stopped
 
 ```
+
+The status and metrics port has no authentication and shows the gateway's configuration. Inside
+the container the image listens on all interfaces, which the port mapping needs, so the mapping is
+what decides who can reach it. `127.0.0.1:19999:18888` keeps it on this machine: a bare
+`19999:18888` would publish it on every host interface, and Docker's own firewall rules bypass
+host firewalls such as ufw. Do not route a path on the gateway port to it either. To reach it from
+elsewhere, put it behind something that authenticates, and list the name you use for it under
+`management.allowed_hosts` (see the [config reference](config.md#management-configuration-management)).
 
 ## Routes Configuration
 

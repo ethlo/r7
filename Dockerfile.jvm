@@ -17,6 +17,7 @@ COPY --from=dirs --chown=65532:65532 /journals /journals
 USER 65532:65532
 # The management endpoint binds to loopback by default; inside a container that would make the
 # published status port unreachable, so listen on all interfaces and let the port mapping decide
-# who can reach it. Set management.host in server.yaml to override.
+# who can reach it - publish it on loopback (127.0.0.1:19999:18888), not on every host interface.
+# Set management.host in server.yaml to override.
 ENV R7_MANAGEMENT_HOST=0.0.0.0
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]

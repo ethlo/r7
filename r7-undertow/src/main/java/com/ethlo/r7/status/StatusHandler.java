@@ -47,6 +47,7 @@ public final class StatusHandler implements HttpHandler
     private final String serverConfigFile;
     private final String combinedHtml;
     private final String contentSecurityPolicy;
+    private final ManagementHostPolicy hostPolicy;
     private ConnectorStatistics connectorStatistics;
 
     /**
@@ -69,6 +70,7 @@ public final class StatusHandler implements HttpHandler
         this.routeRegistry = routeRegistry;
         this.combinedHtml = loadResource("page.html");
         this.contentSecurityPolicy = contentSecurityPolicy(this.combinedHtml);
+        this.hostPolicy = new ManagementHostPolicy(serverConfig.management().host(), serverConfig.management().allowedHosts());
     }
 
     /**
@@ -136,6 +138,15 @@ public final class StatusHandler implements HttpHandler
         exchange.getResponseHeaders().put(Headers.X_FRAME_OPTIONS, "DENY");
         exchange.getResponseHeaders().put(Headers.REFERRER_POLICY, "no-referrer");
         exchange.getResponseHeaders().put(Headers.CONTENT_SECURITY_POLICY, this.contentSecurityPolicy);
+
+        // A name the operator did not configure is what DNS rebinding looks like from here
+        if (!this.hostPolicy.allows(exchange.getRequestHeaders().getFirst(Headers.HOST)))
+        {
+            // 421 Misdirected Request: this server is not configured to answer for that name
+            exchange.setStatusCode(421);
+            exchange.endExchange();
+            return;
+        }
 
         // Read-only: nothing here changes state, so nothing but a read is accepted.
         if (!Methods.GET.equals(exchange.getRequestMethod()) && !Methods.HEAD.equals(exchange.getRequestMethod()))
