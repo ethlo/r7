@@ -45,6 +45,27 @@ jobs:
         with:
           category: /language:java-kotlin
 
+  secrets:
+    name: Secrets in git history (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: a secret committed and then deleted is still published.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Pinned by digest, like the OSV scanner below; gitleaks/gitleaks-action instead downloads
+      # a release binary by version at run time. Digest of ghcr.io/gitleaks/gitleaks:v8.30.1.
+      # Run as the runner's user so git accepts the checkout's ownership.
+      - name: Scan with gitleaks
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git --redact --no-banner --exit-code 1 .
+
   dependencies:
     name: Dependency vulnerabilities (OSV)
     runs-on: ubuntu-latest
