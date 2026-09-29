@@ -604,7 +604,7 @@
             <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
-            <button class="sys-btn" onclick="handleConfigClick()">CONFIG</button>
+            <button class="sys-btn" data-action="config">CONFIG</button>
             <div class="sys-info" id="last-update">CONNECTING...</div>
         </div>
     </header>
@@ -883,7 +883,7 @@
             <div class="panel-title">
                 <span style="color: var(--dim); font-weight: 300;">${kind} //</span> ${title}
             </div>
-            <button class="panel-close-btn" onclick="closeDetails()">
+            <button class="panel-close-btn" data-action="close">
                 <span class="panel-close-icon">←</span> BACK
             </button>
         </div>`;
@@ -937,22 +937,21 @@
 
     // Route rows carry their id as data, not inside an inline onclick: an id is config text, and
     // inside a JavaScript string literal in an attribute a quote in it would end the string.
+    // No inline handlers at all, static ones included: the Content-Security-Policy allows this
+    // page's one script block by hash, and inline handlers would need 'unsafe-inline'.
+    const actions = {config: () => openView('config'), close: closeDetails, system: () => openView('system')};
     document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]');
+        if (action && actions[action.dataset.action]) {
+            actions[action.dataset.action]();
+            return;
+        }
         const row = event.target.closest('[data-route-id]');
         if (row) {
             event.preventDefault();
             openView('route', row.dataset.routeId);
-            return;
-        }
-        const viewRow = event.target.closest('[data-view]');
-        if (viewRow) {
-            openView(viewRow.dataset.view);
         }
     });
-
-    function handleConfigClick() {
-        openView('config');
-    }
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && slider.classList.contains('show-details-view')) {
@@ -1789,7 +1788,7 @@
         let html = '';
 
         html += `
-        <tr class="total-row clickable-row" data-view="system">
+        <tr class="total-row clickable-row" data-action="system">
             <td class="col-route">
                 ${mRow('SYSTEM TOTALS', '', true)}
                 ${mRow('LAST ACTIVE', timeAgo(totals.last_active), false)}

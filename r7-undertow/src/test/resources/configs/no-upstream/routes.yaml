@@ -1,0 +1,15 @@
+version: no-upstream-test
+
+routes:
+  # A closed port with no fallback: once the health check marks it down, r7 answers 503 itself.
+  - id: internal-billing-v2
+    match:
+      - PathPrefix:
+          prefix: /dead
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:1
+      health_check:
+        path: /health
+        interval: 200ms
+        fall: 1

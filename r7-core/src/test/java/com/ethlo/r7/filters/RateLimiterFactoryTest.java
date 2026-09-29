@@ -11,10 +11,12 @@ import java.net.InetAddress;
 import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.validation.ValidationResult;
 
 class RateLimiterFactoryTest
@@ -121,5 +123,19 @@ class RateLimiterFactoryTest
         final ValidationResult zero = new ValidationResult();
         new RateLimiterFactory.Config(1L, 1L, Duration.ofSeconds(1), null, null, 0).validate(zero);
         assertThat(zero.hasErrors()).isTrue();
+    }
+
+    @Test
+    void theRefusalIsTypedAsUtf8Text() throws Exception
+    {
+        final ClientRequestGatewayFilter filter = limiter(null);
+        final ClientRequestGatewayExchange first = from("192.0.2.9");
+        final ClientRequestGatewayExchange second = from("192.0.2.9");
+        filter.onClientRequest(first);
+        filter.onClientRequest(second);
+
+        final ArgumentCaptor<ShortCircuitGatewayResponse> refusal = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+        verify(second).shortCircuit(refusal.capture());
+        assertThat(refusal.getValue().headers().getFirst("Content-Type")).isEqualTo("text/plain; charset=utf-8");
     }
 }

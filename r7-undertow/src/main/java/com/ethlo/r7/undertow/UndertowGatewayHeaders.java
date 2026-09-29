@@ -46,16 +46,16 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
     @Override
     public void add(final String name, final String value)
     {
-        TextValues.requireStorableName(name);
-        TextValues.requireStorable(name, value);
+        TextValues.requireHeaderName(name);
+        TextValues.requireHeaderValue(name, value);
         headerMap.add(toHttpString(name), value);
     }
 
     @Override
     public MutableGatewayHeaders set(final String name, final String value)
     {
-        TextValues.requireStorableName(name);
-        TextValues.requireStorable(name, value);
+        TextValues.requireHeaderName(name);
+        TextValues.requireHeaderValue(name, value);
         headerMap.put(toHttpString(name), value);
         return this;
     }
@@ -74,7 +74,7 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
     @Override
     public void set(final String name, final Iterable<String> values)
     {
-        TextValues.requireStorableName(name);
+        TextValues.requireHeaderName(name);
         if (values == null)
         {
             throw new IllegalArgumentException("Values for '" + name + "' must not be null. Use remove(name) instead.");
@@ -83,7 +83,7 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
         final List<String> validated = new ArrayList<>();
         for (final String value : values)
         {
-            validated.add(TextValues.requireStorable(name, value));
+            validated.add(TextValues.requireHeaderValue(name, value));
         }
 
         final HttpString hs = toHttpString(name);

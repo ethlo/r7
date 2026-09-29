@@ -109,7 +109,7 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         {
             exchange.shortCircuit(new ShortCircuitGatewayResponse(
                     HttpStatuses.BAD_REQUEST,
-                    MediaTypes.TEXT_PLAIN,
+                    MediaTypes.TEXT_PLAIN_UTF8,
                     ByteBuffer.wrap(BAD_REQUEST_PAYLOAD)
             ));
         }
@@ -118,7 +118,7 @@ public final class RequestSizeLimitFactory implements GatewayFilterFactory<Reque
         {
             exchange.shortCircuit(new ShortCircuitGatewayResponse(
                     HttpStatuses.ENTITY_TOO_LARGE,
-                    MediaTypes.TEXT_PLAIN,
+                    MediaTypes.TEXT_PLAIN_UTF8,
                     ByteBuffer.wrap(REJECT_PAYLOAD)
             ));
         }
