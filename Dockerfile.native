@@ -3,7 +3,7 @@
 # rather than the community edition - this is what makes --gc=G1 available to the native-image
 # build below (G1 is not implemented in GraalVM Community Edition). Only the *tool* is Oracle-
 # licensed; this builder stage is discarded and never shipped, see STAGE 2 below.
-FROM container-registry.oracle.com/graalvm/native-image:25 AS builder
+FROM container-registry.oracle.com/graalvm/native-image:25@sha256:1b9347e5c504e345cc8545c49a5b7f0a52a8902e495970425d1116165bbcb065 AS builder
 
 WORKDIR /build
 
@@ -22,10 +22,10 @@ RUN --mount=type=cache,target=/root/.m2 \
 # side stage instead. Docker copies an image's pre-existing directory (including ownership) into
 # a *named* volume the first time that volume is created empty, so this is what makes a freshly
 # created r7-journals volume writable by the nonroot user below instead of root:root.
-FROM busybox:stable AS dirs
+FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
 RUN mkdir -p /journals && chown 65532:65532 /journals
 
-FROM gcr.io/distroless/cc-debian13
+FROM gcr.io/distroless/cc-debian13@sha256:4594d59540d1948417f6ca2829ddd9294493a7c68b7528f4dd459de7f203a750
 # The r7-server binary is built with -H:+StaticExecutableWithDynamicLibC (see
 # r7-undertow/pom.xml), so it still dynamically links glibc - needed to keep glibc's NSS-based
 # getaddrinfo working for upstream hostname resolution (a fully static/musl build breaks that).
