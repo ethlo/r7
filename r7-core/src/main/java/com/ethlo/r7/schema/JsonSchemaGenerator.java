@@ -214,7 +214,7 @@ public final class JsonSchemaGenerator
                 "object", null, null,
                 new SchemaProps(new PrimitiveSchema("string", overrideLevels, null, null, null, null, null, null, null)),
                 null, null, null, null,
-                "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE').",
+                "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': '" + (levels.contains("FULL") ? "FULL" : "HEADERS") + "', '404': 'NONE').",
                 null,
                 null
         );

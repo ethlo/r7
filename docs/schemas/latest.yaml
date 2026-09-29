@@ -1243,7 +1243,7 @@ properties:
                   - NONE
                   - HEADERS
                   - METADATA
-                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'HEADERS', '404': 'NONE')."
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
           response:
@@ -1264,7 +1264,7 @@ properties:
                   - NONE
                   - HEADERS
                   - METADATA
-                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'HEADERS', '404': 'NONE')."
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
         additionalProperties: false

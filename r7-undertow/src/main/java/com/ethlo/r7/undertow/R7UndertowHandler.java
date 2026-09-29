@@ -39,6 +39,7 @@ import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
@@ -432,6 +433,10 @@ public final class R7UndertowHandler implements HttpHandler
     @Override
     public void handleRequest(final HttpServerExchange exchange)
     {
+        // One routing generation for the whole decision: the route table matched against and the
+        // unrouted policy a miss is refused under must come from the same configuration.
+        final RouteRegistry.Snapshot routing = this.routeRegistry.snapshot();
+
         // First of all, framing: a Transfer-Encoding the upstream may parse differently from
         // Undertow would let the two disagree on where this request's body ends. Checked before
         // anything else can answer, so no other rejection keeps such a connection alive.
@@ -439,7 +444,7 @@ public final class R7UndertowHandler implements HttpHandler
         {
             logger.debug("Rejecting non-canonical Transfer-Encoding: {}", exchange.getRequestHeaders().get(Headers.TRANSFER_ENCODING));
             exchange.setPersistent(false);
-            refuseBeforeRouting(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate(), "transfer_encoding");
+            refuseBeforeRouting(exchange, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate(), "transfer_encoding");
             return;
         }
 
@@ -448,7 +453,7 @@ public final class R7UndertowHandler implements HttpHandler
         // resource supports it, so there is no Allow list to send.
         if (Methods.TRACE.equals(exchange.getRequestMethod()))
         {
-            refuseBeforeRouting(exchange, HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate(), "trace");
+            refuseBeforeRouting(exchange, routing.unrouted(), HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate(), "trace");
             return;
         }
 
@@ -458,7 +463,7 @@ public final class R7UndertowHandler implements HttpHandler
         if (pathViolation != null)
         {
             logger.debug("Rejecting ambiguous request path ({}): {}", pathViolation, exchange.getRequestURI());
-            refuseBeforeRouting(exchange, HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate(), "ambiguous_path");
+            refuseBeforeRouting(exchange, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate(), "ambiguous_path");
             return;
         }
 
@@ -467,13 +472,13 @@ public final class R7UndertowHandler implements HttpHandler
         final DefaultGatewayRoute route;
         try
         {
-            route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
+            route = (DefaultGatewayRoute) routing.findRoute(req);
         }
         catch (final RegexBudget.RegexBudgetExceededException e)
         {
             // No route was chosen, like the 404 below: journaled only under an unrouted section.
             logger.warn("Route matching refused: {}", e.getMessage());
-            refuseBeforeRouting(exchange, HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate(), "regex_budget");
+            refuseBeforeRouting(exchange, routing.unrouted(), HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate(), "regex_budget");
             return;
         }
 
@@ -482,7 +487,7 @@ public final class R7UndertowHandler implements HttpHandler
             // Counted here because no route's SimpleMetrics ever sees these: without it, traffic
             // no route matches - a client on a stale path, a scanner - is invisible on the dashboard.
             this.unroutedRequests.increment();
-            refuseBeforeRouting(exchange, HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate(), "no_route");
+            refuseBeforeRouting(exchange, routing.unrouted(), HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate(), "no_route");
             return;
         }
 
@@ -541,9 +546,9 @@ public final class R7UndertowHandler implements HttpHandler
      * {@value #UNROUTED_REASON_KEY}; otherwise it is answered directly and leaves no entry.
      * These are what scanners and probes send, so they are worth an audit trail.
      */
-    private void refuseBeforeRouting(final HttpServerExchange exchange, final int status, final ByteBuffer body, final String reason)
+    private void refuseBeforeRouting(final HttpServerExchange exchange, final GatewayRoute unroutedRoute, final int status, final ByteBuffer body, final String reason)
     {
-        final DefaultGatewayRoute unrouted = (DefaultGatewayRoute) this.routeRegistry.unroutedRoute();
+        final DefaultGatewayRoute unrouted = (DefaultGatewayRoute) unroutedRoute;
         if (unrouted == null)
         {
             sendOwnResponse(exchange, status, body);
