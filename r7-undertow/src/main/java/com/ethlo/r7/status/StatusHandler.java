@@ -173,7 +173,7 @@ public final class StatusHandler implements HttpHandler
 
     private void serveHtml(final HttpServerExchange exchange)
     {
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_HTML);
+        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_HTML + "; charset=utf-8");
         exchange.getResponseSender().send(combinedHtml);
     }
 
