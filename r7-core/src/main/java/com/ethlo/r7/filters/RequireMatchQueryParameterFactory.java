@@ -96,7 +96,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            if (!RepeatedValues.allMatch(exchange.clientRequest().queryParams().getAll(this.config.name()), this.compiledPattern))
+            if (!RepeatedValues.allMatch(exchange.clientRequest().queryParams(), this.config.name(), this.compiledPattern))
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),

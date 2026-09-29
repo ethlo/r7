@@ -68,7 +68,7 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
         public boolean test(final GatewayRequest request)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            return RepeatedValues.allEqual(request.headers().getAll(this.headerName), this.targetValue);
+            return RepeatedValues.allEqual(request.headers(), this.headerName, this.targetValue);
         }
 
         @Override

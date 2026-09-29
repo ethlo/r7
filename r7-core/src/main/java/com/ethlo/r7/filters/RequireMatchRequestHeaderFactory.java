@@ -96,7 +96,7 @@ public final class RequireMatchRequestHeaderFactory implements GatewayFilterFact
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            if (!RepeatedValues.allMatch(exchange.clientRequest().headers().getAll(this.config.name()), this.compiledPattern))
+            if (!RepeatedValues.allMatch(exchange.clientRequest().headers(), this.config.name(), this.compiledPattern))
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),

@@ -68,7 +68,7 @@ public final class QueryParameterFactory implements GatewayPredicateFactory<Quer
         public boolean test(final GatewayRequest request)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            return RepeatedValues.allEqual(request.queryParams().getAll(this.paramName), this.targetValue);
+            return RepeatedValues.allEqual(request.queryParams(), this.paramName, this.targetValue);
         }
 
         @Override

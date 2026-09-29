@@ -48,9 +48,36 @@ public final class RegexBudget
         return pattern.matcher(new BudgetedCharSequence(input, pattern, MAX_CHARACTER_READS));
     }
 
+    /**
+     * One budget for several matches that make up a single check, such as every occurrence of a
+     * repeated parameter: a fresh budget per occurrence would let a request multiply the work by
+     * repeating a value that runs just under the limit. Not thread-safe; create one per check.
+     */
+    public static final class SharedBudget
+    {
+        private final BudgetedCharSequence input;
+        private final Matcher matcher;
+
+        public SharedBudget(final Pattern pattern)
+        {
+            this.input = new BudgetedCharSequence("", pattern, MAX_CHARACTER_READS);
+            this.matcher = pattern.matcher(this.input);
+        }
+
+        /**
+         * @return whether the whole of {@code value} matches, drawing on the budget left over from
+         * earlier calls
+         */
+        public boolean matches(final CharSequence value)
+        {
+            this.input.delegate = value;
+            return this.matcher.reset(this.input).matches();
+        }
+    }
+
     static final class BudgetedCharSequence implements CharSequence
     {
-        private final CharSequence delegate;
+        private CharSequence delegate;
         private final Pattern pattern;
         private final long maxReads;
         private long reads;

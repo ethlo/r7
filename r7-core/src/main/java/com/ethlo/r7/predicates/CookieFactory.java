@@ -69,7 +69,7 @@ public final class CookieFactory implements GatewayPredicateFactory<CookieFactor
         public boolean test(final GatewayRequest request)
         {
             // Every occurrence, not the first: see RepeatedValues.
-            return RepeatedValues.allCookiesEqual(request.cookies(), this.cookieName, this.targetValue);
+            return RepeatedValues.allCookiesEqual(request.headers(), this.cookieName, this.targetValue);
         }
 
         @Override
