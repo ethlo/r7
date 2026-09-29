@@ -1969,7 +1969,7 @@
 <td><code>url</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The fully qualified URL (must begin with <code>http://</code> or <code>https://</code>).</td>
+<td>The fully qualified URL (must begin with <code>http://</code> or <code>https://</code>). For <code>https</code>, the certificate chain is checked against the JVM trust store but the hostname is not verified, so any trusted certificate is accepted for any upstream.</td>
 </tr>
 </tbody>
 </table>
@@ -2831,7 +2831,7 @@
 <td><code>target</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The destination URL template. Regex capture groups can be referenced using <code>{{name}}</code> or <code>{{index}}</code>.</td>
+<td>The destination URL template. Regex capture groups are referenced by number as in Java's <code>Matcher.replaceFirst</code> (<code>$1</code>, <code>$2</code>, ...); <code>\$</code> is a literal <code>$</code>.</td>
 </tr>
 <tr>
 <td><code>status</code></td>
@@ -2842,6 +2842,7 @@
 </tbody>
 </table>
 <p>The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path <code>target</code> (<code>/new/$1</code>) must produce a path: a location starting with <code>//</code>, <code>/\</code>, <code>\</code>, a scheme or whitespace is refused with <code>400</code>, because a browser would leave the site for it (<code>/go//evil.example</code> would otherwise redirect to <code>//evil.example</code>). An absolute <code>target</code> must have the form <code>http://host...</code>, <code>https://host...</code> or <code>//host...</code> with a non-empty host; any other scheme (<code>javascript:</code>, <code>data:</code>, even written with <code>//</code>), a scheme without <code>//</code>, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's <code>/</code>, <code>?</code> or <code>#</code>; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.</p>
+<p>Captured text is decoded request data, so it is percent-encoded before it is placed in the location, for the part of the URL it lands in: before the target's first literal <code>?</code> or <code>#</code> it is encoded as a path (like <code>RewritePath</code>), after it as a single query or fragment value, which also encodes <code>&amp;</code>, <code>=</code>, <code>+</code> and <code>;</code>. A client can therefore not add a query, fragment or parameter to the location: with <code>target: /new/$1</code>, a request for <code>/old/a%3Fadmin=true</code> redirects to <code>/new/a%3Fadmin=true</code>, not <code>/new/a?admin=true</code>. The part of the path that <code>source</code> does not match is carried over (as <code>replaceFirst</code> does) and encoded the same way. Write <code>target</code> itself in encoded form; it is sent as written.</p>
 <hr />
 <h3 id="security-validation">Security &amp; Validation</h3>
 <p>The <code>RequireMatch*</code> filters follow the same regex and repeated-value rules as the predicates (see <a href="#5-predicates">Predicates</a>): the whole value must match, and so must every occurrence.</p>
