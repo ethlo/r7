@@ -19,6 +19,9 @@ public record TargetConfig(
     {
         final ValidatorUtils validator = new ValidatorUtils(result).required("url", this.url());
 
+        // Journaled as gateway.target on every proxied exchange.
+        validator.journalText("url", this.url());
+
         if (this.url() != null && !this.url().isBlank())
         {
             try

@@ -37,7 +37,7 @@ public final class StatefulJournal implements Journal
      * Shared by all four header views of this exchange, so a header that survived the filter
      * chain unchanged is fingerprinted once rather than once per journaled message.
      */
-    private final FingerprintMemo fingerprints = new FingerprintMemo();
+    private final FingerprintMemo fingerprints;
 
     /**
      * The header sets actually handed to the delegate for this exchange's client request and
@@ -94,6 +94,18 @@ public final class StatefulJournal implements Journal
     public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
                             final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
+        this(delegate, config, exchange, safeRequestHeaders, safeResponseHeaders, HeaderFingerprint.UNKEYED);
+    }
+
+    /**
+     * @param fingerprint how values of headers not on the safe lists are written; see
+     *                    {@link HeaderFingerprint} for why a deployment should key it
+     */
+    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
+                            final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders,
+                            final HeaderFingerprint fingerprint)
+    {
+        this.fingerprints = new FingerprintMemo(fingerprint);
         this.delegate = delegate;
         this.config = config;
         this.exchange = exchange;
@@ -188,6 +200,15 @@ public final class StatefulJournal implements Journal
     {
         if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
         {
+            // Anchor the body, for the same reason requestBody does. Below FULL the client
+            // request is held back until the exchange completes, but the response body is teed
+            // into the journal while it is being sent — before completion. Unanchored, every
+            // fragment of a "request HEADERS, response FULL" route reached the reader ahead of
+            // any event for its request id, was discarded as an orphan, and the end event then
+            // reported a checksum mismatch against a body nobody kept. The status is known by
+            // the time a response body is written, so the level resolved here is the final one.
+            final int anchored = checkAndFlushRequest();
+
             if (responseChecksum == null)
             {
                 responseChecksum = new CRC32C();
@@ -195,7 +216,7 @@ public final class StatefulJournal implements Journal
             responseChecksum.update(data.duplicate());
             final int written = delegate.responseBody(reqId, data);
             this.bytesWritten += written;
-            return written;
+            return anchored + written;
         }
         return 0;
     }

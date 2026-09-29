@@ -110,8 +110,15 @@ and that answer belongs next to the policy, not at each site that might be holdi
 *Checked by* `sealedSegmentEndingMidHeaderIsReportedAndConsumed`,
 `sequenceRegressionInASealedSegmentIsAccountedFor`, `holeAtTheStartOfASealedSegmentIsCrossed`,
 `anEntryTheConsumerRefusesIsOfferedAgainRatherThanSkipped`,
-`theSweepNeverReturnsAnExchangeItJustEvicted` and
-`anExchangeAwaitingRedeliverySurvivesTheSweep`.
+`theSweepNeverReturnsAnExchangeItJustEvicted`,
+`anExchangeAwaitingRedeliverySurvivesTheSweep`,
+`aResponseBodyIsNeverJournaledAheadOfItsClientRequest` and
+`aResponseBodyJournaledAtFullIsDeliveredWithARequestBelowFull`.
+
+The writer has a share in this invariant too. A reader can only deliver what it can attach, and
+a body entry for a request id it has not seen is discarded as an orphan. So every body fragment
+has to be anchored by its exchange's client request, whichever direction it belongs to and
+whichever level that request is held at.
 
 ## 3. Identity is unique and monotonic, and losses are detectable from it
 

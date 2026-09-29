@@ -19,6 +19,8 @@ public record RouteDefinition(String id,
     {
         final ValidatorUtils validator = new ValidatorUtils(result);
         validator.required("id", this.id());
+        // Journaled as gateway.route.id (and gateway.fallback.id) on every exchange.
+        validator.journalText("id", this.id());
         // Reserved so the audit trail can tell requests refused before routing apart from a
         // route's own by gateway.route.id alone.
         if (UnroutedDefinition.ROUTE_ID.equals(this.id()))

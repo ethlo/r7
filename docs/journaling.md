@@ -37,6 +37,39 @@ An override can raise a direction to `HEADERS`, but not to `FULL` unless the bas
 for the full table and the `storage` block (`work_dir`, `shard_size`, `shard_count`) that
 controls where and how those journals are written on disk.
 
+Route ids and upstream target URLs are recorded in every exchange's journal attributes
+(`gateway.route.id`, `gateway.target`), and the journal stores ISO-8859-1 text only. A route
+id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.
+
+### Redacted header values
+
+At `HEADERS` and `FULL`, a header whose name is not on the `journal_security` whitelist is
+journaled with a fingerprint in place of its value. There are two forms:
+
+| Form | Example | When |
+| --- | --- | --- |
+| `id:sha256:` + 6 hex digits | `id:sha256:3f2a91` | default: an unkeyed, truncated SHA-256 of the value |
+| `id:hmac:` + 16 hex digits | `id:hmac:9c04e1d27b55a0f3` | `storage.journal_security.fingerprint_key` is set: HMAC-SHA-256 under that key |
+
+Both let you see that two requests carried the same value. Only the keyed form hides the value
+from someone who can read the journal. With the unkeyed form, a reader can hash a guess and
+compare, so a low-entropy secret such as `Authorization: Basic` with a known user name and a
+common password, a short API key or a `role=admin` cookie can be found with a dictionary.
+Set a key in production:
+
+```yaml
+storage:
+  journal_security:
+    fingerprint_key: ${R7_FINGERPRINT_KEY}   # at least 32 characters, e.g. `openssl rand -base64 48`
+```
+
+Keep the key out of anything a journal reader can see. Changing it changes every fingerprint
+from then on, so values journaled before and after the change no longer correlate. The
+unkeyed form is still the default so that existing consumers that match on `id:sha256:` keep
+working until you opt in. The key applies to journaled header values only: the
+`gateway.auth.basic.user` attribute and the management endpoint's summaries still use the
+unkeyed form.
+
 ## 2. Pick a sidecar and mount the shared volume
 
 Gateway and tailer share the `journal_dir` volume: the gateway writes, the tailer only reads.

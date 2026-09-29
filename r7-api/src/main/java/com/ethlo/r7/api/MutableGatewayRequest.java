@@ -30,7 +30,8 @@ public interface MutableGatewayRequest extends GatewayRequest
 
     /**
      * Updates the full target URI. Sent to the upstream exactly as given, so it must already be
-     * percent-encoded.
+     * percent-encoded. It is also journaled as the upstream request line, so a character outside
+     * ISO-8859-1 is refused with {@link InvalidTextValueException}, as a control character is.
      */
     void uri(final String uri);
 

@@ -59,6 +59,7 @@ import com.ethlo.r7.core.RequestIdGenerator;
 import com.ethlo.r7.core.SortableRequestIdGenerator;
 import com.ethlo.r7.core.helpers.StartLineBuilder;
 import com.ethlo.r7.filters.StaticContentFactory;
+import com.ethlo.r7.journal.HeaderFingerprint;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.journal.StatefulJournal;
@@ -134,6 +135,7 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     private final RemoteAddressResolver remoteAddressResolver;
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
+    private final HeaderFingerprint headerFingerprint;
     private static final String NOSNIFF = "nosniff";
     private volatile UndertowXnioSsl xnioSsl;
 
@@ -159,6 +161,14 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
                 journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
         this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
+        this.headerFingerprint = HeaderFingerprint.of(journalSecurity.fingerprintKey());
+        if (!this.headerFingerprint.isKeyed())
+        {
+            // Once, at startup: the unkeyed form is kept for compatibility, but it is only as
+            // strong as the entropy of the value it hides, and an operator should know that.
+            logger.info("Redacted header values are journaled as unkeyed SHA-256 fingerprints; set "
+                    + "storage.journal_security.fingerprint_key so that low-entropy secrets cannot be recovered by guessing.");
+        }
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -544,7 +554,7 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
         exchange.putAttachment(IS_WEBSOCKET_KEY, isWebSocket);
 
         final R7fJournal rawJournal = gatewayExchangeDataWriter.getJournal(requestId);
-        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange, safeRequestHeaders, safeResponseHeaders);
+        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, gatewayExchange, safeRequestHeaders, safeResponseHeaders, headerFingerprint);
         setupJournaling(statefulJournal, exchange, gatewayExchange, journalConfig, requestId, isWebSocket);
         return new OpenedExchange(gatewayExchange, statefulJournal);
     }

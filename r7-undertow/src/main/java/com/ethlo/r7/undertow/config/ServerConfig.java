@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.journal.HeaderFingerprint;
 import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.RegexBudget;
@@ -443,7 +444,7 @@ public record ServerConfig(
         @Override
         public JournalSecurityConfig journalSecurity()
         {
-            return Optional.ofNullable(this.journalSecurity).orElse(new JournalSecurityConfig(null, null, null, null));
+            return Optional.ofNullable(this.journalSecurity).orElse(new JournalSecurityConfig(null, null, null, null, null));
         }
     }
 
@@ -458,17 +459,32 @@ public record ServerConfig(
      * </ul>
      * Setting both for the same direction is rejected: a full replacement and an addition to
      * the defaults it replaces is a contradiction, not a merge to guess at.
+     * <p>
+     * {@code fingerprint_key}, when set, keys the fingerprint written in place of a redacted
+     * value, so that a reader of the journal cannot confirm a guessed value by hashing it
+     * (see {@link com.ethlo.r7.journal.HeaderFingerprint}). Normally supplied through
+     * {@code ${VAR}} interpolation rather than written into the file.
      */
     public record JournalSecurityConfig(
             List<String> additionalSafeRequestHeaders,
             List<String> additionalSafeResponseHeaders,
             List<String> safeRequestHeaders,
-            List<String> safeResponseHeaders
+            List<String> safeResponseHeaders,
+            String fingerprintKey
     ) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
         {
+            // Checked here, against the constant HeaderFingerprint enforces, so that a short key
+            // is a startup error naming this field rather than a constructor throwing later.
+            if (this.fingerprintKey != null && this.fingerprintKey.length() < HeaderFingerprint.MIN_KEY_LENGTH)
+            {
+                result.addError("fingerprint_key", "must be at least " + HeaderFingerprint.MIN_KEY_LENGTH
+                        + " characters (it is the whole secret behind every redacted header value); was "
+                        + this.fingerprintKey.length() + ". Generate one with, for example, `openssl rand -base64 48`.");
+            }
+
             requireValidHeaderTokens(result, "additional_safe_request_headers", this.additionalSafeRequestHeaders());
             requireValidHeaderTokens(result, "additional_safe_response_headers", this.additionalSafeResponseHeaders());
             requireValidHeaderTokens(result, "safe_request_headers", this.safeRequestHeaders());
@@ -532,6 +548,19 @@ public record ServerConfig(
         public List<String> safeResponseHeaders()
         {
             return Optional.ofNullable(this.safeResponseHeaders).orElse(List.of());
+        }
+
+        /**
+         * The key never appears here: the whole server config is logged at startup.
+         */
+        @Override
+        public String toString()
+        {
+            return "JournalSecurityConfig[additionalSafeRequestHeaders=" + this.additionalSafeRequestHeaders()
+                    + ", additionalSafeResponseHeaders=" + this.additionalSafeResponseHeaders()
+                    + ", safeRequestHeaders=" + this.safeRequestHeaders()
+                    + ", safeResponseHeaders=" + this.safeResponseHeaders()
+                    + ", fingerprintKey=" + (this.fingerprintKey == null ? "unset" : "******") + "]";
         }
     }
 
