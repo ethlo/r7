@@ -13,6 +13,7 @@ The r7 configuration engine is strictly validated at startup. The gateway will *
 * Cyclic/recursive `fallback` routing loops.
 * Unresolvable environment variables without default values.
 * Duplicate Route IDs (Route IDs must be globally unique).
+* Malformed journal `status_overrides` keys (see [Status Overrides](#status-overrides-status_overrides)).
 
 ### Environment Variable Interpolation
 
@@ -687,6 +688,28 @@ Verbosity can be set generically or overridden conditionally based on HTTP statu
 | `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
 | `HEADERS` | Metadata + Headers | Captures both request and response headers. |
 | `FULL` | Headers + Bodies | Supports arbitrary binary payload capture. Payloads exceeding 1MB are automatically truncated to prevent runaway storage. |
+
+#### Status Overrides (`status_overrides`)
+
+Each direction (`request`, `response`) takes an optional `status_overrides` map from a status key to a level, applied when the response status matches:
+
+```yaml
+journal:
+  response:
+    level: METADATA
+    status_overrides:
+      5xx: FULL          # a whole status class
+      401,403: HEADERS   # a comma-separated list of codes
+      429: HEADERS       # a single code
+```
+
+| Key form | Example | Matches |
+| --- | --- | --- |
+| Status class `Nxx` | `4xx`, `5XX` | Every code in that class. `N` is `1` to `5`; case-insensitive. |
+| Single code | `429` | That code. Must be three digits, `100`–`599`. |
+| Comma-separated list | `401,403` | Each listed code. Every entry is a single code; classes and ranges are not allowed inside a list. |
+
+Any other key (a range such as `500-599`, `999`, `6xx`, an empty list entry) is rejected at startup and on hot reload with an error naming the field, e.g. `[routes.my-route.journal.response.status_overrides] Invalid status override key '500-599'`. Avoid overlapping keys (`5xx` and `503`): which one wins for the shared codes follows map order and is not part of the contract.
 
 ---
 

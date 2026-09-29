@@ -27,7 +27,7 @@ public record RouteDefinition(String id,
 
         if (journal != null)
         {
-            journal.validate(result);
+            journal.validate(result.nested("journal"));
         }
 
         // A route must have a purpose

@@ -1075,7 +1075,7 @@ $defs:
                 type: object
                 additionalProperties:
                   type: string
-                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'FULL', '404': 'NONE'."
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
           response:
@@ -1093,7 +1093,7 @@ $defs:
                 type: object
                 additionalProperties:
                   type: string
-                description: "Overrides for the journal level based on specific HTTP status codes or classes (e.g., '5xx': 'FULL', '404': 'NONE')."
+                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'FULL', '404': 'NONE'."
             additionalProperties: false
             description: Journal settings for this specific phase of the exchange.
         additionalProperties: false
