@@ -109,8 +109,12 @@ class UndertowGatewayHeadersValidationTest
     }
 
     @Test
-    void controlsAreRefusedInNames()
+    void namesMustBeHttpTokens()
     {
         assertThrows(InvalidTextValueException.class, () -> headers.set("X-Sub\r\nject", "fine"));
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X Subject", "fine"));
+        assertThrows(InvalidTextValueException.class, () -> headers.set("X-Subject:", "fine"));
+        assertThrows(InvalidTextValueException.class, () -> headers.set("", "fine"));
+        assertDoesNotThrow(() -> headers.set("X-Custom_Header.v2!", "fine"));
     }
 }

@@ -23,7 +23,7 @@ public class StaticContentHiddenFilesE2ETest extends AbstractR7IntegrationTest
     @Test
     public void aDotfileIsNotServed()
     {
-        given().when().get("/static/.r7-hidden-test").then().statusCode(404);
+        given().when().get("/static/.r7-hidden-test").then().statusCode(404).header("X-Content-Type-Options", equalTo("nosniff"));
     }
 
     @Test

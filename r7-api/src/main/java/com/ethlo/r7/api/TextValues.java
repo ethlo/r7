@@ -186,17 +186,37 @@ public final class TextValues
     }
 
     /**
-     * As {@link #requireStorableName(String)}, and also refuses any control character: a
-     * header name is a token, and a line break in one splits the message like one in a value.
+     * Characters an HTTP token may contain beyond letters and digits (RFC 9110 §5.6.2).
+     */
+    private static final String TOKEN_SPECIALS = "!#$%&'*+-.^_`|~";
+
+    /**
+     * Returns the name unchanged, or throws unless it is a non-empty HTTP token (RFC 9110
+     * §5.6.2). {@code HttpString.tryFromString} accepts spaces, colons and line breaks, each of
+     * which would write a malformed or split header line, so the check belongs here, where every
+     * filter - extensions included - sets a header name.
+     *
+     * @throws InvalidTextValueException if the name is {@code null}, empty, or has a character
+     *                                   outside the token set
      */
     public static String requireHeaderName(final String name)
     {
         requireStorableName(name);
-        final int index = firstControlCharacterIndex(name);
-        if (index >= 0)
+        if (name.isEmpty())
         {
-            throw new InvalidTextValueException(String.format(
-                    "Header name contains control character U+%04X at index %d.", (int) name.charAt(index), index), name, index);
+            throw new InvalidTextValueException("Header name must not be empty.", name, ABSENT);
+        }
+        for (int i = 0, len = name.length(); i < len; i++)
+        {
+            final char c = name.charAt(i);
+            final boolean tokenChar = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || TOKEN_SPECIALS.indexOf(c) >= 0;
+            if (!tokenChar)
+            {
+                throw new InvalidTextValueException(String.format(
+                        "Header name '%s' has character U+%04X at index %d, which is not permitted in an HTTP token.",
+                        name, (int) c, i), name, i);
+            }
         }
         return name;
     }

@@ -245,6 +245,7 @@ public final class R7UndertowHandler implements HttpHandler
                 if (!staticServeRequest.serveHiddenFiles() && StaticContentFactory.StaticServeRequest.isHidden(exchange.getRelativePath()))
                 {
                     exchange.setStatusCode(HttpStatuses.NOT_FOUND);
+                    exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, NOSNIFF);
                     exchange.endExchange();
                     return;
                 }

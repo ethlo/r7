@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +47,8 @@ class StatusHandlerCspTest
         try (final InputStream in = StatusHandler.class.getResourceAsStream("/dashboard/default/page.html"))
         {
             final String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            assertThat(html).doesNotContainPattern("\\son[a-z]+\\s*=\\s*\"");
+            // Any event-handler attribute, whatever its case or quoting: onclick="", onClick='', onload=x.
+            assertThat(html).doesNotContainPattern(Pattern.compile("<[^>]*\\son[a-z]+\\s*=", Pattern.CASE_INSENSITIVE));
             assertThat(StatusHandler.contentSecurityPolicy(html)).contains("script-src 'sha256-");
         }
     }
