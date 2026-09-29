@@ -9,17 +9,21 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
+import com.ethlo.r7.undertow.R7UndertowHandler;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.SystemUtil;
@@ -38,14 +42,23 @@ public final class StatusHandler implements HttpHandler
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
     private final RouteRegistry routeRegistry;
+    private final HotReloadService hotReloadService;
+    private final R7UndertowHandler gatewayHandler;
+    private final String serverConfigFile;
     private final String combinedHtml;
     private final String contentSecurityPolicy;
     private ConnectorStatistics connectorStatistics;
 
-    public StatusHandler(final MetricsRegistry metricsRegistry, ServerConfig serverConfig, RouteRegistry routeRegistry)
+    /**
+     * @param serverConfigFile the server.yaml that was loaded, or null when the defaults are in use
+     */
+    public StatusHandler(final MetricsRegistry metricsRegistry, final ServerConfig serverConfig, final String serverConfigFile, final RouteRegistry routeRegistry, final HotReloadService hotReloadService, final R7UndertowHandler gatewayHandler)
     {
         this.metricsRegistry = metricsRegistry;
         this.serverConfig = serverConfig;
+        this.serverConfigFile = serverConfigFile;
+        this.hotReloadService = hotReloadService;
+        this.gatewayHandler = gatewayHandler;
         // The journal's effective whitelist, overrides included: a header value it would redact is
         // not shown here either.
         final ServerConfig.JournalSecurityConfig journalSecurity = serverConfig.storage().journalSecurity();
@@ -148,23 +161,30 @@ public final class StatusHandler implements HttpHandler
     {
         final Map<String, Object> root = new LinkedHashMap<>();
 
-        root.put("system", Map.of(
-                        "version", VersionProvider.getVersion(),
-                        "uptime", SystemUtil.getUptime(),
-                        "started_at", SystemUtil.getStartTime(),
-                        "configuration", serverConfig,
-                        "memory", SystemMetricsCollector.collect()
-                )
-        );
+        final Map<String, Object> system = new LinkedHashMap<>();
+        system.put("version", VersionProvider.getVersion());
+        system.put("uptime", SystemUtil.getUptime());
+        system.put("started_at", SystemUtil.getStartTime());
+        system.put("configuration", serverConfig);
+        system.put("configuration_defaults", ServerConfig.standard());
+        system.put("configuration_file", serverConfigFile);
+        system.put("memory", SystemMetricsCollector.collect());
+        root.put("system", system);
         root.put("connector_statistics", ModelMapper.from(connectorStatistics));
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
         root.put("route_metrics", metricsRegistry.getAll());
 
-        final List<RouteConfigDto> routeConfigs = routeRegistry.getRoutes().stream()
-                .map(DefaultGatewayRoute.class::cast)
-                .map(route -> ModelMapper.mapRouteConfig(route, this.safeRequestHeaders, this.safeResponseHeaders))
-                .toList();
+        root.put("unrouted_requests", gatewayHandler.unroutedRequests());
+        root.put("upstream_health", gatewayHandler.upstreamTargetStates());
+
+        final List<GatewayRoute> routes = routeRegistry.getRoutes();
+        final List<RouteConfigDto> routeConfigs = new ArrayList<>(routes.size());
+        for (int i = 0; i < routes.size(); i++)
+        {
+            routeConfigs.add(ModelMapper.mapRouteConfig((DefaultGatewayRoute) routes.get(i), i + 1, this.safeRequestHeaders, this.safeResponseHeaders));
+        }
         root.put("route_version", routeRegistry.getConfigVersion());
+        root.put("route_source", hotReloadService.status());
         root.put("route_configs", routeConfigs);
 
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.APPLICATION_JSON);

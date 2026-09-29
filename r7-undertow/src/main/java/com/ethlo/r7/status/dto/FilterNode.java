@@ -2,9 +2,13 @@ package com.ethlo.r7.status.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/**
+ * @param global true for an instance of one of routes.yaml's {@code global_filters}
+ */
 public record FilterNode(
         String name,
         String summary,
+        boolean global,
         @JsonProperty("on_client_request")
         boolean onClientRequest,
         @JsonProperty("on_upstream_request")
