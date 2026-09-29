@@ -113,7 +113,7 @@ public final class R7Main
         final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
         final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, serverConfigFile, routeRegistry, hotReloadService, r7UndertowHandler);
 
-        this.managementServer = setupStatusBackend(statusHandler, serverConfig.management().port(), serverConfig.management().host(), sharedWorker);
+        this.managementServer = setupStatusBackend(statusHandler, serverConfig.management(), sharedWorker);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
@@ -267,14 +267,18 @@ public final class R7Main
         final OptionMap.Builder options = OptionMap.builder()
                 .set(Options.WORKER_IO_THREADS, advanced.ioThreads())
                 .set(Options.WORKER_TASK_CORE_THREADS, advanced.taskThreads())
-                .set(Options.WORKER_TASK_MAX_THREADS, advanced.taskThreads())
-                .set(Options.CONNECTION_HIGH_WATER, advanced.connectionHighWater())
-                .set(Options.CONNECTION_LOW_WATER, advanced.connectionLowWater());
+                .set(Options.WORKER_TASK_MAX_THREADS, advanced.taskThreads());
 
         return Xnio.getInstance().createWorker(options.getMap());
     }
 
-    private Undertow setupStatusBackend(final StatusHandler statusHandler, final int port, final String host, final XnioWorker sharedWorker)
+    /**
+     * The management listener shares this process's file descriptors with the data plane, so it
+     * gets its own timeouts and a connection cap: without them a client that opens connections
+     * and sends a partial request on each can exhaust descriptors until the data plane stops
+     * accepting.
+     */
+    private Undertow setupStatusBackend(final StatusHandler statusHandler, final ServerConfig.ManagementConfig management, final XnioWorker sharedWorker)
     {
         final Undertow.Builder statusServer = Undertow.builder();
         final HttpHandler targetHandler = Handlers.path()
@@ -282,11 +286,22 @@ public final class R7Main
 
         statusServer.setHandler(targetHandler);
         statusServer.setWorker(sharedWorker);
-        statusServer.addHttpListener(port, host);
+        statusServer.addHttpListener(management.port(), management.host())
+                .setSocketOption(Options.READ_TIMEOUT, Math.toIntExact(management.readTimeout().toMillis()))
+                .setSocketOption(Options.CONNECTION_HIGH_WATER, management.maxConnections())
+                .setSocketOption(Options.CONNECTION_LOW_WATER, management.maxConnections())
+                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, Math.toIntExact(management.requestParseTimeout().toMillis()))
+                .setServerOption(UndertowOptions.NO_REQUEST_TIMEOUT, Math.toIntExact(management.idleTimeout().toMillis()))
+                .setServerOption(UndertowOptions.MAX_HEADER_SIZE, MANAGEMENT_MAX_HEADER_SIZE);
         final Undertow server = statusServer.build();
         server.start();
         return server;
     }
+
+    /**
+     * The dashboard's requests are a GET with a few headers; nothing it sends needs more.
+     */
+    private static final int MANAGEMENT_MAX_HEADER_SIZE = 16 * 1024;
 
     private void configureServer(final Undertow.Builder builder, final ServerConfig config)
     {
@@ -301,6 +316,10 @@ public final class R7Main
                 .setSocketOption(Options.REUSE_ADDRESSES, advanced.reuseAddresses())
                 .setSocketOption(Options.BACKLOG, advanced.socketBacklog())
                 .setSocketOption(Options.READ_TIMEOUT, Math.toIntExact(advanced.socketReadTimeout().toMillis()))
+                // Read by XNIO when the listening channel is created, so they belong here: set on
+                // the worker, as they once were, they are silently ignored and there is no cap.
+                .setSocketOption(Options.CONNECTION_HIGH_WATER, advanced.connectionHighWater())
+                .setSocketOption(Options.CONNECTION_LOW_WATER, advanced.connectionLowWater())
 
                 // HTTP Protocol
                 .setServerOption(UndertowOptions.MAX_HEADER_SIZE, (int) limits.maxHeaderSize().bytes())

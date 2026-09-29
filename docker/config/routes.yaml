@@ -3,13 +3,6 @@ global_filters:
   - SimpleMetrics
   - AddCorrelationId
 routes:
-  - id: forward-status
-    upstream:
-      targets:
-        - url: http://localhost:18888
-    match:
-      - PathPrefix:
-          prefix: ${SECRET_URL:/status}
   - id: reject-benchmark
     upstream:
       targets:
@@ -70,21 +63,3 @@ routes:
         level: HEADERS
         status_overrides:
           2xx: NONE
-
-  - id: home-assistant
-    upstream:
-      targets:
-        - url: http://192.168.50.103:8123
-    match:
-      - PathPrefix:
-          prefix: /ha
-    journal:
-      request:
-        level: METADATA
-        status_overrides:
-          5xx: HEADERS
-      response:
-        level: HEADERS
-    filters:
-      - StripPathPrefix:
-          parts: 1

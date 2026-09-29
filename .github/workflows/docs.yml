@@ -33,8 +33,10 @@ jobs:
           python-version: '3.12'
 
       # 2. Build Zensical Docs FIRST
+      # This job holds a token that can write to the repository, so nothing it installs may
+      # change under it: exact versions with hashes here, the lockfile below.
       - name: Install Zensical
-        run: pip install zensical
+        run: pip install --require-hashes -r .github/docs-requirements.txt
 
       - name: Build Docs
         run: zensical build
@@ -43,7 +45,7 @@ jobs:
       - name: Build r7 Editor
         working-directory: ./r7-editor
         run: |
-          npm install
+          npm ci --ignore-scripts
           npm run build
 
       # 4. Assemble the final site safely

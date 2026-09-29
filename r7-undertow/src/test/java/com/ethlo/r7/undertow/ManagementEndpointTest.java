@@ -8,6 +8,17 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -24,11 +35,119 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
         startGateway("configs/management/management-routes.yaml");
     }
 
+    private static int managementPort()
+    {
+        return R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888);
+    }
+
     private static RequestSpecification management()
     {
         return given()
                 .baseUri("http://localhost")
-                .port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888));
+                .port(managementPort());
+    }
+
+    /**
+     * DNS rebinding: a page on attacker.example that now resolves to this host is same-origin
+     * with the dashboard, and says so in Host.
+     */
+    @Test
+    public void aHostNameThatWasNotConfiguredIsRefused()
+    {
+        management()
+                .header("Host", "attacker.example:" + managementPort())
+                .accept("application/json")
+                .when()
+                .get("/")
+                .then()
+                .statusCode(421)
+                .body(not(containsString("route_configs")));
+
+        management()
+                .header("Host", "127.0.0.1:" + managementPort())
+                .accept("application/json")
+                .when()
+                .get("/")
+                .then()
+                .statusCode(200);
+    }
+
+    /**
+     * A partial request head must not hold its connection - and a file descriptor the data plane
+     * shares - open indefinitely; the default request_parse_timeout is 2s.
+     */
+    @Test
+    public void anUnfinishedRequestHeadIsClosed() throws IOException
+    {
+        try (final Socket socket = new Socket("localhost", managementPort()))
+        {
+            socket.getOutputStream().write("GET / HTTP/1.1\r\nHost: localhost\r\n".getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            socket.setSoTimeout(10_000);
+            final InputStream in = socket.getInputStream();
+            // Undertow may answer 408 before closing; either way the stream must end
+            while (in.read() != -1)
+            {
+                // drain
+            }
+        }
+        catch (final SocketTimeoutException e)
+        {
+            throw new AssertionError("The management listener kept an unfinished request open for 10s", e);
+        }
+    }
+
+    /**
+     * Past management.max_connections (64 by default) a connection is left in the accept backlog,
+     * not accepted, and is served once the count falls.
+     */
+    @Test
+    public void connectionsPastTheCapWaitUntilOthersClose() throws IOException
+    {
+        // A container's port mapping accepts connections itself, so the cap is only visible in-process
+        assumeTrue(R7_GATEWAY == null, "the gateway runs behind a Docker port mapping");
+        final List<Socket> held = new ArrayList<>();
+        try (final Socket extra = openAll(held))
+        {
+            extra.getOutputStream().write(("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            extra.setSoTimeout(1_500);
+            try
+            {
+                final int read = extra.getInputStream().read();
+                throw new AssertionError("A connection past the cap was served (read " + read + ")");
+            }
+            catch (final SocketTimeoutException expected)
+            {
+                // not accepted while the others are held
+            }
+
+            closeAll(held);
+            extra.setSoTimeout(10_000);
+            final String response = new String(extra.getInputStream().readNBytes(12), StandardCharsets.US_ASCII);
+            assertThat(response).isEqualTo("HTTP/1.1 200");
+        }
+        finally
+        {
+            closeAll(held);
+        }
+    }
+
+    private static Socket openAll(final List<Socket> held) throws IOException
+    {
+        for (int i = 0; i < 64; i++)
+        {
+            held.add(new Socket("localhost", managementPort()));
+        }
+        return new Socket("localhost", managementPort());
+    }
+
+    private static void closeAll(final List<Socket> sockets) throws IOException
+    {
+        for (final Socket socket : sockets)
+        {
+            socket.close();
+        }
+        sockets.clear();
     }
 
     @Test
