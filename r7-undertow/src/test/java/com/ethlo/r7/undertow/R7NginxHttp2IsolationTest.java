@@ -16,9 +16,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+// Needs the locally built native image (./build-native.sh); skipped where it has not been built.
+// The class-level condition is evaluated before the Testcontainers extension starts any container.
+@EnabledIfDockerImage(R7NginxHttp2IsolationTest.GATEWAY_IMAGE)
 @Testcontainers
 public class R7NginxHttp2IsolationTest
 {
+    static final String GATEWAY_IMAGE = "docker.io/library/r7-gateway-native:latest";
+
     private static final Network NETWORK = Network.newNetwork();
 
     // NGINX configured explicitly for h2c (cleartext HTTP/2)
@@ -61,7 +66,7 @@ public class R7NginxHttp2IsolationTest
             """;
 
     @Container
-    public static final GenericContainer<?> R7_GATEWAY = new GenericContainer<>(DockerImageName.parse("docker.io/library/r7-gateway-native:latest"))
+    public static final GenericContainer<?> R7_GATEWAY = new GenericContainer<>(DockerImageName.parse(GATEWAY_IMAGE))
             .withNetwork(NETWORK)
             .withExposedPorts(8888)
             .withCopyToContainer(Transferable.of(ROUTES_YAML), "/app/config/routes.yaml")
