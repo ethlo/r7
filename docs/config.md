@@ -833,7 +833,7 @@ Configures boundaries and payload restrictions for incoming HTTP requests to pre
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `max_header_size` | Size | The maximum allowed size for a single HTTP header (e.g., `8KB`). At most 62500 bytes, the longest input configured regular expressions are budgeted for. |
+| `max_header_size` | Size | The maximum size of the request line and all request headers combined (e.g., `8KB`), not of each header separately. At most 62500 bytes, the longest input configured regular expressions are budgeted for. |
 | `max_header_count` | Integer | The maximum number of HTTP headers allowed per request. |
 | `max_entity_size` | Size | The maximum allowed request payload/entity size (e.g., `2MB`). |
 | `max_parameter_count` | Integer | The maximum number of parameters allowed per request. |
