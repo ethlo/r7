@@ -21,8 +21,8 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     @Override
     public MutableGatewayHeaders set(final String name, final String value)
     {
-        TextValues.requireStorableName(name);
-        TextValues.requireStorable(name, value);
+        TextValues.requireHeaderName(name);
+        TextValues.requireHeaderValue(name, value);
         setInternal(name, value);
         return this;
     }
@@ -44,7 +44,7 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     @Override
     public void set(final String name, final Iterable<String> values)
     {
-        TextValues.requireStorableName(name);
+        TextValues.requireHeaderName(name);
         if (values == null)
         {
             throw new IllegalArgumentException("Values for '" + name + "' must not be null. Use remove(name) instead.");
@@ -53,7 +53,7 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
         final List<String> validated = new ArrayList<>();
         for (final String value : values)
         {
-            validated.add(TextValues.requireStorable(name, value));
+            validated.add(TextValues.requireHeaderValue(name, value));
         }
 
         removeInternal(name);
@@ -66,8 +66,8 @@ public class MutableFastGatewayHeaders extends FastGatewayHeaders implements Mut
     @Override
     public void add(final String name, final String value)
     {
-        TextValues.requireStorableName(name);
-        TextValues.requireStorable(name, value);
+        TextValues.requireHeaderName(name);
+        TextValues.requireHeaderValue(name, value);
         addInternal(name, value);
     }
 }

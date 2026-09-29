@@ -160,6 +160,68 @@ public final class TextValues
     }
 
     /**
+     * As {@link #requireStorable(String, String)}, and also refuses the control characters a
+     * header value may never carry: every C0 control except HTAB, and DEL. Undertow blanks CR
+     * and LF when it writes a response, but its client writes upstream request headers
+     * verbatim, so a line break in a value set by a filter would split the upstream request.
+     *
+     * @param field the header name, used in the error message
+     * @throws InvalidTextValueException if the value is {@code null}, has a character above
+     *                                   {@link #MAX_STORABLE}, or has a forbidden control character
+     */
+    public static String requireHeaderValue(final String field, final String value)
+    {
+        requireStorable(field, value);
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7F)
+            {
+                throw new InvalidTextValueException(String.format(
+                        "Cannot set header '%s': control character U+%04X at index %d is not permitted in a header value.",
+                        field, (int) c, i), field, i);
+            }
+        }
+        return value;
+    }
+
+    /**
+     * Characters an HTTP token may contain beyond letters and digits (RFC 9110 §5.6.2).
+     */
+    private static final String TOKEN_SPECIALS = "!#$%&'*+-.^_`|~";
+
+    /**
+     * Returns the name unchanged, or throws unless it is a non-empty HTTP token (RFC 9110
+     * §5.6.2). {@code HttpString.tryFromString} accepts spaces, colons and line breaks, each of
+     * which would write a malformed or split header line, so the check belongs here, where every
+     * filter - extensions included - sets a header name.
+     *
+     * @throws InvalidTextValueException if the name is {@code null}, empty, or has a character
+     *                                   outside the token set
+     */
+    public static String requireHeaderName(final String name)
+    {
+        requireStorableName(name);
+        if (name.isEmpty())
+        {
+            throw new InvalidTextValueException("Header name must not be empty.", name, ABSENT);
+        }
+        for (int i = 0, len = name.length(); i < len; i++)
+        {
+            final char c = name.charAt(i);
+            final boolean tokenChar = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || TOKEN_SPECIALS.indexOf(c) >= 0;
+            if (!tokenChar)
+            {
+                throw new InvalidTextValueException(String.format(
+                        "Header name '%s' has character U+%04X at index %d, which is not permitted in an HTTP token.",
+                        name, (int) c, i), name, i);
+            }
+        }
+        return name;
+    }
+
+    /**
      * As {@link #requireStorable(String, String)}, for the name itself.
      */
     public static String requireStorableName(final String name)

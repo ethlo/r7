@@ -482,7 +482,7 @@ $defs:
             content_type:
               type: string
               description: The Content-Type of the response body.
-              default: text/plain
+              default: text/plain; charset=utf-8
             status:
               anyOf:
               - type: integer
@@ -593,7 +593,8 @@ $defs:
               - type: boolean
               - type: string
                 pattern: "^\\$\\{.*\\}$"
-              description: Whether the cookie is HttpOnly.
+              description: Whether client-side script is denied access to the cookie. Defaults to true.
+              default: true
             max_age:
               type: string
               pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
@@ -608,13 +609,15 @@ $defs:
               description: The cookie path.
             same_site:
               type: string
-              description: "The SameSite policy (Strict, Lax, None)."
+              description: "The SameSite policy (Strict, Lax, None). Defaults to Lax."
+              default: Lax
             secure:
               anyOf:
               - type: boolean
               - type: string
                 pattern: "^\\$\\{.*\\}$"
-              description: Whether the cookie is secure.
+              description: Whether the cookie is sent over HTTPS only. Defaults to true.
+              default: true
             value:
               type: string
               description: The cookie value.
@@ -1165,6 +1168,7 @@ $defs:
               - ROUND_ROBIN
             - type: string
               pattern: "^\\$\\{.*\\}$"
+            description: How requests are spread across the healthy targets.
             default: ROUND_ROBIN
           targets:
             type: array
@@ -1216,3 +1220,57 @@ properties:
     items:
       $ref: "#/$defs/route"
     description: The routing table defining how incoming traffic is matched and forwarded.
+  unrouted:
+    type: object
+    properties:
+      journal:
+        type: object
+        properties:
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                description: The base journaling verbosity level.
+              status_overrides:
+                type: object
+                additionalProperties:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'HEADERS', '404': 'NONE'."
+            additionalProperties: false
+            description: Journal settings for this specific phase of the exchange.
+          response:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                description: The base journaling verbosity level.
+              status_overrides:
+                type: object
+                additionalProperties:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'HEADERS', '404': 'NONE'."
+            additionalProperties: false
+            description: Journal settings for this specific phase of the exchange.
+        additionalProperties: false
+        description: Journal levels for requests refused before any route is chosen. FULL is not allowed.
+    required:
+    - journal
+    additionalProperties: false
+    description: "Journaling for requests refused before routing (no route, ambiguous path, bad Transfer-Encoding, TRACE, regex budget), recorded under route ID <unrouted>."

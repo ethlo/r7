@@ -97,7 +97,7 @@ public final class R7Main
         final XnioWorker sharedWorker = createSharedWorker(serverConfig);
 
         final R7UndertowHandler r7UndertowHandler = new R7UndertowHandler(serverConfig, routeRegistry, journalWriter, errorHandler, scheduler);
-        hotReloadService.onReload(r7UndertowHandler::reloadState);
+        hotReloadService.onReload(r7UndertowHandler);
         final TrafficMetricsHandler trafficMetricsHandler = new TrafficMetricsHandler(r7UndertowHandler);
 
         final HttpHandler rootHandler = Handlers.path()
@@ -110,7 +110,8 @@ public final class R7Main
         configureServer(builder, serverConfig);
         this.server = builder.build();
 
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, routeRegistry);
+        final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
+        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, serverConfigFile, routeRegistry, hotReloadService, r7UndertowHandler);
 
         this.managementServer = setupStatusBackend(statusHandler, serverConfig.management().port(), serverConfig.management().host(), sharedWorker);
 
@@ -299,11 +300,11 @@ public final class R7Main
                 .setSocketOption(Options.TCP_NODELAY, advanced.tcpNoDelay())
                 .setSocketOption(Options.REUSE_ADDRESSES, advanced.reuseAddresses())
                 .setSocketOption(Options.BACKLOG, advanced.socketBacklog())
-                .setSocketOption(Options.READ_TIMEOUT, (int) advanced.socketReadTimeout().toMillis())
+                .setSocketOption(Options.READ_TIMEOUT, Math.toIntExact(advanced.socketReadTimeout().toMillis()))
 
                 // HTTP Protocol
                 .setServerOption(UndertowOptions.MAX_HEADER_SIZE, (int) limits.maxHeaderSize().bytes())
-                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, (int) http.requestParseTimeout().toMillis())
+                .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, Math.toIntExact(http.requestParseTimeout().toMillis()))
                 .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, limits.maxEntitySize().bytes())
                 .setServerOption(UndertowOptions.ENABLE_HTTP2, http.enableHttp2())
                 .setServerOption(UndertowOptions.ALWAYS_SET_KEEP_ALIVE, http.alwaysSetKeepAlive())

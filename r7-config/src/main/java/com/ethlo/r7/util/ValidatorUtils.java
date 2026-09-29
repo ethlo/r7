@@ -114,6 +114,32 @@ public class ValidatorUtils
         return this;
     }
 
+    /**
+     * The longest duration an {@code int} count of milliseconds can hold, about 24.8 days. XNIO's
+     * {@code READ_TIMEOUT} and Undertow's proxy TTL, max request time and request parse timeout
+     * all take their value in that form.
+     */
+    public static final Duration MAX_INT_MILLIS = Duration.ofMillis(Integer.MAX_VALUE);
+
+    /**
+     * Rejects a duration that will be handed on as an {@code int} count of milliseconds but does
+     * not fit one. Without this the value passes validation and the conversion then throws
+     * {@code ArithmeticException} while the server or a route's proxy client is being built: a
+     * stack trace at startup, or a hot reload refused with a message that names no field. The
+     * bound is {@link #MAX_INT_MILLIS}, the same one {@code Math.toIntExact} applies there.
+     * A {@code null} value is not reported here.
+     */
+    public ValidatorUtils fitsIntMillis(final String property, final Duration value)
+    {
+        if (value != null && value.compareTo(MAX_INT_MILLIS) > 0)
+        {
+            result.addError(property, "'" + property + "' must not exceed " + MAX_INT_MILLIS.toMillis() + "ms (about "
+                    + MAX_INT_MILLIS.toDays() + " days), but was " + value
+                    + ". It is passed on as an int number of milliseconds; use " + MAX_INT_MILLIS.toDays() + "d or less.");
+        }
+        return this;
+    }
+
     public ValidatorUtils requirePositive(String property, DataSize value)
     {
         if (value == null || value.bytes() <= 0)

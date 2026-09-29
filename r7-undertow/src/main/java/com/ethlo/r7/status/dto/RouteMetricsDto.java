@@ -16,7 +16,9 @@ public record RouteMetricsDto(
         PerformanceTelemetryDto performanceTelemetry,
 
         @JsonProperty("sparkline_data")
-        SparklineRingBuffer.SparklineSnapshot sparklineData)
+        SparklineRingBuffer.SparklineSnapshot sparklineData,
+
+        LatencyDto latency)
 {
 }
 

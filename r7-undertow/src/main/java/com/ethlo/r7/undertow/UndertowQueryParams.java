@@ -30,6 +30,13 @@ public final class UndertowQueryParams implements QueryParams
     }
 
     @Override
+    public int count(final String name)
+    {
+        final Deque<String> values = this.parameters.get(name);
+        return values != null ? values.size() : 0;
+    }
+
+    @Override
     public List<String> getAll(final String name)
     {
         final Deque<String> values = this.parameters.get(name);

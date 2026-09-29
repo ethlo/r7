@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -167,5 +168,16 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
     public boolean hasAvailableTargets()
     {
         return !this.healthyTargets.isEmpty();
+    }
+
+    @Override
+    public Map<URI, Boolean> targetStates()
+    {
+        final Map<URI, Boolean> states = new LinkedHashMap<>();
+        for (final URI target : this.allTargets)
+        {
+            states.put(target, this.healthyTargets.contains(target));
+        }
+        return states;
     }
 }

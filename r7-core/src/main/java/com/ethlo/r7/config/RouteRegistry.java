@@ -1,6 +1,5 @@
 package com.ethlo.r7.config;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -10,43 +9,90 @@ import com.ethlo.r7.api.GatewayRoute;
 
 public class RouteRegistry
 {
-    private final AtomicReference<List<GatewayRoute>> routes = new AtomicReference<>(Collections.emptyList());
-    private String version;
+    private final AtomicReference<Snapshot> current = new AtomicReference<>(new Snapshot(null, List.of(), null));
+
+    /**
+     * One generation of the routing configuration. Published as a whole, so a request that
+     * misses every route is refused under the unrouted policy of the same generation it was
+     * matched against, never a mix of an old table and a new policy during a hot reload.
+     *
+     * @param unrouted the journal-only route for requests refused before routing, or
+     *                 {@code null} if such requests are not journaled
+     */
+    public record Snapshot(String version, List<GatewayRoute> routes, GatewayRoute unrouted)
+    {
+        public GatewayRoute findRoute(final GatewayRequest gatewayRequest)
+        {
+            for (final GatewayRoute route : this.routes)
+            {
+                if (route.predicate().test(gatewayRequest))
+                {
+                    return route;
+                }
+            }
+            return null;
+        }
+    }
 
     /**
      * Swaps the current routing table for a new one for hot-reload
      */
     public void updateRoutes(final String version, final List<GatewayRoute> newRoutes)
     {
-        this.version = version;
-        this.routes.set(List.copyOf(newRoutes));
+        updateRoutes(version, newRoutes, null);
+    }
+
+    /**
+     * @param unroutedRoute the route requests refused before routing are journaled under, or
+     *                      {@code null} when the configuration has no {@code unrouted} section
+     */
+    public void updateRoutes(final String version, final List<GatewayRoute> newRoutes, final GatewayRoute unroutedRoute)
+    {
+        this.publish(new Snapshot(version, newRoutes, unroutedRoute));
+    }
+
+    /**
+     * Makes the given generation current: routes and unrouted policy in one swap.
+     */
+    public void publish(final Snapshot snapshot)
+    {
+        this.current.set(new Snapshot(snapshot.version(), List.copyOf(snapshot.routes()), snapshot.unrouted()));
+    }
+
+    /**
+     * @return the current generation; hold on to it for the whole of a routing decision
+     */
+    public Snapshot snapshot()
+    {
+        return this.current.get();
     }
 
     public GatewayRoute findRoute(GatewayRequest gatewayRequest)
     {
-        final List<GatewayRoute> current = routes.get();
-        for (GatewayRoute route : current)
-        {
-            if (route.predicate().test(gatewayRequest))
-            {
-                return route;
-            }
-        }
-        return null;
+        return this.current.get().findRoute(gatewayRequest);
     }
 
     public List<GatewayRoute> getRoutes()
     {
-        return this.routes.get();
+        return this.current.get().routes();
     }
 
     public String getConfigVersion()
     {
-        return version;
+        return this.current.get().version();
+    }
+
+    /**
+     * @return the journal-only route for requests refused before routing, or {@code null} if
+     * such requests are not journaled
+     */
+    public GatewayRoute unroutedRoute()
+    {
+        return this.current.get().unrouted();
     }
 
     public Optional<GatewayRoute> findRoute(String routeId)
     {
-        return routes.get().stream().filter(route -> route.id().equals(routeId)).findFirst();
+        return this.current.get().routes().stream().filter(route -> route.id().equals(routeId)).findFirst();
     }
 }

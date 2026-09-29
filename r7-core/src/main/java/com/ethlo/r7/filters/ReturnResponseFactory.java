@@ -49,7 +49,7 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
             HttpStatus status,
 
             @Description("The Content-Type of the response body.")
-            @DefaultValue("text/plain")
+            @DefaultValue(MediaTypes.TEXT_PLAIN_UTF8)
             @Nullable String contentType,
 
             @Description("The body content of the response.")
@@ -59,7 +59,7 @@ public final class ReturnResponseFactory implements GatewayFilterFactory<ReturnR
         {
             if (contentType == null)
             {
-                contentType = MediaTypes.TEXT_PLAIN;
+                contentType = MediaTypes.TEXT_PLAIN_UTF8;
             }
         }
 

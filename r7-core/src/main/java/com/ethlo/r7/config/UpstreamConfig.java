@@ -1,6 +1,7 @@
 package com.ethlo.r7.config;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
@@ -10,7 +11,8 @@ import com.ethlo.r7.validation.ValidationResult;
 
 @Description("Configuration for routing traffic to backend services.")
 public record UpstreamConfig(
-        @DefaultValue("ROUND_ROBIN") Strategy strategy,
+        @DefaultValue("ROUND_ROBIN")
+        @Description("How requests are spread across the healthy targets.") Strategy strategy,
         @DefaultValue("{}") HealthCheckConfig healthCheck,
         @DefaultValue("{}") TimeoutConfig timeouts,
         @Description("List of backend servers to forward traffic to.")
@@ -19,6 +21,12 @@ public record UpstreamConfig(
         @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback
 ) implements ValidatableConfig
 {
+    @Override
+    public Strategy strategy()
+    {
+        return Optional.ofNullable(this.strategy).orElse(Strategy.ROUND_ROBIN);
+    }
+
     @Override
     public void validate(final ValidationResult result)
     {

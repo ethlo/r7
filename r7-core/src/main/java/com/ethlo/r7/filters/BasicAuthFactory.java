@@ -444,7 +444,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         {
             final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
             headers.set(HttpHeaders.RETRY_AFTER, "1");
-            headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
             exchange.shortCircuit(new ShortCircuitGatewayResponse(headers,
                     HttpStatuses.SERVICE_UNAVAILABLE,
                     ByteBuffer.wrap(BUSY_PAYLOAD)
@@ -455,7 +455,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         {
             final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
             headers.set(HttpHeaders.WWW_AUTHENTICATE, List.of(this.challenge));
-            headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            headers.set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
             exchange.shortCircuit(new ShortCircuitGatewayResponse(headers,
                     HttpStatuses.UNAUTHORIZED,
                     ByteBuffer.wrap(UNAUTHORIZED_PAYLOAD)

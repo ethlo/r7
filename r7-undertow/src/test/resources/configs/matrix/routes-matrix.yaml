@@ -42,6 +42,6 @@ routes:
         level: NONE
         status_overrides:
           429: METADATA
-          5xx: FULL
+          5xx: HEADERS
       response:
         level: NONE

@@ -101,7 +101,7 @@ The `upstream` block defines where r7 forwards requests, managing load balancing
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `strategy` | Enum | `ROUND_ROBIN` | The load balancing strategy applied across the targets. |
+| `strategy` | Enum | `ROUND_ROBIN` | How requests are spread across the available targets. `ROUND_ROBIN` is currently the only strategy: each request starts at the next target in turn, passing over targets that are down or whose connection pool is full. |
 | `targets` | List | Required | A list of downstream nodes (`url`) capable of handling the request. |
 | `health_check` | Object | None | Active background health monitoring. |
 | `timeouts` | Object | None | Networking timeouts for this upstream. |
@@ -127,13 +127,15 @@ Configures background probes to automatically evict and restore nodes.
 | `fall` | Integer | `2` | Consecutive failures required to evict a healthy node. |
 | `override` | Enum | `NONE` | **Warning:** `FORCE_DOWN` evicts the target regardless of probe success. `FORCE_UP` routes to the target regardless of probe failure. |
 
+The monitor starts when the routes are loaded, not with a route's first request, so a dead target is found before traffic reaches it. Targets start out healthy; the first probe runs one `interval` after loading, and a target is evicted after `fall` failed probes. A hot reload starts monitors for the new routes and stops the previous ones, so health state starts over.
+
 ### Timeouts (`timeouts`)
 
 *Currently, only response-read timeouts are configurable at the upstream level. Connect timeouts are handled globally by the proxy client.*
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. |
+| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
 
 ### Fallback (`fallback`)
 
@@ -151,7 +153,8 @@ The request is handed to the fallback route **before** the first route's upstrea
 
 Predicates determine whether an incoming request matches a route.
 
-* **Regex Semantics:** All regex predicates use standard Java Regex syntax. Matching is **partial by default** unless explicitly anchored (`^`, `$`). Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Regex Semantics:** All regex predicates and `RequireMatch*` filters use standard Java Regex syntax and must match the **whole value**, as if anchored with `^` and `$`: `user` does not match `superuser`. Use `.*user.*` to match anywhere in the value. Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
 * **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of stalling an I/O thread. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.
 
@@ -479,6 +482,8 @@ The capture groups are filled in from the client's request path, so the computed
 
 ### Security & Validation
 
+The `RequireMatch*` filters follow the same regex and repeated-value rules as the predicates (see [Predicates](#5-predicates)): the whole value must match, and so must every occurrence.
+
 #### RequireRequestHeader
 
 Validates an HTTP header is present. Short-circuits the request if the header is missing.
@@ -547,7 +552,7 @@ Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
+| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nB -C 12 <user>`, which prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
 | `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
@@ -559,14 +564,37 @@ bcrypt is deliberately expensive, so the number of verifications running at once
 
 ```yaml
 filters:
-  - type: BasicAuth
-    realm: "Admin API"
-    users:
-      - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
-      - "bob:${BOB_HTPASSWD_ENTRY}"
+  - BasicAuth:
+      realm: "Admin API"
+      users:
+        - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+        - "bob:${BOB_HTPASSWD_ENTRY}"
 ```
 
-Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash. That cost is also a denial-of-service lever: put a `RateLimiter` in front of `BasicAuth` on any route exposed to untrusted clients.
+Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash.
+
+**Password guessing.** `BasicAuth` has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a `RateLimiter` before `BasicAuth`, so a client is refused before its guess costs a bcrypt:
+
+```yaml
+filters:
+  - RateLimiter:
+      capacity: 20
+      refill_tokens: 5
+      refill_period: 1m
+  - BasicAuth:
+      users:
+        - "alice:${ALICE_HTPASSWD_ENTRY}"
+journal:
+  request:
+    status_overrides:
+      401: METADATA   # every failed login is journaled, even when the route journals nothing else
+```
+
+The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
+
+Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nB -C 12 <user>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
+
+**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time. `status_overrides` (above) records it even on a route that otherwise journals nothing.
 
 A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
 
@@ -642,7 +670,7 @@ Monitors upstream responses and temporarily blocks routing **for the entire rout
 
 #### ReturnResponse
 
-Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain; charset=utf-8` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -698,7 +726,7 @@ journal:
   response:
     level: METADATA
     status_overrides:
-      5xx: FULL          # a whole status class
+      5xx: HEADERS       # a whole status class
       401,403: HEADERS   # a comma-separated list of codes
       429: HEADERS       # a single code
 ```
@@ -710,6 +738,37 @@ journal:
 | Comma-separated list | `401,403` | Each listed code. Every entry is a single code; classes and ranges are not allowed inside a list. |
 
 Any other key (a range such as `500-599`, `999`, `6xx`, an empty list entry) is rejected at startup and on hot reload with an error naming the field, e.g. `[routes.my-route.journal.response.status_overrides] Invalid status override key '500-599'`. Avoid overlapping keys (`5xx` and `503`): which one wins for the shared codes follows map order and is not part of the contract.
+
+An override may not raise a direction to `FULL` unless its base level is already `FULL` (bodies are captured as they stream, and a lower base installs no capture), and a `FULL` request may not be lowered (its body is written before any status exists). Both are refused at startup.
+
+### Unrouted Requests (`routes.yaml -> unrouted`)
+
+Some requests are refused before any route is chosen, so no route's journal settings apply to them:
+
+| Reason (`gateway.unrouted.reason`) | Status | Cause |
+| --- | --- | --- |
+| `no_route` | `404` | No route matched. |
+| `ambiguous_path` | `400` | See [Ambiguous Paths](#ambiguous-paths). |
+| `transfer_encoding` | `400` | See [Transfer-Encoding](#transfer-encoding). |
+| `trace` | `501` | TRACE is never forwarded. |
+| `regex_budget` | `500` | A route predicate's pattern exhausted its regex budget. |
+
+By default these leave no journal entry. They are mostly what scanners and probes send, so they are worth recording where an audit trail matters. The top-level `unrouted` section journals them under the route ID `<unrouted>`, with the reason in the `gateway.unrouted.reason` attribute. The ID is reserved: a configured route may not use it.
+
+```yaml
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+      status_overrides:
+        404: NONE      # route misses: not journaled at all...
+    response:
+      level: METADATA
+      status_overrides:
+        404: NONE      # ...which needs both directions, as overrides apply per direction
+```
+
+Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` (start line, client address, timing) to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
 
 ---
 
@@ -796,7 +855,7 @@ routes:
       request:
         level: METADATA
         status_overrides:
-          5xx: FULL
+          5xx: HEADERS
           401,403: HEADERS
       response:
         level: METADATA
@@ -838,7 +897,15 @@ Defines the interfaces for the internal status and metrics endpoints.
 | `host` | String | The interface for the internal management server. Defaults to `127.0.0.1`, or to the `R7_MANAGEMENT_HOST` environment variable when set; the container images set it to `0.0.0.0` so the published status port works. The endpoint has no authentication: publish it only on a private network. |
 | `port` | Integer | The port for the internal management server. |
 
-The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
+The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
+
+What the dashboard shows beyond the configuration itself:
+
+* **Response time** per route as p50/p95/p99 over the `SimpleMetrics` window (`period`, default 2 minutes), alongside the lifetime average. Percentiles come from a fixed histogram with four buckets per power of two and are reported as the bucket's upper bound, so they read at most 25% high; the window starts empty after a restart.
+* **Reload status** of `routes.yaml`: when the running routes were loaded, and when the most recent edit was rejected. A rejected edit leaves the previous routes running; the dashboard says so but not why, since validation messages can quote configured values - the reason is in the gateway log.
+* **Upstream target health** for routes with a `health_check`, from the moment routes are loaded (see [Health Check](#health-check-health_check)); a hot reload resets it.
+* **Requests no route matched**, which are answered `404` and are not part of any route's figures.
+* **`server.yaml` as in effect**, with every value that differs from the built-in default marked.
 
 ### HTTP Options (`http`)
 
@@ -848,7 +915,7 @@ Configures the HTTP server layer, including protocol support and request parsing
 | --- | --- | --- |
 | `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected. |
 | `always_set_keep_alive` | Boolean | Forces the server to send the `Connection: keep-alive` header to maintain persistent connections. |
-| `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. |
+| `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. At most `24d` (2147483647 ms). |
 
 ### Limits Configuration (`limits`)
 
@@ -880,8 +947,8 @@ Configures the behavior of the internal reverse proxy client that connects to up
 | --- | --- | --- |
 | `connections_per_thread` | Integer | The maximum number of pooled upstream connections allowed *per worker thread*. |
 | `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
-| `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. |
-| `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. |
+| `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. At most `24d` (2147483647 ms). |
+| `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. At most `24d` (2147483647 ms). |
 
 ### Storage & Journaling (`storage`)
 

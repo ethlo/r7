@@ -34,5 +34,8 @@ routes:
           name: tracking
           value: response-cookie-s3cret
     upstream:
+      health_check:
+        path: /health
+        interval: 1h
       targets:
         - url: http://svc-user:url-s3cret-pass@${UPSTREAM_HOST}:${WIREMOCK_PORT}

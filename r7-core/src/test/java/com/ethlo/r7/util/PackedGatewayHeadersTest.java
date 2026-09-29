@@ -87,9 +87,14 @@ class PackedGatewayHeadersTest
     void preservesEveryLatin1Character()
     {
         final StringBuilder sb = new StringBuilder();
+        // Every character a header value can carry: C0 controls other than HTAB, and DEL, are
+        // refused when a header is set (TextValues.requireHeaderValue), so they never reach here.
         for (int c = 0; c <= 0xFF; c++)
         {
-            sb.append((char) c);
+            if ((c >= 0x20 && c != 0x7F) || c == '\t')
+            {
+                sb.append((char) c);
+            }
         }
         final String value = sb.toString();
 
