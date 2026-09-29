@@ -57,14 +57,7 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
     @Test
     public void upstreamTargetHealthIsShownWithoutCredentials() throws Exception
     {
-        // The upstream client and its health monitor are created by the route's first request
-        given()
-                .baseUri(getProxyBaseUrl())
-                .header("X-Route-Token", "predicate-s3cret-value")
-                .header("X-Client-Token", "require-s3cret-pattern")
-                .when()
-                .get("/secrets/anything");
-
+        // No request to the route first: its health monitor exists from the moment routes load
         management()
                 .accept("application/json")
                 .when()

@@ -48,7 +48,15 @@ public class RouteRegistry
      */
     public void updateRoutes(final String version, final List<GatewayRoute> newRoutes, final GatewayRoute unroutedRoute)
     {
-        this.current.set(new Snapshot(version, List.copyOf(newRoutes), unroutedRoute));
+        this.publish(new Snapshot(version, newRoutes, unroutedRoute));
+    }
+
+    /**
+     * Makes the given generation current: routes and unrouted policy in one swap.
+     */
+    public void publish(final Snapshot snapshot)
+    {
+        this.current.set(new Snapshot(snapshot.version(), List.copyOf(snapshot.routes()), snapshot.unrouted()));
     }
 
     /**

@@ -67,6 +67,14 @@ public final class ConfigurationManager
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
     {
+        routeRegistry.publish(this.build(config));
+    }
+
+    /**
+     * Validates and instantiates the routes and the unrouted policy without publishing them.
+     */
+    public RouteRegistry.Snapshot build(RoutesDefinition config)
+    {
         final ValidationResult validationResult = new ValidationResult();
 
         if (config.routes() == null || config.routes().isEmpty())
@@ -136,7 +144,7 @@ public final class ConfigurationManager
                 })
                 .toList();
 
-        routeRegistry.updateRoutes(config.version(), routes, createUnroutedRoute(config.unrouted()));
+        return new RouteRegistry.Snapshot(config.version(), routes, createUnroutedRoute(config.unrouted()));
     }
 
     private void validateUniqueRouteIds(List<RouteDefinition> routes)

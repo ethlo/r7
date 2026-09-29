@@ -100,7 +100,7 @@ The `upstream` block defines where r7 forwards requests, managing load balancing
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `strategy` | Enum | `ROUND_ROBIN` | The load balancing strategy applied across the targets. |
+| `strategy` | Enum | `ROUND_ROBIN` | How requests are spread across the available targets. `ROUND_ROBIN` is currently the only strategy: each request starts at the next target in turn, passing over targets that are down or whose connection pool is full. |
 | `targets` | List | Required | A list of downstream nodes (`url`) capable of handling the request. |
 | `health_check` | Object | None | Active background health monitoring. |
 | `timeouts` | Object | None | Networking timeouts for this upstream. |
@@ -125,6 +125,8 @@ Configures background probes to automatically evict and restore nodes.
 | `rise` | Integer | `2` | Consecutive successes required to mark an offline node healthy. |
 | `fall` | Integer | `2` | Consecutive failures required to evict a healthy node. |
 | `override` | Enum | `NONE` | **Warning:** `FORCE_DOWN` evicts the target regardless of probe success. `FORCE_UP` routes to the target regardless of probe failure. |
+
+The monitor starts when the routes are loaded, not with a route's first request, so a dead target is found before traffic reaches it. Targets start out healthy; the first probe runs one `interval` after loading, and a target is evicted after `fall` failed probes. A hot reload starts monitors for the new routes and stops the previous ones, so health state starts over.
 
 ### Timeouts (`timeouts`)
 
@@ -876,7 +878,7 @@ What the dashboard shows beyond the configuration itself:
 
 * **Response time** per route as p50/p95/p99 over the `SimpleMetrics` window (`period`, default 2 minutes), alongside the lifetime average. Percentiles come from a fixed histogram with four buckets per power of two and are reported as the bucket's upper bound, so they read at most 25% high; the window starts empty after a restart.
 * **Reload status** of `routes.yaml`: when the running routes were loaded, and when the most recent edit was rejected. A rejected edit leaves the previous routes running; the dashboard says so but not why, since validation messages can quote configured values - the reason is in the gateway log.
-* **Upstream target health** for routes with a `health_check`. The monitor starts with a route's first request, so a route that has not been used yet shows no state.
+* **Upstream target health** for routes with a `health_check`, from the moment routes are loaded (see [Health Check](#health-check-health_check)); a hot reload resets it.
 * **Requests no route matched**, which are answered `404` and are not part of any route's figures.
 * **`server.yaml` as in effect**, with every value that differs from the built-in default marked.
 

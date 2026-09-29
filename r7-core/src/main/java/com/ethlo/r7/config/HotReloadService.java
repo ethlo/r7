@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.GatewayScheduler;
+import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.validation.ValidationResult;
 
 public final class HotReloadService
@@ -22,20 +24,22 @@ public final class HotReloadService
     private final Path configFilePath;
     private final ConfigurationManager configManager;
     private final RouteRegistry routeRegistry;
-    private final Set<Runnable> listeners = new LinkedHashSet<>();
+    private final Set<RouteGenerationListener> listeners = new LinkedHashSet<>();
     private long lastKnownModified;
     private volatile Instant loadedAt;
     private volatile Instant rejectedAt;
 
     public HotReloadService(final GatewayScheduler scheduler, final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
     {
-        scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
         this.configFilePath = configFilePath;
         this.configManager = configManager;
         this.routeRegistry = routeRegistry;
         this.lastKnownModified = System.currentTimeMillis();
 
         reloadPipeline(true);
+
+        // Last, so the poller never sees a half-constructed service
+        scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
     }
 
     private void pollForChanges()
@@ -58,7 +62,13 @@ public final class HotReloadService
         }
     }
 
-    private void reloadPipeline(boolean initial)
+    /**
+     * Synchronized with {@link #onReload}: a listener is either added before a reload starts,
+     * and prepares with it, or after it ends, and prepares the routes it published. Otherwise a
+     * listener added mid-reload misses the generation that goes live, which then runs without
+     * what the listener attaches to it.
+     */
+    synchronized void reloadPipeline(boolean initial)
     {
         try
         {
@@ -79,10 +89,13 @@ public final class HotReloadService
                 throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));
             }
 
-            this.configManager.load(routesConfig, this.routeRegistry);
+            final RouteRegistry.Snapshot snapshot = this.configManager.build(routesConfig);
+            this.prepare(snapshot.routes());
+            final List<GatewayRoute> previous = this.routeRegistry.getRoutes();
+            this.routeRegistry.publish(snapshot);
             this.loadedAt = Instant.now();
             this.rejectedAt = null;
-            listeners.forEach(Runnable::run);
+            this.retire(previous);
             log.info("Configuration {} successfully loaded {} routes from version {}", this.configFilePath, routesConfig.routes().size(), routesConfig.version());
         }
         catch (final RuntimeException e)
@@ -119,8 +132,62 @@ public final class HotReloadService
         return new Status(this.configFilePath.toAbsolutePath().toString(), this.loadedAt, this.rejectedAt);
     }
 
-    public void onReload(Runnable onReload)
+    /**
+     * Prepares the generation with every listener before it is published; on a rejection, the
+     * listeners that had prepared it retire it again, so nothing built for it outlives it.
+     */
+    private void prepare(final List<GatewayRoute> routes)
     {
-        this.listeners.add(onReload);
+        final List<RouteGenerationListener> prepared = new ArrayList<>();
+        try
+        {
+            for (final RouteGenerationListener listener : this.listeners)
+            {
+                listener.prepare(routes);
+                prepared.add(listener);
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            for (final RouteGenerationListener listener : prepared)
+            {
+                retire(listener, routes);
+            }
+            throw e;
+        }
+    }
+
+    private void retire(final List<GatewayRoute> routes)
+    {
+        for (final RouteGenerationListener listener : this.listeners)
+        {
+            retire(listener, routes);
+        }
+    }
+
+    /**
+     * A failure to release an old generation is not a failure of the new one: by then it is
+     * published, and reporting the reload as rejected would claim the old routes still run.
+     */
+    private static void retire(final RouteGenerationListener listener, final List<GatewayRoute> routes)
+    {
+        try
+        {
+            listener.retire(routes);
+        }
+        catch (final RuntimeException e)
+        {
+            log.warn("Releasing a route generation failed in {}", listener, e);
+        }
+    }
+
+    /**
+     * Adds the listener and prepares the routes currently in service with it, as one step with
+     * respect to reloads. A listener that fails to prepare them is not added.
+     */
+    public synchronized void onReload(final RouteGenerationListener listener)
+    {
+        listener.prepare(this.routeRegistry.getRoutes());
+        this.listeners.add(listener);
     }
 }
