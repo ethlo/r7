@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -20,8 +21,12 @@ import org.junit.jupiter.api.io.TempDir;
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.ConfigurationManager;
+import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.RoutesDefinition;
+import com.ethlo.r7.config.TimeoutConfig;
+import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.undertow.config.ServerConfig;
@@ -97,17 +102,30 @@ class UpstreamContextLifecycleTest
         this.registry.updateRoutes("test", this.build(this.route("first", "")));
         final R7UndertowHandler handler = this.newHandler();
 
-        // A read timeout that passes validation but does not fit the proxy client's int
-        // milliseconds: preparing fails on the third route, after the second's monitor started.
-        final List<GatewayRoute> rejected = this.build(this.route("second", "") + this.route("third", """
-                      timeouts:
-                        read: 30d
-                """));
+        // Preparing has to fail on the third route, after the second's monitor started. A read
+        // timeout that does not fit the proxy client's int milliseconds does that, but validation
+        // refuses one in a routes file, so the third route is rebuilt around it here.
+        final List<GatewayRoute> built = this.build(this.route("second", "") + this.route("third", ""));
+        final List<GatewayRoute> rejected = List.of(built.get(0), withReadTimeout(built.get(1), Duration.ofDays(30)));
         assertThatThrownBy(() -> handler.prepare(rejected)).isInstanceOf(ArithmeticException.class);
 
         assertStopped(this.secondProbes, "probes of the rejected generation");
         final int first = this.firstProbes.get();
         awaitAtLeast(this.firstProbes, first + 2);
+    }
+
+    /**
+     * The route with its upstream read timeout replaced, constructed directly and so without the
+     * validation {@link ConfigurationManager#build} would apply.
+     */
+    private static GatewayRoute withReadTimeout(final GatewayRoute route, final Duration read)
+    {
+        final DefaultGatewayRoute original = (DefaultGatewayRoute) route;
+        final RouteDefinition definition = original.routeDefinition();
+        final UpstreamConfig upstream = definition.upstream();
+        final UpstreamConfig slow = new UpstreamConfig(upstream.strategy(), upstream.healthCheck(), new TimeoutConfig(read), upstream.targets(), upstream.fallback());
+        return new DefaultGatewayRoute(original.uri(), original.predicate(), original.filters(), original.journal(),
+                new RouteDefinition(definition.id(), slow, definition.match(), definition.journal(), definition.filters()));
     }
 
     private R7UndertowHandler newHandler()

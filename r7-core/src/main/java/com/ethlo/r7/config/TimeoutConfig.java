@@ -3,6 +3,7 @@ package com.ethlo.r7.config;
 import java.time.Duration;
 import java.util.Optional;
 
+import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -28,5 +29,7 @@ public record TimeoutConfig(
         {
             result.addError("read", "Read timeout must be greater than 0");
         }
+        // The route's proxy client takes this as XNIO's int-millisecond READ_TIMEOUT
+        new ValidatorUtils(result).fitsIntMillis("read", this.read);
     }
 }

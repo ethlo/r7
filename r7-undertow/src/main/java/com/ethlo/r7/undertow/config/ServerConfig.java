@@ -173,6 +173,8 @@ public record ServerConfig(
             {
                 result.addError("request_parse_timeout", "must be >= -1");
             }
+            // Undertow's REQUEST_PARSE_TIMEOUT is an int of milliseconds
+            new ValidatorUtils(result).fitsIntMillis("request_parse_timeout", this.requestParseTimeout());
         }
 
         /**
@@ -217,6 +219,11 @@ public record ServerConfig(
             {
                 result.addError("connections_per_thread", "must be >= 1");
             }
+            // Both are handed to Undertow's proxy as int milliseconds when a route's upstream
+            // context is built, which on a hot reload is long after this could name the field.
+            final ValidatorUtils v = new ValidatorUtils(result);
+            v.fitsIntMillis("max_request_time", this.maxRequestTime());
+            v.fitsIntMillis("ttl", this.ttl());
         }
 
         @Override
@@ -557,6 +564,8 @@ public record ServerConfig(
             {
                 result.addError("socket_backlog", "must be >= 1");
             }
+            // XNIO's READ_TIMEOUT is an int of milliseconds
+            new ValidatorUtils(result).fitsIntMillis("socket_read_timeout", this.socketReadTimeout());
         }
 
         @Override

@@ -134,7 +134,7 @@ The monitor starts when the routes are loaded, not with a route's first request,
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. |
+| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
 
 ### Fallback (`fallback`)
 
@@ -861,7 +861,7 @@ Configures the HTTP server layer, including protocol support and request parsing
 | --- | --- | --- |
 | `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected. |
 | `always_set_keep_alive` | Boolean | Forces the server to send the `Connection: keep-alive` header to maintain persistent connections. |
-| `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. |
+| `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. At most `24d` (2147483647 ms). |
 
 ### Limits Configuration (`limits`)
 
@@ -893,8 +893,8 @@ Configures the behavior of the internal reverse proxy client that connects to up
 | --- | --- | --- |
 | `connections_per_thread` | Integer | The maximum number of pooled upstream connections allowed *per worker thread*. |
 | `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
-| `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. |
-| `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. |
+| `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. At most `24d` (2147483647 ms). |
+| `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. At most `24d` (2147483647 ms). |
 
 ### Storage & Journaling (`storage`)
 
