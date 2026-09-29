@@ -108,6 +108,25 @@ class HotReloadServiceTest
     }
 
     @Test
+    void aReloadPublishesTheUnroutedPolicyWithTheRoutes() throws IOException
+    {
+        final HotReloadService service = this.start("first");
+        assertThat(this.registry.unroutedRoute()).isNull();
+
+        Files.writeString(this.dir.resolve("routes.yaml"), """
+                unrouted:
+                  journal:
+                    request:
+                      level: HEADERS
+                """ + Files.readString(this.dir.resolve("routes.yaml")).replace("/first", "/second").replace("id: first", "id: second"));
+        service.reloadPipeline(false);
+
+        assertThat(this.routeIds()).containsExactly("second");
+        assertThat(this.registry.unroutedRoute()).as("unrouted policy after reload").isNotNull();
+        assertThat(service.status().rejectedAt()).isNull();
+    }
+
+    @Test
     void aListenerIsNotAddedWhenItCannotPrepareTheRoutesInService() throws IOException
     {
         final HotReloadService service = this.start("first");

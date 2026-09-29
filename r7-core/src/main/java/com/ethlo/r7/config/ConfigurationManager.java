@@ -67,13 +67,13 @@ public final class ConfigurationManager
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
     {
-        routeRegistry.updateRoutes(config.version(), this.build(config));
+        routeRegistry.publish(this.build(config));
     }
 
     /**
-     * Validates and instantiates the routes without publishing them.
+     * Validates and instantiates the routes and the unrouted policy without publishing them.
      */
-    public List<GatewayRoute> build(RoutesDefinition config)
+    public RouteRegistry.Snapshot build(RoutesDefinition config)
     {
         final ValidationResult validationResult = new ValidationResult();
 
@@ -91,7 +91,7 @@ public final class ConfigurationManager
         validationResult.throwIfInvalid(); // Fail before any instantiation
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
-        return config.routes().stream()
+        final List<GatewayRoute> routes = config.routes().stream()
                 .map(routeDefinition ->
                 {
                     final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id(), engineContext);
@@ -112,7 +112,8 @@ public final class ConfigurationManager
                         }
                     }
 
-                    final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal());
+                    final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal(),
+                            validationResult.nested("routes").nested(routeDefinition.id()).nested("journal"));
 
                     // Validate the structure and the plugin names
                     GatewayPredicate predicate = FalsePredicate.INSTANCE;
@@ -143,6 +144,8 @@ public final class ConfigurationManager
                     return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, globalFilters.size(), journalConfig, routeDefinition);
                 })
                 .toList();
+
+        return new RouteRegistry.Snapshot(config.version(), routes, createUnroutedRoute(config.unrouted()));
     }
 
     private void validateUniqueRouteIds(List<RouteDefinition> routes)
@@ -220,12 +223,37 @@ public final class ConfigurationManager
         }
     }
 
-    private RouteJournalConfig createJournalConfig(JournalDefinition definition)
+    /**
+     * A route that is never matched and has no filters or upstream: it only carries the journal
+     * levels that requests refused before routing are recorded at.
+     */
+    private GatewayRoute createUnroutedRoute(final UnroutedDefinition unrouted)
     {
-        return new RouteJournalConfig(
+        if (unrouted == null)
+        {
+            return null;
+        }
+        final JournalDefinition journal = unrouted.journal();
+        final RouteDefinition definition = new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, journal, List.of());
+        final ValidationResult validationResult = new ValidationResult();
+        final RouteJournalConfig journalConfig = createJournalConfig(journal, validationResult.nested("unrouted").nested("journal"));
+        return new DefaultGatewayRoute(List.of(), FalsePredicate.INSTANCE, List.of(), journalConfig, definition);
+    }
+
+    /**
+     * Builds and validates a route's journal levels. The validation was once defined but never
+     * called, which let a FULL request be lowered by an override - a configuration the journal
+     * cannot honour, since the request body is written before the status exists.
+     */
+    private RouteJournalConfig createJournalConfig(final JournalDefinition definition, final ValidationResult result)
+    {
+        final RouteJournalConfig config = new RouteJournalConfig(
                 new JournalDirectionConfig(definition.request().level(), JournalOverrideParser.parseOverrides(definition.request().statusOverrides())),
                 new JournalDirectionConfig(definition.response().level(), JournalOverrideParser.parseOverrides(definition.response().statusOverrides()))
         );
+        config.validate(result);
+        result.throwIfInvalid();
+        return config;
     }
 
     private void instantiateFilters(final FilterCreationContext filterCreationContext, final ValidationResult validationResult, final List<GatewayFilter> instantiatedFilters, final FilterDefinition filterDef)

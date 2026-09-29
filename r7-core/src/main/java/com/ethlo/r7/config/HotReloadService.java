@@ -78,7 +78,7 @@ public final class HotReloadService
             if (routesConfig == null)
             {
                 log.warn("No routes found");
-                routesConfig = new RoutesDefinition(null, List.of(), List.of());
+                routesConfig = new RoutesDefinition(null, List.of(), List.of(), null);
             }
 
 
@@ -89,10 +89,10 @@ public final class HotReloadService
                 throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));
             }
 
-            final List<GatewayRoute> routes = this.configManager.build(routesConfig);
-            this.prepare(routes);
+            final RouteRegistry.Snapshot snapshot = this.configManager.build(routesConfig);
+            this.prepare(snapshot.routes());
             final List<GatewayRoute> previous = this.routeRegistry.getRoutes();
-            this.routeRegistry.updateRoutes(routesConfig.version(), routes);
+            this.routeRegistry.publish(snapshot);
             this.loadedAt = Instant.now();
             this.rejectedAt = null;
             this.retire(previous);

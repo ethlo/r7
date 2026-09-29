@@ -1,0 +1,28 @@
+version: unrouted-journal-test
+
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+
+routes:
+  - id: known
+    match:
+      - PathPrefix:
+          prefix: /known
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # Catastrophic on an X-Evil header, and cheap for every request without one: exhausting the
+  # regex budget while matching is a refusal before routing.
+  - id: evil
+    match:
+      - MatchRequestHeader:
+          name: X-Evil
+          regexp: "^(.*a){12}$"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

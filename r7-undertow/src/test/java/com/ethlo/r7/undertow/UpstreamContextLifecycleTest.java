@@ -138,7 +138,7 @@ class UpstreamContextLifecycleTest
     {
         final Path file = this.dir.resolve("routes.yaml");
         Files.writeString(file, "version: test\nroutes:\n" + routes);
-        return this.configurationManager.build(ConfigurationManager.load(file, RoutesDefinition.class));
+        return this.configurationManager.build(ConfigurationManager.load(file, RoutesDefinition.class)).routes();
     }
 
     private static void answer(final HttpExchange exchange, final AtomicInteger counter) throws IOException
