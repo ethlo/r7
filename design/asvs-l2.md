@@ -28,12 +28,12 @@ The point is transparency, not a clean sheet: an Accepted row is a legitimate ou
 |---|---:|---:|---:|---:|---:|---:|
 | V1 Encoding and Sanitization | 13 | 2 |  |  |  | 12 |
 | V2 Validation and Business Logic | 4 | 1 |  |  | 1 | 5 |
-| V3 Web Frontend Security | 8 |  |  |  | 10 | 1 |
+| V3 Web Frontend Security | 6 |  |  |  | 12 | 1 |
 | V4 API and Web Service | 2 |  |  | 1 | 2 | 5 |
 | V5 File Handling | 3 |  |  |  |  | 6 |
 | V6 Authentication | 4 |  |  | 2 | 1 | 28 |
 | V7 Session Management |  |  |  |  |  | 18 |
-| V8 Authorization | 3 |  |  |  |  | 4 |
+| V8 Authorization | 2 |  |  |  | 1 | 4 |
 | V9 Self-contained Tokens |  |  |  |  |  | 7 |
 | V10 OAuth and OIDC |  |  |  |  |  | 29 |
 | V11 Cryptography | 5 | 2 |  | 1 |  | 6 |
@@ -41,9 +41,9 @@ The point is transparency, not a clean sheet: an Accepted row is a legitimate ou
 | V13 Configuration | 5 | 1 |  | 1 | 6 |  |
 | V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
 | V15 Secure Coding and Architecture | 10 | 3 |  |  |  |  |
-| V16 Security Logging and Error Handling | 8 | 3 |  |  | 5 |  |
+| V16 Security Logging and Error Handling | 7 | 3 |  |  | 6 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **69** | **15** | **0** | **9** | **30** | **130** |
+| **Total** | **65** | **15** | **0** | **9** | **34** | **130** |
 
 ## Gaps
 
@@ -130,8 +130,8 @@ Also recorded:
 | V3.3.4 | 2 | HttpOnly for cookies scripts must not read | Operator | Only the operator knows whether script needs a cookie. r7 sets `HttpOnly` unless configured `http_only: false` ([#74](https://github.com/ethlo/r7/pull/74)). |
 | V3.4.1 | 1 | HSTS | Operator | Needs TLS, which r7's listener does not terminate. Set it at the TLS terminator, or with `SetResponseHeader` behind one. |
 | V3.4.2 | 1 | CORS allow-origin fixed or allowlisted | Operator | Where configured, `Cors` echoes only allowlisted origins, adds `Vary: Origin`, answers only real preflights and overrules upstream grants ([#51](https://github.com/ethlo/r7/pull/51), `CorsFactoryTest`, `CorsE2ETest`). Which routes carry it is the operator's decision. |
-| V3.4.3 | 2 | Content-Security-Policy | Met | Management: `default-src 'none'`, the one script allowed by hash, `object-src` covered by `default-src`, `base-uri 'none'` ([#74](https://github.com/ethlo/r7/pull/74), `StatusHandlerCspTest`). Proxied responses: the upstream's, or the operator's through `SetResponseHeader`. |
-| V3.4.4 | 2 | `X-Content-Type-Options: nosniff` on all responses | Met | On everything r7 writes, management included ([#46](https://github.com/ethlo/r7/pull/46), [#74](https://github.com/ethlo/r7/pull/74)). Proxied responses are the upstream's. |
+| V3.4.3 | 2 | Content-Security-Policy | Operator | r7 sends a strict policy on the management UI: `default-src 'none'`, the one script allowed by hash, `base-uri 'none'` ([#74](https://github.com/ethlo/r7/pull/74), `StatusHandlerCspTest`). Proxied responses keep the upstream's headers unless the operator adds one with `SetResponseHeader`. |
+| V3.4.4 | 2 | `X-Content-Type-Options: nosniff` on all responses | Operator | Everything r7 writes itself carries `nosniff`: error and refusal responses, short-circuits, static content and the management port ([#46](https://github.com/ethlo/r7/pull/46), [#74](https://github.com/ethlo/r7/pull/74)). Proxied responses keep the upstream's headers unless the operator adds it with a global `SetResponseHeader`. |
 | V3.4.5 | 2 | Referrer-Policy | Operator | Management sends `no-referrer` ([#46](https://github.com/ethlo/r7/pull/46)). Data-plane pages are the upstream's; `SetResponseHeader` can add one. |
 | V3.4.6 | 2 | CSP `frame-ancestors` | Met | Management sends `frame-ancestors 'none'` and `X-Frame-Options: DENY` ([#46](https://github.com/ethlo/r7/pull/46), [#74](https://github.com/ethlo/r7/pull/74)). |
 | V3.5.1 | 1 | Cross-origin requests validated without preflight | Operator | The upstream's CSRF defence. r7 can require an origin header with `RequireMatchRequestHeader`. |
@@ -246,7 +246,7 @@ Not applicable: r7 is stateless: no sessions or session tokens. `BasicAuth` veri
 |---|---|---|---|---|
 | V8.1.1 | 1 | Documented function- and data-level authorisation rules | Met | Route predicates and filters are the function-level rules, declared in `routes.yaml`, with first-match semantics specified in `docs/config.md` §3. Data-level rules are the upstream's. |
 | V8.1.2 | 2 | Documented field-level rules | N/A | r7 does not inspect payloads. |
-| V8.2.1 | 1 | Function-level access needs explicit permission | Met | A route's `Require*`/`BasicAuth` filters apply to whatever the predicates match; ambiguous paths that could match one route and reach another are refused ([#39](https://github.com/ethlo/r7/pull/39), [#40](https://github.com/ethlo/r7/pull/40)); fallback routes carry the matched route's filters ([#41](https://github.com/ethlo/r7/pull/41), `FallbackValidationTest`, `BasicAuthFallbackTest`); no match is 404. |
+| V8.2.1 | 1 | Function-level access needs explicit permission | Operator | A route is public unless the operator puts `BasicAuth` or a `Require*` filter on it. Where they do, the check holds: ambiguous paths that could match one route and reach another are refused ([#39](https://github.com/ethlo/r7/pull/39), [#40](https://github.com/ethlo/r7/pull/40)), fallback routes carry the matched route's filters ([#41](https://github.com/ethlo/r7/pull/41), `FallbackValidationTest`, `BasicAuthFallbackTest`), and no match is 404. |
 | V8.2.2 | 1 | Data-specific access (IDOR) | N/A | The upstream's. |
 | V8.2.3 | 2 | Field-level access | N/A | The upstream's. |
 | V8.3.1 | 1 | Authorisation at a trusted layer | Met | Enforced in the gateway on the decoded, guarded request, never from client-controlled hints (`X-Forwarded-*` stripped, [#43](https://github.com/ethlo/r7/pull/43)). |
@@ -315,9 +315,9 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | ID | L | Requirement | Status | Evidence |
 |---|---|---|---|---|
 | V11.1.1 | 2 | Key management policy | N/A | r7 holds no cryptographic keys: no TLS listener, no signing. bcrypt hashes are verifiers, not keys. |
-| V11.1.2 | 2 | Cryptographic inventory | Partial | Uses: bcrypt (`BasicAuth` verification); SHA-256 (`BasicAuth` cache keys, `RedactUtil` fingerprints, `bin/flatc.sha256`); CRC32C (journal corruption detection, not a security control); JDK TLS and the JVM trust store for `https` upstreams. No keys or certificates of r7's own. Moving this list into `docs/security.md` with an owner makes it a maintained inventory (gap 7). |
-| V11.2.1 | 2 | Industry-validated implementations | Met | The JDK's TLS stack and a bcrypt library; nothing hand-rolled. |
-| V11.2.2 | 2 | Crypto agility | Accepted | SHA-256 appears only in fingerprints and in-memory cache keys, with no stored state to migrate, so replacing it is a code change. bcrypt is the only accepted password hash, and each hash names its own scheme and cost, so another scheme can be added alongside it. Upstream TLS follows JDK security properties. |
+| V11.1.2 | 2 | Cryptographic inventory | Partial | Uses: bcrypt (`BasicAuth` verification); SHA-256 for `BasicAuth` cache keys, `RedactUtil` fingerprints, the dashboard's CSP script hash, WARC payload digests written by the WARC tailer, and `bin/flatc.sha256`; CRC32C for journal corruption detection, not as a security control; JDK TLS and the JVM trust store for `https` upstreams. r7 has no keys or certificates of its own. Moving this list into `docs/security.md` with an owner makes it a maintained inventory (gap 7). |
+| V11.2.1 | 2 | Industry-validated implementations | Met | The JDK's TLS stack and `MessageDigest`; bcrypt is jBCrypt (Damien Miller, ISC licence), vendored unmodified for verification. Nothing hand-rolled. |
+| V11.2.2 | 2 | Crypto agility | Accepted | SHA-256 is hard-coded, but in places where changing it needs no migration: in-memory cache keys and fingerprints, and a CSP hash recomputed at startup. The one place it is persisted, WARC payload digests, labels each digest with its algorithm (`sha256:`), as the WARC format requires, so another algorithm can sit alongside it. bcrypt hashes name their own scheme and cost. Upstream TLS follows JDK security properties. |
 | V11.2.3 | 2 | At least 128-bit security | Met | JDK default TLS suites. bcrypt is outside this metric. |
 | V11.3.1 | 1 | No ECB or weak padding | N/A | r7 encrypts nothing itself. |
 | V11.3.2 | 1 | Approved ciphers and modes | Met | Upstream TLS uses the JDK defaults. |
@@ -408,7 +408,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V16.3.3 | 2 | Security control bypass attempts logged | Operator | Refusals after routing (rate limits, size limits, regex budget) are journaled when the route journals them. Refusals before routing (no route, ambiguous path, bad `Transfer-Encoding`, TRACE, regex budget during matching) are journaled under `<unrouted>`, with the reason in `gateway.unrouted.reason`, once the `unrouted` section is configured ([#82](https://github.com/ethlo/r7/pull/82), `UnroutedJournalTest`). |
 | V16.3.4 | 2 | Unexpected errors and control failures logged | Met | `StandardErrorHandler` logs upstream failures and unexpected errors with the request ID. |
 | V16.4.1 | 2 | Log injection prevented | Met | Journals are binary with length-prefixed fields; header text is ISO-8859-1 without CR/LF. Undertow refuses raw CR/LF in the request line, so a logged URI stays on one line. |
-| V16.4.2 | 2 | Logs protected from access and modification | Met | Journals 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48), `JournalFilePermissionsTest`); sealed segments carry integrity records. |
+| V16.4.2 | 2 | Logs protected from access and modification | Operator | Journals are protected by r7: 0640 files in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48), `JournalFilePermissionsTest`), with integrity records in sealed segments. Application logs go to stdout, where the container or host logging setup protects them. |
 | V16.4.3 | 2 | Logs shipped to a separate system | Operator | The tailers ship journals to ClickHouse or JSON sinks; running them is the deployment's decision. |
 | V16.5.1 | 2 | Generic error messages | Met | r7's error bodies carry no stack traces, internals or configuration names. The no-upstream 503 no longer names the route, which is logged and journaled instead ([#74](https://github.com/ethlo/r7/pull/74), `NoUpstreamResponseTest`). |
 | V16.5.2 | 2 | Secure operation when dependencies fail | Met | `CircuitBreaker`, fallback routes ([#41](https://github.com/ethlo/r7/pull/41)), and 502/503 on upstream failure. |
