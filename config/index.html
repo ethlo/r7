@@ -2034,6 +2034,7 @@
 <p>Predicates determine whether an incoming request matches a route.</p>
 <ul>
 <li><strong>Regex Semantics:</strong> All regex predicates use standard Java Regex syntax. Matching is <strong>partial by default</strong> unless explicitly anchored (<code>^</code>, <code>$</code>). Matching is <strong>case-sensitive</strong> unless the inline flag <code>(?i)</code> is used.</li>
+<li><strong>Regex Cost:</strong> Every match of a configured pattern against request data (predicates, <code>RequireMatch*</code>, <code>RewritePath</code>, <code>TemplateRedirect</code>) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around <code>.*</code> (<code>^(.*a){12}$</code>), several <code>.*</code> in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with <code>500</code> instead of stalling an I/O thread. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.</li>
 <li><strong>Empty Matches:</strong> An empty match block (<code>match: []</code>) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.</li>
 </ul>
 <h3 id="logical-meta-predicates">Logical Meta-Predicates</h3>
