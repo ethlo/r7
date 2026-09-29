@@ -726,7 +726,7 @@ Some requests are refused before any route is chosen, so no route's journal sett
 | `trace` | `501` | TRACE is never forwarded. |
 | `regex_budget` | `500` | A route predicate's pattern exhausted its regex budget. |
 
-By default these leave no journal entry. They are mostly what scanners and probes send, so they are worth recording where an audit trail matters. The top-level `unrouted` section journals them under the route ID `<unrouted>`, with the reason in the `gateway.unrouted.reason` attribute:
+By default these leave no journal entry. They are mostly what scanners and probes send, so they are worth recording where an audit trail matters. The top-level `unrouted` section journals them under the route ID `<unrouted>`, with the reason in the `gateway.unrouted.reason` attribute. The ID is reserved: a configured route may not use it.
 
 ```yaml
 unrouted:

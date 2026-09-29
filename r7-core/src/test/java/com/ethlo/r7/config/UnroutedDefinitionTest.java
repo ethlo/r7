@@ -51,4 +51,12 @@ class UnroutedDefinitionTest
         new UnroutedDefinition(null).validate(result);
         assertThat(result.getErrors()).singleElement().asString().contains("journal");
     }
+
+    @Test
+    void theRouteIdIsReserved()
+    {
+        final ValidationResult result = new ValidationResult();
+        new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, null, java.util.List.of(new FilterDefinition("AddResponseHeader", Map.of()))).validate(result);
+        assertThat(result.getErrors()).anySatisfy(e -> assertThat(e).contains("reserved"));
+    }
 }

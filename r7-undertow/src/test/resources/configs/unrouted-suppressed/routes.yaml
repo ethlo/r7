@@ -1,0 +1,22 @@
+version: unrouted-suppressed-test
+
+# The documented way to keep route misses out: 404 lowered to NONE in both directions.
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+      status_overrides:
+        404: NONE
+    response:
+      level: METADATA
+      status_overrides:
+        404: NONE
+
+routes:
+  - id: known
+    match:
+      - PathPrefix:
+          prefix: /known
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

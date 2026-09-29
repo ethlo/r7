@@ -83,6 +83,23 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         Assertions.assertEquals("ambiguous_path", entry.getAttributes().getFirst("gateway.unrouted.reason"));
     }
 
+    /**
+     * The framing check runs first and closes the connection: journaling the refusal must not
+     * change either.
+     */
+    @Test
+    public void aNonCanonicalTransferEncodingIsJournaledAndTheConnectionClosed() throws Exception
+    {
+        final String marker = "/te-" + UUID.randomUUID();
+        final String response = sendRawFully("POST /known" + marker + " HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked, identity\r\n\r\n0\r\n\r\n");
+        Assertions.assertTrue(response.startsWith("HTTP/1.1 400"), response);
+        Assertions.assertTrue(response.toLowerCase().contains("connection: close"), "the connection was left open: " + response);
+
+        final JournalExchange entry = awaitEntry(marker);
+        Assertions.assertEquals(400, entry.getStatus());
+        Assertions.assertEquals("transfer_encoding", entry.getAttributes().getFirst("gateway.unrouted.reason"));
+    }
+
     @Test
     public void aRoutePatternExhaustingItsBudgetIsJournaledWithItsReason() throws Exception
     {
@@ -117,6 +134,20 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         }
         Assertions.assertTrue(found.containsKey(marker), "no journal entry for " + marker);
         return found.get(marker);
+    }
+
+    /**
+     * @return everything the gateway sent before closing; times out if it keeps the connection
+     */
+    private static String sendRawFully(final String request) throws IOException
+    {
+        try (final Socket socket = new Socket("localhost", RestAssured.port))
+        {
+            socket.setSoTimeout(5_000);
+            socket.getOutputStream().write(request.getBytes(StandardCharsets.ISO_8859_1));
+            socket.getOutputStream().flush();
+            return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
+        }
     }
 
     private static String sendRaw(final String request) throws IOException

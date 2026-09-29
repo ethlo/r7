@@ -19,9 +19,9 @@ public record UnroutedDefinition(
 ) implements ValidatableConfig
 {
     /**
-     * The route ID these requests are journaled under, in {@code gateway.route.id}. Angle
-     * brackets cannot be mistaken for a configured ID in practice, and the value is fixed so
-     * tailers can filter on it.
+     * The route ID these requests are journaled under, in {@code gateway.route.id}. Reserved:
+     * a configured route may not use it ({@link RouteDefinition#validate}), so tailers can rely
+     * on it to identify refusals before routing.
      */
     public static final String ROUTE_ID = "<unrouted>";
 

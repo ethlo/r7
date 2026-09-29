@@ -75,12 +75,18 @@ public record RouteJournalConfig(JournalDirectionConfig request,
         }
     }
 
+    /**
+     * Whether an exchange that ended with {@code statusCode} gets an end record: decided on the
+     * resolved levels, the same ones {@code StatefulJournal} writes the request and response
+     * records at. Deciding on the base levels wrote an end record with nothing before it
+     * whenever overrides lowered both directions to NONE - an orphaned end to the reader. A
+     * request journaled early, at FULL, is never lost this way: {@link #validate} refuses an
+     * override that would lower a FULL request.
+     */
     public boolean isAtLeastMetadata(final int statusCode)
     {
         final int metadataOrdinal = JournalLevel.METADATA.ordinal();
-        return this.request.level().ordinal() >= metadataOrdinal
-                || this.response.level().ordinal() >= metadataOrdinal
-                || this.request.resolve(statusCode).ordinal() >= metadataOrdinal
+        return this.request.resolve(statusCode).ordinal() >= metadataOrdinal
                 || this.response.resolve(statusCode).ordinal() >= metadataOrdinal;
     }
 }
