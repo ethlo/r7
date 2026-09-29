@@ -59,6 +59,7 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         Assertions.assertEquals(UnroutedDefinition.ROUTE_ID, entry.getAttributes().getFirst("gateway.route.id"));
         Assertions.assertEquals("no_route", entry.getAttributes().getFirst("gateway.unrouted.reason"));
         Assertions.assertEquals(JournalLevel.HEADERS, entry.getClientRequestLevel());
+        Assertions.assertEquals(JournalLevel.METADATA, entry.getClientResponseLevel());
     }
 
     @Test

@@ -743,7 +743,7 @@ unrouted:
         404: NONE      # ...which needs both directions, as overrides apply per direction
 ```
 
-Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out, which journals nothing for it. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` (start line, client address, timing) to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
 
 ---
 
@@ -830,7 +830,7 @@ routes:
       request:
         level: METADATA
         status_overrides:
-          5xx: FULL
+          5xx: HEADERS
           401,403: HEADERS
       response:
         level: METADATA

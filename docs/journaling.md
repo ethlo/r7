@@ -28,8 +28,10 @@ routes:
       response:
         level: METADATA
         status_overrides:
-          5xx: FULL   # capture bodies when things break
+          5xx: HEADERS   # more detail when things break
 ```
+
+An override can raise a direction to `HEADERS`, but not to `FULL` unless the base level is already `FULL`: bodies are captured as they stream, and a lower base level installs no capture for an override to switch on. Such a configuration is refused at startup.
 
 `NONE` / `METADATA` / `HEADERS` / `FULL` — see [Configuration §7](config.md#7-journaling-storage)
 for the full table and the `storage` block (`work_dir`, `shard_size`, `shard_count`) that

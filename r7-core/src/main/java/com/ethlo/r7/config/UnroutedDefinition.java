@@ -40,10 +40,6 @@ public record UnroutedDefinition(
 
     private static void validateDirection(final ValidationResult result, final JournalDirectionDefinition direction)
     {
-        if (direction == null)
-        {
-            return;
-        }
         if (direction.level() == JournalLevel.FULL)
         {
             result.addError("level", "FULL is not allowed for unrouted requests; use NONE, METADATA or HEADERS");
@@ -55,16 +51,5 @@ public record UnroutedDefinition(
                 result.addError("status_overrides", "FULL is not allowed for unrouted requests (" + entry.getKey() + "); use NONE, METADATA or HEADERS");
             }
         }
-    }
-
-    /**
-     * Either direction may be left out; an absent one journals nothing.
-     */
-    public JournalDefinition normalizedJournal()
-    {
-        final JournalDirectionDefinition none = new JournalDirectionDefinition(JournalLevel.NONE, null);
-        return new JournalDefinition(
-                this.journal.request() != null ? this.journal.request() : none,
-                this.journal.response() != null ? this.journal.response() : none);
     }
 }
