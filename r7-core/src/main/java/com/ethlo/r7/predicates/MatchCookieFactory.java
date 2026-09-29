@@ -9,6 +9,7 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.util.RegexBudget;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -67,7 +68,7 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
                 return false;
             }
 
-            return this.pattern.matcher(cookie.value()).matches();
+            return RegexBudget.matcher(this.pattern, cookie.value()).matches();
         }
 
         @Override

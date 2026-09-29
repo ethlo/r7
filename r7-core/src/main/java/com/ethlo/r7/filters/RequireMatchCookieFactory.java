@@ -21,6 +21,7 @@ import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RegexBudget;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -97,7 +98,7 @@ public final class RequireMatchCookieFactory implements GatewayFilterFactory<Req
         {
             final Cookie cookie = exchange.clientRequest().cookies().get(this.config.name());
 
-            if (cookie == null || cookie.value() == null || !this.compiledPattern.matcher(cookie.value()).matches())
+            if (cookie == null || cookie.value() == null || !RegexBudget.matcher(this.compiledPattern, cookie.value()).matches())
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),

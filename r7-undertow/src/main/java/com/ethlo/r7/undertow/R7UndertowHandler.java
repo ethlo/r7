@@ -65,6 +65,7 @@ import com.ethlo.r7.status.UpstreamTargetObserver;
 import com.ethlo.r7.time.ClockSource;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.CidrRange;
+import com.ethlo.r7.util.RegexBudget;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
@@ -331,6 +332,20 @@ public final class R7UndertowHandler implements HttpHandler
         sendResponse(exchange, gatewayExchange);
     }
 
+    /**
+     * A regex that exhausted its budget is a deliberate refusal, not a fault: answered as a 500
+     * short-circuit, so response and completion filters run and the journal entry is completed,
+     * as for any other refused request. Unexpected exceptions still fail closed without them.
+     */
+    private static void refuseRegexBudget(final UndertowGatewayExchange gatewayExchange, final RegexBudget.RegexBudgetExceededException e)
+    {
+        logger.warn("Request {} refused: {}", gatewayExchange.requestId(), e.getMessage());
+        gatewayExchange.shortCircuit(new com.ethlo.r7.util.ShortCircuitGatewayResponse(
+                HttpStatuses.INTERNAL_SERVER_ERROR,
+                MediaTypes.TEXT_PLAIN,
+                ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate()));
+    }
+
     private static void setupCompletionHandler(HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
         exchange.addExchangeCompleteListener((serverExchange, next) ->
@@ -404,7 +419,20 @@ public final class R7UndertowHandler implements HttpHandler
 
         final RemoteAddressResolver.RemoteInfo remoteInfo = this.remoteAddressResolver.resolve(exchange);
         final UndertowGatewayRequest req = new UndertowGatewayRequest(exchange, remoteInfo.address(), remoteInfo.source());
-        final DefaultGatewayRoute route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
+        final DefaultGatewayRoute route;
+        try
+        {
+            route = (DefaultGatewayRoute) routeRegistry.findRoute(req);
+        }
+        catch (final RegexBudget.RegexBudgetExceededException e)
+        {
+            // Before any exchange state exists, like the 404 below: nothing to journal yet.
+            logger.warn("Route matching refused: {}", e.getMessage());
+            exchange.setStatusCode(HttpStatuses.INTERNAL_SERVER_ERROR);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
+            exchange.getResponseSender().send(ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate());
+            return;
+        }
 
         if (route == null)
         {
@@ -490,7 +518,14 @@ public final class R7UndertowHandler implements HttpHandler
 
         for (final UpstreamRequestGatewayFilter filter : route.beforeUpstreamGatewayFilters())
         {
-            filter.onUpstreamRequest(gatewayExchange);
+            try
+            {
+                filter.onUpstreamRequest(gatewayExchange);
+            }
+            catch (final RegexBudget.RegexBudgetExceededException e)
+            {
+                refuseRegexBudget(gatewayExchange, e);
+            }
 
             if (gatewayExchange.isShortCircuited())
             {
@@ -747,7 +782,14 @@ public final class R7UndertowHandler implements HttpHandler
                 // return after this block and go back to accepting TCP connections.
                 exchange.dispatch(virtualThreadExecutor, () ->
                         {
-                            filter.onClientRequest(gatewayExchange);
+                            try
+                            {
+                                filter.onClientRequest(gatewayExchange);
+                            }
+                            catch (final RegexBudget.RegexBudgetExceededException e)
+                            {
+                                refuseRegexBudget(gatewayExchange, e);
+                            }
 
                             if (gatewayExchange.isShortCircuited())
                             {
@@ -766,7 +808,14 @@ public final class R7UndertowHandler implements HttpHandler
 
             // FAST PATH: Execute inline if we don't need to block, OR if we are
             // already running on a Virtual Thread from a previous dispatch.
-            filter.onClientRequest(gatewayExchange);
+            try
+            {
+                filter.onClientRequest(gatewayExchange);
+            }
+            catch (final RegexBudget.RegexBudgetExceededException e)
+            {
+                refuseRegexBudget(gatewayExchange, e);
+            }
 
             if (gatewayExchange.isShortCircuited())
             {

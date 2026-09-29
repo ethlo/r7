@@ -22,6 +22,7 @@ import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RegexBudget;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -256,7 +257,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             final String currentPath = exchange.clientRequest().path();
-            final Matcher matcher = this.sourcePattern.matcher(currentPath);
+            final Matcher matcher = RegexBudget.matcher(this.sourcePattern, currentPath);
 
             if (matcher.find())
             {

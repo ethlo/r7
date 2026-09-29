@@ -53,6 +53,8 @@ class SensitiveConfigTest
     {
         assertThat(SensitiveConfig.snakeCase("maxSize")).isEqualTo("max_size");
         assertThat(SensitiveConfig.snakeCase("password")).isEqualTo("password");
+        assertThat(SensitiveConfig.snakeCase("ipv6PrefixLength")).isEqualTo("ipv6_prefix_length");
+        assertThat(SensitiveConfig.snakeCase("maxBucketTTL")).isEqualTo("max_bucket_ttl");
     }
 
     @Test

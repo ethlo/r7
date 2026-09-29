@@ -12,6 +12,7 @@ import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RegexBudget;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -70,7 +71,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            final Matcher matcher = this.regexp.matcher(exchange.clientRequest().path());
+            final Matcher matcher = RegexBudget.matcher(this.regexp, exchange.clientRequest().path());
 
             if (matcher.find())
             {
