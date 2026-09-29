@@ -9,14 +9,17 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -66,6 +69,7 @@ import com.ethlo.r7.time.ClockSource;
 import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.RegexBudget;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
@@ -104,6 +108,7 @@ public final class R7UndertowHandler implements HttpHandler
     private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
     private static final ConcurrentHashMap<String, CachedStaticHandler> staticHandlers = new ConcurrentHashMap<>();
     private final Map<String, RouteUpstreamContext> routeProxyCache = new ConcurrentHashMap<>();
+    private final LongAdder unroutedRequests = new LongAdder();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final ServerConfig serverConfig;
@@ -440,6 +445,9 @@ public final class R7UndertowHandler implements HttpHandler
 
         if (route == null)
         {
+            // Counted here because no route's SimpleMetrics ever sees these: without it, traffic
+            // no route matches - a client on a stale path, a scanner - is invisible on the dashboard.
+            this.unroutedRequests.increment();
             exchange.setStatusCode(HttpStatuses.NOT_FOUND);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send(ErrorMessages.NO_ROUTE.duplicate());
@@ -717,6 +725,31 @@ public final class R7UndertowHandler implements HttpHandler
         staticHandlers.clear();
     }
 
+    /**
+     * Requests answered 404 because no route matched, since startup.
+     */
+    public long unroutedRequests()
+    {
+        return this.unroutedRequests.sum();
+    }
+
+    /**
+     * Health-checked targets per route id, credentials redacted. A route is absent until its first
+     * request, since that is when its upstream client and health monitor are created, and a route
+     * without a health check has no entries.
+     */
+    public Map<String, Map<String, Boolean>> upstreamTargetStates()
+    {
+        final Map<String, Map<String, Boolean>> result = new TreeMap<>();
+        this.routeProxyCache.forEach((routeId, context) ->
+        {
+            final Map<String, Boolean> states = new LinkedHashMap<>();
+            context.targetStates().forEach((target, up) -> states.put(SensitiveConfig.redactUrlCredentials(target.toString()), up));
+            result.put(routeId, states);
+        });
+        return result;
+    }
+
     private DefaultGatewayRoute fallbackRouteOf(final DefaultGatewayRoute route)
     {
         final UpstreamConfig upstream = route.routeDefinition().upstream();
@@ -893,6 +926,11 @@ public final class R7UndertowHandler implements HttpHandler
         public void stop()
         {
             healthMonitor.stop();
+        }
+
+        public Map<URI, Boolean> targetStates()
+        {
+            return healthMonitor.targetStates();
         }
     }
 }
