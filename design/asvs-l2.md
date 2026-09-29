@@ -40,14 +40,14 @@ This is a working document, not yet a claim. It becomes one when every **Gap** a
 | V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
 | V13 Configuration | 9 | 1 |  |  | 3 |  |
 | V14 Data Protection | 4 | 3 |  | 1 |  | 1 |
-| V15 Secure Coding and Architecture | 8 | 4 | 1 |  |  |  |
-| V16 Security Logging and Error Handling | 9 | 4 |  |  | 3 |  |
+| V15 Secure Coding and Architecture | 9 | 3 | 1 |  |  |  |
+| V16 Security Logging and Error Handling | 10 | 3 |  |  | 3 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **79** | **17** | **1** | **6** | **20** | **130** |
+| **Total** | **81** | **15** | **1** | **6** | **20** | **130** |
 
 ## Gaps
 
-The Partial and Gap rows refer to these by number. Gaps 1–6 are closed by #74.
+The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed by #74, and gap 8 by #76.
 
 1. ~~Refuse TRACE~~ (V13.4.4). Closed by [#74](https://github.com/ethlo/r7/pull/74): TRACE gets 501 before routing.
 2. ~~Harden r7's own responses~~ (V3.2.1, V3.4.4, V4.1.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): `nosniff` and `text/plain; charset=utf-8` on everything r7 writes.
@@ -56,9 +56,9 @@ The Partial and Gap rows refer to these by number. Gaps 1–6 are closed by #74.
 5. ~~Cookie defaults~~ (V3.3.1, V3.3.2, V3.3.4). Closed by [#74](https://github.com/ethlo/r7/pull/74): `Secure`, `HttpOnly` and `SameSite=Lax` unless configured otherwise.
 6. ~~Brute-force guidance for BasicAuth~~ (V6.1.1, V6.3.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the docs cover the missing lockout, pairing with a `RateLimiter`, bcrypt cost, and journaling failed logins.
 7. **Security documentation** (V2.1.3, V11.1.2, V13.1.1, V14.1.x, V15.1.1, V15.1.3, V16.1.1). `SECURITY.md` (disclosure address, supported versions, remediation time frames), plus a `docs/security.md` covering data classification, every connection r7 makes, the cryptographic inventory, the log and journal inventory, resource-demanding features and every limit.
-8. **Repeated parameters and headers** (V15.3.7). `Require*`/`Match*` checks read only the first value, so `?role=user&role=admin` passes a check on `role` while an upstream that reads the last value, or all of them, sees `admin`. Decide the semantics, then specify and test them.
+8. ~~Repeated parameters and headers~~ (V15.3.7). Closed by [#76](https://github.com/ethlo/r7/pull/76): every occurrence of a repeated name must pass a value check.
 9. **Refusals before routing are not journaled** (V16.3.3). Ambiguous paths, bad `Transfer-Encoding` and TRACE are refused before a route is chosen, so no journal records them, and the log line is at DEBUG. Journal them, or log them at INFO through a dedicated logger.
-10. **Route ID in the no-upstream 503** (V16.5.1). The body names the route. Decide whether this is an accepted disclosure or should be dropped from the body.
+10. ~~Route ID in the no-upstream 503~~ (V16.5.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the body is generic; the route ID is logged and journaled.
 11. **bcrypt cost floor** (V11.4.2). Any cost from 4 to 31 is accepted. Refuse, or warn at load about, a cost below 10.
 
 Also recorded:
@@ -388,7 +388,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V15.3.4 | 2 | Original client IP transferred through trusted fields | Met | `RemoteAddressResolver` believes forwarding headers only from `trusted_proxies`, right to left, and fails closed (`RemoteAddressResolverTest`); untrusted peers' forwarding headers are stripped before proxying ([#43](https://github.com/ethlo/r7/pull/43)). |
 | V15.3.5 | 2 | Strict types and comparisons | Met | Java, with typed config records. |
 | V15.3.6 | 2 | No prototype pollution | Met | The dashboard does not merge untrusted objects. |
-| V15.3.7 | 2 | HTTP parameter pollution | Partial | Duplicate `Authorization` values are refused ([#47](https://github.com/ethlo/r7/pull/47)). `RequireMatchQueryParameter`/`MatchQueryParameter` with repeated parameters should be specified and tested: does every value have to match, or any? (gap 8). |
+| V15.3.7 | 2 | HTTP parameter pollution | Met | Every value check (`QueryParameter`, `RequestHeader`, `Cookie`, their `Match*` forms and the `RequireMatch*` filters) passes only if every occurrence of a repeated name passes, so `?role=user&role=admin` cannot satisfy a check the upstream reads differently ([#76](https://github.com/ethlo/r7/pull/76), `RepeatedValuesTest`). Duplicate `Authorization` values are refused ([#47](https://github.com/ethlo/r7/pull/47)). |
 
 ## V16 Security Logging and Error Handling
 
@@ -407,7 +407,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V16.4.1 | 2 | Log injection prevented | Met | Journals are binary with length-prefixed fields; header text is ISO-8859-1 without CR/LF. Undertow refuses raw CR/LF in the request line, so a logged URI stays on one line. |
 | V16.4.2 | 2 | Logs protected from access and modification | Met | Journals 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48), `JournalFilePermissionsTest`); sealed segments carry integrity records. |
 | V16.4.3 | 2 | Logs shipped to a separate system | Operator | The tailers ship journals to ClickHouse or JSON sinks; running them is the deployment's decision. |
-| V16.5.1 | 2 | Generic error messages | Partial | Errors carry no stack traces or internals, except that the no-upstream 503 names the route ID (gap 10). |
+| V16.5.1 | 2 | Generic error messages | Met | r7's error bodies carry no stack traces, internals or configuration names. The no-upstream 503 no longer names the route, which is logged and journaled instead ([#74](https://github.com/ethlo/r7/pull/74), `NoUpstreamResponseTest`). |
 | V16.5.2 | 2 | Secure operation when dependencies fail | Met | `CircuitBreaker`, fallback routes ([#41](https://github.com/ethlo/r7/pull/41)), and 502/503 on upstream failure. |
 | V16.5.3 | 2 | Fail securely, never open | Met | A filter exception fails closed with 500 and skips the upstream (`docs/config.md` §3); regex budget exhaustion is refused, not skipped ([#53](https://github.com/ethlo/r7/pull/53)). |
 
