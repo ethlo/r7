@@ -1165,6 +1165,7 @@ $defs:
               - ROUND_ROBIN
             - type: string
               pattern: "^\\$\\{.*\\}$"
+            description: How requests are spread across the healthy targets.
             default: ROUND_ROBIN
           targets:
             type: array

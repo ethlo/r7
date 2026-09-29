@@ -10,6 +10,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +37,7 @@ import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
@@ -72,6 +74,7 @@ import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
+import io.undertow.client.UndertowClient;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
@@ -105,7 +108,13 @@ public final class R7UndertowHandler implements HttpHandler
     private static final AttachmentKey<GatewayFilter> REASON_FILTER_KEY = AttachmentKey.create(GatewayFilter.class);
     private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
     private static final ConcurrentHashMap<String, CachedStaticHandler> staticHandlers = new ConcurrentHashMap<>();
-    private final Map<String, RouteUpstreamContext> routeProxyCache = new ConcurrentHashMap<>();
+    /**
+     * Built for every route with an upstream whenever routes are (re)loaded, never on a request:
+     * a health monitor that only started with a route's first request left a dead target
+     * unnoticed until traffic found it. Replaced wholesale on reload rather than mutated, so a
+     * request always sees one consistent generation.
+     */
+    private volatile Map<String, RouteUpstreamContext> upstreamContexts = Map.of();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
     private final ServerConfig serverConfig;
@@ -141,6 +150,10 @@ public final class R7UndertowHandler implements HttpHandler
                 journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
         this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
+
+        // The routes were loaded before this handler existed, so the first generation of
+        // upstream contexts is not a reload notification: build it here.
+        this.upstreamContexts = buildUpstreamContexts();
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -518,9 +531,11 @@ public final class R7UndertowHandler implements HttpHandler
         // request already carrying those changes must not be handed to a different upstream.
         // A route without an upstream (static content, canned responses) is finished by its
         // upstream-phase filters short-circuiting, so it has no targets to check.
+        // A route with an upstream but no context is one a reload removed while this request was
+        // in flight; it has nowhere to go, the same as one whose targets are all down.
         final boolean hasUpstream = route.routeDefinition().upstream() != null;
-        final RouteUpstreamContext upstreamContext = hasUpstream ? this.upstreamContext(route) : null;
-        if (upstreamContext != null && !upstreamContext.hasAvailableTargets())
+        final RouteUpstreamContext upstreamContext = hasUpstream ? this.upstreamContexts.get(route.id()) : null;
+        if (hasUpstream && (upstreamContext == null || !upstreamContext.hasAvailableTargets()))
         {
             final DefaultGatewayRoute fallbackRoute = this.fallbackRouteOf(route);
             if (fallbackRoute != null)
@@ -612,103 +627,123 @@ public final class R7UndertowHandler implements HttpHandler
         setupCompletionHandler(exchange, route, gatewayExchange, statefulJournal);
     }
 
-    private RouteUpstreamContext upstreamContext(final DefaultGatewayRoute route)
+    private Map<String, RouteUpstreamContext> buildUpstreamContexts()
+    {
+        final Map<String, RouteUpstreamContext> contexts = new HashMap<>();
+        try
+        {
+            for (final GatewayRoute route : this.routeRegistry.getRoutes())
+            {
+                if (route instanceof DefaultGatewayRoute defaultRoute && defaultRoute.routeDefinition().upstream() != null)
+                {
+                    contexts.put(defaultRoute.id(), this.createUpstreamContext(defaultRoute));
+                }
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            // Monitors already started for this generation would otherwise probe forever,
+            // owned by no map that a later reload could stop.
+            contexts.values().forEach(RouteUpstreamContext::stop);
+            throw e;
+        }
+        return Map.copyOf(contexts);
+    }
+
+    private RouteUpstreamContext createUpstreamContext(final DefaultGatewayRoute route)
     {
         final ServerConfig.ProxyConfig pConfig = this.serverConfig.proxy();
+        final UpstreamConfig upstream = route.routeDefinition().upstream();
 
-        return this.routeProxyCache.computeIfAbsent(route.id(), uri ->
+        final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient(UndertowClient.getInstance(), null, UpstreamHostSelectors.forStrategy(upstream.strategy()))
+                .setConnectionsPerThread(pConfig.connectionsPerThread())
+                .setMaxQueueSize(pConfig.maxQueueSize())
+                .setTtl(Math.toIntExact(pConfig.ttl().toMillis()));
+
+        final Set<URI> targets = route.uri().stream()
+                .map(String::toString)
+                .map(URI::create)
+                .collect(Collectors.toSet());
+
+        // Safely extract timeouts, falling back to defaults if not specified in YAML
+        final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts())
+                .orElse(new TimeoutConfig(null));
+
+        final OptionMap clientOptions = OptionMap.builder()
+                .set(Options.READ_TIMEOUT, Math.toIntExact(timeouts.read().toMillis()))
+                .getMap();
+
+        final UpstreamTargetObserver undertowAdapter = new UpstreamTargetObserver()
+        {
+            @Override
+            public void onTargetUp(final URI target)
+            {
+                logger.info("Target {} is reported as available", target);
+
+                // Undertow addHost signature: (URI host, String bindAddress, XnioSsl ssl, OptionMap options)
+                if ("https".equalsIgnoreCase(target.getScheme()))
                 {
-                    final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient()
-                            .setConnectionsPerThread(pConfig.connectionsPerThread())
-                            .setMaxQueueSize(pConfig.maxQueueSize())
-                            .setTtl(Math.toIntExact(pConfig.ttl().toMillis()));
-
-                    final Set<URI> targets = route.uri().stream()
-                            .map(String::toString)
-                            .map(URI::create)
-                            .collect(Collectors.toSet());
-
-                    // Safely extract timeouts, falling back to defaults if not specified in YAML
-                    final TimeoutConfig timeouts = Optional.ofNullable(route.routeDefinition().upstream().timeouts())
-                            .orElse(new TimeoutConfig(null));
-
-                    final OptionMap clientOptions = OptionMap.builder()
-                            .set(Options.READ_TIMEOUT, Math.toIntExact(timeouts.read().toMillis()))
-                            .getMap();
-
-                    final UpstreamTargetObserver undertowAdapter = new UpstreamTargetObserver()
-                    {
-                        @Override
-                        public void onTargetUp(final URI target)
-                        {
-                            logger.info("Target {} is reported as available", target);
-
-                            // Undertow addHost signature: (URI host, String bindAddress, XnioSsl ssl, OptionMap options)
-                            if ("https".equalsIgnoreCase(target.getScheme()))
-                            {
-                                rawClient.addHost(target, null, getXnioSsl(), clientOptions);
-                            }
-                            else
-                            {
-                                rawClient.addHost(target, null, null, clientOptions);
-                            }
-                        }
-
-                        @Override
-                        public void onTargetDown(final URI target)
-                        {
-                            logger.info("Target {} is reported as unavailable", target);
-                            rawClient.removeHost(target);
-                        }
-                    };
-
-                    final ProxyClient client = new DiagnosticProxyClient(rawClient, this.errorHandler);
-
-                    final HttpHandler handler = ProxyHandler.builder()
-                            .setProxyClient(client)
-                            .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
-                            // Safe only because UpstreamHeaderSanitizer has removed every
-                            // X-Forwarded-* header an untrusted peer sent: what is left to
-                            // reuse came from a trusted proxy, whose chain is extended.
-                            .setReuseXForwarded(true)
-                            .setRewriteHostHeader(true)
-                            .build();
-
-                    final HealthCheckConfig healthCheck = route.routeDefinition().upstream().healthCheck();
-
-                    if (healthCheck != null)
-                    {
-                        final PeriodicUpstreamHealthMonitor monitor = new PeriodicUpstreamHealthMonitor(targets, undertowAdapter, healthCheck);
-                        monitor.start(this.scheduler);
-                        return new RouteUpstreamContext(handler, monitor);
-                    }
-                    else
-                    {
-                        // No health monitor is being used, so we must manually register the
-                        // static targets with the Undertow engine immediately.
-                        for (final URI target : targets)
-                        {
-                            undertowAdapter.onTargetUp(target);
-                        }
-
-                        return new RouteUpstreamContext(handler, new UpstreamHealthMonitor()
-                        {
-                            @Override
-                            public boolean hasAvailableTargets()
-                            {
-                                return true;
-                            }
-
-                            @Override
-                            public void stop()
-                            {
-                                // NOP
-                            }
-                        }
-                        );
-                    }
+                    rawClient.addHost(target, null, getXnioSsl(), clientOptions);
                 }
-        );
+                else
+                {
+                    rawClient.addHost(target, null, null, clientOptions);
+                }
+            }
+
+            @Override
+            public void onTargetDown(final URI target)
+            {
+                logger.info("Target {} is reported as unavailable", target);
+                rawClient.removeHost(target);
+            }
+        };
+
+        final ProxyClient client = new DiagnosticProxyClient(rawClient, this.errorHandler);
+
+        final HttpHandler handler = ProxyHandler.builder()
+                .setProxyClient(client)
+                .setMaxRequestTime(Math.toIntExact(pConfig.maxRequestTime().toMillis()))
+                // Safe only because UpstreamHeaderSanitizer has removed every
+                // X-Forwarded-* header an untrusted peer sent: what is left to
+                // reuse came from a trusted proxy, whose chain is extended.
+                .setReuseXForwarded(true)
+                .setRewriteHostHeader(true)
+                .build();
+
+        final HealthCheckConfig healthCheck = upstream.healthCheck();
+
+        if (healthCheck != null)
+        {
+            final PeriodicUpstreamHealthMonitor monitor = new PeriodicUpstreamHealthMonitor(targets, undertowAdapter, healthCheck);
+            monitor.start(this.scheduler);
+            return new RouteUpstreamContext(handler, monitor);
+        }
+        else
+        {
+            // No health monitor is being used, so we must manually register the
+            // static targets with the Undertow engine immediately.
+            for (final URI target : targets)
+            {
+                undertowAdapter.onTargetUp(target);
+            }
+
+            return new RouteUpstreamContext(handler, new UpstreamHealthMonitor()
+            {
+                @Override
+                public boolean hasAvailableTargets()
+                {
+                    return true;
+                }
+
+                @Override
+                public void stop()
+                {
+                    // NOP
+                }
+            }
+            );
+        }
     }
 
     /**
@@ -737,12 +772,16 @@ public final class R7UndertowHandler implements HttpHandler
      */
     public void reloadState()
     {
-        logger.debug("Evicting route proxy cache for live reload");
-        for (final RouteUpstreamContext context : this.routeProxyCache.values())
+        logger.debug("Rebuilding upstream contexts for live reload");
+        // New before old: requests arriving meanwhile keep the previous generation's targets
+        // rather than finding none. In-flight requests holding an old context finish on its
+        // proxy client, which still works with its monitor stopped - only the probing ends.
+        final Map<String, RouteUpstreamContext> previous = this.upstreamContexts;
+        this.upstreamContexts = buildUpstreamContexts();
+        for (final RouteUpstreamContext context : previous.values())
         {
             context.stop();
         }
-        this.routeProxyCache.clear();
 
         logger.debug("Evicting static handlers");
         staticHandlers.clear();
