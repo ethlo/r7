@@ -34,6 +34,8 @@ public record UnroutedDefinition(
             return;
         }
         final ValidationResult journalResult = result.nested("journal");
+        // Override keys are parsed like a route's; malformed ones are refused, not thrown.
+        this.journal.validate(journalResult);
         validateDirection(journalResult.nested("request"), this.journal.request());
         validateDirection(journalResult.nested("response"), this.journal.response());
     }

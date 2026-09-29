@@ -35,7 +35,7 @@ public record JournalDirectionConfig(JournalLevel level, JournalLevel[] statusOv
      */
     public JournalLevel resolve(final int statusCode)
     {
-        if (statusOverrides != null && statusCode >= LOWEST_STATUS_CODE && statusCode < HIGHEST_STATUS_CODE)
+        if (statusOverrides != null && statusCode >= LOWEST_STATUS_CODE && statusCode <= HIGHEST_STATUS_CODE)
         {
             final JournalLevel override = statusOverrides[statusCode];
             if (override != null)

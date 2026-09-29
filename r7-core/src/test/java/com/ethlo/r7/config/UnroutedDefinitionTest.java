@@ -59,4 +59,11 @@ class UnroutedDefinitionTest
         new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, null, java.util.List.of(new FilterDefinition("AddResponseHeader", Map.of()))).validate(result);
         assertThat(result.getErrors()).anySatisfy(e -> assertThat(e).contains("reserved"));
     }
+
+    @Test
+    void aMalformedOverrideKeyIsRefusedNotThrown()
+    {
+        assertThat(validate(new JournalDirectionDefinition(JournalLevel.METADATA, Map.of("500-599", JournalLevel.NONE)), null).getErrors())
+                .anySatisfy(e -> assertThat(e).contains("500-599"));
+    }
 }
