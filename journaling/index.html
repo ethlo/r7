@@ -792,8 +792,9 @@ override it by response status) in <code>routes.yaml</code>:</p>
 </span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
 </span><span id="True-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
 </span><span id="True-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span><span class="w">   </span><span class="c1"># capture bodies when things break</span>
+</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">   </span><span class="c1"># more detail when things break</span>
 </span></code></pre></div>
+<p>An override can raise a direction to <code>HEADERS</code>, but not to <code>FULL</code> unless the base level is already <code>FULL</code>: bodies are captured as they stream, and a lower base level installs no capture for an override to switch on. Such a configuration is refused at startup.</p>
 <p><code>NONE</code> / <code>METADATA</code> / <code>HEADERS</code> / <code>FULL</code> — see <a href="../config/#7-journaling-storage">Configuration §7</a>
 for the full table and the <code>storage</code> block (<code>work_dir</code>, <code>shard_size</code>, <code>shard_count</code>) that
 controls where and how those journals are written on disk.</p>
