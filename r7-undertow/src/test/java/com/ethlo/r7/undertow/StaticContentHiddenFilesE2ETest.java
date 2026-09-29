@@ -29,12 +29,21 @@ public class StaticContentHiddenFilesE2ETest extends AbstractR7IntegrationTest
     @Test
     public void wellKnownIsStillServed()
     {
-        given().when().get("/static/.well-known/r7-test.txt").then().statusCode(200).body(equalTo("well-known content"));
+        given().when().get("/static/.well-known/r7-test.txt").then().statusCode(200).body(equalTo("well-known content")).header("X-Content-Type-Options", equalTo("nosniff"));
     }
 
     @Test
     public void aDotfileIsServedWhenTheRouteOptsIn()
     {
         given().when().get("/static-hidden/.r7-hidden-test").then().statusCode(200).body(equalTo("SECRET=1"));
+    }
+
+    /**
+     * Undertow's ResourceHandler answers a missing file itself, past r7's own response writer.
+     */
+    @Test
+    public void aMissingFileIsAnsweredWithNosniff()
+    {
+        given().when().get("/static/no-such-file.txt").then().statusCode(404).header("X-Content-Type-Options", equalTo("nosniff"));
     }
 }
