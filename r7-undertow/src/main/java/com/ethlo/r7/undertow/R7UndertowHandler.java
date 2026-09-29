@@ -69,7 +69,6 @@ import com.ethlo.r7.util.RegexBudget;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
-import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import io.undertow.protocols.ssl.UndertowXnioSsl;
@@ -82,7 +81,6 @@ import io.undertow.server.handlers.resource.PathResourceManager;
 import io.undertow.server.handlers.resource.ResourceHandler;
 import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
-import io.undertow.util.HttpString;
 
 public final class R7UndertowHandler implements HttpHandler
 {
@@ -116,7 +114,7 @@ public final class R7UndertowHandler implements HttpHandler
     private final RemoteAddressResolver remoteAddressResolver;
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
-    private UndertowXnioSsl xnioSsl;
+    private volatile UndertowXnioSsl xnioSsl;
 
     public R7UndertowHandler(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<R7fJournal> gatewayExchangeDataWriter, final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler)
     {
@@ -372,21 +370,27 @@ public final class R7UndertowHandler implements HttpHandler
 
     private UndertowXnioSsl getXnioSsl()
     {
-        if (xnioSsl == null)
+        UndertowXnioSsl ssl = xnioSsl;
+        if (ssl == null)
         {
             synchronized (this)
             {
-                try
+                ssl = xnioSsl;
+                if (ssl == null)
                 {
-                    return new UndertowXnioSsl(Xnio.getInstance(), OptionMap.EMPTY);
-                }
-                catch (NoSuchProviderException | NoSuchAlgorithmException | KeyManagementException e)
-                {
-                    throw new IllegalStateException(e);
+                    try
+                    {
+                        ssl = new UndertowXnioSsl(Xnio.getInstance(), OptionMap.EMPTY);
+                    }
+                    catch (NoSuchProviderException | NoSuchAlgorithmException | KeyManagementException e)
+                    {
+                        throw new IllegalStateException(e);
+                    }
+                    xnioSsl = ssl;
                 }
             }
         }
-        return xnioSsl;
+        return ssl;
     }
 
     @Override
@@ -437,7 +441,7 @@ public final class R7UndertowHandler implements HttpHandler
         if (route == null)
         {
             exchange.setStatusCode(HttpStatuses.NOT_FOUND);
-            exchange.getRequestHeaders().put(HttpString.tryFromString(HttpHeaders.CONTENT_TYPE), MediaTypes.TEXT_PLAIN);
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN);
             exchange.getResponseSender().send(ErrorMessages.NO_ROUTE.duplicate());
             return;
         }

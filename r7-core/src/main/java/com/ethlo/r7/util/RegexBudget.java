@@ -27,6 +27,14 @@ public final class RegexBudget
      */
     public static final long MAX_CHARACTER_READS = 1_000_000L;
 
+    /**
+     * The longest input the budget is sized for. An unanchored {@code find()} retries from every
+     * start position, so even a benign pattern can read an input several times over; a sixteenfold
+     * margin keeps ordinary patterns clear of the budget. Anything that bounds matched input -
+     * the listener's header size, which also bounds the request line - must stay within this.
+     */
+    public static final int MAX_INPUT_LENGTH = (int) (MAX_CHARACTER_READS / 16);
+
     private RegexBudget()
     {
     }

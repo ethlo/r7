@@ -6,6 +6,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import com.ethlo.r7.config.model.DataSize;
+import com.ethlo.r7.util.RegexBudget;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
@@ -42,6 +44,20 @@ class LimitsConfigValidationTest
     void aSubnetMaskOutOfRangeForTheAddressFamilyIsRefused()
     {
         assertThat(errorsFor(List.of("10.0.0.0/33"))).hasSize(1);
+    }
+
+    @Test
+    void aHeaderSizeBeyondTheRegexBudgetIsRefusedNamingTheBound()
+    {
+        final ValidationResult atBound = new ValidationResult();
+        new ServerConfig.LimitsConfig(DataSize.ofBytes(RegexBudget.MAX_INPUT_LENGTH), null, null, null, null, null).validate(atBound);
+        assertThat(atBound.getErrors()).isEmpty();
+
+        final ValidationResult beyond = new ValidationResult();
+        new ServerConfig.LimitsConfig(DataSize.ofBytes(RegexBudget.MAX_INPUT_LENGTH + 1L), null, null, null, null, null).validate(beyond);
+        assertThat(beyond.getErrors()).singleElement().asString()
+                .contains("max_header_size")
+                .contains(String.valueOf(RegexBudget.MAX_INPUT_LENGTH));
     }
 
     private static List<String> errorsFor(final List<String> trustedProxies)

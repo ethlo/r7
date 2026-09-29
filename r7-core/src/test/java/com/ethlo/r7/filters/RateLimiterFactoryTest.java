@@ -76,6 +76,30 @@ class RateLimiterFactoryTest
         verify(d, never()).shortCircuit(any());
     }
 
+    /**
+     * The configured prefix length must reach the filter, not just the key function: a /48
+     * shares one bucket across what the default /64 keeps apart.
+     */
+    @Test
+    void aConfiguredPrefixLengthIsWhatTheFilterBucketsBy() throws Exception
+    {
+        final ClientRequestGatewayFilter slash48 = limiter(48);
+        final ClientRequestGatewayExchange a = from("2001:db8:1:2::1");
+        final ClientRequestGatewayExchange b = from("2001:db8:1:3::1");
+        slash48.onClientRequest(a);
+        slash48.onClientRequest(b);
+        verify(a, never()).shortCircuit(any());
+        verify(b).shortCircuit(any());
+
+        final ClientRequestGatewayFilter slash128 = limiter(128);
+        final ClientRequestGatewayExchange c = from("2001:db8:1:2::1");
+        final ClientRequestGatewayExchange d = from("2001:db8:1:2::2");
+        slash128.onClientRequest(c);
+        slash128.onClientRequest(d);
+        verify(c, never()).shortCircuit(any());
+        verify(d, never()).shortCircuit(any());
+    }
+
     @Test
     void theKeyKeepsExactlyThePrefix() throws Exception
     {
