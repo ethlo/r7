@@ -309,6 +309,40 @@ discontinuity:
 
 Replay semantics of `JournalEvent` are defined in the FlatBuffer specification, not here.
 
+## 6.1 Resynchronisation Trusts the Bytes It Finds
+
+Resynchronising after damage (this section, "Skip corrupted entries, resynchronising on the
+next Magic") scans forward for the next occurrence of the four Magic bytes and resumes
+decoding there, exactly as if that position began a real entry. The CRC32C (§4.1) then
+catches a forged entry whose framing does not hold together — but framing that happens to be
+internally consistent, with a CRC that matches its own (attacker-chosen) bytes, is
+indistinguishable from a genuine entry. Magic is not a MAC: it identifies where an entry
+starts, not who wrote it.
+
+RawPayload (§4.1) is opaque to this layer and MAY contain the Magic byte sequence as
+ordinary data — a response body, for instance, is never inspected for it. A payload crafted
+to contain `0x52374631` at a chosen offset, followed by bytes that parse as a plausible
+entry with a correct CRC over themselves, would be accepted by resync as a real entry if the
+scan ever lands inside that payload. The scan only lands there after real damage — a hole, a
+flipped bit, a truncated write — put the reader out of alignment with the true entry
+boundaries in the first place; a segment with no damage is decoded entry-by-length (§4) and
+never scans for Magic at all. This is a real, currently unclosed gap, not merely a
+theoretical one: whether the surrounding damage is itself accidental or adversarial, the
+bytes resync lands on afterwards are trusted the same way genuine framing would be.
+
+Closing this needs authenticity the current framing cannot express: CRC32C is an integrity
+check against accidental corruption, not a MAC, so no per-entry field in the format as
+specified today lets a reader tell "byte-compatible forgery embedded in a payload" apart
+from "genuine entry" once resync has landed inside attacker-influenced content. A real fix —
+a per-entry MAC or HMAC chained across entries, verified before Magic is trusted rather than
+after — is a format change (a new field, a new version per §11) and is deliberately **not**
+made here. Format versions have no compatibility path (§11): changing the framing to add
+authentication is significant enough to warrant its own version and its own review, not a
+rider on a bug fix. Operators for whom this matters MUST treat resynchronised regions as
+lower-trust than entries decoded without damage, and SHOULD restrict who can influence
+RawPayload content (request/response bodies) on routes journaled at a level that stores them
+verbatim.
+
 ---
 
 # 7. Determinism

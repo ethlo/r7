@@ -247,6 +247,12 @@ If bytes are corrupted:
 * corrupted entries MUST be skipped
 * no repair is attempted in this layer
 
+CRC32C is an integrity check, not an authenticity one. Resynchronising past damage trusts
+whatever bytes it finds at the next Magic occurrence, including Magic bytes that happen to
+appear inside an opaque RawPayload (a request or response body) — see FORMAT.md §6.1 for why
+this is a real, currently unclosed gap rather than a theoretical one, and why closing it
+needs a format change (per-entry authentication) that is deliberately out of scope here.
+
 ---
 
 # 9. Recovery Semantics
