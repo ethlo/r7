@@ -482,7 +482,7 @@ $defs:
             content_type:
               type: string
               description: The Content-Type of the response body.
-              default: text/plain
+              default: text/plain; charset=utf-8
             status:
               anyOf:
               - type: integer
