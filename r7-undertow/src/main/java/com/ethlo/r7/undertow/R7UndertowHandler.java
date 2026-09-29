@@ -10,7 +10,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,12 +41,14 @@ import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayAttributes;
+import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.FallbackConfig;
 import com.ethlo.r7.config.HealthCheckConfig;
+import com.ethlo.r7.config.RouteGenerationListener;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.TimeoutConfig;
@@ -91,7 +92,7 @@ import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
 import io.undertow.util.Methods;
 
-public final class R7UndertowHandler implements HttpHandler
+public final class R7UndertowHandler implements HttpHandler, RouteGenerationListener
 {
     /**
      * Caches the resource handler for a static content directory alongside the directory's
@@ -113,12 +114,13 @@ public final class R7UndertowHandler implements HttpHandler
     private static final Logger logger = LoggerFactory.getLogger(R7UndertowHandler.class);
     private static final ConcurrentHashMap<String, CachedStaticHandler> staticHandlers = new ConcurrentHashMap<>();
     /**
-     * Built for every route with an upstream whenever routes are (re)loaded, never on a request:
-     * a health monitor that only started with a route's first request left a dead target
-     * unnoticed until traffic found it. Replaced wholesale on reload rather than mutated, so a
-     * request always sees one consistent generation.
+     * Built for every route with an upstream before its generation is published, never on a
+     * request: a health monitor that only started with a route's first request left a dead
+     * target unnoticed until traffic found it. Attached to the route instance rather than kept in
+     * a map by route id, so the route table swap publishes both at once, and a request that
+     * matched a route before a reload keeps that route's upstream after it.
      */
-    private volatile Map<String, RouteUpstreamContext> upstreamContexts = Map.of();
+    private static final StateKey<RouteUpstreamContext> UPSTREAM_CONTEXT = new StateKey<>("upstream-context");
     private final LongAdder unroutedRequests = new LongAdder();
     private final GatewayErrorHandler errorHandler;
     private final RequestIdGenerator requestIdGenerator = new SortableRequestIdGenerator();
@@ -156,9 +158,9 @@ public final class R7UndertowHandler implements HttpHandler
         this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
 
-        // The routes were loaded before this handler existed, so the first generation of
-        // upstream contexts is not a reload notification: build it here.
-        this.upstreamContexts = buildUpstreamContexts();
+        // The first generation was published before this handler existed, and before the server
+        // accepts any request: it is prepared here rather than by the reload service.
+        this.prepare(routeRegistry.getRoutes());
     }
 
     private static long getProxyStartOrMinusOne(final HttpServerExchange exchange)
@@ -539,10 +541,10 @@ public final class R7UndertowHandler implements HttpHandler
         // request already carrying those changes must not be handed to a different upstream.
         // A route without an upstream (static content, canned responses) is finished by its
         // upstream-phase filters short-circuiting, so it has no targets to check.
-        // A route with an upstream but no context is one a reload removed while this request was
-        // in flight; it has nowhere to go, the same as one whose targets are all down.
+        // Every published route with an upstream has a context; a missing one would be a route
+        // that was never prepared, and it is refused like one whose targets are all down.
         final boolean hasUpstream = route.routeDefinition().upstream() != null;
-        final RouteUpstreamContext upstreamContext = hasUpstream ? this.upstreamContexts.get(route.id()) : null;
+        final RouteUpstreamContext upstreamContext = hasUpstream ? route.attachment(UPSTREAM_CONTEXT) : null;
         if (hasUpstream && (upstreamContext == null || !upstreamContext.hasAvailableTargets()))
         {
             final DefaultGatewayRoute fallbackRoute = this.fallbackRouteOf(route);
@@ -635,27 +637,49 @@ public final class R7UndertowHandler implements HttpHandler
         setupCompletionHandler(exchange, route, gatewayExchange, statefulJournal);
     }
 
-    private Map<String, RouteUpstreamContext> buildUpstreamContexts()
+    @Override
+    public void prepare(final List<GatewayRoute> routes)
     {
-        final Map<String, RouteUpstreamContext> contexts = new HashMap<>();
         try
         {
-            for (final GatewayRoute route : this.routeRegistry.getRoutes())
+            for (final GatewayRoute route : routes)
             {
                 if (route instanceof DefaultGatewayRoute defaultRoute && defaultRoute.routeDefinition().upstream() != null)
                 {
-                    contexts.put(defaultRoute.id(), this.createUpstreamContext(defaultRoute));
+                    defaultRoute.attach(UPSTREAM_CONTEXT, this.createUpstreamContext(defaultRoute));
                 }
             }
         }
         catch (final RuntimeException e)
         {
-            // Monitors already started for this generation would otherwise probe forever,
-            // owned by no map that a later reload could stop.
-            contexts.values().forEach(RouteUpstreamContext::stop);
+            // Monitors already started for this generation would otherwise probe forever for
+            // routes that were never published.
+            this.retire(routes);
             throw e;
         }
-        return Map.copyOf(contexts);
+    }
+
+    /**
+     * Stops the health monitors of a replaced or rejected generation. Requests still holding one
+     * of its routes finish on its proxy client, which works on without the monitor: only the
+     * probing ends, with the targets left as they were last seen.
+     */
+    @Override
+    public void retire(final List<GatewayRoute> routes)
+    {
+        for (final GatewayRoute route : routes)
+        {
+            if (route instanceof DefaultGatewayRoute defaultRoute)
+            {
+                final RouteUpstreamContext context = defaultRoute.attachment(UPSTREAM_CONTEXT);
+                if (context != null)
+                {
+                    context.stop();
+                }
+            }
+        }
+        logger.debug("Evicting static handlers");
+        staticHandlers.clear();
     }
 
     private RouteUpstreamContext createUpstreamContext(final DefaultGatewayRoute route)
@@ -775,27 +799,6 @@ public final class R7UndertowHandler implements HttpHandler
     }
 
     /**
-     * Must be invoked by the configuration live-reload listener
-     * whenever routes.yaml changes.
-     */
-    public void reloadState()
-    {
-        logger.debug("Rebuilding upstream contexts for live reload");
-        // New before old: requests arriving meanwhile keep the previous generation's targets
-        // rather than finding none. In-flight requests holding an old context finish on its
-        // proxy client, which still works with its monitor stopped - only the probing ends.
-        final Map<String, RouteUpstreamContext> previous = this.upstreamContexts;
-        this.upstreamContexts = buildUpstreamContexts();
-        for (final RouteUpstreamContext context : previous.values())
-        {
-            context.stop();
-        }
-
-        logger.debug("Evicting static handlers");
-        staticHandlers.clear();
-    }
-
-    /**
      * Requests answered 404 because no route matched, since startup.
      */
     public long unroutedRequests()
@@ -810,12 +813,16 @@ public final class R7UndertowHandler implements HttpHandler
     public Map<String, Map<String, Boolean>> upstreamTargetStates()
     {
         final Map<String, Map<String, Boolean>> result = new TreeMap<>();
-        this.upstreamContexts.forEach((routeId, context) ->
+        for (final GatewayRoute route : this.routeRegistry.getRoutes())
         {
-            final Map<String, Boolean> states = new LinkedHashMap<>();
-            context.targetStates().forEach((target, up) -> states.put(SensitiveConfig.redactUrlCredentials(target.toString()), up));
-            result.put(routeId, states);
-        });
+            final RouteUpstreamContext context = route instanceof DefaultGatewayRoute defaultRoute ? defaultRoute.attachment(UPSTREAM_CONTEXT) : null;
+            if (context != null)
+            {
+                final Map<String, Boolean> states = new LinkedHashMap<>();
+                context.targetStates().forEach((target, up) -> states.put(SensitiveConfig.redactUrlCredentials(target.toString()), up));
+                result.put(route.id(), states);
+            }
+        }
         return result;
     }
 

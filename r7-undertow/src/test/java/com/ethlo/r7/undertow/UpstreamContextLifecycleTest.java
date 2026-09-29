@@ -1,11 +1,13 @@
 package com.ethlo.r7.undertow;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,18 +18,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.GatewayScheduler;
+import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.undertow.config.ServerConfig;
+import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 /**
- * Upstream contexts, and with them the health monitors, exist from the moment routes are loaded:
- * a dead target is noticed before any request is sent to it, and a reload stops the monitors of
- * the generation it replaces.
+ * Upstream contexts, and with them the health monitors, exist from the moment a generation of
+ * routes is prepared: a dead target is noticed before any request is sent to it, a replaced
+ * generation's monitors stop, and a generation that fails to prepare leaves none running.
  */
 class UpstreamContextLifecycleTest
 {
@@ -39,16 +43,16 @@ class UpstreamContextLifecycleTest
     private final GatewayScheduler scheduler = new GatewayScheduler(2);
     private final RouteRegistry registry = new RouteRegistry();
     private final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of()));
-    private HttpServer upstream;
     private final AtomicInteger firstProbes = new AtomicInteger();
     private final AtomicInteger secondProbes = new AtomicInteger();
+    private HttpServer upstream;
 
     @BeforeEach
     void startUpstream() throws IOException
     {
         this.upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        this.upstream.createContext("/first-health", exchange -> this.answer(exchange, this.firstProbes));
-        this.upstream.createContext("/second-health", exchange -> this.answer(exchange, this.secondProbes));
+        this.upstream.createContext("/first-health", exchange -> answer(exchange, this.firstProbes));
+        this.upstream.createContext("/second-health", exchange -> answer(exchange, this.secondProbes));
         this.upstream.start();
     }
 
@@ -62,9 +66,9 @@ class UpstreamContextLifecycleTest
     @Test
     void healthChecksRunBeforeTheRouteSeesAnyTraffic() throws Exception
     {
-        this.loadRoutes(this.route("first"));
+        this.registry.updateRoutes("test", this.build(this.route("first", "")));
 
-        new R7UndertowHandler(ServerConfig.standard(), this.registry, null, new StandardErrorHandler(), this.scheduler);
+        this.newHandler();
 
         awaitAtLeast(this.firstProbes, 2);
     }
@@ -72,28 +76,46 @@ class UpstreamContextLifecycleTest
     @Test
     void reloadStartsTheNewMonitorsAndStopsTheOldOnes() throws Exception
     {
-        this.loadRoutes(this.route("first"));
-        final R7UndertowHandler handler = new R7UndertowHandler(ServerConfig.standard(), this.registry, null, new StandardErrorHandler(), this.scheduler);
+        this.registry.updateRoutes("test", this.build(this.route("first", "")));
+        final R7UndertowHandler handler = this.newHandler();
         awaitAtLeast(this.firstProbes, 1);
 
-        this.loadRoutes(this.route("second"));
-        handler.reloadState();
-
+        // What HotReloadService does: prepare, publish, retire the replaced generation
+        final List<GatewayRoute> first = this.registry.getRoutes();
+        final List<GatewayRoute> second = this.build(this.route("second", ""));
+        handler.prepare(second);
         awaitAtLeast(this.secondProbes, 2);
-        // Probes to the first route may have been in flight at the reload; after that, none.
-        final int firstAfterReload = this.firstProbes.get();
-        TimeUnit.MILLISECONDS.sleep(300);
-        assertThat(this.firstProbes.get()).as("probes of the replaced route").isEqualTo(firstAfterReload);
+        this.registry.updateRoutes("test", second);
+        handler.retire(first);
+
+        assertStopped(this.firstProbes, "probes of the replaced route");
     }
 
-    private void answer(final com.sun.net.httpserver.HttpExchange exchange, final AtomicInteger counter) throws IOException
+    @Test
+    void aGenerationThatFailsToPrepareLeavesNoMonitorRunning() throws Exception
     {
-        counter.incrementAndGet();
-        exchange.sendResponseHeaders(200, -1);
-        exchange.close();
+        this.registry.updateRoutes("test", this.build(this.route("first", "")));
+        final R7UndertowHandler handler = this.newHandler();
+
+        // A read timeout that passes validation but does not fit the proxy client's int
+        // milliseconds: preparing fails on the third route, after the second's monitor started.
+        final List<GatewayRoute> rejected = this.build(this.route("second", "") + this.route("third", """
+                      timeouts:
+                        read: 30d
+                """));
+        assertThatThrownBy(() -> handler.prepare(rejected)).isInstanceOf(ArithmeticException.class);
+
+        assertStopped(this.secondProbes, "probes of the rejected generation");
+        final int first = this.firstProbes.get();
+        awaitAtLeast(this.firstProbes, first + 2);
     }
 
-    private String route(final String id)
+    private R7UndertowHandler newHandler()
+    {
+        return new R7UndertowHandler(ServerConfig.standard(), this.registry, null, new StandardErrorHandler(), this.scheduler);
+    }
+
+    private String route(final String id, final String extraUpstreamConfig)
     {
         return """
                   - id: %s
@@ -106,14 +128,21 @@ class UpstreamContextLifecycleTest
                       health_check:
                         path: /%s-health
                         interval: 50ms
-                """.formatted(id, id, this.upstream.getAddress().getPort(), id);
+                %s""".formatted(id, id, this.upstream.getAddress().getPort(), id, extraUpstreamConfig);
     }
 
-    private void loadRoutes(final String routes) throws IOException
+    private List<GatewayRoute> build(final String routes) throws IOException
     {
         final Path file = this.dir.resolve("routes.yaml");
         Files.writeString(file, "version: test\nroutes:\n" + routes);
-        this.configurationManager.load(ConfigurationManager.load(file, RoutesDefinition.class), this.registry);
+        return this.configurationManager.build(ConfigurationManager.load(file, RoutesDefinition.class));
+    }
+
+    private static void answer(final HttpExchange exchange, final AtomicInteger counter) throws IOException
+    {
+        counter.incrementAndGet();
+        exchange.sendResponseHeaders(200, -1);
+        exchange.close();
     }
 
     private static void awaitAtLeast(final AtomicInteger counter, final int expected) throws InterruptedException
@@ -124,5 +153,14 @@ class UpstreamContextLifecycleTest
             TimeUnit.MILLISECONDS.sleep(10);
         }
         assertThat(counter.get()).as("health probes received").isGreaterThanOrEqualTo(expected);
+    }
+
+    private static void assertStopped(final AtomicInteger counter, final String description) throws InterruptedException
+    {
+        // A probe may already have been in flight when the monitor stopped; after that, none.
+        TimeUnit.MILLISECONDS.sleep(100);
+        final int settled = counter.get();
+        TimeUnit.MILLISECONDS.sleep(300);
+        assertThat(counter.get()).as(description).isEqualTo(settled);
     }
 }

@@ -13,6 +13,7 @@ import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 
 public class DefaultGatewayRoute implements GatewayRoute
@@ -32,6 +33,7 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final List<GatewayFilter> ownFilters;
     private final int globalClientRequestFilterCount;
     private final Map<String, DefaultGatewayRoute> fallbacksOfThis = new ConcurrentHashMap<>();
+    private final Map<StateKey<?>, Object> attachments;
 
     public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
@@ -43,7 +45,7 @@ public class DefaultGatewayRoute implements GatewayRoute
      */
     public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final int globalFilterCount, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
-        this(uri, predicate, filters.subList(0, globalFilterCount), List.of(), filters.subList(globalFilterCount, filters.size()), journal, routeDefinition);
+        this(uri, predicate, filters.subList(0, globalFilterCount), List.of(), filters.subList(globalFilterCount, filters.size()), journal, routeDefinition, new ConcurrentHashMap<>());
     }
 
     /**
@@ -52,9 +54,11 @@ public class DefaultGatewayRoute implements GatewayRoute
      *                       back to this one: their request phase has run, so their upstream,
      *                       response and completion phases remain
      * @param ownFilters     this route's own filters, run in every phase
+     * @param attachments    shared with the route this one is derived from, if any
      */
-    private DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> globalFilters, final List<GatewayFilter> carriedFilters, final List<GatewayFilter> ownFilters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    private DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> globalFilters, final List<GatewayFilter> carriedFilters, final List<GatewayFilter> ownFilters, final RouteJournalConfig journal, final RouteDefinition routeDefinition, final Map<StateKey<?>, Object> attachments)
     {
+        this.attachments = attachments;
         this.id = routeDefinition.id();
         this.uri = uri;
         this.predicate = predicate;
@@ -141,10 +145,26 @@ public class DefaultGatewayRoute implements GatewayRoute
             final List<GatewayFilter> started = this.ownFilters.stream()
                     .filter(f -> f instanceof ClientRequestGatewayFilter)
                     .toList();
-            return new DefaultGatewayRoute(fallback.uri, fallback.predicate, this.globalFilters, concat(this.carriedFilters, started), fallback.ownFilters, fallback.journal, fallback.routeDefinition);
+            return new DefaultGatewayRoute(fallback.uri, fallback.predicate, this.globalFilters, concat(this.carriedFilters, started), fallback.ownFilters, fallback.journal, fallback.routeDefinition, fallback.attachments);
         });
     }
 
+
+    /**
+     * Attaches engine state to this route instance, and to every fallback copy of it, so that it
+     * is published and retired with the route (see {@link RouteGenerationListener}). Meant to be
+     * called before the route is published.
+     */
+    public <T> void attach(final StateKey<T> key, final T value)
+    {
+        this.attachments.put(key, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T attachment(final StateKey<T> key)
+    {
+        return (T) this.attachments.get(key);
+    }
 
     @Override
     public String id()
