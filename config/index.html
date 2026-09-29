@@ -2016,7 +2016,7 @@
 <td><code>read</code></td>
 <td>Duration</td>
 <td><code>30s</code></td>
-<td>Maximum time to wait for a response after sending the request.</td>
+<td>Maximum time to wait for a response after sending the request. At most <code>24d</code> (2147483647 ms, the proxy client's int millisecond limit).</td>
 </tr>
 </tbody>
 </table>
@@ -3598,7 +3598,7 @@
 <tr>
 <td><code>request_parse_timeout</code></td>
 <td>Duration</td>
-<td>The timeout (e.g., <code>2s</code>) for parsing an incoming HTTP request.</td>
+<td>The timeout (e.g., <code>2s</code>) for parsing an incoming HTTP request. At most <code>24d</code> (2147483647 ms).</td>
 </tr>
 </tbody>
 </table>
@@ -3676,12 +3676,12 @@
 <tr>
 <td><code>max_request_time</code></td>
 <td>Duration</td>
-<td>The absolute maximum time (e.g., <code>60s</code>) a proxy request is allowed to take before timing out.</td>
+<td>The absolute maximum time (e.g., <code>60s</code>) a proxy request is allowed to take before timing out. At most <code>24d</code> (2147483647 ms).</td>
 </tr>
 <tr>
 <td><code>ttl</code></td>
 <td>Duration</td>
-<td>The time-to-live (e.g., <code>30s</code>) for idle upstream connections in the pool.</td>
+<td>The time-to-live (e.g., <code>30s</code>) for idle upstream connections in the pool. At most <code>24d</code> (2147483647 ms).</td>
 </tr>
 </tbody>
 </table>
