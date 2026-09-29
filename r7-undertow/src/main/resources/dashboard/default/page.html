@@ -327,7 +327,7 @@
     }
 
     /* Masonry Grid inside the details pane */
-    #details-content {
+    #details-live, #details-content {
         column-width: 360px;
         column-gap: 1.5rem;
         padding-bottom: 2rem;
@@ -487,6 +487,112 @@
         color: var(--fg);
         border-color: rgba(128, 128, 128, 0.4);
     }
+
+    /* ==========================================================================
+       9. OPERATOR SIGNALS
+       ========================================================================== */
+    .banner-warn {
+        display: none;
+        border: 1px solid #ff9800;
+        background: rgba(255, 152, 0, 0.08);
+        color: #ffb74d;
+        padding: 0.8rem 1rem;
+        margin: -1rem 0 1.5rem;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+
+    .banner-warn.visible {
+        display: block;
+    }
+
+    .group-heading {
+        column-span: all;
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        margin: 0.5rem 0 1rem;
+    }
+
+    .route-order {
+        color: var(--dim);
+        font-weight: 300;
+        margin-right: 4px;
+    }
+
+    .tag {
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        color: var(--dim);
+        vertical-align: middle;
+    }
+
+    .tag-up {
+        color: #2ecc71;
+        border-color: rgba(46, 204, 113, 0.5);
+    }
+
+    .tag-down {
+        color: #ee4444;
+        border-color: rgba(238, 68, 68, 0.6);
+    }
+
+    .filter-item {
+        padding-left: 12px;
+        margin: 6px 0;
+    }
+
+    .filter-name {
+        color: #ccc;
+        font-weight: 300;
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: inline-block;
+    }
+
+    .filter-summary {
+        color: var(--dim);
+        font-size: 0.85em;
+        margin-left: 6px;
+        word-break: break-word;
+    }
+
+    .filter-args {
+        margin: 4px 0 0 6px;
+        font-size: 0.8em;
+        color: var(--dim);
+    }
+
+    .filter-args summary {
+        cursor: pointer;
+        letter-spacing: 1px;
+    }
+
+    .filter-args pre {
+        margin: 4px 0 0;
+        padding: 0.5rem;
+        font-size: 0.95em;
+    }
+
+    .cfg-default {
+        color: var(--dim);
+    }
+
+    .cfg-changed {
+        color: var(--brighter);
+        box-shadow: inset 2px 0 0 var(--accent);
+        padding-left: 6px;
+    }
+
+    .muted-note {
+        font-size: 0.8rem;
+        color: var(--dim);
+        line-height: 1.5;
+        margin-top: 8px;
+    }
 </style>
 </head>
 <body>
@@ -502,6 +608,8 @@
             <div class="sys-info" id="last-update">CONNECTING...</div>
         </div>
     </header>
+
+    <div class="banner-warn" id="reload-banner"></div>
 
     <div id="view-slider">
 
@@ -521,6 +629,9 @@
         </div>
 
         <div id="pane-details" class="slide-pane">
+            <!-- Live figures are redrawn every poll; configuration only when the view opens or the
+                 config changes, so it can be selected, copied and expanded without being wiped. -->
+            <div id="details-live"></div>
             <div id="details-content"></div>
         </div>
 
@@ -632,6 +743,24 @@
         return `${m}m ${s}s`;
     }
 
+    // Latency percentiles arrive in microseconds as histogram bucket upper bounds - accurate to
+    // within 25% - so they are shown to two significant figures, not as false precision.
+    function formatMicros(us) {
+        if (!us) return '--';
+        if (us < 1000) return `${us}µs`;
+        if (us < 1000000) {
+            const ms = us / 1000;
+            return (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + 'ms';
+        }
+        return (us / 1000000).toFixed(1) + 's';
+    }
+
+    function latencyClass(us) {
+        if (us >= 1000000) return 'text-err';
+        if (us >= 250000) return 'text-warn';
+        return '';
+    }
+
     function parseTimestamp(iso) {
         if (!iso || iso === "1970-01-01T00:00:00Z") return 0;
         return new Date(iso).getTime();
@@ -661,6 +790,49 @@
             if (c >= min && c <= max) sum += count;
         }
         return sum;
+    }
+
+    // The sparkline window ("the last 2m") is what "currently" means on this page: lifetime
+    // totals are persisted across restarts and stop moving once they are large.
+    function windowSeconds(sparkline) {
+        const meta = sparkline?.metadata;
+        if (!meta) return 0;
+        return meta.capacity * (parseDurationMs(meta.interval) / 1000);
+    }
+
+    function windowLabel(sparkline) {
+        const secs = windowSeconds(sparkline);
+        if (!secs) return '--';
+        return secs >= 60 && secs % 60 === 0 ? `${secs / 60}m` : `${Math.round(secs)}s`;
+    }
+
+    // The sparkline only buckets 2xx, 4xx and 5xx (see SparklineRingBuffer), so window
+    // percentages are shares of those - 1xx/3xx are not part of the denominator.
+    function windowStats(sparkline) {
+        const sum = (arr) => (arr || []).reduce((a, v) => a + (v || 0), 0);
+        const s2 = sum(sparkline?.success);
+        const s4 = sum(sparkline?.client_error);
+        const s5 = sum(sparkline?.server_error);
+        const total = s2 + s4 + s5;
+        const secs = windowSeconds(sparkline);
+        return {
+            total, s2, s4, s5,
+            pct4: total > 0 ? (s4 / total) * 100 : 0,
+            pct5: total > 0 ? (s5 / total) * 100 : 0,
+            avgRps: secs > 0 ? total / secs : 0
+        };
+    }
+
+    function formatPct(pct, total) {
+        if (!total) return '--';
+        if (pct === 0) return '0%';
+        return pct < 0.1 ? '<0.1%' : pct.toFixed(1) + '%';
+    }
+
+    function errorPctClass(pct) {
+        if (pct >= 5) return 'text-err';
+        if (pct > 0) return 'text-warn';
+        return '';
     }
 
     const mRow = (label, primaryValue, isSum = false, valueClass = '', secondaryValue = null) => {
@@ -706,51 +878,80 @@
         return esc(val);
     }
 
-    // --- Click Handlers to centralize Scroll logic ---
-    function handleRowClick(routeId) {
-        window.currentOpenRoute = routeId;
-        slider.classList.add('show-details-view');
-        window.scrollTo({top: 0, behavior: 'smooth'});
-        showDetails(routeId);
+    const panelHeader = (kind, title) => `
+        <div class="panel-header-container">
+            <div class="panel-title">
+                <span style="color: var(--dim); font-weight: 300;">${kind} //</span> ${title}
+            </div>
+            <button class="panel-close-btn" data-action="close">
+                <span class="panel-close-icon">←</span> BACK
+            </button>
+        </div>`;
+
+    // ==========================================================================
+    // Navigation: the open view lives in the URL hash, so a reload keeps it, the browser's back
+    // button closes it, and a link to one route can be handed to a colleague.
+    // ==========================================================================
+    const slider = document.getElementById('view-slider');
+    const liveEl = document.getElementById('details-live');
+    const staticEl = document.getElementById('details-content');
+    let currentView = null;   // {kind: 'route'|'system'|'config', id}
+    let staticKey = null;     // what the configuration part was last rendered for
+
+    function viewFromHash() {
+        const m = location.hash.match(/^#\/(route|system|config)(?:\/(.*))?$/);
+        if (!m) return null;
+        return {kind: m[1], id: m[2] != null ? decodeURIComponent(m[2]) : null};
     }
+
+    function openView(kind, id) {
+        location.hash = id != null ? `#/${kind}/${encodeURIComponent(id)}` : `#/${kind}`;
+    }
+
+    function closeDetails() {
+        if (location.hash) {
+            history.pushState(null, '', location.pathname + location.search);
+        }
+        applyView();
+    }
+
+    function applyView() {
+        const next = viewFromHash();
+        const changed = JSON.stringify(next) !== JSON.stringify(currentView);
+        currentView = next;
+        if (!next) {
+            slider.classList.remove('show-details-view');
+            staticKey = null;
+            return;
+        }
+        if (changed) {
+            staticKey = null;
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+        slider.classList.add('show-details-view');
+        renderDetails();
+    }
+
+    window.addEventListener('hashchange', applyView);
+    window.addEventListener('popstate', applyView);
 
     // Route rows carry their id as data, not inside an inline onclick: an id is config text, and
     // inside a JavaScript string literal in an attribute a quote in it would end the string.
     // No inline handlers at all, static ones included: the Content-Security-Policy allows this
     // page's one script block by hash, and inline handlers would need 'unsafe-inline'.
-    const actions = {config: handleConfigClick, close: closeDetails, system: handleSystemClick};
+    const actions = {config: () => openView('config'), close: closeDetails, system: () => openView('system')};
     document.addEventListener('click', (event) => {
         const action = event.target.closest('[data-action]');
         if (action && actions[action.dataset.action]) {
             actions[action.dataset.action]();
             return;
         }
-        const row = event.target.closest('tr[data-route-id]');
+        const row = event.target.closest('[data-route-id]');
         if (row) {
-            handleRowClick(row.dataset.routeId);
+            event.preventDefault();
+            openView('route', row.dataset.routeId);
         }
     });
-
-    function handleSystemClick() {
-        window.currentOpenRoute = '__SYSTEM__';
-        slider.classList.add('show-details-view');
-        window.scrollTo({top: 0, behavior: 'smooth'});
-        showSystemDetails();
-    }
-
-    function handleConfigClick() {
-        window.currentOpenRoute = '__CONFIG__';
-        slider.classList.add('show-details-view');
-        window.scrollTo({top: 0, behavior: 'smooth'});
-        showConfigDetails();
-    }
-
-    function closeDetails() {
-        slider.classList.remove('show-details-view');
-        window.currentOpenRoute = null;
-    }
-
-    const slider = document.getElementById('view-slider');
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && slider.classList.contains('show-details-view')) {
@@ -758,118 +959,169 @@
         }
     });
 
-    function showConfigDetails() {
+    function renderDetails() {
         const data = window.currentData;
-        if (!data || !data.system) return;
+        if (!data || !currentView) return;
 
+        let view;
+        if (currentView.kind === 'route') view = routeView(currentView.id);
+        else if (currentView.kind === 'system') view = systemView();
+        else view = configView();
+        if (!view) return;
+
+        const scrollPos = window.scrollY;
+        liveEl.innerHTML = view.live;
+        if (view.staticKey !== staticKey) {
+            staticEl.innerHTML = view.static || '';
+            staticKey = view.staticKey;
+        }
+        if (view.afterRender) view.afterRender();
+        window.scrollTo(0, scrollPos);
+    }
+
+    // Changes whenever routes.yaml is reloaded, which is when configuration panels must redraw.
+    function configRevision(data) {
+        return `${data.route_version}|${data.route_source?.loaded_at}`;
+    }
+
+    // ==========================================================================
+    // Reload status
+    // ==========================================================================
+    function renderReloadBanner(data) {
+        const banner = document.getElementById('reload-banner');
+        const src = data.route_source;
+        if (!src || !src.rejected_at) {
+            banner.classList.remove('visible');
+            return;
+        }
+        banner.innerHTML = `
+            <strong>ROUTES.YAML CHANGE REJECTED</strong> ${esc(timeAgo(src.rejected_at))} -
+            the file was edited but did not load, so the gateway is still running version
+            <strong>${esc(data.route_version || 'unversioned')}</strong>, loaded ${esc(new Date(src.loaded_at).toLocaleString())}.
+            What is shown below is what is running, not what is on disk. The reason is in the gateway log.`;
+        banner.classList.add('visible');
+    }
+
+    // ==========================================================================
+    // Configuration view: server.yaml
+    // ==========================================================================
+    const humanKey = (k) => esc(String(k).replace(/_/g, ' ').toUpperCase());
+
+    // Paths and URLs are longer than a panel is wide; the full value stays in the tooltip.
+    const longText = (text, maxWidth = '220px') =>
+        `<span class="text-truncate" style="display: inline-block; max-width: ${maxWidth}; vertical-align: bottom;" title="${esc(text)}">${esc(text)}</span>`;
+
+    // Leaf values as server.yaml would spell them: sizes, durations, lists. Numbers are left
+    // unformatted - a port or a thread count with a thousands separator is not what the file says.
+    function formatConfigValue(val) {
+        if (val == null) return '<span class="text-dim">--</span>';
+        if (typeof val === 'boolean') return formatPrimitive(val);
+        if (typeof val === 'number') return esc(String(val));
+        if (typeof val === 'string') {
+            if (/^PT[\d.HMS]+$/.test(val)) return esc(formatDuration(val));
+            return val.length > 28 ? longText(val) : esc(val);
+        }
+        if (Array.isArray(val)) {
+            return val.length === 0 ? '<span class="text-dim">NONE</span>' : val.map(esc).join(', ');
+        }
+        if (typeof val === 'object' && typeof val.bytes === 'number' && Object.keys(val).length === 1) {
+            return formatBytes(val.bytes);
+        }
+        return esc(JSON.stringify(val));
+    }
+
+    const isNested = (v) => v && typeof v === 'object' && !Array.isArray(v)
+        && !(typeof v.bytes === 'number' && Object.keys(v).length === 1);
+
+    // Rendered from whatever ServerConfig serializes to, rather than a hand-kept list of fields,
+    // so an option added to server.yaml shows up here without anyone remembering to add it.
+    // Values that differ from ServerConfig.standard() are marked: "what did we change" is the
+    // usual question, and the answer is otherwise a diff against docs/config.md.
+    function configRows(obj, defaults, depth) {
+        let html = '';
+        for (const [key, val] of Object.entries(obj || {})) {
+            const def = defaults ? defaults[key] : undefined;
+            if (isNested(val)) {
+                html += `<div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px; padding-left: ${depth * 8}px;">${humanKey(key)}</div>`;
+                html += configRows(val, def, depth + 1);
+                continue;
+            }
+            const changed = defaults !== undefined && JSON.stringify(val) !== JSON.stringify(def);
+            const cls = changed ? 'cfg-changed' : '';
+            const title = changed ? ` title="default: ${esc(def === undefined ? 'n/a' : JSON.stringify(def))}"` : '';
+            html += `<div${title} style="padding-left: ${depth * 8}px;">${mRow(humanKey(key), formatConfigValue(val), false, cls)}</div>`;
+        }
+        return html;
+    }
+
+    function configView() {
+        const data = window.currentData;
         const sys = data.system;
         const cfg = sys.configuration || {};
-        const mem = sys.memory || data.memory || null;
+        const defaults = sys.configuration_defaults;
+        const mem = sys.memory || null;
+        const src = data.route_source || {};
 
-        // Helper to handle strings ("10MB"), raw bytes, DataSize objects ({"bytes": N} - see
-        // com.ethlo.r7.config.model.DataSize), or empty objects ({}) from the backend
-        const formatConfigSize = (val) => {
-            if (val == null) return '--';
-            if (typeof val === 'string') return esc(val);
-            if (typeof val === 'number') return formatBytes(val);
-            if (typeof val === 'object') {
-                if (typeof val.bytes === 'number') return formatBytes(val.bytes);
-                if (Object.keys(val).length === 0) return 'DEFAULT';
-            }
-            return esc(String(val));
-        };
-
-        const content = `
-        <div class="panel-header-container">
-            <div class="panel-title">
-                <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> CONFIGURATION
-            </div>
-            <button class="panel-close-btn" data-action="close">
-                <span class="panel-close-icon">←</span> BACK
-            </button>
-        </div>
+        const live = `
+        ${panelHeader('SYSTEM', 'CONFIGURATION')}
 
         <div class="panel-section">
-            <div class="panel-section-title">Environment Info</div>
+            <div class="panel-section-title">Environment</div>
             ${mRow('VERSION', esc(sys.version), true)}
             ${mRow('STARTED AT', new Date(sys.started_at).toLocaleString(), false)}
             ${mRow('UPTIME', formatUptime(sys.uptime), false)}
-            <div class="spacer-sm"></div>
-            ${mRow('SERVER BIND', esc(`${cfg.server?.host}:${cfg.server?.port}`), false)}
-            ${mRow('MANAGEMENT BIND', esc(`${cfg.management?.host}:${cfg.management?.port}`), false)}
+            ${mRow('ROUTES LOADED', timeAgo(src.loaded_at), false)}
+            ${mRow('LAST RELOAD', src.rejected_at ? `<span class="text-warn">REJECTED ${timeAgo(src.rejected_at)}</span>` : '<span class="text-2xx">OK</span>', false)}
         </div>
 
         <div class="panel-section">
-            <div class="panel-section-title">HTTP & Limits</div>
-            ${mRow('HTTP/2 ENABLED', formatPrimitive(cfg.http?.enable_http2), true)}
-            ${mRow('ALWAYS KEEP-ALIVE', formatPrimitive(cfg.http?.always_set_keep_alive), false)}
-            ${mRow('PARSE TIMEOUT', formatDuration(cfg.http?.request_parse_timeout), false)}
-            <div class="spacer-sm"></div>
-            ${mRow('MAX HEADER COUNT', esc(cfg.limits?.max_header_count), false)}
-            ${mRow('MAX HEADER SIZE', formatConfigSize(cfg.limits?.max_header_size), false)}
-            ${mRow('MAX ENTITY SIZE', formatConfigSize(cfg.limits?.max_entity_size), false)}
-            ${mRow('MAX PARAMS', cfg.limits?.max_parameter_count?.toLocaleString(), false)}
-            ${mRow('MAX COOKIES', cfg.limits?.max_cookie_count?.toLocaleString(), false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Proxy Pool</div>
-            ${mRow('CONNS / THREAD', cfg.proxy?.connections_per_thread?.toLocaleString(), true)}
-            ${mRow('MAX QUEUE SIZE', cfg.proxy?.max_queue_size?.toLocaleString(), false)}
-            ${mRow('MAX REQUEST TIME', formatDuration(cfg.proxy?.max_request_time), false)}
-            ${mRow('TTL', formatDuration(cfg.proxy?.ttl), false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Advanced & Socket</div>
-            ${mRow('I/O THREADS', esc(cfg.advanced?.io_threads), true)}
-            ${mRow('TASK THREADS', esc(cfg.advanced?.task_threads), false)}
-            ${mRow('CONN LOW WATER', cfg.advanced?.connection_low_water?.toLocaleString(), false)}
-            ${mRow('CONN HIGH WATER', cfg.advanced?.connection_high_water?.toLocaleString(), false)}
-            <div class="spacer-sm"></div>
-            ${mRow('TCP NODELAY', formatPrimitive(cfg.advanced?.tcp_no_delay), false)}
-            ${mRow('REUSE ADDRESSES', formatPrimitive(cfg.advanced?.reuse_addresses), false)}
-            ${mRow('SOCKET BACKLOG', cfg.advanced?.socket_backlog?.toLocaleString(), false)}
-            ${mRow('READ TIMEOUT', formatDuration(cfg.advanced?.socket_read_timeout), false)}
-            ${mRow('DIRECT BUFFERS', formatPrimitive(cfg.advanced?.direct_buffers), false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Journal Storage</div>
-            ${mRow('WORK DIR', `<span class="text-dim text-truncate" style="max-width: 150px; display: inline-block; vertical-align: bottom;" title="${esc(cfg.storage?.work_dir)}">${esc(cfg.storage?.work_dir)}</span>`, true)}
-            ${mRow('SHARD COUNT', esc(cfg.storage?.shard_count), false)}
-            ${mRow('SHARD SIZE', formatConfigSize(cfg.storage?.shard_size), false)}
-            ${mRow('PRE-FAULT', formatPrimitive(cfg.storage?.pre_fault), false)}
-        </div>
-
-        <div class="panel-section" id="mem-section">
             <div class="panel-section-title">Resource Pressure</div>
             ${mem ? `
                 ${mRow('HEAP MEMORY',
             `<span class="${getPressureClass(mem.heap_used, mem.heap_max)}">${formatBytes(mem.heap_used)}</span>`,
             true, '', formatBytes(mem.heap_max) + ' MAX')}
-
                 ${mRow('DIRECT MEMORY (NIO)',
             formatBytes(mem.direct_used),
             false, '', mem.direct_max > 0 ? formatBytes(mem.direct_max) + ' MAX' : 'UNLIMITED')}
-
                 ${mRow('FILE DESCRIPTORS',
             `<span class="${getPressureClass(mem.open_fds, mem.max_fds)}">${mem.open_fds.toLocaleString()}</span>`,
             false, '', mem.max_fds > 0 ? mem.max_fds.toLocaleString() + ' MAX' : '--')}
-                ${mRow('TOTAL GC TIME',
-            mem.gc_time_ms.toLocaleString() + ' ms',
-            false,
-            '',
-            formatGcActivity())}
+                ${mRow('TOTAL GC TIME', mem.gc_time_ms.toLocaleString() + ' ms', false, '', formatGcActivity())}
+                ${mRow('JOURNAL DISK FREE', data.journaling?.available_space != null ? formatBytes(data.journaling.available_space) : '--', false)}
             ` : `<div class="sub text-dim" style="padding: 4px;">Resource data pending...</div>`}
-        </div>
-        `;
+        </div>`;
 
-        const container = document.getElementById('details-content');
-        const scrollPos = window.scrollY;
-        container.innerHTML = content;
-        window.scrollTo(0, scrollPos);
+        let sections = '';
+        for (const [key, val] of Object.entries(cfg)) {
+            const body = isNested(val)
+                ? configRows(val, defaults ? defaults[key] : undefined, 0)
+                : mRow(humanKey(key), formatConfigValue(val), false);
+            sections += `<div class="panel-section"><div class="panel-section-title">${humanKey(key)}</div>${body}</div>`;
+        }
+
+        const stat = `
+        <div class="group-heading">CONFIGURATION FILES</div>
+        <div class="panel-section" style="column-span: all;">
+            <div class="panel-section-title">Sources</div>
+            ${mRow('ROUTES', `<span class="text-dim">${longText(src.file || '--', '60vw')}</span>`, true)}
+            ${mRow('ROUTES VERSION', esc(data.route_version || 'unversioned'), false)}
+            ${mRow('ROUTES LOADED AT', src.loaded_at ? esc(new Date(src.loaded_at).toLocaleString()) : '--', false)}
+            ${mRow('SERVER', sys.configuration_file ? `<span class="text-dim">${longText(sys.configuration_file, '60vw')}</span>` : '<span class="text-dim">NONE - BUILT-IN DEFAULTS</span>', true)}
+            <div class="muted-note">
+                routes.yaml is reloaded when it changes; server.yaml is read once at startup, so what is shown
+                below is the file as it was when the gateway started. Values that differ from the built-in
+                defaults are <span class="cfg-changed">marked</span>; hover one to see its default.
+            </div>
+        </div>
+        <div class="group-heading">SERVER.YAML (EFFECTIVE)</div>
+        ${sections}`;
+
+        return {live, static: stat, staticKey: 'config|' + configRevision(data)};
     }
+
+    // ==========================================================================
+    // Charts
+    // ==========================================================================
 
     // Weighted Moving Average smoothing kernel (1-2-1)
     function smoothArray(arr, isEnabled) {
@@ -883,7 +1135,7 @@
         return res;
     }
 
-    function drawStackedSparkline(canvas, data, options = { showYAxis: false, smooth: true }) {
+    function drawStackedSparkline(canvas, data, options = { showYAxis: false, smooth: true, latency: null }) {
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
@@ -933,7 +1185,7 @@
         }
 
         ctx.font = '600 11px ui-monospace, "Roboto Mono", monospace';
-        const intervalSec = parseInt(metadata.interval.match(/\d+/)[0]) || 1;
+        const intervalSec = (parseDurationMs(metadata.interval) / 1000) || 1;
 
         // Draw the explicit Y Axis labels if requested (For the Detail Graph)
         if (options.showYAxis && maxValue > 0) {
@@ -1021,26 +1273,47 @@
         renderPath(clientData, '#f39c12', true);
         renderPath(serverData, '#e74c3c', true);
 
+        // p99 on its own scale (right-hand label): request rate and response time share the time
+        // axis, which is what makes "it got slow when traffic spiked" visible at a glance.
+        const latency = options.latency;
+        if (latency && latency.length === capacity) {
+            const maxLatency = Math.max(...latency);
+            if (maxLatency > 0) {
+                const latencyMax = maxLatency * 1.1;
+                const path = new Path2D();
+                let drawing = false;
+                for (let i = 0; i < latency.length; i++) {
+                    const v = latency[i];
+                    if (!v) { drawing = false; continue; }
+                    const x = i * stepX;
+                    const y = chartHeight - (v / latencyMax) * chartHeight;
+                    if (!drawing) { path.moveTo(x, y); drawing = true; } else { path.lineTo(x, y); }
+                }
+                ctx.strokeStyle = 'rgba(192, 132, 252, 0.9)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 3]);
+                ctx.stroke(path);
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(192, 132, 252, 0.9)';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'top';
+                ctx.fillText(`p99 PEAK: ${formatMicros(maxLatency)}`, logicalWidth - 4, 4);
+            }
+        }
+
         ctx.restore();
     }
 
-    function buildExecutionFlowHtml(config) {
-        let html = '<div style="font-family: monospace; font-size: 0.9em; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px;">';
-        html += buildPipelinePhasesHtml(config.filter_nodes, config.destination);
-        html += '</div>';
-        return html;
-    }
-
+    // ==========================================================================
+    // Route view
+    // ==========================================================================
     function buildMatchTree(node, isRoot = false) {
-        if (!node) return '';
+        if (!node) return '<div class="sub text-dim">No predicates: this route matches nothing on its own (reachable only as a fallback).</div>';
 
-        // Silently unwrap the implicit root 'AndPredicate'
-        if (isRoot && node.name === 'AndPredicate' && node.children && node.children.length > 0) {
-            let unwrappedHtml = '';
-            node.children.forEach(child => {
-                unwrappedHtml += buildMatchTree(child, false);
-            });
-            return unwrappedHtml;
+        // Silently unwrap the implicit root conjunction of a route's match list
+        const isAnd = node.name === 'AndPredicate' || node.name === 'and';
+        if (isRoot && isAnd && node.children && node.children.length > 0) {
+            return node.children.map(child => buildMatchTree(child, false)).join('');
         }
 
         let displayText = node.summary || node.name;
@@ -1067,107 +1340,125 @@
         return html;
     }
 
-    function buildPipelinePhasesHtml(node, destination) {
-        if (!node) return '<div class="sub text-muted" style="padding: 4px;">No pipeline configured.</div>';
-
-        const phases = {
-            clientReq: [],
-            upstreamReq: [],
-            core: 'UpstreamProxy',
-            clientRes: [],
-            completed: []
-        };
-
-        let curr = node;
+    // Flattens the onion the backend sends into the route's filters in declaration order, each
+    // with its phases, and pairs the route's own filters with their (masked) arguments.
+    function flattenFilters(config) {
+        const nodes = [];
+        let curr = config.filter_nodes;
         while (curr) {
-            if (!curr.on_client_request && !curr.on_upstream_request && !curr.on_client_response && !curr.on_completed && !curr.child) {
-                phases.core = curr.id || curr.name;
-            } else {
-                if (curr.on_client_request) phases.clientReq.push(curr.name);
-                if (curr.on_upstream_request) phases.upstreamReq.push(curr.name);
-                if (curr.on_client_response) phases.clientRes.unshift(curr.name);
-                if (curr.on_completed) phases.completed.unshift(curr.name);
+            if (curr.on_client_request || curr.on_upstream_request || curr.on_client_response || curr.on_completed || curr.child) {
+                nodes.push(curr);
             }
             curr = curr.child;
         }
+        const own = config.filters || [];
+        let ownIndex = 0;
+        return nodes.map(n => {
+            const args = !n.global && own[ownIndex] && own[ownIndex].name === n.name ? own[ownIndex].args : undefined;
+            if (!n.global) ownIndex++;
+            let summary = n.summary || '';
+            if (summary.startsWith(n.name + ': ')) summary = summary.substring(n.name.length + 2);
+            else if (summary.startsWith(n.name)) summary = summary.substring(n.name.length).trim();
+            return {name: n.name, global: n.global, summary, args, node: n};
+        });
+    }
 
-        let cleanDest = destination || phases.core || 'N/A';
-        const destMatch = cleanDest.match(/url='([^']+)'/);
-        if (destMatch && destMatch[1]) {
-            cleanDest = destMatch[1];
-        }
+    const globalTag = (f) => f.global ? ' <span class="tag" title="From global_filters in routes.yaml">GLOBAL</span>' : '';
 
-        const renderPhase = (title, items, icon, colorHex, bgColor) => {
+    function buildPipelinePhasesHtml(config, filters) {
+        const phases = {clientReq: [], upstreamReq: [], clientRes: [], completed: []};
+        filters.forEach(f => {
+            if (f.node.on_client_request) phases.clientReq.push(f);
+            if (f.node.on_upstream_request) phases.upstreamReq.push(f);
+            if (f.node.on_client_response) phases.clientRes.unshift(f);
+            if (f.node.on_completed) phases.completed.unshift(f);
+        });
+
+        const renderPhase = (title, items, icon, bgColor) => {
             if (items.length === 0) return '';
             let html = `<div style="margin-bottom: 16px;">`;
             html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 300; font-size: 0.8em; letter-spacing: 0.5px;">${icon} ${title}</div>`;
-            items.forEach((item) => {
-                html += `
-            <div style="padding-left: 12px; margin-top: 6px; margin-bottom: 6px;">
-                <span style="color: #ccc; font-weight: 300; background: ${bgColor}; padding: 2px 6px; border-radius: 4px; display: inline-block;">${esc(item)}</span>
-            </div>`;
+            items.forEach(f => {
+                html += `<div class="filter-item"><span class="filter-name" style="background: ${bgColor};">${esc(f.name)}</span>${globalTag(f)}</div>`;
             });
             html += `</div>`;
             return html;
         };
 
-        let html = '<div style="margin-left: 4px;">';
-        html += renderPhase('CLIENT REQUEST', phases.clientReq, '↓', '#a29bfe', 'rgba(162, 155, 254, 0.08)');
-        html += renderPhase('UPSTREAM REQUEST', phases.upstreamReq, '↓', '#74b9ff', 'rgba(116, 185, 255, 0.08)');
+        const upstream = config.upstream;
+        const target = upstream
+            ? upstream.targets.map(t => `<div class="filter-item"><span style="font-weight: 600; background: rgba(232, 65, 24, 0.08); padding: 2px 6px; border-radius: 4px; display: inline-block;">${esc(t)}</span></div>`).join('')
+            : `<div class="filter-item text-dim" style="font-size: 0.85em;">No upstream: the response comes from this route's filters.</div>`;
 
-        html += `<div style="margin-bottom: 16px;">`;
-        html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 600; font-size: 0.8em; letter-spacing: 0.5px;">◆ TARGET</div>`;
-        html += `
-    <div style="padding-left: 12px; margin-top: 6px; margin-bottom: 6px;">
-        <span style="font-weight: 600; background: rgba(232, 65, 24, 0.08); padding: 2px 6px; border-radius: 4px; display: inline-block;">${esc(cleanDest)}</span>
-    </div>`;
-        html += `</div>`;
-
-        html += renderPhase('CLIENT RESPONSE', phases.clientRes, '↑', '#fdcb6e', 'rgba(253, 203, 110, 0.08)');
-        html += renderPhase('COMPLETED', phases.completed, '↑', '#00b894', 'rgba(0, 184, 148, 0.08)');
+        let html = '<div style="font-family: monospace; font-size: 0.9em; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px;">';
+        html += renderPhase('CLIENT REQUEST', phases.clientReq, '↓', 'rgba(162, 155, 254, 0.08)');
+        html += renderPhase('UPSTREAM REQUEST', phases.upstreamReq, '↓', 'rgba(116, 185, 255, 0.08)');
+        html += `<div style="margin-bottom: 16px;">
+            <div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 600; font-size: 0.8em; letter-spacing: 0.5px;">◆ TARGET</div>
+            ${target}
+        </div>`;
+        html += renderPhase('CLIENT RESPONSE', phases.clientRes, '↑', 'rgba(253, 203, 110, 0.08)');
+        html += renderPhase('COMPLETED', phases.completed, '↑', 'rgba(0, 184, 148, 0.08)');
         html += '</div>';
-
         return html;
     }
 
-    function showDetails(routeId) {
-        const config = window.currentConfigs[routeId];
-        if (!config) return;
+    function buildFilterConfigHtml(filters) {
+        if (filters.length === 0) return '<div class="sub text-dim">No filters.</div>';
+        return filters.map((f, i) => {
+            const hasArgs = f.args && typeof f.args === 'object' && Object.keys(f.args).length > 0;
+            return `
+            <div style="margin-bottom: 10px;">
+                <div><span class="route-order">${i + 1}.</span><span class="filter-name" style="background: rgba(128,128,128,0.1);">${esc(f.name)}</span>${globalTag(f)}</div>
+                ${f.summary ? `<div class="filter-summary" style="margin: 2px 0 0 22px;">${esc(f.summary)}</div>` : ''}
+                ${hasArgs ? `<details class="filter-args" style="margin-left: 22px;"><summary>CONFIG</summary><pre>${esc(JSON.stringify(f.args, null, 2))}</pre></details>` : ''}
+            </div>`;
+        }).join('') + `<div class="muted-note">Secrets and header values outside the journal's safe-header list are shown masked or as fingerprints.</div>`;
+    }
 
-        const metrics = window.currentMetrics[routeId] || {
-            request_statistics: {
-                total: 0, websocket_total: 0, active: 0, websocket_active: 0,
-                last_active: "1970-01-01T00:00:00Z", client_statuses: {}, upstream_statuses: {}
-            },
-            traffic_flow: {
-                ingress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
-                egress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
-                journal_storage_bytes: 0
-            },
-            performance_telemetry: {average_latency: "PT0S"}
-        };
+    function healthTag(routeId, target) {
+        const states = window.currentData?.upstream_health?.[routeId];
+        if (!states) return '<span class="tag" title="The health monitor starts with the route\'s first request">NOT STARTED</span>';
+        if (!(target in states)) return '<span class="tag">UNCHECKED</span>';
+        return states[target] ? '<span class="tag tag-up">UP</span>' : '<span class="tag tag-down">DOWN</span>';
+    }
 
-        const t = metrics.traffic_flow;
-        const s = metrics.request_statistics;
-        const p = metrics.performance_telemetry;
+    function buildUpstreamHtml(config) {
+        const u = config.upstream;
+        if (!u) {
+            return `<div class="sub text-dim">None. Requests are answered by the route's filters (static content, fixed responses, redirects).</div>`;
+        }
+        const hc = u.health_check;
+        const targets = u.targets.map(t => `
+            <div class="sub metric-row" style="display: flex; align-items: baseline;">
+                <span class="metric-label text-truncate" title="${esc(t)}">${esc(t)}</span>
+                <span class="metric-leader"></span>
+                <span data-health-target="${esc(t)}">${hc ? healthTag(config.id, t) : '<span class="tag" title="No health_check: always in rotation">ALWAYS ON</span>'}</span>
+            </div>`).join('');
+        return `
+            ${mRow('TARGETS', u.targets.length, true)}
+            ${targets}
+            <div class="spacer-sm"></div>
+            ${mRow('READ TIMEOUT', formatDuration(u.read_timeout), false)}
+            ${hc ? `
+                ${mRow('HEALTH CHECK', `GET ${esc(hc.path)} every ${formatDuration(hc.interval)}`, false)}
+                ${mRow('DOWN AFTER / UP AFTER', `${hc.fall} / ${hc.rise} probes`, false)}
+                ${hc.override && hc.override !== 'NONE' ? mRow('OVERRIDE', `<span class="text-warn">${esc(hc.override)}</span>`, false) : ''}
+            ` : mRow('HEALTH CHECK', '<span class="text-dim">NONE</span>', false)}
+            ${mRow('FALLBACK ROUTE', u.fallback_route_id
+            ? `<a href="#/route/${encodeURIComponent(u.fallback_route_id)}" style="color: var(--fg);">${esc(u.fallback_route_id)}</a>`
+            : '<span class="text-dim">NONE</span>', false)}`;
+    }
 
-        const st2xx = sumStatuses(s.client_statuses, 200, 299);
-        const st3xx = sumStatuses(s.client_statuses, 300, 399);
-        const err4xx = sumStatuses(s.client_statuses, 400, 499);
-        const err5xx = sumStatuses(s.client_statuses, 500, 599);
-        const wsTotal = s.websocket_total || 0;
-        const wsActive = s.websocket_active || 0;
+    // Health changes while the configuration panels stay put, so only the tags are refreshed.
+    function refreshHealthTags(routeId) {
+        document.querySelectorAll('[data-health-target]').forEach(el => {
+            const html = healthTag(routeId, el.dataset.healthTarget);
+            if (el.innerHTML !== html) el.innerHTML = html;
+        });
+    }
 
-        const r4xxStyle = err4xx > 0 ? 'text-warn' : '';
-        const r5xxStyle = err5xx > 0 ? 'text-err' : '';
-        const rActiveHttpStyle = s.active > 0 ? 'text-http' : '';
-        const rActiveWsStyle = wsActive > 0 ? 'text-ws' : '';
-
-        const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
-
-        const reqJourn = config.journal?.request_level || 'NONE';
-        const resJourn = config.journal?.response_level || 'NONE';
-
+    function buildJournalHtml(config, storageBytes) {
         const buildPills = (activeLevel) => {
             const levels = ['NONE', 'METADATA', 'HEADERS', 'FULL'];
             return `<div class="pill-group">` +
@@ -1191,6 +1482,42 @@
             return ovHtml;
         };
 
+        return `
+            <div class="panel-subtitle" style="margin-bottom: 4px;">REQUEST:</div>
+            ${buildPills(config.journal?.request_level || 'NONE')}
+            ${buildOverrides(config.journal?.request_overrides)}
+            <div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RESPONSE:</div>
+            ${buildPills(config.journal?.response_level || 'NONE')}
+            ${buildOverrides(config.journal?.response_overrides)}`;
+    }
+
+    function routeView(routeId) {
+        const data = window.currentData;
+        const config = window.currentConfigs[routeId];
+        if (!config) {
+            return {
+                live: `${panelHeader('ROUTE', esc(routeId))}<div class="panel-section"><div class="sub text-warn">This route is not in the running configuration (renamed or removed in routes.yaml?).</div></div>`,
+                static: '', staticKey: 'missing|' + routeId
+            };
+        }
+
+        const metrics = window.currentMetrics[routeId] || ZERO_METRICS;
+        const t = metrics.traffic_flow;
+        const s = metrics.request_statistics;
+        const p = metrics.performance_telemetry;
+        const lat = metrics.latency;
+        const spark = metrics.sparkline_data;
+        const win = windowStats(spark);
+        const wl = windowLabel(spark);
+        const routeCount = (data.route_configs || []).length;
+
+        const st2xx = sumStatuses(s.client_statuses, 200, 299);
+        const st3xx = sumStatuses(s.client_statuses, 300, 399);
+        const err4xx = sumStatuses(s.client_statuses, 400, 499);
+        const err5xx = sumStatuses(s.client_statuses, 500, 599);
+        const wsActive = s.websocket_active || 0;
+        const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
+
         const generateStatusRows = (statusMap) => {
             if (!statusMap || Object.keys(statusMap).length === 0) {
                 return `<div class="sub text-muted" style="padding: 4px 4px;">No statuses recorded.</div>`;
@@ -1198,56 +1525,55 @@
             return Object.entries(statusMap).map(([code, count]) => {
                 const codeNum = parseInt(code, 10);
                 const colorClass = codeNum >= 500 ? 'text-err' : (codeNum >= 400 ? 'text-warn' : '');
-                return mRow(`HTTP ${code}`, count.toLocaleString(), false, colorClass);
+                return mRow(`HTTP ${esc(code)}`, count.toLocaleString(), false, colorClass);
             }).join('');
         };
 
-        const content = `
-        <div class="panel-header-container">
-            <div class="panel-title">
-                <span style="color: var(--dim); font-weight: 300;">ROUTE //</span> ${esc(routeId)}
-            </div>
-            <button class="panel-close-btn" data-action="close">
-                <span class="panel-close-icon">←</span> BACK
-            </button>
-        </div>
+        const live = `
+        ${panelHeader('ROUTE', `<span class="route-order">#${config.order}</span>${esc(routeId)}`)}
+
+        <div class="group-heading">PERFORMANCE · LAST ${wl}</div>
 
         <div class="panel-section" style="column-span: all; padding-bottom: 0.5rem;">
             <div class="panel-section-title" style="margin-bottom: 12px; border: none; padding-bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;">
-                <span>TRAFFIC HISTORY</span>
-                <span class="text-dim" style="font-size: 0.8em; letter-spacing: 0;">SMOOTHED (WMA)</span>
+                <span>TRAFFIC &amp; RESPONSE TIME</span>
+                <span class="text-dim" style="font-size: 0.8em; letter-spacing: 0;">
+                    <span style="color: #2ecc71;">━</span> 2xx
+                    <span style="color: #f39c12;">━</span> 4xx
+                    <span style="color: #e74c3c;">━</span> 5xx
+                    <span style="color: #c084fc;">┅</span> p99
+                </span>
             </div>
             <div style="width: 100%; height: 180px; position: relative; margin-bottom: 1rem;">
-                <canvas id="detail-canvas-${esc(routeId)}" style="width: 100%; height: 100%; display: block;"></canvas>
+                <canvas id="detail-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
             </div>
         </div>
 
         <div class="panel-section">
-            <div class="panel-section-title">ROUTE MATCHING</div>
-            ${buildMatchTree(config.match, true)}
+            <div class="panel-section-title">Now (last ${wl})</div>
+            ${mRow('REQUESTS', win.total.toLocaleString(), true, '', win.avgRps.toFixed(1) + PER_SEC)}
+            ${mRow('4xx', formatPct(win.pct4, win.total), false, win.pct4 > 0 ? 'text-warn' : '')}
+            ${mRow('5xx', formatPct(win.pct5, win.total), false, errorPctClass(win.pct5))}
+            <div class="spacer-sm"></div>
+            ${mRow('P50 RESPONSE TIME', formatMicros(lat?.p50_micros), false, latencyClass(lat?.p50_micros))}
+            ${mRow('P95 RESPONSE TIME', formatMicros(lat?.p95_micros), false, latencyClass(lat?.p95_micros))}
+            ${mRow('P99 RESPONSE TIME', formatMicros(lat?.p99_micros), false, latencyClass(lat?.p99_micros))}
+            <div class="spacer-sm"></div>
+            ${mRow('HTTP ACTIVE', s.active, false, s.active > 0 ? 'text-http' : '')}
+            ${mRow('WEBSOCKET ACTIVE', wsActive, false, wsActive > 0 ? 'text-ws' : '')}
+            ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
         </div>
 
         <div class="panel-section">
-            <div class="panel-section-title">FILTER EXECUTION</div>
-            ${buildExecutionFlowHtml(config)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Status</div>
-            ${mRow('LAST ACTIVE', timeAgo(s.last_active), true)}
-            ${mRow('HTTP ACTIVE', s.active, false, rActiveHttpStyle)}
-            ${mRow('WEBSOCKET ACTIVE', wsActive, false, rActiveWsStyle)}
-            ${mRow('AVERAGE LATENCY', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
-        </div>
-
-        <div class="panel-section">
-            <div class="panel-section-title">Aggregated</div>
+            <div class="panel-section-title">Lifetime</div>
             ${mRow('HTTP TOTAL', s.total.toLocaleString(), true)}
-            ${mRow('WEBSOCKET TOTAL', wsTotal.toLocaleString(), false)}
+            ${mRow('WEBSOCKET TOTAL', (s.websocket_total || 0).toLocaleString(), false)}
             ${mRow('2xx SUCCESS', st2xx.toLocaleString(), false)}
             ${mRow('3xx REDIRECT', st3xx.toLocaleString(), false)}
-            ${mRow('4xx ERROR', err4xx.toLocaleString(), false, r4xxStyle)}
-            ${mRow('5xx ERROR', err5xx.toLocaleString(), false, r5xxStyle)}
+            ${mRow('4xx ERROR', err4xx.toLocaleString(), false, err4xx > 0 ? 'text-warn' : '')}
+            ${mRow('5xx ERROR', err5xx.toLocaleString(), false, err5xx > 0 ? 'text-err' : '')}
+            ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
+            <div class="muted-note">Kept across restarts.</div>
         </div>
 
         <div class="panel-section">
@@ -1257,6 +1583,7 @@
 
         <div class="panel-section">
             <div class="panel-section-title">Upstream Responses</div>
+            ${mRow('PROXIED', (s.upstream || 0).toLocaleString(), true)}
             ${generateStatusRows(s.upstream_statuses)}
         </div>
 
@@ -1269,32 +1596,52 @@
             ${mRow('EGRESS TOTAL', formatBytes(t.egress.total_bytes, uRoute), true)}
             ${mRow('EGRESS HEADERS', formatBytes(t.egress.header_bytes, uRoute), false)}
             ${mRow('EGRESS BODY', formatBytes(t.egress.body_bytes, uRoute), false)}
+            <div class="spacer-sm"></div>
+            ${mRow('JOURNAL WRITTEN', formatBytes(t.journal_storage_bytes, uRoute), true)}
+        </div>`;
+
+        const filters = flattenFilters(config);
+        const stat = `
+        <div class="group-heading">CONFIGURATION · ROUTES.YAML ${esc(data.route_version || '')}</div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Matching</div>
+            <div class="sub" style="margin-bottom: 8px;">Tried <strong>#${config.order}</strong> of ${routeCount}; the first route that matches takes the request.</div>
+            ${buildMatchTree(config.match, true)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Upstream</div>
+            ${buildUpstreamHtml(config)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Execution Order</div>
+            ${buildPipelinePhasesHtml(config, filters)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Filters</div>
+            ${buildFilterConfigHtml(filters)}
         </div>
 
         <div class="panel-section">
             <div class="panel-section-title">Journaling</div>
-            ${mRow('STORAGE USED', formatBytes(t.journal_storage_bytes, uRoute), true)}
+            ${buildJournalHtml(config)}
+        </div>`;
 
-            <div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">REQUEST:</div>
-            ${buildPills(reqJourn)}
-            ${buildOverrides(config.journal?.request_overrides)}
-
-            <div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RESPONSE:</div>
-            ${buildPills(resJourn)}
-            ${buildOverrides(config.journal?.response_overrides)}
-        </div>
-        `;
-
-        const container = document.getElementById('details-content');
-        const scrollPos = window.scrollY; // Save scroll position
-        container.innerHTML = content;
-        window.scrollTo(0, scrollPos); // Restore it
-
-        // Draw the sparkline in the newly created canvas for the detail view
-        const detailCanvas = document.getElementById(`detail-canvas-${routeId}`);
-        if (detailCanvas && metrics.sparkline_data) {
-            drawStackedSparkline(detailCanvas, metrics.sparkline_data, { showYAxis: true, smooth: true });
-        }
+        return {
+            live,
+            static: stat,
+            staticKey: 'route|' + routeId + '|' + configRevision(data),
+            afterRender: () => {
+                refreshHealthTags(routeId);
+                const canvas = document.getElementById('detail-canvas');
+                if (canvas && spark) {
+                    drawStackedSparkline(canvas, spark, {showYAxis: true, smooth: true, latency: lat?.p99_series_micros});
+                }
+            }
+        };
     }
 
     const view = document.getElementById('view');
@@ -1305,7 +1652,7 @@
     const ZERO_METRICS = {
         request_statistics: {
             total: 0, websocket_total: 0, active: 0, websocket_active: 0,
-            last_active: "1970-01-01T00:00:00Z", client_statuses: {}
+            last_active: "1970-01-01T00:00:00Z", client_statuses: {}, upstream_statuses: {}, upstream: 0
         },
         traffic_flow: {
             ingress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
@@ -1315,9 +1662,11 @@
         performance_telemetry: {average_latency: "PT0S"}
     };
 
-    function showSystemDetails() {
+    // ==========================================================================
+    // System (socket-level) view
+    // ==========================================================================
+    function systemView() {
         const data = window.currentData;
-        if (!data) return;
 
         const stats = data.connector_statistics || {
             request_count: 0, bytes_sent: 0, bytes_received: 0, error_count: 0,
@@ -1328,20 +1677,15 @@
 
         const avgProcessingNanos = stats.request_count > 0 ? (stats.processing_time_nanos / stats.request_count) : 0;
         const uTotal = getUnitIndex(Math.max(stats.bytes_received, stats.bytes_sent));
+        const unrouted = data.unrouted_requests || 0;
 
-        const content = `
-        <div class="panel-header-container">
-            <div class="panel-title">
-                <span style="color: var(--dim); font-weight: 300;">SYSTEM //</span> RAW TRAFFIC
-            </div>
-            <button class="panel-close-btn" data-action="close">
-                <span class="panel-close-icon">←</span> BACK
-            </button>
-        </div>
+        const live = `
+        ${panelHeader('SYSTEM', 'RAW TRAFFIC')}
 
         <div class="panel-section">
             <div class="panel-section-title">Raw Socket Traffic</div>
             ${mRow('REQUESTS PROCESSED', stats.request_count.toLocaleString(), true)}
+            ${mRow('NO ROUTE MATCHED (404)', unrouted.toLocaleString(), false, unrouted > 0 ? 'text-warn' : '')}
             ${mRow('PARSER ERRORS (Dropped)', stats.error_count.toLocaleString(), false, stats.error_count > 0 ? 'text-warn' : '')}
             ${mRow('BYTES RECEIVED', formatBytes(stats.bytes_received, uTotal), false)}
             ${mRow('BYTES SENT', formatBytes(stats.bytes_sent, uTotal), false)}
@@ -1361,33 +1705,31 @@
             ${mRow('MAXIMUM PROCESSING', (stats.max_processing_time_nanos / 1000000).toFixed(FRACTION_DIGITS) + 'ms', false)}
         </div>
 
-        <div class="panel-section" style="grid-column: 1 / -1;">
+        <div class="panel-section">
             <div class="panel-section-title">Diagnostic Info</div>
             <div class="sub text-dim">
                 These metrics represent the raw physical truth at the TCP/NIO layer, before any routing, filtering, or application logic occurs.
-                Discrepancies between these numbers and the route aggregations indicate early socket terminations, malformed HTTP payloads, or unroutable dark traffic.
+                They count from gateway start; route figures are kept across restarts.
+                Requests no route matched are answered 404 and are not part of any route's figures; a steady stream of them
+                usually means clients on a path that no longer exists, or scanners.
             </div>
-        </div>
-        `;
+        </div>`;
 
-        const container = document.getElementById('details-content');
-        const scrollPos = window.scrollY;
-        container.innerHTML = content;
-        window.scrollTo(0, scrollPos);
+        return {live, static: '', staticKey: 'system'};
     }
 
+    // ==========================================================================
+    // Overview table
+    // ==========================================================================
     function renderTable(data) {
         if (!data.route_configs) return;
 
         const totals = (data.route_metrics || []).reduce((acc, r) => ({
             total: acc.total + (r.request_statistics.total || 0),
-            ws_total: acc.ws_total + (r.request_statistics.websocket_total || 0),
             st_2xx: acc.st_2xx + sumStatuses(r.request_statistics.client_statuses, 200, 299),
-            st_3xx: acc.st_3xx + sumStatuses(r.request_statistics.client_statuses, 300, 399),
             err_4xx: acc.err_4xx + sumStatuses(r.request_statistics.client_statuses, 400, 499),
             err_5xx: acc.err_5xx + sumStatuses(r.request_statistics.client_statuses, 500, 599),
             active: acc.active + (r.request_statistics.active || 0),
-            ws_active: acc.ws_active + (r.request_statistics.websocket_active || 0),
             last_active: Math.max(acc.last_active, parseTimestamp(r.request_statistics.last_active)),
             in_h: acc.in_h + r.traffic_flow.ingress.header_bytes,
             in_b: acc.in_b + r.traffic_flow.ingress.body_bytes,
@@ -1395,26 +1737,10 @@
             out_h: acc.out_h + r.traffic_flow.egress.header_bytes,
             out_b: acc.out_b + r.traffic_flow.egress.body_bytes,
             out_t: acc.out_t + r.traffic_flow.egress.total_bytes,
-            journal: acc.journal + r.traffic_flow.journal_storage_bytes,
-            latency: acc.latency + (parseDurationMs(r.performance_telemetry.average_latency) * (r.request_statistics.total || 0))
+            journal: acc.journal + r.traffic_flow.journal_storage_bytes
         }), {
-            total: 0,
-            ws_total: 0,
-            st_2xx: 0,
-            st_3xx: 0,
-            err_4xx: 0,
-            err_5xx: 0,
-            active: 0,
-            ws_active: 0,
-            last_active: 0,
-            in_h: 0,
-            in_b: 0,
-            in_t: 0,
-            out_h: 0,
-            out_b: 0,
-            out_t: 0,
-            journal: 0,
-            latency: 0
+            total: 0, st_2xx: 0, err_4xx: 0, err_5xx: 0, active: 0, last_active: 0,
+            in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0
         });
 
         const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
@@ -1425,7 +1751,7 @@
 
         let sys2xxRps = 0, sys4xxRps = 0, sys5xxRps = 0;
         data.route_configs.forEach(c => {
-            const r = (data.route_metrics || []).find(m => m.id === c.id);
+            const r = window.currentMetrics[c.id];
             if (r && r.sparkline_data) {
                 sys2xxRps += r.sparkline_data.success_rate;
                 sys4xxRps += r.sparkline_data.client_error_rate;
@@ -1434,6 +1760,31 @@
         });
         const sysRpsTotal = sys2xxRps + sys4xxRps + sys5xxRps;
 
+        // The combined sparkline sums every route's buffer; routes share one interval only when
+        // they share the global SimpleMetrics, which is the common setup.
+        const firstRouteWithSparkline = (data.route_metrics || []).find(m => m.sparkline_data);
+        const bufferSize = firstRouteWithSparkline ? firstRouteWithSparkline.sparkline_data.success.length : 0;
+        const sysSparkline = {metadata: null, success: [], client_error: [], server_error: []};
+        if (bufferSize > 0) {
+            sysSparkline.metadata = firstRouteWithSparkline.sparkline_data.metadata;
+            for (let i = 0; i < bufferSize; i++) {
+                sysSparkline.success[i] = 0;
+                sysSparkline.client_error[i] = 0;
+                sysSparkline.server_error[i] = 0;
+            }
+            (data.route_metrics || []).forEach(m => {
+                if (m.sparkline_data && m.sparkline_data.success.length === bufferSize) {
+                    for (let i = 0; i < bufferSize; i++) {
+                        sysSparkline.success[i] += (m.sparkline_data.success[i] || 0);
+                        sysSparkline.client_error[i] += (m.sparkline_data.client_error[i] || 0);
+                        sysSparkline.server_error[i] += (m.sparkline_data.server_error[i] || 0);
+                    }
+                }
+            });
+        }
+        const sysWin = windowStats(sysSparkline);
+        const unrouted = data.unrouted_requests || 0;
+
         let html = '';
 
         html += `
@@ -1441,8 +1792,9 @@
             <td class="col-route">
                 ${mRow('SYSTEM TOTALS', '', true)}
                 ${mRow('LAST ACTIVE', timeAgo(totals.last_active), false)}
-                ${mRow('ACTIVE REQUESTS', totals.active, false)}
-                ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(totals.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
+                ${mRow('ACTIVE REQUESTS', totals.active, false, totals.active > 0 ? 'text-http' : '')}
+                ${mRow(`5xx (${windowLabel(sysSparkline)})`, formatPct(sysWin.pct5, sysWin.total), false, errorPctClass(sysWin.pct5))}
+                ${mRow('NO ROUTE (404)', formatCompact(unrouted), false, unrouted > 0 ? 'text-warn' : '')}
             </td>
             <td class="col-active">
                 <canvas id="canvas___SYSTEM__" width="200" height="60" style="margin-top: 8px;"></canvas>
@@ -1463,45 +1815,52 @@
             </td>
         </tr>`;
 
-        data.route_configs.forEach(config => {
-            const r = (data.route_metrics || []).find(m => m.id === config.id) || ZERO_METRICS;
+        data.route_configs.forEach((config, index) => {
+            const r = window.currentMetrics[config.id] || ZERO_METRICS;
 
             const t = r.traffic_flow;
             const s = r.request_statistics;
-            const p = r.performance_telemetry;
+            const lat = r.latency;
+            const win = windowStats(r.sparkline_data);
 
             const st2xx = sumStatuses(s.client_statuses, 200, 299);
-            const st3xx = sumStatuses(s.client_statuses, 300, 399);
             const err4xx = sumStatuses(s.client_statuses, 400, 499);
             const err5xx = sumStatuses(s.client_statuses, 500, 599);
 
-            const reqJourn = config.journal?.request_level || 'NONE';
-            const resJourn = config.journal?.response_level || 'NONE';
-
             const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
-            const rActiveHttpStyle = s.active > 0 ? 'text-http' : '';
 
             const r2xxRps = r.sparkline_data ? r.sparkline_data.success_rate : 0;
             const r4xxRps = r.sparkline_data ? r.sparkline_data.client_error_rate : 0;
             const r5xxRps = r.sparkline_data ? r.sparkline_data.server_error_rate : 0;
             const rRpsTotal = r2xxRps + r4xxRps + r5xxRps;
 
+            // Any target a health check has taken out of rotation is worth seeing without clicking in
+            const health = data.upstream_health?.[config.id] || {};
+            const down = Object.values(health).filter(up => !up).length;
+            const healthRow = config.upstream
+                ? mRow('UPSTREAM', down > 0
+                    ? `<span class="text-err">${down}/${config.upstream.targets.length} DOWN</span>`
+                    : `${config.upstream.targets.length} TARGET${config.upstream.targets.length === 1 ? '' : 'S'}`, false)
+                : mRow('UPSTREAM', '<span class="text-dim">NONE</span>', false);
+
             html += `
         <tr class="clickable-row" data-route-id="${esc(config.id)}">
             <td class="col-route">
-                ${mRow('ROUTE', esc(config.id), true)}
+                ${mRow(`<span class="route-order">#${config.order}</span>`, `<span title="${esc(config.id)}">${esc(config.id)}</span>`, true)}
                 ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
-                ${mRow('ACTIVE REQUESTS', s.active, false, rActiveHttpStyle)}
-                ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
+                ${mRow('ACTIVE REQUESTS', s.active, false, s.active > 0 ? 'text-http' : '')}
+                ${mRow('P50 / P99', lat?.window_samples ? `${formatMicros(lat.p50_micros)} / <span class="${latencyClass(lat.p99_micros)}">${formatMicros(lat.p99_micros)}</span>` : '--', false)}
+                ${mRow(`5xx (${windowLabel(r.sparkline_data)})`, formatPct(win.pct5, win.total), false, errorPctClass(win.pct5))}
+                ${healthRow}
             </td>
             <td class="col-active">
-               <canvas id="canvas_${esc(config.id)}" width="200" height="60" style="margin-top: 8px;"></canvas>
+               <canvas id="canvas_${index}" width="200" height="60" style="margin-top: 8px;"></canvas>
             </td>
             <td class="col-totals">
                 ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)) + PER_SEC)}
                 ${mRow('2xx', formatCompact(st2xx), false, t2xxStyle, formatCompact(Math.round(r2xxRps)) + PER_SEC)}
-                ${mRow('4xx', formatCompact(err4xx), false, t4xxStyle, formatCompact(Math.round(r4xxRps)) + PER_SEC)}
-                ${mRow('5xx', formatCompact(err5xx), false, t5xxStyle, formatCompact(Math.round(r5xxRps)) + PER_SEC)}
+                ${mRow('4xx', formatCompact(err4xx), false, err4xx > 0 ? 'text-4xx' : '', formatCompact(Math.round(r4xxRps)) + PER_SEC)}
+                ${mRow('5xx', formatCompact(err5xx), false, err5xx > 0 ? 'text-5xx' : '', formatCompact(Math.round(r5xxRps)) + PER_SEC)}
             </td>
             <td class="col-ingress">
                 ${mRow('SUM', formatBytes(t.ingress.total_bytes, uRoute), true, '', formatBytes(t.egress.total_bytes, uRoute))}
@@ -1510,76 +1869,35 @@
             </td>
             <td class="col-journal">
                 ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
-                ${mRow('REQUEST', jBadge(reqJourn), false)}
-                ${mRow('RESPONSE', jBadge(resJourn), false)}
+                ${mRow('REQUEST', jBadge(config.journal?.request_level), false)}
+                ${mRow('RESPONSE', jBadge(config.journal?.response_level), false)}
             </td>
         </tr>`;
         });
 
         view.innerHTML = html;
 
-        const sysSparkline = {
-            metadata: null,
-            successRate: 0,
-            clientErrorRate: 0,
-            serverErrorRate: 0,
-            success: [],
-            client_error: [],
-            server_error: []
-        };
+        const sysCanvas = document.getElementById('canvas___SYSTEM__');
+        if (sysCanvas && sysSparkline.metadata) drawStackedSparkline(sysCanvas, sysSparkline, {showYAxis: false, smooth: true});
 
-        // Find the first route that actually has sparkline data to extract the global metadata/buffer size
-        const firstRouteWithSparkline = (data.route_metrics || []).find(m => m.sparkline_data);
-        const bufferSize = firstRouteWithSparkline ? firstRouteWithSparkline.sparkline_data.success.length : 0;
-
-        if (bufferSize > 0) {
-            // Assign the global metadata (capacity & interval)
-            sysSparkline.metadata = firstRouteWithSparkline.sparkline_data.metadata;
-
-            for (let i = 0; i < bufferSize; i++) {
-                sysSparkline.success[i] = 0;
-                sysSparkline.client_error[i] = 0;
-                sysSparkline.server_error[i] = 0;
-            }
-
-            (data.route_metrics || []).forEach(m => {
-                if (m.sparkline_data) {
-                    // Sum the pre-calculated rates from the backend
-                    sysSparkline.successRate += (m.sparkline_data.successRate || 0);
-                    sysSparkline.clientErrorRate += (m.sparkline_data.clientErrorRate || m.sparkline_data.client_error_rate || 0);
-                    sysSparkline.serverErrorRate += (m.sparkline_data.serverErrorRate || m.sparkline_data.server_error_rate || 0);
-
-                    // Sum the historical arrays for the visual graph
-                    for (let i = 0; i < bufferSize; i++) {
-                        sysSparkline.success[i] += (m.sparkline_data.success[i] || 0);
-                        sysSparkline.client_error[i] += (m.sparkline_data.client_error[i] || m.sparkline_data.clientError?.[i] || 0);
-                        sysSparkline.server_error[i] += (m.sparkline_data.server_error[i] || m.sparkline_data.serverError?.[i] || 0);
-                    }
-                }
-            });
-
-            const sysCanvas = document.getElementById('canvas___SYSTEM__');
-            if (sysCanvas) drawStackedSparkline(sysCanvas, sysSparkline, { showYAxis: false, smooth: true });
-        }
-
-        data.route_configs.forEach(config => {
-            const canvas = document.getElementById(`canvas_${config.id}`);
-            const metrics = (data.route_metrics || []).find(m => m.id === config.id);
+        data.route_configs.forEach((config, index) => {
+            const canvas = document.getElementById(`canvas_${index}`);
+            const metrics = window.currentMetrics[config.id];
             if (canvas && metrics && metrics.sparkline_data) {
-                drawStackedSparkline(canvas, metrics.sparkline_data, { showYAxis: false, smooth: true });
+                drawStackedSparkline(canvas, metrics.sparkline_data, {showYAxis: false, smooth: true});
             }
         });
     }
 
     async function update() {
         try {
-            const res = await fetch(window.location.href, {headers: {'Accept': 'application/json'}});
+            const res = await fetch(window.location.pathname, {headers: {'Accept': 'application/json'}});
             const data = await res.json();
 
             window.currentData = data;
 
             const sys = data.system;
-            const mem = sys.memory || data.memory || null;
+            const mem = sys.memory || null;
             const now = performance.now();
 
             if (mem && mem.gc_time_ms !== undefined) {
@@ -1597,39 +1915,27 @@
             const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
             const activeConns = data.connector_statistics?.active_connections || 0;
             const routesVer = data.route_version || 'Unversioned';
+            const loadedAgo = data.route_source?.loaded_at ? ` (LOADED ${timeAgo(data.route_source.loaded_at)})` : '';
 
-            vitals.innerText = `UPTIME: ${formatUptime(data.system.uptime)} | ROUTES: ${routesVer} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
+            vitals.innerText = `UPTIME: ${formatUptime(sys.uptime)} | ROUTES: ${routesVer}${loadedAgo} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
 
-            const version = data.system.version || 'Unknown';
-            document.getElementById('sys-version').innerText = version;
+            document.getElementById('sys-version').innerText = sys.version || 'Unknown';
             document.getElementById('routes-version').innerText = routesVer;
 
             timeEl.innerHTML = `<span class="status-indicator" style="color: #00aa00;">●</span>ONLINE`;
 
             window.currentConfigs = {};
-            if (data.route_configs) {
-                data.route_configs.forEach(c => window.currentConfigs[c.id] = c);
-            }
+            (data.route_configs || []).forEach(c => window.currentConfigs[c.id] = c);
 
             window.currentMetrics = {};
-            if (data.route_metrics) {
-                data.route_metrics.forEach(m => window.currentMetrics[m.id] = m);
-            }
+            (data.route_metrics || []).forEach(m => window.currentMetrics[m.id] = m);
 
             // Bulletproof scroll retention for the entire redraw tick
             const currentGlobalScroll = window.scrollY;
 
+            renderReloadBanner(data);
             renderTable(data);
-
-            if (slider.classList.contains('show-details-view')) {
-                if (window.currentOpenRoute === '__SYSTEM__') {
-                    showSystemDetails();
-                } else if (window.currentOpenRoute === '__CONFIG__') {
-                    showConfigDetails();
-                } else if (window.currentOpenRoute) {
-                    showDetails(window.currentOpenRoute);
-                }
-            }
+            if (currentView) renderDetails();
 
             window.scrollTo(0, currentGlobalScroll);
 
@@ -1639,6 +1945,8 @@
         }
     }
 
+    currentView = viewFromHash();
+    if (currentView) slider.classList.add('show-details-view');
     setInterval(update, 1000);
     update();
 </script>
