@@ -155,7 +155,17 @@ public final class RepeatedValues
                 {
                     start++;
                 }
-                final int eq = line.indexOf('=', start);
+                // Bounded to this segment: an unbounded indexOf would rescan the rest of the line
+                // for every '='-less segment, quadratic in the header's length.
+                int eq = -1;
+                for (int i = start; i < end; i++)
+                {
+                    if (line.charAt(i) == '=')
+                    {
+                        eq = i;
+                        break;
+                    }
+                }
                 // Whitespace around the name is not RFC 6265, but a lenient upstream parser trims
                 // it: "role =admin" has to count as a role cookie here too.
                 int nameEnd = eq;
@@ -163,7 +173,7 @@ public final class RepeatedValues
                 {
                     nameEnd--;
                 }
-                if (eq >= 0 && eq < end && nameEnd - start == name.length() && line.regionMatches(start, name, 0, name.length()))
+                if (eq >= 0 && nameEnd - start == name.length() && line.regionMatches(start, name, 0, name.length()))
                 {
                     final String value = cookieValue(line, eq + 1, end);
                     if (expected != null)

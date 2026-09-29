@@ -140,4 +140,17 @@ class RepeatedValuesTest
                 .onClientRequest(exchange);
         verify(exchange, never()).shortCircuit(any());
     }
+
+    /**
+     * Segments without '=' are skipped without rescanning the rest of the line; a quadratic scan
+     * over a large admitted header would take seconds on the I/O thread.
+     */
+    @Test
+    void manySegmentsWithoutEqualsAreScannedInLinearTime()
+    {
+        final String line = "x;".repeat(30_000) + "role=user";
+        final long start = System.nanoTime();
+        assertThat(RepeatedValues.allCookiesMatch(cookies(line), "role", USER)).isTrue();
+        assertThat(System.nanoTime() - start).isLessThan(100_000_000L);
+    }
 }
