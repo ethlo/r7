@@ -546,7 +546,7 @@ Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
+| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nB -C 12 <user>`, which prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
 | `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
@@ -586,7 +586,7 @@ journal:
 
 The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
 
-Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nbB -C 12 <user> <password>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
+Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nB -C 12 <user>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
 
 **Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time. `status_overrides` (above) records it even on a route that otherwise journals nothing.
 
