@@ -223,4 +223,15 @@ class TemplateRedirectFactoryTest
         assertThat(location("^/(a)$", "/$10", "/a")).isEqualTo("/a0");
         assertThat(location("^/(?<name>.*)$", "/n/${name}", "/x?y")).isEqualTo("/n/x%3Fy");
     }
+
+    /**
+     * Text that is not a safe header value decoded - non-Latin-1, or whitespace at the end - is
+     * still ordinary data once encoded, and must not turn a legitimate redirect into a 400.
+     */
+    @Test
+    void textThatIsOnlyUnsafeDecodedIsRedirectedEncoded()
+    {
+        assertThat(location("^/old/(.*)$", "/new/$1", "/old/\u65e5\u672c")).isEqualTo("/new/%E6%97%A5%E6%9C%AC");
+        assertThat(location("^/search/(.*)$", "/find?q=$1", "/search/x ")).isEqualTo("/find?q=x%20");
+    }
 }

@@ -408,15 +408,18 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
                 final String location = encoded.toString();
 
-                // The template itself is validated at startup, but a capture group (e.g. $1) is
-                // filled in from the request path, which Undertow hands us already URL-decoded.
-                // A crafted path can therefore inject a control character into the computed
-                // location; MutableFastGatewayHeaders.set only rejects code points above
-                // ISO-8859-1, not CR/LF, so that would otherwise reach the wire as response
-                // splitting. Reject the request instead of emitting a malformed Location - and
-                // likewise one the capture group has moved off the template's origin.
-                final String decodedLocation = raw.toString();
-                if (!isSafeLocation(decodedLocation) || !staysOnTemplateOrigin(this.targetTemplate, decodedLocation)
+                // The encoded location is what is sent, so it is the one that must be a well-formed
+                // header value on the template's origin. Encoding turns request-supplied control
+                // characters, whitespace and non-Latin-1 text into %XX, so those checks cannot be
+                // failed by a capture group, only by a template built without validation.
+                //
+                // The decoded form is checked for its origin alone: a request whose capture group
+                // would take the redirect off-site once some hop decodes it is hostile, and is
+                // refused rather than served. It is trimmed first, as a browser would, so
+                // " //evil" still counts as //evil - but a space or non-Latin-1 character in it is
+                // data, not a reason to refuse (the encoded form carries it safely).
+                final String decodedLocation = stripAsciiWhitespace(raw.toString());
+                if (!staysOnTemplateOrigin(this.targetTemplate, decodedLocation)
                         || !isSafeLocation(location) || !staysOnTemplateOrigin(this.targetTemplate, location))
                 {
                     exchange.shortCircuit(new ShortCircuitGatewayResponse(
@@ -436,6 +439,21 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                         EMPTY_BODY.slice()
                 ));
             }
+        }
+
+        private static String stripAsciiWhitespace(final String value)
+        {
+            int start = 0;
+            int end = value.length();
+            while (start < end && isAsciiWhitespace(value.charAt(start)))
+            {
+                start++;
+            }
+            while (end > start && isAsciiWhitespace(value.charAt(end - 1)))
+            {
+                end--;
+            }
+            return value.substring(start, end);
         }
 
         private static boolean isSafeLocation(final String location)
