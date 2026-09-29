@@ -70,8 +70,11 @@ jobs:
           ./mvnw -B -ntp org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DincludeTestScope=false
 
       # Fails on any advisory not accepted, with its reason and an expiry, in osv-scanner.toml.
-      - uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
-        with:
-          scan-args: |-
-            --config=osv-scanner.toml
-            -L=target/bom.json
+      # The scanner image is pinned by digest rather than through google/osv-scanner-action:
+      # that action's metadata runs a mutable image tag, so pinning the action's SHA would not
+      # pin the code this job executes. Digest of ghcr.io/google/osv-scanner:v2.6.0.
+      - name: Scan the SBOM with OSV-Scanner
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src \
+            ghcr.io/google/osv-scanner@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa \
+            scan --config=osv-scanner.toml -L=target/bom.json
