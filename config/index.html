@@ -3908,6 +3908,11 @@ fingerprint of its value instead of the value itself. This list is separate per 
 <td>List of Strings</td>
 <td>If non-empty, replaces the built-in response whitelist entirely.</td>
 </tr>
+<tr>
+<td><code>fingerprint_key</code></td>
+<td>String</td>
+<td>Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (<code>id:hmac:</code> + 16 hex digits) rather than the default unkeyed SHA-256 (<code>id:sha256:</code> + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with <code>${VAR}</code> interpolation. See <a href="../journaling/#redacted-header-values">Journaling: redacted header values</a>.</td>
+</tr>
 </tbody>
 </table>
 <p>Header names are matched case-insensitively. There is no way to remove a single header from the
@@ -3915,7 +3920,8 @@ built-in whitelist while keeping the rest — use <code>safe_*_headers</code> to
 you need exact control. Setting both <code>additional_safe_*_headers</code> and <code>safe_*_headers</code> for the
 same direction is a validation error: a full replacement and an addition to the defaults it
 replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
-is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
+is fingerprinted, no exceptions (unkeyed unless <code>fingerprint_key</code> is set, which it should be
+in production). This affects only journaling; it has no effect on what headers
 are sent to clients or upstreams.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">storage</span><span class="p">:</span>
 </span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>

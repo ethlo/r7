@@ -581,6 +581,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="1. Turn on journaling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#redacted-header-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Redacted header values
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -798,6 +815,48 @@ override it by response status) in <code>routes.yaml</code>:</p>
 <p><code>NONE</code> / <code>METADATA</code> / <code>HEADERS</code> / <code>FULL</code> — see <a href="../config/#7-journaling-storage">Configuration §7</a>
 for the full table and the <code>storage</code> block (<code>work_dir</code>, <code>shard_size</code>, <code>shard_count</code>) that
 controls where and how those journals are written on disk.</p>
+<p>Route ids and upstream target URLs are recorded in every exchange's journal attributes
+(<code>gateway.route.id</code>, <code>gateway.target</code>), and the journal stores ISO-8859-1 text only. A route
+id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.</p>
+<h3 id="redacted-header-values">Redacted header values</h3>
+<p>At <code>HEADERS</code> and <code>FULL</code>, a header whose name is not on the <code>journal_security</code> whitelist is
+journaled with a fingerprint in place of its value. There are two forms:</p>
+<table>
+<thead>
+<tr>
+<th>Form</th>
+<th>Example</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id:sha256:</code> + 6 hex digits</td>
+<td><code>id:sha256:3f2a91</code></td>
+<td>default: an unkeyed, truncated SHA-256 of the value</td>
+</tr>
+<tr>
+<td><code>id:hmac:</code> + 16 hex digits</td>
+<td><code>id:hmac:9c04e1d27b55a0f3</code></td>
+<td><code>storage.journal_security.fingerprint_key</code> is set: HMAC-SHA-256 under that key</td>
+</tr>
+</tbody>
+</table>
+<p>Both let you see that two requests carried the same value. Only the keyed form hides the value
+from someone who can read the journal. With the unkeyed form, a reader can hash a guess and
+compare, so a low-entropy secret such as <code>Authorization: Basic</code> with a known user name and a
+common password, a short API key or a <code>role=admin</code> cookie can be found with a dictionary.
+Set a key in production:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">storage</span><span class="p">:</span>
+</span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
+</span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">fingerprint_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${R7_FINGERPRINT_KEY}</span><span class="w">   </span><span class="c1"># at least 32 characters, e.g. `openssl rand -base64 48`</span>
+</span></code></pre></div>
+<p>Keep the key out of anything a journal reader can see. Changing it changes every fingerprint
+from then on, so values journaled before and after the change no longer correlate. The
+unkeyed form is still the default so that existing consumers that match on <code>id:sha256:</code> keep
+working until you opt in. The key applies to journaled header values only: the
+<code>gateway.auth.basic.user</code> attribute and the management endpoint's summaries still use the
+unkeyed form.</p>
 <h2 id="2-pick-a-sidecar-and-mount-the-shared-volume">2. Pick a sidecar and mount the shared volume</h2>
 <p>Gateway and tailer share the <code>journal_dir</code> volume: the gateway writes, the tailer only reads.</p>
 <div class="admonition warning">
@@ -862,30 +921,30 @@ to their defaults below (so a bare container with no config volume still starts 
 </tbody>
 </table>
 <p><strong>Example <code>config/jsonld-tailer.yaml</code>:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
-</span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">checkpoint_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints</span>
-</span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="s">"-"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">checkpoint_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints</span>
+</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">output_path</span><span class="p">:</span><span class="w"> </span><span class="s">"-"</span>
 </span></code></pre></div>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
-</span><span id="True-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># Mount the shared volume</span>
-</span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-</span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
-</span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
-</span><span id="True-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro</span>
-</span><span id="True-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
-</span><span id="True-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-checkpoints:/checkpoints:rw</span><span class="w"> </span><span class="c1"># .r7_checkpoints lives here by default</span>
-</span><span id="True-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="c1"># The output of this container goes to Docker's stdout, </span>
-</span><span id="True-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="c1"># ready to be scraped by your infrastructure's logging driver.</span>
-</span><span id="True-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>
-</span><span id="True-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
-</span><span id="True-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="nt">r7-checkpoints</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
+</span><span id="True-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># Mount the shared volume</span>
+</span><span id="True-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+</span><span id="True-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
+</span><span id="True-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
+</span><span id="True-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro</span>
+</span><span id="True-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
+</span><span id="True-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-checkpoints:/checkpoints:rw</span><span class="w"> </span><span class="c1"># .r7_checkpoints lives here by default</span>
+</span><span id="True-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="c1"># The output of this container goes to Docker's stdout, </span>
+</span><span id="True-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">    </span><span class="c1"># ready to be scraped by your infrastructure's logging driver.</span>
+</span><span id="True-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>
+</span><span id="True-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">  </span><span class="nt">r7-checkpoints</span><span class="p">:</span>
 </span></code></pre></div>
 <h3 id="warczstd-tailer-archival">WARC/zstd Tailer (Archival)</h3>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-tailer-warc:latest</code></p>
@@ -950,26 +1009,26 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 </tbody>
 </table>
 <p><strong>Example <code>config/warc-tailer.yaml</code>:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
-</span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">output_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/warc</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">output_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/warc</span>
 </span></code></pre></div>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
-</span><span id="True-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
-</span><span id="True-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">r7-tailer-warc</span><span class="p">:</span>
-</span><span id="True-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-warc:latest</span>
-</span><span id="True-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro</span>
-</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
-</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
-</span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
-</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
-</span><span id="True-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">r7-tailer-warc</span><span class="p">:</span>
+</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-warc:latest</span>
+</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro</span>
+</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
+</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
+</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
+</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
 </span></code></pre></div>
 <h3 id="clickhouse-tailer">ClickHouse Tailer</h3>
 <div class="admonition important">
@@ -980,26 +1039,26 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 <p>For extremely high-throughput environments, storing access logs in a standard inverted-index database (like Elasticsearch) becomes prohibitively expensive. ClickHouse is a columnar database uniquely suited for this scale.</p>
 <p>This tailer reads the binary journals and performs optimized, asynchronous batch inserts directly into ClickHouse using the <code>JSONEachRow</code> format.</p>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
-</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
-</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">r7-tailer-clickhouse</span><span class="p">:</span>
-</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-clickhouse:latest</span>
-</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
-</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
-</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JOURNAL_DIR=/journals</span>
-</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs</span>
-</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_USER=default</span>
-</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_PASSWORD=secret</span>
-</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BATCH_SIZE=10000</span>
-</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FLUSH_INTERVAL=1s</span>
-</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
-</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+</span><span id="True-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">r7-tailer-clickhouse</span><span class="p">:</span>
+</span><span id="True-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-clickhouse:latest</span>
+</span><span id="True-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is a separate reaper's job</span>
+</span><span id="True-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+</span><span id="True-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JOURNAL_DIR=/journals</span>
+</span><span id="True-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs</span>
+</span><span id="True-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_USER=default</span>
+</span><span id="True-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLICKHOUSE_PASSWORD=secret</span>
+</span><span id="True-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BATCH_SIZE=10000</span>
+</span><span id="True-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FLUSH_INTERVAL=1s</span>
+</span><span id="True-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>
+</span><span id="True-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
 </span></code></pre></div>
 <h2 id="4-retention-the-reaper">4. Retention: The Reaper</h2>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-reaper:latest</code></p>
@@ -1053,29 +1112,29 @@ overridable via the <code>REAPER_CONFIG</code> env var.</p>
 </tbody>
 </table>
 <p><strong>Example <code>config/reaper.yaml</code>:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
-</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7d</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7d</span>
 </span></code></pre></div>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
-</span><span id="True-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
-</span><span id="True-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
-</span><span id="True-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
-</span><span id="True-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is the reaper's job</span>
-</span><span id="True-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>
-</span><span id="True-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="nt">r7-reaper</span><span class="p">:</span>
-</span><span id="True-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-reaper:latest</span>
-</span><span id="True-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/reaper.yaml:/app/config/reaper.yaml:ro</span>
-</span><span id="True-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># the only container that needs write access to this volume</span>
-</span><span id="True-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>
-</span><span id="True-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+</span><span id="True-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">r7-tailer-json</span><span class="p">:</span>
+</span><span id="True-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer-json:latest</span>
+</span><span id="True-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w"> </span><span class="c1"># this tailer only ever reads; retention is the reaper's job</span>
+</span><span id="True-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
+</span><span id="True-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="nt">r7-reaper</span><span class="p">:</span>
+</span><span id="True-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-reaper:latest</span>
+</span><span id="True-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/reaper.yaml:/app/config/reaper.yaml:ro</span>
+</span><span id="True-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w"> </span><span class="c1"># the only container that needs write access to this volume</span>
+</span><span id="True-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>
+</span><span id="True-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
 </span></code></pre></div>
 <h2 id="5-visualizing-your-data">5. Visualizing your data</h2>
 <p>Once your data is routed through a tailer:</p>
