@@ -41,13 +41,13 @@ The point is transparency, not a clean sheet: an Accepted row is a legitimate ou
 | V13 Configuration | 5 | 1 |  | 1 | 6 |  |
 | V14 Data Protection | 3 | 3 |  | 2 |  | 1 |
 | V15 Secure Coding and Architecture | 10 | 3 |  |  |  |  |
-| V16 Security Logging and Error Handling | 8 | 4 |  |  | 4 |  |
+| V16 Security Logging and Error Handling | 8 | 3 |  |  | 5 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **69** | **16** | **0** | **9** | **29** | **130** |
+| **Total** | **69** | **15** | **0** | **9** | **30** | **130** |
 
 ## Gaps
 
-The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed by #74, and gap 8 by #76. This file is stacked on both, so the rows it marks Met describe the tree it ships in.
+The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed by #74, gap 8 by #76 and gap 9 by #82; gap 12 is accepted. This file is stacked on #76 and #82, so the rows it cites describe the tree it ships in.
 
 1. ~~Refuse TRACE~~ (V13.4.4). Closed by [#74](https://github.com/ethlo/r7/pull/74): TRACE gets 501 before routing.
 2. ~~Harden r7's own responses~~ (V3.2.1, V3.4.4, V4.1.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): `nosniff` and `text/plain; charset=utf-8` on everything r7 writes.
@@ -57,7 +57,7 @@ The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed 
 6. ~~Brute-force guidance for BasicAuth~~ (V6.1.1, V6.3.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the docs cover the missing lockout, pairing with a `RateLimiter`, bcrypt cost, and journaling failed logins.
 7. **Security documentation** (V2.1.3, V11.1.2, V13.1.1, V14.1.x, V15.1.3, V15.2.2, V16.1.1). `SECURITY.md` is done ([#75](https://github.com/ethlo/r7/pull/75)). Still to write: a `docs/security.md` covering data classification, every connection r7 makes, the cryptographic inventory, the log and journal inventory, resource-demanding features and every limit.
 8. ~~Repeated parameters and headers~~ (V15.3.7). Closed by [#76](https://github.com/ethlo/r7/pull/76): every occurrence of a repeated name must pass a value check.
-9. **Refusals before routing are not journaled** (V16.3.3). Ambiguous paths, bad `Transfer-Encoding`, TRACE and requests matching no route are refused before a route is chosen, so no journal records them. The first two get a DEBUG log line; TRACE and no-route get none. Planned: an opt-in `unrouted` journal section.
+9. ~~Refusals before routing are not journaled~~ (V16.3.3). Closed by [#82](https://github.com/ethlo/r7/pull/82): an opt-in `unrouted` section journals them under `<unrouted>` with the reason.
 10. ~~Route ID in the no-upstream 503~~ (V16.5.1). Closed by [#74](https://github.com/ethlo/r7/pull/74): the body is generic; the route ID is logged and journaled.
 11. **bcrypt cost floor** (V11.4.2). Any cost from 4 to 31 is accepted. Refuse, or warn at load about, a cost below 10.
 12. ~~Short-lived credentials towards upstreams~~ (V13.2.1). Accepted: r7 presents only static credentials to upstreams, and the private network is the trust boundary. Revisit if mTLS or token exchange is ever needed.
@@ -405,7 +405,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V16.2.5 | 2 | Sensitive data logged by protection level | Partial | The header allowlist and journal levels do this. Query strings are the recorded exception (Accepted, V14.2.1); upstream-failure log lines include the request URI (`StandardErrorHandler`). |
 | V16.3.1 | 2 | All authentication operations logged | Operator | When the route journals requests, or has `status_overrides` covering 401 as the `BasicAuth` docs show ([#74](https://github.com/ethlo/r7/pull/74)), every refusal is recorded with request ID, client address and time. Route journaling defaults to `NONE`, so this depends on configuration. Successful logins carry the user's fingerprint (`gateway.auth.basic.user`) on journaled routes. |
 | V16.3.2 | 2 | Failed authorisation logged | Operator | As V16.3.1: `Require*` refusals are journaled with their status when route journaling or a matching `status_overrides` entry covers it. |
-| V16.3.3 | 2 | Security control bypass attempts logged | Partial | Refusals after routing (rate limits, size limits, regex budget) are journaled when the route journals them. Refusals before routing have no journal: ambiguous paths and bad `Transfer-Encoding` get a DEBUG log line, and TRACE gets none at all (gap 9). |
+| V16.3.3 | 2 | Security control bypass attempts logged | Operator | Refusals after routing (rate limits, size limits, regex budget) are journaled when the route journals them. Refusals before routing (no route, ambiguous path, bad `Transfer-Encoding`, TRACE, regex budget during matching) are journaled under `<unrouted>`, with the reason in `gateway.unrouted.reason`, once the `unrouted` section is configured ([#82](https://github.com/ethlo/r7/pull/82), `UnroutedJournalTest`). |
 | V16.3.4 | 2 | Unexpected errors and control failures logged | Met | `StandardErrorHandler` logs upstream failures and unexpected errors with the request ID. |
 | V16.4.1 | 2 | Log injection prevented | Met | Journals are binary with length-prefixed fields; header text is ISO-8859-1 without CR/LF. Undertow refuses raw CR/LF in the request line, so a logged URI stays on one line. |
 | V16.4.2 | 2 | Logs protected from access and modification | Met | Journals 0640 in a 0750 directory ([#48](https://github.com/ethlo/r7/pull/48), `JournalFilePermissionsTest`); sealed segments carry integrity records. |
