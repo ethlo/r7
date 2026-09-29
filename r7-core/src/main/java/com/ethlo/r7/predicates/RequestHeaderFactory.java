@@ -9,6 +9,7 @@ import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -66,14 +67,8 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
         @Override
         public boolean test(final GatewayRequest request)
         {
-            final String headerValue = request.headers().getFirst(this.headerName);
-
-            if (headerValue == null)
-            {
-                return false;
-            }
-
-            return this.targetValue.equals(headerValue);
+            // Every occurrence, not the first: see RepeatedValues.
+            return RepeatedValues.allEqual(request.headers(), this.headerName, this.targetValue);
         }
 
         @Override

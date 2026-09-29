@@ -20,7 +20,7 @@ import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
-import com.ethlo.r7.util.RegexBudget;
+import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
@@ -95,9 +95,8 @@ public final class RequireMatchRequestHeaderFactory implements GatewayFilterFact
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            final String headerValue = exchange.clientRequest().headers().getFirst(this.config.name());
-
-            if (headerValue == null || !RegexBudget.matcher(this.compiledPattern, headerValue).matches())
+            // Every occurrence, not the first: see RepeatedValues.
+            if (!RepeatedValues.allMatch(exchange.clientRequest().headers(), this.config.name(), this.compiledPattern))
             {
                 exchange.shortCircuit(new ShortCircuitGatewayResponse(
                         this.config.rejectStatusCode().code(),

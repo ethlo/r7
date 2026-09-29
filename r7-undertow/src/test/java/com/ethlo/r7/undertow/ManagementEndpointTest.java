@@ -122,6 +122,7 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .header("X-Frame-Options", equalTo("DENY"))
                 .header("Cache-Control", equalTo("no-store"))
                 .header("Referrer-Policy", equalTo("no-referrer"))
+                .header("Content-Type", equalTo("text/html; charset=utf-8"))
                 .header("Content-Security-Policy", containsString("script-src 'sha256-"))
                 .header("Content-Security-Policy", containsString("frame-ancestors 'none'"))
                 .header("Content-Security-Policy", containsString("base-uri 'none'"))

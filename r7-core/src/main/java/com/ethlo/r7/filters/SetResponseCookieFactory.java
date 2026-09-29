@@ -6,6 +6,7 @@ import java.util.Optional;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.doc.Sensitive;
@@ -55,11 +56,11 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
             String path,
             @Nullable @Description("The cookie max-age duration.")
             Duration maxAge,
-            @Nullable @Description("Whether the cookie is sent over HTTPS only. Defaults to true.")
+            @Nullable @DefaultValue("true") @Description("Whether the cookie is sent over HTTPS only. Defaults to true.")
             Boolean secure,
-            @Nullable @Description("Whether client-side script is denied access to the cookie. Defaults to true.")
+            @Nullable @DefaultValue("true") @Description("Whether client-side script is denied access to the cookie. Defaults to true.")
             Boolean httpOnly,
-            @Nullable @Description("The SameSite policy (Strict, Lax, None). Defaults to Lax.")
+            @Nullable @DefaultValue("Lax") @Description("The SameSite policy (Strict, Lax, None). Defaults to Lax.")
             String sameSite
     ) implements ValidatableConfig
     {

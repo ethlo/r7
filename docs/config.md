@@ -150,7 +150,8 @@ The request is handed to the fallback route **before** the first route's upstrea
 
 Predicates determine whether an incoming request matches a route.
 
-* **Regex Semantics:** All regex predicates use standard Java Regex syntax. Matching is **partial by default** unless explicitly anchored (`^`, `$`). Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Regex Semantics:** All regex predicates and `RequireMatch*` filters use standard Java Regex syntax and must match the **whole value**, as if anchored with `^` and `$`: `user` does not match `superuser`. Use `.*user.*` to match anywhere in the value. Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
 * **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of stalling an I/O thread. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.
 
@@ -478,6 +479,8 @@ The capture groups are filled in from the client's request path, so the computed
 
 ### Security & Validation
 
+The `RequireMatch*` filters follow the same regex and repeated-value rules as the predicates (see [Predicates](#5-predicates)): the whole value must match, and so must every occurrence.
+
 #### RequireRequestHeader
 
 Validates an HTTP header is present. Short-circuits the request if the header is missing.
@@ -546,7 +549,7 @@ Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nbB <user> <password>`. |
+| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nB -C 12 <user>`, which prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
 | `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
@@ -586,7 +589,7 @@ journal:
 
 The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
 
-Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nbB -C 12 <user> <password>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
+Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nB -C 12 <user>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
 
 **Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time. `status_overrides` (above) records it even on a route that otherwise journals nothing.
 

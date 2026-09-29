@@ -546,7 +546,9 @@ public final class R7UndertowHandler implements HttpHandler
             registerResponseListeners(exchange, route, gatewayExchange, statefulJournal);
             // The route ID is configuration, and naming it tells a client how routes are laid
             // out; it stays in the log and the journal (gateway.route.id), not the body.
-            logger.info("Request {}: no upstream available for route '{}'", gatewayExchange.requestId(), route.id());
+            // DEBUG, not INFO: during an outage this runs for every request, and the journal
+            // entry already carries the route ID.
+            logger.debug("Request {}: no upstream available for route '{}'", gatewayExchange.requestId(), route.id());
             sendOwnResponse(exchange, HttpStatuses.SERVICE_UNAVAILABLE, ErrorMessages.NO_UPSTREAM_AVAILABLE.duplicate());
             return;
         }

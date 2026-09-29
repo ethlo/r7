@@ -594,6 +594,7 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: Whether client-side script is denied access to the cookie. Defaults to true.
+              default: true
             max_age:
               type: string
               pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
@@ -609,12 +610,14 @@ $defs:
             same_site:
               type: string
               description: "The SameSite policy (Strict, Lax, None). Defaults to Lax."
+              default: Lax
             secure:
               anyOf:
               - type: boolean
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: Whether the cookie is sent over HTTPS only. Defaults to true.
+              default: true
             value:
               type: string
               description: The cookie value.
