@@ -1,4 +1,4 @@
-package com.ethlo.r7.undertow.util;
+package com.ethlo.r7.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,5 +34,14 @@ class PathEncoderTest
     void keepsTheUnencodedPrefixIntact()
     {
         assertThat(PathEncoder.encode("/some/long/prefix/then space")).isEqualTo("/some/long/prefix/then%20space");
+    }
+
+    @Test
+    void aQueryValueCannotAddParametersOrAFragment()
+    {
+        assertThat(PathEncoder.encodeQueryValue("a&admin=true")).isEqualTo("a%26admin%3Dtrue");
+        assertThat(PathEncoder.encodeQueryValue("a+b;c?d#e%f")).isEqualTo("a%2Bb%3Bc%3Fd%23e%25f");
+        final String plain = "a/b:c@d-e_f.g~h!$'()*,";
+        assertThat(PathEncoder.encodeQueryValue(plain)).isSameAs(plain);
     }
 }

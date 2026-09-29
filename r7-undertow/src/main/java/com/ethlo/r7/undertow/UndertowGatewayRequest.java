@@ -8,7 +8,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.api.TextValues;
-import com.ethlo.r7.undertow.util.PathEncoder;
+import com.ethlo.r7.util.PathEncoder;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.util.HttpString;
 

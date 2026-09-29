@@ -66,9 +66,9 @@ class TemplateRedirectFactoryTest
     @Test
     void anAbsoluteTemplateKeepsItsOrigin()
     {
-        final ShortCircuitGatewayResponse ok = redirect("^/x/(.*)$", "https://good.example/$1", "/x/p?q=1");
+        final ShortCircuitGatewayResponse ok = redirect("^/x/(.*)$", "https://good.example/$1", "/x/p/q");
         assertThat(ok.status()).isEqualTo(HttpStatuses.FOUND);
-        assertThat(ok.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("https://good.example/p?q=1");
+        assertThat(ok.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("https://good.example/p/q");
 
         final ShortCircuitGatewayResponse tricky = redirect("^/x/(.*)$", "https://good.example/$1", "/x/@evil.example");
         assertThat(tricky.headers().getFirst(HttpHeaders.LOCATION)).startsWith("https://good.example/");
@@ -148,5 +148,90 @@ class TemplateRedirectFactoryTest
         final ShortCircuitGatewayResponse response = redirect("^/go/(.*)$", "/go/$1://fixed", "/go/a");
         assertThat(response.status()).isEqualTo(HttpStatuses.FOUND);
         assertThat(response.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("/go/a://fixed");
+    }
+
+    private static String location(final String source, final String target, final String path)
+    {
+        final ShortCircuitGatewayResponse response = redirect(source, target, path);
+        assertThat(response.status()).isEqualTo(HttpStatuses.FOUND);
+        return response.headers().getFirst(HttpHeaders.LOCATION);
+    }
+
+    /**
+     * The path arrives decoded, so a client's %3F / %23 is a real '?' / '#' here, and its %253F
+     * a literal "%3F". Spliced in raw, either would start a query or fragment the template never
+     * had (or be decoded into one by the next hop); encoded, it stays data in the path.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "/old/a?admin=true      | /new/a%3Fadmin=true",
+            "/old/a#frag            | /new/a%23frag",
+            "/old/a%3Fadmin=true    | /new/a%253Fadmin=true",
+            "/old/a%23frag          | /new/a%2523frag",
+            "/old/a b               | /new/a%20b",
+            "/old/caf\u00e9         | /new/caf%C3%A9"
+    })
+    void aCaptureGroupCannotAddAQueryOrFragmentToAPath(final String path, final String expected)
+    {
+        final String location = location("^/old/(.*)$", "/new/$1", path);
+        assertThat(location).isEqualTo(expected);
+        assertThat(location).doesNotContain("?").doesNotContain("#");
+    }
+
+    @Test
+    void anAbsoluteTargetKeepsItsPathQueryAndFragmentStructure()
+    {
+        final String location = location("^/x/(.*)$", "https://good.example/$1?keep=1#top", "/x/p?evil=1#other");
+        assertThat(location).isEqualTo("https://good.example/p%3Fevil=1%23other?keep=1#top");
+    }
+
+    /**
+     * After a literal '?' the group is a query value: '&', '=' and '#' must not add a parameter
+     * or end the query.
+     */
+    @Test
+    void aCaptureGroupInTheQueryStaysOneValue()
+    {
+        final String location = location("^/search/(.*)$", "/find?q=$1&page=1", "/search/x&admin=true#f");
+        assertThat(location).isEqualTo("/find?q=x%26admin%3Dtrue%23f&page=1");
+
+        final String injected = location("^/search/(.*)$", "/find?q=$1", "/search/x%26admin%3Dtrue");
+        assertThat(injected).isEqualTo("/find?q=x%2526admin%253Dtrue");
+    }
+
+    @Test
+    void aCaptureGroupInTheFragmentIsEncoded()
+    {
+        assertThat(location("^/doc/(.*)$", "/docs#$1", "/doc/a#b?c")).isEqualTo("/docs#a%23b%3Fc");
+    }
+
+    /**
+     * The part of the path the source did not match is carried over, as replaceFirst does, and
+     * encoded as well.
+     */
+    @Test
+    void theUnmatchedRestOfThePathIsEncodedToo()
+    {
+        assertThat(location("/old", "/new", "/old/a?b")).isEqualTo("/new/a%3Fb");
+        assertThat(location("/old", "/new?from=", "/old/a&b")).isEqualTo("/new?from=/a%26b");
+    }
+
+    @Test
+    void escapesAndMultiDigitGroupsFollowMatcherSyntax()
+    {
+        assertThat(location("^/(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)$", "/$11/$10/$1\\$1", "/abcdefghijk")).isEqualTo("/k/j/a$1");
+        assertThat(location("^/(a)$", "/$10", "/a")).isEqualTo("/a0");
+        assertThat(location("^/(?<name>.*)$", "/n/${name}", "/x?y")).isEqualTo("/n/x%3Fy");
+    }
+
+    /**
+     * Text that is not a safe header value decoded - non-Latin-1, or whitespace at the end - is
+     * still ordinary data once encoded, and must not turn a legitimate redirect into a 400.
+     */
+    @Test
+    void textThatIsOnlyUnsafeDecodedIsRedirectedEncoded()
+    {
+        assertThat(location("^/old/(.*)$", "/new/$1", "/old/\u65e5\u672c")).isEqualTo("/new/%E6%97%A5%E6%9C%AC");
+        assertThat(location("^/search/(.*)$", "/find?q=$1", "/search/x ")).isEqualTo("/find?q=x%20");
     }
 }
