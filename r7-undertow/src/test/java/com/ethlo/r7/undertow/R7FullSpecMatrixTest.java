@@ -59,6 +59,8 @@ public class R7FullSpecMatrixTest extends AbstractR7IntegrationTest
                 .when()
                 .get("/unmatched-route")
                 .then()
-                .statusCode(404);
+                .statusCode(404)
+                // On the response: it was once set on the request headers, leaving the 404 untyped
+                .contentType("text/plain");
     }
 }

@@ -8,6 +8,7 @@ import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.CidrRange;
+import com.ethlo.r7.util.RegexBudget;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -265,6 +266,13 @@ public record ServerConfig(
             if (this.maxHeaderSize().bytes() < 1024)
             {
                 result.addError("max_header_size", "must be >= 1024 bytes");
+            }
+            // Route and filter patterns match header values and the request line under a fixed
+            // regex budget; past this size a perfectly linear pattern could exhaust it and turn a
+            // legitimate request into a 500.
+            if (this.maxHeaderSize().bytes() > RegexBudget.MAX_INPUT_LENGTH)
+            {
+                result.addError("max_header_size", "must be <= " + RegexBudget.MAX_INPUT_LENGTH + " bytes, the longest input configured regular expressions are budgeted for");
             }
             if (this.maxEntitySize().bytes() < 1024)
             {
