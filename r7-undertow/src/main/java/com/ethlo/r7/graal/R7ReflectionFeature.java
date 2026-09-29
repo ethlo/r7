@@ -123,6 +123,7 @@ public final class R7ReflectionFeature implements Feature
                 com.ethlo.r7.config.RouteJournalConfig.class,
                 com.ethlo.r7.config.JournalDirectionConfig.class,
                 com.ethlo.r7.config.RoutesDefinition.class,
+                com.ethlo.r7.config.UnroutedDefinition.class,
                 com.ethlo.r7.config.FallbackConfig.class,
                 com.ethlo.r7.config.UpstreamConfig.class,
                 com.ethlo.r7.config.HealthCheckConfig.class,

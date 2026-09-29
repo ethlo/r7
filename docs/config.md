@@ -733,10 +733,12 @@ unrouted:
   journal:
     request:
       level: HEADERS
+      status_overrides:
+        404: NONE      # route misses: not journaled at all...
     response:
       level: METADATA
       status_overrides:
-        404: NONE      # keep route misses out, record only the probes
+        404: NONE      # ...which needs both directions, as overrides apply per direction
 ```
 
 Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out, which journals nothing for it. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.

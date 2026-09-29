@@ -16,6 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,9 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
     @BeforeAll
     public static void setupTopology()
     {
+        // The journal is read from the host filesystem, which only the in-process gateway
+        // writes to; the Docker modes journal inside their containers.
+        Assumptions.assumeTrue(System.getProperty("r7.test.mode", "in-process").equals("in-process"), "reads the gateway's journal from the host filesystem");
         startGateway("configs/unrouted/routes.yaml");
     }
 
@@ -77,6 +81,17 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         final JournalExchange entry = awaitEntry(marker);
         Assertions.assertEquals(400, entry.getStatus());
         Assertions.assertEquals("ambiguous_path", entry.getAttributes().getFirst("gateway.unrouted.reason"));
+    }
+
+    @Test
+    public void aRoutePatternExhaustingItsBudgetIsJournaledWithItsReason() throws Exception
+    {
+        final String marker = "/evil-" + UUID.randomUUID();
+        given().header("X-Evil", "a".repeat(40) + "!").when().get(marker).then().statusCode(500);
+
+        final JournalExchange entry = awaitEntry(marker);
+        Assertions.assertEquals(500, entry.getStatus());
+        Assertions.assertEquals("regex_budget", entry.getAttributes().getFirst("gateway.unrouted.reason"));
     }
 
     private static JournalExchange awaitEntry(final String marker) throws Exception
