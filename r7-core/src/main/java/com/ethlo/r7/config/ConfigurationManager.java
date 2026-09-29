@@ -136,7 +136,7 @@ public final class ConfigurationManager
                 })
                 .toList();
 
-        routeRegistry.updateRoutes(config.version(), routes);
+        routeRegistry.updateRoutes(config.version(), routes, createUnroutedRoute(config.unrouted()));
     }
 
     private void validateUniqueRouteIds(List<RouteDefinition> routes)
@@ -212,6 +212,21 @@ public final class ConfigurationManager
                 current = fallbackOf.get(current);
             }
         }
+    }
+
+    /**
+     * A route that is never matched and has no filters or upstream: it only carries the journal
+     * levels that requests refused before routing are recorded at.
+     */
+    private GatewayRoute createUnroutedRoute(final UnroutedDefinition unrouted)
+    {
+        if (unrouted == null)
+        {
+            return null;
+        }
+        final JournalDefinition journal = unrouted.normalizedJournal();
+        final RouteDefinition definition = new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, journal, List.of());
+        return new DefaultGatewayRoute(List.of(), FalsePredicate.INSTANCE, List.of(), createJournalConfig(journal), definition);
     }
 
     private RouteJournalConfig createJournalConfig(JournalDefinition definition)

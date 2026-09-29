@@ -65,7 +65,7 @@ public final class HotReloadService
             if (routesConfig == null)
             {
                 log.warn("No routes found");
-                routesConfig = new RoutesDefinition(null, List.of(), List.of());
+                routesConfig = new RoutesDefinition(null, List.of(), List.of(), null);
             }
 
 

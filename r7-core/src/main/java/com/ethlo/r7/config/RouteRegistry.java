@@ -11,6 +11,7 @@ import com.ethlo.r7.api.GatewayRoute;
 public class RouteRegistry
 {
     private final AtomicReference<List<GatewayRoute>> routes = new AtomicReference<>(Collections.emptyList());
+    private final AtomicReference<GatewayRoute> unrouted = new AtomicReference<>();
     private String version;
 
     /**
@@ -18,8 +19,27 @@ public class RouteRegistry
      */
     public void updateRoutes(final String version, final List<GatewayRoute> newRoutes)
     {
+        updateRoutes(version, newRoutes, null);
+    }
+
+    /**
+     * @param unroutedRoute the route requests refused before routing are journaled under, or
+     *                      {@code null} when the configuration has no {@code unrouted} section
+     */
+    public void updateRoutes(final String version, final List<GatewayRoute> newRoutes, final GatewayRoute unroutedRoute)
+    {
         this.version = version;
+        this.unrouted.set(unroutedRoute);
         this.routes.set(List.copyOf(newRoutes));
+    }
+
+    /**
+     * @return the journal-only route for requests refused before routing, or {@code null} if
+     * such requests are not journaled
+     */
+    public GatewayRoute unroutedRoute()
+    {
+        return this.unrouted.get();
     }
 
     public GatewayRoute findRoute(GatewayRequest gatewayRequest)

@@ -714,6 +714,33 @@ Verbosity can be set generically or overridden conditionally based on HTTP statu
 | `HEADERS` | Metadata + Headers | Captures both request and response headers. |
 | `FULL` | Headers + Bodies | Supports arbitrary binary payload capture. Payloads exceeding 1MB are automatically truncated to prevent runaway storage. |
 
+### Unrouted Requests (`routes.yaml -> unrouted`)
+
+Some requests are refused before any route is chosen, so no route's journal settings apply to them:
+
+| Reason (`gateway.unrouted.reason`) | Status | Cause |
+| --- | --- | --- |
+| `no_route` | `404` | No route matched. |
+| `ambiguous_path` | `400` | See [Ambiguous Paths](#ambiguous-paths). |
+| `transfer_encoding` | `400` | See [Transfer-Encoding](#transfer-encoding). |
+| `trace` | `501` | TRACE is never forwarded. |
+| `regex_budget` | `500` | A route predicate's pattern exhausted its regex budget. |
+
+By default these leave no journal entry. They are mostly what scanners and probes send, so they are worth recording where an audit trail matters. The top-level `unrouted` section journals them under the route ID `<unrouted>`, with the reason in the `gateway.unrouted.reason` attribute:
+
+```yaml
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+      status_overrides:
+        404: NONE      # keep route misses out, record only the probes
+```
+
+Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out, which journals nothing for it. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+
 ---
 
 ## 8. Complete Example Configuration

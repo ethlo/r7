@@ -9,7 +9,8 @@ import com.ethlo.r7.validation.ValidationResult;
 public record RoutesDefinition(
         String version,
         List<FilterDefinition> globalFilters,
-        List<RouteDefinition> routes
+        List<RouteDefinition> routes,
+        UnroutedDefinition unrouted
 ) implements ValidatableConfig, VersionedConfig
 {
     @Override
@@ -18,6 +19,10 @@ public record RoutesDefinition(
         for (final RouteDefinition route : routes())
         {
             route.validate(result.nested(route.id() != null ? route.id() : "?"));
+        }
+        if (this.unrouted != null)
+        {
+            this.unrouted.validate(result.nested("unrouted"));
         }
     }
 

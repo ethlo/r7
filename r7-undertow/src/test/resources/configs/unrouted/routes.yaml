@@ -1,0 +1,17 @@
+version: unrouted-journal-test
+
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+
+routes:
+  - id: known
+    match:
+      - PathPrefix:
+          prefix: /known
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
