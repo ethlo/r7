@@ -113,7 +113,7 @@ Defines the physical endpoints requests will be routed to. The upstream must con
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). |
+| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). For `https`, the certificate chain is checked against the JVM trust store but the hostname is not verified, so any trusted certificate is accepted for any upstream. |
 
 ### Health Check (`health_check`)
 
@@ -473,10 +473,12 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `source` | String | Yes | The regular expression pattern to match against the request path. |
-| `target` | String | Yes | The destination URL template. Regex capture groups can be referenced using `{{name}}` or `{{index}}`. |
+| `target` | String | Yes | The destination URL template. Regex capture groups are referenced by number as in Java's `Matcher.replaceFirst` (`$1`, `$2`, ...); `\$` is a literal `$`. |
 | `status` | Integer | No | The HTTP redirect status code. Defaults to `302` (Found). |
 
 The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path `target` (`/new/$1`) must produce a path: a location starting with `//`, `/\`, `\`, a scheme or whitespace is refused with `400`, because a browser would leave the site for it (`/go//evil.example` would otherwise redirect to `//evil.example`). An absolute `target` must have the form `http://host...`, `https://host...` or `//host...` with a non-empty host; any other scheme (`javascript:`, `data:`, even written with `//`), a scheme without `//`, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's `/`, `?` or `#`; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.
+
+Captured text is decoded request data, so it is percent-encoded before it is placed in the location, for the part of the URL it lands in: before the target's first literal `?` or `#` it is encoded as a path (like `RewritePath`), after it as a single query or fragment value, which also encodes `&`, `=`, `+` and `;`. A client can therefore not add a query, fragment or parameter to the location: with `target: /new/$1`, a request for `/old/a%3Fadmin=true` redirects to `/new/a%3Fadmin=true`, not `/new/a?admin=true`. The part of the path that `source` does not match is carried over (as `replaceFirst` does) and encoded the same way. Write `target` itself in encoded form; it is sent as written.
 
 ---
 

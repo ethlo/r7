@@ -2,6 +2,8 @@ package com.ethlo.r7.filters;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,6 +18,7 @@ import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.ethlo.r7.util.PathEncoder;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -226,10 +229,116 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 && location.regionMatches(true, 0, template, 0, templateOriginEnd);
     }
 
+    /**
+     * The URI component a piece of request text lands in, which decides how it is encoded.
+     */
+    enum Component
+    {
+        PATH, QUERY_OR_FRAGMENT;
+
+        String encode(final String decoded)
+        {
+            return this == PATH ? PathEncoder.encode(decoded) : PathEncoder.encodeQueryValue(decoded);
+        }
+    }
+
+    /**
+     * One piece of a parsed target: literal template text ({@code group < 0}), or a capture group
+     * together with the component its position in the template puts it in.
+     */
+    record Part(String literal, int group, Component component)
+    {
+    }
+
+    /**
+     * Parses a target in {@link Matcher#appendReplacement} syntax ({@code $n}, {@code ${name}},
+     * {@code \x}) so each capture group can be encoded for where it lands, which
+     * {@link Matcher#replaceFirst} cannot do. A group is in the query or fragment once a literal
+     * {@code ?} or {@code #} precedes it; request text can never move that boundary, because it
+     * is encoded before it is spliced in.
+     */
+    static List<Part> parse(final String template, final Pattern pattern)
+    {
+        final int groupCount = pattern.matcher("").groupCount();
+        final List<Part> parts = new ArrayList<>();
+        final StringBuilder literal = new StringBuilder();
+        Component component = Component.PATH;
+        int i = 0;
+        while (i < template.length())
+        {
+            final char c = template.charAt(i);
+            if (c == '\\' && i + 1 < template.length())
+            {
+                literal.append(template.charAt(i + 1));
+                component = componentAfter(template.charAt(i + 1), component);
+                i += 2;
+            }
+            else if (c == '$' && i + 1 < template.length())
+            {
+                final int group;
+                if (template.charAt(i + 1) == '{')
+                {
+                    final int close = template.indexOf('}', i + 2);
+                    final Integer named = close < 0 ? null : pattern.namedGroups().get(template.substring(i + 2, close));
+                    if (named == null)
+                    {
+                        throw new IllegalArgumentException("No group named in: " + template);
+                    }
+                    group = named;
+                    i = close + 1;
+                }
+                else
+                {
+                    // Same rule as Matcher.appendReplacement: take further digits only while the
+                    // number they make is still a group of the pattern.
+                    int ref = template.charAt(i + 1) - '0';
+                    if (ref < 0 || ref > 9 || ref > groupCount)
+                    {
+                        throw new IllegalArgumentException("Illegal group reference in: " + template);
+                    }
+                    i += 2;
+                    while (i < template.length() && Character.isDigit(template.charAt(i)))
+                    {
+                        final int next = ref * 10 + (template.charAt(i) - '0');
+                        if (next > groupCount)
+                        {
+                            break;
+                        }
+                        ref = next;
+                        i++;
+                    }
+                    group = ref;
+                }
+                if (!literal.isEmpty())
+                {
+                    parts.add(new Part(literal.toString(), -1, component));
+                    literal.setLength(0);
+                }
+                parts.add(new Part(null, group, component));
+            }
+            else
+            {
+                literal.append(c);
+                component = componentAfter(c, component);
+                i++;
+            }
+        }
+        // A trailing part carries the component the template ends in, which is where the
+        // unmatched remainder of the path is appended.
+        parts.add(new Part(literal.toString(), -1, component));
+        return List.copyOf(parts);
+    }
+
+    private static Component componentAfter(final char c, final Component current)
+    {
+        return c == '?' || c == '#' ? Component.QUERY_OR_FRAGMENT : current;
+    }
+
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
         private final Pattern sourcePattern;
         private final String targetTemplate;
+        private final List<Part> targetParts;
         private final int responseStatus;
         private final ByteBuffer invalidLocationBody;
 
@@ -239,6 +348,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
             // Consume the standard regex string exactly as provided
             this.targetTemplate = config.target();
+            this.targetParts = parse(config.target(), this.sourcePattern);
 
             if (config.status() != null)
             {
@@ -261,7 +371,42 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
             if (matcher.find())
             {
-                final String location = matcher.replaceFirst(this.targetTemplate);
+                // Two renderings of the same substitution, as Matcher.replaceFirst would build
+                // it: the request text as Undertow decoded it, and percent-encoded for the
+                // component it lands in. Only the encoded one is sent - left raw, a decoded %3F
+                // or %23 in a capture group would start a query or fragment of its own in the
+                // Location, and a '&' add a parameter to a query the template started. The raw
+                // one is still checked, because a request whose capture group would take the
+                // redirect off the template's origin once decoded is refused rather than served.
+                final StringBuilder raw = new StringBuilder(currentPath.length() + this.targetTemplate.length());
+                final StringBuilder encoded = new StringBuilder(currentPath.length() + this.targetTemplate.length());
+                final String before = currentPath.substring(0, matcher.start());
+                raw.append(before);
+                encoded.append(Component.PATH.encode(before));
+                Component last = Component.PATH;
+                for (final Part part : this.targetParts)
+                {
+                    if (part.group() < 0)
+                    {
+                        raw.append(part.literal());
+                        encoded.append(part.literal());
+                    }
+                    else
+                    {
+                        final String captured = matcher.group(part.group());
+                        if (captured != null)
+                        {
+                            raw.append(captured);
+                            encoded.append(part.component().encode(captured));
+                        }
+                    }
+                    last = part.component();
+                }
+                final String after = currentPath.substring(matcher.end());
+                raw.append(after);
+                encoded.append(last.encode(after));
+
+                final String location = encoded.toString();
 
                 // The template itself is validated at startup, but a capture group (e.g. $1) is
                 // filled in from the request path, which Undertow hands us already URL-decoded.
@@ -270,7 +415,9 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 // ISO-8859-1, not CR/LF, so that would otherwise reach the wire as response
                 // splitting. Reject the request instead of emitting a malformed Location - and
                 // likewise one the capture group has moved off the template's origin.
-                if (!isSafeLocation(location) || !staysOnTemplateOrigin(this.targetTemplate, location))
+                final String decodedLocation = raw.toString();
+                if (!isSafeLocation(decodedLocation) || !staysOnTemplateOrigin(this.targetTemplate, decodedLocation)
+                        || !isSafeLocation(location) || !staysOnTemplateOrigin(this.targetTemplate, location))
                 {
                     exchange.shortCircuit(new ShortCircuitGatewayResponse(
                             HttpStatuses.BAD_REQUEST,
