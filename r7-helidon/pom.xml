@@ -1,0 +1,59 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.ethlo.r7</groupId>
+        <artifactId>r7</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <!--
+        EXPERIMENTAL. r7 on Helidon's Níma web server: the second implementation of the server SPI
+        (r7-server's ServerExchange), with its own blocking HTTP/1.1 upstream client on virtual
+        threads. Not a supported deployment; see design/server-spi.md, step 6.
+    -->
+    <artifactId>r7-helidon</artifactId>
+    <packaging>jar</packaging>
+    <name>r7-helidon</name>
+    <url>https://github.com/ethlo/r7</url>
+    <properties>
+        <helidon.version>4.5.5</helidon.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.ethlo.r7</groupId>
+            <artifactId>r7-server</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.helidon.webserver</groupId>
+            <artifactId>helidon-webserver</artifactId>
+            <version>${helidon.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <!-- TEST -->
+        <dependency>
+            <groupId>com.ethlo.r7</groupId>
+            <artifactId>r7-server</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.1.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
