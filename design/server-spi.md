@@ -1,7 +1,7 @@
 # A server SPI: moving the pipeline out of `r7-undertow`
 
-**Status:** proposed. Step 1 (measurement) comes first; nothing here changes the request path until
-it has a number behind it.
+**Status:** proposed. Step 1 (measurement) is done; see "Measured". Nothing else here changes the
+request path until it has a number behind it.
 
 **Why.** `r7-api`, `r7-core`, `r7-utils` and both journal modules have no `io.undertow` or
 `org.xnio` import, so filters, predicates, config and journaling are already server-neutral at
@@ -14,35 +14,50 @@ what actually demonstrates the absence of lock-in; a second server then tests th
 
 ---
 
-## The constraint: the SPI adds no allocations
+## Measured
+
+Profiled 2026-09-30: the gateway jar on six pinned cores (`-XX:+UseZGC`, JDK 25.0.4), nginx on
+loopback, `wrk -t4 -c64` on separate cores, async-profiler in CPU mode for 15-20 s after
+warm-up. At 113-123k req/s the whole process spends **~39 µs of CPU per passthrough request and
+~47 µs at `HEADERS` journaling** (`/proc/<pid>/stat` delta over request count, two runs each).
+
+Self time, by the deepest non-JDK frame of each sample:
+
+| | passthrough | `HEADERS` journal |
+|---|---|---|
+| Kernel: socket syscalls, loopback TCP, nf_tables | 54% | 47% |
+| Undertow / XNIO | 41% | 35% |
+| r7 journal (`StatefulJournal`, `R7fJournal`, FlatBuffers) | 0.3% | **13.5%** |
+| r7 everything else: guards, `open()`, routing, filters, metrics | **3.4%** | 3.0% |
+| GC | not visible | not visible |
+
+What this settles:
+
+- **The layers and security checks are not the throughput problem.** Everything r7 does outside
+  the journal is ~3% of I/O-thread CPU. `UpstreamHeaderSanitizer` is 0.1%, `RemoteAddressResolver`
+  0.2%, `open()` 1.6% inclusive. The allocation list in `open()` (about 8.5 KB per request) costs
+  a TLAB bump and dies young; GC does not show up in the profile at all.
+- **Journaling is r7's one real cost:** +8 µs per request at `HEADERS`, about +20%. Within it,
+  the header walks dominate: `RedactingHeaders.forEach` 5.1%, `ImmutableHeaderSnapshot.forEach`
+  3.4%, `buildHeaderDelta` 3.2% (all inclusive), each through a lambda per header, plus
+  `HeaderNameSet` hashing and case-insensitive compares. Monitor contention on
+  `R7fJournal.writeEntry` is 1.4%.
+- **The rest belongs to the server and the kernel.** A proxied request needs four socket
+  syscalls: read from the client, write upstream, read the response, write to the client. JFR
+  socket events show Undertow's client makes **five**: after every upstream response it reads
+  once more and gets nothing. That read, `epoll_ctl` churn (2.8%) and read-timeout bookkeeping
+  (~2%) are Undertow's and cannot be fixed from r7 without owning the proxy.
+
+## The rule for the SPI
 
 An interface with one implementation loaded in the process is close to free: the call site is
-monomorphic and the JIT inlines it. What layering costs is *objects*: adapters wrapping
-adapters, capturing lambdas, side records. So the rule for this SPI is:
+monomorphic and the JIT inlines it. So the SPI is held to **CPU per request not going up**,
+checked with a profile and `benchmark/run.sh --repeat 3` before and after.
 
-> Bytes allocated per request in `passthrough` must not go up. The refactor should bring them
-> down.
-
-This is enforced by a test, not by review (see step 1), because allocation per request is far
-less noisy than req/s and can gate CI.
-
-### Where the per-request cost actually is (from reading, not yet profiled)
-
-The security guards are cheap. `RequestPathGuard` is one pass over the path with no allocation,
-`TransferEncodingGuard` is one header lookup, TRACE is one comparison, and
-`UpstreamHeaderSanitizer` uses Undertow's fast iterator. What is paid on *every* request,
-including passthrough with no filters and journaling off:
-
-| Cost | Where |
-|---|---|
-| Every header copied eagerly into `ImmutableHeaderSnapshot`, only because `sanitize()` edits the live headers afterwards | `open()` |
-| About 10 objects: `UndertowGatewayRequest`, `RemoteInfo`, `ImmutableGatewayRequest`, `UndertowQueryParams`, `UndertowMutableCookies`, `UndertowGatewayResponse`, `FastGatewayAttributes`, `UndertowGatewayExchange`, `StatefulJournal` + `FingerprintMemo`, `OpenedExchange` | `open()` |
-| Two capturing lambdas registered as listeners | `registerResponseListeners`, `setupCompletionHandler` |
-| `new HttpString(name)` per `getFirst(String)`, then a linear scan | `ImmutableHeaderSnapshot` |
-| `Optional…map…ifPresent`, `List.of(attemptedUris)` | `tagExchangeAttributes` |
-| Undertow's `ProxyHandler` + `LoadBalancingProxyClient`, wrapped by `DiagnosticProxyClient` | Likely the largest share of passthrough-vs-baseline, and the one part not ours to tune |
-
-The last row makes owning the proxy layer a performance argument as well as a lock-in argument.
+`RequestPathCostTest` reports CPU time per request on the I/O threads (not gated: it varies by a
+factor of two between runs) and gates bytes allocated per request. The allocation gate is there
+because it is stable enough for CI (within about 2%) and moves when a layer of per-request
+objects is added; it is a tripwire, not a target.
 
 ---
 
@@ -104,7 +119,7 @@ public interface UpstreamConnector
 public interface UpstreamHandle extends UpstreamTargetObserver, AutoCloseable { }
 ```
 
-How it keeps allocation at zero or below:
+How it avoids adding per-request objects:
 
 - **`dispatchResume` reuses the exchange.** The index is stored on the exchange and the exchange
   implements `Runnable`, so no capturing lambda is created. Helidon already runs each request on
@@ -142,20 +157,21 @@ path tests therefore become an abstract test kit in a test-jar that every server
 Each step is its own PR. Steps 3 and 5 carry `benchmark/run.sh --repeat 3` before and after,
 with `environment.txt`.
 
-1. **Measure.** Profile `passthrough` (CPU and allocation). Add an allocated-bytes-per-request
-   gate: N requests in-process, `com.sun.management.ThreadMXBean.getTotalThreadAllocatedBytes()`
-   before and after. This establishes whether the cost is the layers, the copying or Undertow's
-   proxy before anything is optimized.
+1. **Measure.** Done: see "Measured", and `RequestPathCostTest` for the per-request numbers.
 2. **Move the Undertow-free code:** status/DTO classes, `ServerConfig`, the guards once they take
    neutral types. Mechanical changes only.
 3. **Introduce `ServerExchange` and `GatewayPipeline`;** `UndertowGatewayExchange` implements the
-   SPI. Allocation per request stays flat or drops.
+   SPI, with the dispatch index, commit and completion listeners and `PipelineState` held on the
+   exchange rather than in lambdas and side objects. CPU per request stays flat.
 4. **The security test kit.**
-5. **Performance, one PR each:**
-   - copy the client-request snapshot on first write, via the header adapter, instead of eagerly;
-   - resolve header names to interned tokens at config load, so predicate lookups do not allocate;
-   - allocate attributes only when something uses them;
-   - a fast path for routes with no filters and journal `NONE`.
+5. **Performance, where the profile points, one PR each:**
+   - journal header encoding: walk each header set once, without a lambda per header, and hash
+     names once per request rather than once per pass;
+   - `R7fJournal.writeEntry` contention, if it grows with core count.
+
+   Allocation work in `open()` (copy-on-write snapshots, interned header names, lazy
+   attributes) is left out: at ~3% of CPU for all of r7 outside the journal, it cannot move
+   throughput measurably.
 6. **Helidon Níma spike**, as the second implementation of the SPI. It needs its own proxy
    layer; a basic HTTP/1.1 proxy on virtual threads is a few hundred lines, while parity with
    `ProxyHandler` (per-host pooling, host add/remove on health, selection strategies, timeouts,
