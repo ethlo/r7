@@ -220,7 +220,9 @@ public class UndertowGatewayExchange extends ServerExchange implements ProxiedEx
         if (upstream instanceof HttpUpstream r7)
         {
             // The relay blocks, so it runs on a virtual thread: already on one if a filter
-            // dispatched, otherwise dispatched now, and the I/O thread returns at once.
+            // dispatched, otherwise dispatched now, and the I/O thread returns at once. A
+            // Runnable given to dispatch() runs as it is, outside Undertow's "in call" state, so
+            // the resumeReads/resumeWrites the bridge makes take effect immediately.
             if (mayBlock())
             {
                 relay(r7);

@@ -13,6 +13,7 @@ import org.xnio.channels.StreamSinkChannel;
 import org.xnio.channels.StreamSourceChannel;
 
 import io.undertow.server.HttpServerExchange;
+import io.undertow.server.ServerConnection;
 
 /**
  * Blocking streams over an exchange's non-blocking request and response channels, for a virtual
@@ -73,9 +74,15 @@ final class ParkingChannelStreams
             LockSupport.unpark(this.thread);
         }
 
-        void await(final Channel channel)
+        /**
+         * Parks until the listener fires or the client connection is gone. The connection, not
+         * just the channel: the exchange's channel wrappers can stay "open" after the socket
+         * under them closed, and a relay parked on one would hold its upstream connection for
+         * good.
+         */
+        void await(final Channel channel, final ServerConnection connection)
         {
-            while (!this.ready && channel.isOpen())
+            while (!this.ready && channel.isOpen() && connection.isOpen())
             {
                 LockSupport.parkNanos(this, RECHECK_NANOS);
             }
@@ -117,8 +124,8 @@ final class ParkingChannelStreams
                     channel.getReadSetter().set(waiter);
                     channel.getCloseSetter().set(waiter);
                     channel.resumeReads();
-                    waiter.await(channel);
-                    if (!channel.isOpen())
+                    waiter.await(channel, exchange.getConnection());
+                    if (!channel.isOpen() || !exchange.getConnection().isOpen())
                     {
                         throw new IOException("The client connection closed while its request body was being read");
                     }
@@ -152,7 +159,7 @@ final class ParkingChannelStreams
                 {
                     if (channel.write(buffer) == 0)
                     {
-                        awaitWritable(channel);
+                        awaitWritable(channel, exchange.getConnection());
                     }
                 }
             }
@@ -162,7 +169,7 @@ final class ParkingChannelStreams
             {
                 while (!channel.flush())
                 {
-                    awaitWritable(channel);
+                    awaitWritable(channel, exchange.getConnection());
                 }
             }
 
@@ -181,14 +188,14 @@ final class ParkingChannelStreams
         };
     }
 
-    private static void awaitWritable(final StreamSinkChannel channel) throws IOException
+    private static void awaitWritable(final StreamSinkChannel channel, final ServerConnection connection) throws IOException
     {
         final Waiter waiter = new Waiter(false);
         channel.getWriteSetter().set(waiter);
         channel.getCloseSetter().set(waiter);
         channel.resumeWrites();
-        waiter.await(channel);
-        if (!channel.isOpen())
+        waiter.await(channel, connection);
+        if (!channel.isOpen() || !connection.isOpen())
         {
             throw new IOException("The client connection closed while the response was being written");
         }
