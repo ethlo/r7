@@ -63,6 +63,8 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private boolean commitRequested;
     private boolean committed;
     private boolean completionRequested;
+    private boolean headWritten;
+    private boolean aborted;
     private Consumer<ByteBuffer> requestTee;
     private Consumer<ByteBuffer> responseTee;
     private long requestBodyLimit = Long.MAX_VALUE;
@@ -316,6 +318,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private void writeHead()
     {
         final MutableGatewayResponse response = clientResponse();
+        this.headWritten = true;
         writeHead(response.status(), response.headers());
     }
 
@@ -425,9 +428,25 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         this.attempted = target.toString();
     }
 
+    @Override
+    public void abortResponse()
+    {
+        this.aborted = true;
+    }
+
+    /**
+     * Whether the response was abandoned part-way; the server must then drop the connection
+     * rather than complete the message ({@link BlockingGateway#handle} throws to make it).
+     */
+    boolean isAborted()
+    {
+        return this.aborted;
+    }
+
     private void respondError(final int status, final String message)
     {
-        if (isResponseStarted())
+        // Our own flag first: a server's "response sent" can stay false while a body streams.
+        if (this.headWritten || isResponseStarted())
         {
             return;
         }

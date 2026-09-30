@@ -167,7 +167,7 @@ gets a named test in step 2.
   before committing, and never pool a connection whose response was not framed exactly.
 - **Response lines have no length bound.** `LineReader` spills into a `StringBuilder` without
   limit, and there is no limit on header count; a hostile or broken upstream can exhaust the
-  heap. Bound both, mirroring the server's own `max_header_size` and `max_header_count`.
+  heap. Bound both.
 - **`Connection: close` is compared as a whole value.** `Connection: keep-alive, close` is
   missed, and the headers a `Connection` value nominates are not stripped from the response. An
   HTTP/1.0 response without `keep-alive` is pooled as if it were persistent.
@@ -305,8 +305,25 @@ check.
    `BlockingServerExchange` into it behind `ProxiedExchange` and `UpstreamRelay`, with the codec
    separated from the transport. No behaviour change; Helidon and servlet instructions per
    request unchanged; security kit green on both.
-2. **Harden the codec.** Everything in "Things the spike gets wrong", each with its test, and
-   `UpstreamConformanceKit` running against Níma and the servlet host.
+2. **Harden the codec.** Done. Everything in "Things the spike gets wrong", with `Http1Test`
+   (61 cases) for the parser and `UpstreamConformanceKit` (19 cases, a `ScriptedUpstream` per
+   case) running against Níma and the servlet host. Response heads are bounded at 64 KB and 200
+   lines by `UpstreamOptions`, not by the server's `max_header_size`: that limit is for clients,
+   and Undertow's own client allowed upstream heads far larger than its 8 KB default. Idle
+   pooled connections now expire after `proxy.ttl` (30 s, below nginx's 75 s keep-alive), since
+   a request that fails on a stale connection is only retried when it is idempotent.
+
+   The kit's first run found a bug the spike had on the servlet host: when the upstream's body
+   failed part-way, the relay closed the client's body stream, and Tomcat completed the message
+   with a terminating chunk - a truncated body delivered as a whole one. `ProxiedExchange`
+   gained `abortResponse()`, which the thread-per-request servers honour by throwing out of the
+   handler, so that the container drops the connection instead.
+
+   Cost: about +3% user instructions and +2% cycles per passthrough GET, +1-2% per POST, at the
+   edge of the ±1.5-2% noise floor; the `Connection` header is now tokenised without
+   allocating. Still open: a blocking socket write has no timeout, so an upstream that stops
+   reading a request body without closing holds the virtual thread until `max_request_time`
+   exists to close the socket (step 5).
 3. **Undertow adapter behind `proxy.client: r7`.** The channel bridge, dispatch, the fd-leak
    test, both kits green on Undertow with `r7` selected.
 4. **Measure Undertow with `r7` against Undertow with `undertow`.** Instructions and cycles per

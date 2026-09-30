@@ -27,6 +27,7 @@ import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.upstream.HttpUpstream;
+import com.ethlo.r7.upstream.UpstreamOptions;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
@@ -61,7 +62,7 @@ public final class BlockingGateway implements AutoCloseable
         final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(GatewayScheduler.class, this.scheduler)));
         final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
 
-        this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, BlockingGateway::connect);
+        this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
         hotReloadService.onReload(new RouteGenerationListener()
         {
             @Override
@@ -112,12 +113,33 @@ public final class BlockingGateway implements AutoCloseable
         {
             exchange.complete();
         }
+        if (exchange.isAborted())
+        {
+            // A server finishes a response its handler returns from normally - for a chunked
+            // one, by writing the last chunk - so a response abandoned part-way must end in a
+            // throw. Tomcat and Níma both drop the connection when a handler throws after the
+            // response was committed, which is the only signal of truncation a client can see.
+            throw new ResponseAbortedException();
+        }
     }
 
-    private static HttpUpstream connect(final DefaultGatewayRoute route)
+    /**
+     * Thrown out of the server's handler to make it drop the client connection.
+     */
+    public static final class ResponseAbortedException extends RuntimeException
+    {
+        ResponseAbortedException()
+        {
+            super("The upstream response failed part-way; dropping the client connection", null, false, false);
+        }
+    }
+
+    private HttpUpstream connect(final DefaultGatewayRoute route)
     {
         final TimeoutConfig timeouts = Optional.ofNullable(route.routeDefinition().upstream().timeouts()).orElse(new TimeoutConfig(null));
-        return new HttpUpstream(Math.toIntExact(timeouts.read().toMillis()));
+        final UpstreamOptions defaults = UpstreamOptions.defaults();
+        return new HttpUpstream(new UpstreamOptions(timeouts.read(), defaults.connectTimeout(), this.serverConfig.proxy().ttl(),
+                defaults.maxHeadBytes(), defaults.maxHeaderCount()));
     }
 
     private static ServerConfig loadServerSettings(final Path serverFile)

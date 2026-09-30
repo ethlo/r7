@@ -72,6 +72,15 @@ public interface ProxiedExchange
     OutputStream commit(boolean body) throws IOException;
 
     /**
+     * Ends the client's response so that it cannot be mistaken for a complete one: the relay
+     * failed after the head was committed, so part of a body has gone out. Closing the body
+     * stream would let the server finish the message - write the last chunk of a chunked
+     * response - and hand the client a truncated body as a whole one. The server must instead
+     * drop the connection. The relay never closes the stream after calling this.
+     */
+    void abortResponse();
+
+    /**
      * Called with each block of response body, before it is written to the client.
      */
     default void onResponseBody(final byte[] buffer, final int offset, final int length)

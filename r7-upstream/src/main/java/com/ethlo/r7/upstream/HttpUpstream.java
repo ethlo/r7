@@ -23,23 +23,26 @@ import com.ethlo.r7.server.UpstreamHandle;
  * each exchange on a thread that may block, a virtual thread in practice, so a blocked read parks
  * that thread and nothing else.
  * <p>
- * Scope so far (design/upstream.md): HTTP/1.1 over plain TCP only - no upstream TLS, no retries
- * beyond one reconnect for a pooled connection the upstream had already closed, no WebSocket
- * tunnelling, no 100-continue. Names no server type, so every server shares it.
+ * Scope so far (design/upstream.md): HTTP/1.1 over plain TCP only - no upstream TLS, no
+ * WebSocket tunnelling, no 100-continue. Names no server type, so every server shares it.
  */
 public final class HttpUpstream implements UpstreamHandle
 {
     private static final Logger logger = LoggerFactory.getLogger(HttpUpstream.class);
-    private static final int CONNECT_TIMEOUT_MILLIS = 5_000;
     private static final int MAX_IDLE_PER_TARGET = 64;
 
     private final List<Target> up = new CopyOnWriteArrayList<>();
     private final AtomicInteger next = new AtomicInteger();
-    private final int readTimeoutMillis;
+    private final UpstreamOptions options;
 
-    public HttpUpstream(final int readTimeoutMillis)
+    public HttpUpstream(final UpstreamOptions options)
     {
-        this.readTimeoutMillis = readTimeoutMillis;
+        this.options = options;
+    }
+
+    UpstreamOptions options()
+    {
+        return this.options;
     }
 
     @Override
@@ -47,7 +50,7 @@ public final class HttpUpstream implements UpstreamHandle
     {
         if ("https".equalsIgnoreCase(target.getScheme()))
         {
-            throw new IllegalArgumentException("The blocking upstream client (experimental) does not support https upstreams yet: " + target);
+            throw new IllegalArgumentException("The r7 upstream client does not support https upstreams yet: " + target);
         }
         for (final Target existing : up)
         {
@@ -120,30 +123,51 @@ public final class HttpUpstream implements UpstreamHandle
         }
 
         /**
-         * An idle pooled connection, or a new one; {@link Connection#reused} tells which.
+         * An idle pooled connection, or a new one; {@link Connection#reused} tells which. Idle
+         * connections past their TTL are closed on the way: the upstream is likely closing them.
          */
         Connection acquire() throws IOException
         {
+            final long now = System.nanoTime();
+            final long ttl = options.idleTtl().toNanos();
             Connection c;
             while ((c = idle.pollFirst()) != null)
             {
-                if (!c.socket.isClosed())
+                if (!c.socket.isClosed() && now - c.idleSince < ttl)
                 {
                     c.reused = true;
                     return c;
                 }
+                c.close();
             }
+            return connect();
+        }
+
+        /**
+         * A new connection, never a pooled one.
+         */
+        Connection connect() throws IOException
+        {
             final Socket socket = new Socket();
-            socket.setTcpNoDelay(true);
-            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MILLIS);
-            socket.setSoTimeout(readTimeoutMillis);
-            return new Connection(socket);
+            try
+            {
+                socket.setTcpNoDelay(true);
+                socket.connect(new InetSocketAddress(host, port), Math.toIntExact(options.connectTimeout().toMillis()));
+                socket.setSoTimeout(Math.toIntExact(options.readTimeout().toMillis()));
+                return new Connection(socket);
+            }
+            catch (final IOException e)
+            {
+                socket.close();
+                throw e;
+            }
         }
 
         void release(final Connection c)
         {
             if (idle.size() < MAX_IDLE_PER_TARGET && up.contains(this))
             {
+                c.idleSince = System.nanoTime();
                 idle.addFirst(c);
             }
             else
@@ -174,6 +198,7 @@ public final class HttpUpstream implements UpstreamHandle
         final LineReader reader;
         final OutputStream out;
         boolean reused;
+        long idleSince;
 
         Connection(final Socket socket) throws IOException
         {
@@ -226,16 +251,24 @@ public final class HttpUpstream implements UpstreamHandle
         }
 
         /**
-         * One CRLF- or LF-terminated line as ISO-8859-1; {@code null} at end of stream.
+         * One CRLF- or LF-terminated line as ISO-8859-1, without the terminator; {@code null} at
+         * end of stream before any byte of a line.
+         *
+         * @param maxLength longest line accepted, terminator excluded. An upstream that sends more
+         *                  is broken or hostile, and buffering it all is how a heap runs out
          */
-        String readLine() throws IOException
+        String readLine(final int maxLength) throws IOException
         {
             StringBuilder spill = null;
             while (true)
             {
                 if (pos == limit && !fill())
                 {
-                    return spill == null || spill.isEmpty() ? null : spill.toString();
+                    if (spill == null || spill.isEmpty())
+                    {
+                        return null;
+                    }
+                    throw new UpstreamProtocolException("Upstream closed the connection inside a line");
                 }
                 for (int i = pos; i < limit; i++)
                 {
@@ -249,6 +282,7 @@ public final class HttpUpstream implements UpstreamHandle
                             {
                                 end--;
                             }
+                            checkLength(end - pos, maxLength);
                             line = new String(buffer, 0, pos, end - pos);
                         }
                         else
@@ -259,6 +293,7 @@ public final class HttpUpstream implements UpstreamHandle
                             {
                                 spill.setLength(length - 1);
                             }
+                            checkLength(spill.length(), maxLength);
                             line = spill.toString();
                         }
                         pos = i + 1;
@@ -270,7 +305,17 @@ public final class HttpUpstream implements UpstreamHandle
                     spill = new StringBuilder(128);
                 }
                 spill.append(new String(buffer, 0, pos, limit - pos));
+                // One byte of slack for a CR whose LF is still to come.
+                checkLength(spill.length() - 1, maxLength);
                 pos = limit;
+            }
+        }
+
+        private static void checkLength(final int length, final int maxLength) throws UpstreamProtocolException
+        {
+            if (length > maxLength)
+            {
+                throw new UpstreamProtocolException("Upstream sent a line longer than " + maxLength + " bytes");
             }
         }
 
