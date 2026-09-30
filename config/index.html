@@ -3800,6 +3800,11 @@
 <td>Duration</td>
 <td>The time-to-live (e.g., <code>30s</code>) for idle upstream connections in the pool. At most <code>24d</code> (2147483647 ms).</td>
 </tr>
+<tr>
+<td><code>client</code></td>
+<td>String</td>
+<td><strong>Experimental.</strong> Which upstream client proxies requests: <code>undertow</code> (Undertow's own proxy; the default) or <code>r7</code>, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With <code>r7</code>, response framing is checked strictly (conflicting <code>Content-Length</code>, folded headers, malformed chunks and transfer codings other than <code>chunked</code> are answered with <code>502</code>), a request that fails on a reused connection is retried only when it is idempotent, and <code>connections_per_thread</code> and <code>max_queue_size</code> are not applied yet. <code>r7</code> does not yet support <code>https</code> targets or WebSocket upgrades.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="advanced-advanced">Advanced (<code>advanced</code>)</h3>
