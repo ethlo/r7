@@ -65,12 +65,16 @@ r7-utils        allocation-conscious containers (PackedGatewayHeaders, FastGatew
 r7-core         the engine: YAML config model, route registry, built-in filters/predicates, SPI
 r7-journal-api  Journal, JournalExchange, JournalLevel, integrity listeners
 r7-journal-mmap the r7f format: writer, decoder, recovery, reassembler, R7Tailer
-r7-undertow     the entrypoint: R7Main, R7UndertowHandler, status/dashboard, DTOs
+r7-server       server-neutral runtime: ServerConfig, request guards, management metrics and DTOs
+r7-undertow     the Undertow server: R7Main, R7UndertowHandler, proxy, status/dashboard handlers
 r7-tailer-jsonld sidecar apps that turn journals into JSON / ClickHouse rows
 ```
 
 `api` is the contract and `core` the engine; keep the separation strict — `r7-api` must not
 depend on the engine, and nothing in the request path should reach into `r7-undertow` types.
+`r7-server` sits between the engine and a server implementation: code that any HTTP server would
+share goes there, and code that names an Undertow or XNIO type stays in `r7-undertow`. `r7-core`
+must not depend on `r7-server` or on `r7-journal-mmap` (see `design/server-spi.md`).
 `r7-editor` (Vite + Monaco) and `benchmark/` are not Maven modules.
 
 ## Request lifecycle

@@ -20,7 +20,6 @@ import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.status.PipelineVisualizer;
 import com.ethlo.r7.status.RouteMetricsBucket;
-import io.undertow.server.ConnectorStatistics;
 
 public class ModelMapper
 {
@@ -131,26 +130,5 @@ public class ModelMapper
         );
 
         return new TrafficFlowDto(ingress, egress, routeMetricsBucket.getTotalJournalBytes());
-    }
-
-    public static ConnectorStatisticsDto from(final ConnectorStatistics stats)
-    {
-        if (stats == null)
-        {
-            return null;
-        }
-
-        return new ConnectorStatisticsDto(
-                stats.getRequestCount(),
-                stats.getBytesSent(),
-                stats.getBytesReceived(),
-                stats.getErrorCount(),
-                stats.getProcessingTime(),
-                stats.getMaxProcessingTime(),
-                stats.getActiveConnections(),
-                stats.getMaxActiveConnections(),
-                stats.getActiveRequests(),
-                stats.getMaxActiveRequests()
-        );
     }
 }

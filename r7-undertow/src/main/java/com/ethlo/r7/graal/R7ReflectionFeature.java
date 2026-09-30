@@ -11,10 +11,10 @@ import com.ethlo.r7.config.JournalDirectionConfig;
 import com.ethlo.r7.config.JournalDirectionDefinition;
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.status.SparklineRingBuffer;
-import com.ethlo.r7.undertow.config.ServerConfig;
 
 public final class R7ReflectionFeature implements Feature
 {

@@ -1,4 +1,4 @@
-package com.ethlo.r7.undertow.config;
+package com.ethlo.r7.server.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;

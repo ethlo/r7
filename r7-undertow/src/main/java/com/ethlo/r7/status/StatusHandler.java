@@ -21,10 +21,11 @@ import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
+import com.ethlo.r7.server.config.ServerConfig;
+import com.ethlo.r7.status.dto.ConnectorStatisticsDto;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
 import com.ethlo.r7.undertow.R7UndertowHandler;
-import com.ethlo.r7.undertow.config.ServerConfig;
 import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -181,7 +182,7 @@ public final class StatusHandler implements HttpHandler
         system.put("configuration_file", serverConfigFile);
         system.put("memory", SystemMetricsCollector.collect());
         root.put("system", system);
-        root.put("connector_statistics", ModelMapper.from(connectorStatistics));
+        root.put("connector_statistics", toDto(connectorStatistics));
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
         root.put("route_metrics", metricsRegistry.getAll());
 
@@ -206,6 +207,31 @@ public final class StatusHandler implements HttpHandler
     {
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_HTML + "; charset=utf-8");
         exchange.getResponseSender().send(combinedHtml);
+    }
+
+    /**
+     * Undertow's listener counters as the dashboard's DTO. Here rather than in ModelMapper, which
+     * is server-neutral: the counters are Undertow's type, and so is the mapping.
+     */
+    private static ConnectorStatisticsDto toDto(final ConnectorStatistics stats)
+    {
+        if (stats == null)
+        {
+            return null;
+        }
+
+        return new ConnectorStatisticsDto(
+                stats.getRequestCount(),
+                stats.getBytesSent(),
+                stats.getBytesReceived(),
+                stats.getErrorCount(),
+                stats.getProcessingTime(),
+                stats.getMaxProcessingTime(),
+                stats.getActiveConnections(),
+                stats.getMaxActiveConnections(),
+                stats.getActiveRequests(),
+                stats.getMaxActiveRequests()
+        );
     }
 
     public void setConnectorStatistics(ConnectorStatistics connectorStatistics)

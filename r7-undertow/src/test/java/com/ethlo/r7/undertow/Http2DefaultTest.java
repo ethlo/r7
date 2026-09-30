@@ -13,7 +13,7 @@ import java.net.http.HttpResponse;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import com.ethlo.r7.undertow.config.ServerConfig;
+import com.ethlo.r7.server.config.ServerConfig;
 import io.restassured.RestAssured;
 
 /**

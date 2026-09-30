@@ -28,8 +28,8 @@ import com.ethlo.r7.config.RoutesDefinition;
 import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.core.StandardErrorHandler;
+import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.spi.EngineContext;
-import com.ethlo.r7.undertow.config.ServerConfig;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
