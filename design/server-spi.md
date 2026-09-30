@@ -241,6 +241,20 @@ its own change.
    implements six small methods over its own request and response objects; `r7-helidon` is now
    that adapter and nothing more. Instructions per request unchanged.
 
+   Second half done, as `r7-servlet` (experimental): `R7GatewayServlet`, mounted at `/*` in any
+   Servlet 6.1 container, is ~150 lines over `r7-server-blocking`, and the security kit passes
+   against it in embedded Tomcat 11 unchanged. What the container owns, r7 now says rather than
+   works around: the path comes from `getRequestURI()` (raw; `getServletPath()` is decoded and
+   normalised), the peer from `getRemoteAddr()` (so the container must not rewrite it too, as
+   RemoteIpValve would), and a container that refuses a request itself - Tomcat answers TRACE
+   with 405 unless the connector allows it - refuses it before r7's guards run, which is as safe.
+   The kit's test connector allows TRACE so that it checks r7's own 501.
+
+   Per request on Tomcat with virtual threads, 1 JVM: ~67 µs CPU and ~168k user instructions
+   passthrough, against ~57 µs and ~128k for Níma and ~55 µs for Undertow. The pipeline and
+   upstream client are the same code as on Níma, so the difference is most likely Tomcat's own
+   request handling; not yet profiled.
+
 ### Naming, once there is a second implementation
 
 `isOnIoThread()` and `dispatch()` are Undertow's shape: on Níma and on a servlet host every

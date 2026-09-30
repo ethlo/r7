@@ -69,6 +69,7 @@ r7-server       server-neutral runtime: ServerConfig, request guards, management
 r7-undertow     the Undertow server: R7Main, R7UndertowHandler, proxy, status/dashboard handlers
 r7-server-blocking EXPERIMENTAL thread-per-request base: HttpUpstream client, BlockingServerExchange, BlockingGateway
 r7-helidon      EXPERIMENTAL Helidon Níma server: R7Helidon, an adapter over r7-server-blocking
+r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
 r7-tailer-jsonld sidecar apps that turn journals into JSON / ClickHouse rows
 ```
 
