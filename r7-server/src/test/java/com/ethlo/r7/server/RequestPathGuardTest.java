@@ -1,4 +1,4 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

@@ -1,4 +1,4 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
 /**
  * Refuses request paths that the gateway and an upstream could read as naming different

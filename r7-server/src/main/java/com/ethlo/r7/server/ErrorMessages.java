@@ -1,4 +1,4 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

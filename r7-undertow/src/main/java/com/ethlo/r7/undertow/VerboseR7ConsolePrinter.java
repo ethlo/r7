@@ -22,7 +22,7 @@ import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.JournalDirectionConfig;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.predicates.CompositePredicate;
-import com.ethlo.r7.undertow.config.ServerConfig;
+import com.ethlo.r7.server.config.ServerConfig;
 
 public class VerboseR7ConsolePrinter implements R7ConsolePrinter
 {

@@ -1,4 +1,4 @@
-package com.ethlo.r7.undertow.config;
+package com.ethlo.r7.server.config;
 
 import java.time.Duration;
 import java.util.List;

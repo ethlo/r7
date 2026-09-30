@@ -3,7 +3,7 @@ package com.ethlo.r7.undertow;
 import java.util.List;
 
 import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.undertow.config.ServerConfig;
+import com.ethlo.r7.server.config.ServerConfig;
 
 public interface R7ConsolePrinter
 {

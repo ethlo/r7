@@ -9,6 +9,7 @@
     <name>r7</name>
     <modules>
         <module>r7-api</module>
+        <module>r7-server</module>
         <module>r7-undertow</module>
         <module>r7-core</module>
         <module>r7-config</module>
