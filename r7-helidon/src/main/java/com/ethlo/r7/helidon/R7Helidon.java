@@ -2,6 +2,7 @@ package com.ethlo.r7.helidon;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -31,6 +32,8 @@ public final class R7Helidon
     private static final String MANAGEMENT_SOCKET = "management";
 
     private final BlockingGateway gateway;
+    private final HeadTimeouts dataHeadTimeouts;
+    private final HeadTimeouts managementHeadTimeouts;
     private final WebServer server;
     private final AtomicBoolean stopped = new AtomicBoolean();
 
@@ -46,6 +49,8 @@ public final class R7Helidon
         final ServerConfig.ManagementConfig management = gateway.serverConfig().management();
         final ManagementEndpoint endpoint = gateway.managementEndpoint();
         final boolean http2 = gateway.serverConfig().http().enableHttp2();
+        this.dataHeadTimeouts = new HeadTimeouts("data", gateway.serverConfig().http().requestParseTimeout());
+        this.managementHeadTimeouts = new HeadTimeouts("management", management.requestParseTimeout());
         this.server = WebServer.builder()
                 .host(core.host())
                 .port(core.port())
@@ -53,7 +58,7 @@ public final class R7Helidon
                 // listener is plaintext) only with http.enable_http2, as on Undertow - it adds a
                 // second protocol parser to the attack surface. The upstream hop stays HTTP/1.1.
                 .protocolsDiscoverServices(false)
-                .addProtocol(Http1Config.create())
+                .addProtocol(http1(this.dataHeadTimeouts))
                 .update(builder ->
                 {
                     if (http2)
@@ -67,19 +72,28 @@ public final class R7Helidon
                 // plane, and a client holding connections open must not starve the latter.
                 .putSocket(MANAGEMENT_SOCKET, socket -> socket
                         .protocolsDiscoverServices(false)
-                        .addProtocol(Http1Config.create())
+                        .addProtocol(http1(this.managementHeadTimeouts))
                         .host(management.host())
                         .port(management.port())
                         .maxTcpConnections(management.maxConnections())
-                        // Not request_parse_timeout: Helidon has no request-head timeout, and
-                        // neither its idle sweep nor socket read timeouts end a connection
-                        // stalled in a partial head (HelidonManagementPortTest).
                         .idleConnectionTimeout(management.idleTimeout())
+                        // Helidon checks every two minutes by default, which would let an idle
+                        // connection - or one trickling its request line, which Helidon counts as
+                        // idle - outlive idle_timeout by that much.
+                        .idleConnectionPeriod(Duration.ofSeconds(1))
                         .routing(routing -> routing.any((req, res) -> serveManagement(endpoint, req, res))))
                 .build()
                 .start();
         logger.info("ethlo r7 (Helidon Níma, experimental) listening on {}:{}, management on {}:{}", core.host(), this.server.port(),
                 management.host(), this.server.port(MANAGEMENT_SOCKET));
+    }
+
+    /**
+     * HTTP/1 with request_parse_timeout enforced by r7, which Helidon cannot do (HeadTimeouts).
+     */
+    private static Http1Config http1(final HeadTimeouts headTimeouts)
+    {
+        return Http1Config.builder().addReceiveListener(headTimeouts).build();
     }
 
     public int port()
@@ -118,6 +132,8 @@ public final class R7Helidon
             return;
         }
         this.server.stop();
+        this.dataHeadTimeouts.stop();
+        this.managementHeadTimeouts.stop();
         this.gateway.close();
     }
 

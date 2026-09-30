@@ -410,13 +410,20 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   (`putSocket`) with its own connection cap and idle timeout. `SimpleMetrics` and the
   `MetricsRegistry` moved to `r7-server` with it, so the filter works on every server.
 
-  **Gap found:** Níma has no request-head timeout. Its idle sweep does not close a connection
-  stalled in a partial head, and neither does a socket read timeout in its connection options,
-  so `request_parse_timeout` cannot be honoured - on the management listener or the data
-  plane's. `HelidonManagementPortTest.anUnfinishedRequestHeadIsClosed` states the expectation
-  and is disabled until it can be met. Undertow bounds this with `REQUEST_PARSE_TIMEOUT`. It
-  weighs on the switch: a client that opens connections and trickles a head holds descriptors
-  indefinitely.
+  **Gap found, then closed from r7's side:** Níma has no request-head timeout. It reads through
+  a `SocketChannel`, which ignores `SO_TIMEOUT`, and its idle sweep does not count a connection
+  whose request line has arrived as idle - so a client trickling header lines held its
+  connection indefinitely. `HeadTimeouts` enforces `request_parse_timeout` on both listeners:
+  an `Http1ConnectionListener` starts a clock when the request line is read and stops it when
+  the head is complete, and one sweeper thread ends overdue connections. Two more rough edges
+  on the way: Helidon never calls the listener's per-read `data()` callbacks (only `prologue()`
+  and `headers()`), and `ConnectionContext.serverSocket()` throws, so there is no handle to
+  close. The sweeper interrupts the connection's reader thread instead - an interrupted read on
+  an interruptible channel closes it - with a per-connection lock so the interrupt can never land
+  once the head has completed and the request is using other sockets. A trickled *request line*
+  never reaches the listener; Helidon counts it idle, and the management listener's idle sweep
+  now runs every second instead of every two minutes so `idle_timeout` holds. Saturation
+  throughput and tail unchanged (136-138k req/s, p99 4.4-4.7 ms, worst 17-24 ms).
 - **Static content.** Done. `StaticFiles` (in `r7-server`) serves the `StaticContent` filter on
   Níma and the servlet host, and `StaticContentKit` (13 cases) holds all three servers to the
   same behaviour. Run against Undertow's `ResourceHandler` first, the kit found it serving files
