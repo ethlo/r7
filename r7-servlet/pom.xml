@@ -1,0 +1,68 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.ethlo.r7</groupId>
+        <artifactId>r7</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <!--
+        EXPERIMENTAL. r7 as a servlet inside someone else's container (Servlet 6.1: Tomcat 11,
+        Jetty 12.1 ee11, ...), the way Spring Cloud Gateway can run on Servlet: the third
+        implementation of the server SPI, a thin adapter over r7-server-blocking. The container is
+        provided; the tests run it in embedded Tomcat. See design/server-spi.md, step 7.
+    -->
+    <artifactId>r7-servlet</artifactId>
+    <packaging>jar</packaging>
+    <name>r7-servlet</name>
+    <url>https://github.com/ethlo/r7</url>
+    <properties>
+        <tomcat.version>11.0.26</tomcat.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.ethlo.r7</groupId>
+            <artifactId>r7-server-blocking</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>6.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- TEST -->
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-core</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.ethlo.r7</groupId>
+            <artifactId>r7-server</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.1.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

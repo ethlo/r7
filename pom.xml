@@ -13,6 +13,7 @@
         <module>r7-undertow</module>
         <module>r7-server-blocking</module>
         <module>r7-helidon</module>
+        <module>r7-servlet</module>
         <module>r7-core</module>
         <module>r7-config</module>
         <module>r7-journal-api</module>
