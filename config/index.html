@@ -3325,7 +3325,7 @@
 </tbody>
 </table>
 <h4 id="staticcontent">StaticContent</h4>
-<p>Short-circuits the pipeline to serve static files directly from the disk using a high-performance native handler. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected.</p>
+<p>Short-circuits the pipeline to serve static files directly from the disk: on Undertow with its native handler, on the other servers with r7's own, and with the same rules on each. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), every answer carries <code>X-Content-Type-Options: nosniff</code>, and a directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> (and an <code>ETag</code> on servers other than Undertow), answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>.</p>
 <table>
 <thead>
 <tr>
@@ -3346,7 +3346,7 @@
 <td><code>follow_symlinks</code></td>
 <td>Boolean</td>
 <td>No (default <code>false</code>)</td>
-<td>Follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped <code>current</code> release symlink).</td>
+<td>Follow symbolic links found under the base directory. The base directory itself may be a symlink either way (e.g. an atomically swapped <code>current</code> release symlink); this is only needed for links inside it.</td>
 </tr>
 <tr>
 <td><code>list_directory</code></td>
@@ -3358,7 +3358,7 @@
 <td><code>serve_hidden_files</code></td>
 <td>Boolean</td>
 <td>No (default <code>false</code>)</td>
-<td>Serve files and directories whose name starts with <code>.</code> (e.g. <code>.env</code>, <code>.git/</code>, <code>.htpasswd</code>). When disabled, such a request is answered <code>404 Not Found</code>; <code>.well-known/</code> is always served. A directory listing, if enabled, still shows their names.</td>
+<td>Serve files and directories whose name starts with <code>.</code> (e.g. <code>.env</code>, <code>.git/</code>, <code>.htpasswd</code>). When disabled, such a request is answered <code>404 Not Found</code>, and a directory listing, if enabled, leaves their names out; <code>.well-known/</code> is always served.</td>
 </tr>
 </tbody>
 </table>
