@@ -84,14 +84,14 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
         this.rawQuery = req.prologue().query().rawValue();
         // Helidon's request headers are immutable; the pipeline sanitises and filters change a
         // copy, and that copy is what is forwarded.
-        final MutableGatewayHeaders headers = new MutableFastGatewayHeaders();
+        final WireHeaders headers = new WireHeaders();
         long headerBytes = method().length() + 1 + rawPath.length() + (rawQuery.isEmpty() ? 0 : 1 + rawQuery.length()) + 1 + PROTOCOL.length() + 2;
         for (final Header header : req.headers())
         {
             final String name = header.name();
             for (final String value : header.allValues())
             {
-                headers.add(name, value);
+                headers.addFromWire(name, value);
                 headerBytes += name.length() + 2 + value.length() + 2;
             }
         }
@@ -176,9 +176,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
 
     private static MutableGatewayHeaders copyOf(final GatewayHeaders headers)
     {
-        final MutableGatewayHeaders copy = new MutableFastGatewayHeaders();
-        headers.forEach(copy, MutableGatewayHeaders::add);
-        return copy;
+        return WireHeaders.copyOf(headers);
     }
 
     // --- Threading ---------------------------------------------------------------------------
@@ -464,7 +462,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
 
         while (true)
         {
-            final String statusLine = readLine(connection.in);
+            final String statusLine = connection.reader.readLine();
             if (statusLine == null)
             {
                 throw new IOException("Upstream closed the connection before responding");
@@ -472,7 +470,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
             final List<String> lines = new ArrayList<>();
             lines.add(statusLine);
             String line;
-            while ((line = readLine(connection.in)) != null && !line.isEmpty())
+            while ((line = connection.reader.readLine()) != null && !line.isEmpty())
             {
                 lines.add(line);
             }
@@ -585,7 +583,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
             return connectionHeader == null || !connectionHeader.equalsIgnoreCase("close");
         }
 
-        final InputStream in = connection.in;
+        final HttpUpstream.LineReader in = connection.reader;
         boolean framed = true;
         try (OutputStream out = this.res.outputStream())
         {
@@ -606,7 +604,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
         return framed && (connectionHeader == null || !connectionHeader.equalsIgnoreCase("close"));
     }
 
-    private void relayExactly(final InputStream in, final OutputStream out, final long length) throws IOException
+    private void relayExactly(final HttpUpstream.LineReader in, final OutputStream out, final long length) throws IOException
     {
         final byte[] buffer = new byte[8192];
         long remaining = length;
@@ -626,12 +624,12 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
         }
     }
 
-    private void relayChunked(final InputStream in, final OutputStream out) throws IOException
+    private void relayChunked(final HttpUpstream.LineReader in, final OutputStream out) throws IOException
     {
         final byte[] buffer = new byte[8192];
         while (true)
         {
-            final String sizeLine = readLine(in);
+            final String sizeLine = in.readLine();
             if (sizeLine == null)
             {
                 throw new IOException("Upstream closed the connection inside a chunked body");
@@ -641,7 +639,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
             if (size == 0)
             {
                 String trailer;
-                while ((trailer = readLine(in)) != null && !trailer.isEmpty())
+                while ((trailer = in.readLine()) != null && !trailer.isEmpty())
                 {
                     // Trailers are not relayed in the spike.
                 }
@@ -658,7 +656,7 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
                 writeResponseBody(out, buffer, n);
                 remaining -= n;
             }
-            readLine(in);
+            in.readLine();
         }
     }
 
@@ -694,26 +692,6 @@ final class HelidonGatewayExchange extends ServerExchange implements TrafficMetr
         clientResponse().headers().set("Content-Type", "text/plain; charset=utf-8");
         clientResponse().headers().set("X-Content-Type-Options", "nosniff");
         sendBody(ByteBuffer.wrap(message.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private static String readLine(final InputStream in) throws IOException
-    {
-        final StringBuilder line = new StringBuilder(64);
-        int b;
-        while ((b = in.read()) != -1)
-        {
-            if (b == '\n')
-            {
-                final int length = line.length();
-                if (length > 0 && line.charAt(length - 1) == '\r')
-                {
-                    line.setLength(length - 1);
-                }
-                return line.toString();
-            }
-            line.append((char) b);
-        }
-        return line.isEmpty() ? null : line.toString();
     }
 
     private static final class RequestBodyTooLargeException extends IOException

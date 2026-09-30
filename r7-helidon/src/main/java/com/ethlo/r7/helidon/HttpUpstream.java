@@ -1,6 +1,5 @@
 package com.ethlo.r7.helidon;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -173,14 +172,14 @@ final class HttpUpstream implements UpstreamHandle
     static final class Connection
     {
         final Socket socket;
-        final InputStream in;
+        final LineReader reader;
         final OutputStream out;
         boolean reused;
 
         Connection(final Socket socket) throws IOException
         {
             this.socket = socket;
-            this.in = new BufferedInputStream(socket.getInputStream(), 8192);
+            this.reader = new LineReader(socket.getInputStream());
             this.out = new BufferedOutputStream(socket.getOutputStream(), 8192);
         }
 
@@ -194,6 +193,98 @@ final class HttpUpstream implements UpstreamHandle
             {
                 // Closing is best effort.
             }
+        }
+    }
+
+    /**
+     * A buffered reader over the upstream socket for a response head and body: lines are scanned
+     * in the buffer, and body reads are served from it before going to the socket. Unsynchronised,
+     * unlike BufferedInputStream, whose per-call lock showed in the profile when the head was read
+     * a byte at a time; a connection is only ever used by one request at a time.
+     */
+    static final class LineReader
+    {
+        private final InputStream in;
+        private final byte[] buffer = new byte[8192];
+        private int pos;
+        private int limit;
+
+        LineReader(final InputStream in)
+        {
+            this.in = in;
+        }
+
+        private boolean fill() throws IOException
+        {
+            final int n = in.read(buffer, 0, buffer.length);
+            if (n <= 0)
+            {
+                return false;
+            }
+            pos = 0;
+            limit = n;
+            return true;
+        }
+
+        /**
+         * One CRLF- or LF-terminated line as ISO-8859-1; {@code null} at end of stream.
+         */
+        String readLine() throws IOException
+        {
+            StringBuilder spill = null;
+            while (true)
+            {
+                if (pos == limit && !fill())
+                {
+                    return spill == null || spill.isEmpty() ? null : spill.toString();
+                }
+                for (int i = pos; i < limit; i++)
+                {
+                    if (buffer[i] == '\n')
+                    {
+                        int end = i;
+                        final String line;
+                        if (spill == null)
+                        {
+                            if (end > pos && buffer[end - 1] == '\r')
+                            {
+                                end--;
+                            }
+                            line = new String(buffer, 0, pos, end - pos);
+                        }
+                        else
+                        {
+                            spill.append(new String(buffer, 0, pos, end - pos));
+                            final int length = spill.length();
+                            if (length > 0 && spill.charAt(length - 1) == '\r')
+                            {
+                                spill.setLength(length - 1);
+                            }
+                            line = spill.toString();
+                        }
+                        pos = i + 1;
+                        return line;
+                    }
+                }
+                if (spill == null)
+                {
+                    spill = new StringBuilder(128);
+                }
+                spill.append(new String(buffer, 0, pos, limit - pos));
+                pos = limit;
+            }
+        }
+
+        int read(final byte[] target, final int offset, final int length) throws IOException
+        {
+            if (pos < limit)
+            {
+                final int n = Math.min(length, limit - pos);
+                System.arraycopy(buffer, pos, target, offset, n);
+                pos += n;
+                return n;
+            }
+            return in.read(target, offset, length);
         }
     }
 }
