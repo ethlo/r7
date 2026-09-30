@@ -143,13 +143,17 @@ public final class R7Helidon
      * one, and every connection registered with it stalls until it runs: at saturation this
      * produced outliers of 0.5-2 s (p99 8.6 ms) where Undertow's worst was 40 ms. Per-carrier
      * pollers (mode 3) poll as part of each carrier's own scheduling, and the same load gives a
-     * worst case of 16-20 ms and p99 4.4 ms (design/upstream.md). Internal and undocumented, so
+     * worst case of 16-20 ms and p99 4.4 ms (design/upstream.md). JDK 25 has no mode 3, and is
+     * left on its default. Internal and undocumented, so
      * an explicit -Djdk.pollerMode still wins, and a JDK that drops it falls back to its default.
      * Set before anything opens a socket: the poller reads it once, when it starts.
      */
     static void preferPerCarrierPollers()
     {
-        if (System.getProperty("jdk.pollerMode") == null)
+        // Only where mode 3 exists: JDK 25's poller refuses "3" and fails to start. There the
+        // JDK default stays - measured on 25 at saturation, platform-thread pollers (mode 1) end
+        // the stalls but raise p99 from 7 ms to 15-50 ms, as they compete with the carriers.
+        if (System.getProperty("jdk.pollerMode") == null && Runtime.version().feature() >= 27)
         {
             System.setProperty("jdk.pollerMode", "3");
         }

@@ -466,7 +466,25 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   | 1, platform-thread pollers | 128k | 5.9 ms | 58 ms |
   | 3, per-carrier pollers | 132-137k | 4.4 ms | 16-25 ms |
 
-  `R7Helidon.main` now defaults to mode 3 unless the property is set. It is an internal,
+  On **Java 25 with Helidon 4.5.5** - the LTS pairing; Helidon 27 is the Java 27 line and
+  Helidon 29 will be the next LTS - the same code builds and passes all 54 Helidon tests
+  unchanged, but mode 3 does not exist: JDK 25's poller refuses the value and fails to start.
+  Measured there at saturation:
+
+  | Java 25 + Helidon 4.5.5 | req/s | p99 | worst |
+  |---|---|---|---|
+  | mode 2 (JDK default) | 141k | 7.0 ms | 539 ms |
+  | mode 1, 2 read pollers (JDK default count) | 125-127k | 33-50 ms | 275 ms |
+  | mode 1, 4 read pollers | 128k | 14.8 ms | 104 ms |
+  | mode 1, 8 read pollers | 125k | 38.5 ms | 148 ms |
+
+  Platform-thread pollers end the long stalls but compete with the carriers for the cores, and
+  the p99 pays for it. So on 25 there is no setting that is both; the clean fix is the JDK's
+  per-carrier poller.
+
+  `R7Helidon.main` sets mode 3 on JDK 27 and later unless the property is set, and leaves
+  JDK 25 on its default: the stalls occur only at saturation (the rate sweep below it showed
+  none), and trading p99 at every load for them is the worse deal. It is an internal,
   undocumented JDK property: a future JDK may change or drop it, and an embedder that does not
   go through `main` must set it itself. With it, Níma's tail beats Undertow's (p99 5.9 ms, worst
   33-40 ms) at higher throughput.
