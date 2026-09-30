@@ -29,7 +29,7 @@ import io.helidon.webserver.http1.Http1ConnectionListener;
  * reading its request line as idle, so its own idle timeout ends that one. One daemon thread
  * sweeps for connections past their deadline, as the upstream client does for its own.
  * <p>
- * Helidon 27 does not hand out a connection's socket ({@code ConnectionContext.serverSocket()}
+ * Helidon (4.5 and 27 alike) does not hand out a connection's socket ({@code ConnectionContext.serverSocket()}
  * throws), so a stalled connection is ended the way NIO allows from another thread: its reader
  * is interrupted, and an interrupted read on an interruptible channel closes the channel. The
  * receive callbacks run on the connection's own virtual thread, which is how it is known. The

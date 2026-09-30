@@ -468,7 +468,8 @@ later. Meanwhile Níma gains what it lacks, one PR each:
 
   On **Java 25 with Helidon 4.5.5** - the LTS pairing; Helidon 27 is the Java 27 line and
   Helidon 29 will be the next LTS - the same code builds and passes all 54 Helidon tests
-  unchanged, but mode 3 does not exist: JDK 25's poller refuses the value and fails to start.
+  unchanged (it is the default build; `-Phelidon-27` builds the Java 27 line), but mode 3
+  does not exist: JDK 25's poller refuses the value and fails to start.
   Measured there at saturation:
 
   | Java 25 + Helidon 4.5.5 | req/s | p99 | worst |
