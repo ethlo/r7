@@ -5,6 +5,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.r7f.fbs.DeltaOp;
 import com.ethlo.r7.r7f.fbs.DeltaOpKind;
 import com.ethlo.r7.r7f.fbs.HeaderDelta;
+import com.ethlo.r7.util.IndexedGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
 /**
@@ -49,42 +50,31 @@ final class HeaderDeltaCodec
      * else by emitting it. The shapes it handles are the shapes that occur: Host rewritten in
      * place, forwarding headers appended, a filter adding or replacing one entry.
      */
-    static void diff(final String[] baseNames,
-                     final String[] baseValues,
-                     final int baseCount,
-                     final GatewayHeaders target,
-                     final Ops out)
+    static void diff(final IndexedGatewayHeaders base, final GatewayHeaders target, final Ops out)
     {
         out.reset();
-        target.forEach(out, (ops, name, value) ->
+        out.base = base;
+        try
         {
-            final int cursor = ops.baseCursor;
-
-            if (cursor < baseCount && matches(baseNames[cursor], baseValues[cursor], name, value))
+            if (target instanceof final IndexedGatewayHeaders indexed)
             {
-                ops.copy(cursor);
-                ops.baseCursor = cursor + 1;
-                return;
+                // What the journal always passes: read by position, with no callback per header.
+                for (int i = 0, n = indexed.size(); i < n; i++)
+                {
+                    out.step(indexed.name(i), indexed.value(i));
+                }
             }
-
-            // The base entry here is gone from the target, but the next one survives: skip it
-            // rather than emitting everything from this point on.
-            if (cursor + 1 < baseCount && matches(baseNames[cursor + 1], baseValues[cursor + 1], name, value))
+            else
             {
-                ops.copy(cursor + 1);
-                ops.baseCursor = cursor + 2;
-                return;
+                target.forEach(out, Ops::step);
             }
-
-            ops.emit(name, value);
-
-            // Same name, different value is a replacement, so the base entry it replaced is
-            // consumed. Advancing past it keeps everything after it aligned.
-            if (cursor < baseCount && baseNames[cursor].equals(name))
-            {
-                ops.baseCursor = cursor + 1;
-            }
-        });
+        }
+        finally
+        {
+            // The encoder's Ops live in a ThreadLocal; holding the base past the diff would keep
+            // this exchange's header strings alive on that thread until the next one replaces it.
+            out.base = null;
+        }
         out.releaseUnusedEmitted();
     }
 
@@ -109,8 +99,8 @@ final class HeaderDeltaCodec
                     "the entry this delta is expressed against was not read, so the headers it describes are unknown");
         }
 
-        final Ops scratch = new Ops();
-        final int baseCount = materialise(base, scratch);
+        final IndexedGatewayHeaders indexedBase = materialise(base);
+        final int baseCount = indexedBase.size();
 
         final MutableGatewayHeaders result = new MutableFastGatewayHeaders();
         final DeltaOp op = new DeltaOp();
@@ -131,7 +121,7 @@ final class HeaderDeltaCodec
                 }
                 for (int b = (int) start; b < start + count; b++)
                 {
-                    result.add(scratch.name[b], scratch.value[b]);
+                    result.add(indexedBase.name(b), indexedBase.value(b));
                 }
             }
             else
@@ -144,22 +134,19 @@ final class HeaderDeltaCodec
     }
 
     /**
-     * Copies a header set into indexable arrays. A delta addresses the base by position, and
-     * {@link GatewayHeaders} only offers traversal.
+     * The header set as indexable arrays. A delta addresses the base by position, and
+     * {@link GatewayHeaders} only offers traversal. A set that is already indexed - which is
+     * what the journal writes, see {@code RedactingHeaders.snapshot()} - is used as it is.
      */
-    static int materialise(final GatewayHeaders headers, final Ops into)
+    static IndexedGatewayHeaders materialise(final GatewayHeaders headers)
     {
-        final int previousLength = into.baseLength;
-        into.baseLength = 0;
-        headers.forEach(into, (target, name, value) -> target.appendBase(name, value));
-
-        // Slots past the new base still point at the previous exchange's header strings, and
-        // this workspace lives in a ThreadLocal — so without this, one request with an unusual
-        // number of headers keeps them alive on that IO thread for as long as it runs. Only the
-        // tail is cleared: in the steady state, where consecutive requests carry the same
-        // number of headers, that is nothing at all.
-        into.clearBaseFrom(previousLength);
-        return into.baseLength;
+        if (headers instanceof final IndexedGatewayHeaders indexed)
+        {
+            return indexed;
+        }
+        final IndexedGatewayHeaders copy = new IndexedGatewayHeaders(16);
+        headers.forEach(copy, IndexedGatewayHeaders::append);
+        return copy;
     }
 
     /**
@@ -178,10 +165,8 @@ final class HeaderDeltaCodec
         String[] emittedValue = new String[32];
         int size;
 
-        String[] name = new String[32];
-        String[] value = new String[32];
-        int baseLength;
-
+        /** Set for the duration of one diff only. */
+        IndexedGatewayHeaders base;
         int baseCursor;
         private int previousSize;
 
@@ -207,25 +192,40 @@ final class HeaderDeltaCodec
             previousSize = size;
         }
 
-        void clearBaseFrom(final int previousLength)
+        /**
+         * Sequential match with one step of lookahead, for one target entry; see
+         * {@link HeaderDeltaCodec#diff}.
+         */
+        void step(final String name, final String value)
         {
-            for (int i = baseLength; i < previousLength; i++)
-            {
-                name[i] = null;
-                value[i] = null;
-            }
-        }
+            final IndexedGatewayHeaders b = this.base;
+            final int baseCount = b.size();
+            final int cursor = this.baseCursor;
 
-        void appendBase(final String headerName, final String headerValue)
-        {
-            if (baseLength == name.length)
+            if (cursor < baseCount && matches(b.name(cursor), b.value(cursor), name, value))
             {
-                name = java.util.Arrays.copyOf(name, name.length * 2);
-                value = java.util.Arrays.copyOf(value, value.length * 2);
+                copy(cursor);
+                this.baseCursor = cursor + 1;
+                return;
             }
-            name[baseLength] = headerName;
-            value[baseLength] = headerValue;
-            baseLength++;
+
+            // The base entry here is gone from the target, but the next one survives: skip it
+            // rather than emitting everything from this point on.
+            if (cursor + 1 < baseCount && matches(b.name(cursor + 1), b.value(cursor + 1), name, value))
+            {
+                copy(cursor + 1);
+                this.baseCursor = cursor + 2;
+                return;
+            }
+
+            emit(name, value);
+
+            // Same name, different value is a replacement, so the base entry it replaced is
+            // consumed. Advancing past it keeps everything after it aligned.
+            if (cursor < baseCount && b.name(cursor).equals(name))
+            {
+                this.baseCursor = cursor + 1;
+            }
         }
 
         /**

@@ -17,7 +17,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.stream.Stream;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
@@ -30,6 +31,7 @@ import com.ethlo.r7.r7f.R7Tailer;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.IndexedGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
 /**
@@ -49,8 +51,48 @@ class HeaderDeltaRoundTripTest
     private static final int EXCHANGES = 300;
     private static final long SEGMENT_BYTES = 64L * 1024 * 1024;
 
-    @Test
-    void everyDeltaRebuildsExactlyTheHeadersItWasBuiltFrom() throws Exception
+    /**
+     * Which containers the base and the target arrive in. The encoder reads an
+     * {@link IndexedGatewayHeaders} by position and anything else by traversal, and the delta
+     * must not depend on which: the gateway passes indexed sets, other writers need not.
+     */
+    enum Containers
+    {
+        TRAVERSED(false, false),
+        INDEXED(true, true),
+        INDEXED_BASE(true, false),
+        INDEXED_TARGET(false, true);
+
+        private final boolean indexedBase;
+        private final boolean indexedTarget;
+
+        Containers(final boolean indexedBase, final boolean indexedTarget)
+        {
+            this.indexedBase = indexedBase;
+            this.indexedTarget = indexedTarget;
+        }
+
+        GatewayHeaders base(final GatewayHeaders headers)
+        {
+            return indexedBase ? indexed(headers) : headers;
+        }
+
+        GatewayHeaders target(final GatewayHeaders headers)
+        {
+            return indexedTarget ? indexed(headers) : headers;
+        }
+
+        private static GatewayHeaders indexed(final GatewayHeaders headers)
+        {
+            final IndexedGatewayHeaders indexed = new IndexedGatewayHeaders(0);
+            headers.forEach(indexed, IndexedGatewayHeaders::append);
+            return indexed;
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Containers.class)
+    void everyDeltaRebuildsExactlyTheHeadersItWasBuiltFrom(final Containers containers) throws Exception
     {
         final Random random = new Random(20260917L);
         final Path dir = Files.createTempDirectory("r7f-delta");
@@ -70,10 +112,10 @@ class HeaderDeltaRoundTripTest
                 {
                     final String id = "delta-" + i;
 
-                    final GatewayHeaders clientRequest = randomHeaders(random, "req");
-                    final GatewayHeaders upstreamRequest = mutate(random, clientRequest);
-                    final GatewayHeaders upstreamResponse = randomHeaders(random, "res");
-                    final GatewayHeaders clientResponse = mutate(random, upstreamResponse);
+                    final GatewayHeaders clientRequest = containers.base(randomHeaders(random, "req"));
+                    final GatewayHeaders upstreamRequest = containers.target(mutate(random, clientRequest));
+                    final GatewayHeaders upstreamResponse = containers.base(randomHeaders(random, "res"));
+                    final GatewayHeaders clientResponse = containers.target(mutate(random, upstreamResponse));
 
                     expectedUpstreamRequest.put(id, entries(upstreamRequest));
                     expectedClientResponse.put(id, entries(clientResponse));
