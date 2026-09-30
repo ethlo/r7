@@ -26,6 +26,7 @@ import com.ethlo.r7.r7f.R7fRecoveryManager;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.spi.EngineContext;
+import com.ethlo.r7.upstream.HttpUpstream;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**

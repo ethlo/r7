@@ -81,8 +81,8 @@ r7-api ← r7-core ← r7-server ← r7-upstream ← r7-server-blocking ← r7-h
 **Codec (`Http1`)**, which does no I/O: it encodes the upstream request head, decides framing,
 parses and validates the upstream response head, and decodes chunked bodies as a state machine
 over byte ranges. This is where request smuggling and response splitting are decided, so it
-exists once and is tested exhaustively and in isolation. Today it is spread through
-`BlockingServerExchange.proxy()` and its helpers, about 400 lines.
+exists once and is tested exhaustively and in isolation. Step 1 moves the request head encoding
+and framing into `Http1`; the response-head parser and the chunked decoder follow in step 2.
 
 **Transport (`HttpUpstream`, `UpstreamRelay`)**: targets, strategy, the connection pool, sockets,
 timeouts, and the loop that drives the codec between the upstream socket and the server's
@@ -92,40 +92,45 @@ streams.
 
 The server supplies the request, the body streams and the response; the relay drives them. Teeing,
 counting and the request-body limit stay with the server, which already does them at its own
-layer: Undertow in its conduits, `BlockingServerExchange` in its stream wrappers. The relay does
-not know journaling exists.
+layer: Undertow in its conduits, `BlockingServerExchange` in the two per-block callbacks, which
+allocate nothing. The relay does not know journaling exists.
 
 ```java
 /** Implemented by the server's exchange; everything the relay needs from the client side. */
 public interface ProxiedExchange
 {
     // The request as the pipeline leaves it: sanitised, filtered, ready to forward
-    String method();
-    String target();                        // raw path and query, as sent
-    GatewayHeaders headers();
-    String peerIp();                        // what the gateway vouches for in X-Forwarded-For
-    String scheme();
+    String forwardMethod();
+    String forwardTarget();                 // raw path and query, as sent
+    GatewayHeaders forwardHeaders();
+    String forwardedFor();                  // the peer the gateway vouches for in X-Forwarded-For
+    String forwardedProto();
 
     // Client side
-    InputStream requestBody() throws IOException;           // only called when the request has a body
-    MutableGatewayResponse response();                      // the relay sets status and headers here
-    OutputStream commit(boolean body) throws IOException;   // commit listener, then the head; null when !body
-    boolean isResponseStarted();
+    InputStream openRequestBody() throws IOException;     // only called when the request has a body
+    default void onRequestBody(byte[] b, int off, int len) throws IOException { }  // count, limit, tee
+    MutableGatewayResponse clientResponse();              // the relay sets status and headers here
+    OutputStream commit(boolean body) throws IOException; // commit work, then the head; null when !body
+    default void onResponseBody(byte[] b, int off, int len) { }                   // count, tee
 
     // Reporting
-    void attempted(URI target);
+    void attemptedTarget(URI target);
 }
 
 public final class UpstreamRelay
 {
     /** Runs the whole exchange on the calling thread, which must be allowed to block. */
-    public static void relay(HttpUpstream upstream, ProxiedExchange exchange) throws ProxyException;
+    public static void relay(HttpUpstream upstream, ProxiedExchange exchange, String routeId) throws ProxyFailure;
 }
 ```
 
-`ProxyException` carries the status the client should get (502, 503, 504, 413) and whether a
-response had already started. The server answers it through the pipeline's existing error path,
-so error bodies stay identical across servers.
+The names avoid `ServerExchange`'s own (`method()`, `requestBody()`, ...), whose protected
+declarations a public interface method of the same name would clash with.
+
+`ProxyFailure` carries the status the client should get (502, 503, 504, 413) and the failure to
+report to the pipeline, if any. The server answers with it unless its response has already
+started, so error bodies stay identical across servers. A request body over the limit is
+signalled by throwing `RequestBodyTooLargeException` from `onRequestBody`.
 
 One object per request, as the server SPI requires: `ProxiedExchange` is implemented by the
 server's exchange itself, not an adapter around it.
@@ -255,26 +260,38 @@ gateway pinned to P-cores 0-7 and wrk to E-cores 12-19, nginx in Docker unpinned
 the two *servers*, each with its own client, so it bounds what is at stake, not what the module
 will do on Undertow.
 
-Saturation throughput (wrk), passthrough, req/s, medians of 3 fresh JVMs; nginx alone does ~274k:
+Saturation throughput (wrk), req/s, medians of 3 fresh JVMs; nginx alone does ~274k:
 
-| workload | Undertow | Níma |
-|---|---|---|
-| browser | 131.8k (±7.0%) | _pending_ |
-| headers | 100.2k (±5.9%) | _pending_ |
-| post | 154.8k (±2.4%) | _pending_ |
-
-Undertow's tail against offered load (wrk2, browser):
-
-| rate | p50 | p99 | p99.9 |
+| | Undertow | Níma | |
 |---|---|---|---|
-| 20k | 1.7 ms | 5.0 ms | 11.6 ms |
-| 60k | 1.5 ms | 14.3 ms | 28.0 ms |
-| 90k | 1.4 ms | 28.6 ms | 57.4 ms |
-| 110k | 1.5 ms | 50.4 ms | 87.4 ms |
-| 130k | saturated | 2.85 s | 3.68 s |
+| passthrough browser | 131.8k (±7.0%) | 141.8k (±1.6%) | +8% |
+| passthrough headers | 100.2k (±5.9%) | 113.0k (±2.0%) | +13% |
+| passthrough post | 154.8k (±2.4%) | 163.4k (±0.3%) | +6% |
+| filtered browser | 126.9k (±0.8%) | 136.7k (±1.1%) | +8% |
+| filtered headers | 98.1k (±1.8%) | 110.8k (±0.5%) | +13% |
+| filtered post | 149.6k (±0.7%) | 155.3k (±1.8%) | +4% |
 
-p99 is already ten times p50 at half load on Undertow. Whether the blocking client flattens that
-curve or steepens it is the question step 4 answers for Undertow specifically.
+p99 / p99.9 against offered load (wrk2, one run per rate, so read each cell as ±20%), ms:
+
+| rate | Undertow browser | Níma browser | Undertow post | Níma post |
+|---|---|---|---|---|
+| 20k | 5.0 / 11.6 | 3.8 / 5.3 | 4.8 / 11.4 | 3.4 / 5.3 |
+| 60k | 14.3 / 28.0 | 11.5 / 18.8 | 10.5 / 20.6 | 10.5 / 17.0 |
+| 90k | 28.6 / 57.4 | 12.5 / 27.1 | 18.7 / 61.7 | 10.1 / 21.8 |
+| 110k | 50.4 / 87.4 | 23.6 / 45.7 | 23.4 / 46.3 | 9.2 / 17.9 |
+| 130k | 2850 / 3680 | 49.8 / 93.9 | 52.7 / 88.9 | 29.9 / 54.4 |
+
+Below saturation Níma is ahead everywhere: 4-13% more throughput, and p99.9 about half of
+Undertow's at every rate. The exception is saturation itself. Under wrk's open taps Níma's
+*maximum* latency is 0.16-1.8 s against Undertow's 43-59 ms, and one `filtered headers` run had
+two requests time out after 2 s (marked `INVALID`). A few requests wait a very long time when
+Níma is overloaded, where Undertow degrades evenly. Not yet profiled; virtual-thread scheduling
+fairness under overload is the first suspect. It has to be understood before Níma could be a
+default.
+
+These rows compare server *and* client together, so they do not say how much of the gain is the
+upstream client. Step 4, Undertow with the r7 client against Undertow with its own, separates
+the two.
 
 ---
 

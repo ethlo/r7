@@ -67,7 +67,8 @@ r7-journal-api  Journal, JournalExchange, JournalLevel, integrity listeners
 r7-journal-mmap the r7f format: writer, decoder, recovery, reassembler, R7Tailer
 r7-server       server-neutral runtime: ServerConfig, request guards, management metrics and DTOs
 r7-undertow     the Undertow server: R7Main, R7UndertowHandler, proxy, status/dashboard handlers
-r7-server-blocking EXPERIMENTAL thread-per-request base: HttpUpstream client, BlockingServerExchange, BlockingGateway
+r7-upstream     the blocking HTTP/1.1 upstream client every server is to share: HttpUpstream, UpstreamRelay
+r7-server-blocking EXPERIMENTAL thread-per-request base: BlockingServerExchange, BlockingGateway
 r7-helidon      EXPERIMENTAL Helidon Níma server: R7Helidon, an adapter over r7-server-blocking
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
 r7-tailer-jsonld sidecar app that turns journals into JSON lines

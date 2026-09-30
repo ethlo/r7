@@ -1,4 +1,4 @@
-package com.ethlo.r7.server.blocking;
+package com.ethlo.r7.upstream;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -18,15 +18,14 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.server.UpstreamHandle;
 
 /**
- * A route's upstream for the thread-per-request servers: the targets the health monitor reports up, picked round
- * robin, and a pool of idle keep-alive connections per target. Plain blocking sockets: every
- * request already runs on its own virtual thread, so a blocked read parks that thread and
- * nothing else.
+ * A route's upstream: the targets the health monitor reports up, picked round robin, and a pool
+ * of idle keep-alive connections per target. Plain blocking sockets: {@link UpstreamRelay} runs
+ * each exchange on a thread that may block, a virtual thread in practice, so a blocked read parks
+ * that thread and nothing else.
  * <p>
- * Spike scope (design/server-spi.md, step 6): HTTP/1.1 over plain TCP only - no upstream TLS, no
- * retries beyond one reconnect for a pooled connection the upstream had already closed, no
- * WebSocket tunnelling, no 100-continue. Names no server type, so every thread-per-request
- * server shares it.
+ * Scope so far (design/upstream.md): HTTP/1.1 over plain TCP only - no upstream TLS, no retries
+ * beyond one reconnect for a pooled connection the upstream had already closed, no WebSocket
+ * tunnelling, no 100-continue. Names no server type, so every server shares it.
  */
 public final class HttpUpstream implements UpstreamHandle
 {
