@@ -6,6 +6,18 @@ $defs:
     anyOf:
     - type: object
       properties:
+        AddCorrelationId:
+          type: object
+          properties:
+            trust_incoming:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether an incoming X-Correlation-Id from the client is kept instead of being replaced. Off by default: the header is client-controlled, so trusting it lets a client plant an arbitrary value in upstream logs and tracing under this gateway's name."
+              default: false
+          additionalProperties: false
+          description: Adds a unique correlation ID header to upstream requests and client responses for request tracing.
         AddQueryParameter:
           type: object
           properties:
@@ -760,7 +772,6 @@ $defs:
       maxProperties: 1
     - type: string
       enum:
-      - AddCorrelationId
       - RemoveCacheHeaders
       - RequireAuthorizationHeader
     - type: string

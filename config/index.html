@@ -1889,6 +1889,7 @@
 <li>Swapping the <code>routes.yaml</code> configuration is an <strong>atomic operation</strong>.</li>
 <li>In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.</li>
 <li>Stateful filter data (like <code>CircuitBreaker</code> tripping states and <code>RateLimiter</code> token buckets) is intentionally reset upon reload. This is <strong>by design and not configurable</strong>, guaranteeing immediate, strict adherence to the new configuration parameters.</li>
+<li>A filter declared in <code>global_filters</code> is instantiated <strong>once</strong> and that single instance is shared by every route. A <code>RateLimiter</code> in <code>global_filters</code> therefore enforces one limit across the whole gateway, drawing from one set of buckets no matter which route a request matched; a <code>CircuitBreaker</code> there tracks one upstream health state for all of them. This differs from declaring the same filter under several routes' own <code>filters:</code> blocks, where each route gets its own independent instance and state.</li>
 </ul>
 <hr />
 <h2 id="3-execution-semantics">3. Execution Semantics</h2>
@@ -2770,8 +2771,25 @@
 </tbody>
 </table>
 <h4 id="addcorrelationid">AddCorrelationId</h4>
-<p>Automatically injects the gateway's internal request ID into both the upstream request and the client response using the <code>X-Correlation-Id</code> header.
-<em>This filter requires no configuration parameters.</em></p>
+<p>Automatically injects the gateway's internal request ID into both the upstream request and the client response using the <code>X-Correlation-Id</code> header. By default, an <code>X-Correlation-Id</code> the client already sent is <strong>replaced</strong>, never appended to: it is client-controlled, and trusting it would let a client plant an arbitrary value in upstream logs and tracing under this gateway's name.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trust_incoming</code></td>
+<td>Boolean</td>
+<td>No</td>
+<td>If <code>true</code>, an <code>X-Correlation-Id</code> already present on the incoming request is kept (and echoed back to the client) instead of being replaced with r7's own request ID. Defaults to <code>false</code>. Only enable this behind a trusted edge that itself controls or strips the header before it reaches r7.</td>
+</tr>
+</tbody>
+</table>
 <h4 id="removecacheheaders">RemoveCacheHeaders</h4>
 <p>Deletes cache validation headers (<code>If-Modified-Since</code>, <code>If-None-Match</code>) and injects strict no-cache directives (<code>Cache-Control: no-cache</code>, <code>Pragma: no-cache</code>) upstream.
 <em>This filter requires no configuration parameters.</em></p>
@@ -3242,7 +3260,7 @@
 <td><code>max_bucket_ttl</code></td>
 <td>Duration</td>
 <td>No</td>
-<td>Time-to-live for idle buckets. Defaults to <code>max(refill_period * 10, 30s)</code>.</td>
+<td>Time-to-live for idle buckets. Defaults to the time a fully-drained bucket needs to refill to <code>capacity</code> (<code>ceil(capacity / refill_tokens) * refill_period</code>), floored at <code>30s</code>. A shorter TTL would evict an idle client's bucket before it could refill, handing it a fresh full bucket - effectively resetting its limit - the next time it is seen.</td>
 </tr>
 <tr>
 <td><code>ipv6_prefix_length</code></td>
