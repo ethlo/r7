@@ -404,7 +404,13 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   and is disabled until it can be met. Undertow bounds this with `REQUEST_PARSE_TIMEOUT`. It
   weighs on the switch: a client that opens connections and trickles a head holds descriptors
   indefinitely.
-- **Static content**, in `r7-server-blocking` so Níma and the servlet host serve it alike.
+- **Static content.** Done. `StaticFiles` (in `r7-server`) serves the `StaticContent` filter on
+  Níma and the servlet host, and `StaticContentKit` (13 cases) holds all three servers to the
+  same behaviour. Run against Undertow's `ResourceHandler` first, the kit found it serving files
+  to `POST`, redirecting a directory without its trailing slash to the path *after*
+  `StripPathPrefix` (off the route's prefix, so the client got a 404), and naming dotfiles in a
+  listing while refusing to serve them. Undertow now decides those cases with `StaticFiles`
+  before `ResourceHandler` sees the request; file serving itself stays Undertow's, zero-copy.
 - **HTTP/2** with `helidon-webserver-http2`; the upstream hop stays HTTP/1.1.
 - **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
 

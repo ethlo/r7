@@ -193,7 +193,9 @@ public class UndertowGatewayExchange extends ServerExchange implements ProxiedEx
     @Override
     protected void serveStatic(final StaticContentFactory.StaticServeRequest request)
     {
-        this.handler.serveStatic(this.undertowExchange, request);
+        final String query = clientRequest().queryParams().toQueryString();
+        final String clientTarget = query == null || query.isEmpty() ? clientRequest().uri() : clientRequest().uri() + '?' + query;
+        this.handler.serveStatic(this.undertowExchange, request, clientTarget);
     }
 
     @Override

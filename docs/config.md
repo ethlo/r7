@@ -689,14 +689,14 @@ Short-circuits the routing pipeline, halting execution and immediately returning
 
 #### StaticContent
 
-Short-circuits the pipeline to serve static files directly from the disk using a high-performance native handler. **Security:** Path traversal attempts (`../`) are automatically rejected.
+Short-circuits the pipeline to serve static files directly from the disk: on Undertow with its native handler, on the other servers with r7's own, and with the same rules on each. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), every answer carries `X-Content-Type-Options: nosniff`, and a directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` (and an `ETag` on servers other than Undertow), answer conditional requests with `304`, and serve a single byte `Range`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `base_directory` | String | Yes | The absolute physical path on the disk (e.g., `/var/www/html/`) containing the static assets. |
-| `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped `current` release symlink). |
+| `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links found under the base directory. The base directory itself may be a symlink either way (e.g. an atomically swapped `current` release symlink); this is only needed for links inside it. |
 | `list_directory` | Boolean | No (default `false`) | Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. `index.html`) is found there. When disabled, such a request is rejected with `403 Forbidden`. |
-| `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`; `.well-known/` is always served. A directory listing, if enabled, still shows their names. |
+| `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`, and a directory listing, if enabled, leaves their names out; `.well-known/` is always served. |
 
 #### SetStatus
 
