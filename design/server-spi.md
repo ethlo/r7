@@ -9,7 +9,7 @@ compile time. The lock-in is concentrated in `R7UndertowHandler` (about 1,100 li
 that file is not Undertow code: it is the request pipeline of `docs/config.md` §3, written
 against `HttpServerExchange`. A second server (Helidon Níma is the candidate) built today would
 have to copy it, and with it every security fix that has landed there (#89, #91), which would
-then drift. Moving the pipeline into core behind a small SPI is worth doing on its own. It is also
+then drift. Moving the pipeline into `r7-server` behind a small SPI is worth doing on its own. It is also
 what actually demonstrates the absence of lock-in; a second server then tests the SPI's shape.
 
 ---
@@ -63,7 +63,15 @@ objects is added; it is a tripwire, not a target.
 
 ## The boundary
 
-### Core (`r7-core`, `com.ethlo.r7.server`)
+### Where it lives: `r7-server`
+
+Not `r7-core`. The pipeline opens journals on the r7f writer (`ShardedJournalWriter<R7fJournal>`), and
+`ServerConfig` validates shard sizes against `R7fJournalProvider`'s constants so the two cannot drift.
+Both need `r7-journal-mmap`, and the engine should not depend on one journal implementation any more
+than on one HTTP server. So a module sits between them: `r7-server` depends on `r7-core` and
+`r7-journal-mmap`, and server modules (`r7-undertow`, later `r7-helidon`) depend on `r7-server`.
+
+### Server-neutral side (`r7-server`, `com.ethlo.r7.server`)
 
 ```java
 /** Server-neutral request pipeline, docs/config.md §3. One instance per server; no per-request state. */
@@ -111,7 +119,7 @@ public interface ServerExchange extends ClientRequestGatewayExchange, UpstreamRe
     PipelineState pipelineState();                  // route, journal, filter index, reason filter, timestamps
 }
 
-/** Per route, built by the server from UpstreamConfig; health monitoring stays in core. */
+/** Per route, built by the server from UpstreamConfig; health monitoring stays in r7-server. */
 public interface UpstreamConnector
 {
     UpstreamHandle open(GatewayRoute route, UpstreamConfig config, ProxyConfig proxy);
@@ -133,17 +141,17 @@ How it avoids adding per-request objects:
 
 | Now in `r7-undertow` | Goes to |
 |---|---|
-| `TransferEncodingGuard`, TRACE refusal, `RequestPathGuard`, `RemoteAddressResolver`, `UpstreamHeaderSanitizer` | core, over `GatewayHeaders` and plain strings instead of `HeaderMap`/`HttpString` |
-| `handleRequest`, `open`, `refuseBeforeRouting`, `executeRequestFilters`, fallback routing, `Authorization` stripping, `shortCircuit`, response and completed onions, `handleCompleted`, `tagExchangeAttributes`, WebSocket detection, `setupJournaling` decisions | core `GatewayPipeline` |
-| `RouteUpstreamContext` and health-monitor wiring | core; it holds an `UpstreamHandle` |
-| `ServerConfig` (no Undertow imports) and the ~25 status/metrics/DTO classes (no Undertow imports) | core, or a new `r7-status` module |
+| `TransferEncodingGuard`, TRACE refusal, `RequestPathGuard`, `RemoteAddressResolver`, `UpstreamHeaderSanitizer` | `r7-server`, over `GatewayHeaders` and plain strings instead of `HeaderMap`/`HttpString` |
+| `handleRequest`, `open`, `refuseBeforeRouting`, `executeRequestFilters`, fallback routing, `Authorization` stripping, `shortCircuit`, response and completed onions, `handleCompleted`, `tagExchangeAttributes`, WebSocket detection, `setupJournaling` decisions | `r7-server` `GatewayPipeline` |
+| `RouteUpstreamContext` and health-monitor wiring | `r7-server`; it holds an `UpstreamHandle` |
+| `ServerConfig` (no Undertow imports) and the ~25 status/metrics/DTO classes (no Undertow imports) | `r7-server` (done in step 2) |
 | Proxy, pooling, TLS, conduits, `UpstreamAbort`, `guardChunkedRequestBody`, `DiagnosticProxyClient`, static `ResourceHandler`, `StatusHandler`/`TrafficMetricsHandler` | stay with the server |
 
 `R7UndertowHandler` shrinks to roughly 200 lines of glue.
 
 ### The security checks need a shared test kit
 
-The guard code lives in core, but whether it is *sufficient* depends on the server's parser:
+The guard code lives in `r7-server`, but whether it is *sufficient* depends on the server's parser:
 Undertow accepts `chunked, identity`, and Helidon will have its own quirks. The smuggling and
 path tests therefore become an abstract test kit in a test-jar that every server module runs:
 `TransferEncodingGuardTest`, `RequestPathGuardTest`, `UpstreamHeaderHygieneTest`,
@@ -155,18 +163,32 @@ path tests therefore become an abstract test kit in a test-jar that every server
 ## Order
 
 Each step is its own PR. Steps 3 and 5 carry `benchmark/run.sh --repeat 3` before and after,
-with `environment.txt`.
+with `environment.txt`, but that is the final check, not the evidence. For comparing two builds
+the evidence is **instructions and cycles per request** from `perf stat` on the gateway process
+(user and kernel, P-cores only on this hybrid CPU), a few short runs per build: within one JVM
+instructions repeat to about ±0.5%, across JVM starts to about ±1.5%, where req/s needs long
+runs to get to ±2%. Cycles alongside, because fewer instructions that miss cache are not
+faster. `-XX:+PrintInlining` explains a result; it does not measure one.
+
+The `journal` scenario of `benchmark/run.sh` does not measure CPU at these rates: `HEADERS` at
+~100k req/s writes ~225 MB/s of journal, throughput is set by page-cache writeback, and its
+req/s spread is ±20% (#97). Fixing that - a smaller shard size, or a rate-limited wrk2 run - is
+its own change.
 
 1. **Measure.** Done: see "Measured", and `RequestPathCostTest` for the per-request numbers.
-2. **Move the Undertow-free code:** status/DTO classes, `ServerConfig`, the guards once they take
-   neutral types. Mechanical changes only.
+2. **Move the Undertow-free code into a new `r7-server` module.** Done: `ServerConfig`,
+   `RequestPathGuard`, `ErrorMessages`, the management metrics and DTOs, `JsonUtil`, `SystemUtil`.
+   Left for step 3, because each still names an Undertow type or needs the SPI:
+   `TransferEncodingGuard`, `UpstreamHeaderSanitizer` and `RemoteAddressResolver` (take
+   `HeaderMap`), `SimpleMetricsFactory` (casts to `UndertowGatewayExchange` for WebSocket close),
+   the console printers.
 3. **Introduce `ServerExchange` and `GatewayPipeline`;** `UndertowGatewayExchange` implements the
    SPI, with the dispatch index, commit and completion listeners and `PipelineState` held on the
    exchange rather than in lambdas and side objects. CPU per request stays flat.
 4. **The security test kit.**
 5. **Performance, where the profile points, one PR each:**
-   - journal header encoding: walk each header set once, without a lambda per header, and hash
-     names once per request rather than once per pass;
+   - journal header encoding: redact each set once and encode it by position. Done in #97:
+     -14k instructions per `HEADERS` request, ~14% of journaling's cost over passthrough;
    - `R7fJournal.writeEntry` contention, if it grows with core count.
 
    Allocation work in `open()` (copy-on-write snapshots, interned header names, lazy
