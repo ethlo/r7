@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## What this is
 
-`ethlo r7` is a JVM HTTP gateway (Java 25, Undertow/XNIO) that routes and filters requests and
+`ethlo r7` is a JVM HTTP gateway (Java 25 bytecode, built with JDK 27; Undertow/XNIO) that routes and filters requests and
 audits them into memory-mapped binary journals. Pre-release. Docs source lives in `docs/`
 (published to https://r7.ethlo.com); `docs/config.md`, `docs/extensibility.md` and
 `docs/journaling.md` are the user-facing contracts and should be updated when behaviour changes.

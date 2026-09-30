@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# ON HOLD while the build moves to JDK 27: CI does not run this (build-push.yml, build-native).
 # Oracle GraalVM (GFTC-licensed, https://www.oracle.com/downloads/licenses/graal-free-license.html)
 # rather than the community edition - this is what makes --gc=G1 available to the native-image
 # build below (G1 is not implemented in GraalVM Community Edition). Only the *tool* is Oracle-

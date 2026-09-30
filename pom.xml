@@ -25,7 +25,11 @@
         <module>r7-reaper</module>
     </modules>
     <properties>
-        <maven.compiler.release>27</maven.compiler.release>
+        <!-- Built with JDK 27, released for 25: an LTS floor, so hosts that embed r7 (a servlet
+             container, say) and the java25 runtime images are not forced onto a non-LTS runtime.
+             25 is also as low as it goes: r7-journal-mmap uses the FFM API, final in 22.
+             Modules that need newer (r7-helidon) raise it for themselves. -->
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jackson.version>3.2.3</jackson.version>
         <!-- One version for every module: 1.5.34+ carries the fixes for CVE-2026-9828 and CVE-2026-10532 -->
