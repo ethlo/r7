@@ -71,11 +71,17 @@ class RequestPathCostTest
     private static final int CONCURRENCY = 8;
 
     // Bytes per request; see the class comment for how they are set and maintained. Measured on
-    // 2026-09-30 (JDK 25.0.4, three runs): passthrough 8237-8510, journal HEADERS 8408-8688,
-    // filtered 9233-9606. About 10% headroom: enough for JIT variation, too little for a new
-    // per-request object graph to slip through unnoticed.
+    // 2026-09-30 (JDK 25.0.4): passthrough 8237-8510, journal HEADERS 9368-9509, filtered
+    // 9233-9606 locally; the GitHub runner measured about 2-4% higher. About 10% headroom:
+    // enough for JIT variation and the runner, too little for a new per-request object graph to
+    // slip through unnoticed.
+    //
+    // The journal budget rose by ~800 bytes with #97, deliberately: redacting each header set
+    // once into an array snapshot allocates those arrays and saves ~14k instructions per request.
+    // Allocation that buys instructions back is the right trade; this gate is there to make it a
+    // visible one.
     private static final long PASSTHROUGH_BUDGET = 9_400;
-    private static final long JOURNAL_HEADERS_BUDGET = 9_600;
+    private static final long JOURNAL_HEADERS_BUDGET = 10_400;
     private static final long FILTERED_BUDGET = 10_600;
 
     @TempDir
