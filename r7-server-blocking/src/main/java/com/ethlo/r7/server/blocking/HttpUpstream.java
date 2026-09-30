@@ -1,4 +1,4 @@
-package com.ethlo.r7.helidon;
+package com.ethlo.r7.server.blocking;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -18,17 +18,17 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.server.UpstreamHandle;
 
 /**
- * A route's upstream for r7-helidon: the targets the health monitor reports up, picked round
+ * A route's upstream for the thread-per-request servers: the targets the health monitor reports up, picked round
  * robin, and a pool of idle keep-alive connections per target. Plain blocking sockets: every
  * request already runs on its own virtual thread, so a blocked read parks that thread and
  * nothing else.
  * <p>
  * Spike scope (design/server-spi.md, step 6): HTTP/1.1 over plain TCP only - no upstream TLS, no
  * retries beyond one reconnect for a pooled connection the upstream had already closed, no
- * WebSocket tunnelling, no 100-continue. Nothing here names a Helidon type, so a servlet host
- * could use it as it is.
+ * WebSocket tunnelling, no 100-continue. Names no server type, so every thread-per-request
+ * server shares it.
  */
-final class HttpUpstream implements UpstreamHandle
+public final class HttpUpstream implements UpstreamHandle
 {
     private static final Logger logger = LoggerFactory.getLogger(HttpUpstream.class);
     private static final int CONNECT_TIMEOUT_MILLIS = 5_000;
@@ -38,7 +38,7 @@ final class HttpUpstream implements UpstreamHandle
     private final AtomicInteger next = new AtomicInteger();
     private final int readTimeoutMillis;
 
-    HttpUpstream(final int readTimeoutMillis)
+    public HttpUpstream(final int readTimeoutMillis)
     {
         this.readTimeoutMillis = readTimeoutMillis;
     }
@@ -48,7 +48,7 @@ final class HttpUpstream implements UpstreamHandle
     {
         if ("https".equalsIgnoreCase(target.getScheme()))
         {
-            throw new IllegalArgumentException("r7-helidon (experimental) does not support https upstreams yet: " + target);
+            throw new IllegalArgumentException("The blocking upstream client (experimental) does not support https upstreams yet: " + target);
         }
         for (final Target existing : up)
         {
