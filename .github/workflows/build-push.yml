@@ -86,10 +86,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}-reaper:latest
 
-  # On hold while the build moves to JDK 27. publish-native-manifest below is skipped with it
-  # through `needs`.
   build-native:
-    if: false
     strategy:
       fail-fast: false
       matrix:

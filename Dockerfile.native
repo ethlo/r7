@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-# ON HOLD while the build moves to JDK 27: CI does not run this (build-push.yml, build-native).
+# This builder is JDK 25 while the JVM build is JDK 27: fine because every module on
+# r7-undertow's path is released for Java 25 (root pom.xml). r7-helidon, released for 27, is not
+# on that path (-pl r7-undertow -am below).
 # Oracle GraalVM (GFTC-licensed, https://www.oracle.com/downloads/licenses/graal-free-license.html)
 # rather than the community edition - this is what makes --gc=G1 available to the native-image
 # build below (G1 is not implemented in GraalVM Community Edition). Only the *tool* is Oracle-
@@ -43,6 +45,10 @@ USER 65532:65532
 # who can reach it - publish it on loopback (127.0.0.1:19999:18888), not on every host interface.
 # Set management.host in server.yaml to override.
 ENV R7_MANAGEMENT_HOST=0.0.0.0
+# Journals go to /journals, the directory prepared above for this user and the mount point the
+# docs use; without it a container started with no server.yaml tries to create /app/journals,
+# which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
+ENV R7_JOURNAL_DIR=/journals
 ENTRYPOINT ["/app/server", "-Djava.security.egd=file:/dev/./urandom"]
 
 

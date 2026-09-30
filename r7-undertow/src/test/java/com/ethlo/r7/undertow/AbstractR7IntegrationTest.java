@@ -143,7 +143,9 @@ public abstract class AbstractR7IntegrationTest
                         "/tmp/static-listing-test/.keep"
                 )
                 .withEnv("WIREMOCK_PORT", String.valueOf(UPSTREAM_SERVER.port()))
-                .withEnv("UPSTREAM_HOST", "${UPSTREAM_HOST}")
+                // exposeHostPorts above makes WireMock reachable from the container by this name;
+                // routes.yaml interpolates it, and a literal "${UPSTREAM_HOST}" fails URL validation.
+                .withEnv("UPSTREAM_HOST", "host.testcontainers.internal")
                 .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
                 .withLogConsumer(new Slf4jLogConsumer(logger).withPrefix("R7-DOCKER"))
                 .waitingFor(Wait.forHttp("/")

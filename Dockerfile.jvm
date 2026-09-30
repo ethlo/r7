@@ -20,4 +20,8 @@ USER 65532:65532
 # who can reach it - publish it on loopback (127.0.0.1:19999:18888), not on every host interface.
 # Set management.host in server.yaml to override.
 ENV R7_MANAGEMENT_HOST=0.0.0.0
+# Journals go to /journals, the directory prepared above for this user and the mount point the
+# docs use; without it a container started with no server.yaml tries to create /app/journals,
+# which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
+ENV R7_JOURNAL_DIR=/journals
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]
