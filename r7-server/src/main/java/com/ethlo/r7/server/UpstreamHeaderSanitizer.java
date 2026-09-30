@@ -30,22 +30,6 @@ public final class UpstreamHeaderSanitizer
     private static final String TE = "TE";
 
     /**
-     * Client address and original-request claims that only a trusted proxy may make.
-     * {@code X-Original-URL} and {@code X-Rewrite-URL} are included because IIS, Symfony and
-     * others route by them in place of the request line, which would undo the path the gateway
-     * matched and checked.
-     */
-    private static final String[] FORWARDING_HEADERS = {
-            "Forwarded",
-            "X-Real-IP",
-            "X-Client-IP",
-            "True-Client-IP",
-            "X-Cluster-Client-IP",
-            "X-Original-URL",
-            "X-Rewrite-URL"
-    };
-
-    /**
      * Every {@code X-Forwarded-*} header is a claim about an earlier hop, including extensions
      * such as {@code X-Forwarded-User} that some backends trust for identity, so the whole
      * family is matched by prefix rather than listed. The separators are checked individually
@@ -74,22 +58,39 @@ public final class UpstreamHeaderSanitizer
         // One pass to see what is there, then removals for what is there and must go. Asking
         // the container to remove each of a dozen names an ordinary request never carries costs
         // a name conversion and a lookup apiece on every request (on Undertow, an HttpString
-        // built from scratch for every name outside its own table), to remove nothing.
+        // built from scratch for every name outside its own table), to remove nothing. The pass
+        // screens each name by length first, so an ordinary header costs a switch and at most
+        // two comparisons.
         final Scan scan = new Scan();
         headers.forEach(scan, Scan::accept);
 
         final boolean webSocket = "websocket".equalsIgnoreCase(scan.upgrade);
 
+        // Names the client listed in Connection are hop-by-hop by declaration. Framing and Host
+        // are never removed on its say-so: dropping Content-Length or Transfer-Encoding would
+        // change how the body is delimited, which is a request-smuggling primitive of its own.
+        for (int i = 0; i < scan.connectionLines; i++)
+        {
+            removeNamedIn(scan.connection[i], headers, webSocket);
+        }
+
         // "TE: trailers" is how a client says it accepts trailers (gRPC depends on it); any other
         // transfer coding is a matter for this connection only.
         final boolean keepTe = scan.teLines == 1 && "trailers".equalsIgnoreCase(scan.te.strip());
 
-        for (int i = 0; i < scan.nameCount; i++)
+        for (int i = 0; i < scan.candidateCount; i++)
         {
-            final String name = scan.names[i];
-            if (mustRemove(name, scan.connection, scan.connectionLines, webSocket, keepTe, trustedPeer))
+            final boolean remove = switch (scan.kinds[i])
             {
-                headers.remove(name);
+                case HOP_BY_HOP -> true;
+                case KIND_TE -> !keepTe;
+                case KIND_UPGRADE -> !webSocket;
+                case FORWARDING -> !trustedPeer;
+                default -> false;
+            };
+            if (remove)
+            {
+                headers.remove(scan.candidates[i]);
             }
         }
 
@@ -101,123 +102,114 @@ public final class UpstreamHeaderSanitizer
         }
     }
 
-    private static boolean mustRemove(final String name, final String[] connection, final int connectionLines,
-                                      final boolean webSocket, final boolean keepTe, final boolean trustedPeer)
-    {
-        if (name.equalsIgnoreCase(CONNECTION)
-                || name.equalsIgnoreCase("Keep-Alive")
-                || name.equalsIgnoreCase("Proxy-Connection")
-                // Credentials for a proxy are for this hop: the gateway is that proxy.
-                || name.equalsIgnoreCase("Proxy-Authorization"))
-        {
-            return true;
-        }
-        if (name.equalsIgnoreCase(UPGRADE))
-        {
-            return !webSocket;
-        }
-
-        // Names the client listed in Connection are hop-by-hop by declaration. Framing and Host
-        // are never removed on its say-so: dropping Content-Length or Transfer-Encoding would
-        // change how the body is delimited, which is a request-smuggling primitive of its own.
-        if (isNamedIn(connection, connectionLines, name, webSocket))
-        {
-            return true;
-        }
-        if (name.equalsIgnoreCase(TE))
-        {
-            return !keepTe;
-        }
-
-        if (!trustedPeer)
-        {
-            for (final String forwarding : FORWARDING_HEADERS)
-            {
-                if (name.equalsIgnoreCase(forwarding))
-                {
-                    return true;
-                }
-            }
-            return isForwardedFamilyName(name);
-        }
-        return false;
-    }
-
+    private static final int NONE = 0;
     /**
-     * Whether a Connection field-line names {@code name} as hop-by-hop. Scans each
-     * comma-separated list in place, without allocating: this runs for every header of every
-     * proxied request. {@code keep-alive} and {@code close} are connection options, not names,
-     * and the protected names are never taken on the client's say-so.
+     * Connection, Keep-Alive, Proxy-Connection, and Proxy-Authorization: credentials for a proxy
+     * are for this hop, and the gateway is that proxy.
      */
-    private static boolean isNamedIn(final String[] connection, final int lines, final String name, final boolean webSocket)
+    private static final int HOP_BY_HOP = 1;
+    private static final int KIND_TE = 2;
+    private static final int KIND_UPGRADE = 3;
+    /**
+     * Client address and original-request claims that only a trusted proxy may make: Forwarded,
+     * X-Real-IP, X-Client-IP, True-Client-IP, X-Cluster-Client-IP, the X-Forwarded-* family, and
+     * X-Original-URL and X-Rewrite-URL, which IIS, Symfony and others route by in place of the
+     * request line - undoing the path the gateway matched and checked.
+     */
+    private static final int FORWARDING = 4;
+
+    /**
+     * Which rule, if any, can remove a header of this name. Screened by length, so a name that
+     * cannot be one of the few costs one switch.
+     */
+    private static int kindOf(final String name)
     {
-        for (int l = 0; l < lines; l++)
+        return switch (name.length())
         {
-            final String line = connection[l];
-            final int len = line.length();
-            int start = 0;
-            while (start < len)
-            {
-                int end = line.indexOf(',', start);
-                if (end < 0)
-                {
-                    end = len;
-                }
-                int from = start;
-                int to = end;
-                while (from < to && isOws(line.charAt(from)))
-                {
-                    from++;
-                }
-                while (to > from && isOws(line.charAt(to - 1)))
-                {
-                    to--;
-                }
-                if (to > from
-                        && regionIs(line, from, to, name)
-                        && !regionIs(line, from, to, "keep-alive")
-                        && !regionIs(line, from, to, "close")
-                        && !isProtected(line, from, to, webSocket))
-                {
-                    return true;
-                }
-                start = end + 1;
-            }
-        }
-        return false;
+            case 2 -> name.equalsIgnoreCase(TE) ? KIND_TE : NONE;
+            case 7 -> name.equalsIgnoreCase(UPGRADE) ? KIND_UPGRADE : NONE;
+            case 9 -> name.equalsIgnoreCase("Forwarded") || name.equalsIgnoreCase("X-Real-IP") ? FORWARDING : NONE;
+            case 10 -> name.equalsIgnoreCase(CONNECTION) || name.equalsIgnoreCase("Keep-Alive") ? HOP_BY_HOP : NONE;
+            case 11 -> name.equalsIgnoreCase("X-Client-IP") ? FORWARDING : NONE;
+            case 13 -> name.equalsIgnoreCase("X-Rewrite-URL") || isForwardedFamilyName(name) ? FORWARDING : NONE;
+            case 14 -> name.equalsIgnoreCase("True-Client-IP") || name.equalsIgnoreCase("X-Original-URL") || isForwardedFamilyName(name) ? FORWARDING : NONE;
+            case 16 -> name.equalsIgnoreCase("Proxy-Connection") ? HOP_BY_HOP
+                    : isForwardedFamilyName(name) ? FORWARDING : NONE;
+            case 19 -> name.equalsIgnoreCase("Proxy-Authorization") ? HOP_BY_HOP
+                    : name.equalsIgnoreCase("X-Cluster-Client-IP") || isForwardedFamilyName(name) ? FORWARDING : NONE;
+            default -> isForwardedFamilyName(name) ? FORWARDING : NONE;
+        };
     }
 
     /**
-     * What one pass over the headers found: each distinct name once, in order, and the values the
-     * rules depend on. Names are compared ignoring case, as the container matches them.
+     * Removes the headers a Connection field line names. Scans the comma-separated list in place:
+     * this runs before every proxied request, and the usual tokens ({@code keep-alive},
+     * {@code close}, {@code upgrade}) are handled without allocating - only a token naming some
+     * other header costs the substring needed to remove it.
+     */
+    private static void removeNamedIn(final String line, final MutableGatewayHeaders headers, final boolean webSocket)
+    {
+        final int len = line.length();
+        int start = 0;
+        while (start < len)
+        {
+            int end = line.indexOf(',', start);
+            if (end < 0)
+            {
+                end = len;
+            }
+            int from = start;
+            int to = end;
+            while (from < to && isOws(line.charAt(from)))
+            {
+                from++;
+            }
+            while (to > from && isOws(line.charAt(to - 1)))
+            {
+                to--;
+            }
+            if (to > from
+                    && !regionIs(line, from, to, "keep-alive")
+                    && !regionIs(line, from, to, "close")
+                    && !isProtected(line, from, to, webSocket))
+            {
+                headers.remove(line.substring(from, to));
+            }
+            start = end + 1;
+        }
+    }
+
+    /**
+     * What one pass over the headers found: the values the rules depend on, and the few names a
+     * rule may remove. Nothing is allocated for an ordinary request beyond this object.
      */
     private static final class Scan
     {
-        private String[] names = new String[16];
-        private int nameCount;
         private String upgrade;
         private String te;
         private int teLines;
         private String[] connection;
         private int connectionLines;
+        private String[] candidates;
+        private int[] kinds;
+        private int candidateCount;
 
         void accept(final String name, final String value)
         {
-            if (name.equalsIgnoreCase(UPGRADE))
+            final int kind = kindOf(name);
+            if (kind == NONE)
             {
-                if (upgrade == null)
-                {
-                    upgrade = value;
-                }
+                return;
             }
-            else if (name.equalsIgnoreCase(TE))
+            if (kind == KIND_UPGRADE && upgrade == null)
             {
-                if (teLines++ == 0)
-                {
-                    te = value;
-                }
+                upgrade = value;
             }
-            else if (name.equalsIgnoreCase(CONNECTION))
+            else if (kind == KIND_TE && teLines++ == 0)
+            {
+                te = value;
+            }
+            else if (kind == HOP_BY_HOP && name.equalsIgnoreCase(CONNECTION))
             {
                 if (connection == null)
                 {
@@ -230,18 +222,20 @@ public final class UpstreamHeaderSanitizer
                 connection[connectionLines++] = value;
             }
 
-            for (int i = 0; i < nameCount; i++)
+            // One entry per field-line is fine: removing a name twice removes nothing the second
+            // time, and repeated names are rare enough that deduplicating would cost more.
+            if (candidates == null)
             {
-                if (names[i].equalsIgnoreCase(name))
-                {
-                    return;
-                }
+                candidates = new String[4];
+                kinds = new int[4];
             }
-            if (nameCount == names.length)
+            else if (candidateCount == candidates.length)
             {
-                names = java.util.Arrays.copyOf(names, nameCount * 2);
+                candidates = java.util.Arrays.copyOf(candidates, candidateCount * 2);
+                kinds = java.util.Arrays.copyOf(kinds, candidateCount * 2);
             }
-            names[nameCount++] = name;
+            candidates[candidateCount] = name;
+            kinds[candidateCount++] = kind;
         }
     }
 
