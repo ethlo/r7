@@ -111,15 +111,21 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
                 return this.maxBucketTTL;
             }
 
-            if (this.refillPeriod == null)
+            if (this.refillPeriod == null || this.capacity == null || this.refillTokens == null || this.refillTokens <= 0)
             {
                 return null;
             }
 
             try
             {
-                final long scaledMillis = Math.multiplyExact(this.refillPeriod.toMillis(), 10L);
-                return Duration.ofMillis(Math.max(scaledMillis, MINIMUM_EXPIRY_TIME_MILLIS));
+                // A bucket evicted before it could refill from empty to full hands a returning,
+                // merely idle client a brand-new full bucket: its consumed tokens are erased for
+                // free. The TTL must therefore cover at least the full-refill time - a fixed
+                // multiple of the refill period (the old rule) is only correct when capacity
+                // happens to equal refillTokens, and undercounts by exactly that ratio otherwise.
+                final long refillPeriods = -Math.floorDiv(-this.capacity, this.refillTokens); // ceil(capacity / refillTokens)
+                final long fullRefillMillis = Math.multiplyExact(refillPeriods, this.refillPeriod.toMillis());
+                return Duration.ofMillis(Math.max(fullRefillMillis, MINIMUM_EXPIRY_TIME_MILLIS));
             }
             catch (final ArithmeticException e)
             {

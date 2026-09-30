@@ -356,9 +356,11 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
             }
         }
 
+        // The refusal's status and headers were already applied in shortCircuit(), before
+        // response filters ran (see the comment there): re-applying terminationResponse here
+        // would silently undo whatever a response filter (e.g. AddResponseHeader, CircuitBreaker)
+        // just set, since this runs after them.
         final ShortCircuitGatewayResponse terminationResponse = gatewayExchange.getShortCircuitGatewayResponse();
-        gatewayExchange.clientResponse().status(terminationResponse.status());
-        terminationResponse.headers().forEach(((name, value) -> gatewayExchange.clientResponse().headers().set(name, value)));
         // A short-circuit body is r7's (or its configuration's), not the upstream's: r7 vouches
         // for its Content-Type, unless the filter that answered says otherwise.
         if (!exchange.getResponseHeaders().contains(Headers.X_CONTENT_TYPE_OPTIONS))
@@ -389,9 +391,24 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     private static void shortCircuit(final GatewayFilter reasonFilter, HttpServerExchange exchange, DefaultGatewayRoute route, UndertowGatewayExchange gatewayExchange, StatefulJournal statefulJournal)
     {
         exchange.putAttachment(REASON_FILTER_KEY, reasonFilter);
-        for (final ClientResponseGatewayFilter filter : route.beforeCommitGatewayFilters())
+
+        // Applied before response filters run - not after, in sendResponse() - so that a filter's
+        // onClientResponse (CircuitBreaker's above all: it reads clientResponse().status() to
+        // tell a refused half-open probe from a successful one) sees the real refusal outcome
+        // instead of the exchange's still-default 200. It also means a filter that sets its own
+        // header here is the last word on it, rather than being overwritten by this reapplying
+        // the refusal's original headers afterwards.
+        final ShortCircuitGatewayResponse terminationResponse = gatewayExchange.getShortCircuitGatewayResponse();
+        gatewayExchange.clientResponse().status(terminationResponse.status());
+        terminationResponse.headers().forEach(((name, value) -> gatewayExchange.clientResponse().headers().set(name, value)));
+
+        // Reverse iteration on the way out (onion), exactly like the normal response path in
+        // registerResponseListeners: the filter declared first is closest to the client and gets
+        // the final say, matching a request that actually reached the upstream and came back.
+        final ClientResponseGatewayFilter[] beforeCommitFilters = route.beforeCommitGatewayFilters();
+        for (int i = beforeCommitFilters.length - 1; i >= 0; i--)
         {
-            filter.onClientResponse(gatewayExchange);
+            beforeCommitFilters[i].onClientResponse(gatewayExchange);
         }
 
         // Attach the completion listener so the journal records

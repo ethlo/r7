@@ -31,6 +31,13 @@ import tools.jackson.dataformat.yaml.JacksonYAMLParseException;
 
 public final class ConfigurationManager
 {
+    /**
+     * The {@link FilterCreationContext#routeId()} global filters are created under: they belong
+     * to no single route, and no filter factory currently reads this value, but a real route ID
+     * would misleadingly claim ownership by whichever route happened to build first.
+     */
+    private static final String GLOBAL_FILTER_ROUTE_ID = "<global>";
+
     private static final ObjectMapper mapper;
 
     static
@@ -91,17 +98,20 @@ public final class ConfigurationManager
         validationResult.throwIfInvalid(); // Fail before any instantiation
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
+        // Global filters are instantiated exactly once, outside the per-route loop, and the
+        // same filter instances are then prepended to every route: a global RateLimiter or
+        // CircuitBreaker must see every request against one shared bucket/state, not a fresh
+        // instance - and its private cache - per route it happens to be wired onto.
+        final List<GatewayFilter> globalFilters = new ArrayList<>();
+        for (final FilterDefinition filterDef : config.globalFilters())
+        {
+            instantiateFilters(new FilterCreationContext(GLOBAL_FILTER_ROUTE_ID, engineContext), validationResult, globalFilters, filterDef);
+        }
+
         final List<GatewayRoute> routes = config.routes().stream()
                 .map(routeDefinition ->
                 {
                     final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id(), engineContext);
-
-                    // Load global filters
-                    final List<GatewayFilter> globalFilters = new ArrayList<>();
-                    for (final FilterDefinition filterDef : config.globalFilters())
-                    {
-                        instantiateFilters(filterCreationContext, validationResult, globalFilters, filterDef);
-                    }
 
                     final List<GatewayFilter> filters = new ArrayList<>(globalFilters);
                     if (routeDefinition.filters() != null)

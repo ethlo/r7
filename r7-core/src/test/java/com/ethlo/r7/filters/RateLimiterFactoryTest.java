@@ -138,4 +138,49 @@ class RateLimiterFactoryTest
         verify(second).shortCircuit(refusal.capture());
         assertThat(refusal.getValue().headers().getFirst("Content-Type")).isEqualTo("text/plain; charset=utf-8");
     }
+
+    /**
+     * M6: a bucket evicted from the cache before it could refill from empty to full hands an
+     * idle-but-returning client a brand-new full bucket, erasing whatever it had already
+     * consumed. The default max_bucket_ttl must cover at least that full-refill time, not a
+     * fixed multiple of the refill period - which only happens to be enough when capacity
+     * equals refillTokens, and otherwise undercounts by exactly that ratio.
+     */
+    @Test
+    void defaultTtlCoversTheFullRefillTimeWhenCapacityExceedsTheRefillRate()
+    {
+        // 100 tokens capacity, refilling 1 token/second: a fully-drained bucket needs 100s to
+        // refill, but "10x the refill period" would evict it after 10s - 10x too early.
+        final RateLimiterFactory.Config config = new RateLimiterFactory.Config(100L, 1L, Duration.ofSeconds(1), null, null, null);
+
+        assertThat(config.maxBucketTTL()).isEqualTo(Duration.ofSeconds(100));
+    }
+
+    @Test
+    void defaultTtlNeverDropsBelowTheThirtySecondFloor()
+    {
+        // Full refill takes only 1 second here, well under the 30s floor that keeps a
+        // high-frequency, low-capacity limiter's cache from constant eviction/recreation churn.
+        final RateLimiterFactory.Config config = new RateLimiterFactory.Config(10L, 10L, Duration.ofSeconds(1), null, null, null);
+
+        assertThat(config.maxBucketTTL()).isEqualTo(Duration.ofSeconds(30));
+    }
+
+    @Test
+    void anExplicitMaxBucketTTLIsNeverOverridden()
+    {
+        final RateLimiterFactory.Config config = new RateLimiterFactory.Config(100L, 1L, Duration.ofSeconds(1), null, Duration.ofSeconds(5), null);
+
+        assertThat(config.maxBucketTTL()).isEqualTo(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void aNonDivisibleCapacityRoundsTheRefillPeriodCountUp()
+    {
+        // 105 tokens at 10/period needs 11 whole periods (ceil(105/10)), not 10: the eleventh,
+        // partial refill still leaves tokens outstanding that eviction would hand back for free.
+        final RateLimiterFactory.Config config = new RateLimiterFactory.Config(105L, 10L, Duration.ofSeconds(10), null, null, null);
+
+        assertThat(config.maxBucketTTL()).isEqualTo(Duration.ofSeconds(110));
+    }
 }
