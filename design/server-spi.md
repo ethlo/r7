@@ -243,6 +243,8 @@ its own change.
    byte counts) and `BlockingGateway` (config, journal, hot reload, pipeline). A server
    implements six small methods over its own request and response objects; `r7-helidon` is now
    that adapter and nothing more. Instructions per request unchanged.
+   `HttpUpstream` and the relay have since moved to `r7-upstream`, to be shared with Undertow
+   too (design/upstream.md).
 
    Second half done, as `r7-servlet` (experimental): `R7GatewayServlet`, mounted at `/*` in any
    Servlet 6.1 container, is ~150 lines over `r7-server-blocking`, and the security kit passes

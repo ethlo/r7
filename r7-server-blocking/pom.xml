@@ -7,8 +7,8 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
     <!--
-        EXPERIMENTAL. What a server with a thread per request shares: a blocking HTTP/1.1 upstream
-        client, the exchange base class that proxies through it, and the composition of config,
+        EXPERIMENTAL. What a server with a thread per request shares: the exchange base class that
+        proxies through r7-upstream's client, and the composition of config,
         journal and pipeline. r7-helidon (Níma, a virtual thread per request) is a thin adapter
         over this, and a servlet host is to be the next. Names no server type. See
         design/server-spi.md, steps 6 and 7.
@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>com.ethlo.r7</groupId>
-            <artifactId>r7-server</artifactId>
+            <artifactId>r7-upstream</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
     </dependencies>

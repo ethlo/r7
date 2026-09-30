@@ -8,8 +8,8 @@
     </parent>
     <!--
         EXPERIMENTAL. r7 on Helidon's Níma web server: the second implementation of the server SPI
-        (r7-server's ServerExchange): a thin adapter over r7-server-blocking, which holds the
-        upstream client and the proxying it shares with a servlet host. Not a supported
+        (r7-server's ServerExchange): a thin adapter over r7-server-blocking, which it shares
+        with a servlet host, proxying through r7-upstream. Not a supported
         deployment; see design/server-spi.md, step 6.
     -->
     <artifactId>r7-helidon</artifactId>

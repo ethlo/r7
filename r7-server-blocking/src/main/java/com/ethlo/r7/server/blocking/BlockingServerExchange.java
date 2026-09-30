@@ -3,13 +3,10 @@ package com.ethlo.r7.server.blocking;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.ConnectException;
 import java.net.InetSocketAddress;
-import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 
 import com.ethlo.r7.api.GatewayHeaders;
@@ -19,8 +16,6 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.StateKey;
-import com.ethlo.r7.core.proxy.NoAvailableTargetException;
-import com.ethlo.r7.core.proxy.ProxyConnectionException;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.RemoteAddressResolver;
@@ -28,6 +23,11 @@ import com.ethlo.r7.server.RequestPaths;
 import com.ethlo.r7.server.ServerExchange;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.status.TrafficMetrics;
+import com.ethlo.r7.upstream.HttpUpstream;
+import com.ethlo.r7.upstream.ProxiedExchange;
+import com.ethlo.r7.upstream.ProxyFailure;
+import com.ethlo.r7.upstream.RequestBodyTooLargeException;
+import com.ethlo.r7.upstream.UpstreamRelay;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -35,7 +35,7 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 /**
  * One request on a server that gives each request a thread of its own - a virtual thread on
  * Helidon Níma, a container thread (virtual or not) in a servlet container - as the pipeline sees
- * it, proxied through {@link HttpUpstream}.
+ * it, proxied through r7-upstream's {@link UpstreamRelay}, which it serves as the client side.
  * <p>
  * Everything here runs on the request's thread, synchronously: the pipeline's {@code handle}
  * returns when the response has been sent, so there is no I/O thread to protect
@@ -44,13 +44,12 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  * completion once {@link GatewayPipeline#handle} has returned ({@link BlockingGateway#handle}).
  * <p>
  * A server supplies the parsed request to the constructor and implements the few methods that
- * touch its own request and response objects; everything between - framing, the upstream
- * exchange, hop-by-hop stripping, error answers, byte counts - lives here, once.
+ * touch its own request and response objects; error answers, byte counts and the journal tees
+ * live here, once, and the upstream exchange itself in the relay.
  */
-public abstract class BlockingServerExchange extends ServerExchange implements TrafficMetrics
+public abstract class BlockingServerExchange extends ServerExchange implements TrafficMetrics, ProxiedExchange
 {
     private static final String PROTOCOL = "HTTP/1.1";
-    private static final byte[] CRLF = {'\r', '\n'};
 
     private final String method;
     private final String rawPath;
@@ -64,6 +63,8 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private boolean commitRequested;
     private boolean committed;
     private boolean completionRequested;
+    private boolean headWritten;
+    private boolean aborted;
     private Consumer<ByteBuffer> requestTee;
     private Consumer<ByteBuffer> responseTee;
     private long requestBodyLimit = Long.MAX_VALUE;
@@ -317,6 +318,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private void writeHead()
     {
         final MutableGatewayResponse response = clientResponse();
+        this.headWritten = true;
         writeHead(response.status(), response.headers());
     }
 
@@ -332,391 +334,119 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     protected void proxy(final UpstreamHandle handle) throws Exception
     {
-        final HttpUpstream upstream = (HttpUpstream) handle;
-        final HttpUpstream.Target target = upstream.pick();
-        if (target == null)
-        {
-            respondError(503, "No upstream available");
-            throw new NoAvailableTargetException("No target is up for " + route().id());
-        }
-        this.attempted = target.uri.toString();
-
-        final BlockingGatewayRequest live = (BlockingGatewayRequest) upstreamRequest();
-        final byte[] head = requestHead(target, live);
-        final Framing framing = Framing.ofRequest(this.liveHeaders);
-
-        HttpUpstream.Connection connection = null;
         try
         {
-            connection = target.acquire();
-            String[] statusAndHeaders;
-            try
-            {
-                statusAndHeaders = exchangeHead(connection, head, framing);
-            }
-            catch (final IOException e)
-            {
-                // A pooled connection the upstream closed while it sat idle fails on first use.
-                // Reconnect once, and only when there was no body: a body may be half-sent.
-                if (!connection.reused || framing != Framing.NONE)
-                {
-                    throw e;
-                }
-                connection.close();
-                connection = target.acquire();
-                statusAndHeaders = exchangeHead(connection, head, framing);
-            }
-            final boolean reusable = relayResponse(connection, statusAndHeaders);
-            if (reusable)
-            {
-                target.release(connection);
-            }
-            else
-            {
-                connection.close();
-            }
-            connection = null;
+            UpstreamRelay.relay((HttpUpstream) handle, this, route().id());
         }
-        catch (final ConnectException e)
+        catch (final ProxyFailure failure)
         {
-            respondError(503, "Upstream connection failed");
-            throw new ProxyConnectionException("TCP Connection failed to: " + target.uri);
-        }
-        catch (final SocketTimeoutException e)
-        {
-            respondError(504, "Upstream timed out");
-            throw e;
-        }
-        catch (final RequestBodyTooLargeException e)
-        {
-            respondError(413, "Request body too large");
-        }
-        catch (final IOException e)
-        {
-            respondError(502, "Upstream failed");
-            throw new ProxyConnectionException("Upstream exchange failed with " + target.uri + ": " + e.getMessage());
-        }
-        finally
-        {
-            if (connection != null)
+            respondError(failure.status(), failure.message());
+            if (failure.getCause() != null)
             {
-                connection.close();
+                throw failure.getCause();
             }
         }
     }
 
-    private enum Framing
+    @Override
+    public String forwardMethod()
     {
-        NONE, LENGTH, CHUNKED;
-
-        static Framing ofRequest(final GatewayHeaders headers)
-        {
-            if (headers.getFirst("Transfer-Encoding") != null)
-            {
-                return CHUNKED;
-            }
-            return headers.getFirst("Content-Length") != null ? LENGTH : NONE;
-        }
+        return upstreamRequest().method();
     }
 
-    /**
-     * The request line and headers to send upstream: the live headers (already sanitised by the
-     * pipeline) with Host rewritten to the target, the gateway's X-Forwarded-* added the way
-     * Undertow's proxy adds them (extending a trusted proxy's chain, starting one otherwise), and
-     * framing and Expect left to this hop.
-     */
-    private byte[] requestHead(final HttpUpstream.Target target, final BlockingGatewayRequest live)
+    @Override
+    public String forwardTarget()
     {
-        final StringBuilder sb = new StringBuilder(512);
-        sb.append(live.method()).append(' ').append(target.basePath).append(live.target()).append(" HTTP/1.1\r\n");
-        sb.append("Host: ").append(target.hostHeader).append("\r\n");
-        final String originalHost = this.liveHeaders.getFirst("Host");
-        this.liveHeaders.forEach(sb, (b, name, value) ->
-        {
-            if (!name.equalsIgnoreCase("Host") && !name.equalsIgnoreCase("Expect") && !name.equalsIgnoreCase("X-Forwarded-For")
-                    && !name.equalsIgnoreCase("Content-Length") && !name.equalsIgnoreCase("Transfer-Encoding"))
-            {
-                b.append(name).append(": ").append(value).append("\r\n");
-            }
-        });
-        final String peer = live.remoteAddress() != null ? peerIp() : "unknown";
-        final List<String> chain = new ArrayList<>();
-        for (final String value : this.liveHeaders.getAll("X-Forwarded-For"))
-        {
-            chain.add(value);
-        }
-        chain.add(peer);
-        sb.append("X-Forwarded-For: ").append(String.join(", ", chain)).append("\r\n");
-        if (this.liveHeaders.getFirst("X-Forwarded-Host") == null && originalHost != null)
-        {
-            sb.append("X-Forwarded-Host: ").append(originalHost).append("\r\n");
-        }
-        if (this.liveHeaders.getFirst("X-Forwarded-Proto") == null)
-        {
-            sb.append("X-Forwarded-Proto: ").append(scheme()).append("\r\n");
-        }
-        final String contentLength = this.liveHeaders.getFirst("Content-Length");
-        if (this.liveHeaders.getFirst("Transfer-Encoding") != null)
-        {
-            sb.append("Transfer-Encoding: chunked\r\n");
-        }
-        else if (contentLength != null)
-        {
-            sb.append("Content-Length: ").append(contentLength).append("\r\n");
-        }
-        sb.append("\r\n");
-        return sb.toString().getBytes(StandardCharsets.ISO_8859_1);
+        return ((BlockingGatewayRequest) upstreamRequest()).target();
     }
 
-    /**
-     * The immediate peer's address, which is what the gateway vouches for in X-Forwarded-For
-     * (the resolved client address may have come from a trusted proxy's chain).
-     */
-    private String peerIp()
+    @Override
+    public GatewayHeaders forwardHeaders()
+    {
+        return this.liveHeaders;
+    }
+
+    @Override
+    public String forwardedFor()
     {
         final InetSocketAddress peer = peerAddress();
-        return peer != null ? peer.getAddress().getHostAddress() : "unknown";
+        return upstreamRequest().remoteAddress() != null && peer != null ? peer.getAddress().getHostAddress() : "unknown";
     }
 
-    /**
-     * Sends the request head and body and reads the upstream's response head, skipping any
-     * interim 1xx responses. Returns the status line followed by the header lines.
-     */
-    private String[] exchangeHead(final HttpUpstream.Connection connection, final byte[] head, final Framing framing) throws IOException
+    @Override
+    public String forwardedProto()
     {
-        final OutputStream out = connection.out;
-        out.write(head);
-        if (framing != Framing.NONE)
-        {
-            copyRequestBody(out, framing);
-        }
-        out.flush();
+        return scheme();
+    }
 
-        while (true)
+    @Override
+    public InputStream openRequestBody() throws IOException
+    {
+        return requestBody();
+    }
+
+    @Override
+    public void onRequestBody(final byte[] buffer, final int offset, final int length) throws IOException
+    {
+        this.requestBodyBytes += length;
+        if (this.requestBodyBytes > this.requestBodyLimit)
         {
-            final String statusLine = connection.reader.readLine();
-            if (statusLine == null)
-            {
-                throw new IOException("Upstream closed the connection before responding");
-            }
-            final List<String> lines = new ArrayList<>();
-            lines.add(statusLine);
-            String line;
-            while ((line = connection.reader.readLine()) != null && !line.isEmpty())
-            {
-                lines.add(line);
-            }
-            final int status = statusOf(statusLine);
-            if (status >= 100 && status < 200 && status != 101)
-            {
-                continue;
-            }
-            return lines.toArray(new String[0]);
+            throw new RequestBodyTooLargeException();
+        }
+        if (this.requestTee != null)
+        {
+            this.requestTee.accept(ByteBuffer.wrap(buffer, offset, length).asReadOnlyBuffer());
         }
     }
 
-    private void copyRequestBody(final OutputStream out, final Framing framing) throws IOException
+    @Override
+    public OutputStream commit(final boolean body) throws IOException
     {
-        final InputStream in = requestBody();
-        final byte[] buffer = new byte[8192];
-        int n;
-        while ((n = in.read(buffer)) != -1)
-        {
-            this.requestBodyBytes += n;
-            if (this.requestBodyBytes > this.requestBodyLimit)
-            {
-                throw new RequestBodyTooLargeException();
-            }
-            if (this.requestTee != null)
-            {
-                this.requestTee.accept(ByteBuffer.wrap(buffer, 0, n).asReadOnlyBuffer());
-            }
-            if (framing == Framing.CHUNKED)
-            {
-                out.write(Integer.toHexString(n).getBytes(StandardCharsets.ISO_8859_1));
-                out.write(CRLF);
-                out.write(buffer, 0, n);
-                out.write(CRLF);
-            }
-            else
-            {
-                out.write(buffer, 0, n);
-            }
-        }
-        if (framing == Framing.CHUNKED)
-        {
-            out.write('0');
-            out.write(CRLF);
-            out.write(CRLF);
-        }
-    }
-
-    /**
-     * Relays the upstream's response to the client. Returns whether the upstream connection can
-     * be reused: the body was framed and read to its end, and the upstream did not ask to close.
-     */
-    private boolean relayResponse(final HttpUpstream.Connection connection, final String[] head) throws IOException
-    {
-        final int status = statusOf(head[0]);
-        if (status == 101)
-        {
-            // The upgrade request went upstream sanitised like any other; tunnelling the upgraded
-            // connection is what the spike does not do yet.
-            connection.close();
-            respondError(502, "WebSocket tunnelling is not supported by this server (experimental)");
-            return false;
-        }
-        final MutableGatewayResponse response = clientResponse();
-        response.status(status);
-
-        String connectionHeader = null;
-        String contentLength = null;
-        boolean chunked = false;
-        for (int i = 1; i < head.length; i++)
-        {
-            final String line = head[i];
-            final int colon = line.indexOf(':');
-            if (colon <= 0)
-            {
-                continue;
-            }
-            final String name = line.substring(0, colon).trim();
-            final String value = line.substring(colon + 1).trim();
-            if (name.equalsIgnoreCase("Connection"))
-            {
-                connectionHeader = value;
-            }
-            else if (name.equalsIgnoreCase("Transfer-Encoding"))
-            {
-                chunked = value.toLowerCase().contains("chunked");
-            }
-            else if (name.equalsIgnoreCase("Content-Length"))
-            {
-                contentLength = value;
-            }
-            else if (!isHopByHop(name))
-            {
-                response.headers().add(name, value);
-            }
-        }
-
-        final boolean noBody = "HEAD".equalsIgnoreCase(upstreamRequest().method()) || status == 204 || status == 304;
-        if (!noBody && !chunked && contentLength != null)
-        {
-            response.headers().set("Content-Length", contentLength);
-        }
-
         commit();
         writeHead();
-
-        if (noBody)
+        if (!body)
         {
             sendNoBody();
-            return connectionHeader == null || !connectionHeader.equalsIgnoreCase("close");
+            return null;
         }
-
-        final HttpUpstream.LineReader in = connection.reader;
-        boolean framed = true;
-        try (OutputStream out = responseBody())
-        {
-            if (chunked)
-            {
-                relayChunked(in, out);
-            }
-            else if (contentLength != null)
-            {
-                relayExactly(in, out, Long.parseLong(contentLength));
-            }
-            else
-            {
-                framed = false;
-                relayExactly(in, out, Long.MAX_VALUE);
-            }
-        }
-        return framed && (connectionHeader == null || !connectionHeader.equalsIgnoreCase("close"));
+        return responseBody();
     }
 
-    private void relayExactly(final HttpUpstream.LineReader in, final OutputStream out, final long length) throws IOException
+    @Override
+    public void onResponseBody(final byte[] buffer, final int offset, final int length)
     {
-        final byte[] buffer = new byte[8192];
-        long remaining = length;
-        while (remaining > 0)
-        {
-            final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
-            if (n == -1)
-            {
-                if (length == Long.MAX_VALUE)
-                {
-                    return;
-                }
-                throw new IOException("Upstream closed the connection " + remaining + " bytes short of its Content-Length");
-            }
-            writeResponseBody(out, buffer, n);
-            remaining -= n;
-        }
-    }
-
-    private void relayChunked(final HttpUpstream.LineReader in, final OutputStream out) throws IOException
-    {
-        final byte[] buffer = new byte[8192];
-        while (true)
-        {
-            final String sizeLine = in.readLine();
-            if (sizeLine == null)
-            {
-                throw new IOException("Upstream closed the connection inside a chunked body");
-            }
-            final int semicolon = sizeLine.indexOf(';');
-            final long size = Long.parseLong((semicolon < 0 ? sizeLine : sizeLine.substring(0, semicolon)).trim(), 16);
-            if (size == 0)
-            {
-                String trailer;
-                while ((trailer = in.readLine()) != null && !trailer.isEmpty())
-                {
-                    // Trailers are not relayed in the spike.
-                }
-                return;
-            }
-            long remaining = size;
-            while (remaining > 0)
-            {
-                final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
-                if (n == -1)
-                {
-                    throw new IOException("Upstream closed the connection inside a chunk");
-                }
-                writeResponseBody(out, buffer, n);
-                remaining -= n;
-            }
-            in.readLine();
-        }
-    }
-
-    private void writeResponseBody(final OutputStream out, final byte[] buffer, final int n) throws IOException
-    {
-        this.responseBodyBytes += n;
+        this.responseBodyBytes += length;
         if (this.responseTee != null)
         {
-            this.responseTee.accept(ByteBuffer.wrap(buffer, 0, n).asReadOnlyBuffer());
+            this.responseTee.accept(ByteBuffer.wrap(buffer, offset, length).asReadOnlyBuffer());
         }
-        out.write(buffer, 0, n);
     }
 
-    private static boolean isHopByHop(final String name)
+    @Override
+    public void attemptedTarget(final URI target)
     {
-        return name.equalsIgnoreCase("Keep-Alive") || name.equalsIgnoreCase("Proxy-Connection")
-                || name.equalsIgnoreCase("TE") || name.equalsIgnoreCase("Trailer") || name.equalsIgnoreCase("Upgrade");
+        this.attempted = target.toString();
     }
 
-    private static int statusOf(final String statusLine)
+    @Override
+    public void abortResponse()
     {
-        final int start = statusLine.indexOf(' ') + 1;
-        return Integer.parseInt(statusLine.substring(start, start + 3));
+        this.aborted = true;
+    }
+
+    /**
+     * Whether the response was abandoned part-way; the server must then drop the connection
+     * rather than complete the message ({@link BlockingGateway#handle} throws to make it).
+     */
+    boolean isAborted()
+    {
+        return this.aborted;
     }
 
     private void respondError(final int status, final String message)
     {
-        if (isResponseStarted())
+        // Our own flag first: a server's "response sent" can stay false while a body streams.
+        if (this.headWritten || isResponseStarted())
         {
             return;
         }
@@ -724,14 +454,6 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         clientResponse().headers().set("Content-Type", "text/plain; charset=utf-8");
         clientResponse().headers().set("X-Content-Type-Options", "nosniff");
         sendBody(ByteBuffer.wrap(message.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private static final class RequestBodyTooLargeException extends IOException
-    {
-        RequestBodyTooLargeException()
-        {
-            super("Request body exceeds the route's limit");
-        }
     }
 
     // --- Filter-facing -----------------------------------------------------------------------

@@ -20,7 +20,7 @@ import com.ethlo.r7.util.PathEncoder;
 
 /**
  * The live request on a thread-per-request server: what route predicates match, what filters
- * change, and what {@link HttpUpstream} forwards. It holds a mutable copy of the request headers,
+ * change, and what {@link com.ethlo.r7.upstream.UpstreamRelay} forwards. It holds a mutable copy of the request headers,
  * taken once off the wire (server header APIs are read-only); everything the upstream receives is
  * read from here.
  * <p>
