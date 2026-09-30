@@ -70,7 +70,7 @@ r7-undertow     the Undertow server: R7Main, R7UndertowHandler, proxy, status/da
 r7-server-blocking EXPERIMENTAL thread-per-request base: HttpUpstream client, BlockingServerExchange, BlockingGateway
 r7-helidon      EXPERIMENTAL Helidon Níma server: R7Helidon, an adapter over r7-server-blocking
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
-r7-tailer-jsonld sidecar apps that turn journals into JSON / ClickHouse rows
+r7-tailer-jsonld sidecar app that turns journals into JSON lines
 ```
 
 `api` is the contract and `core` the engine; keep the separation strict — `r7-api` must not
@@ -150,7 +150,7 @@ The rules most easily broken by a well-intentioned local fix:
 - Journal text (header names/values, attributes, start lines) is **ISO-8859-1**. Values set
   programmatically are validated at the point of mutation and rejected with
   `InvalidTextValueException`; do not move that check into the journal writer.
-- The gateway writes binary only. Conversion to JSON/ClickHouse belongs to the sidecar tailers,
+- The gateway writes binary only. Conversion to JSON/WARC belongs to the sidecar tailers,
   never the request path.
 
 Journal levels are `NONE | METADATA | HEADERS | FULL`, per route and per direction.
