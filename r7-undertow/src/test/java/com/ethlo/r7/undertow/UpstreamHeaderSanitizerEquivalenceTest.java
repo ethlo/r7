@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
+import java.util.TreeMap;
 
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +34,10 @@ class UpstreamHeaderSanitizerEquivalenceTest
             "Forwarded", "X-Real-IP", "X-Client-IP", "True-Client-IP", "X-Cluster-Client-IP",
             "X-Original-URL", "X-Rewrite-URL",
             "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host", "X-Forwarded-User", "X-Forwarded-",
-            "X-Forwardedx", "X-Forward-For", "XX-Forwarded-For", "X-Custom", "X-Other"
+            "X-Forwardedx", "X-Forward-For", "XX-Forwarded-For", "X-Custom", "X-Other",
+            // Connection options, as names: a Connection token "close" or "keep-alive" is an option,
+            // never a header to remove, so a header that happens to be called that must survive it.
+            "close", "keep-alive"
     };
 
     private static final String[] CONNECTION_TOKENS = {
@@ -136,17 +142,21 @@ class UpstreamHeaderSanitizerEquivalenceTest
     }
 
     /**
-     * Every remaining field-line, in the map's order, with the name as stored. Order and spelling
-     * are part of what must match: the proxy copies the map as it is.
+     * Every remaining field-line, grouped by name: for each name (ignoring case), its spelling and
+     * its values in order. The order of lines with the same name is significant (RFC 9110 §5.3),
+     * so it must match; the order between different names is not, and HeaderMap's iteration order
+     * across names is a property of its hash table and of the order removals happened in, not of
+     * the request - so it is not compared.
      */
-    private static List<String> render(final HeaderMap map)
+    private static Map<String, List<String>> render(final HeaderMap map)
     {
-        final List<String> out = new ArrayList<>();
+        final Map<String, List<String>> out = new TreeMap<>();
         for (final HeaderValues values : map)
         {
+            final List<String> lines = out.computeIfAbsent(values.getHeaderName().toString().toLowerCase(Locale.ROOT), k -> new ArrayList<>());
             for (final String value : values)
             {
-                out.add(values.getHeaderName() + "=" + value);
+                lines.add(values.getHeaderName() + "=" + value);
             }
         }
         return out;

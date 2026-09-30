@@ -71,34 +71,26 @@ public final class UpstreamHeaderSanitizer
 
     public static void sanitize(final MutableGatewayHeaders headers, final boolean trustedPeer)
     {
-        final boolean webSocket = "websocket".equalsIgnoreCase(headers.getFirst(UPGRADE));
+        // One pass to see what is there, then removals for what is there and must go. Asking
+        // the container to remove each of a dozen names an ordinary request never carries costs
+        // a name conversion and a lookup apiece on every request (on Undertow, an HttpString
+        // built from scratch for every name outside its own table), to remove nothing.
+        final Scan scan = new Scan();
+        headers.forEach(scan, Scan::accept);
 
-        // Names the client listed in Connection are hop-by-hop by declaration. Framing and Host
-        // are never removed on its say-so: dropping Content-Length or Transfer-Encoding would
-        // change how the body is delimited, which is a request-smuggling primitive of its own.
-        // The lines are copied first: removing a header they name (Connection itself, even) must
-        // not disturb the iteration, and not every container gives a stable view under removal.
-        final String[] connection = valuesOf(headers, CONNECTION);
-        if (connection != null)
-        {
-            for (final String line : connection)
-            {
-                removeNamedIn(line, headers, webSocket);
-            }
-        }
-
-        headers.remove(CONNECTION);
-        headers.remove("Keep-Alive");
-        headers.remove("Proxy-Connection");
-        // Credentials for a proxy are for this hop: the gateway is that proxy.
-        headers.remove("Proxy-Authorization");
+        final boolean webSocket = "websocket".equalsIgnoreCase(scan.upgrade);
 
         // "TE: trailers" is how a client says it accepts trailers (gRPC depends on it); any other
         // transfer coding is a matter for this connection only.
-        final String te = headers.getFirst(TE);
-        if (te != null && !(count(headers, TE) == 1 && "trailers".equalsIgnoreCase(te.strip())))
+        final boolean keepTe = scan.teLines == 1 && "trailers".equalsIgnoreCase(scan.te.strip());
+
+        for (int i = 0; i < scan.nameCount; i++)
         {
-            headers.remove(TE);
+            final String name = scan.names[i];
+            if (mustRemove(name, scan.connection, scan.connectionLines, webSocket, keepTe, trustedPeer))
+            {
+                headers.remove(name);
+            }
         }
 
         if (webSocket)
@@ -107,129 +99,149 @@ public final class UpstreamHeaderSanitizer
             // rebuilt with only the token that asks for it.
             headers.set(CONNECTION, UPGRADE);
         }
-        else
+    }
+
+    private static boolean mustRemove(final String name, final String[] connection, final int connectionLines,
+                                      final boolean webSocket, final boolean keepTe, final boolean trustedPeer)
+    {
+        if (name.equalsIgnoreCase(CONNECTION)
+                || name.equalsIgnoreCase("Keep-Alive")
+                || name.equalsIgnoreCase("Proxy-Connection")
+                // Credentials for a proxy are for this hop: the gateway is that proxy.
+                || name.equalsIgnoreCase("Proxy-Authorization"))
         {
-            headers.remove(UPGRADE);
+            return true;
+        }
+        if (name.equalsIgnoreCase(UPGRADE))
+        {
+            return !webSocket;
+        }
+
+        // Names the client listed in Connection are hop-by-hop by declaration. Framing and Host
+        // are never removed on its say-so: dropping Content-Length or Transfer-Encoding would
+        // change how the body is delimited, which is a request-smuggling primitive of its own.
+        if (isNamedIn(connection, connectionLines, name, webSocket))
+        {
+            return true;
+        }
+        if (name.equalsIgnoreCase(TE))
+        {
+            return !keepTe;
         }
 
         if (!trustedPeer)
         {
-            for (final String name : FORWARDING_HEADERS)
+            for (final String forwarding : FORWARDING_HEADERS)
             {
-                headers.remove(name);
+                if (name.equalsIgnoreCase(forwarding))
+                {
+                    return true;
+                }
             }
-            removeXForwardedFamily(headers);
+            return isForwardedFamilyName(name);
         }
+        return false;
     }
 
     /**
-     * The field-lines of {@code name}, copied; {@code null} when there are none, so an ordinary
-     * request without the header allocates nothing.
+     * Whether a Connection field-line names {@code name} as hop-by-hop. Scans each
+     * comma-separated list in place, without allocating: this runs for every header of every
+     * proxied request. {@code keep-alive} and {@code close} are connection options, not names,
+     * and the protected names are never taken on the client's say-so.
      */
-    private static String[] valuesOf(final MutableGatewayHeaders headers, final String name)
+    private static boolean isNamedIn(final String[] connection, final int lines, final String name, final boolean webSocket)
     {
-        String[] values = null;
-        int n = 0;
-        for (final String value : headers.getAll(name))
+        for (int l = 0; l < lines; l++)
         {
-            if (values == null)
+            final String line = connection[l];
+            final int len = line.length();
+            int start = 0;
+            while (start < len)
             {
-                values = new String[2];
+                int end = line.indexOf(',', start);
+                if (end < 0)
+                {
+                    end = len;
+                }
+                int from = start;
+                int to = end;
+                while (from < to && isOws(line.charAt(from)))
+                {
+                    from++;
+                }
+                while (to > from && isOws(line.charAt(to - 1)))
+                {
+                    to--;
+                }
+                if (to > from
+                        && regionIs(line, from, to, name)
+                        && !regionIs(line, from, to, "keep-alive")
+                        && !regionIs(line, from, to, "close")
+                        && !isProtected(line, from, to, webSocket))
+                {
+                    return true;
+                }
+                start = end + 1;
             }
-            else if (n == values.length)
-            {
-                values = java.util.Arrays.copyOf(values, n * 2);
-            }
-            values[n++] = value;
         }
-        return values == null || n == values.length ? values : java.util.Arrays.copyOf(values, n);
-    }
-
-    private static int count(final MutableGatewayHeaders headers, final String name)
-    {
-        int n = 0;
-        for (final String ignored : headers.getAll(name))
-        {
-            n++;
-        }
-        return n;
+        return false;
     }
 
     /**
-     * Removes the headers a Connection field line names. Scans the comma-separated list in place:
-     * this runs before every proxied request, and the usual tokens ({@code keep-alive},
-     * {@code close}, {@code upgrade}) are handled without allocating - only a token naming some
-     * other header costs the substring needed to remove it.
+     * What one pass over the headers found: each distinct name once, in order, and the values the
+     * rules depend on. Names are compared ignoring case, as the container matches them.
      */
-    private static void removeNamedIn(final String line, final MutableGatewayHeaders headers, final boolean webSocket)
+    private static final class Scan
     {
-        final int len = line.length();
-        int start = 0;
-        while (start < len)
-        {
-            int end = line.indexOf(',', start);
-            if (end < 0)
-            {
-                end = len;
-            }
-            int from = start;
-            int to = end;
-            while (from < to && isOws(line.charAt(from)))
-            {
-                from++;
-            }
-            while (to > from && isOws(line.charAt(to - 1)))
-            {
-                to--;
-            }
-            if (to > from
-                    && !regionIs(line, from, to, "keep-alive")
-                    && !regionIs(line, from, to, "close")
-                    && !isProtected(line, from, to, webSocket))
-            {
-                headers.remove(line.substring(from, to));
-            }
-            start = end + 1;
-        }
-    }
+        private String[] names = new String[16];
+        private int nameCount;
+        private String upgrade;
+        private String te;
+        private int teLines;
+        private String[] connection;
+        private int connectionLines;
 
-    /**
-     * Collects matches before removing them, since a container cannot be changed while it is
-     * being iterated; the array is only allocated once a match is found, which an ordinary
-     * request from an untrusted client never has.
-     */
-    private static void removeXForwardedFamily(final MutableGatewayHeaders headers)
-    {
-        final Matches matches = new Matches();
-        headers.forEach(matches, (m, name, value) ->
+        void accept(final String name, final String value)
         {
-            if (isForwardedFamilyName(name))
+            if (name.equalsIgnoreCase(UPGRADE))
             {
-                m.add(name);
+                if (upgrade == null)
+                {
+                    upgrade = value;
+                }
             }
-        });
-        for (int i = 0; i < matches.count; i++)
-        {
-            headers.remove(matches.names[i]);
-        }
-    }
+            else if (name.equalsIgnoreCase(TE))
+            {
+                if (teLines++ == 0)
+                {
+                    te = value;
+                }
+            }
+            else if (name.equalsIgnoreCase(CONNECTION))
+            {
+                if (connection == null)
+                {
+                    connection = new String[2];
+                }
+                else if (connectionLines == connection.length)
+                {
+                    connection = java.util.Arrays.copyOf(connection, connectionLines * 2);
+                }
+                connection[connectionLines++] = value;
+            }
 
-    private static final class Matches
-    {
-        private String[] names;
-        private int count;
-
-        void add(final String name)
-        {
-            if (names == null)
+            for (int i = 0; i < nameCount; i++)
             {
-                names = new String[4];
+                if (names[i].equalsIgnoreCase(name))
+                {
+                    return;
+                }
             }
-            else if (count == names.length)
+            if (nameCount == names.length)
             {
-                names = java.util.Arrays.copyOf(names, count * 2);
+                names = java.util.Arrays.copyOf(names, nameCount * 2);
             }
-            names[count++] = name;
+            names[nameCount++] = name;
         }
     }
 
