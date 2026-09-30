@@ -3705,7 +3705,7 @@
 <tr>
 <td><code>enable_http2</code></td>
 <td>Boolean</td>
-<td>Enables HTTP/2. Defaults to <code>false</code>. The listener is plaintext, so this means h2c (prior knowledge or <code>Upgrade: h2c</code>): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected.</td>
+<td>Enables HTTP/2. Defaults to <code>false</code>. The listener is plaintext, so this means h2c (prior knowledge or <code>Upgrade: h2c</code>): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and with the r7 upstream client a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its <code>Content-Length</code> - is answered <code>400</code> rather than forwarded.</td>
 </tr>
 <tr>
 <td><code>always_set_keep_alive</code></td>
@@ -3803,7 +3803,7 @@
 <tr>
 <td><code>client</code></td>
 <td>String</td>
-<td><strong>Experimental.</strong> Which upstream client proxies requests: <code>undertow</code> (Undertow's own proxy; the default) or <code>r7</code>, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With <code>r7</code>, response framing is checked strictly (conflicting <code>Content-Length</code>, folded headers, malformed chunks and transfer codings other than <code>chunked</code> are answered with <code>502</code>), a request that fails on a reused connection is retried only when it is idempotent, and <code>connections_per_thread</code> and <code>max_queue_size</code> are not applied yet. <code>r7</code> does not yet support <code>https</code> targets or WebSocket upgrades.</td>
+<td><strong>Experimental.</strong> Which upstream client proxies requests: <code>undertow</code> (Undertow's own proxy; the default) or <code>r7</code>, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With <code>r7</code>, response framing is checked strictly (conflicting <code>Content-Length</code>, folded headers, malformed chunks and transfer codings other than <code>chunked</code> are answered with <code>502</code>), a request that fails on a reused connection is retried only when it is idempotent, and a target that refuses the connection is skipped for the next. <code>connections_per_thread</code> is scaled by <code>advanced.io_threads</code> into a per-target limit on requests in flight, with up to <code>max_queue_size</code> waiting; <code>max_request_time</code> bounds the whole exchange, waiting included. <code>https</code> targets are verified against the JVM's trust store, host name included. <code>r7</code> does not yet tunnel WebSocket upgrades.</td>
 </tr>
 </tbody>
 </table>
