@@ -9,6 +9,7 @@ import java.util.Locale;
 import org.junit.jupiter.api.Test;
 
 import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.util.IndexedGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.RedactUtil;
 
@@ -84,6 +85,29 @@ class RedactingHeadersTest
         assertThat(collect(new RedactingHeaders(source, SAFE))).containsExactly(
                 "cookie=" + RedactUtil.fingerprint("a=1"),
                 "cookie=" + RedactUtil.fingerprint("b=2"));
+    }
+
+    /**
+     * The journal writes the snapshot, not the view, so the two must be the same set: same
+     * order, same repeats, same fingerprints, and readable by position as well as traversal.
+     */
+    @Test
+    void theSnapshotIsExactlyWhatTheViewTraverses()
+    {
+        final MutableFastGatewayHeaders source = new MutableFastGatewayHeaders();
+        source.add("User-Agent", "Mozilla/5.0");
+        source.add("cookie", "a=1");
+        source.add("Accept", "*/*");
+        source.add("cookie", "b=2");
+        final RedactingHeaders view = new RedactingHeaders(source, SAFE);
+
+        final IndexedGatewayHeaders snapshot = view.snapshot();
+
+        assertThat(collect(snapshot)).containsExactlyElementsOf(collect(view));
+        assertThat(snapshot.size()).isEqualTo(4);
+        assertThat(snapshot.name(3)).isEqualTo("cookie");
+        assertThat(snapshot.value(3)).isEqualTo(RedactUtil.fingerprint("b=2"));
+        assertThat(snapshot.getFirst("user-agent")).as("lookups stay case-insensitive").isEqualTo("Mozilla/5.0");
     }
 
     @Test

@@ -6,6 +6,7 @@ import java.util.List;
 import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.StatefulEntryConsumer;
+import com.ethlo.r7.util.IndexedGatewayHeaders;
 
 /**
  * A read-only view over another header container that replaces every value whose name is not
@@ -22,6 +23,13 @@ import com.ethlo.r7.api.StatefulEntryConsumer;
  * <p>
  * Redaction is therefore applied during traversal instead, which costs one capture per
  * message in place of those per-header allocations.
+ * <p>
+ * The journal takes a {@link #snapshot()} of this view rather than the view itself. The encoder
+ * reads the client request and upstream response sets twice - once to write them, once as the
+ * base the next set is diffed against - and every traversal of the view redacts again: a
+ * safe-list lookup per header, a memo probe per unsafe value. The snapshot pays that once, into
+ * two arrays, with none of the costs above: no lower-casing, no validation, the same String
+ * instances.
  * <p>
  * Not thread-safe in any way its delegate is not, and not intended to outlive the exchange it
  * was built for: it holds a live reference to the underlying container rather than a snapshot,
@@ -48,6 +56,17 @@ public final class RedactingHeaders implements GatewayHeaders
     private String redact(final String name, final String value)
     {
         return safeNames.contains(name) ? value : memo.fingerprintOf(value);
+    }
+
+    /**
+     * The redacted set as it is now, in order, readable by position. One traversal of the
+     * delegate; later changes to the delegate are not seen.
+     */
+    public IndexedGatewayHeaders snapshot()
+    {
+        final IndexedGatewayHeaders snapshot = new IndexedGatewayHeaders(16);
+        delegate.forEach(snapshot, (target, name, value) -> target.append(name, redact(name, value)));
+        return snapshot;
     }
 
     @Override

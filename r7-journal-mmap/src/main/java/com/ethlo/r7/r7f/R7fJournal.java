@@ -42,6 +42,7 @@ import com.ethlo.r7.r7f.fbs.RequestBody;
 import com.ethlo.r7.r7f.fbs.ResponseBody;
 import com.ethlo.r7.r7f.fbs.UpstreamRequest;
 import com.ethlo.r7.r7f.fbs.UpstreamResponse;
+import com.ethlo.r7.util.IndexedGatewayHeaders;
 import com.google.flatbuffers.FlatBufferBuilder;
 
 public final class R7fJournal implements Journal
@@ -471,8 +472,8 @@ public final class R7fJournal implements Journal
             {
                 return 0;
             }
-            final int baseCount = HeaderDeltaCodec.materialise(base, deltaOps);
-            if (baseCount == 0)
+            final IndexedGatewayHeaders indexedBase = HeaderDeltaCodec.materialise(base);
+            if (indexedBase.size() == 0)
             {
                 // Nothing to refer to. A delta against an empty base is the full set with extra
                 // framing, and worse, it would make the record depend on an entry that carries
@@ -480,7 +481,7 @@ public final class R7fJournal implements Journal
                 return 0;
             }
 
-            HeaderDeltaCodec.diff(deltaOps.name, deltaOps.value, baseCount, target, deltaOps);
+            HeaderDeltaCodec.diff(indexedBase, target, deltaOps);
 
             final int opCount = deltaOps.size;
             if (deltaOpOffsets.length < opCount)
@@ -520,6 +521,18 @@ public final class R7fJournal implements Journal
         private int buildHeadersVector(final GatewayHeaders headers)
         {
             this.currentHeaderCount = 0;
+            if (headers instanceof final IndexedGatewayHeaders indexed)
+            {
+                // What StatefulJournal always passes: read by position, no callback per header.
+                final int count = indexed.size();
+                for (int i = 0; i < count; i++)
+                {
+                    headerOffsetsScratch = ensureSlot(headerOffsetsScratch, i);
+                    headerWrite(indexed.name(i), indexed.value(i));
+                    headerOffsetsScratch[i] = Header.endHeader(fbb);
+                }
+                return count == 0 ? 0 : createOffsetVector(headerOffsetsScratch, count);
+            }
             headers.forEach(this, (self, name, value) ->
                     {
                         self.headerOffsetsScratch = ensureSlot(self.headerOffsetsScratch, self.currentHeaderCount);

@@ -359,7 +359,12 @@ public final class StatefulJournal implements Journal
         {
             return FastGatewayHeaders.empty();
         }
-        return new RedactingHeaders(original, safeHeaders, fingerprints);
+        // A snapshot, not the view: see RedactingHeaders for why the journal redacts once. It
+        // also makes a base exactly what was written. The view was read again when the next set
+        // was diffed against it, so a delegate that changed in between would have produced a
+        // delta against headers the journal never held; the gateway passes immutable snapshots,
+        // so that never happened there, but the base no longer depends on it.
+        return new RedactingHeaders(original, safeHeaders, fingerprints).snapshot();
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)
