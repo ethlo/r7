@@ -487,11 +487,27 @@ public record ServerConfig(
             return highest >= (1 << 30) ? highest : highest << 1;
         }
 
+        /**
+         * {@code R7_JOURNAL_DIR} sets the default without a server.yaml, and an explicit
+         * {@code storage.work_dir} takes precedence over it. The container images set it to
+         * /journals, the one directory they prepare for their nonroot user: without it the
+         * relative default resolves under /app, which that user cannot create, and a container
+         * started with no server.yaml died at startup.
+         */
         @Override
         public String workDir()
         {
-            return Optional.ofNullable(this.workDir).orElse("journals");
+            return Optional.ofNullable(this.workDir).orElseGet(StorageConfig::defaultWorkDir);
         }
+
+        static String defaultWorkDir()
+        {
+            final String fromEnvironment = System.getenv(WORK_DIR_ENVIRONMENT_VARIABLE);
+            return fromEnvironment != null && !fromEnvironment.isBlank() ? fromEnvironment.strip() : DEFAULT_WORK_DIR;
+        }
+
+        static final String WORK_DIR_ENVIRONMENT_VARIABLE = "R7_JOURNAL_DIR";
+        static final String DEFAULT_WORK_DIR = "journals";
 
         @Override
         public Integer shardCount()
