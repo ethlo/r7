@@ -41,12 +41,8 @@ services:
           cpus: "16.0"
         reservations:
           memory: 400M
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8888"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+    # No healthcheck: the image is distroless, with no shell, curl or wget for one to run. Probe
+    # the gateway port from outside instead (a TCP connect to 8888, or the orchestrator's check).
     restart: unless-stopped
     depends_on:
       - echo-server

@@ -1,9 +1,6 @@
-mvn clean install -DskipTests
-
-pack build r7-gateway \
-    --path r7-undertow/target/r7-undertow-1.0-SNAPSHOT.jar \
-    --builder paketobuildpacks/builder-jammy-java-tiny \
-    --env BP_JVM_VERSION=25 \
-    --env BP_JVM_TYPE=jre \
-    --env BP_JVM_JLINK_ENABLED=true \
-    --env BP_JVM_JLINK_ARGS="--add-modules java.base,java.logging,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,jdk.unsupported --strip-debug --no-man-pages --no-header-files --compress=2"
+#!/bin/bash
+# Debug build of the gateway image, the same way CI builds it (build-push.yml): the jar, then
+# Dockerfile.jvm. Tagged r7-gateway, which the jvm-docker integration tests run against.
+set -e
+./mvnw clean package -DskipTests -pl r7-undertow -am
+docker build -t r7-gateway -f Dockerfile.jvm .
