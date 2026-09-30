@@ -67,6 +67,21 @@ public final class R7Tailer
     private final JournalIntegrityListener integrity;
     private final Path checkpointPath;
 
+    /**
+     * Guards every method that touches {@link #checkpoints} or {@link #reassembler}.
+     * <p>
+     * {@code shutdown()} is meant to run from a JVM shutdown hook thread - a container's
+     * SIGTERM handler - which has no other relationship to whatever thread is driving the
+     * normal poll loop's {@code runTick()} calls. SIGTERM can land at any point, including
+     * mid-tick, and both methods read and structurally mutate the same plain, non-thread-safe
+     * {@code checkpoints} map and the reassembler's in-flight tracking. Without this lock,
+     * a shutdown racing a tick corrupts that state - observed as anything from a
+     * {@code ConcurrentModificationException} to a {@code NullPointerException} deep inside
+     * the reassembler's tracking table - at exactly the moment the shutdown path exists to
+     * make a restart safer, not to add a new way to lose or corrupt progress.
+     */
+    private final Object lock = new Object();
+
     private long totalBytesRead = 0;
     private long totalMissingEntries = 0;
     private long totalCorruptEntries = 0;
@@ -152,36 +167,42 @@ public final class R7Tailer
      */
     public void shutdown()
     {
-        reassembler.shutdown();
-        saveCheckpoints();
+        synchronized (lock)
+        {
+            reassembler.shutdown();
+            saveCheckpoints();
+        }
     }
 
     public long runTick() throws IOException
     {
-        totalBytesRead = 0;
-        totalMissingEntries = 0;
-        totalCorruptEntries = 0;
-        metaCache.clear();
-
-        try
+        synchronized (lock)
         {
-            runTickBody();
-        }
-        finally
-        {
-            // Whatever happened above, work that was already dispatched must not be left
-            // un-checkpointed: the next tick would re-read those bytes and emit every
-            // exchange in them a second time. One I/O error on one file used to discard the
-            // progress of every file processed before it in the same tick.
-            // The reassembler's age sweep is amortised over incoming events, so on a quiet
-            // stream it would never run and abandoned exchanges would go unreported until
-            // traffic resumed. A tick boundary is a natural pause.
-            reassembler.sweep();
-            logStats();
-            saveCheckpoints();
-        }
+            totalBytesRead = 0;
+            totalMissingEntries = 0;
+            totalCorruptEntries = 0;
+            metaCache.clear();
 
-        return totalBytesRead;
+            try
+            {
+                runTickBody();
+            }
+            finally
+            {
+                // Whatever happened above, work that was already dispatched must not be left
+                // un-checkpointed: the next tick would re-read those bytes and emit every
+                // exchange in them a second time. One I/O error on one file used to discard the
+                // progress of every file processed before it in the same tick.
+                // The reassembler's age sweep is amortised over incoming events, so on a quiet
+                // stream it would never run and abandoned exchanges would go unreported until
+                // traffic resumed. A tick boundary is a natural pause.
+                reassembler.sweep();
+                logStats();
+                saveCheckpoints();
+            }
+
+            return totalBytesRead;
+        }
     }
 
     private void runTickBody() throws IOException

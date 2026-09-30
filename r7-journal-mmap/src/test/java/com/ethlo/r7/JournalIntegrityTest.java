@@ -1819,6 +1819,86 @@ class JournalIntegrityTest
         assertThat(afterRestart.orphanedEnds).isEmpty();
     }
 
+    /**
+     * {@code R7Tailer#shutdown()} was added so a graceful stop (a container's SIGTERM
+     * handler, run from a JVM shutdown hook thread) can report in-flight exchanges before
+     * the process exits. But the hook thread has no coordination with whatever thread is
+     * driving the normal poll loop's {@code runTick()} calls - and a SIGTERM can land at any
+     * point while a tick is running, not just between ticks.
+     * <p>
+     * {@code runTick()} and {@code shutdown()} both read and structurally mutate the same
+     * plain, non-thread-safe {@code checkpoints} map ({@code processFile}'s
+     * {@code checkpoints.put(...)}, {@code forgetCheckpointsWithoutSegments}'s
+     * {@code retainAll(...)}, and {@code saveCheckpoints}'s {@code forEach(...)} all touch
+     * it) with no lock between them. Run concurrently, exactly as a real SIGTERM during a
+     * real tick would, this must not corrupt the checkpoint state or throw - the shutdown
+     * path exists to make a restart safer, not to add a new way to crash or corrupt progress
+     * during the very moment a graceful stop is trying to preserve it.
+     */
+    @Test
+    void shutdownDuringAConcurrentTickDoesNotCorruptCheckpoints() throws Exception
+    {
+        // One journal, one warmer thread, but a segment small enough to rotate every couple
+        // of exchanges - the point is many checkpoint keys churning quickly, not many
+        // journals. A dedicated pool per shard (as a real deployment would have) would make
+        // this needlessly heavy for a test whose subject is the tailer's own locking.
+        final long tinySegment = 65536L;
+        final java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        final Thread ticker = new Thread(() -> {
+            try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, tinySegment, true)))
+            {
+                final long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+                int i = 0;
+                while (!stop.get() && System.nanoTime() < deadline)
+                {
+                    final String reqId = "req-" + i++;
+                    writeClientRequest(journal, reqId);
+                    writeEndExchange(journal, reqId);
+                    tailer.runTick();
+                }
+            }
+            catch (final Throwable t)
+            {
+                failure.compareAndSet(null, t);
+            }
+            finally
+            {
+                stop.set(true);
+            }
+        }, "ticker");
+
+        final Thread shutdowner = new Thread(() -> {
+            try
+            {
+                while (!stop.get())
+                {
+                    tailer.shutdown();
+                }
+            }
+            catch (final Throwable t)
+            {
+                failure.compareAndSet(null, t);
+            }
+        }, "shutdowner");
+
+        ticker.start();
+        shutdowner.start();
+        ticker.join(10_000);
+        stop.set(true);
+        shutdowner.join(10_000);
+
+        assertThat(ticker.isAlive()).as("ticker thread must have stopped").isFalse();
+        assertThat(shutdowner.isAlive()).as("shutdowner thread must have stopped").isFalse();
+        assertThat(failure.get())
+                .as("runTick() and shutdown() raced on shared, unsynchronized state")
+                .isNull();
+    }
+
     private static void writeClientRequest(final R7fJournal journal, final String reqId) throws IOException
     {
         journal.clientRequest(JournalLevel.FULL, reqId,
