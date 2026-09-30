@@ -121,8 +121,27 @@ public final class R7Helidon
         this.gateway.close();
     }
 
+    /**
+     * The JDK's I/O pollers run by default as virtual threads on the same carriers as the
+     * requests. When the carriers are saturated a poller can wait hundreds of milliseconds for
+     * one, and every connection registered with it stalls until it runs: at saturation this
+     * produced outliers of 0.5-2 s (p99 8.6 ms) where Undertow's worst was 40 ms. Per-carrier
+     * pollers (mode 3) poll as part of each carrier's own scheduling, and the same load gives a
+     * worst case of 16-20 ms and p99 4.4 ms (design/upstream.md). Internal and undocumented, so
+     * an explicit -Djdk.pollerMode still wins, and a JDK that drops it falls back to its default.
+     * Set before anything opens a socket: the poller reads it once, when it starts.
+     */
+    static void preferPerCarrierPollers()
+    {
+        if (System.getProperty("jdk.pollerMode") == null)
+        {
+            System.setProperty("jdk.pollerMode", "3");
+        }
+    }
+
     public static void main(final String[] args) throws IOException
     {
+        preferPerCarrierPollers();
         final R7Helidon gateway = new R7Helidon(BlockingGateway.fromEnvironment());
         Runtime.getRuntime().addShutdownHook(new Thread(gateway::stop, "r7-shutdown-hook"));
     }

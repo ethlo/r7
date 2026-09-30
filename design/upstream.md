@@ -436,5 +436,38 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   branch is +4-5% user instructions and +0.5-1% cycles per request against `main` on Níma.
   `BlockingServerExchange` now carries the client's real protocol, which it had hard-coded as
   HTTP/1.1 - an HTTP/2 request would have been journaled as HTTP/1.1.
+- **The stalls at saturation: explained, and gone.** The first benchmark showed Níma with
+  outliers of 0.2-1.8 s at saturation (and two wrk timeouts) where Undertow's worst was
+  ~50 ms. Narrowed down on the benchmark's own nginx, `wrk -c200`, gateway pinned to P-cores
+  0-7, one variable at a time:
+  - not the kernel: `nstat` showed ~170 new upstream connections/s, no listen drops, no SYN
+    retransmits (the first hypothesis, pool churn past 64 idle connections, was wrong - with
+    1024 idle the stall got no better);
+  - not GC: ZGC reported no allocation stalls, pauses in microseconds; no safepoint over 20 ms;
+  - not wrk or nginx: Undertow under identical conditions, worst 33-40 ms;
+  - not Níma itself: a bare Helidon "OK" server did 278k req/s with a worst of 25 ms.
+
+  JFR then showed the stalled connections were idle *between* requests, several resuming in
+  the same millisecond - one shared thing held them. In JDK 27 the I/O pollers run as virtual
+  threads on the same carriers as the requests (`Poller$VThreadsPollerGroup`); when the
+  carriers are saturated a poller can wait long for one, and every connection registered with
+  it waits too. Bare Helidon does too little per request to saturate carriers the same way.
+
+  | `jdk.pollerMode` | req/s | p99 | worst |
+  |---|---|---|---|
+  | 2, virtual-thread pollers (JDK default) | 134-136k | 8.6-9.7 ms | 1.56-2.23 s |
+  | 1, platform-thread pollers | 128k | 5.9 ms | 58 ms |
+  | 3, per-carrier pollers | 132-137k | 4.4 ms | 16-25 ms |
+
+  `R7Helidon.main` now defaults to mode 3 unless the property is set. It is an internal,
+  undocumented JDK property: a future JDK may change or drop it, and an embedder that does not
+  go through `main` must set it itself. With it, Níma's tail beats Undertow's (p99 5.9 ms, worst
+  33-40 ms) at higher throughput.
+
+  A second, separate contention showed on the static route: every file served opens a
+  `FileChannel`, which registers with the JDK's `Cleaner` under one global lock, and ~50
+  virtual threads queued on it (worst 4 s with the default pollers, 255 ms with mode 3). The fix
+  is not to open a file per request for small hot files - a bounded content cache validated by
+  size and modification time - and is still to do.
 - **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
 
