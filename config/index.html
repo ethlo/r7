@@ -1871,7 +1871,7 @@
 <li>If a variable is missing and no default is provided, configuration validation fails.</li>
 </ul>
 <h3 id="header-case-sensitivity">Header Case Sensitivity</h3>
-<p>In strict accordance with RFC 7230, <strong>all HTTP header evaluations in r7 are case-insensitive</strong>. This applies to predicate matching (<code>RequestHeader</code>), filter mutations (<code>SetRequestHeader</code>), and CORS validations.</p>
+<p>In strict accordance with RFC 7230, <strong>all HTTP header evaluations in r7 are case-insensitive</strong>. This applies to predicate matching (<code>RequestHeader</code>), filter mutations (<code>SetRequestHeader</code>), and CORS validations. It also holds for the headers a journal consumer reads back through <code>R7Tailer</code>: a lookup for <code>content-type</code> finds a header journaled as <code>Content-Type</code>, while iteration still shows each name as it was written. Folding is ASCII-only and does not depend on the JVM's default locale.</p>
 <hr />
 <h2 id="2-operational-guarantees">2. Operational Guarantees</h2>
 <p>As a deterministic request execution engine, r7 provides strict operational guarantees for infrastructure reliability.</p>
