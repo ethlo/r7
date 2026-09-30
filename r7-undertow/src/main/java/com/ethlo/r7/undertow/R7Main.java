@@ -47,6 +47,7 @@ import com.ethlo.r7.validation.ValidationResult;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
+import io.undertow.server.DefaultByteBufferPool;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.GracefulShutdownHandler;
 
@@ -326,6 +327,16 @@ public final class R7Main
 
                 // Memory Configuration
                 .setDirectBuffers(true);
+
+        if (ServerConfig.ProxyConfig.CLIENT_R7.equals(config.proxy().client()))
+        {
+            // With the r7 client, responses are written from a virtual thread per request, and
+            // Undertow's default pool caches buffers per thread: each new thread takes a global
+            // lock to register its cache in a list that only the GC shrinks, and the buffers it
+            // frees stay in a cache no thread will use again. At ~100k threads a second that lock
+            // stalls every response. Same buffer size as Undertow picks by default, no cache.
+            builder.setByteBufferPool(new DefaultByteBufferPool(true, 16 * 1024 - 20, -1, 0));
+        }
     }
 
     /**

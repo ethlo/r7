@@ -52,6 +52,14 @@ public abstract class GatewaySecurityKit
      */
     protected abstract AutoCloseable startGateway(Path routesYaml, Path serverYaml) throws Exception;
 
+    /**
+     * Extra top-level YAML for server.yaml, such as a proxy client selection.
+     */
+    protected String serverYamlExtra()
+    {
+        return "";
+    }
+
     @BeforeAll
     void start() throws Exception
     {
@@ -80,7 +88,8 @@ public abstract class GatewaySecurityKit
                   host: 127.0.0.1
                 storage:
                   work_dir: %s
-                """.formatted(this.gatewayPort, freePort(), this.dir.resolve("journals").toAbsolutePath()), StandardCharsets.UTF_8);
+                %s
+                """.formatted(this.gatewayPort, freePort(), this.dir.resolve("journals").toAbsolutePath(), serverYamlExtra()), StandardCharsets.UTF_8);
         this.gateway = startGateway(routes, server);
     }
 

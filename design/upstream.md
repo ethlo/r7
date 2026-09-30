@@ -324,12 +324,63 @@ check.
    allocating. Still open: a blocking socket write has no timeout, so an upstream that stops
    reading a request body without closing holds the virtual thread until `max_request_time`
    exists to close the socket (step 5).
-3. **Undertow adapter behind `proxy.client: r7`.** The channel bridge, dispatch, the fd-leak
-   test, both kits green on Undertow with `r7` selected.
-4. **Measure Undertow with `r7` against Undertow with `undertow`.** Instructions and cycles per
-   request, then the throughput table and the wrk2 sweep above. If `r7` is worse, profile the
-   dispatch and the parking before considering the non-blocking transport.
+3. **Undertow adapter behind `proxy.client: r7`.** Done. `UndertowGatewayExchange` is a
+   `ProxiedExchange`; `proxy()` dispatches the relay to the virtual-thread executor (or runs it
+   inline when a filter already dispatched), and `ParkingChannelStreams` is the park/unpark
+   bridge. The security kit and the conformance kit pass on Undertow with `r7` selected, and
+   so does the whole `r7-undertow` suite (145 tests) with `r7` temporarily made the default -
+   which caught one difference: `HttpUpstream` converted its timeouts to int milliseconds on
+   first connect, where Undertow's client fails while the route generation is prepared. It now
+   converts in its constructor. `X-Forwarded-Server` is added as Undertow adds it.
+
+   `SlowPeerDescriptorTest` samples the process's epoll descriptors while 16 exchanges with a
+   slow sender and a slow reader run. With the bridge replaced by `startBlocking()` streams it
+   fails, with exactly one new epoll descriptor per exchange (47 → 63): the per-thread
+   selectors are real, not just read off the bytecode. It samples during the run because by
+   the end the test's allocation rate has let finalization close them again - which is also
+   why this never shows in a benchmark.
+
+   **Undertow's own client against the conformance kit** (run once, not kept as a test): 11 of
+   19 fail. The ones that matter: a chunk longer than its declared size reaches the client as
+   a complete response; a POST that fails on a reused connection is sent to the upstream a
+   second time; conflicting `Content-Length`s, folded headers, a 70 KB header and
+   `Transfer-Encoding: gzip, chunked` are all relayed; headers the upstream nominates in
+   `Connection` leak to the client. The rest are status choices (503 where the kit expects
+   502) and a stale pooled GET that is answered 503 rather than retried.
+
+4. **Measure Undertow with `r7` against Undertow with `undertow`.** Done, and it does not pass
+   the gate. Same jar, alternating JVMs, gateway pinned to P-cores 0-7, per request:
+
+   | | req/s | user instr | kernel instr | cycles | context switches |
+   |---|---|---|---|---|---|
+   | browser GET, `undertow` | 80-94k | 255k | 115-127k | 231-252k | 0.53 |
+   | browser GET, `r7` | 53-55k | 245k | 187-189k | 432-435k | 1.93 |
+   | POST 1 KB, `undertow` | 91-104k | 143-146k | 102k | 166-168k | |
+   | POST 1 KB, `r7` | 62-66k | 160k | 142-147k | 327k | |
+
+   User-space work is level; the cost is the handoffs. Undertow's proxy never leaves the I/O
+   thread. With a blocking client the request crosses threads at least three times - I/O
+   thread to the relay's virtual thread, and back when `endExchange()` resumes reads for the
+   next request, which wakes the I/O thread's selector from outside. That is the same cost a
+   filter that `requiresDispatch()` pays, per request, and no tuning of the relay removes it.
+   Níma has no such crossing: one virtual thread owns the whole request, which is why the same
+   client is level with or ahead of Undertow there.
+
+   The measurement also found two more ways Undertow's thread-local design breaks under a
+   virtual thread per request, both fixed for `proxy.client: r7`:
+   - `DefaultByteBufferPool` caches buffers per thread. Each new virtual thread took a global
+     lock to register a cache in a list only the GC shrinks, and the buffers it freed were
+     stranded; at load the lock stalled responses outright (POST fell to 0 req/s). With `r7`
+     the server gets a pool with no thread-local cache. Before this fix user instructions per
+     request were twice Undertow's; after it they are level.
+   - A relay parked on a client that dropped its connection could wait on a channel wrapper
+     that still reports open; the bridge now also checks the connection.
+
+   So Undertow keeps its own client by default. Sharing one client with Undertow now means the
+   non-blocking transport (the fallback under "The decision"), not a flag flip.
+
 5. **Close the gaps**, one PR each: https, WebSocket tunnelling, pool limits and queue, `ttl` and
    `max_request_time`, connect-failure retry. Each adds its case to the conformance kit.
 6. **Flip the default** to `r7` and delete what "What goes away" lists. The `undertow` value
-   stays for one release as a way back.
+   stays for one release as a way back. **Blocked** by step 4: not without a non-blocking
+   transport for Undertow.

@@ -202,6 +202,16 @@ class Http1Test
     }
 
     @Test
+    void theForwardedServerIsTheHostHeaderWithoutItsPort()
+    {
+        assertThat(Http1.hostNameOf("example.com:8443")).isEqualTo("example.com");
+        assertThat(Http1.hostNameOf("example.com")).isEqualTo("example.com");
+        assertThat(Http1.hostNameOf("[::1]:9000")).isEqualTo("[::1]");
+        assertThat(Http1.hostNameOf("[::1]")).isEqualTo("[::1]");
+        assertThat(Http1.hostNameOf(null)).isEqualTo("localhost");
+    }
+
+    @Test
     void onlyMethodsThatAreSafeToRepeatAreIdempotent()
     {
         assertThat(Http1.isIdempotent("GET")).isTrue();

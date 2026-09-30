@@ -94,6 +94,10 @@ final class Http1
         {
             sb.append("X-Forwarded-Proto: ").append(exchange.forwardedProto()).append("\r\n");
         }
+        if (headers.getFirst("X-Forwarded-Server") == null)
+        {
+            sb.append("X-Forwarded-Server: ").append(hostNameOf(originalHost)).append("\r\n");
+        }
         if (headers.getFirst("X-Forwarded-Port") == null)
         {
             sb.append("X-Forwarded-Port: ").append(portOf(originalHost, proto != null ? proto : exchange.forwardedProto())).append("\r\n");
@@ -139,6 +143,21 @@ final class Http1
             port = port * 10 + (c - '0');
         }
         return port >= 1 && port <= 65535 ? port : fallback;
+    }
+
+    /**
+     * The host the client addressed, without its port, as Undertow's proxy reports it in
+     * X-Forwarded-Server; an IPv6 literal keeps its brackets.
+     */
+    static String hostNameOf(final String host)
+    {
+        if (host == null || host.isEmpty())
+        {
+            return "localhost";
+        }
+        final int bracket = host.lastIndexOf(']');
+        final int colon = host.lastIndexOf(':');
+        return colon > bracket ? host.substring(0, colon) : host;
     }
 
     static boolean isIdempotent(final String method)

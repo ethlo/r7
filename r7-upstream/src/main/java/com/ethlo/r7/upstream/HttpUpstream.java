@@ -34,10 +34,17 @@ public final class HttpUpstream implements UpstreamHandle
     private final List<Target> up = new CopyOnWriteArrayList<>();
     private final AtomicInteger next = new AtomicInteger();
     private final UpstreamOptions options;
+    private final int readTimeoutMillis;
+    private final int connectTimeoutMillis;
 
     public HttpUpstream(final UpstreamOptions options)
     {
         this.options = options;
+        // Socket timeouts are int milliseconds. Converted here so that a route whose timeout does
+        // not fit fails while its generation is prepared - before any monitor starts or request
+        // arrives - rather than on its first connection.
+        this.readTimeoutMillis = Math.toIntExact(options.readTimeout().toMillis());
+        this.connectTimeoutMillis = Math.toIntExact(options.connectTimeout().toMillis());
     }
 
     UpstreamOptions options()
@@ -152,8 +159,8 @@ public final class HttpUpstream implements UpstreamHandle
             try
             {
                 socket.setTcpNoDelay(true);
-                socket.connect(new InetSocketAddress(host, port), Math.toIntExact(options.connectTimeout().toMillis()));
-                socket.setSoTimeout(Math.toIntExact(options.readTimeout().toMillis()));
+                socket.connect(new InetSocketAddress(host, port), connectTimeoutMillis);
+                socket.setSoTimeout(readTimeoutMillis);
                 return new Connection(socket);
             }
             catch (final IOException e)

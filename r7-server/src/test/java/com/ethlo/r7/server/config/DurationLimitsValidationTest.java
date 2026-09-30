@@ -24,21 +24,21 @@ class DurationLimitsValidationTest
     @Test
     void proxyMaxRequestTime()
     {
-        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, AT_LIMIT, null))).isEmpty();
-        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, BEYOND_LIMIT, null), "max_request_time");
+        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, AT_LIMIT, null, null))).isEmpty();
+        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, BEYOND_LIMIT, null, null), "max_request_time");
     }
 
     @Test
     void proxyTtl()
     {
-        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, AT_LIMIT))).isEmpty();
-        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, null, BEYOND_LIMIT), "ttl");
+        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, AT_LIMIT, null))).isEmpty();
+        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, null, BEYOND_LIMIT, null), "ttl");
     }
 
     @Test
     void proxyTtlOfMinusOneStillMeansNoLimit()
     {
-        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, Duration.ofMillis(-1)))).isEmpty();
+        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, Duration.ofMillis(-1), null))).isEmpty();
     }
 
     @Test
@@ -58,7 +58,7 @@ class DurationLimitsValidationTest
     @Test
     void theErrorIsReportedUnderTheFullPathFromTheServerConfigRoot()
     {
-        final ServerConfig config = new ServerConfig(null, null, null, new ServerConfig.ProxyConfig(null, null, null, Duration.ofDays(30)), null, null, null);
+        final ServerConfig config = new ServerConfig(null, null, null, new ServerConfig.ProxyConfig(null, null, null, Duration.ofDays(30), null), null, null, null);
         final ValidationResult result = new ValidationResult();
         config.validate(result);
         assertThat(result.getErrors()).singleElement().asString().contains("proxy.ttl").contains("24d");
