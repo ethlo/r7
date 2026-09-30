@@ -165,9 +165,11 @@ path tests therefore become an abstract test kit in a test-jar that every server
 Each step is its own PR. Steps 3 and 5 carry `benchmark/run.sh --repeat 3` before and after,
 with `environment.txt`, but that is the final check, not the evidence. For comparing two builds
 the evidence is **instructions and cycles per request** from `perf stat` on the gateway process
-(user and kernel, P-cores only on this hybrid CPU), a few short runs per build: within one JVM
-instructions repeat to about ±0.5%, across JVM starts to about ±1.5%, where req/s needs long
-runs to get to ±2%. Cycles alongside, because fewer instructions that miss cache are not
+(user and kernel, P-cores only on this hybrid CPU), alternating JVM starts between the two
+builds: within one JVM instructions repeat to about ±0.5%, across JVM starts to about ±1.5-2%.
+So repeats inside one JVM add time, not information. One 5 s run per route per JVM, two JVMs
+per build, resolves changes of about 3% or more in about three minutes; add JVMs, not duration,
+for smaller ones. Cycles alongside, because fewer instructions that miss cache are not
 faster. `-XX:+PrintInlining` explains a result; it does not measure one.
 
 The `journal` scenario of `benchmark/run.sh` does not measure CPU at these rates: `HEADERS` at
@@ -182,9 +184,12 @@ its own change.
    `TransferEncodingGuard`, `UpstreamHeaderSanitizer` and `RemoteAddressResolver` (take
    `HeaderMap`), `SimpleMetricsFactory` (casts to `UndertowGatewayExchange` for WebSocket close),
    the console printers.
-3. **Introduce `ServerExchange` and `GatewayPipeline`;** `UndertowGatewayExchange` implements the
-   SPI, with the dispatch index, commit and completion listeners and `PipelineState` held on the
-   exchange rather than in lambdas and side objects. CPU per request stays flat.
+3. **Introduce `ServerExchange` and `GatewayPipeline`.** Done in #99. `ServerExchange` became an
+   abstract class rather than the interface plus `PipelineState` sketched above: the pipeline's
+   state is fields on it, so there is no side object. Dispatch runs the exchange itself as the
+   task, and the listeners are stateless singletons. Instructions per request are unchanged on
+   passthrough, journal and filtered routes. The Transfer-Encoding check, header sanitiser and
+   remote-address resolver stay behind hooks until step 4.
 4. **The security test kit.**
 5. **Performance, where the profile points, one PR each:**
    - journal header encoding: redact each set once and encode it by position. Done in #97:
