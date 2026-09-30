@@ -64,6 +64,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private final MutableGatewayHeaders liveHeaders;
     private final long startNanos = System.nanoTime();
     private final long requestHeaderBytes;
+    private final int requestHeaderCount;
 
     private Object[] attachments;
     private boolean commitRequested;
@@ -108,9 +109,15 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         this.decodedPath = RequestPaths.decode(rawPath);
         this.rawQuery = rawQuery == null ? "" : rawQuery;
         this.liveHeaders = headers;
-        final long[] size = {method.length() + 1 + rawPath.length() + (this.rawQuery.isEmpty() ? 0 : 1 + this.rawQuery.length()) + 1 + protocol.length() + 2};
-        headers.forEach(size, (sz, name, value) -> sz[0] += name.length() + 2 + value.length() + 2);
+        // [0]: bytes of the head as sent, [1]: header lines
+        final long[] size = {method.length() + 1 + rawPath.length() + (this.rawQuery.isEmpty() ? 0 : 1 + this.rawQuery.length()) + 1 + protocol.length() + 2, 0};
+        headers.forEach(size, (sz, name, value) ->
+        {
+            sz[0] += name.length() + 2 + value.length() + 2;
+            sz[1]++;
+        });
         this.requestHeaderBytes = size[0] + 2;
+        this.requestHeaderCount = (int) size[1];
     }
 
     // --- What the server provides ------------------------------------------------------------
@@ -566,6 +573,29 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     boolean isAborted()
     {
         return this.aborted;
+    }
+
+    int requestHeaderCount()
+    {
+        return this.requestHeaderCount;
+    }
+
+    /**
+     * The status sent, or to be sent; 200 until something set another.
+     */
+    int responseStatus()
+    {
+        return clientResponse().status();
+    }
+
+    /**
+     * Answers without running the pipeline, for a request the server should not have accepted,
+     * and closes the connection after it, as a server's own parser does when it refuses a head.
+     */
+    void refuse(final int status, final String message)
+    {
+        closeConnectionAfterResponse();
+        respondError(status, message);
     }
 
     private void respondError(final int status, final String message)

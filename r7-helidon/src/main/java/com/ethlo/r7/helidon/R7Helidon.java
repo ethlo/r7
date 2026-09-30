@@ -3,6 +3,8 @@ package com.ethlo.r7.helidon;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -10,26 +12,33 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.server.blocking.BlockingGateway;
+import com.ethlo.r7.server.blocking.ListenerStatistics;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.status.ManagementEndpoint;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
+import io.helidon.webserver.ProtocolConfigs;
 import io.helidon.webserver.WebServer;
 import io.helidon.webserver.http1.Http1Config;
+import io.helidon.webserver.http1.Http1ConnectionProvider;
 import io.helidon.webserver.http2.Http2Config;
+import io.helidon.webserver.http2.Http2ConnectionProvider;
+import io.helidon.webserver.spi.ProtocolConfig;
+import io.helidon.webserver.spi.ServerConnectionSelector;
 import io.helidon.webserver.http.ServerRequest;
 import io.helidon.webserver.http.ServerResponse;
 
 /**
  * EXPERIMENTAL: r7 on Helidon's Níma web server. The same configuration files, routes, filters,
  * journal and pipeline as the Undertow build; a different HTTP server and upstream client
- * underneath, and the management port with the same dashboard. Not yet included: static
- * content, WebSocket proxying, and https upstreams (design/server-spi.md, step 6).
+ * underneath, and the management port with the same dashboard. Not yet included: WebSocket
+ * proxying (design/server-spi.md, step 6).
  */
 public final class R7Helidon
 {
     private static final Logger logger = LoggerFactory.getLogger(R7Helidon.class);
     private static final String MANAGEMENT_SOCKET = "management";
+    private static final String DATA_SOCKET = "@default";
 
     private final BlockingGateway gateway;
     private final HeadTimeouts dataHeadTimeouts;
@@ -48,31 +57,38 @@ public final class R7Helidon
         final ServerConfig.ServerCoreConfig core = gateway.serverConfig().server();
         final ServerConfig.ManagementConfig management = gateway.serverConfig().management();
         final ManagementEndpoint endpoint = gateway.managementEndpoint();
-        final boolean http2 = gateway.serverConfig().http().enableHttp2();
+        final ServerConfig.LimitsConfig limits = gateway.serverConfig().limits();
+        final int maxHeadBytes = Math.toIntExact(limits.maxHeaderSize().bytes());
         this.dataHeadTimeouts = new HeadTimeouts("data", gateway.serverConfig().http().requestParseTimeout());
         this.managementHeadTimeouts = new HeadTimeouts("management", management.requestParseTimeout());
+        // Protocols by configuration, not by what is on the classpath: HTTP/2 (h2c, the listener
+        // is plaintext) only with http.enable_http2, as on Undertow - it adds a second protocol
+        // parser to the attack surface. The upstream hop stays HTTP/1.1.
+        // request_parse_timeout is enforced by r7, which Helidon cannot do (HeadTimeouts).
+        final List<ProtocolConfig> protocols = new ArrayList<>();
+        // max_header_size bounds the whole head on Undertow; Helidon bounds the request line and
+        // the header fields separately, so each gets the limit and BlockingGateway checks the sum.
+        protocols.add(Http1Config.builder().addReceiveListener(this.dataHeadTimeouts).maxPrologueLength(maxHeadBytes).maxHeadersSize(maxHeadBytes).build());
+        if (gateway.serverConfig().http().enableHttp2())
+        {
+            protocols.add(Http2Config.builder().maxHeaderListSize(maxHeadBytes).build());
+        }
         this.server = WebServer.builder()
                 .host(core.host())
                 .port(core.port())
-                // Protocols by configuration, not by what is on the classpath: HTTP/2 (h2c, the
-                // listener is plaintext) only with http.enable_http2, as on Undertow - it adds a
-                // second protocol parser to the attack surface. The upstream hop stays HTTP/1.1.
                 .protocolsDiscoverServices(false)
-                .addProtocol(http1(this.dataHeadTimeouts))
-                .update(builder ->
-                {
-                    if (http2)
-                    {
-                        builder.addProtocol(Http2Config.create());
-                    }
-                })
+                .protocols(protocols)
+                .connectionSelectors(countingSelectors(protocols, gateway.statistics()))
+                // Refused as the body arrives, before r7 sees the request; BlockingGateway holds a
+                // server without this setting (a servlet container) to the same limit.
+                .maxPayloadSize(limits.maxEntitySize().bytes())
                 .routing(routing -> routing.any((req, res) -> gateway.handle(new HelidonGatewayExchange(gateway.pipeline(), req, res))))
                 // The management port: its own listener, with its own connection cap and idle
                 // timeout, as on Undertow - it shares the process's descriptors with the data
                 // plane, and a client holding connections open must not starve the latter.
                 .putSocket(MANAGEMENT_SOCKET, socket -> socket
                         .protocolsDiscoverServices(false)
-                        .addProtocol(http1(this.managementHeadTimeouts))
+                        .addProtocol(Http1Config.builder().addReceiveListener(this.managementHeadTimeouts).build())
                         .host(management.host())
                         .port(management.port())
                         .maxTcpConnections(management.maxConnections())
@@ -89,12 +105,26 @@ public final class R7Helidon
     }
 
     /**
-     * HTTP/1 with request_parse_timeout enforced by r7, which Helidon cannot do (HeadTimeouts).
+     * The data plane's protocol selectors, built as Helidon would build them from these protocols
+     * and wrapped to count the connections each accepts (CountingSelector).
      */
-    private static Http1Config http1(final HeadTimeouts headTimeouts)
+    private static List<ServerConnectionSelector> countingSelectors(final List<ProtocolConfig> protocols, final ListenerStatistics statistics)
     {
-        return Http1Config.builder().addReceiveListener(headTimeouts).build();
+        final ProtocolConfigs configs = ProtocolConfigs.create(protocols);
+        final List<ServerConnectionSelector> selectors = new ArrayList<>();
+        for (final ProtocolConfig protocol : protocols)
+        {
+            final ServerConnectionSelector selector = switch (protocol)
+            {
+                case Http1Config http1 -> new Http1ConnectionProvider().create(DATA_SOCKET, http1, configs);
+                case Http2Config http2 -> new Http2ConnectionProvider().create(DATA_SOCKET, http2, configs);
+                default -> throw new IllegalStateException("No selector for " + protocol.type());
+            };
+            selectors.add(new CountingSelector(selector, statistics));
+        }
+        return selectors;
     }
+
 
     public int port()
     {

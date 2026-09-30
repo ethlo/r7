@@ -1,5 +1,7 @@
 package com.ethlo.r7.helidon;
 
+import java.io.FilterInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -9,8 +11,10 @@ import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.blocking.BlockingServerExchange;
 import com.ethlo.r7.server.blocking.WireHeaders;
+import com.ethlo.r7.upstream.RequestBodyTooLargeException;
 import io.helidon.http.Header;
 import io.helidon.http.HeaderNames;
+import io.helidon.http.RequestException;
 import io.helidon.webserver.http.ServerRequest;
 import io.helidon.webserver.http.ServerResponse;
 
@@ -65,7 +69,51 @@ final class HelidonGatewayExchange extends BlockingServerExchange
     @Override
     protected InputStream requestBody()
     {
-        return this.req.content().inputStream();
+        return new BodyStream(this.req.content().inputStream());
+    }
+
+    /**
+     * Helidon fails a body read with its own unchecked {@link RequestException} - on a body past
+     * max_entity_size (maxPayloadSize), for one - where the relay expects an {@link IOException}
+     * from a failed client body; unmapped, it escaped as an unexpected error and a 500.
+     */
+    private static final class BodyStream extends FilterInputStream
+    {
+        BodyStream(final InputStream in)
+        {
+            super(in);
+        }
+
+        @Override
+        public int read() throws IOException
+        {
+            try
+            {
+                return super.read();
+            }
+            catch (final RequestException e)
+            {
+                throw translate(e);
+            }
+        }
+
+        @Override
+        public int read(final byte[] buffer, final int offset, final int length) throws IOException
+        {
+            try
+            {
+                return super.read(buffer, offset, length);
+            }
+            catch (final RequestException e)
+            {
+                throw translate(e);
+            }
+        }
+
+        private static IOException translate(final RequestException e)
+        {
+            return e.status().code() == 413 ? new RequestBodyTooLargeException() : new IOException(e.getMessage(), e);
+        }
     }
 
     @Override

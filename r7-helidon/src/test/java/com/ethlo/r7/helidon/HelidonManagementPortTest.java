@@ -95,6 +95,43 @@ class HelidonManagementPortTest
         assertThat(response.body()).contains("route_configs").contains("secretive").doesNotContain("url-s3cret-pass");
     }
 
+    /**
+     * Helidon keeps no counters it shares; r7 counts requests itself and connections by wrapping
+     * Helidon's protocol selectors (CountingSelector), so an open connection shows as one.
+     */
+    @Test
+    void theListenerCountsItsConnectionsRequestsAndBytes() throws Exception
+    {
+        try (Socket client = new Socket("127.0.0.1", this.gateway.port()))
+        {
+            client.setSoTimeout(10_000);
+            client.getOutputStream().write("GET /counted HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            final String statusLine = new String(client.getInputStream().readNBytes(12), StandardCharsets.ISO_8859_1);
+            // The route's upstream refuses connections: a 5xx, counted like any other response.
+            assertThat(statusLine).startsWith("HTTP/1.1 5");
+            final String open = get("application/json").body();
+            assertThat(statistic(open, "active_connections")).isEqualTo(1);
+            assertThat(statistic(open, "max_active_connections")).isGreaterThanOrEqualTo(1);
+            assertThat(statistic(open, "request_count")).isGreaterThanOrEqualTo(1);
+            assertThat(statistic(open, "bytes_received")).isPositive();
+            assertThat(statistic(open, "bytes_sent")).isPositive();
+            assertThat(statistic(open, "active_requests")).isZero();
+        }
+        final long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (statistic(get("application/json").body(), "active_connections") != 0 && System.nanoTime() < deadline)
+        {
+            Thread.sleep(20);
+        }
+        assertThat(statistic(get("application/json").body(), "active_connections")).as("the closed connection is still counted").isZero();
+    }
+
+    private static long statistic(final String json, final String name)
+    {
+        final java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"" + name + "\"\\s*:\\s*(\\d+)").matcher(json);
+        assertThat(matcher.find()).as("%s in %s", name, json).isTrue();
+        return Long.parseLong(matcher.group(1));
+    }
+
     @Test
     void aHostNameThatWasNotConfiguredIsRefused() throws Exception
     {

@@ -1,0 +1,32 @@
+# Dockerfile.helidon.jvm
+
+# EXPERIMENTAL: r7 on Helidon Níma (r7-helidon), on the same Java 25 runtime and with the same
+# layout, user and environment as the Undertow image in Dockerfile.jvm, so it is a drop-in
+# replacement for trying it: the same config mounts, journal volume and ports. r7-helidon builds
+# on Helidon 4.5.x, the LTS line for Java 25.
+
+# distroless has no shell, so a directory can't be chown'd in the final stage - prepare it here
+# instead. Docker copies an image's pre-existing directory (including ownership) into a *named*
+# volume the first time that volume is created empty, so this is what makes a freshly created
+# r7-journals volume writable by the nonroot user below instead of root:root.
+FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
+RUN mkdir -p /journals && chown 65532:65532 /journals
+
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
+WORKDIR /app
+
+# We assume the JAR is already compiled by the CI runner
+COPY r7-helidon/target/r7-helidon-*.jar /app/server.jar
+COPY --from=dirs --chown=65532:65532 /journals /journals
+
+USER 65532:65532
+# The management endpoint binds to loopback by default; inside a container that would make the
+# published status port unreachable, so listen on all interfaces and let the port mapping decide
+# who can reach it - publish it on loopback (127.0.0.1:19999:18888), not on every host interface.
+# Set management.host in server.yaml to override.
+ENV R7_MANAGEMENT_HOST=0.0.0.0
+# Journals go to /journals, the directory prepared above for this user and the mount point the
+# docs use; without it a container started with no server.yaml tries to create /app/journals,
+# which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
+ENV R7_JOURNAL_DIR=/journals
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]

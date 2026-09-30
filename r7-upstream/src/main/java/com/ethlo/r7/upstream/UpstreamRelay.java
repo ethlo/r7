@@ -302,6 +302,12 @@ public final class UpstreamRelay
             {
                 n = in.read(buffer);
             }
+            catch (final RequestBodyTooLargeException e)
+            {
+                // A server that enforces max_entity_size in its own reader (Helidon): 413, as
+                // when onRequestBody finds the body too large.
+                throw e;
+            }
             catch (final IOException e)
             {
                 throw new ClientBodyException(e);
