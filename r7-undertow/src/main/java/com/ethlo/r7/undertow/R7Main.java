@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +56,9 @@ public final class R7Main
     private final GracefulShutdownHandler gracefulShutdownHandler;
     private final Undertow server;
     private final Undertow managementServer;
+    private final ShardedJournalWriter<R7fJournal> journalWriter;
+    private final Thread shutdownHook;
+    private final AtomicBoolean stopped = new AtomicBoolean(false);
 
     public R7Main(final Path configFile, final Path serverFile) throws IOException
     {
@@ -86,7 +90,7 @@ public final class R7Main
         // gateway's whole job for a segment is write, seal, rename.
         R7fRecoveryManager.cleanAndRecover(workDir);
 
-        final ShardedJournalWriter<R7fJournal> journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
+        this.journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
             final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault());
             return new R7fJournal(provider);
@@ -115,32 +119,15 @@ public final class R7Main
 
         this.managementServer = setupStatusBackend(statusHandler, serverConfig.management(), sharedWorker);
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() ->
-        {
-            logger.info("Shutdown signal received. Initiating graceful shutdown sequence...");
-
-            logger.info("Rejecting new requests and draining in-flight traffic...");
-            gracefulShutdownHandler.shutdown();
-            try
-            {
-                gracefulShutdownHandler.awaitShutdown(10_000);
-            }
-            catch (final InterruptedException e)
-            {
-                logger.warn("Interrupted while waiting for in-flight requests to drain");
-                Thread.currentThread().interrupt();
-            }
-
-            logger.info("Stopping Undertow server...");
-            server.stop();
-
-            logger.info("Shutting down journal writer...");
-            journalWriter.shutdown();
-
-            logger.info("Shutdown sequence complete");
-
-        }, "r7-shutdown-hook"
-        ));
+        // Registered once per instance and deregistered by stop() (see there): without that, an
+        // embedder that creates and stops several R7Main instances in one JVM - every in-process
+        // integration test does exactly this - leaves one dangling hook per instance. Each hook
+        // captures that instance's own journalWriter, which stop() alone never shut down, so the
+        // segment it still holds open stays unsealed and unclosed until the JVM actually exits,
+        // by which point a later instance's recovery pass may already have renamed the same
+        // shard file out from under it.
+        this.shutdownHook = new Thread(this::shutdownSequence, "r7-shutdown-hook");
+        Runtime.getRuntime().addShutdownHook(this.shutdownHook);
 
         server.start();
 
@@ -341,9 +328,58 @@ public final class R7Main
                 .setDirectBuffers(true);
     }
 
+    /**
+     * Stops the data and management listeners and fully shuts down the journal writer, then
+     * deregisters the JVM shutdown hook so it does not run a second time - against a
+     * {@link #journalWriter} and {@link #server} already stopped - at actual JVM exit.
+     * <p>
+     * Idempotent and safe to call from both an explicit {@code stop()} and the shutdown hook
+     * itself: whichever runs first executes {@link #shutdownSequence()} once, and the other's
+     * deregistration attempt is a no-op (removing a hook that is not registered, or that the JVM
+     * is already running, is not an error).
+     */
     public void stop()
     {
+        try
+        {
+            Runtime.getRuntime().removeShutdownHook(this.shutdownHook);
+        }
+        catch (final IllegalStateException e)
+        {
+            // The JVM is already shutting down and running this hook itself; fall through so
+            // shutdownSequence() still runs exactly once, guarded by 'stopped'.
+        }
+        shutdownSequence();
+    }
+
+    private void shutdownSequence()
+    {
+        if (!this.stopped.compareAndSet(false, true))
+        {
+            return;
+        }
+
+        logger.info("Shutdown signal received. Initiating graceful shutdown sequence...");
+
+        logger.info("Rejecting new requests and draining in-flight traffic...");
+        gracefulShutdownHandler.shutdown();
+        try
+        {
+            gracefulShutdownHandler.awaitShutdown(10_000);
+        }
+        catch (final InterruptedException e)
+        {
+            logger.warn("Interrupted while waiting for in-flight requests to drain");
+            Thread.currentThread().interrupt();
+        }
+
+        logger.info("Stopping Undertow server...");
         server.stop();
         managementServer.stop();
+
+        logger.info("Shutting down journal writer...");
+        journalWriter.shutdown();
+
+        logger.info("Shutdown sequence complete");
     }
 }
