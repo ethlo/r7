@@ -282,13 +282,13 @@ public final class GatewayPipeline
             final ClientRequestGatewayFilter filter = filters[i];
 
             // Only dispatch if the filter needs it AND we are on a thread that must not block
-            if (filter.requiresDispatch() && ex.isOnIoThread())
+            if (filter.requiresDispatch() && !ex.mayBlock())
             {
                 // The server runs the exchange itself as the task (ServerExchange.run), which
                 // lands in resumeDispatched: no capturing lambda per dispatch.
                 ex.resumeRoute = route;
                 ex.resumeIndex = i;
-                ex.dispatch();
+                ex.resumeOnBlockingThread();
                 return; // Surrender the I/O thread immediately
             }
 

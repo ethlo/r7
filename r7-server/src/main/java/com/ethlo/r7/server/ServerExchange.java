@@ -154,14 +154,18 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     // --- Threading ---------------------------------------------------------------------------
 
     /**
-     * Whether this thread is one a blocking filter must not run on.
+     * Whether a filter may block the calling thread: false on an event loop's I/O thread
+     * (Undertow), true on a thread of the request's own (a Níma virtual thread, a servlet
+     * container's request thread, or a thread {@link #resumeOnBlockingThread} moved it to).
      */
-    protected abstract boolean isOnIoThread();
+    protected abstract boolean mayBlock();
 
     /**
-     * Runs this exchange ({@link #run()}) on a thread that may block.
+     * Hands this exchange to a thread where {@link #mayBlock()} holds, which runs it
+     * ({@link #run()}); the calling thread returns at once. Called only when {@link #mayBlock()}
+     * is false.
      */
-    protected abstract void dispatch();
+    protected abstract void resumeOnBlockingThread();
 
     // --- Answering, teeing, proxying ---------------------------------------------------------
 

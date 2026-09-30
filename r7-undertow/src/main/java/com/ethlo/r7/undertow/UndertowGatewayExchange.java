@@ -153,13 +153,13 @@ public class UndertowGatewayExchange extends ServerExchange
     // --- Threading ---------------------------------------------------------------------------
 
     @Override
-    protected boolean isOnIoThread()
+    protected boolean mayBlock()
     {
-        return this.undertowExchange.isInIoThread();
+        return !this.undertowExchange.isInIoThread();
     }
 
     @Override
-    protected void dispatch()
+    protected void resumeOnBlockingThread()
     {
         // Undertow handles the async hand-off. The IO thread returns as soon as this does and
         // goes back to accepting TCP connections.

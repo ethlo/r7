@@ -100,8 +100,8 @@ public interface ServerExchange extends ClientRequestGatewayExchange, UpstreamRe
     InetSocketAddress peerAddress();
 
     // Threading
-    boolean isOnIoThread();                         // Helidon: always false
-    void dispatchResume(int nextFilterIndex);       // Undertow: exchange.dispatch(vtExecutor, this)
+    boolean mayBlock();                             // Helidon, servlet: always true
+    void resumeOnBlockingThread();                  // Undertow: exchange.dispatch(vtExecutor, this)
 
     // Answering locally
     void respond(int status, ByteBuffer body);      // headers already on clientResponse()
@@ -257,6 +257,10 @@ its own change.
 
 ### Naming, once there is a second implementation
 
-`isOnIoThread()` and `dispatch()` are Undertow's shape: on Níma and on a servlet host every
-request already may block, so the pair likely becomes one `mayBlock()`. The names are left as
-they are until a second implementation shows what the right ones are, rather than guessed now.
+`isOnIoThread()` and `dispatch()` were Undertow's shape. With Níma and a servlet host beside it
+they are `mayBlock()` - asked of the thread, not of the server: true on a request's own thread,
+false on an event loop's - and `resumeOnBlockingThread()`, called only when `mayBlock()` is
+false, so the thread-per-request servers implement it trivially. They stay two methods, not
+the one `mayBlock()` guessed here earlier: the pipeline must both ask and, on an event loop,
+move. The public filter contract keeps its name, `requiresDispatch()`: it says what the filter
+needs, which is still dispatching off a thread that must not block.
