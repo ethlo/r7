@@ -151,12 +151,17 @@ How it avoids adding per-request objects:
 
 ### The security checks need a shared test kit
 
-The guard code lives in `r7-server`, but whether it is *sufficient* depends on the server's parser:
-Undertow accepts `chunked, identity`, and Helidon will have its own quirks. The smuggling and
-path tests therefore become an abstract test kit in a test-jar that every server module runs:
-`TransferEncodingGuardTest`, `RequestPathGuardTest`, `UpstreamHeaderHygieneTest`,
-`WebSocketUpgradeOutcomeTest`, `RequestSizeLimitStreamingTest`, `R7FullSpecMatrixTest`. The
-`r7.test.mode` switch is most of the way there.
+The guard code lives in `r7-server` and the pipeline applies it, but whether a server is *safe*
+depends on its parser as well: Undertow accepts `chunked, identity`; a servlet container resolves
+or rejects `..` and consumes chunked framing before r7 sees the request. So the kit is black-box.
+`GatewaySecurityKit` (published as `r7-server`'s test-jar) sends raw requests to a running gateway
+and checks what the client got and, byte-exact, what a recording upstream received; each server
+module runs it by implementing one method. It holds a server to the guarantee whichever layer
+provides it. It also states the proxy contract a new upstream layer must meet, such as the
+gateway writing `X-Forwarded-For` from the real peer.
+
+On Undertow, the pipeline's guards are load-bearing: with each removed in turn, the kit fails -
+`chunked, identity` and `/kit/../admin` (answered 200) reach the upstream.
 
 ---
 
@@ -190,7 +195,10 @@ its own change.
    task, and the listeners are stateless singletons. Instructions per request are unchanged on
    passthrough, journal and filtered routes. The Transfer-Encoding check, header sanitiser and
    remote-address resolver stay behind hooks until step 4.
-4. **The security test kit.**
+4. **The security test kit.** Done. 4a (#101): the three request guards made server-neutral and
+   applied by the pipeline, the sanitizer shown equivalent to the `HeaderMap` version by a
+   differential test over 20,000 generated header sets, kept honest by mutants. 4b (#102): the
+   wire-level kit above.
 5. **Performance, where the profile points, one PR each:**
    - journal header encoding: redact each set once and encode it by position. Done in #97:
      -14k instructions per `HEADERS` request, ~14% of journaling's cost over passthrough;
@@ -207,3 +215,15 @@ its own change.
    upside is that `UpstreamAbort`, `guardChunkedRequestBody` and `TransferEncodingGuard`, which
    exist to work around how Undertow's proxy frames bodies, become correct by construction.
    Post-1.0, experimental until the benchmark says otherwise.
+7. **A servlet host**, r7 as a servlet inside someone else's container, in the way Spring Cloud
+   Gateway can run on Servlet. It is the strictest test of the SPI: the container owns the
+   socket, parses and normalises before r7 sees anything, has no I/O thread to protect, and there
+   may be no management port. It cannot proxy with the server either, so it and Níma share the
+   same need - a blocking HTTP/1.1 upstream client on virtual threads - which argues for building
+   that once, as its own module, rather than per server.
+
+### Naming, once there is a second implementation
+
+`isOnIoThread()` and `dispatch()` are Undertow's shape: on Níma and on a servlet host every
+request already may block, so the pair likely becomes one `mayBlock()`. The names are left as
+they are until a second implementation shows what the right ones are, rather than guessed now.
