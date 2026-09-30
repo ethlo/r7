@@ -46,6 +46,10 @@ public final class BlockingGateway implements AutoCloseable
     private final ShardedJournalWriter<R7fJournal> journalWriter;
     private final GatewayScheduler scheduler;
     private final ManagementEndpoint managementEndpoint;
+    private final ListenerStatistics statistics = new ListenerStatistics();
+    private final long maxHeadBytes;
+    private final int maxHeaderCount;
+    private final long maxEntityBytes;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public BlockingGateway(final Path routesFile, final Path serverFile) throws IOException
@@ -53,6 +57,10 @@ public final class BlockingGateway implements AutoCloseable
         final RouteRegistry routeRegistry = new RouteRegistry();
         this.scheduler = new GatewayScheduler(5);
         this.serverConfig = loadServerSettings(serverFile);
+        final ServerConfig.LimitsConfig limits = this.serverConfig.limits();
+        this.maxHeadBytes = limits.maxHeaderSize().bytes();
+        this.maxHeaderCount = limits.maxHeaderCount();
+        this.maxEntityBytes = limits.maxEntitySize().bytes();
 
         final ServerConfig.StorageConfig storage = this.serverConfig.storage();
         final Path workDir = Paths.get(storage.workDir());
@@ -69,8 +77,7 @@ public final class BlockingGateway implements AutoCloseable
 
         this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
         final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
-        // No listener counters of our own; the server may know them, but none is asked yet.
-        this.managementEndpoint = new ManagementEndpoint(metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, null);
+        this.managementEndpoint = new ManagementEndpoint(metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, this.statistics::snapshot);
         hotReloadService.onReload(new RouteGenerationListener()
         {
             @Override
@@ -116,18 +123,38 @@ public final class BlockingGateway implements AutoCloseable
     }
 
     /**
+     * The data-plane listener's counters. A server that can see its connections reports them here.
+     */
+    public ListenerStatistics statistics()
+    {
+        return this.statistics;
+    }
+
+    /**
      * Runs one request through the pipeline on the calling thread, and the completion work
      * (journal, completed filters) once the response has been sent.
      */
     public void handle(final BlockingServerExchange exchange)
     {
+        this.statistics.requestStarted();
         try
         {
-            this.pipeline.handle(exchange);
+            if (withinLimits(exchange))
+            {
+                this.pipeline.handle(exchange);
+            }
         }
         finally
         {
-            exchange.complete();
+            try
+            {
+                exchange.complete();
+            }
+            finally
+            {
+                this.statistics.requestFinished(System.nanoTime() - exchange.requestStartNanos(), exchange.responseStatus(),
+                        exchange.totalResponseBytes(), exchange.totalRequestBytes());
+            }
         }
         if (exchange.isAborted())
         {
@@ -136,6 +163,48 @@ public final class BlockingGateway implements AutoCloseable
             // throw. Tomcat and Níma both drop the connection when a handler throws after the
             // response was committed, which is the only signal of truncation a client can see.
             throw new ResponseAbortedException();
+        }
+    }
+
+    /**
+     * {@code limits.*} as Undertow applies them, checked here so that they hold on every server
+     * whatever its own parser allows: Helidon has no header count limit, and a servlet container
+     * has its own settings, which the operator may not have aligned. A server that enforces a
+     * limit in its parser just never lets such a request get this far. The head is measured as
+     * sent, request line included, as Undertow's max_header_size measures it.
+     */
+    private boolean withinLimits(final BlockingServerExchange exchange)
+    {
+        if (exchange.requestHeaderBytes() > this.maxHeadBytes || exchange.requestHeaderCount() > this.maxHeaderCount)
+        {
+            exchange.refuse(431, "Request Header Fields Too Large");
+            return false;
+        }
+        final String contentLength = exchange.requestHeaders().getFirst("Content-Length");
+        if (contentLength != null && exceeds(contentLength, this.maxEntityBytes))
+        {
+            // Refused before a byte of it is read or forwarded; a chunked body is held to the same
+            // limit as it streams (limitRequestBody), and answered 413 when it passes it.
+            exchange.refuse(413, "Request Entity Too Large");
+            return false;
+        }
+        exchange.limitRequestBody(this.maxEntityBytes);
+        return true;
+    }
+
+    /**
+     * Whether a Content-Length value is larger than {@code max}. One that is not a number is not
+     * this check's to reject: the request guards refuse it with 400.
+     */
+    private static boolean exceeds(final String contentLength, final long max)
+    {
+        try
+        {
+            return Long.parseLong(contentLength.trim()) > max;
+        }
+        catch (final NumberFormatException e)
+        {
+            return false;
         }
     }
 

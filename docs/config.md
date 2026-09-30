@@ -940,6 +940,8 @@ Configures the HTTP server layer, including protocol support and request parsing
 
 Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.
 
+A request over `max_header_size` or `max_header_count` is refused before any filter runs, with `400` or `431` depending on which layer caught it. A body over `max_entity_size` is refused with `413` when its `Content-Length` declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental Helidon and servlet hosts, whatever the server's own parser settings.
+
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `max_header_size` | Size | The maximum size of the request line and all request headers combined (e.g., `8KB`), not of each header separately. At most 62500 bytes, the longest input configured regular expressions are budgeted for. |

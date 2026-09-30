@@ -495,5 +495,26 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   virtual threads queued on it (worst 4 s with the default pollers, 255 ms with mode 3). The fix
   is not to open a file per request for small hot files - a bounded content cache validated by
   size and modification time - and is still to do.
+- **Header and body limits.** Done. `limits.max_header_size`, `max_header_count` and
+  `max_entity_size` now hold on every server, checked by `GatewaySecurityKit` (seven cases, a
+  head and a body at the limit included). Níma bounds the request line and the header fields
+  separately (`maxPrologueLength`, `maxHeadersSize`) and the body as it arrives
+  (`maxPayloadSize`), but has no header count limit; a servlet container has settings of its
+  own, which need not match the operator's `server.yaml`. So `BlockingGateway` checks all three
+  itself before the pipeline runs: 431 for a head over either limit, 413 for a declared body
+  over `max_entity_size`, and a chunked body is held to it as it streams. Helidon fails a body
+  read past `maxPayloadSize` with its own unchecked exception, which reached the relay as an
+  unexpected error and a 500; the Níma adapter now maps it to r7's `RequestBodyTooLargeException`,
+  and the relay answers 413.
+- **Listener statistics.** Done. The dashboard's connector counters come from
+  `ListenerStatistics`, counted the way Undertow's `ConnectorStatistics` counts: an error is a
+  500, processing time runs from arrival to completion, bytes are the exchange's head and body.
+  Níma keeps no connection counters it shares, but every connection runs inside one
+  `ServerConnection.handle` call, so `CountingSelector` wraps the protocol selectors a listener
+  derives from its protocols - a listener tries the selectors it is given first - and brackets
+  that call. A servlet container's connections are its own; there they read 0.
+- **Container image.** Done: `Dockerfile.helidon.jvm`, the same distroless Java 25 image,
+  user, journal volume and environment as the Undertow image, so it drops in for it; built by CI
+  as `r7-gateway-helidon`, locally by `build-helidon.sh`.
 - **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
 

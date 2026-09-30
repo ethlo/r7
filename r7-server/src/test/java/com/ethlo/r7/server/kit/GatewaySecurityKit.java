@@ -39,6 +39,9 @@ public abstract class GatewaySecurityKit
 {
     private static final Duration SETTLE = Duration.ofMillis(300);
     private static final Duration ARRIVAL = Duration.ofSeconds(5);
+    private static final int MAX_HEAD_BYTES = 4096;
+    private static final int MAX_HEADER_COUNT = 20;
+    private static final int MAX_ENTITY_BYTES = 64 * 1024;
 
     private Path dir;
 
@@ -88,8 +91,13 @@ public abstract class GatewaySecurityKit
                   host: 127.0.0.1
                 storage:
                   work_dir: %s
+                limits:
+                  max_header_size: %dB
+                  max_header_count: %d
+                  max_entity_size: %dB
                 %s
-                """.formatted(this.gatewayPort, freePort(), this.dir.resolve("journals").toAbsolutePath(), serverYamlExtra()), StandardCharsets.UTF_8);
+                """.formatted(this.gatewayPort, freePort(), this.dir.resolve("journals").toAbsolutePath(),
+                MAX_HEAD_BYTES, MAX_HEADER_COUNT, MAX_ENTITY_BYTES, serverYamlExtra()), StandardCharsets.UTF_8);
         this.gateway = startGateway(routes, server);
     }
 
@@ -304,6 +312,90 @@ public abstract class GatewaySecurityKit
                 + "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n");
         assertThat(received.bodyText()).isEqualTo("hello world");
         assertThat(received.has("Content-Length") && received.has("Transfer-Encoding")).isFalse();
+    }
+
+    // ============================================================================================
+    // limits.*: the same bounds whichever server parses the request
+    // ============================================================================================
+
+    @Test
+    void aHeadWithinTheLimitsPasses() throws Exception
+    {
+        // Exactly max_header_count headers: Host, the padding, and the rest.
+        final String request = "GET /kit/limits HTTP/1.1\r\nHost: localhost\r\n" + headers(MAX_HEADER_COUNT - 2, 10)
+                + "X-Pad: " + "p".repeat(MAX_HEAD_BYTES / 2) + "\r\n\r\n";
+        forward(request);
+    }
+
+    @Test
+    void aHeadLargerThanMaxHeaderSizeIsRefused() throws Exception
+    {
+        final int status = send("GET /kit/limits HTTP/1.1\r\nHost: localhost\r\nX-Pad: " + "p".repeat(MAX_HEAD_BYTES) + "\r\n\r\n");
+        assertRefused(status, "a head over max_header_size");
+    }
+
+    /**
+     * Split over many headers, each small: the limit is on the head, not per header.
+     */
+    @Test
+    void aHeadLargerThanMaxHeaderSizeInSmallHeadersIsRefused() throws Exception
+    {
+        final int status = send("GET /kit/limits HTTP/1.1\r\nHost: localhost\r\n" + headers(MAX_HEADER_COUNT - 2, MAX_HEAD_BYTES / (MAX_HEADER_COUNT - 4)) + "\r\n");
+        assertRefused(status, "many small headers over max_header_size");
+    }
+
+    @Test
+    void moreHeadersThanMaxHeaderCountAreRefused() throws Exception
+    {
+        final int status = send("GET /kit/limits HTTP/1.1\r\nHost: localhost\r\n" + headers(MAX_HEADER_COUNT + 5, 4) + "\r\n");
+        assertRefused(status, "more headers than max_header_count");
+    }
+
+    @Test
+    void aDeclaredBodyLargerThanMaxEntitySizeIsRefusedUnsent() throws Exception
+    {
+        final int status = send("POST /kit/limits HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + (MAX_ENTITY_BYTES + 1) + "\r\n\r\n"
+                + "b".repeat(MAX_ENTITY_BYTES + 1));
+        assertRefused(status, "a Content-Length over max_entity_size");
+    }
+
+    /**
+     * A chunked body is only known to be too large once it has streamed past the limit, by which
+     * time the head may be upstream: what must never happen is the upstream receiving it as a
+     * complete request.
+     */
+    @Test
+    void aChunkedBodyLargerThanMaxEntitySizeNeverArrivesComplete() throws Exception
+    {
+        final String chunk = "c".repeat(8192);
+        final StringBuilder request = new StringBuilder("POST /kit/limits HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n");
+        for (int sent = 0; sent <= MAX_ENTITY_BYTES; sent += chunk.length())
+        {
+            request.append(Integer.toHexString(chunk.length())).append("\r\n").append(chunk).append("\r\n");
+        }
+        request.append("0\r\n\r\n");
+        final int status = send(request.toString());
+        assertThat(status == -1 || status >= 400).as("a chunked body over max_entity_size answered %d", status).isTrue();
+        // RecordingUpstream records a chunked request only once its last chunk has arrived.
+        assertThat(this.upstream.next(SETTLE)).as("the upstream received the oversized body as a complete request").isNull();
+    }
+
+    @Test
+    void aBodyWithinMaxEntitySizeArrives() throws Exception
+    {
+        final String body = "b".repeat(MAX_ENTITY_BYTES);
+        final RecordingUpstream.Received received = forward("POST /kit/limits HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + body.length() + "\r\n\r\n" + body);
+        assertThat(received.bodyText()).isEqualTo(body);
+    }
+
+    private static String headers(final int count, final int valueLength)
+    {
+        final StringBuilder headers = new StringBuilder();
+        for (int i = 0; i < count; i++)
+        {
+            headers.append("X-Kit-").append(i).append(": ").append("v".repeat(valueLength)).append("\r\n");
+        }
+        return headers.toString();
     }
 
     // ============================================================================================

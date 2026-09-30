@@ -38,6 +38,7 @@ java -jar r7-undertow/target/r7-undertow-1.0-SNAPSHOT.jar        # reads ./confi
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
 docker compose up -d                                             # nginx test backend on :11111
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
+./build-helidon.sh  # the same for the EXPERIMENTAL Helidon gateway, Dockerfile.helidon.jvm (r7-gateway-helidon)
 ./build-native.sh   # GraalVM native image via Dockerfile.native
 ```
 
