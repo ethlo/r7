@@ -211,13 +211,14 @@ its own change.
    with `HttpUpstream`, a blocking HTTP/1.1 client of its own (round-robin targets, per-target
    keep-alive pools, Content-Length and chunked bodies both ways, X-Forwarded-* as Undertow
    writes them) that names no Helidon type. Not yet: management port, static content,
-   WebSocket tunnelling, https upstreams, retries. Helidon 27 is compiled for Java 27 (class file
-   version 71), so `r7-helidon` alone is released for 27; every other module stays on 25 (LTS),
-   the floor `r7-journal-mmap`'s use of the FFM API sets, so a host embedding r7 is not pushed
-   onto a non-LTS runtime by this spike. The build itself needs JDK 27. The move from 4.5.5 took
-   no source change: r7 used none of the removed APIs, and `routing.any` has no method selector
-   for 27's case-sensitive method matching to affect - methods now reach r7 exactly as sent,
-   which is what Undertow does.
+   WebSocket tunnelling, https upstreams, retries. Helidon pairs its releases with Java's:
+   4.5.x is the LTS line for Java 25, 27 is compiled for Java 27 (class file version 71) and 29
+   will be the next LTS. `r7-helidon` builds on 4.5.x by default, released for 25 like every
+   other module - the floor `r7-journal-mmap`'s use of the FFM API sets - and `-Phelidon-27`
+   builds the Java 27 line, released for 27. The same source builds and passes on both: r7
+   used none of the APIs 27 removed, and `routing.any` has no method selector for 27's
+   case-sensitive method matching to affect - methods reach r7 exactly as sent, which is what
+   Undertow does.
 
    The security kit passes against it, and its first run caught a Níma-specific hole:
    Helidon's `UriPath.path()` resolves dot segments, so predicates and the path guard saw

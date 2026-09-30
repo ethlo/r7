@@ -17,7 +17,6 @@ import java.time.Duration;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -56,6 +55,7 @@ class HelidonManagementPortTest
                   port: %d
                   host: 127.0.0.1
                   request_parse_timeout: 1s
+                  idle_timeout: 1s
                 storage:
                   work_dir: %s
                 """.formatted(freePort(), freePort(), this.dir.resolve("journals").toAbsolutePath()));
@@ -117,11 +117,8 @@ class HelidonManagementPortTest
     }
 
     /**
-     * Known gap, kept as a failing expectation rather than deleted: Helidon 27 has no request-head
-     * timeout, and neither its idle sweep nor socket read timeouts close a connection stalled in
-     * a partial head, on this listener or the data plane's. Undertow's REQUEST_PARSE_TIMEOUT does.
+     * Helidon has no request-head timeout of its own; HeadTimeouts enforces request_parse_timeout.
      */
-    @Disabled("Helidon 27 cannot bound a partial request head; see design/upstream.md")
     @Test
     void anUnfinishedRequestHeadIsClosed() throws IOException
     {
@@ -139,6 +136,37 @@ class HelidonManagementPortTest
         catch (final SocketTimeoutException e)
         {
             throw new AssertionError("The management listener kept an unfinished request open for 10s", e);
+        }
+    }
+
+    /**
+     * A request line trickled without its end never reaches r7's head timer; Helidon counts such
+     * a connection as idle, and idle_timeout ends it.
+     */
+    @Test
+    void aTrickledRequestLineIsClosedAsIdle() throws IOException
+    {
+        try (Socket socket = new Socket("127.0.0.1", this.port))
+        {
+            socket.getOutputStream().write("GET / HT".getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            socket.setSoTimeout(10_000);
+            final InputStream in = socket.getInputStream();
+            try
+            {
+                while (in.read() != -1)
+                {
+                    // drain
+                }
+            }
+            catch (final SocketTimeoutException e)
+            {
+                throw new AssertionError("A trickled request line held its connection for 10s", e);
+            }
+            catch (final IOException closed)
+            {
+                // Reset: closed too.
+            }
         }
     }
 

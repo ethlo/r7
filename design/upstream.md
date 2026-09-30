@@ -410,13 +410,20 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   (`putSocket`) with its own connection cap and idle timeout. `SimpleMetrics` and the
   `MetricsRegistry` moved to `r7-server` with it, so the filter works on every server.
 
-  **Gap found:** Níma has no request-head timeout. Its idle sweep does not close a connection
-  stalled in a partial head, and neither does a socket read timeout in its connection options,
-  so `request_parse_timeout` cannot be honoured - on the management listener or the data
-  plane's. `HelidonManagementPortTest.anUnfinishedRequestHeadIsClosed` states the expectation
-  and is disabled until it can be met. Undertow bounds this with `REQUEST_PARSE_TIMEOUT`. It
-  weighs on the switch: a client that opens connections and trickles a head holds descriptors
-  indefinitely.
+  **Gap found, then closed from r7's side:** Níma has no request-head timeout. It reads through
+  a `SocketChannel`, which ignores `SO_TIMEOUT`, and its idle sweep does not count a connection
+  whose request line has arrived as idle - so a client trickling header lines held its
+  connection indefinitely. `HeadTimeouts` enforces `request_parse_timeout` on both listeners:
+  an `Http1ConnectionListener` starts a clock when the request line is read and stops it when
+  the head is complete, and one sweeper thread ends overdue connections. Two more rough edges
+  on the way: Helidon never calls the listener's per-read `data()` callbacks (only `prologue()`
+  and `headers()`), and `ConnectionContext.serverSocket()` throws, so there is no handle to
+  close. The sweeper interrupts the connection's reader thread instead - an interrupted read on
+  an interruptible channel closes it - with a per-connection lock so the interrupt can never land
+  once the head has completed and the request is using other sockets. A trickled *request line*
+  never reaches the listener; Helidon counts it idle, and the management listener's idle sweep
+  now runs every second instead of every two minutes so `idle_timeout` holds. Saturation
+  throughput and tail unchanged (136-138k req/s, p99 4.4-4.7 ms, worst 17-24 ms).
 - **Static content.** Done. `StaticFiles` (in `r7-server`) serves the `StaticContent` filter on
   Níma and the servlet host, and `StaticContentKit` (13 cases) holds all three servers to the
   same behaviour. Run against Undertow's `ResourceHandler` first, the kit found it serving files
@@ -436,5 +443,57 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   branch is +4-5% user instructions and +0.5-1% cycles per request against `main` on Níma.
   `BlockingServerExchange` now carries the client's real protocol, which it had hard-coded as
   HTTP/1.1 - an HTTP/2 request would have been journaled as HTTP/1.1.
+- **The stalls at saturation: explained, and gone.** The first benchmark showed Níma with
+  outliers of 0.2-1.8 s at saturation (and two wrk timeouts) where Undertow's worst was
+  ~50 ms. Narrowed down on the benchmark's own nginx, `wrk -c200`, gateway pinned to P-cores
+  0-7, one variable at a time:
+  - not the kernel: `nstat` showed ~170 new upstream connections/s, no listen drops, no SYN
+    retransmits (the first hypothesis, pool churn past 64 idle connections, was wrong - with
+    1024 idle the stall got no better);
+  - not GC: ZGC reported no allocation stalls, pauses in microseconds; no safepoint over 20 ms;
+  - not wrk or nginx: Undertow under identical conditions, worst 33-40 ms;
+  - not Níma itself: a bare Helidon "OK" server did 278k req/s with a worst of 25 ms.
+
+  JFR then showed the stalled connections were idle *between* requests, several resuming in
+  the same millisecond - one shared thing held them. In JDK 27 the I/O pollers run as virtual
+  threads on the same carriers as the requests (`Poller$VThreadsPollerGroup`); when the
+  carriers are saturated a poller can wait long for one, and every connection registered with
+  it waits too. Bare Helidon does too little per request to saturate carriers the same way.
+
+  | `jdk.pollerMode` | req/s | p99 | worst |
+  |---|---|---|---|
+  | 2, virtual-thread pollers (JDK default) | 134-136k | 8.6-9.7 ms | 1.56-2.23 s |
+  | 1, platform-thread pollers | 128k | 5.9 ms | 58 ms |
+  | 3, per-carrier pollers | 132-137k | 4.4 ms | 16-25 ms |
+
+  On **Java 25 with Helidon 4.5.5** - the LTS pairing; Helidon 27 is the Java 27 line and
+  Helidon 29 will be the next LTS - the same code builds and passes all 54 Helidon tests
+  unchanged (it is the default build; `-Phelidon-27` builds the Java 27 line), but mode 3
+  does not exist: JDK 25's poller refuses the value and fails to start.
+  Measured there at saturation:
+
+  | Java 25 + Helidon 4.5.5 | req/s | p99 | worst |
+  |---|---|---|---|
+  | mode 2 (JDK default) | 141k | 7.0 ms | 539 ms |
+  | mode 1, 2 read pollers (JDK default count) | 125-127k | 33-50 ms | 275 ms |
+  | mode 1, 4 read pollers | 128k | 14.8 ms | 104 ms |
+  | mode 1, 8 read pollers | 125k | 38.5 ms | 148 ms |
+
+  Platform-thread pollers end the long stalls but compete with the carriers for the cores, and
+  the p99 pays for it. So on 25 there is no setting that is both; the clean fix is the JDK's
+  per-carrier poller.
+
+  `R7Helidon.main` sets mode 3 on JDK 27 and later unless the property is set, and leaves
+  JDK 25 on its default: the stalls occur only at saturation (the rate sweep below it showed
+  none), and trading p99 at every load for them is the worse deal. It is an internal,
+  undocumented JDK property: a future JDK may change or drop it, and an embedder that does not
+  go through `main` must set it itself. With it, Níma's tail beats Undertow's (p99 5.9 ms, worst
+  33-40 ms) at higher throughput.
+
+  A second, separate contention showed on the static route: every file served opens a
+  `FileChannel`, which registers with the JDK's `Cleaner` under one global lock, and ~50
+  virtual threads queued on it (worst 4 s with the default pollers, 255 ms with mode 3). The fix
+  is not to open a file per request for small hot files - a bounded content cache validated by
+  size and modification time - and is still to do.
 - **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
 
