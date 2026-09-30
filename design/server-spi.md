@@ -207,14 +207,25 @@ its own change.
    Allocation work in `open()` (copy-on-write snapshots, interned header names, lazy
    attributes) is left out: at ~3% of CPU for all of r7 outside the journal, it cannot move
    throughput measurably.
-6. **Helidon Níma spike**, as the second implementation of the SPI. It needs its own proxy
-   layer; a basic HTTP/1.1 proxy on virtual threads is a few hundred lines, while parity with
-   `ProxyHandler` (per-host pooling, host add/remove on health, selection strategies, timeouts,
-   upstream TLS, X-Forwarded and Host rewriting, hop-by-hop stripping, `100-continue`,
-   trailers, retries, WebSocket tunnelling) is more like 1.5–3k lines plus the test kit. The
-   upside is that `UpstreamAbort`, `guardChunkedRequestBody` and `TransferEncodingGuard`, which
-   exist to work around how Undertow's proxy frames bodies, become correct by construction.
-   Post-1.0, experimental until the benchmark says otherwise.
+6. **Helidon Níma spike.** Done, as `r7-helidon` (experimental): `R7Helidon` on Helidon 4.5.5
+   with `HttpUpstream`, a blocking HTTP/1.1 client of its own (round-robin targets, per-target
+   keep-alive pools, Content-Length and chunked bodies both ways, X-Forwarded-* as Undertow
+   writes them) that names no Helidon type. Not yet: management port, static content,
+   WebSocket tunnelling, https upstreams, retries. Helidon 27.0.0 has since been released;
+   moving to it is a follow-up.
+
+   The security kit passes against it, and its first run caught a Níma-specific hole:
+   Helidon's `UriPath.path()` resolves dot segments, so predicates and the path guard saw
+   `/kit/x` while the raw `/kit/./x` was forwarded. `RequestPaths` (r7-server) now decodes the
+   raw path the way Undertow does - decoded, never normalised, encoded slash kept.
+
+   Per request, 13 browser-like headers, 2 JVMs each: CPU time is level with Undertow
+   (passthrough 55-58 µs against 55 µs; journal and filtered routes likewise), with ~40% fewer
+   user instructions (125k against 213k) and ~15% more kernel instructions - virtual-thread
+   parking shows as `futex` time Undertow's event loop does not pay. Two costs of the first
+   version were the adapter's own, not Níma's: re-validating every wire header on each copy,
+   and reading the upstream's response head a byte at a time through `BufferedInputStream`'s
+   per-call lock. Fixed, they took ~90k instructions per request with them.
 7. **A servlet host**, r7 as a servlet inside someone else's container, in the way Spring Cloud
    Gateway can run on Servlet. It is the strictest test of the SPI: the container owns the
    socket, parses and normalises before r7 sees anything, has no I/O thread to protect, and there
