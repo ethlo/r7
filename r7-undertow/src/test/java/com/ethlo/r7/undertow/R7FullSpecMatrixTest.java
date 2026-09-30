@@ -81,4 +81,29 @@ public class R7FullSpecMatrixTest extends AbstractR7IntegrationTest
                 .header("Content-Type", equalTo("text/plain; charset=utf-8"))
                 .header("X-Content-Type-Options", equalTo("nosniff"));
     }
+
+    /**
+     * TRACE is refused in any case: an upstream that reads {@code trace} as TRACE would otherwise
+     * echo the request back. Pinned when the pipeline moved out of r7-undertow, where the check
+     * had relied on Undertow's case-insensitive HttpString. Sent over a raw socket, because
+     * RestAssured upper-cases the method and would hide exactly this.
+     */
+    @Test
+    @Order(3)
+    public void traceIsRefusedInAnyCase() throws Exception
+    {
+        for (final String method : new String[]{"trace", "Trace"})
+        {
+            try (final java.net.Socket socket = new java.net.Socket("localhost", io.restassured.RestAssured.port))
+            {
+                socket.setSoTimeout(5_000);
+                socket.getOutputStream().write((method + " /api/v1/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                final String statusLine = new java.io.BufferedReader(new java.io.InputStreamReader(
+                        socket.getInputStream(), java.nio.charset.StandardCharsets.US_ASCII)).readLine();
+                org.junit.jupiter.api.Assertions.assertTrue(statusLine != null && statusLine.startsWith("HTTP/1.1 501"),
+                        method + " was not refused: " + statusLine);
+            }
+        }
+    }
 }

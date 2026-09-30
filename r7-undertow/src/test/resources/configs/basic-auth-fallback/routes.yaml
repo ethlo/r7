@@ -56,6 +56,9 @@ routes:
       - AddRequestHeader:
           name: X-Fallback
           value: "yes"
+      - AddResponseHeader:
+          name: X-Fallback-Response
+          value: "yes"
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

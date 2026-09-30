@@ -36,15 +36,21 @@ public class BasicAuthFallbackTest extends AbstractR7IntegrationTest
         // The health check needs a probe or two to mark the closed port down; until then the
         // request goes to the dead primary and fails.
         int status = -1;
+        String fallbackResponseHeader = null;
         for (int attempt = 0; attempt < 50 && status != 200; attempt++)
         {
-            status = given().header("Authorization", credentials).when().get("/protected/data").then().extract().statusCode();
+            final io.restassured.response.ExtractableResponse<?> response = given().header("Authorization", credentials).when().get("/protected/data").then().extract();
+            status = response.statusCode();
+            fallbackResponseHeader = response.header("X-Fallback-Response");
             if (status != 200)
             {
                 Thread.sleep(200);
             }
         }
         Assertions.assertEquals(200, status, "request never reached the fallback route");
+        // The fallback route's own response filters run, not the matched route's: the request is
+        // handled as if it had matched the fallback (docs/config.md, fallback).
+        Assertions.assertEquals("yes", fallbackResponseHeader, "the fallback route's response filters did not run");
 
         UPSTREAM_SERVER.verify(getRequestedFor(urlPathEqualTo("/protected/data"))
                 .withHeader("X-Fallback", com.github.tomakehurst.wiremock.client.WireMock.equalTo("yes"))

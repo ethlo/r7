@@ -13,9 +13,9 @@ import com.ethlo.r7.api.GatewayExchange;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.server.ServerExchange;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.undertow.UndertowGatewayExchange;
 import com.ethlo.r7.validation.ValidatableConfig;
 
 public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMetricsFactory.Config>
@@ -106,11 +106,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
-            final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
+            final ServerExchange serverExchange = (ServerExchange) exchange;
             final RouteMetricsBucket bucket = this.bucketFor(exchange);
-            if (undertowExchange.isWebsocketUpgraded())
+            if (serverExchange.isWebsocketUpgraded())
             {
-                undertowExchange.onWebSocketClose(bucket::decrementActiveWsRequests);
+                serverExchange.onConnectionClose(bucket::decrementActiveWsRequests);
                 bucket.incrementActiveWsRequests();
                 bucket.incrementTotalWsRequests();
             }
@@ -121,23 +121,24 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
         @Override
         public void onCompleted(final CompletedGatewayExchange exchange)
         {
-            final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
+            final ServerExchange serverExchange = (ServerExchange) exchange;
             final RouteMetricsBucket bucket = this.bucketFor(exchange);
             bucket.decrementActiveRequests();
 
+            final TrafficMetrics trafficMetrics = serverExchange.trafficMetrics();
             bucket.addTrafficMetrics(
-                    undertowExchange.getTrafficMetrics().requestHeaderBytes(),
-                    undertowExchange.getTrafficMetrics().requestBodyBytes(),
-                    undertowExchange.getTrafficMetrics().responseHeaderBytes(),
-                    undertowExchange.getTrafficMetrics().responseBodyBytes(),
-                    undertowExchange.getJournalBytes(),
-                    undertowExchange.getDurationNanos()
+                    trafficMetrics.requestHeaderBytes(),
+                    trafficMetrics.requestBodyBytes(),
+                    trafficMetrics.responseHeaderBytes(),
+                    trafficMetrics.responseBodyBytes(),
+                    serverExchange.getJournalBytes(),
+                    serverExchange.getDurationNanos()
             );
 
             final int clientStatus = exchange.clientResponse() != null ? exchange.clientResponse().status() : 0;
             bucket.recordClientStatus(clientStatus);
 
-            if (undertowExchange.wasProxied())
+            if (serverExchange.wasProxied())
             {
                 bucket.recordUpstreamStatus(exchange.upstreamResponse().status());
             }

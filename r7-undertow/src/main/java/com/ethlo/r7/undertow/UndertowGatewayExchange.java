@@ -1,86 +1,260 @@
 package com.ethlo.r7.undertow;
 
+import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
-import com.ethlo.r7.UnproxiedUpstreamRequest;
-import com.ethlo.r7.api.ClientRequestGatewayExchange;
-import com.ethlo.r7.api.ClientResponseGatewayExchange;
-import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayResponse;
-import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.api.GatewayRouteInfo;
-import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
-import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.StateKey;
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.filters.StaticContentFactory;
+import com.ethlo.r7.server.GatewayPipeline;
+import com.ethlo.r7.server.ServerExchange;
+import com.ethlo.r7.server.UpstreamHandle;
+import com.ethlo.r7.status.TrafficMetrics;
 import com.ethlo.r7.status.TrafficMetricsHandler;
-import com.ethlo.r7.time.ClockSource;
+import com.ethlo.r7.util.ImmutableGatewayRequest;
+import com.ethlo.r7.util.ImmutableGatewayResponse;
+import io.undertow.server.ExchangeCompletionListener;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.server.ResponseCommitListener;
 import io.undertow.util.AttachmentKey;
+import io.undertow.util.Headers;
 
-public class UndertowGatewayExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange
+/**
+ * The Undertow side of one request: the {@link ServerExchange} filters see, backed by the
+ * {@link HttpServerExchange} it arrived on.
+ */
+public class UndertowGatewayExchange extends ServerExchange
 {
     private static final Object REGISTRY_LOCK = new Object();
     // Start with a reasonable size, it will grow automatically if needed
     private static volatile AttachmentKey<?>[] KEY_REGISTRY = new AttachmentKey<?>[32];
 
     static final AttachmentKey<Long> REQUEST_BODY_LIMIT = AttachmentKey.create(Long.class);
+
+    /**
+     * Stateless, so one instance serves every exchange: registering it costs no allocation, where
+     * a lambda capturing the exchange would cost one per request.
+     */
+    private static final ResponseCommitListener COMMIT_LISTENER = serverExchange ->
+    {
+        final UndertowGatewayExchange ex = serverExchange.getAttachment(R7UndertowHandler.GATEWAY_EXCHANGE_KEY);
+        ex.pipeline().onResponseCommit(ex);
+    };
+
+    /**
+     * Stateless for the same reason. The completed filters run in a {@code finally} with the next
+     * listener, as before, and the journal is completed ahead of them outside it.
+     */
+    private static final ExchangeCompletionListener COMPLETION_LISTENER = (serverExchange, next) ->
+    {
+        final UndertowGatewayExchange ex = serverExchange.getAttachment(R7UndertowHandler.GATEWAY_EXCHANGE_KEY);
+        ex.pipeline().completeJournal(ex);
+        try
+        {
+            ex.pipeline().runCompletedFilters(ex);
+        }
+        finally
+        {
+            next.proceed();
+        }
+    };
+
     private final HttpServerExchange undertowExchange;
-    private final String requestId;
-    private final GatewayRequest request;
-    private final MutableGatewayResponse response;
-    private final MutableGatewayAttributes attributes;
-    private final GatewayRoute route;
-    private MutableGatewayRequest upstreamRequest;
-    private GatewayResponse upstreamResponse;
-    private ShortCircuitGatewayResponse shortCircuitGatewayResponse;
-    private long journalBytes;
+    private final R7UndertowHandler handler;
+    private RemoteAddressResolver.RemoteInfo remoteInfo;
 
-    public UndertowGatewayExchange(
-            HttpServerExchange undertowExchange,
-            String requestId,
-            GatewayRequest request,
-            MutableGatewayRequest upstreamRequest,
-            MutableGatewayResponse response,
-            GatewayResponse upstreamResponse,
-            MutableGatewayAttributes attributes,
-            final GatewayRoute route)
+    UndertowGatewayExchange(final HttpServerExchange undertowExchange, final GatewayPipeline pipeline, final R7UndertowHandler handler)
     {
+        super(pipeline);
         this.undertowExchange = undertowExchange;
-        this.requestId = requestId;
-        this.request = request;
-        this.upstreamRequest = upstreamRequest;
-        this.response = response;
-        this.upstreamResponse = upstreamResponse;
-        this.attributes = attributes;
-        this.route = route;
+        this.handler = handler;
+    }
+
+    // --- The request as Undertow parsed it ---------------------------------------------------
+
+    @Override
+    protected String method()
+    {
+        return this.undertowExchange.getRequestMethod().toString();
     }
 
     @Override
-    public String requestId()
+    protected String decodedPath()
     {
-        return requestId;
+        return this.undertowExchange.getRequestPath();
     }
 
     @Override
-    public GatewayRequest clientRequest()
+    protected long requestStartNanos()
     {
-        return request;
+        return this.undertowExchange.getRequestStartTime();
+    }
+
+    // --- Request hygiene ---------------------------------------------------------------------
+
+    @Override
+    protected boolean hasCanonicalTransferEncoding()
+    {
+        return TransferEncodingGuard.isAcceptable(this.undertowExchange.getRequestHeaders());
     }
 
     @Override
-    public MutableGatewayRequest upstreamRequest()
+    protected MutableGatewayRequest openLiveRequest()
     {
-        return upstreamRequest;
+        this.remoteInfo = this.handler.remoteAddressResolver().resolve(this.undertowExchange);
+        return new UndertowGatewayRequest(this.undertowExchange, this.remoteInfo.address(), this.remoteInfo.source());
     }
 
     @Override
-    public void shortCircuit(final ShortCircuitGatewayResponse response)
+    protected boolean isTrustedPeer()
     {
-        shortCircuitGatewayResponse = response;
+        return this.remoteInfo.trustedPeer();
     }
+
+    @Override
+    protected GatewayRequest snapshotClientRequest()
+    {
+        final HttpServerExchange exchange = this.undertowExchange;
+        return new ImmutableGatewayRequest(exchange.getProtocol().toString(),
+                new ImmutableHeaderSnapshot(exchange.getRequestHeaders()),
+                exchange.getRequestPath(),
+                exchange.getRequestURI(),
+                exchange.getRequestMethod().toString(),
+                new UndertowQueryParams(exchange.getQueryString(), exchange.getQueryParameters()),
+                new UndertowMutableCookies(exchange),
+                this.remoteInfo.address(),
+                this.remoteInfo.source()
+        );
+    }
+
+    @Override
+    protected void sanitizeUpstreamHeaders(final boolean trustedPeer)
+    {
+        UpstreamHeaderSanitizer.sanitize(this.undertowExchange.getRequestHeaders(), trustedPeer);
+    }
+
+    @Override
+    protected MutableGatewayResponse openClientResponse()
+    {
+        return new UndertowGatewayResponse(this.undertowExchange);
+    }
+
+    @Override
+    protected GatewayResponse snapshotResponse()
+    {
+        final HttpServerExchange exchange = this.undertowExchange;
+        return new ImmutableGatewayResponse(exchange.getProtocol().toString(), new ImmutableHeaderSnapshot(exchange.getResponseHeaders()), exchange.getStatusCode(), true);
+    }
+
+    // --- Threading ---------------------------------------------------------------------------
+
+    @Override
+    protected boolean isOnIoThread()
+    {
+        return this.undertowExchange.isInIoThread();
+    }
+
+    @Override
+    protected void dispatch()
+    {
+        // Undertow handles the async hand-off. The IO thread returns as soon as this does and
+        // goes back to accepting TCP connections.
+        this.undertowExchange.dispatch(this.handler.virtualThreadExecutor(), this);
+    }
+
+    // --- Answering, teeing, proxying ---------------------------------------------------------
+
+    @Override
+    protected void sendBody(final ByteBuffer body)
+    {
+        this.undertowExchange.getResponseSender().send(body);
+    }
+
+    @Override
+    protected void serveStatic(final StaticContentFactory.StaticServeRequest request)
+    {
+        this.handler.serveStatic(this.undertowExchange, request);
+    }
+
+    @Override
+    protected void closeConnectionAfterResponse()
+    {
+        this.undertowExchange.setPersistent(false);
+    }
+
+    @Override
+    protected void teeRequestBody(final Consumer<ByteBuffer> sink)
+    {
+        this.undertowExchange.addRequestWrapper((factory, ex) -> new TeeingStreamSourceConduit(factory.create(), sink));
+    }
+
+    @Override
+    protected void teeResponseBody(final Consumer<ByteBuffer> sink)
+    {
+        this.undertowExchange.addResponseWrapper((factory, ex) -> new TeeingStreamSinkConduit(factory.create(), sink));
+    }
+
+    @Override
+    protected void proxy(final UpstreamHandle upstream) throws Exception
+    {
+        guardChunkedRequestBody(this.undertowExchange);
+        ((R7UndertowHandler.UndertowUpstream) upstream).proxyHandler().handleRequest(this.undertowExchange);
+    }
+
+    /**
+     * A body without Content-Length is sent to the upstream chunked, and if reading it fails
+     * part-way the proxy closes the upstream request off with a terminating chunk, handing the
+     * upstream a truncated body as a complete one (see {@link UpstreamAbort}). Such bodies get a
+     * guard that aborts the upstream first, and that also enforces any RequestSizeLimit - which
+     * a body of undeclared length could otherwise only be held to after the fact. A body with a
+     * Content-Length needs neither: the upstream request is fixed-length, so a short body fails
+     * rather than completes, and an oversized declared length was refused up front.
+     */
+    private static void guardChunkedRequestBody(final HttpServerExchange exchange)
+    {
+        if (exchange.isRequestComplete() || exchange.getRequestHeaders().contains(Headers.CONTENT_LENGTH))
+        {
+            return;
+        }
+        final Long limit = exchange.getAttachment(REQUEST_BODY_LIMIT);
+        final long maxBytes = limit != null ? limit : Long.MAX_VALUE;
+        exchange.addRequestWrapper((factory, ex) -> new RequestBodyGuardConduit(factory.create(), ex, maxBytes));
+    }
+
+    @Override
+    protected String[] attemptedUpstreams()
+    {
+        return DiagnosticProxyClient.getAttemptedUris(this.undertowExchange);
+    }
+
+    @Override
+    public void onConnectionClose(final Runnable listener)
+    {
+        this.undertowExchange.getConnection().addCloseListener(connection -> listener.run());
+    }
+
+    @Override
+    public TrafficMetrics trafficMetrics()
+    {
+        return this.undertowExchange.getAttachment(TrafficMetricsHandler.SIZE_METRICS_KEY);
+    }
+
+    @Override
+    protected void listenForCommit()
+    {
+        this.undertowExchange.addResponseCommitListener(COMMIT_LISTENER);
+    }
+
+    @Override
+    protected void listenForCompletion()
+    {
+        this.undertowExchange.addExchangeCompleteListener(COMPLETION_LISTENER);
+    }
+
+    // --- Filter-facing -----------------------------------------------------------------------
 
     @Override
     public void limitRequestBody(final long maxBytes)
@@ -93,43 +267,6 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
         {
             this.undertowExchange.putAttachment(REQUEST_BODY_LIMIT, maxBytes);
         }
-    }
-
-    @Override
-    public GatewayResponse upstreamResponse()
-    {
-        return upstreamResponse;
-    }
-
-    @Override
-    public MutableGatewayResponse clientResponse()
-    {
-        return response;
-    }
-
-    @Override
-    public MutableGatewayAttributes attributes()
-    {
-        return attributes;
-    }
-
-    @Override
-    public GatewayRouteInfo route()
-    {
-        return new GatewayRouteInfo()
-        {
-            @Override
-            public String id()
-            {
-                return route.id();
-            }
-
-            @Override
-            public String toString()
-            {
-                return route.uri().toString();
-            }
-        };
     }
 
     @Override
@@ -193,79 +330,5 @@ public class UndertowGatewayExchange implements ClientRequestGatewayExchange, Up
             }
             return (AttachmentKey<T>) undertowKey;
         }
-    }
-
-
-    public void setUpstreamResponse(GatewayResponse clone)
-    {
-        this.upstreamResponse = clone;
-    }
-
-    public ShortCircuitGatewayResponse getShortCircuitGatewayResponse()
-    {
-        return shortCircuitGatewayResponse;
-    }
-
-    public long getRequestStartEpochNanos()
-    {
-        return ClockSource.now() - (System.nanoTime() - undertowExchange.getRequestStartTime());
-    }
-
-    public long getRequestStartNanos()
-    {
-        return undertowExchange.getRequestStartTime();
-    }
-
-    public TrafficMetricsHandler.TrafficMetrics getTrafficMetrics()
-    {
-        return undertowExchange.getAttachment(TrafficMetricsHandler.SIZE_METRICS_KEY);
-    }
-
-    public long getJournalBytes()
-    {
-        return journalBytes;
-    }
-
-    public void setJournalBytes(final long journalBytes)
-    {
-        this.journalBytes = journalBytes;
-    }
-
-    public long getDurationNanos()
-    {
-        return System.nanoTime() - getRequestStartNanos();
-    }
-
-    /**
-     * Whether the upstream actually answered {@code 101 Switching Protocols} for this exchange,
-     * not merely whether the client asked to upgrade. Unset (e.g. before the response commits,
-     * or for an exchange with no upstream at all) reads as {@code false} rather than unboxing a
-     * {@code null} attachment.
-     */
-    public boolean isWebsocketUpgraded()
-    {
-        return Boolean.TRUE.equals(undertowExchange.getAttachment(R7UndertowHandler.WEBSOCKET_UPGRADED_KEY));
-    }
-
-    public void onWebSocketClose(Runnable closeListener)
-    {
-        undertowExchange.getConnection().addCloseListener(connection -> closeListener.run());
-    }
-
-    @Override
-    public boolean wasProxied()
-    {
-        return undertowExchange.getAttachment(R7UndertowHandler.PROXY_START_TS_KEY) != null;
-    }
-
-    public void setUpstreamRequest(UnproxiedUpstreamRequest unproxiedUpstreamRequest)
-    {
-        this.upstreamRequest = unproxiedUpstreamRequest;
-    }
-
-    @Override
-    public boolean isShortCircuited()
-    {
-        return getShortCircuitGatewayResponse() != null;
     }
 }
