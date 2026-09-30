@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.core.proxy.NoAvailableTargetException;
 import com.ethlo.r7.core.proxy.ProxyConnectionException;
+import com.ethlo.r7.core.proxy.ProxyPoolExhaustedException;
 
 /**
  * Runs one proxied exchange on the calling thread, which must be allowed to block: pick a target,
@@ -28,19 +29,17 @@ public final class UpstreamRelay
      */
     public static void relay(final HttpUpstream upstream, final ProxiedExchange exchange, final String routeId) throws ProxyFailure
     {
-        final HttpUpstream.Target target = upstream.pick();
+        HttpUpstream.Target target = upstream.pick();
         if (target == null)
         {
             throw new ProxyFailure(503, "No upstream available", new NoAvailableTargetException("No target is up for " + routeId));
         }
-        exchange.attemptedTarget(target.uri);
 
         final UpstreamOptions options = upstream.options();
-        final byte[] head;
+        final long deadline = System.nanoTime() + options.maxRequestTime().toNanos();
         final long declaredLength;
         try
         {
-            head = Http1.requestHead(target, exchange);
             declaredLength = exchange.forwardHeaders().getFirst("Content-Length") != null ? Http1.requestContentLength(exchange.forwardHeaders()) : -1;
         }
         catch (final ClientProtocolException e)
@@ -48,12 +47,75 @@ public final class UpstreamRelay
             throw new ProxyFailure(400, "Bad request", null);
         }
         final Http1.Framing framing = Http1.Framing.ofRequest(exchange.forwardHeaders());
-        final Attempt attempt = new Attempt(declaredLength);
 
+        // A target that refuses the connection gets nothing, so the next one may be tried: once
+        // per target that is up, as Undertow's load balancer does.
+        for (int triesLeft = Math.max(1, upstream.targetCount()); ; )
+        {
+            exchange.attemptedTarget(target.uri);
+            try
+            {
+                exchangeWith(target, exchange, framing, declaredLength, deadline, options);
+                return;
+            }
+            catch (final ConnectFailedException e)
+            {
+                final HttpUpstream.Target next = --triesLeft > 0 ? upstream.pick() : null;
+                if (next == null)
+                {
+                    throw new ProxyFailure(503, "Upstream connection failed", new ProxyConnectionException("TCP Connection failed to: " + target.uri));
+                }
+                target = next;
+            }
+        }
+    }
+
+    /**
+     * A connection to a target could not be made; nothing was sent, so another target may be tried.
+     */
+    private static final class ConnectFailedException extends Exception
+    {
+        ConnectFailedException()
+        {
+            super(null, null, false, false);
+        }
+    }
+
+    private static void exchangeWith(final HttpUpstream.Target target, final ProxiedExchange exchange, final Http1.Framing framing, final long declaredLength,
+                                     final long deadline, final UpstreamOptions options) throws ProxyFailure, ConnectFailedException
+    {
+        final byte[] head;
+        try
+        {
+            head = Http1.requestHead(target, exchange);
+        }
+        catch (final ClientProtocolException e)
+        {
+            throw new ProxyFailure(400, "Bad request", null);
+        }
+        try
+        {
+            target.acquireSlot(deadline);
+        }
+        catch (final PoolExhaustedException e)
+        {
+            throw new ProxyFailure(503, "Upstream busy", new ProxyPoolExhaustedException(e.getMessage()));
+        }
+
+        final Attempt attempt = new Attempt(declaredLength);
         HttpUpstream.Connection connection = null;
         try
         {
-            connection = target.acquire();
+            try
+            {
+                connection = target.acquire();
+            }
+            catch (final ConnectException | SocketTimeoutException e)
+            {
+                // Refused, or no answer within the connect timeout: nothing was sent.
+                throw new ConnectFailedException();
+            }
+            HttpUpstream.track(connection, deadline);
             Http1.ResponseHead response;
             try
             {
@@ -65,13 +127,16 @@ public final class UpstreamRelay
                 {
                     throw e;
                 }
+                HttpUpstream.untrack(connection);
                 connection.close();
                 connection = target.connect();
+                HttpUpstream.track(connection, deadline);
                 attempt.requestFlushed = false;
                 response = exchangeHead(connection, exchange, head, framing, options, attempt);
             }
             final boolean reusable = relayResponse(connection, exchange, response, options);
-            if (reusable)
+            HttpUpstream.untrack(connection);
+            if (reusable && !connection.expired)
             {
                 target.release(connection);
             }
@@ -80,10 +145,6 @@ public final class UpstreamRelay
                 connection.close();
             }
             connection = null;
-        }
-        catch (final ConnectException e)
-        {
-            throw new ProxyFailure(503, "Upstream connection failed", new ProxyConnectionException("TCP Connection failed to: " + target.uri));
         }
         catch (final SocketTimeoutException e)
         {
@@ -100,14 +161,20 @@ public final class UpstreamRelay
         }
         catch (final IOException e)
         {
+            if (connection != null && connection.expired)
+            {
+                throw new ProxyFailure(504, "Upstream timed out", new SocketTimeoutException("The exchange with " + target.uri + " exceeded max_request_time"));
+            }
             throw new ProxyFailure(502, "Upstream failed", new ProxyConnectionException("Upstream exchange failed with " + target.uri + ": " + e.getMessage()));
         }
         finally
         {
             if (connection != null)
             {
+                HttpUpstream.untrack(connection);
                 connection.close();
             }
+            target.releaseSlot();
         }
     }
 

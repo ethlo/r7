@@ -184,10 +184,7 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
         {
             // The client every r7 server shares (design/upstream.md); requests are relayed on a
             // virtual thread by UndertowGatewayExchange.
-            final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(new TimeoutConfig(null));
-            final UpstreamOptions defaults = UpstreamOptions.defaults();
-            return new HttpUpstream(new UpstreamOptions(timeouts.read(), defaults.connectTimeout(), pConfig.ttl(),
-                    defaults.maxHeadBytes(), defaults.maxHeaderCount()));
+            return new HttpUpstream(UpstreamOptions.of(this.serverConfig, upstream));
         }
 
         final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient(UndertowClient.getInstance(), null, UpstreamHostSelectors.forStrategy(upstream.strategy()))

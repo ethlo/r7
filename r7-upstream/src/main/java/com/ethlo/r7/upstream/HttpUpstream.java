@@ -8,9 +8,17 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocket;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,8 +31,10 @@ import com.ethlo.r7.server.UpstreamHandle;
  * each exchange on a thread that may block, a virtual thread in practice, so a blocked read parks
  * that thread and nothing else.
  * <p>
- * Scope so far (design/upstream.md): HTTP/1.1 over plain TCP only - no upstream TLS, no
- * WebSocket tunnelling, no 100-continue. Names no server type, so every server shares it.
+ * HTTP/1.1, over TCP or TLS. Per target, at most {@link UpstreamOptions#maxConnectionsPerTarget}
+ * requests are in flight and at most {@link UpstreamOptions#maxQueuePerTarget} wait for one;
+ * every exchange is bounded by {@link UpstreamOptions#maxRequestTime}. Names no server type, so
+ * every server shares it.
  */
 public final class HttpUpstream implements UpstreamHandle
 {
@@ -52,13 +62,82 @@ public final class HttpUpstream implements UpstreamHandle
         return this.options;
     }
 
+    private SSLContext sslContext() throws IOException
+    {
+        if (this.options.sslContext() != null)
+        {
+            return this.options.sslContext();
+        }
+        try
+        {
+            return SSLContext.getDefault();
+        }
+        catch (final java.security.NoSuchAlgorithmException e)
+        {
+            throw new IOException("No default TLS context", e);
+        }
+    }
+
+    // --- Deadlines -----------------------------------------------------------------------------
+
+    /**
+     * Connections with an exchange in flight, for the sweeper. One registry and one thread for
+     * every upstream, not a timer task per request: at 100k requests a second a scheduled task
+     * each is an allocation and a contended heap operation each, and routes come and go on
+     * hot reload without anything to stop a thread of theirs.
+     */
+    private static final Set<Connection> IN_FLIGHT = ConcurrentHashMap.newKeySet();
+    private static final long SWEEP_MILLIS = 250;
+
+    static
+    {
+        Thread.ofPlatform().daemon().name("r7-upstream-deadlines").start(() ->
+        {
+            while (true)
+            {
+                try
+                {
+                    Thread.sleep(SWEEP_MILLIS);
+                    final long now = System.nanoTime();
+                    for (final Connection c : IN_FLIGHT)
+                    {
+                        if (now - c.deadline > 0)
+                        {
+                            // A read waits no longer than its timeout, but a write to an upstream
+                            // that stopped reading has no timeout at all: closing the socket is
+                            // what ends both.
+                            c.expired = true;
+                            c.close();
+                            IN_FLIGHT.remove(c);
+                        }
+                    }
+                }
+                catch (final InterruptedException e)
+                {
+                    return;
+                }
+                catch (final RuntimeException e)
+                {
+                    logger.warn("Upstream deadline sweep failed", e);
+                }
+            }
+        });
+    }
+
+    static void track(final Connection connection, final long deadline)
+    {
+        connection.deadline = deadline;
+        IN_FLIGHT.add(connection);
+    }
+
+    static void untrack(final Connection connection)
+    {
+        IN_FLIGHT.remove(connection);
+    }
+
     @Override
     public void onTargetUp(final URI target)
     {
-        if ("https".equalsIgnoreCase(target.getScheme()))
-        {
-            throw new IllegalArgumentException("The r7 upstream client does not support https upstreams yet: " + target);
-        }
         for (final Target existing : up)
         {
             if (existing.uri.equals(target))
@@ -83,6 +162,14 @@ public final class HttpUpstream implements UpstreamHandle
             }
             return false;
         });
+    }
+
+    /**
+     * How many targets are up: the most a request is worth trying.
+     */
+    int targetCount()
+    {
+        return this.up.size();
     }
 
     /**
@@ -117,16 +204,60 @@ public final class HttpUpstream implements UpstreamHandle
          */
         final String basePath;
         final String hostHeader;
+        final boolean secure;
         private final ConcurrentLinkedDeque<Connection> idle = new ConcurrentLinkedDeque<>();
+        private final Semaphore slots = new Semaphore(options.maxConnectionsPerTarget());
+        private final AtomicInteger waiting = new AtomicInteger();
 
         private Target(final URI uri)
         {
             this.uri = uri;
             this.host = uri.getHost();
-            this.port = uri.getPort() != -1 ? uri.getPort() : 80;
+            this.secure = "https".equalsIgnoreCase(uri.getScheme());
+            this.port = uri.getPort() != -1 ? uri.getPort() : (this.secure ? 443 : 80);
             final String path = uri.getRawPath();
             this.basePath = path == null || path.equals("/") ? "" : path;
             this.hostHeader = uri.getPort() != -1 ? host + ":" + port : host;
+        }
+
+        /**
+         * Takes one of the target's in-flight slots, waiting for one until {@code deadline} if
+         * all are taken and the queue has room.
+         *
+         * @throws PoolExhaustedException when the queue is full, or no slot came free in time
+         */
+        void acquireSlot(final long deadline) throws PoolExhaustedException
+        {
+            if (this.slots.tryAcquire())
+            {
+                return;
+            }
+            if (this.waiting.incrementAndGet() > options.maxQueuePerTarget())
+            {
+                this.waiting.decrementAndGet();
+                throw new PoolExhaustedException("Connection pool full for: " + this.uri);
+            }
+            try
+            {
+                if (!this.slots.tryAcquire(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
+                {
+                    throw new PoolExhaustedException("No connection to " + this.uri + " came free within max_request_time");
+                }
+            }
+            catch (final InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+                throw new PoolExhaustedException("Interrupted waiting for a connection to " + this.uri);
+            }
+            finally
+            {
+                this.waiting.decrementAndGet();
+            }
+        }
+
+        void releaseSlot()
+        {
+            this.slots.release();
         }
 
         /**
@@ -160,8 +291,21 @@ public final class HttpUpstream implements UpstreamHandle
             {
                 socket.setTcpNoDelay(true);
                 socket.connect(new InetSocketAddress(host, port), connectTimeoutMillis);
-                socket.setSoTimeout(readTimeoutMillis);
-                return new Connection(socket);
+                if (!secure)
+                {
+                    socket.setSoTimeout(readTimeoutMillis);
+                    return new Connection(socket);
+                }
+                // The handshake is bounded by the connect timeout, then reads by the read timeout.
+                socket.setSoTimeout(connectTimeoutMillis);
+                final SSLSocket tls = (SSLSocket) sslContext().getSocketFactory().createSocket(socket, host, port, true);
+                final SSLParameters parameters = tls.getSSLParameters();
+                // Verify the certificate names the host we meant, not just that some CA signed it.
+                parameters.setEndpointIdentificationAlgorithm("HTTPS");
+                tls.setSSLParameters(parameters);
+                tls.startHandshake();
+                tls.setSoTimeout(readTimeoutMillis);
+                return new Connection(tls);
             }
             catch (final IOException e)
             {
@@ -206,6 +350,11 @@ public final class HttpUpstream implements UpstreamHandle
         final OutputStream out;
         boolean reused;
         long idleSince;
+        volatile long deadline;
+        /**
+         * Closed by the sweeper because its exchange ran past max_request_time.
+         */
+        volatile boolean expired;
 
         Connection(final Socket socket) throws IOException
         {

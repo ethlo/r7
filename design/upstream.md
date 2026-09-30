@@ -144,7 +144,7 @@ the servlet host need them too, which is why they come before Undertow depends o
 
 | Gap | Today on Undertow | Plan |
 |---|---|---|
-| https upstreams | `UndertowXnioSsl` | `SSLSocket` from the JDK's default `SSLContext`, SNI and hostname verification on. |
+| https upstreams | `UndertowXnioSsl` | Done: `SSLSocket` from the JDK's default `SSLContext`, SNI and hostname verification on. |
 | WebSocket / 101 | `ProxyHandler` tunnels | After a 101, hand both sockets to two virtual threads copying bytes until either side closes. The server adapter exposes the client connection's raw streams. |
 | Pool limits and queueing | `connections_per_thread`, `max_queue_size` | A per-target semaphore, with waiters bounded by `max_queue_size`; beyond it, 503. |
 | `ttl` | idle-connection TTL | Idle connections carry their release time and are closed on acquire when older than `ttl`. |
@@ -379,8 +379,21 @@ check.
    So Undertow keeps its own client by default. Sharing one client with Undertow now means the
    non-blocking transport (the fallback under "The decision"), not a flag flip.
 
-5. **Close the gaps**, one PR each: https, WebSocket tunnelling, pool limits and queue, `ttl` and
-   `max_request_time`, connect-failure retry. Each adds its case to the conformance kit.
+5. **Close the gaps.** Done except WebSocket (below). `HttpUpstreamClientTest`:
+   - a target that refuses the connection is skipped for the next, once per target up;
+   - `max_request_time` bounds the whole exchange, pool wait included: one daemon thread
+     sweeps a registry of in-flight connections every 250 ms and closes the overdue ones,
+     which also ends the write with no timeout that step 2 left open. Not a timer task per
+     request - at 100k requests a second that is an allocation and a contended heap operation
+     each, and routes come and go on hot reload with nothing to stop a thread of theirs;
+   - per target, `connections_per_thread` x `io_threads` requests in flight (a semaphore) and
+     `max_queue_size` waiting, then 503 with `ProxyPoolExhaustedException`;
+   - https targets over `SSLSocket`, SNI and host-name verification on, the JVM's trust store.
+
+   All of it maps from configuration in `UpstreamOptions.of`, the one place both Undertow and
+   the thread-per-request servers read it. Per request on Níma against `main`: +2.5% user
+   instructions and +0.5% cycles on GET, +6% and +1.6% on POST.
+
 6. **Flip the default** to `r7` and delete what "What goes away" lists. The `undertow` value
    stays for one release as a way back. **Blocked** by step 4: not without a non-blocking
    transport for Undertow.
