@@ -3,6 +3,8 @@ package com.ethlo.r7.journal;
 import java.util.Collection;
 import java.util.Set;
 
+import com.ethlo.r7.util.AsciiCase;
+
 /**
  * A fixed set of header names with a case-insensitive membership test that allocates nothing.
  * <p>
@@ -71,7 +73,7 @@ public final class HeaderNameSet
             {
                 return false;
             }
-            if (equalsAsciiIgnoreCase(candidate, name))
+            if (AsciiCase.equalsIgnoreCase(candidate, name))
             {
                 return true;
             }
@@ -89,40 +91,18 @@ public final class HeaderNameSet
         table[index] = name;
     }
 
+    /**
+     * Folds with exactly the rule {@link AsciiCase#equalsIgnoreCase} folds with. A comparison
+     * that considered two names equal where the hash had placed them in different buckets would
+     * make membership depend on insertion order.
+     */
     private static int hash(final String s)
     {
         int h = 0;
         for (int i = 0, len = s.length(); i < len; i++)
         {
-            h = 31 * h + toLowerAscii(s.charAt(i));
+            h = 31 * h + AsciiCase.toLower(s.charAt(i));
         }
         return h ^ (h >>> 16);
-    }
-
-    /**
-     * Folds with exactly the rule {@link #hash} folds with. A comparison that considered two
-     * names equal where the hash had placed them in different buckets would make membership
-     * depend on insertion order.
-     */
-    private static boolean equalsAsciiIgnoreCase(final String a, final String b)
-    {
-        final int len = a.length();
-        if (len != b.length())
-        {
-            return false;
-        }
-        for (int i = 0; i < len; i++)
-        {
-            if (toLowerAscii(a.charAt(i)) != toLowerAscii(b.charAt(i)))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static char toLowerAscii(final char c)
-    {
-        return (c >= 'A' && c <= 'Z') ? (char) (c + 'a' - 'A') : c;
     }
 }

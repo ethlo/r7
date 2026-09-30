@@ -48,7 +48,12 @@ public abstract class ArrayBackedPairStorage<K, V>
 
     protected void removeInternal(K key)
     {
-        for (int i = 0; i < size; i += 2)
+        removeFrom(0, key);
+    }
+
+    private void removeFrom(final int start, final K key)
+    {
+        for (int i = start; i < size; i += 2)
         {
             if (keysEqual(key, (K) data[i]))
             {
@@ -103,7 +108,11 @@ public abstract class ArrayBackedPairStorage<K, V>
             int idx = findKey(key);
             if (idx != -1)
             {
+                // Set replaces every value for the key, so later duplicates go too. The first
+                // entry keeps its slot and its stored key, which for a case-insensitive
+                // container is the casing it was first written with.
                 data[idx + 1] = value;
+                removeFrom(idx + 2, key);
                 return;
             }
         }

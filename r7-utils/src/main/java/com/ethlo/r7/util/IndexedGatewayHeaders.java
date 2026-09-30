@@ -69,7 +69,7 @@ public final class IndexedGatewayHeaders implements GatewayHeaders
     {
         for (int i = 0; i < size; i++)
         {
-            if (names[i].equalsIgnoreCase(name))
+            if (AsciiCase.equalsIgnoreCase(names[i], name))
             {
                 return values[i];
             }
@@ -83,7 +83,7 @@ public final class IndexedGatewayHeaders implements GatewayHeaders
         final List<String> all = new ArrayList<>();
         for (int i = 0; i < size; i++)
         {
-            if (names[i].equalsIgnoreCase(name))
+            if (AsciiCase.equalsIgnoreCase(names[i], name))
             {
                 all.add(values[i]);
             }

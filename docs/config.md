@@ -28,7 +28,7 @@ Configuration values support environment variable injection using the `${VAR_NAM
 
 ### Header Case Sensitivity
 
-In strict accordance with RFC 7230, **all HTTP header evaluations in r7 are case-insensitive**. This applies to predicate matching (`RequestHeader`), filter mutations (`SetRequestHeader`), and CORS validations.
+In strict accordance with RFC 7230, **all HTTP header evaluations in r7 are case-insensitive**. This applies to predicate matching (`RequestHeader`), filter mutations (`SetRequestHeader`), and CORS validations. It also holds for the headers a journal consumer reads back through `R7Tailer`: a lookup for `content-type` finds a header journaled as `Content-Type`, while iteration still shows each name as it was written. Folding is ASCII-only and does not depend on the JVM's default locale.
 
 ---
 
