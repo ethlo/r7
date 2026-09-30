@@ -9,6 +9,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayFilter;
+import com.ethlo.r7.api.GatewayExchange;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
@@ -37,12 +38,7 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
     public ClientResponseGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
         final MetricsRegistry metricsRegistry = filterCreationContext.engine().getRequired(MetricsRegistry.class);
-        final RouteMetricsBucket persistentBucket = metricsRegistry.getOrCreate(
-                filterCreationContext.routeId(),
-                config.capacity(),
-                config.interval()
-        );
-        return new GF(persistentBucket);
+        return new GF(metricsRegistry, config);
     }
 
     public record Config(Duration period, Duration interval) implements ValidatableConfig
@@ -67,47 +63,69 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
 
     public static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
     {
-        private final RouteMetricsBucket bucket;
+        private final MetricsRegistry metricsRegistry;
+        private final Config config;
 
-        public GF(final RouteMetricsBucket routeMetricsBucket)
+        public GF(final MetricsRegistry metricsRegistry, final Config config)
         {
-            this.bucket = routeMetricsBucket;
+            this.metricsRegistry = metricsRegistry;
+            this.config = config;
+        }
+
+        /**
+         * Resolved per exchange, by the route that actually matched it, rather than bound once
+         * at construction time: when this filter is declared in {@code global_filters}, one
+         * instance is now shared by every route (see M5 in the filter-runtime review), so a
+         * bucket fixed at creation would put every route's traffic into whichever single route
+         * happened to be in scope when the shared instance was built - the fallback route's own
+         * declaration is the one exception, since a fallback runs with the matched route's own
+         * started instances (see DefaultGatewayRoute#asFallbackOfThis), not this method.
+         * Route-scoped (non-global) declarations still get one instance per route, so this
+         * always resolves to the same bucket for them; the lookup is a plain map access, not an
+         * allocation.
+         */
+        private RouteMetricsBucket bucketFor(final GatewayExchange exchange)
+        {
+            return this.metricsRegistry.getOrCreate(exchange.route().id(), this.config.capacity(), this.config.interval());
         }
 
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
-            this.bucket.incrementTotalRequests();
-            this.bucket.incrementActiveRequests();
+            final RouteMetricsBucket bucket = this.bucketFor(exchange);
+            bucket.incrementTotalRequests();
+            bucket.incrementActiveRequests();
         }
 
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            this.bucket.incrementUpstreamRequests();
+            this.bucketFor(exchange).incrementUpstreamRequests();
         }
 
         @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
             final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
+            final RouteMetricsBucket bucket = this.bucketFor(exchange);
             if (undertowExchange.isWebsocketUpgraded())
             {
-                undertowExchange.onWebSocketClose(this.bucket::decrementActiveWsRequests);
-                this.bucket.incrementActiveWsRequests();
-                this.bucket.incrementTotalWsRequests();
+                undertowExchange.onWebSocketClose(bucket::decrementActiveWsRequests);
+                bucket.incrementActiveWsRequests();
+                bucket.incrementTotalWsRequests();
             }
 
-            this.bucket.setLastActiveTime(System.currentTimeMillis());
+            bucket.setLastActiveTime(System.currentTimeMillis());
         }
 
         @Override
         public void onCompleted(final CompletedGatewayExchange exchange)
         {
             final UndertowGatewayExchange undertowExchange = (UndertowGatewayExchange) exchange;
-            this.bucket.decrementActiveRequests();
+            final RouteMetricsBucket bucket = this.bucketFor(exchange);
+            bucket.decrementActiveRequests();
 
-            this.bucket.addTrafficMetrics(
+            bucket.addTrafficMetrics(
                     undertowExchange.getTrafficMetrics().requestHeaderBytes(),
                     undertowExchange.getTrafficMetrics().requestBodyBytes(),
                     undertowExchange.getTrafficMetrics().responseHeaderBytes(),
@@ -117,11 +135,11 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
             );
 
             final int clientStatus = exchange.clientResponse() != null ? exchange.clientResponse().status() : 0;
-            this.bucket.recordClientStatus(clientStatus);
+            bucket.recordClientStatus(clientStatus);
 
             if (undertowExchange.wasProxied())
             {
-                this.bucket.recordUpstreamStatus(exchange.upstreamResponse().status());
+                bucket.recordUpstreamStatus(exchange.upstreamResponse().status());
             }
         }
 
