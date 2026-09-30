@@ -193,43 +193,6 @@ volumes:
 
 ```
 
-### ClickHouse Tailer
-
-!!! important
-    Not yet ready!
-
-**Image:** `ghcr.io/ethlo/r7-tailer-clickhouse:latest`
-
-For extremely high-throughput environments, storing access logs in a standard inverted-index database (like Elasticsearch) becomes prohibitively expensive. ClickHouse is a columnar database uniquely suited for this scale.
-
-This tailer reads the binary journals and performs optimized, asynchronous batch inserts directly into ClickHouse using the `JSONEachRow` format.
-
-**Example Docker Compose Integration:**
-
-```yaml
-services:
-  r7-api:
-    image: ghcr.io/ethlo/r7-gateway:latest
-    volumes:
-      - r7-journals:/journals:rw
-
-  r7-tailer-clickhouse:
-    image: ghcr.io/ethlo/r7-tailer-clickhouse:latest
-    volumes:
-      - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
-    environment:
-      - JOURNAL_DIR=/journals
-      - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse-server:8123/r7_logs
-      - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=secret
-      - BATCH_SIZE=10000
-      - FLUSH_INTERVAL=1s
-
-volumes:
-  r7-journals:
-
-```
-
 ## 4. Retention: The Reaper
 
 **Image:** `ghcr.io/ethlo/r7-reaper:latest`
@@ -303,5 +266,4 @@ Once your data is routed through a tailer:
 
 * **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like `duration`, `status`, or specific headers).
 * **If using the WARC Tailer:** WARC files are for archival/replay, not dashboards — feed them to a WARC-aware tool (e.g. [pywb](https://github.com/webrecorder/pywb)) to replay captured traffic, or to an indexer for forensic search.
-* **If using the ClickHouse Tailer:** Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the `r7_logs` table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.
-* **If using the ClickHouse Tailer:** Install the official ClickHouse plugin for Grafana. You can write standard SQL queries against the `r7_logs` table to build blazing-fast dashboards for latency percentiles, error rates, and traffic volume.
+* **Into ClickHouse:** r7 ships no ClickHouse tailer. Point the JSON Tailer's `output_path` at a file and batch-insert its lines with a loader of your own (they are one JSON object per line, which ClickHouse reads as `JSONEachRow`), then query them from Grafana with the ClickHouse plugin.
