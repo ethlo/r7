@@ -162,21 +162,6 @@ public final class TrafficMetricsHandler implements HttpHandler
         return size;
     }
 
-    public interface TrafficMetrics
-    {
-        long requestHeaderBytes();
-
-        long requestBodyBytes();
-
-        long responseHeaderBytes();
-
-        long responseBodyBytes();
-
-        long totalRequestBytes();
-
-        long totalResponseBytes();
-    }
-
     // --- Internal Conduit Wrappers ---
 
     private static final class CountingSourceConduit extends AbstractStreamSourceConduit<StreamSourceConduit>
