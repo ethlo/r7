@@ -108,6 +108,11 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
         return this.virtualThreadExecutor;
     }
 
+    public GatewayPipeline pipeline()
+    {
+        return this.pipeline;
+    }
+
     GatewayErrorHandler errorHandler()
     {
         return this.errorHandler;

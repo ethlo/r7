@@ -38,6 +38,7 @@ import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.status.FileTelemetryRepository;
 import com.ethlo.r7.status.MetricsRegistry;
+import com.ethlo.r7.status.ManagementEndpoint;
 import com.ethlo.r7.status.StatusHandler;
 import com.ethlo.r7.status.TelemetryRepository;
 import com.ethlo.r7.status.TrafficMetricsHandler;
@@ -47,6 +48,7 @@ import com.ethlo.r7.validation.ValidationResult;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
+import io.undertow.server.ConnectorStatistics;
 import io.undertow.server.DefaultByteBufferPool;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.GracefulShutdownHandler;
@@ -57,6 +59,8 @@ public final class R7Main
     private final GracefulShutdownHandler gracefulShutdownHandler;
     private final Undertow server;
     private final Undertow managementServer;
+    // Set once the data listener has started; the management endpoint reads it per request.
+    private volatile ConnectorStatistics connectorStatistics;
     private final ShardedJournalWriter<R7fJournal> journalWriter;
     private final Thread shutdownHook;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -116,7 +120,9 @@ public final class R7Main
         this.server = builder.build();
 
         final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
-        final StatusHandler statusHandler = new StatusHandler(metricsRegistry, serverConfig, serverConfigFile, routeRegistry, hotReloadService, r7UndertowHandler);
+        final ManagementEndpoint managementEndpoint = new ManagementEndpoint(metricsRegistry, serverConfig, serverConfigFile, routeRegistry, hotReloadService,
+                r7UndertowHandler.pipeline(), () -> StatusHandler.toDto(this.connectorStatistics));
+        final StatusHandler statusHandler = new StatusHandler(managementEndpoint);
 
         this.managementServer = setupStatusBackend(statusHandler, serverConfig.management(), sharedWorker);
 
@@ -133,7 +139,7 @@ public final class R7Main
         server.start();
 
         // Have to happen after start
-        statusHandler.setConnectorStatistics(server.getListenerInfo().getFirst().getConnectorStatistics());
+        this.connectorStatistics = server.getListenerInfo().getFirst().getConnectorStatistics();
 
         final Duration uptime = SystemUtil.getUptime();
         logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms", VersionProvider.getVersion(), uptime.toMillis());

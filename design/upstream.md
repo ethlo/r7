@@ -384,3 +384,27 @@ check.
 6. **Flip the default** to `r7` and delete what "What goes away" lists. The `undertow` value
    stays for one release as a way back. **Blocked** by step 4: not without a non-blocking
    transport for Undertow.
+
+---
+
+## Helidon parity, for the decision on switching servers
+
+Undertow keeps its own client for now (step 4); whether r7 moves to Níma altogether is decided
+later. Meanwhile Níma gains what it lacks, one PR each:
+
+- **Management port.** Done. The dashboard and its JSON are `ManagementEndpoint` in `r7-server`,
+  which Undertow's `StatusHandler` now adapts and Níma serves on a second listener
+  (`putSocket`) with its own connection cap and idle timeout. `SimpleMetrics` and the
+  `MetricsRegistry` moved to `r7-server` with it, so the filter works on every server.
+
+  **Gap found:** Níma has no request-head timeout. Its idle sweep does not close a connection
+  stalled in a partial head, and neither does a socket read timeout in its connection options,
+  so `request_parse_timeout` cannot be honoured - on the management listener or the data
+  plane's. `HelidonManagementPortTest.anUnfinishedRequestHeadIsClosed` states the expectation
+  and is disabled until it can be met. Undertow bounds this with `REQUEST_PARSE_TIMEOUT`. It
+  weighs on the switch: a client that opens connections and trickles a head holds descriptors
+  indefinitely.
+- **Static content**, in `r7-server-blocking` so Níma and the servlet host serve it alike.
+- **HTTP/2** with `helidon-webserver-http2`; the upstream hop stays HTTP/1.1.
+- **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
+
