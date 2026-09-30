@@ -94,16 +94,23 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
         }
     }
 
+    /**
+     * Walks the map with its cookie-based iteration and reads values by index: no iterator object
+     * per header, which the request path pays for on every request (the upstream header sanitizer
+     * scans every header). Only non-empty entries are visited, which is all the Iterable form ever
+     * yielded values for.
+     */
     @Override
     public int forEach(EntryConsumer consumer)
     {
         int totalCount = 0;
-        for (HeaderValues values : headerMap)
+        for (long cookie = headerMap.fastIterateNonEmpty(); cookie != -1L; cookie = headerMap.fiNextNonEmpty(cookie))
         {
-            final HttpString hs = values.getHeaderName();
-            for (String value : values)
+            final HeaderValues values = headerMap.fiCurrent(cookie);
+            final String name = values.getHeaderName().toString();
+            for (int i = 0, n = values.size(); i < n; i++)
             {
-                consumer.accept(hs.toString(), value);
+                consumer.accept(name, values.get(i));
                 totalCount++;
             }
         }
@@ -122,14 +129,14 @@ public final class UndertowGatewayHeaders implements MutableGatewayHeaders
     public <S> int forEach(S state, StatefulEntryConsumer<S> consumer)
     {
         int count = 0;
-        for (HeaderValues headerValues : headerMap)
+        for (long cookie = headerMap.fastIterateNonEmpty(); cookie != -1L; cookie = headerMap.fiNextNonEmpty(cookie))
         {
-            final HttpString hm = headerValues.getHeaderName();
-            final String name = hm.toString();
-            for (String value : headerValues)
+            final HeaderValues values = headerMap.fiCurrent(cookie);
+            final String name = values.getHeaderName().toString();
+            for (int i = 0, n = values.size(); i < n; i++)
             {
                 // Pass the state explicitly
-                consumer.accept(state, name, value);
+                consumer.accept(state, name, values.get(i));
                 count++;
             }
         }

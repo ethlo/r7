@@ -15,7 +15,7 @@ import io.undertow.util.HttpString;
 /**
  * A plain carrier for an in-flight request's Undertow-backed state. It does not decide
  * anything about the request (e.g. which address it is attributed to) — that is resolved
- * up front by {@link RemoteAddressResolver} and handed in, keeping this class free of config.
+ * up front by {@link com.ethlo.r7.server.RemoteAddressResolver} and handed in, keeping this class free of config.
  */
 public final class UndertowGatewayRequest implements MutableGatewayRequest
 {

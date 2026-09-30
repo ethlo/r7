@@ -1,15 +1,18 @@
 package com.ethlo.r7.undertow;
 
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayResponse;
+import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.server.GatewayPipeline;
+import com.ethlo.r7.server.RemoteAddressResolver;
 import com.ethlo.r7.server.ServerExchange;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.status.TrafficMetrics;
@@ -64,7 +67,7 @@ public class UndertowGatewayExchange extends ServerExchange
 
     private final HttpServerExchange undertowExchange;
     private final R7UndertowHandler handler;
-    private RemoteAddressResolver.RemoteInfo remoteInfo;
+    private MutableGatewayHeaders requestHeaders;
 
     UndertowGatewayExchange(final HttpServerExchange undertowExchange, final GatewayPipeline pipeline, final R7UndertowHandler handler)
     {
@@ -93,25 +96,29 @@ public class UndertowGatewayExchange extends ServerExchange
         return this.undertowExchange.getRequestStartTime();
     }
 
-    // --- Request hygiene ---------------------------------------------------------------------
+    @Override
+    protected MutableGatewayHeaders requestHeaders()
+    {
+        MutableGatewayHeaders headers = this.requestHeaders;
+        if (headers == null)
+        {
+            headers = new UndertowGatewayHeaders(this.undertowExchange.getRequestHeaders());
+            this.requestHeaders = headers;
+        }
+        return headers;
+    }
 
     @Override
-    protected boolean hasCanonicalTransferEncoding()
+    protected InetSocketAddress peerAddress()
     {
-        return TransferEncodingGuard.isAcceptable(this.undertowExchange.getRequestHeaders());
+        return this.undertowExchange.getSourceAddress();
     }
 
     @Override
     protected MutableGatewayRequest openLiveRequest()
     {
-        this.remoteInfo = this.handler.remoteAddressResolver().resolve(this.undertowExchange);
-        return new UndertowGatewayRequest(this.undertowExchange, this.remoteInfo.address(), this.remoteInfo.source());
-    }
-
-    @Override
-    protected boolean isTrustedPeer()
-    {
-        return this.remoteInfo.trustedPeer();
+        final RemoteAddressResolver.RemoteInfo remote = remoteInfo();
+        return new UndertowGatewayRequest(this.undertowExchange, remote.address(), remote.source());
     }
 
     @Override
@@ -125,15 +132,9 @@ public class UndertowGatewayExchange extends ServerExchange
                 exchange.getRequestMethod().toString(),
                 new UndertowQueryParams(exchange.getQueryString(), exchange.getQueryParameters()),
                 new UndertowMutableCookies(exchange),
-                this.remoteInfo.address(),
-                this.remoteInfo.source()
+                remoteInfo().address(),
+                remoteInfo().source()
         );
-    }
-
-    @Override
-    protected void sanitizeUpstreamHeaders(final boolean trustedPeer)
-    {
-        UpstreamHeaderSanitizer.sanitize(this.undertowExchange.getRequestHeaders(), trustedPeer);
     }
 
     @Override

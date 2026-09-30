@@ -1,30 +1,35 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
-import io.undertow.util.HeaderMap;
-import io.undertow.util.Headers;
 
 class TransferEncodingGuardTest
 {
-    private static HeaderMap te(final String... values)
+    private static TestHeaders te(final String... values)
     {
-        final HeaderMap map = new HeaderMap();
+        final TestHeaders headers = new TestHeaders();
         for (final String value : values)
         {
-            map.add(Headers.TRANSFER_ENCODING, value);
+            headers.add("Transfer-Encoding", value);
         }
-        return map;
+        return headers;
     }
 
     @Test
     void acceptsAbsentOrExactlyChunked()
     {
-        assertThat(TransferEncodingGuard.isAcceptable(new HeaderMap())).isTrue();
+        assertThat(TransferEncodingGuard.isAcceptable(new TestHeaders())).isTrue();
         assertThat(TransferEncodingGuard.isAcceptable(te("chunked"))).isTrue();
         assertThat(TransferEncodingGuard.isAcceptable(te("Chunked "))).isTrue();
+    }
+
+    @Test
+    void readsTheHeaderInAnyCase()
+    {
+        final TestHeaders headers = TestHeaders.of("transfer-encoding", "chunked, identity");
+        assertThat(TransferEncodingGuard.isAcceptable(headers)).isFalse();
     }
 
     @Test

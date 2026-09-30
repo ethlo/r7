@@ -6,6 +6,14 @@ import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 
 /**
+ * <b>Frozen reference, test use only.</b> The {@code HeaderMap}-based sanitizer as it was when it
+ * last ran in production (r7-undertow, before the pipeline moved to r7-server), kept unchanged so
+ * {@code UpstreamHeaderSanitizerEquivalenceTest} can show that the server-neutral
+ * {@link com.ethlo.r7.server.UpstreamHeaderSanitizer} does exactly what it did. Do not fix or
+ * extend it: a change here would stop it being the thing the new code is compared against.
+ * <p>
+ * Original documentation follows.
+ * <p>
  * Removes the client headers that must not reach an upstream as the client wrote them.
  * <p>
  * Undertow's {@code ProxyHandler} copies every inbound request header to the upstream request,
@@ -16,7 +24,7 @@ import io.undertow.util.HttpString;
  *   that honours {@code Connection: X-Forwarded-For, ...} deletes the headers the client names
  *   there, so a client could strip the forwarding headers the gateway itself set.</li>
  *   <li><b>Forwarding and client-identity headers</b> ({@code X-Real-IP}, {@code Forwarded},
- *   {@code X-Forwarded-*}, ...). {@link RemoteAddressResolver} already refuses to believe them
+ *   {@code X-Forwarded-*}, ...). {@code RemoteAddressResolver} already refuses to believe them
  *   from a peer that is not a trusted proxy, but the upstream never learns that and would
  *   believe them instead. They are removed for untrusted peers, so the proxy writes fresh
  *   {@code X-Forwarded-*} values, and kept for trusted ones, so the proxy extends their
@@ -25,7 +33,7 @@ import io.undertow.util.HttpString;
  * Runs on the live request headers after the client-request snapshot is taken, so filters and
  * the journal still see what the client actually sent.
  */
-public final class UpstreamHeaderSanitizer
+final class LegacyHeaderMapSanitizer
 {
     private static final HttpString PROXY_CONNECTION = new HttpString("Proxy-Connection");
 
@@ -65,7 +73,7 @@ public final class UpstreamHeaderSanitizer
      */
     private static final int X_FORWARDED_PREFIX_LENGTH = 1 + 1 + FORWARDED_BYTES.length + 1;
 
-    private UpstreamHeaderSanitizer()
+    private LegacyHeaderMapSanitizer()
     {
     }
 

@@ -51,6 +51,7 @@ import com.ethlo.r7.status.PeriodicUpstreamHealthMonitor;
 import com.ethlo.r7.status.TrafficMetrics;
 import com.ethlo.r7.status.UpstreamHealthMonitor;
 import com.ethlo.r7.time.ClockSource;
+import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.RegexBudget;
@@ -104,6 +105,7 @@ public final class GatewayPipeline
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
     private final HeaderFingerprint headerFingerprint;
+    private final RemoteAddressResolver remoteAddressResolver;
 
     public GatewayPipeline(final ServerConfig serverConfig, final RouteRegistry routeRegistry, final ShardedJournalWriter<? extends Journal> journalWriter,
                            final GatewayErrorHandler errorHandler, final GatewayScheduler scheduler, final UpstreamConnector upstreamConnector)
@@ -113,6 +115,12 @@ public final class GatewayPipeline
         this.errorHandler = errorHandler;
         this.scheduler = scheduler;
         this.upstreamConnector = upstreamConnector;
+
+        // server.yaml is loaded once at startup (unlike routes.yaml, it is not hot-reloaded),
+        // so parsing the configured CIDRs here means every request reuses the same immutable
+        // resolver instead of re-parsing it.
+        this.remoteAddressResolver = new RemoteAddressResolver(
+                serverConfig.limits().trustedProxies().stream().map(CidrRange::parse).toList());
 
         // The safe-header whitelist is resolved once against the built-in policy here, so every
         // exchange's StatefulJournal reuses the same HeaderNameSet instead of rebuilding it per
@@ -148,9 +156,9 @@ public final class GatewayPipeline
         // First of all, framing: a Transfer-Encoding the upstream may parse differently from the
         // server would let the two disagree on where this request's body ends. Checked before
         // anything else can answer, so no other rejection keeps such a connection alive.
-        if (!ex.hasCanonicalTransferEncoding())
+        if (!TransferEncodingGuard.isAcceptable(ex.requestHeaders()))
         {
-            logger.debug("Rejecting non-canonical Transfer-Encoding");
+            logger.debug("Rejecting non-canonical Transfer-Encoding: {}", ex.requestHeaders().getAll("Transfer-Encoding"));
             ex.closeConnectionAfterResponse();
             refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate(), "transfer_encoding");
             return;
@@ -176,7 +184,7 @@ public final class GatewayPipeline
             return;
         }
 
-        ex.liveRequest = ex.openLiveRequest();
+        openLiveRequest(ex);
         final DefaultGatewayRoute route;
         try
         {
@@ -203,6 +211,12 @@ public final class GatewayPipeline
         executeRequestFilters(ex, route, 0);
     }
 
+    private void openLiveRequest(final ServerExchange ex)
+    {
+        ex.remote = this.remoteAddressResolver.resolve(ex.peerAddress(), ex.requestHeaders());
+        ex.liveRequest = ex.openLiveRequest();
+    }
+
     /**
      * Everything a request needs before its filters run: its ID, the snapshot filters and the
      * journal see, the exchange's own state, and the journal entry opened at the route's levels.
@@ -215,7 +229,7 @@ public final class GatewayPipeline
         ex.clientRequest = ex.snapshotClientRequest();
         // After the snapshot: filters and the journal keep seeing what the client sent, while
         // the live headers - which are what the proxy copies upstream - lose what must not pass.
-        ex.sanitizeUpstreamHeaders(ex.isTrustedPeer());
+        UpstreamHeaderSanitizer.sanitize(ex.requestHeaders(), ex.remote.trustedPeer());
         ex.clientResponse = ex.openClientResponse();
         ex.attributes = new FastGatewayAttributes();
         ex.upstreamRequest = ex.liveRequest;
@@ -251,7 +265,7 @@ public final class GatewayPipeline
         }
         if (ex.liveRequest == null)
         {
-            ex.liveRequest = ex.openLiveRequest();
+            openLiveRequest(ex);
         }
         open(ex, unrouted);
         ex.attributes().set(UNROUTED_REASON_KEY, reason);

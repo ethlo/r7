@@ -39,7 +39,6 @@ import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.UpstreamConnector;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.server.config.ServerConfig;
-import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import io.undertow.client.UndertowClient;
@@ -81,7 +80,6 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     private final ServerConfig serverConfig;
     private final GatewayErrorHandler errorHandler;
     private final GatewayPipeline pipeline;
-    private final RemoteAddressResolver remoteAddressResolver;
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private volatile UndertowXnioSsl xnioSsl;
 
@@ -89,12 +87,6 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     {
         this.serverConfig = serverConfig;
         this.errorHandler = errorHandler;
-
-        // server.yaml is loaded once at startup (unlike routes.yaml, it is not hot-reloaded),
-        // so parsing the configured CIDRs here means every request reuses the same immutable
-        // resolver instead of re-parsing it.
-        this.remoteAddressResolver = new RemoteAddressResolver(
-                serverConfig.limits().trustedProxies().stream().map(CidrRange::parse).toList());
 
         this.pipeline = new GatewayPipeline(serverConfig, routeRegistry, gatewayExchangeDataWriter, errorHandler, scheduler, this);
     }
@@ -107,11 +99,6 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
         // DiagnosticProxyClient's error reporting, find the exchange through it.
         exchange.putAttachment(GATEWAY_EXCHANGE_KEY, gatewayExchange);
         this.pipeline.handle(gatewayExchange);
-    }
-
-    RemoteAddressResolver remoteAddressResolver()
-    {
-        return this.remoteAddressResolver;
     }
 
     ExecutorService virtualThreadExecutor()

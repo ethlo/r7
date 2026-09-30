@@ -1,5 +1,6 @@
 package com.ethlo.r7.server;
 
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 
@@ -11,6 +12,7 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayResponse;
 import com.ethlo.r7.api.GatewayRouteInfo;
 import com.ethlo.r7.api.MutableGatewayAttributes;
+import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
@@ -30,11 +32,11 @@ import com.ethlo.r7.time.ClockSource;
  * one server loaded, every abstract method here has one implementation and the JIT inlines it.
  * The pipeline's state is plain fields for the same reason; there is no side object holding it.
  * <p>
- * The hooks fall into four groups: the request as the server parsed it; the server's own request
- * hygiene, which stays with the server until the shared security test kit can prove a
- * server-neutral version equivalent (design/server-spi.md, step 4); answering, teeing and proxying;
- * and the two listener registrations through which the server hands the exchange back to the
- * pipeline when the response commits and when the exchange completes.
+ * The hooks fall into three groups: the request as the server parsed it; answering, teeing and
+ * proxying; and the two listener registrations through which the server hands the exchange back
+ * to the pipeline when the response commits and when the exchange completes. Request hygiene -
+ * framing, hop-by-hop and forwarding headers, the client address - is the pipeline's, applied to
+ * what the server exposes here, so every server gets the same checks.
  */
 public abstract class ServerExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange, Runnable
 {
@@ -50,6 +52,8 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     MutableGatewayAttributes attributes;
     StatefulJournal journal;
 
+    // Who the request is attributed to, and whether its peer may make forwarding claims.
+    RemoteAddressResolver.RemoteInfo remote;
     // The live request: what the predicates match, the filters change and the proxy forwards.
     MutableGatewayRequest liveRequest;
     MutableGatewayRequest upstreamRequest;
@@ -86,6 +90,14 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
         return this.pipeline;
     }
 
+    /**
+     * Who the request is attributed to. Set before {@link #openLiveRequest()} is called.
+     */
+    protected final RemoteAddressResolver.RemoteInfo remoteInfo()
+    {
+        return this.remote;
+    }
+
     // --- The request as the server parsed it -------------------------------------------------
 
     /**
@@ -103,36 +115,30 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
      */
     protected abstract long requestStartNanos();
 
-    // --- The server's own request hygiene ----------------------------------------------------
-
     /**
-     * Whether the request's {@code Transfer-Encoding} is absent or exactly {@code chunked}, the one
-     * form every HTTP/1.1 parser reads the same way.
+     * The live request headers: what the proxy will copy upstream. Names must match ignoring
+     * case. The pipeline checks their framing and removes hop-by-hop and untrusted forwarding
+     * headers from them before any filter runs.
      */
-    protected abstract boolean hasCanonicalTransferEncoding();
+    protected abstract MutableGatewayHeaders requestHeaders();
 
     /**
-     * Resolves the client address - socket peer or trusted forwarding headers - and returns the live
-     * request carrying it. Called once per exchange, before routing.
+     * The address of the connection's immediate peer, or {@code null} if the server does not
+     * know it.
+     */
+    protected abstract InetSocketAddress peerAddress();
+
+    /**
+     * The live request, attributed to {@link #remoteInfo()}. Called once per exchange, before
+     * routing.
      */
     protected abstract MutableGatewayRequest openLiveRequest();
 
     /**
-     * Whether the connection's peer is a trusted proxy. Valid after {@link #openLiveRequest()}.
-     */
-    protected abstract boolean isTrustedPeer();
-
-    /**
-     * An immutable copy of the request as it arrived, for filters and the journal. Taken before
-     * {@link #sanitizeUpstreamHeaders(boolean)} changes the live headers.
+     * An immutable copy of the request as it arrived, for filters and the journal, attributed to
+     * {@link #remoteInfo()}. Taken before the pipeline sanitises the live headers.
      */
     protected abstract GatewayRequest snapshotClientRequest();
-
-    /**
-     * Removes from the live request headers what must not reach the upstream: hop-by-hop headers,
-     * and forwarding claims an untrusted peer made.
-     */
-    protected abstract void sanitizeUpstreamHeaders(boolean trustedPeer);
 
     /**
      * The response as the server will send it: status and headers are read and written live.
