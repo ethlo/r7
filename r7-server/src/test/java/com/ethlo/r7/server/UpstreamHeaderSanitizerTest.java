@@ -1,28 +1,21 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
-import io.undertow.util.HeaderMap;
-import io.undertow.util.HttpString;
 
 class UpstreamHeaderSanitizerTest
 {
-    private static HeaderMap headers(final String... pairs)
+    private static TestHeaders headers(final String... pairs)
     {
-        final HeaderMap map = new HeaderMap();
-        for (int i = 0; i < pairs.length; i += 2)
-        {
-            map.add(new HttpString(pairs[i]), pairs[i + 1]);
-        }
-        return map;
+        return TestHeaders.of(pairs);
     }
 
     @Test
     void removesHopByHopHeadersAndTheOnesConnectionNames()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "Connection", "keep-alive, X-Forwarded-For, X-Custom",
                 "Connection", "X-Other",
                 "Keep-Alive", "timeout=5",
@@ -36,14 +29,14 @@ class UpstreamHeaderSanitizerTest
 
         UpstreamHeaderSanitizer.sanitize(map, true);
 
-        assertThat(map.getHeaderNames()).extracting(HttpString::toString)
+        assertThat(map.names())
                 .containsExactlyInAnyOrder("Authorization", "Accept");
     }
 
     @Test
     void neverRemovesFramingOrHostOnTheClientsSayingSo()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "Connection", "Content-Length, Transfer-Encoding, Host",
                 "Content-Length", "3",
                 "Transfer-Encoding", "chunked",
@@ -54,13 +47,13 @@ class UpstreamHeaderSanitizerTest
         assertThat(map.getFirst("Content-Length")).isEqualTo("3");
         assertThat(map.getFirst("Transfer-Encoding")).isEqualTo("chunked");
         assertThat(map.getFirst("Host")).isEqualTo("example.com");
-        assertThat(map.contains("Connection")).isFalse();
+        assertThat(map.getFirst("Connection")).isNull();
     }
 
     @Test
     void keepsAWebSocketUpgradeAndNothingElseInConnection()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "Connection", "Upgrade, X-Drop",
                 "Upgrade", "websocket",
                 "X-Drop", "1");
@@ -68,26 +61,26 @@ class UpstreamHeaderSanitizerTest
         UpstreamHeaderSanitizer.sanitize(map, false);
 
         assertThat(map.getFirst("Upgrade")).isEqualTo("websocket");
-        assertThat(map.get("Connection")).containsExactly("Upgrade");
-        assertThat(map.contains("X-Drop")).isFalse();
+        assertThat(map.getAll("Connection")).containsExactly("Upgrade");
+        assertThat(map.getFirst("X-Drop")).isNull();
     }
 
     @Test
     void keepsOnlyTeTrailers()
     {
-        final HeaderMap trailers = headers("TE", "trailers");
+        final TestHeaders trailers = headers("TE", "trailers");
         UpstreamHeaderSanitizer.sanitize(trailers, false);
         assertThat(trailers.getFirst("TE")).isEqualTo("trailers");
 
-        final HeaderMap other = headers("TE", "gzip, trailers");
+        final TestHeaders other = headers("TE", "gzip, trailers");
         UpstreamHeaderSanitizer.sanitize(other, false);
-        assertThat(other.contains("TE")).isFalse();
+        assertThat(other.getFirst("TE")).isNull();
     }
 
     @Test
     void dropsForwardingClaimsFromAnUntrustedPeer()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "X-Forwarded-For", "6.6.6.6",
                 "X-Forwarded-Proto", "https",
                 "X-Forwarded-Host", "evil.example",
@@ -101,7 +94,7 @@ class UpstreamHeaderSanitizerTest
 
         UpstreamHeaderSanitizer.sanitize(map, false);
 
-        assertThat(map.getHeaderNames()).extracting(HttpString::toString).containsExactly("Accept");
+        assertThat(map.names()).containsExactly("Accept");
     }
 
     /**
@@ -114,7 +107,7 @@ class UpstreamHeaderSanitizerTest
     @Test
     void dropsUnderscoreAndMixedSeparatorForwardedVariantsFromAnUntrustedPeer()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "X_Forwarded_For", "6.6.6.6",
                 "X-Forwarded_Proto", "https",
                 "X_Forwarded-Host", "evil.example",
@@ -122,13 +115,13 @@ class UpstreamHeaderSanitizerTest
 
         UpstreamHeaderSanitizer.sanitize(map, false);
 
-        assertThat(map.getHeaderNames()).extracting(HttpString::toString).containsExactly("Accept");
+        assertThat(map.names()).containsExactly("Accept");
     }
 
     @Test
     void keepsForwardingHeadersFromATrustedProxy()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "X-Forwarded-For", "203.0.113.9",
                 "X-Forwarded-Proto", "https",
                 "X-Real-IP", "203.0.113.9");
@@ -143,7 +136,7 @@ class UpstreamHeaderSanitizerTest
     @Test
     void parsesConnectionTokensWithOptionalWhitespaceAndEmptyEntries()
     {
-        final HeaderMap map = headers(
+        final TestHeaders map = headers(
                 "Connection", " ,\tX-A ,, keep-alive,X-B\t",
                 "X-A", "1",
                 "X-B", "2",
@@ -151,6 +144,6 @@ class UpstreamHeaderSanitizerTest
 
         UpstreamHeaderSanitizer.sanitize(map, true);
 
-        assertThat(map.getHeaderNames()).extracting(HttpString::toString).containsExactly("X-C");
+        assertThat(map.names()).containsExactly("X-C");
     }
 }

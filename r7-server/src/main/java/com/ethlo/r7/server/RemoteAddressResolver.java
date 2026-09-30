@@ -1,24 +1,26 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Iterator;
 import java.util.List;
 
+import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.util.CidrRange;
-import io.undertow.server.HttpServerExchange;
-import io.undertow.util.HeaderValues;
-import io.undertow.util.Headers;
-import io.undertow.util.HttpString;
 
 /**
  * Decides which address a request is attributed to. Holds the trusted-proxy configuration and
- * is the single caller-facing entry point for that decision, so {@link UndertowGatewayRequest}
+ * is the single caller-facing entry point for that decision, so the server's request object
  * stays a plain carrier of request data rather than a config consumer.
+ * <p>
+ * Reads the socket peer and the request headers as the server presents them; the headers must
+ * match names ignoring case, as every server's request header view does.
  */
 public final class RemoteAddressResolver
 {
-    private static final HttpString X_REAL_IP = HttpString.tryFromString("X-Real-IP");
+    private static final String X_FORWARDED_FOR = "X-Forwarded-For";
+    private static final String X_REAL_IP = "X-Real-IP";
 
     private final List<CidrRange> trustedProxies;
 
@@ -27,9 +29,13 @@ public final class RemoteAddressResolver
         this.trustedProxies = List.copyOf(trustedProxies);
     }
 
-    public RemoteInfo resolve(final HttpServerExchange exchange)
+    /**
+     * @param peer    the address of the connection's immediate peer, or {@code null} if unknown
+     * @param headers the request headers as the client (or a trusted proxy in front of it) sent them
+     */
+    public RemoteInfo resolve(final InetSocketAddress peer, final GatewayHeaders headers)
     {
-        final InetAddress socketAddress = socketAddress(exchange);
+        final InetAddress socketAddress = peer != null ? peer.getAddress() : null;
         final boolean trustedPeer = isTrustedProxy(socketAddress);
 
         // X-Forwarded-For/X-Real-IP are client-controlled: anything can put whatever it
@@ -46,8 +52,8 @@ public final class RemoteAddressResolver
         // equivalent to one comma-joined list in the order received, so all lines must be
         // combined before walking the chain. Using only the first line would let a client
         // supply its own forged line ahead of the one line a trusted proxy appends.
-        final HeaderValues xffLines = exchange.getRequestHeaders().get(Headers.X_FORWARDED_FOR);
-        if (xffLines != null && !xffLines.isEmpty())
+        final Iterable<String> xffLines = headers.getAll(X_FORWARDED_FOR);
+        if (xffLines.iterator().hasNext())
         {
             final String joined = String.join(",", xffLines);
             if (!joined.isBlank())
@@ -68,10 +74,11 @@ public final class RemoteAddressResolver
         // X-Real-IP is single-valued by contract; more than one field-line is ambiguous (a
         // client-supplied line could be preserved alongside one a trusted proxy adds) and is
         // rejected outright rather than guessing which line to believe.
-        final HeaderValues xRealIpLines = exchange.getRequestHeaders().get(X_REAL_IP);
-        if (xRealIpLines != null && xRealIpLines.size() == 1)
+        final Iterator<String> xRealIpLines = headers.getAll(X_REAL_IP).iterator();
+        final String xRealIpFirst = xRealIpLines.hasNext() ? xRealIpLines.next() : null;
+        if (xRealIpFirst != null && !xRealIpLines.hasNext())
         {
-            final String xRealIp = xRealIpLines.getFirst();
+            final String xRealIp = xRealIpFirst;
             if (xRealIp != null && !xRealIp.isBlank())
             {
                 final InetAddress candidate = parseLiteral(xRealIp.trim());
@@ -168,12 +175,6 @@ public final class RemoteAddressResolver
     private static RemoteInfo toRemoteInfo(final InetAddress address, final IpSource source, final boolean trustedPeer)
     {
         return address != null ? new RemoteInfo(address, source, trustedPeer) : new RemoteInfo(null, IpSource.UNKNOWN, trustedPeer);
-    }
-
-    private static InetAddress socketAddress(final HttpServerExchange exchange)
-    {
-        final InetSocketAddress sourceAddress = exchange.getSourceAddress();
-        return sourceAddress != null ? sourceAddress.getAddress() : null;
     }
 
     /**

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.server.RemoteAddressResolver;
 import com.ethlo.r7.util.CidrRange;
 import io.undertow.Undertow;
 import io.undertow.server.HttpServerExchange;
@@ -24,7 +25,9 @@ import io.undertow.server.HttpServerExchange;
  * Exercises {@link RemoteAddressResolver} over a real loopback connection, since the
  * behaviour under test is entirely about what {@link HttpServerExchange#getSourceAddress()}
  * and request headers say for an actual TCP peer - a hand-built exchange would not exercise
- * the thing a spoofing attempt actually touches.
+ * the thing a spoofing attempt actually touches. The resolver is server-neutral; it is fed the
+ * way the Undertow exchange feeds it, so this also covers how Undertow presents repeated
+ * forwarding field-lines.
  */
 class RemoteAddressResolverTest
 {
@@ -39,7 +42,7 @@ class RemoteAddressResolverTest
         this.server = Undertow.builder()
                 .addHttpListener(0, "127.0.0.1")
                 .setHandler(exchange -> {
-                    this.lastResult.set(this.resolver.resolve(exchange));
+                    this.lastResult.set(this.resolver.resolve(exchange.getSourceAddress(), new UndertowGatewayHeaders(exchange.getRequestHeaders())));
                     exchange.setStatusCode(204);
                     exchange.endExchange();
                 })

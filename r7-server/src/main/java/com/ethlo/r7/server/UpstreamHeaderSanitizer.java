@@ -1,15 +1,12 @@
-package com.ethlo.r7.undertow;
+package com.ethlo.r7.server;
 
-import io.undertow.util.HeaderMap;
-import io.undertow.util.HeaderValues;
-import io.undertow.util.Headers;
-import io.undertow.util.HttpString;
+import com.ethlo.r7.api.MutableGatewayHeaders;
 
 /**
  * Removes the client headers that must not reach an upstream as the client wrote them.
  * <p>
- * Undertow's {@code ProxyHandler} copies every inbound request header to the upstream request,
- * so without this step two kinds of header pass straight through:
+ * A proxy copies every inbound request header to the upstream request, so without this step two
+ * kinds of header pass straight through:
  * <ul>
  *   <li><b>Hop-by-hop headers</b> (RFC 9110 §7.6.1). They describe the client's connection to
  *   the gateway, not the gateway's to the upstream. Worse, any intermediary behind the gateway
@@ -23,11 +20,14 @@ import io.undertow.util.HttpString;
  *   chain.</li>
  * </ul>
  * Runs on the live request headers after the client-request snapshot is taken, so filters and
- * the journal still see what the client actually sent.
+ * the journal still see what the client actually sent. The headers must match names ignoring
+ * case, as every server's request header view does.
  */
 public final class UpstreamHeaderSanitizer
 {
-    private static final HttpString PROXY_CONNECTION = new HttpString("Proxy-Connection");
+    private static final String CONNECTION = "Connection";
+    private static final String UPGRADE = "Upgrade";
+    private static final String TE = "TE";
 
     /**
      * Client address and original-request claims that only a trusted proxy may make.
@@ -35,14 +35,14 @@ public final class UpstreamHeaderSanitizer
      * others route by them in place of the request line, which would undo the path the gateway
      * matched and checked.
      */
-    private static final HttpString[] FORWARDING_HEADERS = {
-            Headers.FORWARDED,
-            new HttpString("X-Real-IP"),
-            new HttpString("X-Client-IP"),
-            new HttpString("True-Client-IP"),
-            new HttpString("X-Cluster-Client-IP"),
-            new HttpString("X-Original-URL"),
-            new HttpString("X-Rewrite-URL")
+    private static final String[] FORWARDING_HEADERS = {
+            "Forwarded",
+            "X-Real-IP",
+            "X-Client-IP",
+            "True-Client-IP",
+            "X-Cluster-Client-IP",
+            "X-Original-URL",
+            "X-Rewrite-URL"
     };
 
     /**
@@ -57,62 +57,64 @@ public final class UpstreamHeaderSanitizer
      * a client sending the underscore (or mixed) form would otherwise sail past a check written
      * only against hyphens and have its forged claim believed downstream.
      */
-    private static final byte[] FORWARDED_BYTES = {'f', 'o', 'r', 'w', 'a', 'r', 'd', 'e', 'd'};
+    private static final String FORWARDED = "forwarded";
 
     /**
      * Length of {@code X-Forwarded-}: 1 ({@code x}) + 1 (separator) + 9 ({@code forwarded}) + 1
      * (separator), the shortest a name in the family can be before whatever it forwards.
      */
-    private static final int X_FORWARDED_PREFIX_LENGTH = 1 + 1 + FORWARDED_BYTES.length + 1;
+    private static final int X_FORWARDED_PREFIX_LENGTH = 1 + 1 + FORWARDED.length() + 1;
 
     private UpstreamHeaderSanitizer()
     {
     }
 
-    public static void sanitize(final HeaderMap headers, final boolean trustedPeer)
+    public static void sanitize(final MutableGatewayHeaders headers, final boolean trustedPeer)
     {
-        final boolean webSocket = "websocket".equalsIgnoreCase(headers.getFirst(Headers.UPGRADE));
+        final boolean webSocket = "websocket".equalsIgnoreCase(headers.getFirst(UPGRADE));
 
         // Names the client listed in Connection are hop-by-hop by declaration. Framing and Host
         // are never removed on its say-so: dropping Content-Length or Transfer-Encoding would
         // change how the body is delimited, which is a request-smuggling primitive of its own.
-        final HeaderValues connection = headers.get(Headers.CONNECTION);
+        // The lines are copied first: removing a header they name (Connection itself, even) must
+        // not disturb the iteration, and not every container gives a stable view under removal.
+        final String[] connection = valuesOf(headers, CONNECTION);
         if (connection != null)
         {
-            for (int i = 0; i < connection.size(); i++)
+            for (final String line : connection)
             {
-                removeNamedIn(connection.get(i), headers, webSocket);
+                removeNamedIn(line, headers, webSocket);
             }
         }
 
-        headers.remove(Headers.CONNECTION);
-        headers.remove(Headers.KEEP_ALIVE);
-        headers.remove(PROXY_CONNECTION);
+        headers.remove(CONNECTION);
+        headers.remove("Keep-Alive");
+        headers.remove("Proxy-Connection");
         // Credentials for a proxy are for this hop: the gateway is that proxy.
-        headers.remove(Headers.PROXY_AUTHORIZATION);
+        headers.remove("Proxy-Authorization");
 
         // "TE: trailers" is how a client says it accepts trailers (gRPC depends on it); any other
         // transfer coding is a matter for this connection only.
-        final String te = headers.getFirst(Headers.TE);
-        if (te != null && !(headers.count(Headers.TE) == 1 && "trailers".equalsIgnoreCase(te.strip())))
+        final String te = headers.getFirst(TE);
+        if (te != null && !(count(headers, TE) == 1 && "trailers".equalsIgnoreCase(te.strip())))
         {
-            headers.remove(Headers.TE);
+            headers.remove(TE);
         }
 
         if (webSocket)
         {
             // The upstream needs to see the upgrade request to answer 101; Connection is
             // rebuilt with only the token that asks for it.
-            headers.put(Headers.CONNECTION, Headers.UPGRADE_STRING);
+            headers.set(CONNECTION, UPGRADE);
         }
         else
         {
-            headers.remove(Headers.UPGRADE);
+            headers.remove(UPGRADE);
         }
 
         if (!trustedPeer)
         {
-            for (final HttpString name : FORWARDING_HEADERS)
+            for (final String name : FORWARDING_HEADERS)
             {
                 headers.remove(name);
             }
@@ -121,12 +123,45 @@ public final class UpstreamHeaderSanitizer
     }
 
     /**
+     * The field-lines of {@code name}, copied; {@code null} when there are none, so an ordinary
+     * request without the header allocates nothing.
+     */
+    private static String[] valuesOf(final MutableGatewayHeaders headers, final String name)
+    {
+        String[] values = null;
+        int n = 0;
+        for (final String value : headers.getAll(name))
+        {
+            if (values == null)
+            {
+                values = new String[2];
+            }
+            else if (n == values.length)
+            {
+                values = java.util.Arrays.copyOf(values, n * 2);
+            }
+            values[n++] = value;
+        }
+        return values == null || n == values.length ? values : java.util.Arrays.copyOf(values, n);
+    }
+
+    private static int count(final MutableGatewayHeaders headers, final String name)
+    {
+        int n = 0;
+        for (final String ignored : headers.getAll(name))
+        {
+            n++;
+        }
+        return n;
+    }
+
+    /**
      * Removes the headers a Connection field line names. Scans the comma-separated list in place:
      * this runs before every proxied request, and the usual tokens ({@code keep-alive},
      * {@code close}, {@code upgrade}) are handled without allocating - only a token naming some
      * other header costs the substring needed to remove it.
      */
-    private static void removeNamedIn(final String line, final HeaderMap headers, final boolean webSocket)
+    private static void removeNamedIn(final String line, final MutableGatewayHeaders headers, final boolean webSocket)
     {
         final int len = line.length();
         int start = 0;
@@ -159,68 +194,80 @@ public final class UpstreamHeaderSanitizer
     }
 
     /**
-     * Collects matches before removing them, since the map cannot be changed while it is being
-     * iterated; the array is only allocated once a match is found, which an ordinary request
-     * from an untrusted client never has.
+     * Collects matches before removing them, since a container cannot be changed while it is
+     * being iterated; the array is only allocated once a match is found, which an ordinary
+     * request from an untrusted client never has.
      */
-    private static void removeXForwardedFamily(final HeaderMap headers)
+    private static void removeXForwardedFamily(final MutableGatewayHeaders headers)
     {
-        HttpString[] matches = null;
-        int count = 0;
-        for (long cookie = headers.fastIterateNonEmpty(); cookie != -1L; cookie = headers.fiNextNonEmpty(cookie))
+        final Matches matches = new Matches();
+        headers.forEach(matches, (m, name, value) ->
         {
-            final HttpString name = headers.fiCurrent(cookie).getHeaderName();
             if (isForwardedFamilyName(name))
             {
-                if (matches == null)
-                {
-                    matches = new HttpString[headers.size()];
-                }
-                matches[count++] = name;
+                m.add(name);
             }
-        }
-        for (int i = 0; i < count; i++)
+        });
+        for (int i = 0; i < matches.count; i++)
         {
-            headers.remove(matches[i]);
+            headers.remove(matches.names[i]);
+        }
+    }
+
+    private static final class Matches
+    {
+        private String[] names;
+        private int count;
+
+        void add(final String name)
+        {
+            if (names == null)
+            {
+                names = new String[4];
+            }
+            else if (count == names.length)
+            {
+                names = java.util.Arrays.copyOf(names, count * 2);
+            }
+            names[count++] = name;
         }
     }
 
     /**
      * Whether {@code name} is {@code X-Forwarded-*} in any casing, with either {@code -} or
-     * {@code _} (independently) at the two separator positions - see {@link #FORWARDED_BYTES}
-     * for why both must be accepted. Reads bytes directly off the {@link HttpString} rather than
-     * allocating a {@code String}, so a header that is not even long enough to be a candidate
-     * costs nothing beyond the length check.
+     * {@code _} (independently) at the two separator positions - see {@link #FORWARDED} for why
+     * both must be accepted. A name that is not even long enough to be a candidate costs
+     * nothing beyond the length check.
      */
-    private static boolean isForwardedFamilyName(final HttpString name)
+    static boolean isForwardedFamilyName(final String name)
     {
-        if (name.length() <= X_FORWARDED_PREFIX_LENGTH || !isByteIgnoreCase(name.byteAt(0), (byte) 'x') || !isSeparator(name.byteAt(1)))
+        if (name.length() <= X_FORWARDED_PREFIX_LENGTH || !isCharIgnoreCase(name.charAt(0), 'x') || !isSeparator(name.charAt(1)))
         {
             return false;
         }
-        for (int i = 0; i < FORWARDED_BYTES.length; i++)
+        for (int i = 0; i < FORWARDED.length(); i++)
         {
-            if (!isByteIgnoreCase(name.byteAt(2 + i), FORWARDED_BYTES[i]))
+            if (!isCharIgnoreCase(name.charAt(2 + i), FORWARDED.charAt(i)))
             {
                 return false;
             }
         }
-        return isSeparator(name.byteAt(X_FORWARDED_PREFIX_LENGTH - 1));
+        return isSeparator(name.charAt(X_FORWARDED_PREFIX_LENGTH - 1));
     }
 
-    private static boolean isSeparator(final byte b)
+    private static boolean isSeparator(final char c)
     {
-        return b == '-' || b == '_';
+        return c == '-' || c == '_';
     }
 
     /**
-     * ASCII-only case-insensitive compare: header names are ASCII, and folding the 0x20 bit
-     * this way is only valid for letters, which is all {@link #FORWARDED_BYTES} and the leading
-     * {@code x} ever are.
+     * ASCII-only case-insensitive compare: header names are ASCII, and folding the 0x20 bit this
+     * way is only valid for letters, which is all {@link #FORWARDED} and the leading {@code x}
+     * ever are. A char above 0xFF can never match, so it is not folded into one that does.
      */
-    private static boolean isByteIgnoreCase(final byte b, final byte lower)
+    private static boolean isCharIgnoreCase(final char c, final char lower)
     {
-        return (byte) (b | 0x20) == lower;
+        return c <= 0xFF && (char) (c | 0x20) == lower;
     }
 
     private static boolean isOws(final char c)
@@ -235,9 +282,9 @@ public final class UpstreamHeaderSanitizer
 
     private static boolean isProtected(final String line, final int from, final int to, final boolean webSocket)
     {
-        return regionIs(line, from, to, Headers.HOST_STRING)
-                || regionIs(line, from, to, Headers.CONTENT_LENGTH_STRING)
-                || regionIs(line, from, to, Headers.TRANSFER_ENCODING_STRING)
-                || (webSocket && regionIs(line, from, to, Headers.UPGRADE_STRING));
+        return regionIs(line, from, to, "Host")
+                || regionIs(line, from, to, "Content-Length")
+                || regionIs(line, from, to, "Transfer-Encoding")
+                || (webSocket && regionIs(line, from, to, UPGRADE));
     }
 }
