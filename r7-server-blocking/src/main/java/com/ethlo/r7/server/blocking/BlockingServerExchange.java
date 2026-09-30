@@ -39,7 +39,7 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  * <p>
  * Everything here runs on the request's thread, synchronously: the pipeline's {@code handle}
  * returns when the response has been sent, so there is no I/O thread to protect
- * ({@link #isOnIoThread()} is always false), and the commit and completion "listeners" are flags
+ * ({@link #mayBlock()} is always true), and the commit and completion "listeners" are flags
  * this class acts on at the right moment - commit just before the response head is written,
  * completion once {@link GatewayPipeline#handle} has returned ({@link BlockingGateway#handle}).
  * <p>
@@ -213,15 +213,16 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     // --- Threading ---------------------------------------------------------------------------
 
     @Override
-    protected boolean isOnIoThread()
+    protected final boolean mayBlock()
     {
         // Every request has its own thread: a blocking filter just blocks it (parks, if virtual).
-        return false;
+        return true;
     }
 
     @Override
-    protected void dispatch()
+    protected final void resumeOnBlockingThread()
     {
+        // Never called while mayBlock() holds; were it, running here is what it asks for.
         run();
     }
 
