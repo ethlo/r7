@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.ethlo.r7.GatewayScheduler;
@@ -17,7 +16,6 @@ import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteGenerationListener;
 import com.ethlo.r7.config.RouteRegistry;
-import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.core.StandardErrorHandler;
 import com.ethlo.r7.r7f.JournalFiles;
 import com.ethlo.r7.r7f.R7fJournal;
@@ -154,10 +152,7 @@ public final class BlockingGateway implements AutoCloseable
 
     private HttpUpstream connect(final DefaultGatewayRoute route)
     {
-        final TimeoutConfig timeouts = Optional.ofNullable(route.routeDefinition().upstream().timeouts()).orElse(new TimeoutConfig(null));
-        final UpstreamOptions defaults = UpstreamOptions.defaults();
-        return new HttpUpstream(new UpstreamOptions(timeouts.read(), defaults.connectTimeout(), this.serverConfig.proxy().ttl(),
-                defaults.maxHeadBytes(), defaults.maxHeaderCount()));
+        return new HttpUpstream(UpstreamOptions.of(this.serverConfig, route.routeDefinition().upstream()));
     }
 
     private static ServerConfig loadServerSettings(final Path serverFile)

@@ -19,6 +19,18 @@ import com.ethlo.r7.api.MutableGatewayResponse;
 public interface ProxiedExchange
 {
     /**
+     * Whether the request arrived over HTTP/1.x, whose parser has already guaranteed what the
+     * relay would otherwise check on every header: names that are tokens, and values without a
+     * line break - an HTTP/1.1 head cannot even express one. Over HTTP/2 both can be sent, so
+     * the relay checks, at a cost of about a tenth of the user-space instructions of a
+     * passthrough request with browser-like headers. The default is to check.
+     */
+    default boolean parsedAsHttp1()
+    {
+        return false;
+    }
+
+    /**
      * The method to forward, as the pipeline leaves it.
      */
     String forwardMethod();

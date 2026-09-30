@@ -26,9 +26,19 @@ final class HelidonGatewayExchange extends BlockingServerExchange
     HelidonGatewayExchange(final GatewayPipeline pipeline, final ServerRequest req, final ServerResponse res)
     {
         // Not UriPath.path(): Helidon resolves dot segments there, and the guard must see them.
-        super(pipeline, req.prologue().method().text(), req.prologue().uriPath().rawPath(), req.prologue().query().rawValue(), headersOf(req));
+        super(pipeline, protocolOf(req), req.prologue().method().text(),
+                req.prologue().uriPath().rawPath(), req.prologue().query().rawValue(), headersOf(req));
         this.req = req;
         this.res = res;
+    }
+
+    /**
+     * "HTTP/1.1" or "HTTP/2.0", without building a string for the common case.
+     */
+    private static String protocolOf(final ServerRequest req)
+    {
+        final String version = req.prologue().protocolVersion();
+        return "1.1".equals(version) ? "HTTP/1.1" : req.prologue().protocol() + '/' + version;
     }
 
     private static WireHeaders headersOf(final ServerRequest req)

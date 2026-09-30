@@ -212,6 +212,22 @@ class Http1Test
     }
 
     @Test
+    void forwardedFieldsMustBeExpressibleInHttp11()
+    {
+        assertThat(Http1.isToken("X-Request-Id")).isTrue();
+        assertThat(Http1.isToken("X Bad")).isFalse();
+        assertThat(Http1.isToken("")).isFalse();
+        assertThat(Http1.isToken("X:Bad")).isFalse();
+        assertThat(Http1.isFieldValue("a\tb c")).isTrue();
+        assertThat(Http1.isFieldValue("caf\u00e9")).isTrue();
+        assertThat(Http1.isFieldValue("a\r\nb")).isFalse();
+        assertThat(Http1.isFieldValue("a\nb")).isFalse();
+        assertThat(Http1.isFieldValue("a\u0000b")).isFalse();
+        assertThat(Http1.isFieldValue("a\u007fb")).isFalse();
+        assertThat(Http1.isFieldValue("\u20ac")).isFalse();
+    }
+
+    @Test
     void onlyMethodsThatAreSafeToRepeatAreIdempotent()
     {
         assertThat(Http1.isIdempotent("GET")).isTrue();

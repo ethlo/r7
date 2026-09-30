@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.core.proxy.NoAvailableTargetException;
 import com.ethlo.r7.core.proxy.ProxyConnectionException;
+import com.ethlo.r7.core.proxy.ProxyPoolExhaustedException;
 
 /**
  * Runs one proxied exchange on the calling thread, which must be allowed to block: pick a target,
@@ -28,22 +29,93 @@ public final class UpstreamRelay
      */
     public static void relay(final HttpUpstream upstream, final ProxiedExchange exchange, final String routeId) throws ProxyFailure
     {
-        final HttpUpstream.Target target = upstream.pick();
+        HttpUpstream.Target target = upstream.pick();
         if (target == null)
         {
             throw new ProxyFailure(503, "No upstream available", new NoAvailableTargetException("No target is up for " + routeId));
         }
-        exchange.attemptedTarget(target.uri);
 
         final UpstreamOptions options = upstream.options();
-        final byte[] head = Http1.requestHead(target, exchange);
+        final long deadline = System.nanoTime() + options.maxRequestTime().toNanos();
+        final long declaredLength;
+        try
+        {
+            declaredLength = exchange.forwardHeaders().getFirst("Content-Length") != null ? Http1.requestContentLength(exchange.forwardHeaders()) : -1;
+        }
+        catch (final ClientProtocolException e)
+        {
+            throw new ProxyFailure(400, "Bad request", null);
+        }
         final Http1.Framing framing = Http1.Framing.ofRequest(exchange.forwardHeaders());
-        final Attempt attempt = new Attempt();
 
+        // A target that refuses the connection gets nothing, so the next one may be tried: once
+        // per target that is up, as Undertow's load balancer does.
+        for (int triesLeft = Math.max(1, upstream.targetCount()); ; )
+        {
+            exchange.attemptedTarget(target.uri);
+            try
+            {
+                exchangeWith(target, exchange, framing, declaredLength, deadline, options);
+                return;
+            }
+            catch (final ConnectFailedException e)
+            {
+                final HttpUpstream.Target next = --triesLeft > 0 ? upstream.pick() : null;
+                if (next == null)
+                {
+                    throw new ProxyFailure(503, "Upstream connection failed", new ProxyConnectionException("TCP Connection failed to: " + target.uri));
+                }
+                target = next;
+            }
+        }
+    }
+
+    /**
+     * A connection to a target could not be made; nothing was sent, so another target may be tried.
+     */
+    private static final class ConnectFailedException extends Exception
+    {
+        ConnectFailedException()
+        {
+            super(null, null, false, false);
+        }
+    }
+
+    private static void exchangeWith(final HttpUpstream.Target target, final ProxiedExchange exchange, final Http1.Framing framing, final long declaredLength,
+                                     final long deadline, final UpstreamOptions options) throws ProxyFailure, ConnectFailedException
+    {
+        final byte[] head;
+        try
+        {
+            head = Http1.requestHead(target, exchange);
+        }
+        catch (final ClientProtocolException e)
+        {
+            throw new ProxyFailure(400, "Bad request", null);
+        }
+        try
+        {
+            target.acquireSlot(deadline);
+        }
+        catch (final PoolExhaustedException e)
+        {
+            throw new ProxyFailure(503, "Upstream busy", new ProxyPoolExhaustedException(e.getMessage()));
+        }
+
+        final Attempt attempt = new Attempt(declaredLength);
         HttpUpstream.Connection connection = null;
         try
         {
-            connection = target.acquire();
+            try
+            {
+                connection = target.acquire();
+            }
+            catch (final ConnectException | SocketTimeoutException e)
+            {
+                // Refused, or no answer within the connect timeout: nothing was sent.
+                throw new ConnectFailedException();
+            }
+            HttpUpstream.track(connection, deadline);
             Http1.ResponseHead response;
             try
             {
@@ -55,13 +127,16 @@ public final class UpstreamRelay
                 {
                     throw e;
                 }
+                HttpUpstream.untrack(connection);
                 connection.close();
                 connection = target.connect();
+                HttpUpstream.track(connection, deadline);
                 attempt.requestFlushed = false;
                 response = exchangeHead(connection, exchange, head, framing, options, attempt);
             }
             final boolean reusable = relayResponse(connection, exchange, response, options);
-            if (reusable)
+            HttpUpstream.untrack(connection);
+            if (reusable && !connection.expired)
             {
                 target.release(connection);
             }
@@ -71,10 +146,6 @@ public final class UpstreamRelay
             }
             connection = null;
         }
-        catch (final ConnectException e)
-        {
-            throw new ProxyFailure(503, "Upstream connection failed", new ProxyConnectionException("TCP Connection failed to: " + target.uri));
-        }
         catch (final SocketTimeoutException e)
         {
             throw new ProxyFailure(504, "Upstream timed out", e);
@@ -83,16 +154,27 @@ public final class UpstreamRelay
         {
             throw new ProxyFailure(413, "Request body too large", null);
         }
+        catch (final ClientProtocolException | ClientBodyException e)
+        {
+            // The client's doing, not the upstream's; nothing to report.
+            throw new ProxyFailure(400, "Bad request", null);
+        }
         catch (final IOException e)
         {
+            if (connection != null && connection.expired)
+            {
+                throw new ProxyFailure(504, "Upstream timed out", new SocketTimeoutException("The exchange with " + target.uri + " exceeded max_request_time"));
+            }
             throw new ProxyFailure(502, "Upstream failed", new ProxyConnectionException("Upstream exchange failed with " + target.uri + ": " + e.getMessage()));
         }
         finally
         {
             if (connection != null)
             {
+                HttpUpstream.untrack(connection);
                 connection.close();
             }
+            target.releaseSlot();
         }
     }
 
@@ -101,7 +183,13 @@ public final class UpstreamRelay
      */
     private static final class Attempt
     {
+        final long declaredLength;
         boolean requestFlushed;
+
+        Attempt(final long declaredLength)
+        {
+            this.declaredLength = declaredLength;
+        }
     }
 
     /**
@@ -132,12 +220,12 @@ public final class UpstreamRelay
             out.write(head);
             if (framing != Http1.Framing.NONE)
             {
-                copyRequestBody(out, exchange, framing);
+                copyRequestBody(out, exchange, framing, attempt.declaredLength);
             }
             out.flush();
             attempt.requestFlushed = true;
         }
-        catch (final ClientBodyException | RequestBodyTooLargeException e)
+        catch (final ClientBodyException | ClientProtocolException | RequestBodyTooLargeException e)
         {
             throw e;
         }
@@ -195,10 +283,18 @@ public final class UpstreamRelay
         }
     }
 
-    private static void copyRequestBody(final OutputStream out, final ProxiedExchange exchange, final Http1.Framing framing) throws IOException
+    /**
+     * @param declaredLength the Content-Length a LENGTH-framed body must match exactly: a server
+     *                       that hands over more or fewer bytes (HTTP/2 lets a client send a
+     *                       DATA stream of any length) must not have that forwarded as a
+     *                       fixed-length HTTP/1.1 body, where the difference becomes the start
+     *                       of another request, or holds the upstream waiting
+     */
+    private static void copyRequestBody(final OutputStream out, final ProxiedExchange exchange, final Http1.Framing framing, final long declaredLength) throws IOException
     {
         final InputStream in = exchange.openRequestBody();
         final byte[] buffer = new byte[8192];
+        long copied = 0;
         while (true)
         {
             final int n;
@@ -214,6 +310,11 @@ public final class UpstreamRelay
             {
                 break;
             }
+            copied += n;
+            if (framing == Http1.Framing.LENGTH && copied > declaredLength)
+            {
+                throw new ClientProtocolException("The request body is longer than its Content-Length");
+            }
             exchange.onRequestBody(buffer, 0, n);
             if (framing == Http1.Framing.CHUNKED)
             {
@@ -226,6 +327,10 @@ public final class UpstreamRelay
             {
                 out.write(buffer, 0, n);
             }
+        }
+        if (framing == Http1.Framing.LENGTH && copied != declaredLength)
+        {
+            throw new ClientProtocolException("The request body is shorter than its Content-Length");
         }
         // Only reached when the whole body was read: a failure above leaves a chunked body
         // without its terminating chunk, and the socket is then closed, so the upstream sees a

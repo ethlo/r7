@@ -932,7 +932,7 @@ Configures the HTTP server layer, including protocol support and request parsing
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected. |
+| `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and with the r7 upstream client a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its `Content-Length` - is answered `400` rather than forwarded. |
 | `always_set_keep_alive` | Boolean | Forces the server to send the `Connection: keep-alive` header to maintain persistent connections. |
 | `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. At most `24d` (2147483647 ms). |
 
@@ -968,7 +968,7 @@ Configures the behavior of the internal reverse proxy client that connects to up
 | `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
 | `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. At most `24d` (2147483647 ms). |
 | `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. At most `24d` (2147483647 ms). |
-| `client` | String | **Experimental.** Which upstream client proxies requests: `undertow` (Undertow's own proxy; the default) or `r7`, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With `r7`, response framing is checked strictly (conflicting `Content-Length`, folded headers, malformed chunks and transfer codings other than `chunked` are answered with `502`), a request that fails on a reused connection is retried only when it is idempotent, and `connections_per_thread` and `max_queue_size` are not applied yet. `r7` does not yet support `https` targets or WebSocket upgrades. |
+| `client` | String | **Experimental.** Which upstream client proxies requests: `undertow` (Undertow's own proxy; the default) or `r7`, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With `r7`, response framing is checked strictly (conflicting `Content-Length`, folded headers, malformed chunks and transfer codings other than `chunked` are answered with `502`), a request that fails on a reused connection is retried only when it is idempotent, and a target that refuses the connection is skipped for the next. `connections_per_thread` is scaled by `advanced.io_threads` into a per-target limit on requests in flight, with up to `max_queue_size` waiting; `max_request_time` bounds the whole exchange, waiting included. `https` targets are verified against the JVM's trust store, host name included. `r7` does not yet tunnel WebSocket upgrades. |
 
 ### Advanced (`advanced`)
 

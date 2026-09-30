@@ -63,21 +63,36 @@ final class Http1
      * adds them (extending a trusted proxy's chain, starting one otherwise), and framing and
      * Expect left to this hop.
      */
-    static byte[] requestHead(final HttpUpstream.Target target, final ProxiedExchange exchange)
+    static byte[] requestHead(final HttpUpstream.Target target, final ProxiedExchange exchange) throws ClientProtocolException
     {
         final GatewayHeaders headers = exchange.forwardHeaders();
         final StringBuilder sb = new StringBuilder(512);
-        sb.append(exchange.forwardMethod()).append(' ').append(target.basePath).append(exchange.forwardTarget()).append(" HTTP/1.1\r\n");
+        final String requestTarget = exchange.forwardTarget();
+        if (!isFieldValue(requestTarget) || requestTarget.indexOf(' ') >= 0)
+        {
+            throw new ClientProtocolException("The request target cannot be forwarded");
+        }
+        sb.append(exchange.forwardMethod()).append(' ').append(target.basePath).append(requestTarget).append(" HTTP/1.1\r\n");
         sb.append("Host: ").append(target.hostHeader).append("\r\n");
         final String originalHost = headers.getFirst("Host");
+        final boolean check = !exchange.parsedAsHttp1();
+        final boolean[] valid = {true};
         headers.forEach(sb, (b, name, value) ->
         {
-            if (!name.equalsIgnoreCase("Host") && !name.equalsIgnoreCase("Expect") && !name.equalsIgnoreCase("X-Forwarded-For")
+            if (check && (!isToken(name) || !isFieldValue(value)))
+            {
+                valid[0] = false;
+            }
+            else if (!name.equalsIgnoreCase("Host") && !name.equalsIgnoreCase("Expect") && !name.equalsIgnoreCase("X-Forwarded-For")
                     && !name.equalsIgnoreCase("Content-Length") && !name.equalsIgnoreCase("Transfer-Encoding"))
             {
                 b.append(name).append(": ").append(value).append("\r\n");
             }
         });
+        if (!valid[0])
+        {
+            throw new ClientProtocolException("A request header cannot be forwarded as HTTP/1.1");
+        }
         final List<String> chain = new ArrayList<>();
         for (final String value : headers.getAll("X-Forwarded-For"))
         {
@@ -102,17 +117,70 @@ final class Http1
         {
             sb.append("X-Forwarded-Port: ").append(portOf(originalHost, proto != null ? proto : exchange.forwardedProto())).append("\r\n");
         }
-        final String contentLength = headers.getFirst("Content-Length");
         if (headers.getFirst("Transfer-Encoding") != null)
         {
             sb.append("Transfer-Encoding: chunked\r\n");
         }
-        else if (contentLength != null)
+        else if (headers.getFirst("Content-Length") != null)
         {
-            sb.append("Content-Length: ").append(contentLength).append("\r\n");
+            sb.append("Content-Length: ").append(requestContentLength(headers)).append("\r\n");
         }
         sb.append("\r\n");
         return sb.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    /**
+     * The request's declared body length, one number however it was sent ("5, 5" and repeated
+     * headers included); anything that is not one non-negative decimal is refused.
+     */
+    static long requestContentLength(final GatewayHeaders headers) throws ClientProtocolException
+    {
+        long length = -1;
+        try
+        {
+            for (final String value : headers.getAll("Content-Length"))
+            {
+                length = mergeContentLength(length, value);
+            }
+        }
+        catch (final UpstreamProtocolException e)
+        {
+            throw new ClientProtocolException("The request's Content-Length is invalid");
+        }
+        return length;
+    }
+
+    static boolean isToken(final String name)
+    {
+        if (name.isEmpty())
+        {
+            return false;
+        }
+        for (int i = 0; i < name.length(); i++)
+        {
+            if (!isTokenChar(name.charAt(i)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * No control characters other than HTAB, no DEL, nothing past ISO-8859-1: above all no CR
+     * or LF, which would end the line in the HTTP/1.1 head.
+     */
+    static boolean isFieldValue(final String value)
+    {
+        for (int i = 0; i < value.length(); i++)
+        {
+            final char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7f || c > 0xff)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
