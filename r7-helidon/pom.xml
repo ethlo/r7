@@ -8,8 +8,9 @@
     </parent>
     <!--
         EXPERIMENTAL. r7 on Helidon's Níma web server: the second implementation of the server SPI
-        (r7-server's ServerExchange), with its own blocking HTTP/1.1 upstream client on virtual
-        threads. Not a supported deployment; see design/server-spi.md, step 6.
+        (r7-server's ServerExchange): a thin adapter over r7-server-blocking, which holds the
+        upstream client and the proxying it shares with a servlet host. Not a supported
+        deployment; see design/server-spi.md, step 6.
     -->
     <artifactId>r7-helidon</artifactId>
     <packaging>jar</packaging>
@@ -21,7 +22,7 @@
     <dependencies>
         <dependency>
             <groupId>com.ethlo.r7</groupId>
-            <artifactId>r7-server</artifactId>
+            <artifactId>r7-server-blocking</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
         <dependency>

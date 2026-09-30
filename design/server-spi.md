@@ -211,8 +211,10 @@ its own change.
    with `HttpUpstream`, a blocking HTTP/1.1 client of its own (round-robin targets, per-target
    keep-alive pools, Content-Length and chunked bodies both ways, X-Forwarded-* as Undertow
    writes them) that names no Helidon type. Not yet: management port, static content,
-   WebSocket tunnelling, https upstreams, retries. Helidon 27.0.0 has since been released;
-   moving to it is a follow-up.
+   WebSocket tunnelling, https upstreams, retries. Helidon 27.0.0 has since been released, but
+   it is compiled for Java 27 (class file version 71) and r7 builds and runs on Java 25, so the
+   spike stays on 4.5.5 until r7 moves to Java 27. Its upgrade guide shows little for r7 to
+   change: `Header.value()` becomes `Header.get()`, and methods are matched case-sensitively.
 
    The security kit passes against it, and its first run caught a Níma-specific hole:
    Helidon's `UriPath.path()` resolves dot segments, so predicates and the path guard saw
@@ -232,6 +234,12 @@ its own change.
    may be no management port. It cannot proxy with the server either, so it and Níma share the
    same need - a blocking HTTP/1.1 upstream client on virtual threads - which argues for building
    that once, as its own module, rather than per server.
+
+   First half done: `r7-server-blocking` holds what the two share - `HttpUpstream`,
+   `BlockingServerExchange` (framing, the upstream exchange, hop-by-hop stripping, error answers,
+   byte counts) and `BlockingGateway` (config, journal, hot reload, pipeline). A server
+   implements six small methods over its own request and response objects; `r7-helidon` is now
+   that adapter and nothing more. Instructions per request unchanged.
 
 ### Naming, once there is a second implementation
 

@@ -1,4 +1,4 @@
-package com.ethlo.r7.helidon;
+package com.ethlo.r7.server.blocking;
 
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -9,19 +9,19 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  * and {@code TextValues} documents keeping it at that point of mutation - which this container
  * still does, since {@link #add}, {@link #set} and friends are inherited unchanged.
  */
-final class WireHeaders extends MutableFastGatewayHeaders
+public final class WireHeaders extends MutableFastGatewayHeaders
 {
-    WireHeaders()
+    public WireHeaders()
     {
         super(24);
     }
 
-    void addFromWire(final String name, final String value)
+    public void addFromWire(final String name, final String value)
     {
         addInternal(name, value);
     }
 
-    static WireHeaders copyOf(final GatewayHeaders headers)
+    public static WireHeaders copyOf(final GatewayHeaders headers)
     {
         final WireHeaders copy = new WireHeaders();
         headers.forEach(copy, WireHeaders::addFromWire);

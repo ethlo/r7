@@ -1,4 +1,4 @@
-package com.ethlo.r7.helidon;
+package com.ethlo.r7.server.blocking;
 
 import java.net.InetAddress;
 import java.net.URLDecoder;
@@ -19,15 +19,16 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.PathEncoder;
 
 /**
- * The live request on Helidon: what route predicates match, what filters change, and what
- * {@link HttpUpstream} forwards. Helidon's own request headers are immutable, so this holds a
- * mutable copy, taken once; everything the upstream receives is read from here.
+ * The live request on a thread-per-request server: what route predicates match, what filters
+ * change, and what {@link HttpUpstream} forwards. It holds a mutable copy of the request headers,
+ * taken once off the wire (server header APIs are read-only); everything the upstream receives is
+ * read from here.
  * <p>
  * The mutators follow {@code UndertowGatewayRequest}: a new path re-encodes the forwarded URI,
  * a new URI is taken verbatim once checked to be storable and free of control characters, and a
  * changed query or cookie is written back into what is forwarded.
  */
-final class HelidonGatewayRequest implements MutableGatewayRequest
+public final class BlockingGatewayRequest implements MutableGatewayRequest
 {
     private final String protocol;
     private final MutableGatewayHeaders headers;
@@ -39,7 +40,7 @@ final class HelidonGatewayRequest implements MutableGatewayRequest
     private String path;
     private String uri;
 
-    HelidonGatewayRequest(final String protocol, final String method, final String decodedPath, final String rawPath, final String rawQuery,
+    BlockingGatewayRequest(final String protocol, final String method, final String decodedPath, final String rawPath, final String rawQuery,
                           final MutableGatewayHeaders headers, final InetAddress remoteAddress, final IpSource remoteAddressSource)
     {
         this.protocol = protocol;
