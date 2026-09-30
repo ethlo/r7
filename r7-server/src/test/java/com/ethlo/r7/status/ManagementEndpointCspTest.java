@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  * The dashboard's script is allowed by hash, so the policy is only right if it hashes exactly
  * the bytes the browser will hash, and if nothing else on the page needs to run.
  */
-class StatusHandlerCspTest
+class ManagementEndpointCspTest
 {
     @Test
     void thePolicyAllowsExactlyTheInlineScriptByItsHash() throws Exception
@@ -24,7 +24,7 @@ class StatusHandlerCspTest
         final String expected = Base64.getEncoder().encodeToString(
                 MessageDigest.getInstance("SHA-256").digest("\n  run();\n".getBytes(StandardCharsets.UTF_8)));
 
-        assertThat(StatusHandler.contentSecurityPolicy(html))
+        assertThat(ManagementEndpoint.contentSecurityPolicy(html))
                 .contains("script-src 'sha256-" + expected + "'")
                 .contains("default-src 'none'")
                 .doesNotContain("script-src 'unsafe-inline'");
@@ -33,7 +33,7 @@ class StatusHandlerCspTest
     @Test
     void aSecondScriptBlockIsRefusedRatherThanSilentlyBlocked()
     {
-        assertThatThrownBy(() -> StatusHandler.contentSecurityPolicy("<script>a()</script><script>b()</script>"))
+        assertThatThrownBy(() -> ManagementEndpoint.contentSecurityPolicy("<script>a()</script><script>b()</script>"))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -44,12 +44,12 @@ class StatusHandlerCspTest
     @Test
     void theShippedDashboardHasNoInlineHandlers() throws Exception
     {
-        try (final InputStream in = StatusHandler.class.getResourceAsStream("/dashboard/default/page.html"))
+        try (final InputStream in = ManagementEndpoint.class.getResourceAsStream("/dashboard/default/page.html"))
         {
             final String html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             // Any event-handler attribute, whatever its case or quoting: onclick="", onClick='', onload=x.
             assertThat(html).doesNotContainPattern(Pattern.compile("<[^>]*\\son[a-z]+\\s*=", Pattern.CASE_INSENSITIVE));
-            assertThat(StatusHandler.contentSecurityPolicy(html)).contains("script-src 'sha256-");
+            assertThat(ManagementEndpoint.contentSecurityPolicy(html)).contains("script-src 'sha256-");
         }
     }
 }

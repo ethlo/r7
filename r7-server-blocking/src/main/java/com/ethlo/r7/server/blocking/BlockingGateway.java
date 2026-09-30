@@ -26,6 +26,9 @@ import com.ethlo.r7.r7f.R7fRecoveryManager;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.spi.EngineContext;
+import com.ethlo.r7.status.FileTelemetryRepository;
+import com.ethlo.r7.status.ManagementEndpoint;
+import com.ethlo.r7.status.MetricsRegistry;
 import com.ethlo.r7.upstream.HttpUpstream;
 import com.ethlo.r7.upstream.UpstreamOptions;
 import com.ethlo.r7.validation.ValidationResult;
@@ -44,6 +47,7 @@ public final class BlockingGateway implements AutoCloseable
     private final GatewayPipeline pipeline;
     private final ShardedJournalWriter<R7fJournal> journalWriter;
     private final GatewayScheduler scheduler;
+    private final ManagementEndpoint managementEndpoint;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public BlockingGateway(final Path routesFile, final Path serverFile) throws IOException
@@ -59,10 +63,16 @@ public final class BlockingGateway implements AutoCloseable
         this.journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
                 new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault())));
 
-        final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(GatewayScheduler.class, this.scheduler)));
+        final MetricsRegistry metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
+        final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(
+                GatewayScheduler.class, this.scheduler,
+                MetricsRegistry.class, metricsRegistry)));
         final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
 
         this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
+        final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
+        // No listener counters of our own; the server may know them, but none is asked yet.
+        this.managementEndpoint = new ManagementEndpoint(metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, null);
         hotReloadService.onReload(new RouteGenerationListener()
         {
             @Override
@@ -97,6 +107,14 @@ public final class BlockingGateway implements AutoCloseable
     public GatewayPipeline pipeline()
     {
         return this.pipeline;
+    }
+
+    /**
+     * The management port's dashboard and JSON, for a server that runs one.
+     */
+    public ManagementEndpoint managementEndpoint()
+    {
+        return this.managementEndpoint;
     }
 
     /**

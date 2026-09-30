@@ -5,6 +5,7 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyManagementException;
@@ -36,6 +37,7 @@ import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.server.GatewayPipeline;
+import com.ethlo.r7.server.StaticFiles;
 import com.ethlo.r7.server.UpstreamConnector;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.server.config.ServerConfig;
@@ -54,6 +56,7 @@ import io.undertow.server.handlers.resource.PathResourceManager;
 import io.undertow.server.handlers.resource.ResourceHandler;
 import io.undertow.util.AttachmentKey;
 import io.undertow.util.Headers;
+import io.undertow.util.Methods;
 
 /**
  * Undertow's side of the gateway: every data-plane request becomes an
@@ -106,6 +109,11 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     ExecutorService virtualThreadExecutor()
     {
         return this.virtualThreadExecutor;
+    }
+
+    public GatewayPipeline pipeline()
+    {
+        return this.pipeline;
     }
 
     GatewayErrorHandler errorHandler()
@@ -261,13 +269,40 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
 
     // --- Static content ----------------------------------------------------------------------
 
-    void serveStatic(final HttpServerExchange exchange, final StaticContentFactory.StaticServeRequest staticServeRequest)
+    private static boolean hasWelcomeFile(final Path directory)
+    {
+        // ResourceHandler's defaults.
+        for (final String welcome : List.of("index.html", "index.htm", "default.html", "default.htm"))
+        {
+            if (Files.isRegularFile(directory.resolve(welcome)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param clientTarget the path and query the client sent, before filters rewrote them: where
+     *                     a directory's trailing-slash redirect must point
+     */
+    void serveStatic(final HttpServerExchange exchange, final StaticContentFactory.StaticServeRequest staticServeRequest, final String clientTarget)
     {
         final String staticBasePath = staticServeRequest.baseDirectory().toString();
         try
         {
             final boolean followSymlinks = staticServeRequest.followSymlinks();
             final boolean listDirectory = staticServeRequest.listDirectory();
+
+            // Read-only, as on every server: ResourceHandler serves a file to any method.
+            if (!Methods.GET.equals(exchange.getRequestMethod()) && !Methods.HEAD.equals(exchange.getRequestMethod()))
+            {
+                exchange.setStatusCode(HttpStatuses.METHOD_NOT_ALLOWED);
+                exchange.getResponseHeaders().put(Headers.ALLOW, "GET, HEAD");
+                exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, NOSNIFF);
+                exchange.endExchange();
+                return;
+            }
 
             // Dotfiles in a web root are usually deployment leftovers - .env, .git/, .htpasswd -
             // and ResourceHandler serves them like any other file. Answered as if absent.
@@ -294,6 +329,30 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
                 logger.debug("Static content directory '{}' is not currently accessible: {}", staticBasePath, e.getMessage());
                 sendOwnResponse(exchange, HttpStatuses.NOT_FOUND, "Static content directory unavailable");
                 return;
+            }
+
+            // Directories are decided here, not by ResourceHandler: its trailing-slash redirect is
+            // built from the path after filters (a StripPathPrefix route would redirect the client
+            // off its prefix), and its listing names dotfiles it refuses to serve.
+            final String relative = exchange.getRelativePath().startsWith("/") ? exchange.getRelativePath().substring(1) : exchange.getRelativePath();
+            final Path resolved = StaticFiles.resolve(Paths.get(staticBasePath), relative, followSymlinks);
+            if (resolved != null && Files.isDirectory(resolved))
+            {
+                if (!relative.isEmpty() && !relative.endsWith("/"))
+                {
+                    exchange.setStatusCode(HttpStatuses.FOUND);
+                    exchange.getResponseHeaders().put(Headers.LOCATION, StaticFiles.withTrailingSlash(clientTarget));
+                    exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, NOSNIFF);
+                    exchange.endExchange();
+                    return;
+                }
+                if (listDirectory && !hasWelcomeFile(resolved))
+                {
+                    exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/html; charset=utf-8");
+                    exchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, NOSNIFF);
+                    exchange.getResponseSender().send(ByteBuffer.wrap(StaticFiles.listing(resolved, exchange.getRelativePath(), staticServeRequest.serveHiddenFiles())));
+                    return;
+                }
             }
 
             // Different routes may point at the same base directory with different options,
@@ -324,8 +383,9 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
                 final PathResourceManager resourceManager = followSymlinks
                         ? new PathResourceManager(Paths.get(staticBasePath), 100, true, new String[0])
                         : new PathResourceManager(Paths.get(staticBasePath), 100);
+                // Listings are rendered above; ResourceHandler would name dotfiles in them.
                 final ResourceHandler handler = new ResourceHandler(resourceManager)
-                        .setDirectoryListingEnabled(listDirectory);
+                        .setDirectoryListingEnabled(false);
                 return new CachedStaticHandler(directoryIdentity, handler);
             });
 

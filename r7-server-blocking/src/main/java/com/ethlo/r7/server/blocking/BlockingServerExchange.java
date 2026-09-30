@@ -6,7 +6,11 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.function.Consumer;
 
 import com.ethlo.r7.api.GatewayHeaders;
@@ -21,6 +25,7 @@ import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.RemoteAddressResolver;
 import com.ethlo.r7.server.RequestPaths;
 import com.ethlo.r7.server.ServerExchange;
+import com.ethlo.r7.server.StaticFiles;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.status.TrafficMetrics;
 import com.ethlo.r7.upstream.HttpUpstream;
@@ -255,9 +260,111 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     protected void serveStatic(final StaticContentFactory.StaticServeRequest request)
     {
-        clientResponse().status(501);
-        clientResponse().headers().set("Content-Type", "text/plain; charset=utf-8");
-        sendBody(ByteBuffer.wrap("Static content is not supported by this server (experimental)".getBytes(StandardCharsets.UTF_8)));
+        try
+        {
+            StaticFiles.serve(new StaticTarget(), request);
+        }
+        catch (final IOException e)
+        {
+            if (this.headWritten)
+            {
+                // Part of a file went out: the client must not take it for the whole.
+                this.aborted = true;
+                return;
+            }
+            clientResponse().status(500);
+            clientResponse().headers().set("Content-Type", "text/plain; charset=utf-8");
+            sendBody(ByteBuffer.wrap("Error serving static content".getBytes(StandardCharsets.UTF_8)));
+        }
+    }
+
+    /**
+     * This exchange as {@link StaticFiles} needs it.
+     */
+    private final class StaticTarget implements StaticFiles.Target
+    {
+        @Override
+        public String method()
+        {
+            return upstreamRequest().method();
+        }
+
+        @Override
+        public String path()
+        {
+            return upstreamRequest().path();
+        }
+
+        @Override
+        public String clientTarget()
+        {
+            return rawQuery.isEmpty() ? rawPath : rawPath + '?' + rawQuery;
+        }
+
+        @Override
+        public GatewayHeaders requestHeaders()
+        {
+            return liveHeaders;
+        }
+
+        @Override
+        public void header(final String name, final String value)
+        {
+            clientResponse().headers().set(name, value);
+        }
+
+        @Override
+        public void answer(final int status, final byte[] body)
+        {
+            clientResponse().status(status);
+            if (body.length > 0)
+            {
+                sendBody(ByteBuffer.wrap(body));
+                return;
+            }
+            commit();
+            writeHead();
+            try
+            {
+                sendNoBody();
+            }
+            catch (final IOException e)
+            {
+                throw new java.io.UncheckedIOException(e);
+            }
+        }
+
+        @Override
+        public void answerFile(final int status, final Path file, final long offset, final long length, final boolean headOnly) throws IOException
+        {
+            clientResponse().status(status);
+            clientResponse().headers().set("Content-Length", Long.toString(length));
+            commit();
+            writeHead();
+            if (headOnly)
+            {
+                sendNoBody();
+                return;
+            }
+            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ); OutputStream out = responseBody())
+            {
+                channel.position(offset);
+                final InputStream in = Channels.newInputStream(channel);
+                final byte[] buffer = new byte[64 * 1024];
+                long remaining = length;
+                while (remaining > 0)
+                {
+                    final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                    if (n == -1)
+                    {
+                        throw new IOException("File " + file + " shrank while it was being served");
+                    }
+                    onResponseBody(buffer, 0, n);
+                    out.write(buffer, 0, n);
+                    remaining -= n;
+                }
+            }
+        }
     }
 
     @Override
