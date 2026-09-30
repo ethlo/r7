@@ -54,8 +54,9 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  */
 public abstract class BlockingServerExchange extends ServerExchange implements TrafficMetrics, ProxiedExchange
 {
-    private static final String PROTOCOL = "HTTP/1.1";
+    private static final String HTTP_1_1 = "HTTP/1.1";
 
+    private final String protocol;
     private final String method;
     private final String rawPath;
     private final String decodedPath;
@@ -90,13 +91,24 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
      */
     protected BlockingServerExchange(final GatewayPipeline pipeline, final String method, final String rawPath, final String rawQuery, final WireHeaders headers)
     {
+        this(pipeline, HTTP_1_1, method, rawPath, rawQuery, headers);
+    }
+
+    /**
+     * @param protocol the protocol the client spoke, as a start line names it ("HTTP/1.1",
+     *                 "HTTP/2.0"): journaled, and it decides whether forwarded headers need
+     *                 checking for what only HTTP/2 can carry (see {@link #parsedAsHttp1()})
+     */
+    protected BlockingServerExchange(final GatewayPipeline pipeline, final String protocol, final String method, final String rawPath, final String rawQuery, final WireHeaders headers)
+    {
         super(pipeline);
+        this.protocol = protocol;
         this.method = method;
         this.rawPath = rawPath;
         this.decodedPath = RequestPaths.decode(rawPath);
         this.rawQuery = rawQuery == null ? "" : rawQuery;
         this.liveHeaders = headers;
-        final long[] size = {method.length() + 1 + rawPath.length() + (this.rawQuery.isEmpty() ? 0 : 1 + this.rawQuery.length()) + 1 + PROTOCOL.length() + 2};
+        final long[] size = {method.length() + 1 + rawPath.length() + (this.rawQuery.isEmpty() ? 0 : 1 + this.rawQuery.length()) + 1 + protocol.length() + 2};
         headers.forEach(size, (sz, name, value) -> sz[0] += name.length() + 2 + value.length() + 2);
         this.requestHeaderBytes = size[0] + 2;
     }
@@ -186,7 +198,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     protected MutableGatewayRequest openLiveRequest()
     {
         final RemoteAddressResolver.RemoteInfo remote = remoteInfo();
-        return new BlockingGatewayRequest(PROTOCOL, method(), decodedPath(), this.rawPath, this.rawQuery, this.liveHeaders, remote.address(), remote.source());
+        return new BlockingGatewayRequest(this.protocol, method(), decodedPath(), this.rawPath, this.rawQuery, this.liveHeaders, remote.address(), remote.source());
     }
 
     @Override
@@ -194,7 +206,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     {
         final RemoteAddressResolver.RemoteInfo remote = remoteInfo();
         final MutableGatewayHeaders copy = copyOf(this.liveHeaders);
-        return new ImmutableGatewayRequest(PROTOCOL, copy, decodedPath(), this.rawPath, method(),
+        return new ImmutableGatewayRequest(this.protocol, copy, decodedPath(), this.rawPath, method(),
                 new BlockingGatewayRequest.Query(this.rawQuery), new BlockingGatewayRequest.HeaderCookies(copy),
                 remote.address(), remote.source());
     }
@@ -208,7 +220,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     protected GatewayResponse snapshotResponse()
     {
-        return new ImmutableGatewayResponse(PROTOCOL, copyOf(clientResponse().headers()), clientResponse().status(), true);
+        return new ImmutableGatewayResponse(this.protocol, copyOf(clientResponse().headers()), clientResponse().status(), true);
     }
 
     private static MutableGatewayHeaders copyOf(final GatewayHeaders headers)
@@ -429,9 +441,9 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         writeHead(response.status(), response.headers());
     }
 
-    private static long headBytes(final MutableGatewayResponse response)
+    private long headBytes(final MutableGatewayResponse response)
     {
-        final long[] size = {PROTOCOL.length() + 1 + 3 + 2};
+        final long[] size = {this.protocol.length() + 1 + 3 + 2};
         response.headers().forEach(size, (s, name, value) -> s[0] += name.length() + 2 + value.length() + 2);
         return size[0] + 2;
     }
@@ -453,6 +465,12 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
                 throw failure.getCause();
             }
         }
+    }
+
+    @Override
+    public boolean parsedAsHttp1()
+    {
+        return this.protocol.startsWith("HTTP/1.");
     }
 
     @Override

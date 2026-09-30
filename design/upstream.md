@@ -411,6 +411,17 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   `StripPathPrefix` (off the route's prefix, so the client got a 404), and naming dotfiles in a
   listing while refusing to serve them. Undertow now decides those cases with `StaticFiles`
   before `ResourceHandler` sees the request; file serving itself stays Undertow's, zero-copy.
-- **HTTP/2** with `helidon-webserver-http2`; the upstream hop stays HTTP/1.1.
+- **HTTP/2.** Done: h2c with `helidon-webserver-http2`, registered explicitly so that
+  `http.enable_http2` (off by default) decides it, as on Undertow; the management listener is
+  HTTP/1.1 only. The upstream hop stays HTTP/1.1, which makes the relay the place where an
+  h2-to-h1 downgrade is either safe or a smuggling vector. It now refuses, with 400, what HTTP/2
+  can carry and HTTP/1.1 cannot: a body whose length differs from its Content-Length (the excess
+  never reaches the upstream), a header name that is not a token, and a value or target with a
+  line break or other control character (`UpstreamRelayTest`). The header check costs about a
+  tenth of the user instructions of a browser-like passthrough, so it runs only for requests
+  that did not arrive over HTTP/1.x, whose parser already guarantees it; with it scoped, the
+  branch is +4-5% user instructions and +0.5-1% cycles per request against `main` on Níma.
+  `BlockingServerExchange` now carries the client's real protocol, which it had hard-coded as
+  HTTP/1.1 - an HTTP/2 request would have been journaled as HTTP/1.1.
 - **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
 

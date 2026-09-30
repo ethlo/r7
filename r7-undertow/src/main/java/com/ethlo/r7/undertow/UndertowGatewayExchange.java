@@ -288,6 +288,13 @@ public class UndertowGatewayExchange extends ServerExchange implements ProxiedEx
     // --- ProxiedExchange: the client side of the r7 upstream client ---------------------------
 
     @Override
+    public boolean parsedAsHttp1()
+    {
+        final String protocol = this.undertowExchange.getProtocol().toString();
+        return protocol.startsWith("HTTP/1.");
+    }
+
+    @Override
     public String forwardMethod()
     {
         return this.undertowExchange.getRequestMethod().toString();

@@ -36,9 +36,19 @@ public final class UpstreamRelay
         exchange.attemptedTarget(target.uri);
 
         final UpstreamOptions options = upstream.options();
-        final byte[] head = Http1.requestHead(target, exchange);
+        final byte[] head;
+        final long declaredLength;
+        try
+        {
+            head = Http1.requestHead(target, exchange);
+            declaredLength = exchange.forwardHeaders().getFirst("Content-Length") != null ? Http1.requestContentLength(exchange.forwardHeaders()) : -1;
+        }
+        catch (final ClientProtocolException e)
+        {
+            throw new ProxyFailure(400, "Bad request", null);
+        }
         final Http1.Framing framing = Http1.Framing.ofRequest(exchange.forwardHeaders());
-        final Attempt attempt = new Attempt();
+        final Attempt attempt = new Attempt(declaredLength);
 
         HttpUpstream.Connection connection = null;
         try
@@ -83,6 +93,11 @@ public final class UpstreamRelay
         {
             throw new ProxyFailure(413, "Request body too large", null);
         }
+        catch (final ClientProtocolException | ClientBodyException e)
+        {
+            // The client's doing, not the upstream's; nothing to report.
+            throw new ProxyFailure(400, "Bad request", null);
+        }
         catch (final IOException e)
         {
             throw new ProxyFailure(502, "Upstream failed", new ProxyConnectionException("Upstream exchange failed with " + target.uri + ": " + e.getMessage()));
@@ -101,7 +116,13 @@ public final class UpstreamRelay
      */
     private static final class Attempt
     {
+        final long declaredLength;
         boolean requestFlushed;
+
+        Attempt(final long declaredLength)
+        {
+            this.declaredLength = declaredLength;
+        }
     }
 
     /**
@@ -132,12 +153,12 @@ public final class UpstreamRelay
             out.write(head);
             if (framing != Http1.Framing.NONE)
             {
-                copyRequestBody(out, exchange, framing);
+                copyRequestBody(out, exchange, framing, attempt.declaredLength);
             }
             out.flush();
             attempt.requestFlushed = true;
         }
-        catch (final ClientBodyException | RequestBodyTooLargeException e)
+        catch (final ClientBodyException | ClientProtocolException | RequestBodyTooLargeException e)
         {
             throw e;
         }
@@ -195,10 +216,18 @@ public final class UpstreamRelay
         }
     }
 
-    private static void copyRequestBody(final OutputStream out, final ProxiedExchange exchange, final Http1.Framing framing) throws IOException
+    /**
+     * @param declaredLength the Content-Length a LENGTH-framed body must match exactly: a server
+     *                       that hands over more or fewer bytes (HTTP/2 lets a client send a
+     *                       DATA stream of any length) must not have that forwarded as a
+     *                       fixed-length HTTP/1.1 body, where the difference becomes the start
+     *                       of another request, or holds the upstream waiting
+     */
+    private static void copyRequestBody(final OutputStream out, final ProxiedExchange exchange, final Http1.Framing framing, final long declaredLength) throws IOException
     {
         final InputStream in = exchange.openRequestBody();
         final byte[] buffer = new byte[8192];
+        long copied = 0;
         while (true)
         {
             final int n;
@@ -214,6 +243,11 @@ public final class UpstreamRelay
             {
                 break;
             }
+            copied += n;
+            if (framing == Http1.Framing.LENGTH && copied > declaredLength)
+            {
+                throw new ClientProtocolException("The request body is longer than its Content-Length");
+            }
             exchange.onRequestBody(buffer, 0, n);
             if (framing == Http1.Framing.CHUNKED)
             {
@@ -226,6 +260,10 @@ public final class UpstreamRelay
             {
                 out.write(buffer, 0, n);
             }
+        }
+        if (framing == Http1.Framing.LENGTH && copied != declaredLength)
+        {
+            throw new ClientProtocolException("The request body is shorter than its Content-Length");
         }
         // Only reached when the whole body was read: a failure above leaves a chunked body
         // without its terminating chunk, and the socket is then closed, so the upstream sees a

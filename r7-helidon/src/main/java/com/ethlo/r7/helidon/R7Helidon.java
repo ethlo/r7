@@ -14,6 +14,8 @@ import com.ethlo.r7.status.ManagementEndpoint;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webserver.WebServer;
+import io.helidon.webserver.http1.Http1Config;
+import io.helidon.webserver.http2.Http2Config;
 import io.helidon.webserver.http.ServerRequest;
 import io.helidon.webserver.http.ServerResponse;
 
@@ -43,14 +45,29 @@ public final class R7Helidon
         final ServerConfig.ServerCoreConfig core = gateway.serverConfig().server();
         final ServerConfig.ManagementConfig management = gateway.serverConfig().management();
         final ManagementEndpoint endpoint = gateway.managementEndpoint();
+        final boolean http2 = gateway.serverConfig().http().enableHttp2();
         this.server = WebServer.builder()
                 .host(core.host())
                 .port(core.port())
+                // Protocols by configuration, not by what is on the classpath: HTTP/2 (h2c, the
+                // listener is plaintext) only with http.enable_http2, as on Undertow - it adds a
+                // second protocol parser to the attack surface. The upstream hop stays HTTP/1.1.
+                .protocolsDiscoverServices(false)
+                .addProtocol(Http1Config.create())
+                .update(builder ->
+                {
+                    if (http2)
+                    {
+                        builder.addProtocol(Http2Config.create());
+                    }
+                })
                 .routing(routing -> routing.any((req, res) -> gateway.handle(new HelidonGatewayExchange(gateway.pipeline(), req, res))))
                 // The management port: its own listener, with its own connection cap and idle
                 // timeout, as on Undertow - it shares the process's descriptors with the data
                 // plane, and a client holding connections open must not starve the latter.
                 .putSocket(MANAGEMENT_SOCKET, socket -> socket
+                        .protocolsDiscoverServices(false)
+                        .addProtocol(Http1Config.create())
                         .host(management.host())
                         .port(management.port())
                         .maxTcpConnections(management.maxConnections())

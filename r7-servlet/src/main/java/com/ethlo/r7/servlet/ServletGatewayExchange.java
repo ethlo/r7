@@ -28,7 +28,7 @@ final class ServletGatewayExchange extends BlockingServerExchange
     {
         // getRequestURI(), not getServletPath() or getPathInfo(): those are decoded and
         // normalised, and the guard must see the dot segments and escapes as the client sent them.
-        super(pipeline, req.getMethod(), pathWithinContext(req), req.getQueryString(), headersOf(req));
+        super(pipeline, req.getProtocol(), req.getMethod(), pathWithinContext(req), req.getQueryString(), headersOf(req));
         this.req = req;
         this.resp = resp;
     }
