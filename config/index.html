@@ -3721,6 +3721,7 @@
 </table>
 <h3 id="limits-configuration-limits">Limits Configuration (<code>limits</code>)</h3>
 <p>Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.</p>
+<p>A request over <code>max_header_size</code> or <code>max_header_count</code> is refused before any filter runs, with <code>400</code> or <code>431</code> depending on which layer caught it. A body over <code>max_entity_size</code> is refused with <code>413</code> when its <code>Content-Length</code> declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental Helidon and servlet hosts, whatever the server's own parser settings.</p>
 <table>
 <thead>
 <tr>
