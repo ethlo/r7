@@ -17,7 +17,10 @@
     <name>r7-helidon</name>
     <url>https://github.com/ethlo/r7</url>
     <properties>
-        <helidon.version>4.5.5</helidon.version>
+        <helidon.version>27.0.0</helidon.version>
+        <!-- Helidon 27 is compiled for Java 27; the rest of r7 stays on 25, so hosts that embed it
+             (a servlet container, say) are not forced onto a non-LTS runtime by this spike. -->
+        <maven.compiler.release>27</maven.compiler.release>
     </properties>
     <dependencies>
         <dependency>

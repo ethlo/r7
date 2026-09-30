@@ -207,14 +207,17 @@ its own change.
    Allocation work in `open()` (copy-on-write snapshots, interned header names, lazy
    attributes) is left out: at ~3% of CPU for all of r7 outside the journal, it cannot move
    throughput measurably.
-6. **Helidon Níma spike.** Done, as `r7-helidon` (experimental): `R7Helidon` on Helidon 4.5.5
+6. **Helidon Níma spike.** Done, as `r7-helidon` (experimental): `R7Helidon` on Helidon 27.0.0
    with `HttpUpstream`, a blocking HTTP/1.1 client of its own (round-robin targets, per-target
    keep-alive pools, Content-Length and chunked bodies both ways, X-Forwarded-* as Undertow
    writes them) that names no Helidon type. Not yet: management port, static content,
-   WebSocket tunnelling, https upstreams, retries. Helidon 27.0.0 has since been released, but
-   it is compiled for Java 27 (class file version 71) and r7 builds and runs on Java 25, so the
-   spike stays on 4.5.5 until r7 moves to Java 27. Its upgrade guide shows little for r7 to
-   change: `Header.value()` becomes `Header.get()`, and methods are matched case-sensitively.
+   WebSocket tunnelling, https upstreams, retries. Helidon 27 is compiled for Java 27 (class file
+   version 71), so `r7-helidon` alone is released for 27; every other module stays on 25 (LTS),
+   the floor `r7-journal-mmap`'s use of the FFM API sets, so a host embedding r7 is not pushed
+   onto a non-LTS runtime by this spike. The build itself needs JDK 27. The move from 4.5.5 took
+   no source change: r7 used none of the removed APIs, and `routing.any` has no method selector
+   for 27's case-sensitive method matching to affect - methods now reach r7 exactly as sent,
+   which is what Undertow does.
 
    The security kit passes against it, and its first run caught a Níma-specific hole:
    Helidon's `UriPath.path()` resolves dot segments, so predicates and the path guard saw
