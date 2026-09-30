@@ -50,7 +50,7 @@ public record ServerConfig(
     @Override
     public ProxyConfig proxy()
     {
-        return Optional.ofNullable(this.proxy).orElse(new ProxyConfig(null, null, null, null));
+        return Optional.ofNullable(this.proxy).orElse(new ProxyConfig(null, null, null, null, null));
     }
 
     @Override
@@ -280,12 +280,22 @@ public record ServerConfig(
             Integer connectionsPerThread,
             Integer maxQueueSize,
             Duration maxRequestTime,
-            Duration ttl
+            Duration ttl,
+            @Description("Which upstream client proxies requests on Undertow: 'undertow' (its own proxy, the default) or 'r7' "
+                    + "(the blocking client every r7 server shares, on virtual threads). Experimental; see design/upstream.md.")
+            String client
     ) implements ValidatableConfig
     {
+        public static final String CLIENT_UNDERTOW = "undertow";
+        public static final String CLIENT_R7 = "r7";
+
         @Override
         public void validate(final ValidationResult result)
         {
+            if (!CLIENT_UNDERTOW.equals(this.client()) && !CLIENT_R7.equals(this.client()))
+            {
+                result.addError("client", "must be '" + CLIENT_UNDERTOW + "' or '" + CLIENT_R7 + "'");
+            }
             if (this.connectionsPerThread() < 1)
             {
                 result.addError("connections_per_thread", "must be >= 1");
@@ -319,6 +329,12 @@ public record ServerConfig(
         public Duration ttl()
         {
             return Optional.ofNullable(this.ttl).orElse(Duration.ofSeconds(30));
+        }
+
+        @Override
+        public String client()
+        {
+            return this.client == null ? CLIENT_UNDERTOW : this.client.trim().toLowerCase(java.util.Locale.ROOT);
         }
     }
 

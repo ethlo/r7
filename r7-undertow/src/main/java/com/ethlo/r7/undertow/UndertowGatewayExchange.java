@@ -1,9 +1,16 @@
 package com.ethlo.r7.undertow;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 
+import org.xnio.IoUtils;
+
+import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayResponse;
 import com.ethlo.r7.api.MutableGatewayHeaders;
@@ -17,6 +24,11 @@ import com.ethlo.r7.server.ServerExchange;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.status.TrafficMetrics;
 import com.ethlo.r7.status.TrafficMetricsHandler;
+import com.ethlo.r7.upstream.HttpUpstream;
+import com.ethlo.r7.upstream.ProxiedExchange;
+import com.ethlo.r7.upstream.ProxyFailure;
+import com.ethlo.r7.upstream.RequestBodyTooLargeException;
+import com.ethlo.r7.upstream.UpstreamRelay;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
 import io.undertow.server.ExchangeCompletionListener;
@@ -29,7 +41,7 @@ import io.undertow.util.Headers;
  * The Undertow side of one request: the {@link ServerExchange} filters see, backed by the
  * {@link HttpServerExchange} it arrived on.
  */
-public class UndertowGatewayExchange extends ServerExchange
+public class UndertowGatewayExchange extends ServerExchange implements ProxiedExchange
 {
     private static final Object REGISTRY_LOCK = new Object();
     // Start with a reasonable size, it will grow automatically if needed
@@ -68,6 +80,10 @@ public class UndertowGatewayExchange extends ServerExchange
     private final HttpServerExchange undertowExchange;
     private final R7UndertowHandler handler;
     private MutableGatewayHeaders requestHeaders;
+
+    // Only used with proxy.client: r7.
+    private String attemptedTarget;
+    private long relayedRequestBytes;
 
     UndertowGatewayExchange(final HttpServerExchange undertowExchange, final GatewayPipeline pipeline, final R7UndertowHandler handler)
     {
@@ -201,8 +217,168 @@ public class UndertowGatewayExchange extends ServerExchange
     @Override
     protected void proxy(final UpstreamHandle upstream) throws Exception
     {
+        if (upstream instanceof HttpUpstream r7)
+        {
+            // The relay blocks, so it runs on a virtual thread: already on one if a filter
+            // dispatched, otherwise dispatched now, and the I/O thread returns at once.
+            if (mayBlock())
+            {
+                relay(r7);
+            }
+            else
+            {
+                this.undertowExchange.dispatch(this.handler.virtualThreadExecutor(), () -> relay(r7));
+            }
+            return;
+        }
         guardChunkedRequestBody(this.undertowExchange);
         ((R7UndertowHandler.UndertowUpstream) upstream).proxyHandler().handleRequest(this.undertowExchange);
+    }
+
+    /**
+     * One exchange through the r7 client, on a thread that may block. Nothing escapes: after a
+     * dispatch there is no pipeline frame left to catch it, so failures are answered and
+     * reported here, the way the pipeline does it for a filter.
+     */
+    private void relay(final HttpUpstream upstream)
+    {
+        try
+        {
+            UpstreamRelay.relay(upstream, this, route().id());
+        }
+        catch (final ProxyFailure failure)
+        {
+            respondError(failure.status(), failure.message());
+            if (failure.getCause() != null)
+            {
+                this.handler.errorHandler().handleError(this, failure.getCause());
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            // Fail closed.
+            if (this.undertowExchange.isResponseStarted())
+            {
+                abortResponse();
+            }
+            else
+            {
+                respondError(500, "Internal gateway error");
+            }
+            this.handler.errorHandler().handleError(this, e);
+        }
+    }
+
+    private void respondError(final int status, final String message)
+    {
+        if (this.undertowExchange.isResponseStarted())
+        {
+            return;
+        }
+        this.undertowExchange.setStatusCode(status);
+        this.undertowExchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/plain; charset=utf-8");
+        this.undertowExchange.getResponseHeaders().put(Headers.X_CONTENT_TYPE_OPTIONS, "nosniff");
+        this.undertowExchange.getResponseSender().send(message);
+    }
+
+    // --- ProxiedExchange: the client side of the r7 upstream client ---------------------------
+
+    @Override
+    public String forwardMethod()
+    {
+        return this.undertowExchange.getRequestMethod().toString();
+    }
+
+    /**
+     * The request target as Undertow's ProxyHandler builds it: the request URI - encoded, as
+     * filters leave it - without the scheme and authority of an absolute-form target, and the
+     * query string.
+     */
+    @Override
+    public String forwardTarget()
+    {
+        String uri = this.undertowExchange.getRequestURI();
+        if (this.undertowExchange.isHostIncludedInRequestURI())
+        {
+            final int authority = uri.indexOf("//");
+            if (authority != -1)
+            {
+                final int path = uri.indexOf('/', authority + 2);
+                if (path != -1)
+                {
+                    uri = uri.substring(path);
+                }
+            }
+        }
+        final String query = this.undertowExchange.getQueryString();
+        return query == null || query.isEmpty() ? uri : uri + '?' + query;
+    }
+
+    @Override
+    public GatewayHeaders forwardHeaders()
+    {
+        return requestHeaders();
+    }
+
+    @Override
+    public String forwardedFor()
+    {
+        final InetSocketAddress peer = this.undertowExchange.getSourceAddress();
+        if (peer == null)
+        {
+            return "unknown";
+        }
+        return peer.getAddress() != null ? peer.getAddress().getHostAddress() : peer.getHostString();
+    }
+
+    @Override
+    public String forwardedProto()
+    {
+        return "https".equals(this.undertowExchange.getRequestScheme()) ? "https" : "http";
+    }
+
+    @Override
+    public InputStream openRequestBody()
+    {
+        return ParkingChannelStreams.requestBody(this.undertowExchange);
+    }
+
+    @Override
+    public void onRequestBody(final byte[] buffer, final int offset, final int length) throws IOException
+    {
+        // The journal tee and the traffic metrics see the body in their conduits; only the
+        // route's limit is left to enforce, which RequestBodyGuardConduit does for Undertow's
+        // own client.
+        this.relayedRequestBytes += length;
+        final Long limit = this.undertowExchange.getAttachment(REQUEST_BODY_LIMIT);
+        if (limit != null && this.relayedRequestBytes > limit)
+        {
+            throw new RequestBodyTooLargeException();
+        }
+    }
+
+    @Override
+    public OutputStream commit(final boolean body)
+    {
+        // The commit listener runs when Undertow commits the head, on this thread.
+        if (!body)
+        {
+            this.undertowExchange.endExchange();
+            return null;
+        }
+        return ParkingChannelStreams.responseBody(this.undertowExchange);
+    }
+
+    @Override
+    public void abortResponse()
+    {
+        IoUtils.safeClose(this.undertowExchange.getConnection());
+    }
+
+    @Override
+    public void attemptedTarget(final URI target)
+    {
+        this.attemptedTarget = target.toString();
     }
 
     /**
@@ -228,6 +404,10 @@ public class UndertowGatewayExchange extends ServerExchange
     @Override
     protected String[] attemptedUpstreams()
     {
+        if (this.attemptedTarget != null)
+        {
+            return new String[]{this.attemptedTarget};
+        }
         return DiagnosticProxyClient.getAttemptedUris(this.undertowExchange);
     }
 

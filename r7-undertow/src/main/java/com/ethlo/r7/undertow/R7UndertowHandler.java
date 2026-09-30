@@ -39,6 +39,8 @@ import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.UpstreamConnector;
 import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.server.config.ServerConfig;
+import com.ethlo.r7.upstream.HttpUpstream;
+import com.ethlo.r7.upstream.UpstreamOptions;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
 import io.undertow.client.UndertowClient;
@@ -106,6 +108,11 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
         return this.virtualThreadExecutor;
     }
 
+    GatewayErrorHandler errorHandler()
+    {
+        return this.errorHandler;
+    }
+
     // --- Route generations -------------------------------------------------------------------
 
     @Override
@@ -164,6 +171,16 @@ public final class R7UndertowHandler implements HttpHandler, RouteGenerationList
     {
         final ServerConfig.ProxyConfig pConfig = this.serverConfig.proxy();
         final UpstreamConfig upstream = route.routeDefinition().upstream();
+
+        if (ServerConfig.ProxyConfig.CLIENT_R7.equals(pConfig.client()))
+        {
+            // The client every r7 server shares (design/upstream.md); requests are relayed on a
+            // virtual thread by UndertowGatewayExchange.
+            final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(new TimeoutConfig(null));
+            final UpstreamOptions defaults = UpstreamOptions.defaults();
+            return new HttpUpstream(new UpstreamOptions(timeouts.read(), defaults.connectTimeout(), pConfig.ttl(),
+                    defaults.maxHeadBytes(), defaults.maxHeaderCount()));
+        }
 
         final LoadBalancingProxyClient rawClient = new LoadBalancingProxyClient(UndertowClient.getInstance(), null, UpstreamHostSelectors.forStrategy(upstream.strategy()))
                 .setConnectionsPerThread(pConfig.connectionsPerThread())

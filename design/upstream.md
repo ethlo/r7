@@ -324,8 +324,30 @@ check.
    allocating. Still open: a blocking socket write has no timeout, so an upstream that stops
    reading a request body without closing holds the virtual thread until `max_request_time`
    exists to close the socket (step 5).
-3. **Undertow adapter behind `proxy.client: r7`.** The channel bridge, dispatch, the fd-leak
-   test, both kits green on Undertow with `r7` selected.
+3. **Undertow adapter behind `proxy.client: r7`.** Done. `UndertowGatewayExchange` is a
+   `ProxiedExchange`; `proxy()` dispatches the relay to the virtual-thread executor (or runs it
+   inline when a filter already dispatched), and `ParkingChannelStreams` is the park/unpark
+   bridge. The security kit and the conformance kit pass on Undertow with `r7` selected, and
+   so does the whole `r7-undertow` suite (145 tests) with `r7` temporarily made the default -
+   which caught one difference: `HttpUpstream` converted its timeouts to int milliseconds on
+   first connect, where Undertow's client fails while the route generation is prepared. It now
+   converts in its constructor. `X-Forwarded-Server` is added as Undertow adds it.
+
+   `SlowPeerDescriptorTest` samples the process's epoll descriptors while 16 exchanges with a
+   slow sender and a slow reader run. With the bridge replaced by `startBlocking()` streams it
+   fails, with exactly one new epoll descriptor per exchange (47 → 63): the per-thread
+   selectors are real, not just read off the bytecode. It samples during the run because by
+   the end the test's allocation rate has let finalization close them again - which is also
+   why this never shows in a benchmark.
+
+   **Undertow's own client against the conformance kit** (run once, not kept as a test): 11 of
+   19 fail. The ones that matter: a chunk longer than its declared size reaches the client as
+   a complete response; a POST that fails on a reused connection is sent to the upstream a
+   second time; conflicting `Content-Length`s, folded headers, a 70 KB header and
+   `Transfer-Encoding: gzip, chunked` are all relayed; headers the upstream nominates in
+   `Connection` leak to the client. The rest are status choices (503 where the kit expects
+   502) and a stale pooled GET that is answered 503 rather than retried.
+
 4. **Measure Undertow with `r7` against Undertow with `undertow`.** Instructions and cycles per
    request, then the throughput table and the wrk2 sweep above. If `r7` is worse, profile the
    dispatch and the parking before considering the non-blocking transport.

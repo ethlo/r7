@@ -968,6 +968,7 @@ Configures the behavior of the internal reverse proxy client that connects to up
 | `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
 | `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. At most `24d` (2147483647 ms). |
 | `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. At most `24d` (2147483647 ms). |
+| `client` | String | **Experimental.** Which upstream client proxies requests: `undertow` (Undertow's own proxy; the default) or `r7`, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With `r7`, response framing is checked strictly (conflicting `Content-Length`, folded headers, malformed chunks and transfer codings other than `chunked` are answered with `502`), a request that fails on a reused connection is retried only when it is idempotent, and `connections_per_thread` and `max_queue_size` are not applied yet. `r7` does not yet support `https` targets or WebSocket upgrades. |
 
 ### Advanced (`advanced`)
 
