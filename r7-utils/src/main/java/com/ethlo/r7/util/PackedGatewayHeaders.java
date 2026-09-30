@@ -108,9 +108,9 @@ public final class PackedGatewayHeaders implements GatewayHeaders
     }
 
     /**
-     * Exact-match lookup, as the String-backed container this replaces did — HTTP header names
-     * are case-insensitive, but changing that here would change behaviour rather than
-     * representation.
+     * Header names compare ASCII case-insensitively, as in {@link FastGatewayHeaders}: this is
+     * the container a journal consumer reads from, and a consumer asking for
+     * {@code content-type} must find a header written as {@code Content-Type}.
      */
     @Override
     public String getFirst(final String name)
@@ -171,7 +171,8 @@ public final class PackedGatewayHeaders implements GatewayHeaders
 
     /**
      * Compares against the stored bytes without building a string for the candidate. Each
-     * stored byte is one ISO-8859-1 character, so an unsigned byte compares directly to a char.
+     * stored byte is one ISO-8859-1 character, so an unsigned byte compares directly to a char,
+     * and folds with the same ASCII-only rule as {@link AsciiCase#equalsIgnoreCase}.
      */
     private boolean matches(final String candidate, final int start, final int length)
     {
@@ -181,7 +182,9 @@ public final class PackedGatewayHeaders implements GatewayHeaders
         }
         for (int i = 0; i < length; i++)
         {
-            if (candidate.charAt(i) != (char) (data[start + i] & 0xFF))
+            final char c = candidate.charAt(i);
+            final char stored = (char) (data[start + i] & 0xFF);
+            if (c != stored && AsciiCase.toLower(c) != AsciiCase.toLower(stored))
             {
                 return false;
             }
