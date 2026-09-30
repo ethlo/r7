@@ -120,6 +120,13 @@ public abstract class AbstractR7IntegrationTest
                         MountableFile.forClasspathResource(configClasspath),
                         "/app/config/routes.yaml"
                 )
+                // The images run as UID 65532 and prepare only /journals for it; without this the
+                // default relative work_dir resolves to /app/journals, which that user cannot
+                // create, and the gateway dies at startup. Same as docker/config/server.yaml.
+                .withCopyToContainer(
+                        Transferable.of("storage:\n  work_dir: /journals\n"),
+                        "/app/config/server.yaml"
+                )
                 // Injecting a test file for the static content route
                 .withCopyToContainer(
                         Transferable.of(STATIC_CONTENT_SERVED_SUCCESSFULLY),
