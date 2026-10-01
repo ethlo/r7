@@ -150,6 +150,14 @@ public class R7fJournalProvider implements AutoCloseable
     private volatile boolean running = true;
 
     /**
+     * Opens this shard's {@link CommitSignal}, for the journal writing it.
+     */
+    CommitSignal openCommitSignal()
+    {
+        return CommitSignal.open(tempDir, shardId);
+    }
+
+    /**
      * An uncompressed journal.
      */
     public R7fJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)

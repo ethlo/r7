@@ -96,6 +96,12 @@ public final class R7fJournal implements Journal
     private final ThreadLocal<EntryEncoder> encoders = ThreadLocal.withInitial(EntryEncoder::new);
 
     private final R7fJournalProvider provider;
+
+    /**
+     * Bumped after every commit and rotation, so a tailer can wait for news without polling
+     * the segment (design/live-tailing.md).
+     */
+    private final CommitSignal commitSignal;
     private final Consumer<Path> finishedJournalFileSupplier;
 
     private static final byte[] FBS_JOURNAL_LEVELS = new byte[]{
@@ -184,6 +190,7 @@ public final class R7fJournal implements Journal
         this.faultAhead = FaultAhead.create(provider.isPreFault());
         this.compressionLevel = provider.getCompressionLevel();
         this.codec = compressionLevel > 0 ? R7fConstants.CODEC_ZSTD : R7fConstants.CODEC_NONE;
+        this.commitSignal = provider.openCommitSignal();
         rotateSegment();
     }
 
@@ -481,6 +488,7 @@ public final class R7fJournal implements Journal
 
         position = end;
         nextSequence++;
+        commitSignal.signal();
 
         if (faultAhead != null)
         {
@@ -596,6 +604,7 @@ public final class R7fJournal implements Journal
         }
         enc.releaseSources();
         nextSequence++;
+        commitSignal.signal();
         if (faultAhead != null)
         {
             faultAhead.advance(segment, position);
@@ -1003,6 +1012,8 @@ public final class R7fJournal implements Journal
             // restart reported a recovery. Nothing is lost either way; the cost is that the
             // signal stops meaning anything.
             awaitPendingFinalizers();
+            commitSignal.signal();
+            commitSignal.close();
             if (faultAhead != null)
             {
                 faultAhead.close();
@@ -1148,6 +1159,9 @@ if (finalizer.isAlive())
         {
             faultAhead.reset(segment, position);
         }
+        // The retiring segment's seal record is stamped and the new one has a preamble: a
+        // reader woken now can finish the one and start the other.
+        commitSignal.signal();
     }
 
     @SuppressWarnings("unused")
