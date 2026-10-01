@@ -98,7 +98,6 @@ public abstract class AbstractR7IntegrationTest
         {
             switch (runMode)
             {
-                case "native-docker" -> startDockerContainer("docker.io/library/r7-gateway-native:latest", configClasspath);
                 case "jvm-docker" -> startDockerContainer("docker.io/library/r7-gateway:latest", configClasspath);
                 case "in-process" -> startInProcessEngine(configClasspath);
                 default -> throw new IllegalArgumentException("Unknown r7.test.mode: " + runMode);

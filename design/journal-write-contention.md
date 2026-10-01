@@ -103,7 +103,7 @@ queue offer). The populate call runs outside it.
   closing a segment's arena. Chunks run in order on one thread, so a no-op task submitted after
   them is a fence.
 - **Off where it cannot help:** not Linux, a kernel older than 5.14 (probed once, on an
-  anonymous page), a failed link (native image), or `pre_fault` on. A failure while running
+  anonymous page), a failed link, or `pre_fault` on. A failure while running
   costs nothing: the writer faults as before.
 - **Native access:** the gateway jars carry `Enable-Native-Access: ALL-UNNAMED` in their
   manifests, as the images' entrypoints do not pass the flag.

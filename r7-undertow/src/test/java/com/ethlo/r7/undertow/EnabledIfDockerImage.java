@@ -17,8 +17,8 @@ import org.testcontainers.DockerClientFactory;
  * Skips the annotated test class unless Docker is reachable and the named image is present in the
  * local image store.
  *
- * <p>Some tests run a locally built gateway image (e.g. {@code r7-gateway-native}, produced by
- * {@code ./build-native.sh}). That image is never published under that name, so Testcontainers
+ * <p>Some tests run a locally built gateway image ({@code r7-gateway}, produced by
+ * {@code ./build.sh}). That image is never published under that name, so Testcontainers
  * would try to pull it and fail the build on any machine, CI runner included, that has not built
  * it. Such tests are opt-in by building the image, not failures by default. The check is
  * deliberately local-only: it never pulls.</p>

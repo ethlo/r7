@@ -598,9 +598,9 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
      * flushed compression and its decompression.
      * <p>
      * Loading the library is not proof. zstd-jni binds through FFM on JDK 22 and later, and a
-     * native image without those downcalls registered loads the library fine and then fails
-     * on first use — with an {@link Error}, inside a request, so every journaled request
-     * failed closed with a 500. Anything that goes wrong here goes wrong at startup instead,
+     * runtime that cannot make those downcalls loads the library fine and then fails on first
+     * use — with an {@link Error}, inside a request. That is how the native image, before it
+     * was dropped, failed every journaled request closed with a 500. Anything that goes wrong here goes wrong at startup instead,
      * and an audit journal written uncompressed beats a gateway that cannot serve.
      */
     private static boolean zstdAvailable(final int shardId)

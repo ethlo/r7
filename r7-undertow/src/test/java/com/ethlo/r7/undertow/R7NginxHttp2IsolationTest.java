@@ -12,17 +12,18 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.images.builder.Transferable;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-// Needs the locally built native image (./build-native.sh); skipped where it has not been built.
+// Needs the locally built gateway image (./build.sh); skipped where it has not been built.
 // The class-level condition is evaluated before the Testcontainers extension starts any container.
 @EnabledIfDockerImage(R7NginxHttp2IsolationTest.GATEWAY_IMAGE)
 @Testcontainers
 public class R7NginxHttp2IsolationTest
 {
-    static final String GATEWAY_IMAGE = "docker.io/library/r7-gateway-native:latest";
+    static final String GATEWAY_IMAGE = "docker.io/library/r7-gateway:latest";
 
     private static final Network NETWORK = Network.newNetwork();
 
@@ -73,6 +74,10 @@ public class R7NginxHttp2IsolationTest
             .withCopyToContainer(Transferable.of(SERVER_YAML), "/app/config/server.yaml")
             .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
             .withEnv("R7_SERVER_CONFIG", "/app/config/server.yaml")
+            // Not the default port check: Docker's port proxy accepts connections before the
+            // gateway listens, and the first request then reads no bytes. The startup line is
+            // logged once the listeners are up.
+            .waitingFor(Wait.forLogMessage(".*started in.*", 1).withStartupTimeout(Duration.ofSeconds(60)))
             .dependsOn(NGINX_BACKEND);
 
     @Test
