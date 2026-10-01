@@ -4,6 +4,7 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.channels.Channels;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,7 +18,9 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
+import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdCompressCtx;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,6 +98,7 @@ public final class WarcFileWriter implements AutoCloseable
         this.maxFileAgeMillis = maxFileAgeMillis;
         this.zstdLevel = zstdLevel;
         Files.createDirectories(directory);
+        sealLeftovers();
         rotate();
 
         // Age-based rollover has to run on its own clock: a quiet deployment may go arbitrarily
@@ -285,6 +289,85 @@ public final class WarcFileWriter implements AutoCloseable
         this.currentWarcinfoId = warcinfoId;
         this.hasRecordsSinceRotate = false; // the warcinfo record itself doesn't count as traffic
         logger.info("Rotated to new WARC file: {}", openPath);
+    }
+
+    /**
+     * Seals the files a crash left under their {@code .open} name.
+     * <p>
+     * Every exchange in such a file reached the OS before the tailer checkpointed past it, so
+     * the tailer will not write it again: left unsealed, it is invisible to every consumer that
+     * picks up finished files by name, which is all of them. Each file is cut back to its last
+     * complete Zstandard frame and sealed. An exchange group is a single {@code write}, so a
+     * killed process leaves whole groups; only a torn trailing frame is dropped, and its
+     * exchange, never checkpointed, is written again.
+     */
+    private void sealLeftovers() throws IOException
+    {
+        final List<Path> leftovers;
+        try (Stream<Path> files = Files.list(directory))
+        {
+            leftovers = files.filter(p ->
+            {
+                final String name = p.getFileName().toString();
+                return name.startsWith(filePrefix + "-") && name.endsWith(".warc.zst.open");
+            }).toList();
+        }
+        for (final Path leftover : leftovers)
+        {
+            final long complete;
+            try (FileChannel file = FileChannel.open(leftover, StandardOpenOption.READ, StandardOpenOption.WRITE))
+            {
+                complete = endOfLastCompleteFrame(file);
+                if (complete < file.size())
+                {
+                    logger.warn("Cut a torn trailing frame ({} bytes) from {}; its exchange will be written again",
+                            file.size() - complete, leftover.getFileName());
+                    file.truncate(complete);
+                }
+                file.force(true);
+            }
+            if (complete == 0)
+            {
+                Files.delete(leftover);
+                continue;
+            }
+            final String name = leftover.getFileName().toString();
+            final Path sealed = leftover.resolveSibling(name.substring(0, name.length() - ".open".length()));
+            Files.move(leftover, sealed, StandardCopyOption.ATOMIC_MOVE);
+            logger.info("Sealed WARC file left open by an earlier run: {}", sealed);
+        }
+    }
+
+    /**
+     * Walks the file frame by frame through a mapped window (a file may exceed what one
+     * mapping can hold), remapping from a frame's start when it runs past the window.
+     */
+    private static long endOfLastCompleteFrame(final FileChannel file) throws IOException
+    {
+        final long size = file.size();
+        long end = 0;
+        while (end < size)
+        {
+            final long windowSize = Math.min(size - end, Integer.MAX_VALUE);
+            final MappedByteBuffer window = file.map(FileChannel.MapMode.READ_ONLY, end, windowSize);
+            long within = 0;
+            while (within < windowSize)
+            {
+                final long frame = Zstd.findFrameCompressedSize(window.slice((int) within, (int) (windowSize - within)));
+                if (Zstd.isError(frame) || frame <= 0)
+                {
+                    break;
+                }
+                within += frame;
+            }
+            if (within == 0 || end + windowSize == size)
+            {
+                // No complete frame from here, or the window reached the end of the file.
+                return end + within;
+            }
+            end += within;
+        }
+        return end;
     }
 
     private static byte[] warcinfoBlock()
