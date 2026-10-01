@@ -26,9 +26,10 @@ What it costs (decided 2026-10-01, see the session discussion):
 - **No compatibility with version 1.** Pre-release, so nothing needs it. A reader refuses any
   other version (§11) and sets the file aside rather than deleting it.
 
-Compression is out of scope. The preamble reserves a codec field (`0` = none) so a later
-per-block zstd needs no version 3. Whether to adopt it is a separate decision, to be measured
-in a memory-limited container (see `design/journal-write-contention.md`).
+Compression was left out of this step, with the preamble's codec field reserved for it. It
+followed as codec `1` (`FORMAT.md` §4.4): a zstd stream per block, on by default, after a
+short measurement showed the journal 9–15x smaller on benchmark traffic with no measurable
+latency at 1,000 req/s, against 17–40% of peak throughput at saturation.
 
 ## Format
 
