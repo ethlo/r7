@@ -1,7 +1,7 @@
 # r7f format version 2: block framing (plan)
 
-**Status:** planned 2026-10-01, not started. This note is the working plan; `FORMAT.md` becomes
-the normative text once step 1 lands.
+**Status:** step 1 done 2026-10-01: `FORMAT.md` now specifies version 2 and is the normative
+text. Steps 2 and 3 are open, so until step 2 lands the code still writes version 1.
 
 ## Why
 
