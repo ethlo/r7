@@ -38,7 +38,15 @@ These are deployment assumptions, not vulnerabilities:
   network or behind a TLS-terminating load balancer.
 - The management port (`:18888`) is unauthenticated and must not be reachable from untrusted
   networks. The JVM binds it to 127.0.0.1 by default; the container images bind it to all
-  interfaces so that a published port works.
+  interfaces so that a published port works. It is read-only and masks configured secrets,
+  but it shows the route configuration, upstream targets and live metrics to anyone who can
+  reach it.
+- Redacted header values in the journal are an unkeyed, truncated SHA-256 unless
+  `storage.journal_security.fingerprint_key` is set. Anyone who can read the journal can
+  confirm a guess at a low-entropy value (a common password, a short API key) by hashing it.
+  Setting the key, which production deployments should do, makes the fingerprint an
+  HMAC-SHA-256 that a journal reader cannot check guesses against (`docs/journaling.md`,
+  "Redacted header values").
 - Upstream services are responsible for their own authentication, sessions and payload
   validation beyond what r7's filters are configured to check.
 
