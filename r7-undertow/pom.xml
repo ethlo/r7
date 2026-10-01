@@ -129,6 +129,14 @@
                         <manifest>
                             <mainClass>com.ethlo.r7.undertow.R7Main</mainClass>
                         </manifest>
+                        <manifestEntries>
+                            <!--
+                                The journal populates pages ahead of its writer through FFM
+                                (madvise); this grants that to java -jar without a command-line
+                                flag, which the images' entrypoints do not pass.
+                            -->
+                            <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                        </manifestEntries>
                     </archive>
                 </configuration>
             </plugin>

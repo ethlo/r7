@@ -123,6 +123,13 @@ public final class R7fJournal implements Journal
     private boolean closed;
 
     /**
+     * Keeps the active segment's next few MB faulted in, so the writer does not take page
+     * faults while holding this journal's monitor. Null where the platform cannot, or the
+     * segments are pre-faulted anyway.
+     */
+    private final FaultAhead faultAhead;
+
+    /**
      * Sequence number of the next entry written to the current segment. Reset on every
      * rotation; persisted per entry so that a reader can tell missing data from
      * end-of-data.
@@ -146,6 +153,7 @@ public final class R7fJournal implements Journal
     {
         this.provider = provider;
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
+        this.faultAhead = FaultAhead.create(provider.isPreFault());
         rotateSegment();
     }
 
@@ -437,6 +445,11 @@ public final class R7fJournal implements Journal
 
         nextSequence++;
 
+        if (faultAhead != null)
+        {
+            faultAhead.advance(segment, position);
+        }
+
         return totalLen; // Returning the total binary size of the entry
     }
 
@@ -652,6 +665,10 @@ public final class R7fJournal implements Journal
             // restart reported a recovery. Nothing is lost either way; the cost is that the
             // signal stops meaning anything.
             awaitPendingFinalizers();
+            if (faultAhead != null)
+            {
+                faultAhead.close();
+            }
 
             // The provider is this journal's to close. Its warmer thread runs ahead of the
             // writer holding mapped, pre-allocated .flux segments, and nothing else holds
@@ -779,6 +796,10 @@ if (finalizer.isAlive())
         this.arena = next.arena();
 
         writePreamble(next.segmentSequence());
+        if (faultAhead != null)
+        {
+            faultAhead.reset(segment, position);
+        }
     }
 
     @SuppressWarnings("unused")
@@ -790,6 +811,12 @@ if (finalizer.isAlive())
             final long firstTs,
             final long lastTs) throws IOException
     {
+        // A shared arena refuses to close while a native call is populating one of its pages
+        if (faultAhead != null)
+        {
+            faultAhead.drain();
+        }
+
         // 1. Unmap the memory. The OS flushes any remaining dirty pages to disk.
         oldArena.close();
 
@@ -816,6 +843,10 @@ if (finalizer.isAlive())
         final long finalPosition = this.position;
         stampSealRecord(segment, nextSequence, finalPosition);
         segment.force();
+        if (faultAhead != null)
+        {
+            faultAhead.drain();
+        }
         arena.close();
 
         final long firstTs = this.segmentStartEpochMillis;
