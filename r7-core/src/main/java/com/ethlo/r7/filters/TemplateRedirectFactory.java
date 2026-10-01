@@ -58,7 +58,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             @Description("The regular expression pattern to match against the request path.")
             String source,
 
-            @Description("The replacement template for the target URL (e.g., /new/$1).")
+            @Description("The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation.")
             String target,
 
             @Description("The HTTP status code to return for the redirect.")
