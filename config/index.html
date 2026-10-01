@@ -3935,6 +3935,16 @@
 <td>When <code>true</code>, the warmer touches every page of each segment before the writer gets it. Defaults to <code>false</code>, and best left so: on Linux 5.14 and later r7 already faults pages in a few MB ahead of the writer (fault-ahead), which was faster in every measurement and costs a fraction of the memory. <code>pre_fault</code> charges every warmed segment to memory at once (about 6 × <code>shard_size</code> per shard) and disables fault-ahead. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
+<td><code>compression</code></td>
+<td>String</td>
+<td><code>zstd</code> (the default) or <code>none</code>. With <code>zstd</code>, each 32KB block of a journal segment carries one zstd stream and every entry is flushed into it as it is written, so entries stay individually committed and readable. On benchmark traffic it made the journal 9-15x smaller with no measurable latency at 1,000 req/s; it costs CPU on the writing thread, which shows only near saturation. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See <a href="../performance_tuning/#journal-compression-compression-and-compression_level">Performance tuning</a>.</td>
+</tr>
+<tr>
+<td><code>compression_level</code></td>
+<td>Integer</td>
+<td>zstd level, <code>1</code> to <code>19</code>. Defaults to <code>1</code>, which measured best: higher levels cost noticeably more CPU for a few percent less disk. Ignored when <code>compression</code> is <code>none</code>.</td>
+</tr>
+<tr>
 <td><code>journal_security</code></td>
 <td>Object</td>
 <td>Shapes the whitelist of header names journaled in plain text. See below.</td>

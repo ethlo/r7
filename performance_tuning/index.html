@@ -719,6 +719,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#journal-compression-compression-and-compression_level" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Journal compression: <code>compression</code> and <code>compression_level</code>
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Journal compression: compression and compression_level">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What it does
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What it costs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommendations_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recommendations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1023,6 +1073,69 @@ kill is not: check <code>shmem</code> for journals on tmpfs, and the heap settin
 <p>Run it once with your current <code>storage</code> settings and once with the change, against the same
 backend. Compare the <code>vs r7</code> column, and the p99 at the rate you actually serve, not only
 saturation throughput. In a container, also watch <code>memory.stat</code> while it runs.</p>
+<hr />
+<h2 id="journal-compression-compression-and-compression_level">Journal compression: <code>compression</code> and <code>compression_level</code></h2>
+<h3 id="what-it-does">What it does</h3>
+<p>With <code>compression: zstd</code>, the default, each 32KB block of a journal segment carries one zstd
+stream. Every entry is fed into it and flushed as it is written, so it is still its own
+committed record: a tailer reads it as soon as it is written, a crash loses at most the entry
+being written, and damage still costs at most the rest of one block. Because an entry is
+compressed against the entries before it in the block, repetitive traffic — the same headers,
+similar bodies — compresses far better than any entry would on its own.</p>
+<h3 id="what-it-costs">What it costs</h3>
+<p>Compression runs on the writing thread, under the shard's lock, because a block's stream is
+shared and its order is the journal's order. That costs CPU per request, which shows only near
+saturation:</p>
+<table>
+<thead>
+<tr>
+<th>Workload, journal level</th>
+<th>Throughput at saturation</th>
+<th>Latency at 1,000 req/s (p50 / p99)</th>
+<th>Journal bytes per request</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>headers, <code>HEADERS</code>, none</td>
+<td>76,500 req/s</td>
+<td>1.21 / 2.88 ms</td>
+<td>3,659</td>
+</tr>
+<tr>
+<td>headers, <code>HEADERS</code>, zstd 1</td>
+<td>63,500 req/s (-17%)</td>
+<td>1.29 / 2.66 ms</td>
+<td>273</td>
+</tr>
+<tr>
+<td>POST, <code>FULL</code>, none</td>
+<td>108,700 req/s</td>
+<td>1.28 / 2.56 ms</td>
+<td>2,872</td>
+</tr>
+<tr>
+<td>POST, <code>FULL</code>, zstd 1</td>
+<td>65,800 req/s (-39%)</td>
+<td>1.24 / 2.72 ms</td>
+<td>329</td>
+</tr>
+</tbody>
+</table>
+<p>Single short runs on the machine described above; the benchmark sends near-identical requests,
+so real traffic compresses less than this. Levels above 1 gave a few percent less disk for
+another 5-15% of throughput, and 4 shards instead of 2 won back only a little: the cost is CPU,
+not lock contention.</p>
+<p>What it saves is everything downstream of the write: about a tenth of the disk, of the page
+cache charged to a container's memory limit, of the writeback, and of what a tailer reads.</p>
+<h3 id="recommendations_1">Recommendations</h3>
+<ul>
+<li><strong>Leave it on.</strong> At any load a real deployment sees, the cost does not show, and the
+  journal is a fraction of the size.</li>
+<li><strong>Turn it off (<code>compression: none</code>) only if the gateway runs close to its CPU limit with
+  journaling at <code>FULL</code>,</strong> and disk and page cache are cheap where it runs.</li>
+<li><strong>Leave <code>compression_level</code> at 1.</strong></li>
+</ul>
 
 
 
