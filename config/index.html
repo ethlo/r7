@@ -3922,7 +3922,7 @@
 <tr>
 <td><code>shard_size</code></td>
 <td>Size</td>
-<td>The target size limit for a single journal shard (e.g., <code>200MB</code>).</td>
+<td>The target size limit for a single journal shard (e.g., <code>200MB</code>). Must be a whole number of 32KB journal blocks, from 64KB to just under 2GB; any whole number of megabytes qualifies.</td>
 </tr>
 <tr>
 <td><code>shard_count</code></td>
