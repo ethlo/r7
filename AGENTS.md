@@ -43,6 +43,14 @@ docker compose up -d                                             # nginx test ba
 ./build-native.sh   # GraalVM native image via Dockerfile.native
 ```
 
+The native image needs FFM downcalls registered at build time: zstd-jni binds through FFM on
+JDK 22+, and so does `FaultAhead`'s `madvise`. They are listed in
+`r7-undertow/src/main/resources/META-INF/native-image/com.ethlo.r7/r7-undertow/reachability-metadata.json`,
+recorded with GraalVM's tracing agent (`java -agentlib:native-image-agent=config-output-dir=...`
+in the native builder image, with journaling traffic through it). Re-record it when zstd-jni is
+upgraded. A missing downcall fails at first use, not at startup; the journal's zstd probe turns
+that into an uncompressed journal and a warning, so check the native gateway's log for it.
+
 Recommended JVM flags (used by benchmarks, docs and CI images):
 `-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow`.
 
