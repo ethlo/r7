@@ -29,9 +29,9 @@ jobs:
 
       # Docker-backed tests (r7-gateway / r7-gateway-native images built by build.sh /
       # build-native.sh) are opt-in: @EnabledIfDockerImage skips them here because this runner
-      # never builds those images. Everything else, including the *BenchmarkTest /
-      # *PerformanceTest classes, runs: none of them assert an absolute threshold, they only
-      # print measured throughput, so there is nothing here that would flake on shared hardware.
+      # never builds those images. *BenchmarkTest classes are opt-in (-Dr7.bench=true) and are
+      # skipped. Everything else runs; RequestPathCostTest gates allocation, which is
+      # deterministic enough for shared hardware, and reports CPU time without gating it.
       - name: Build and test
         run: ./mvnw -B clean install
 

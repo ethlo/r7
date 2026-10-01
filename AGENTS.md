@@ -28,8 +28,9 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
   almost always a missing `@AutoService` or a build that skipped processing.
 - `r7-core` surefire runs with `workingDirectory = src/test/resources`; relative paths in those
   tests resolve there.
-- `*BenchmarkTest` / `*PerformanceTest` classes run as part of the normal test phase and are
-  timing-sensitive — treat their failures as noise only after re-running.
+- `*BenchmarkTest` classes are opt-in (`-Dr7.bench=true`) and do not run in a normal build. A
+  test that only prints a number belongs there or in `benchmark/`, not in the default test
+  phase. `RequestPathCostTest` does run: it gates allocation per request against a budget.
 
 ## Running
 
