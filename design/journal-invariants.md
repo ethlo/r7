@@ -101,6 +101,10 @@ outside both the age sweep and the capacity ceiling: they are not in flight, not
 coming for them, and the bound is the number of stalled segments — each of which is being held
 on disk anyway.
 
+**Sealed is the seal magic, not the name.** The writer stamps the seal record when it
+rotates and renames the file later, on another thread. A reader that went by the name read a
+sealed segment as active, never finished it, and held its whole shard back until the rename.
+
 **A restart is a reader too.** Reading an entry is not delivering its exchange: an exchange is
 held in memory until its end event, so the checkpoint had already moved past the earlier
 entries of every exchange open when a tailer stopped, and a hard kill lost them all. The
