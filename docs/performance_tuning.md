@@ -24,7 +24,7 @@ Helidon gateway, and grows with the number of open connections.
 
 ### Why it happens
 
-The journal is split into `shard_count` shards (default `1`). Each request goes to one shard,
+The journal is split into `shard_count` shards (default `2`). Each request goes to one shard,
 chosen by its request id. Each shard writes into one memory-mapped segment at a time, and
 writers take turns: encoding happens in parallel, but placing each entry in the segment is done
 one writer at a time per shard. That step is a short copy, cheap unless something stalls it.
@@ -76,7 +76,7 @@ removes disk writeback and isolates the writer lock:
 |---|---|---|
 | 1 shard, without fault-ahead (before r7 had it) | 64k req/s, p99 14 ms | 41k req/s, p99 20 ms |
 | 1 shard, `pre_fault: true` | 89k req/s, p99 12 ms | 93k req/s, p99 55 ms |
-| **1 shard (the defaults, with fault-ahead)** | **94k req/s, p99 11 ms** | **98k req/s, p99 50 ms** |
+| 1 shard, with fault-ahead | 94k req/s, p99 11 ms | 98k req/s, p99 50 ms |
 | 4 shards | 89k req/s, p99 12 ms | 96k req/s, p99 24 ms |
 
 On a local disk, one shard: without fault-ahead, 67k (Undertow) and 63k (Helidon) req/s. With
@@ -90,7 +90,7 @@ Under a container memory limit (`-m 8g`), journals on a disk volume, with cgroup
 | 1 shard, without fault-ahead | ~190 MB | ~340 MB | 48k req/s |
 | 1 shard, `pre_fault: true` | ~1.4 GB | ~1.6 GB | 34k req/s |
 | 4 shards, `pre_fault: true` | ~5.0 GB | ~5.3 GB | 30k req/s |
-| **1 shard (the defaults, with fault-ahead)** | **~190 MB** | **~330 MB** | **54k req/s** |
+| 1 shard, with fault-ahead | ~190 MB | ~330 MB | 54k req/s |
 | 4 shards | ~220 MB | ~380 MB | 52k req/s |
 
 In the container, the journal's page cache fills the memory limit within seconds at full load,
@@ -103,10 +103,11 @@ ones the kernel can least easily reclaim.
 - **Leave `pre_fault` off.** Fault-ahead does its job at a fraction of the memory. Turn it on
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.
-- **Set `shard_count: 4` for a thread-per-connection server, or many concurrent connections.**
-  Throughput is already level at one shard. More shards halve the experimental Helidon
-  gateway's p99, by spreading its many writers. Without `pre_fault`, extra shards cost no
-  memory.
+- **Keep the default of 2 shards, or raise it to 4 for a thread-per-connection server with
+  many concurrent connections.** With fault-ahead, throughput is already level at one shard;
+  more shards shorten the tail by spreading the writers. On the experimental Helidon gateway,
+  4 shards halved p99 compared with one. Each shard is one more open segment and, without
+  `pre_fault`, costs no memory of note.
 - **Give a container headroom for page cache, not just heap.** The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.
