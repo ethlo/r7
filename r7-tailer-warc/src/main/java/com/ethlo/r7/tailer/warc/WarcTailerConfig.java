@@ -55,12 +55,11 @@ public record WarcTailerConfig(
     @Override
     public String checkpointDir()
     {
-        // Not under journalDir(): a secondary tailer (one not responsible for retention -
-        // R7Tailer itself never deletes anything, see the class javadoc) must be free to
-        // mount journalDir read-only, which a checkpoint file living inside it would rule
-        // out. outputDir() is always a real, already-writable directory for this tailer, so
-        // it is a safe default parent.
-        return Optional.ofNullable(this.checkpointDir).orElse(this.outputDir() + "/.checkpoints");
+        // Its own volume, as for the JSON tailer: not under journalDir(), which a tailer mounts
+        // read-only, and not under outputDir(), because a reaper reads this directory to learn
+        // which segments the tailer is done with, and must not need access to the archive to
+        // do it.
+        return Optional.ofNullable(this.checkpointDir).orElse("/checkpoints");
     }
 
     @Override
