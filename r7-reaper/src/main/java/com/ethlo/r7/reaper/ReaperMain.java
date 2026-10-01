@@ -17,7 +17,8 @@ import tools.jackson.databind.ObjectMapper;
  * Entry point for the standalone reaper image (see {@code docs/journaling.md}).
  * <p>
  * Deletes sealed journal segments from {@code journal_dir} once they are older than {@code
- * ttl} - a dumb, age-only retention policy with no awareness of any tailer's read progress.
+ * ttl}, or earlier once every tailer listed in {@code tailers} is done with them (see
+ * {@link ReaperConfig}).
  * Configured by {@code reaper.yaml} (path overridable via {@code REAPER_CONFIG}), the same
  * YAML conventions as the gateway's {@code routes.yaml}/{@code server.yaml}.
  */
@@ -38,9 +39,18 @@ public final class ReaperMain
         final Duration ttl = config.ttl();
         final Duration pollInterval = config.pollInterval();
 
-        logger.info("Reaping sealed segments in '{}' older than {} (checking every {})", journalDir, ttl, pollInterval);
+        final java.util.List<Path> tailers = config.tailers().stream().map(Paths::get).toList();
+        if (tailers.isEmpty())
+        {
+            logger.info("Reaping sealed segments in '{}' older than {} (checking every {})", journalDir, ttl, pollInterval);
+        }
+        else
+        {
+            logger.info("Reaping sealed segments in '{}' once {} old and done with by every tailer in {}, or older than {} (checking every {})",
+                    journalDir, config.minAge(), tailers, ttl, pollInterval);
+        }
 
-        final JournalReaper reaper = new JournalReaper(journalDir, ttl);
+        final JournalReaper reaper = new JournalReaper(journalDir, ttl, tailers, config.minAge());
 
         while (!Thread.currentThread().isInterrupted())
         {

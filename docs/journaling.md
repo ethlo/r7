@@ -245,10 +245,10 @@ sealed segment once it is no longer needed, or `journal_dir` grows without bound
 is the reaper: a small standalone process whose only job is deleting old segments from a shared
 journal volume.
 
-!!! warning "This is a dumb, age-only policy"
-    The reaper does not look at any tailer's checkpoint, and does not confirm anything was
-    actually read. A sealed (`.r7f`) segment is deleted once it has existed for longer than
-    `ttl`, whether every tailer sharing the directory has read it or not. Set `ttl` comfortably
+!!! warning "`ttl` deletes whether or not a segment was read"
+    With `tailers` listed, a segment is deleted early once every one of them is done with it
+    (see the table below). Whatever the tailers say, a sealed (`.r7f`) segment is deleted once
+    it has existed for longer than `ttl`, read or not: that is the bound on disk use. Set `ttl` comfortably
     longer than the slowest tailer's realistic lag — including time to recover from a restart —
     or a slow or temporarily-down tailer will lose data it never got a chance to read. A
     segment the gateway's recovery quarantined (`*.corrupt`, see
@@ -271,6 +271,8 @@ overridable via the `REAPER_CONFIG` env var.
 |------------------|-------------|--------------------------------------------------------------------------|
 | `journal_dir`     | `/journals` | Directory the reaper scans (and deletes from) — mount this read-write, unlike every tailer |
 | `ttl`             | `7d`        | How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (not the file's filesystem mtime — see below), before it is deleted. Supports `ms`, `s`, `m`, `h`, `d` |
+| `tailers`         | none        | Checkpoint directories of the tailers that must all be done with a segment before it is deleted ahead of `ttl` (mount them read-only). A segment is done for a tailer when its checkpoint file says it was read to the end and everything in it delivered, and the tailer does not need it to rebuild an exchange still open. A listed tailer with no readable checkpoint file stops early deletion, so a tailer that is down keeps everything for up to `ttl` |
+| `min_age`         | `1h`        | How old a segment must be before it is deleted ahead of `ttl`. A tailer counts a segment as done once its output reached the OS, not the disk; keep this above the tailers' `max_file_age` (15 minutes by default), after which their output files are fsync'd, so a power loss cannot take both copies |
 | `poll_interval`   | `1m`        | Delay between sweeps. Supports `ms`, `s`, `m`, `h`, `d`                  |
 
 **Example `config/reaper.yaml`:**
@@ -278,6 +280,10 @@ overridable via the `REAPER_CONFIG` env var.
 ```yaml
 journal_dir: /journals
 ttl: 7d
+# Delete as soon as both tailers are done with a segment (and it is an hour old), not after 7 days
+tailers:
+  - /checkpoints/json
+  - /checkpoints/warc
 ```
 
 **Example Docker Compose Integration:**

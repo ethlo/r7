@@ -27,7 +27,7 @@ class ReaperConfigTest
     @Test
     void rejectsNonPositiveTtl()
     {
-        final ReaperConfig config = new ReaperConfig(null, Duration.ZERO, null);
+        final ReaperConfig config = new ReaperConfig(null, Duration.ZERO, null, null, null);
 
         final ValidationResult result = new ValidationResult();
         config.validate(result);
@@ -39,7 +39,7 @@ class ReaperConfigTest
     @Test
     void rejectsNonPositivePollInterval()
     {
-        final ReaperConfig config = new ReaperConfig(null, null, Duration.ofSeconds(-1));
+        final ReaperConfig config = new ReaperConfig(null, null, null, null, Duration.ofSeconds(-1));
 
         final ValidationResult result = new ValidationResult();
         config.validate(result);
@@ -51,7 +51,7 @@ class ReaperConfigTest
     @Test
     void rejectsBlankJournalDir()
     {
-        final ReaperConfig config = new ReaperConfig("   ", null, null);
+        final ReaperConfig config = new ReaperConfig("   ", null, null, null, null);
 
         final ValidationResult result = new ValidationResult();
         config.validate(result);

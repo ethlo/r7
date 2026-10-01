@@ -69,8 +69,12 @@ touching the gateway.
 
 Expected latency: about decode time under load (single-digit microseconds), and the parked
 interval or one doorbell round trip (tens of microseconds) when idle. Durability, checkpoints,
-at-least-once delivery and the reaper are untouched; the reaper is age-based and gains nothing
-from being live.
+at-least-once delivery are untouched. The reaper does not need to be live, but it does gain
+from the tailers saying how far they have got: it can delete a segment as soon as every tailer
+is done with it, instead of after a TTL sized for the slowest one. The tailers' checkpoint
+files already say exactly that, and are written at once when a segment is finished, so the
+reaper reads them (`tailers` and `min_age` in `reaper.yaml`, `TailerProgress`) rather than
+anything new being added to the gateway.
 
 ## Constraints
 

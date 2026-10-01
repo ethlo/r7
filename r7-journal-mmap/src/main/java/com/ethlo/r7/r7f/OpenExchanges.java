@@ -44,7 +44,7 @@ import com.ethlo.r7.r7f.fbs.HeaderDelta;
  */
 final class OpenExchanges implements JournalEventListener, JournalDecoder.EntryObserver
 {
-    private static final String KEY_PREFIX = "open.";
+    private static final String KEY_PREFIX = com.ethlo.r7.journal.api.TailerProgress.OPEN_PREFIX;
 
     /**
      * Where an exchange's first entry is: the segment (shard and sequence), the offset to
