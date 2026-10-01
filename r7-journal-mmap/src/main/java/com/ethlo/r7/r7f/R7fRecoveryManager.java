@@ -13,7 +13,6 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.stream.Stream;
-import java.util.zip.CRC32C;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -191,8 +190,8 @@ public final class R7fRecoveryManager
             }
             else
             {
-                validatePreamble(segment);
-                scanResult = scan(segment, originalSize, file, integrity);
+                final int blockSize = validatePreamble(segment);
+                scanResult = scan(segment, originalSize, blockSize, file, integrity);
 
                 if (scanResult.recordCount() == 0)
                 {
@@ -361,7 +360,10 @@ public final class R7fRecoveryManager
         return position;
     }
 
-    private static void validatePreamble(final MemorySegment segment)
+    /**
+     * @return the segment's block size
+     */
+    private static int validatePreamble(final MemorySegment segment)
     {
         final int magic = segment.get(INT_BE, R7fConstants.PREAMBLE_OFF_MAGIC);
         if (magic != R7fConstants.MAGIC)
@@ -372,27 +374,50 @@ public final class R7fRecoveryManager
         final short version = segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_VERSION);
         if (version != R7fConstants.CURRENT_VERSION)
         {
+            // Quarantined, never deleted: having read nothing from a file is no proof that it
+            // holds nothing (FORMAT.md 11).
             throw new UnreadableSegmentException("unsupported format version " + version
                     + " (this build writes and reads version " + R7fConstants.CURRENT_VERSION + ")");
         }
+
+        final int blockSize = segment.get(INT_BE, R7fConstants.PREAMBLE_OFF_BLOCK_SIZE);
+        if (!R7fFraming.isValidBlockSize(blockSize))
+        {
+            throw new UnreadableSegmentException("invalid block size " + blockSize);
+        }
+
+        final short codec = segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC);
+        if (codec != R7fConstants.CODEC_NONE)
+        {
+            throw new UnreadableSegmentException("unsupported codec " + codec);
+        }
+        return blockSize;
     }
 
     /**
      * Walks entries from the end of the preamble to the end of the file.
      * <p>
-     * Damage does not end the scan. An unclean stop leaves a torn entry at the tail, but a
-     * power loss can leave a gap anywhere, with perfectly good entries after it — stopping
-     * at the first anomaly and sealing there would strand those entries before anyone
-     * could see that they were separated from the rest by a hole. So the scan resynchronises
-     * on the next entry magic, reports what it skipped, and keeps going. The file is later
-     * sealed at the end of the <em>last</em> valid entry found, not the first anomaly.
+     * Damage does not end the scan. An unclean stop leaves an uncommitted entry at the tail,
+     * but a power loss can leave a gap anywhere, with perfectly good entries after it —
+     * stopping at the first anomaly and sealing there would strand those entries before anyone
+     * could see that they were separated from the rest by a hole. So the scan resumes at the
+     * next block boundary, the only places it can trust to hold framing (FORMAT.md 6), and
+     * keeps going. The file is later sealed at the end of the <em>last</em> valid entry found,
+     * not the first anomaly.
+     * <p>
+     * Damage is reported only once a valid entry turns up after it. Without one, what lies
+     * past the last entry is the ordinary tail of a crash: zeroes, perhaps with the
+     * continuations of an entry whose first fragment was never stamped.
      * <p>
      * Sequence numbers make the difference visible: a forward jump means entries that were
      * written are not on disk, which append-only writing cannot produce on its own. Those
      * entries are gone, but we can say how many and where.
      */
-    private static ScanResult scan(final MemorySegment segment, final long size, final Path file, final JournalIntegrityListener integrity)
+    private static ScanResult scan(final MemorySegment segment, final long size, final int blockSize,
+                                   final Path file, final JournalIntegrityListener integrity)
     {
+        final FragmentReader reader = new FragmentReader(segment.asByteBuffer(), size, blockSize);
+
         long position = R7fConstants.PREAMBLE_SIZE;
         long lastValidPosition = R7fConstants.PREAMBLE_SIZE;
         long recordCount = 0;
@@ -400,40 +425,39 @@ public final class R7fRecoveryManager
         boolean stoppedOnRegression = false;
         int expectedSequence = R7fConstants.FIRST_ENTRY_SEQUENCE;
 
+        long damageStart = -1;
+        String damageReason = null;
+
         final String name = file.getFileName().toString();
-        final CRC32C crc = new CRC32C();
 
-        while (size - position >= R7fConstants.MIN_ENTRY_SIZE)
+        while (position < size)
         {
-            final String problem = validateEntryAt(segment, size, position, crc);
-
-            if (problem != null)
+            final FragmentReader.Status status = reader.read(position);
+            if (status == FragmentReader.Status.END)
             {
-                // Look for a later entry before concluding that this is the end. If none
-                // follows, this is the ordinary torn tail and the scan is done.
-                final long resume = findNextEntry(segment, size, position + 1);
-                if (resume < 0)
+                break;
+            }
+            if (status != FragmentReader.Status.ENTRY)
+            {
+                if (damageStart < 0)
                 {
-                    if (recordCount > 0 || segment.get(ValueLayout.JAVA_BYTE, position) != 0)
-                    {
-                        logger.debug("{} ends at offset {} ({})", name, position, problem);
-                    }
-                    break;
+                    damageStart = position;
+                    damageReason = reader.problem();
                 }
-
-                final long skipped = resume - position;
-                logger.error("Damaged region in {} at offset {} ({} bytes, {}); valid entries follow, "
-                        + "resuming at {}.", name, position, skipped, problem, resume);
-                integrity.onCorruptRegion(name, position, skipped, problem);
-                position = resume;
+                position = reader.resync(reader.entryStart());
                 continue;
             }
 
-            final int sequence = segment.get(INT_BE, position + 4L);
-            final int fbLen = segment.get(INT_BE, position + 12L);
-            final int rawLen = segment.get(INT_BE, position + 16L);
-            final long entryEnd = position + R7fConstants.ENTRY_HEADER_SIZE + (long) fbLen + rawLen + Integer.BYTES;
+            if (damageStart >= 0)
+            {
+                final long skipped = reader.entryStart() - damageStart;
+                logger.error("Damaged region in {} at offset {} ({} bytes, {}); valid entries follow, "
+                        + "resuming at {}.", name, damageStart, skipped, damageReason, reader.entryStart());
+                integrity.onCorruptRegion(name, damageStart, skipped, damageReason);
+                damageStart = -1;
+            }
 
+            final int sequence = reader.sequence();
             if (sequence != expectedSequence)
             {
                 if (sequence > expectedSequence)
@@ -456,90 +480,17 @@ public final class R7fRecoveryManager
             }
 
             expectedSequence = sequence + 1;
-            position = entryEnd;
-            lastValidPosition = entryEnd;
+            position = reader.entryEnd();
+            lastValidPosition = position;
             recordCount++;
         }
 
+        if (damageStart >= 0)
+        {
+            logger.debug("{} ends at offset {} ({})", name, damageStart, damageReason);
+        }
+
         return new ScanResult(lastValidPosition, recordCount, missingRecords, expectedSequence - 1, stoppedOnRegression);
-    }
-
-    /**
-     * Checks the entry at {@code position}.
-     *
-     * @return null when the entry is structurally sound and its CRC matches, otherwise a
-     * short description of what is wrong with it
-     */
-    private static String validateEntryAt(final MemorySegment segment, final long size, final long position, final CRC32C crc)
-    {
-        if (segment.get(ValueLayout.JAVA_BYTE, position) == 0)
-        {
-            return "unwritten region";
-        }
-
-        if (segment.get(INT_BE, position) != R7fConstants.MAGIC)
-        {
-            return "bad entry magic";
-        }
-
-        final int sequence = segment.get(INT_BE, position + 4L);
-        final int payloadLen = segment.get(INT_BE, position + 8L);
-        final int fbLen = segment.get(INT_BE, position + 12L);
-        final int rawLen = segment.get(INT_BE, position + 16L);
-
-        if (fbLen < 0 || rawLen < 0 || payloadLen != (Integer.BYTES * 2 + fbLen + rawLen))
-        {
-            return "inconsistent entry lengths (payloadLen=" + payloadLen + ", fbLen=" + fbLen + ", rawLen=" + rawLen + ")";
-        }
-
-        final long dataLen = (long) fbLen + rawLen;
-        if (position + R7fConstants.ENTRY_HEADER_SIZE + dataLen + Integer.BYTES > size)
-        {
-            return "entry extends past end of file";
-        }
-
-        crc.reset();
-        updateInt(crc, sequence);
-        updateInt(crc, payloadLen);
-        updateInt(crc, fbLen);
-        updateInt(crc, rawLen);
-        if (dataLen > 0)
-        {
-            crc.update(segment.asSlice(position + R7fConstants.ENTRY_HEADER_SIZE, dataLen).asByteBuffer());
-        }
-
-        if ((int) crc.getValue() != segment.get(INT_BE, position + R7fConstants.ENTRY_HEADER_SIZE + dataLen))
-        {
-            return "checksum mismatch";
-        }
-
-        return null;
-    }
-
-    /**
-     * Scans forward for the next entry magic, crossing zeroes rather than stopping at them.
-     * <p>
-     * The zero-filled tail of a pre-allocated segment and a hole left by incomplete
-     * writeback look identical from one byte, so the only way to tell them apart is to look
-     * for what comes after. The first-byte test keeps the common case — scanning a long
-     * zero tail to the end of the file — down to one comparison per position.
-     *
-     * @return the offset of the next entry magic, or -1 if none remains
-     */
-    private static long findNextEntry(final MemorySegment segment, final long size, final long from)
-    {
-        final byte firstMagicByte = (byte) (R7fConstants.MAGIC >>> 24);
-        final long end = size - R7fConstants.MIN_ENTRY_SIZE;
-
-        for (long pos = from; pos <= end; pos++)
-        {
-            if (segment.get(ValueLayout.JAVA_BYTE, pos) == firstMagicByte
-                    && segment.get(INT_BE, pos) == R7fConstants.MAGIC)
-            {
-                return pos;
-            }
-        }
-        return -1;
     }
 
     private static void quarantine(final Path file, final String reason, final JournalIntegrityListener integrity)
@@ -557,14 +508,6 @@ public final class R7fRecoveryManager
         {
             logger.error("Unable to quarantine unreadable segment {}", file.getFileName(), e);
         }
-    }
-
-    private static void updateInt(final CRC32C crc, final int value)
-    {
-        crc.update((value >>> 24) & 0xFF);
-        crc.update((value >>> 16) & 0xFF);
-        crc.update((value >>> 8) & 0xFF);
-        crc.update(value & 0xFF);
     }
 
     public static List<Path> cleanAndRecover(final Path journalDirectory) throws IOException

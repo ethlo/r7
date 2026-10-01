@@ -684,7 +684,23 @@ public final class R7Tailer
         final short version = header.getShort(R7fConstants.PREAMBLE_OFF_VERSION);
         if (version != R7fConstants.CURRENT_VERSION)
         {
-            return "unsupported format version " + version;
+            // Quarantined by the caller, not decoded and not deleted (FORMAT.md 11).
+            return "unsupported format version " + version + " (this build reads version "
+                    + R7fConstants.CURRENT_VERSION + ")";
+        }
+
+        // The decoder finds block boundaries from this number, so a value it cannot use is a
+        // file it cannot read, said here rather than discovered mid-decode.
+        final int blockSize = header.getInt(R7fConstants.PREAMBLE_OFF_BLOCK_SIZE);
+        if (!R7fFraming.isValidBlockSize(blockSize))
+        {
+            return "invalid block size " + blockSize;
+        }
+
+        final short codec = header.getShort(R7fConstants.PREAMBLE_OFF_CODEC);
+        if (codec != R7fConstants.CODEC_NONE)
+        {
+            return "unsupported codec " + codec;
         }
 
         return null;

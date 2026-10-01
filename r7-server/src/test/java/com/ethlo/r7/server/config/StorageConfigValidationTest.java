@@ -92,6 +92,21 @@ class StorageConfigValidationTest
     }
 
     /**
+     * Journal segments are cut into fixed blocks, so a size that is not a whole number of them
+     * is named here rather than refused by the provider at startup.
+     */
+    @Test
+    void aShardSizeThatIsNotAWholeNumberOfBlocksIsRefused()
+    {
+        final List<String> errors = errorsForSize(DataSize.ofKilobytes(100));
+
+        assertEquals(1, errors.size(), () -> "expected exactly one error, got " + errors);
+        assertTrue(errors.getFirst().contains("shard_size"), () -> errors.getFirst());
+        assertTrue(errors.getFirst().contains("multiple of " + R7fJournalProvider.SEGMENT_SIZE_MULTIPLE), () -> errors.getFirst());
+        assertTrue(errorsForSize(DataSize.ofKilobytes(96)).isEmpty(), "a whole number of blocks is accepted");
+    }
+
+    /**
      * As with shard_count, the check is only worth having if it agrees with the constructor it
      * fronts — a value validation accepts must not then be refused during startup.
      */
@@ -106,6 +121,8 @@ class StorageConfigValidationTest
                 "the maximum itself must be accepted");
         assertFalse(errorsForSize(DataSize.ofBytes(R7fJournalProvider.MAX_SEGMENT_SIZE + 1)).isEmpty(),
                 "one byte above the maximum must be refused");
+        assertFalse(errorsForSize(DataSize.ofBytes(R7fJournalProvider.MAX_SEGMENT_SIZE + R7fJournalProvider.SEGMENT_SIZE_MULTIPLE)).isEmpty(),
+                "one block above the maximum must be refused");
     }
 
     @Test

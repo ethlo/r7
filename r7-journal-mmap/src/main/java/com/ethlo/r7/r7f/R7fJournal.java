@@ -102,7 +102,17 @@ public final class R7fJournal implements Journal
             FbsJournalLevel.FULL,
     };
 
+    /**
+     * The block size this journal writes, recorded in every segment's preamble.
+     */
+    private static final int BLOCK_SIZE = R7fConstants.DEFAULT_BLOCK_SIZE;
+
     private MemorySegment segment;
+    /**
+     * A buffer view of {@link #segment}, for computing fragment CRCs over what was just
+     * written without allocating a view per fragment. Only touched under the monitor.
+     */
+    private ByteBuffer segmentView;
     private Arena arena;
     private Path activePath;
     private long position;
@@ -375,74 +385,74 @@ public final class R7fJournal implements Journal
      * the bytes must land where the sequence says they do, so claiming and copying cannot be
      * separated without a different publication protocol. The encoder it reads from is
      * thread-confined, so no other thread can be building into it while this runs.
+     * <p>
+     * The entry's content is {@code sequence fbLen rawLen fb raw}, stored as one FULL fragment
+     * when it fits the rest of the current block and split across blocks otherwise
+     * (FORMAT.md 4.3). No fragment crosses a block boundary; that is what lets a reader resume
+     * at the next boundary after damage without ever reading payload as framing.
      */
     private synchronized int writeEntry(final EntryEncoder enc, ByteBuffer rawData)
     {
-        final CRC32C crc = enc.crc;
         final ByteBuffer fbBuf = enc.fbb.dataBuffer();
         final int fbLen = fbBuf.remaining();
-        final MemorySegment fbSource = MemorySegment.ofBuffer(fbBuf);
-
         final int rawLen = (rawData != null) ? rawData.remaining() : 0;
+        final long contentLength = R7fConstants.ENTRY_CONTENT_HEADER_SIZE + (long) fbLen + rawLen;
 
-        // payloadLen as the format defines it: the two length fields plus the payload.
-        final int payloadLen = Integer.BYTES + Integer.BYTES + fbLen + rawLen;
-        // Physical size on disk: the fixed header (which already contains those two length
-        // fields), the payload itself, and the CRC footer. Adding payloadLen here would
-        // count the length fields twice.
-        final int totalLen = R7fConstants.ENTRY_HEADER_SIZE + fbLen + rawLen + Integer.BYTES;
+        ensureCapacity(contentLength);
 
-        ensureCapacity(totalLen);
-
+        // After ensureCapacity, which may have rotated to a new segment
+        final long claimedFrom = position;
+        final long start = R7fFraming.entryStart(position, BLOCK_SIZE);
         final int sequence = nextSequence;
 
-        // The magic is reserved now and stamped last, once the whole entry is in place.
-        // FORMAT.md 5 requires this order, and it is the difference between a reader having
-        // to guess whether a half-written entry is damaged and simply not seeing it yet:
-        // the magic is the commit. The slot is zero until then, because segments are
-        // pre-allocated zero-filled and never reused, and a zero where a magic belongs is
-        // already the reader's end-of-data signal.
-        //
-        // ensureCapacity may have rotated to a new segment, so the slot is taken after it.
-        final long magicPosition = position;
-        position += Integer.BYTES;
+        enc.prepareSources(sequence, fbBuf, fbLen, rawData, rawLen);
 
-        putInt(sequence);
-        putInt(payloadLen);
-        putInt(fbLen);
-        putInt(rawLen);
-
-        // CRC covers everything but the magic: the sequence, the three lengths and the payload.
-        crc.reset();
-        enc.updateInt(sequence);
-        enc.updateInt(payloadLen);
-        enc.updateInt(fbLen);
-        enc.updateInt(rawLen);
-        crc.update(fbBuf.duplicate());
-
-        // Copy FlatBuffer
-        MemorySegment.copy(fbSource, 0, segment, position, fbLen);
-        position += fbLen;
-
-        // Handle Body Chunks
-        if (rawLen > 0)
+        final long firstCapacity = R7fFraming.firstCapacity(start, BLOCK_SIZE);
+        final long end;
+        if (contentLength <= firstCapacity)
         {
-            final MemorySegment rawSource = MemorySegment.ofBuffer(rawData);
-            crc.update(rawData.duplicate());
-            MemorySegment.copy(rawSource, 0, segment, position, rawLen);
-            position += rawLen;
-            rawData.position(rawData.position() + rawLen);
+            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FULL, 0, contentLength);
+            end = start + R7fConstants.FRAGMENT_HEADER_SIZE + contentLength;
         }
-
-        // Write CRC footer
-        putInt((int) crc.getValue());
+        else
+        {
+            // Continuations first, complete with their magics, and the FIRST fragment last of
+            // all. A reader stops at the FIRST fragment's zero magic and so never reaches the
+            // continuations until the entry is whole; once it sees that magic, everything
+            // behind it is already in place (FORMAT.md 5.1).
+            final int perBlock = R7fFraming.continuationCapacity(BLOCK_SIZE);
+            long logical = firstCapacity;
+            long at = R7fFraming.nextBoundary(start, BLOCK_SIZE);
+            long last = at;
+            while (logical < contentLength)
+            {
+                final long length = Math.min(perBlock, contentLength - logical);
+                final byte type = logical + length == contentLength ? R7fConstants.FRAGMENT_LAST : R7fConstants.FRAGMENT_MIDDLE;
+                writeFragmentBody(enc, at, type, logical, length);
+                segment.set(INT_BE, at, R7fConstants.FRAGMENT_MAGIC);
+                logical += length;
+                last = at + R7fConstants.FRAGMENT_HEADER_SIZE + length;
+                at += BLOCK_SIZE;
+            }
+            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FIRST, 0, firstCapacity);
+            end = last;
+        }
 
         // Publish. The fence keeps every store above from being reordered after the magic,
         // so a reader — in this process or, as in production, in the tailer process sharing
-        // this mapping — never sees a magic without the entry behind it.
+        // this mapping — never sees a magic without the entry behind it. The slot is zero
+        // until now, because segments are pre-allocated zero-filled and never reused, and a
+        // zero where a magic belongs is already the reader's end-of-data signal.
         VarHandle.releaseFence();
-        segment.set(INT_BE, magicPosition, R7fConstants.MAGIC);
+        segment.set(INT_BE, start, R7fConstants.FRAGMENT_MAGIC);
 
+        if (rawLen > 0)
+        {
+            rawData.position(rawData.position() + rawLen);
+        }
+        enc.releaseSources();
+
+        position = end;
         nextSequence++;
 
         if (faultAhead != null)
@@ -450,7 +460,30 @@ public final class R7fJournal implements Journal
             faultAhead.advance(segment, position);
         }
 
-        return totalLen; // Returning the total binary size of the entry
+        return (int) (end - claimedFrom);
+    }
+
+    /**
+     * Writes everything of a fragment but its magic: the header fields, the data (bytes
+     * {@code [from, from + length)} of the entry's content) and the CRC over both.
+     * <p>
+     * The CRC is taken from the segment after the copy rather than from the sources: the
+     * content is three separate buffers, and the copy has just brought these bytes into cache.
+     */
+    private void writeFragmentBody(final EntryEncoder enc, final long at, final byte type, final long from, final long length)
+    {
+        segment.set(ValueLayout.JAVA_BYTE, at + R7fConstants.FRAGMENT_OFF_TYPE, type);
+        segment.set(INT_BE, at + R7fConstants.FRAGMENT_OFF_LENGTH, (int) length);
+        final long dataAt = at + R7fConstants.FRAGMENT_HEADER_SIZE;
+        enc.copyContent(segment, from, length, dataAt);
+
+        final CRC32C crc = enc.crc;
+        crc.reset();
+        crc.update(segmentView.limit((int) (at + R7fConstants.FRAGMENT_OFF_CRC)).position((int) (at + R7fConstants.FRAGMENT_OFF_TYPE)));
+        segmentView.clear();
+        crc.update(segmentView.limit((int) (dataAt + length)).position((int) dataAt));
+        segmentView.clear();
+        segment.set(INT_BE, at + R7fConstants.FRAGMENT_OFF_CRC, (int) crc.getValue());
     }
 
     /**
@@ -632,12 +665,74 @@ public final class R7fJournal implements Journal
             return len;
         }
 
-        private void updateInt(final int v)
+        /**
+         * The entry's content is three sources laid end to end: this 12-byte head, the
+         * FlatBuffer and the raw payload. Fragments cut that logical stream wherever block
+         * boundaries fall, which can be inside any of the three.
+         */
+        private final MemorySegment head = MemorySegment.ofArray(new byte[R7fConstants.ENTRY_CONTENT_HEADER_SIZE]);
+        private MemorySegment fbSource;
+        private MemorySegment rawSource;
+        private long fbEnd;
+
+        private void prepareSources(final int sequence, final ByteBuffer fbBuf, final int fbLen, final ByteBuffer rawData, final int rawLen)
         {
-            crc.update((v >>> 24) & 0xFF);
-            crc.update((v >>> 16) & 0xFF);
-            crc.update((v >>> 8) & 0xFF);
-            crc.update(v & 0xFF);
+            head.set(INT_BE, 0, sequence);
+            head.set(INT_BE, Integer.BYTES, fbLen);
+            head.set(INT_BE, 2 * Integer.BYTES, rawLen);
+            fbSource = MemorySegment.ofBuffer(fbBuf);
+            rawSource = rawLen > 0 ? MemorySegment.ofBuffer(rawData) : null;
+            fbEnd = R7fConstants.ENTRY_CONTENT_HEADER_SIZE + (long) fbLen;
+        }
+
+        /**
+         * Drops the references to the caller's buffers, which this thread-local would
+         * otherwise keep alive until its next entry.
+         */
+        private void releaseSources()
+        {
+            fbSource = null;
+            rawSource = null;
+        }
+
+        /**
+         * Copies bytes {@code [from, from + length)} of the content into {@code target} at
+         * {@code at}.
+         */
+        private void copyContent(final MemorySegment target, final long from, final long length, final long at)
+        {
+            long logical = from;
+            long remaining = length;
+            long destination = at;
+            while (remaining > 0)
+            {
+                final MemorySegment source;
+                final long offset;
+                final long available;
+                if (logical < R7fConstants.ENTRY_CONTENT_HEADER_SIZE)
+                {
+                    source = head;
+                    offset = logical;
+                    available = R7fConstants.ENTRY_CONTENT_HEADER_SIZE - logical;
+                }
+                else if (logical < fbEnd)
+                {
+                    source = fbSource;
+                    offset = logical - R7fConstants.ENTRY_CONTENT_HEADER_SIZE;
+                    available = fbEnd - logical;
+                }
+                else
+                {
+                    source = rawSource;
+                    offset = logical - fbEnd;
+                    available = rawSource.byteSize() - offset;
+                }
+                final long count = Math.min(available, remaining);
+                MemorySegment.copy(source, offset, target, destination, count);
+                logical += count;
+                destination += count;
+                remaining -= count;
+            }
         }
     }
 
@@ -753,6 +848,7 @@ if (finalizer.isAlive())
             }
 
             this.segment = null;
+            this.segmentView = null;
             this.arena = null;
 
             // Built unstarted and registered first. Starting it and then recording it
@@ -792,6 +888,7 @@ if (finalizer.isAlive())
 
         final R7fJournalProvider.WarmedSegment next = provider.getNextSegment();
         this.segment = next.segment();
+        this.segmentView = segment.asByteBuffer();
         this.activePath = next.path();
         this.arena = next.arena();
 
@@ -853,6 +950,7 @@ if (finalizer.isAlive())
         final long lastTs = System.currentTimeMillis();
 
         segment = null;
+        segmentView = null;
         arena = null;
 
         if (finalPosition <= R7fConstants.PREAMBLE_SIZE)
@@ -900,24 +998,31 @@ if (finalizer.isAlive())
         return String.format("%s-%d-%d%s", baseName, firstTs, lastTs, R7fConstants.R7F_FILE_EXTENSION);
     }
 
-    private void ensureCapacity(long needed)
+    /**
+     * Rotates when an entry of {@code contentLength} bytes, with its fragment headers and any
+     * padding before it, does not fit the rest of the active segment. An entry never spans
+     * segments.
+     */
+    private void ensureCapacity(final long contentLength)
     {
         if (closed)
         {
             throw new IllegalStateException("Journal is closed");
         }
 
-        if (needed > provider.getSegmentSizeBytes() - R7fConstants.PREAMBLE_SIZE)
+        final long freshStart = R7fFraming.entryStart(R7fConstants.PREAMBLE_SIZE, BLOCK_SIZE);
+        if (R7fFraming.entryEnd(freshStart, contentLength, BLOCK_SIZE) > provider.getSegmentSizeBytes())
         {
             // Rotating would not help: no segment can ever hold this entry. Fail before
             // burning a freshly warmed segment on it.
             throw new IllegalStateException(
-                    "Entry of " + needed + " bytes can never fit a segment of "
+                    "Entry of " + contentLength + " bytes can never fit a segment of "
                             + provider.getSegmentSizeBytes() + " bytes (minus a "
-                            + R7fConstants.PREAMBLE_SIZE + " byte preamble)");
+                            + R7fConstants.PREAMBLE_SIZE + " byte preamble and the fragment headers)");
         }
 
-        if (segment == null || position + needed > segment.byteSize())
+        if (segment == null
+                || R7fFraming.entryEnd(R7fFraming.entryStart(position, BLOCK_SIZE), contentLength, BLOCK_SIZE) > segment.byteSize())
         {
             rotateSegment();
         }
@@ -946,6 +1051,8 @@ if (finalizer.isAlive())
         putShort(R7fConstants.CURRENT_VERSION);
         putLong(segmentSequence);
         putLong(segmentStartEpochMillis);
+        segment.set(INT_BE, R7fConstants.PREAMBLE_OFF_BLOCK_SIZE, BLOCK_SIZE);
+        segment.set(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC, R7fConstants.CODEC_NONE);
         position = R7fConstants.PREAMBLE_SIZE;
     }
 

@@ -1,7 +1,7 @@
 # r7f format version 2: block framing (plan)
 
-**Status:** step 1 done 2026-10-01: `FORMAT.md` now specifies version 2 and is the normative
-text. Steps 2 and 3 are open, so until step 2 lands the code still writes version 1.
+**Status:** steps 1 and 2 done 2026-10-01: `FORMAT.md` specifies version 2 and is the
+normative text, and the code writes and reads it. Step 3, the user-facing docs, is open.
 
 ## Why
 
@@ -23,8 +23,8 @@ What it costs (decided 2026-10-01, see the session discussion):
 - **Tailer copies.** An entry split across blocks is copied together before FlatBuffers decodes
   it: about 3% of header entries and about 25% of 8 KB body chunks at 32 KB blocks. The gateway
   is unaffected.
-- **No compatibility with version 1.** Tailers drain version-1 segments before the upgrade
-  (§11). Recovery refuses a version-1 `.flux` with a clear error and leaves it in place.
+- **No compatibility with version 1.** Pre-release, so nothing needs it. A reader refuses any
+  other version (§11) and sets the file aside rather than deleting it.
 
 Compression is out of scope. The preamble reserves a codec field (`0` = none) so a later
 per-block zstd needs no version 3. Whether to adopt it is a separate decision, to be measured
@@ -145,7 +145,6 @@ Data     Length
    - `benchmark/run.sh --scenario journal --journal-levels HEADERS,FULL --repeat 3` against
      main, recorded in the PR, expected flat on the gateway side.
 3. **Docs:**
-   - `docs/journaling.md`: the upgrade note (drain tailers before upgrading);
    - the journal README;
    - any tailer README that describes the framing;
    - the performance tuning page, if anything moved.

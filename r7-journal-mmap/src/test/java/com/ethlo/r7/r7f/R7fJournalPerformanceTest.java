@@ -41,7 +41,7 @@ class R7fJournalPerformanceTest
 
         final ByteBuffer startLine = wrap("GET /test HTTP/1.1".getBytes());
 
-        final R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
+        final R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, R7fJournalProvider.MAX_SEGMENT_SIZE, true);
         final String id = "adasqwteyutqwet";
         try (final R7fJournal journal = new R7fJournal(provider))
         {

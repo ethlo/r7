@@ -35,10 +35,17 @@ public class R7fJournalProvider implements AutoCloseable
     public static final long MIN_SEGMENT_SIZE = 64L * 1024L;
 
     /**
-     * Downstream readers address segment offsets with ints, so a segment cannot be larger than
-     * an int can address. Public for the same reason as {@link #MIN_SEGMENT_SIZE}.
+     * Segments are cut into blocks (FORMAT.md 3.1), so a segment's size must be a whole number
+     * of them. Public for the same reason as {@link #MIN_SEGMENT_SIZE}.
      */
-    public static final long MAX_SEGMENT_SIZE = Integer.MAX_VALUE;
+    public static final long SEGMENT_SIZE_MULTIPLE = R7fConstants.DEFAULT_BLOCK_SIZE;
+
+    /**
+     * Downstream readers address segment offsets with ints, so a segment cannot be larger than
+     * an int can address: the largest whole number of blocks below that. Public for the same
+     * reason as {@link #MIN_SEGMENT_SIZE}.
+     */
+    public static final long MAX_SEGMENT_SIZE = Integer.MAX_VALUE / SEGMENT_SIZE_MULTIPLE * SEGMENT_SIZE_MULTIPLE;
 
     /**
      * Extension of the per-shard sequence high-water marker. Deliberately not one of the
@@ -147,6 +154,11 @@ public class R7fJournalProvider implements AutoCloseable
             // int offsets, so refuse here rather than fail obscurely much later.
             throw new IllegalArgumentException("segmentSizeBytes must not exceed " + MAX_SEGMENT_SIZE
                     + " bytes, got " + segmentSizeBytes);
+        }
+        if (segmentSizeBytes % SEGMENT_SIZE_MULTIPLE != 0)
+        {
+            throw new IllegalArgumentException("segmentSizeBytes must be a multiple of the "
+                    + SEGMENT_SIZE_MULTIPLE + " byte block size, got " + segmentSizeBytes);
         }
 
         this.tempDir = tempDir;

@@ -93,7 +93,9 @@ apart (§11).
 
 **Block Size** is recorded per segment, so every segment describes itself and a reader needs
 no configuration to read it. A reader MUST reject a segment whose Block Size is not a power
-of two within the bounds above, or does not divide the file size.
+of two within the bounds above. A file size that is not a multiple of it is not a reason to
+reject the segment: a writer never produces one, so it means the file lost bytes, and what
+remains is read and the loss reported (§3.2, Data End).
 
 **Codec** is reserved for per-block compression. This version defines only `0`, meaning
 fragment data is stored as written. A reader MUST reject a segment with any other Codec
@@ -510,8 +512,7 @@ The FlatBuffer schema is intentionally external to preserve:
 A reader MUST reject a file whose Version it does not recognise, rather than attempt to
 interpret it, and MUST NOT delete such a file on the strength of having read nothing from
 it. There is no compatibility path between versions; the format is small enough that a new
-version means a new reader. Segments written by a previous version are drained by a reader
-of that version before the writer is upgraded.
+version means a new reader.
 
 ---
 

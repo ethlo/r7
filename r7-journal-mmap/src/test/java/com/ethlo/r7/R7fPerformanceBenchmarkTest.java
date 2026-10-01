@@ -44,7 +44,7 @@ public final class R7fPerformanceBenchmarkTest
         try
         {
             logger.info("Setting up benchmark in {}", tempDir);
-            final R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, Integer.MAX_VALUE, true);
+            final R7fJournalProvider provider = new R7fJournalProvider(tempDir, 0, R7fJournalProvider.MAX_SEGMENT_SIZE, true);
             final Chronograph chronograph = Chronograph.create();
 
             final MutableGatewayHeaders headers = new MutableFastGatewayHeaders();

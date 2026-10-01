@@ -262,15 +262,16 @@ If disk capacity is exhausted:
 
 If bytes are corrupted:
 
-* CRC32C MUST detect it
-* corrupted entries MUST be skipped
+* CRC32C MUST detect it (every fragment carries its own)
+* corrupted entries MUST be skipped, and in a sealed segment the reader resumes at the next
+  32 KB block boundary, so damage costs the rest of its block
 * no repair is attempted in this layer
 
-CRC32C is an integrity check, not an authenticity one. Resynchronising past damage trusts
-whatever bytes it finds at the next Magic occurrence, including Magic bytes that happen to
-appear inside an opaque RawPayload (a request or response body) — see FORMAT.md §6.1 for why
-this is a real, currently unclosed gap rather than a theoretical one, and why closing it
-needs a format change (per-entry authentication) that is deliberately out of scope here.
+CRC32C is an integrity check, not an authenticity one, and the format does not need it to be
+one. Fragments never cross a block boundary, so every boundary holds a header the writer put
+there, and resynchronising never reads payload bytes as framing: a request or response body
+crafted to look like entries is stepped over with the rest of its block, never delivered
+(FORMAT.md §6.1).
 
 ---
 
@@ -281,10 +282,10 @@ On restart:
 The system MUST:
 
 1. mmap last known segment(s)
-2. scan sequentially from last valid offset
-3. validate CRC32C per entry
-4. discard incomplete tail entry
-5. resume ingestion at first invalid boundary
+2. scan sequentially from the end of the preamble
+3. validate CRC32C per fragment, resuming at the next block boundary after damage
+4. seal at the end of the last valid entry; an uncommitted entry at the tail is not damage
+5. refuse a segment of another format version, setting it aside rather than deleting it
 
 Recovery MUST be deterministic.
 
