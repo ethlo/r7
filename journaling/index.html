@@ -957,7 +957,7 @@ to their defaults below (so a bare container with no config volume still starts 
 <tr>
 <td><code>poll_interval</code></td>
 <td><code>1s</code></td>
-<td>Delay between tailer ticks. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
+<td>The longest the tailer waits between reads. It wakes as soon as the gateway commits an entry (the gateway bumps a counter in <code>shard-&lt;id&gt;.ctl</code> beside the segments), so on the same host an exchange is read within microseconds to about a millisecond; this interval only matters where that file is not shared, such as across hosts. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
 </tr>
 <tr>
 <td><code>pretty_print</code></td>
@@ -1090,7 +1090,7 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 <tr>
 <td><code>poll_interval</code></td>
 <td><code>1s</code></td>
-<td>Delay between tailer ticks. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
+<td>The longest the tailer waits between reads; it wakes as soon as the gateway commits, as for the JSON tailer. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
 </tr>
 </tbody>
 </table>
