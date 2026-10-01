@@ -199,7 +199,7 @@ by default, overridable via the `WARC_TAILER_CONFIG` env var.
 |----------------------------|-------------|-----------------------------------------------------------------------------|
 | `journal_dir`               | `/journals` | Directory the tailer reads binary journals from                             |
 | `checkpoint_dir`            | `<output_dir>/.checkpoints` | Directory `.r7_checkpoints` is read from and written to; a subdirectory of `output_dir` (not `journal_dir`), so `journal_dir` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `journal_dir` |
-| `output_dir`                | `/warc`     | Directory rotated `.warc.zst` files are written to                          |
+| `output_dir`                | `/warc`     | Directory rotated `.warc.zst` files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete record and sealed on the next start |
 | `file_prefix`               | `r7`        | Filename prefix for rotated WARC files                                      |
 | `max_file_size`             | `1gb`       | Rotate to a new file once the current one reaches this size (at least `64kb`; a size that couldn't hold a single record is refused at startup). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`              | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
