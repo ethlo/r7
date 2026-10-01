@@ -272,12 +272,12 @@ final class FragmentReader
         final int perBlock = R7fFraming.continuationCapacity(blockSize);
 
         assembly.put(0, file, (int) (start + R7fConstants.FRAGMENT_HEADER_SIZE), (int) firstLength);
-        int copied = (int) firstLength;
+        long copied = firstLength;
         long position = R7fFraming.nextBoundary(start, blockSize);
         while (copied < contentLength)
         {
             final int length = (int) Math.min(perBlock, contentLength - copied);
-            assembly.put(copied, file, (int) (position + R7fConstants.FRAGMENT_HEADER_SIZE), length);
+            assembly.put((int) copied, file, (int) (position + R7fConstants.FRAGMENT_HEADER_SIZE), length);
             copied += length;
             position += blockSize;
         }
