@@ -313,6 +313,22 @@
   
   
     <li class="md-tabs__item">
+      <a href="../performance_tuning/" class="md-tabs__link">
+        
+  
+  Performance tuning
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
       <a href="../benchmarks/" class="md-tabs__link">
         
   
@@ -1740,6 +1756,32 @@
     
   
   Journaling
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance_tuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance tuning
 
     
   </span>
@@ -3885,12 +3927,12 @@
 <tr>
 <td><code>shard_count</code></td>
 <td>Integer</td>
-<td>The number of shards (files) to split the journal across to reduce lock contention and manage file sizes.</td>
+<td>The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. Defaults to <code>1</code>; must be a power of two. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>pre_fault</code></td>
 <td>Boolean</td>
-<td>When <code>true</code>, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency.</td>
+<td>When <code>true</code>, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. Defaults to <code>false</code>. It charges every warmed segment to memory at once (about 6 × <code>shard_size</code> per shard), and under a container memory limit it lowered throughput; see <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>journal_security</code></td>

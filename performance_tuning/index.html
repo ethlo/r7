@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://r7.ethlo.com/benchmarks/">
+        <link rel="canonical" href="https://r7.ethlo.com/performance_tuning/">
       
       
-        <link rel="prev" href="../performance_tuning/">
+        <link rel="prev" href="../journaling/">
       
       
-        <link rel="next" href="../licensing/">
+        <link rel="next" href="../benchmarks/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Benchmarks - r7 Gateway</title>
+        <title>Performance tuning - r7 Gateway</title>
       
     
     
@@ -85,7 +85,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#performance-memory-behavior" class="md-skip">
+        <a href="#performance-tuning" class="md-skip">
           Skip to content
         </a>
       
@@ -137,7 +137,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Benchmarks
+              Performance tuning
             
           </span>
         </div>
@@ -309,9 +309,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../performance_tuning/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="././" class="md-tabs__link">
         
   
   Performance tuning
@@ -325,11 +327,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="././" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../benchmarks/" class="md-tabs__link">
         
   
   Benchmarks
@@ -551,32 +551,6 @@
       
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../performance_tuning/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Performance tuning
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
     
   
   
@@ -588,6 +562,8 @@
       
       
       
+        
+      
       
         <label class="md-nav__link md-nav__link--active" for="__toc">
           
@@ -596,7 +572,7 @@
   <span class="md-ellipsis">
     
   
-  Benchmarks
+  Performance tuning
 
     
   </span>
@@ -613,7 +589,7 @@
   <span class="md-ellipsis">
     
   
-  Benchmarks
+  Performance tuning
 
     
   </span>
@@ -629,6 +605,8 @@
   
   
   
+    
+  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -637,22 +615,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#performance-memory-behavior" class="md-nav__link">
+  <a href="#journal-storage-shard_count-pre_fault-and-where-segments-live" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Performance &amp; Memory Behavior
+        Journal storage: <code>shard_count</code>, <code>pre_fault</code> and where segments live
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Performance &amp; Memory Behavior">
+    <nav class="md-nav" aria-label="Journal storage: shard_count, pre_fault and where segments live">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#test-goal" class="md-nav__link">
+  <a href="#symptom" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Test Goal
+        Symptom
       </span>
     </span>
   </a>
@@ -660,10 +638,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#test-configuration" class="md-nav__link">
+  <a href="#why-it-happens" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Test Configuration
+        Why it happens
       </span>
     </span>
   </a>
@@ -671,10 +649,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#results" class="md-nav__link">
+  <a href="#the-settings" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Results
+        The settings
       </span>
     </span>
   </a>
@@ -682,10 +660,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#observations" class="md-nav__link">
+  <a href="#what-they-did-measured" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Observations
+        What they did, measured
       </span>
     </span>
   </a>
@@ -693,10 +671,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#interpretation" class="md-nav__link">
+  <a href="#recommendations" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Interpretation
+        Recommendations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-the-numbers-in-a-container" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reading the numbers in a container
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-check-yours" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to check yours
       </span>
     </span>
   </a>
@@ -712,6 +712,32 @@
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Benchmarks
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -786,62 +812,188 @@
   
 
 
-  <h1 id="__skip">Benchmarks</h1>
-
-<h2 id="performance-memory-behavior">Performance &amp; Memory Behavior</h2>
-<p>API gateway benchmarks are often misleading due to synthetic comparisons and inconsistent configurations.<br />
-This benchmark focuses on a controlled variable: memory pressure under sustained request load.</p>
-<h3 id="test-goal">Test Goal</h3>
-<p>Sustain <strong>20,000 RPS</strong> with a <strong>12-thread worker pool</strong>, while progressively reducing container memory limits to observe latency behavior under constrained runtime conditions.</p>
-<h3 id="test-configuration">Test Configuration</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>wrk2<span class="w"> </span>-t12<span class="w"> </span>-c200<span class="w"> </span>-d30s<span class="w"> </span>-R20000<span class="w"> </span><span class="se">\</span>
-</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>-H<span class="w"> </span><span class="s2">"Authorization: Bearer &lt;token&gt;"</span><span class="w"> </span><span class="se">\</span>
-</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>http://localhost:9999/hello<span class="w"> </span>--latency
-</span></code></pre></div>
-<h3 id="results">Results</h3>
+<h1 id="performance-tuning">Performance tuning</h1>
+<p>r7's defaults favour a small, predictable footprint over peak throughput. Most deployments never
+need to change them. When you do, each setting below trades one resource for another, and the
+right side of that trade depends on where r7 runs. Each entry says what to tune, when it helps,
+what it costs, and how to check the result on your own hardware.</p>
+<p>Numbers on this page were measured on one machine (20 cores, JDK 25, ZGC, an nginx backend on
+the same host) and are there to show direction and size, not to promise throughput. Measure
+before and after with <code>benchmark/run.sh</code> (see <a href="../benchmarks/">Benchmarks</a>); only the
+passthrough-relative deltas carry over to other hardware.</p>
+<hr />
+<h2 id="journal-storage-shard_count-pre_fault-and-where-segments-live">Journal storage: <code>shard_count</code>, <code>pre_fault</code> and where segments live</h2>
+<h3 id="symptom">Symptom</h3>
+<p>With journaling on at high request rates, throughput falls well below what the same gateway
+does with journaling off. p99 latency climbs into tens or hundreds of milliseconds, and it often
+gets worse the longer the load lasts. Header-heavy traffic at <code>HEADERS</code> or <code>FULL</code> shows it
+first. It is worst on servers that run a thread per connection, such as the experimental
+Helidon gateway, and grows with the number of open connections.</p>
+<h3 id="why-it-happens">Why it happens</h3>
+<p>The journal is split into <code>shard_count</code> shards (default <code>1</code>). Each request goes to one shard,
+chosen by its request id. Each shard writes into one memory-mapped segment at a time, and
+writers take turns: encoding happens in parallel, but placing each entry in the segment is done
+one writer at a time per shard. That step is a short copy, cheap unless something stalls it.
+Two things do:</p>
+<ul>
+<li><strong>Page faults.</strong> Segments are mapped lazily: the first write to each 4 KB page asks the
+  kernel for the page, and every other writer to that shard waits meanwhile. At a few hundred
+  MB/s of journal that is tens of thousands of stalls a second.</li>
+<li><strong>Writeback throttling.</strong> On a disk, once enough journal pages are dirty, the kernel makes
+  the writing thread wait for the disk to catch up. That happens at the same moment, and it
+  builds up as dirty pages accumulate, which is why the slowdown grows over a run.</li>
+</ul>
+<p>How much a stall costs depends on how many writers are waiting. Undertow writes from a small,
+fixed set of threads (one I/O thread per core by default). A thread-per-connection server can
+have a writer for every open connection, all queued on the same shard.</p>
+<h3 id="the-settings">The settings</h3>
 <table>
 <thead>
 <tr>
-<th>Container Size</th>
-<th>P50 Latency</th>
-<th>P99 Latency</th>
-<th>Max Latency</th>
-<th>Result</th>
+<th>Setting</th>
+<th>Effect</th>
+<th>Cost</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>990 MB</td>
-<td>1.10 ms</td>
-<td>6.54 ms</td>
-<td>21.25 ms</td>
-<td>Stable</td>
+<td><code>storage.shard_count</code></td>
+<td>Fewer writers per shard: less queueing and a shorter tail. Must be a power of two.</td>
+<td>More segment files open at once. No memory cost unless <code>pre_fault</code> is on.</td>
 </tr>
 <tr>
-<td>300 MB</td>
-<td>1.05 ms</td>
-<td>5.13 ms</td>
-<td>32.00 ms</td>
-<td>Stable</td>
+<td><code>storage.pre_fault</code></td>
+<td>Touches each segment's pages while warming it, off the request path, so writes never fault.</td>
+<td>Each shard's warmed segments are charged to memory at once: the active segment plus 4 queued plus 1 being warmed. That is about 1.2 GB per shard at the default <code>shard_size</code> of 200 MB. They also take real disk space immediately rather than as written.</td>
 </tr>
 <tr>
-<td>200 MB</td>
-<td>1.02 ms</td>
-<td>78.08 ms</td>
-<td>176.38 ms</td>
-<td>GC pressure</td>
+<td><code>storage.shard_size</code></td>
+<td>Scales what <code>pre_fault</code> charges per shard (about 6 × <code>shard_size</code>). Smaller segments also rotate more often.</td>
+<td>Each rotation does a little work under the shard's lock, so very small segments add their own stalls.</td>
+</tr>
+<tr>
+<td>Journal medium</td>
+<td>Where <code>work_dir</code> lives: a disk-backed volume or tmpfs.</td>
+<td>tmpfs is memory that cannot be reclaimed. See below.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="observations">Observations</h3>
+<h3 id="what-they-did-measured">What they did, measured</h3>
+<p>On tmpfs, which removes disk writeback and isolates the writer lock. <code>HEADERS</code> journaling,
+header-heavy workload, 200 connections at saturation:</p>
+<table>
+<thead>
+<tr>
+<th>Storage</th>
+<th>Undertow</th>
+<th>Helidon (experimental)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>defaults (1 shard)</td>
+<td>64k req/s, p99 14 ms</td>
+<td>41k req/s, p99 20 ms</td>
+</tr>
+<tr>
+<td>4 shards</td>
+<td>81k req/s, p99 12 ms</td>
+<td>81k req/s, p99 22 ms</td>
+</tr>
+<tr>
+<td>1 shard, <code>pre_fault: true</code></td>
+<td>89k req/s, p99 12 ms</td>
+<td>93k req/s, p99 55 ms</td>
+</tr>
+<tr>
+<td>4 shards, <code>pre_fault: true</code></td>
+<td>88k req/s, p99 12 ms</td>
+<td>95k req/s, p99 17 ms</td>
+</tr>
+</tbody>
+</table>
+<p>On a local disk with spare memory, <code>pre_fault: true</code> raised throughput by 15–25% on both
+servers.</p>
+<p><strong>In a container with a memory limit (<code>-m 8g</code>), <code>pre_fault</code> did the opposite.</strong> Throughput fell
+30–40% compared with leaving it off: the journal's page cache fills the container's limit within
+seconds at full load either way, and the pre-faulted pages crowd out what the kernel can
+reclaim. Measured with cgroup v2 <code>memory.stat</code>, journals on a disk volume:</p>
+<table>
+<thead>
+<tr>
+<th>Storage</th>
+<th>Mapped journal at idle</th>
+<th>Working set at idle</th>
+<th>Throughput under load</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 shard</td>
+<td>~190 MB</td>
+<td>~340 MB</td>
+<td>48k req/s</td>
+</tr>
+<tr>
+<td>1 shard, <code>pre_fault: true</code></td>
+<td>~1.4 GB</td>
+<td>~1.6 GB</td>
+<td>34k req/s</td>
+</tr>
+<tr>
+<td>4 shards</td>
+<td>~180 MB</td>
+<td>~340 MB</td>
+<td>48k req/s</td>
+</tr>
+<tr>
+<td>4 shards, <code>pre_fault: true</code></td>
+<td>~5.0 GB</td>
+<td>~5.3 GB</td>
+<td>30k req/s</td>
+</tr>
+</tbody>
+</table>
+<h3 id="recommendations">Recommendations</h3>
+<p><strong>In a container or anywhere memory is limited (the common case):</strong></p>
 <ul>
-<li><strong>Median latency stability:</strong> P50 remains ~1.0–1.1ms across all tested memory configurations, indicating stable request-path performance under CPU-bound conditions.</li>
-<li><strong>300MB operating range:</strong> Reducing memory from 990MB to 300MB shows no measurable degradation in tail latency under this workload.</li>
-<li><strong>200MB constraint threshold:</strong> At 200MB, the runtime exhibits increased tail latency under sustained load, consistent with elevated garbage collection pressure and reduced JVM headroom.</li>
+<li><strong>Leave <code>pre_fault</code> off.</strong> Its memory is charged up front, and under a limit it costs more
+  than it saves.</li>
+<li><strong>Set <code>shard_count: 4</code> when running a thread-per-connection server, or many concurrent
+  connections.</strong> Without <code>pre_fault</code>, extra shards cost no memory.</li>
+<li><strong>Give the container headroom for page cache, not just heap.</strong> The journal is written through
+  the page cache, which counts toward the container's memory limit. Up to the limit, that cache
+  is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.</li>
 </ul>
-<h3 id="interpretation">Interpretation</h3>
-<p>The data suggests r7 maintains consistent request-path performance under moderate to tight memory allocations, with degradation appearing only when container memory approaches JVM operational limits under sustained high RPS workloads.</p>
-<p>This indicates that practical deployments should provision memory above the observed degradation threshold to avoid GC-induced tail latency spikes.</p>
+<p><strong>On a host or VM with memory to spare:</strong></p>
+<ul>
+<li><strong><code>pre_fault: true</code> with <code>shard_count: 4</code></strong> gave the best throughput and tail of any setting
+  measured. Budget about 6 × <code>shard_size</code> × <code>shard_count</code> of memory and disk for it: about
+  4.8 GB at the defaults. Lower <code>shard_size</code> to shrink that.</li>
+</ul>
+<p><strong>Never put journals on tmpfs</strong> (<code>emptyDir: {medium: Memory}</code>, <code>--tmpfs</code>, <code>/dev/shm</code>) unless
+something deletes sealed segments as fast as they are written. tmpfs pages cannot be reclaimed
+and count fully against the container's limit, and r7 does not delete its own journals. A
+container with journals on tmpfs was OOM-killed within 30 seconds of full load in these tests.</p>
+<h3 id="reading-the-numbers-in-a-container">Reading the numbers in a container</h3>
+<p>The kernel's per-container memory counters (cgroup v2 <code>memory.stat</code>) break the usage down:</p>
+<ul>
+<li><strong><code>file_mapped</code> and <code>file</code>:</strong> journal segments. Mapped segments count as active, so they show
+  up in the working set Kubernetes and <code>docker stats</code> report, even though most of it can be
+  reclaimed.</li>
+<li><strong><code>shmem</code>:</strong> with ZGC, this is mostly the Java heap (ZGC backs it with shared memory), not
+  journals, unless the journals are on tmpfs.</li>
+<li><strong><code>file_dirty</code>:</strong> journal data not yet written to disk. If it stays high, the disk is the
+  bottleneck, not r7.</li>
+</ul>
+<p>A working set near the limit is normal under journaling load and is mostly page cache. An OOM
+kill is not: check <code>shmem</code> for journals on tmpfs, and the heap settings.</p>
+<h3 id="how-to-check-yours">How to check yours</h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>benchmark/run.sh<span class="w"> </span>--scenario<span class="w"> </span>journal<span class="w"> </span>--journal-levels<span class="w"> </span>HEADERS,FULL<span class="w"> </span>--workload<span class="w"> </span>headers<span class="w"> </span>--repeat<span class="w"> </span><span class="m">3</span>
+</span></code></pre></div>
+<p>Run it once with your current <code>storage</code> settings and once with the change, against the same
+backend. Compare the <code>vs r7</code> column, and the p99 at the rate you actually serve, not only
+saturation throughput. In a container, also watch <code>memory.stat</code> while it runs.</p>
 
 
 
