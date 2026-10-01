@@ -681,9 +681,12 @@ class JournalIntegrityTest
         // Rebuild it as the writer would have had it a moment earlier: an active segment is
         // the full pre-allocation, and the final entry is fully assembled but not yet
         // published — its magic slot is still zero, because the writer stamps the magic last.
+        // And not yet sealed: a live segment has no seal record, and one that has is read as
+        // sealed whatever its name.
         final byte[] active = new byte[SEGMENT_SIZE];
         System.arraycopy(complete, 0, active, 0, complete.length);
         java.util.Arrays.fill(active, last.offset(), last.offset() + Integer.BYTES, (byte) 0);
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC + Integer.BYTES, (byte) 0);
 
         final Path activePath = journalDir.resolve(activeNameFor(sealed));
         Files.delete(sealed);

@@ -437,8 +437,9 @@ rewind, so the abandoned exchange is not offered again.
 
 ## 11.6 Restarting a tailer
 
-`R7Tailer` writes its checkpoint file at the end of every tick and on `shutdown()`. A restart,
-graceful or a hard kill, loses nothing:
+`R7Tailer` writes its checkpoint file on `shutdown()`, at once when a segment appears, is
+finished or changes state, and otherwise at most once a second while only read positions
+move. A restart, graceful or a hard kill, loses nothing:
 
 * **Exchanges still being assembled are rebuilt.** The checkpoint file records, per shard,
   where the oldest open exchange began and the request ids of every open exchange (including
