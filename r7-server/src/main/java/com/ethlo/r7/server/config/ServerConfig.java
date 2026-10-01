@@ -525,10 +525,16 @@ public record ServerConfig(
         static final String WORK_DIR_ENVIRONMENT_VARIABLE = "R7_JOURNAL_DIR";
         static final String DEFAULT_WORK_DIR = "journals";
 
+        /**
+         * Two by default: with page faults taken ahead of the writer, one shard already keeps up,
+         * but a thread-per-connection server queues every connection's writer on it. A second
+         * shard halves that queue for one more open segment and no memory of note. See
+         * docs/performance_tuning.md.
+         */
         @Override
         public Integer shardCount()
         {
-            return Optional.ofNullable(this.shardCount).orElse(1);
+            return Optional.ofNullable(this.shardCount).orElse(2);
         }
 
         @Override

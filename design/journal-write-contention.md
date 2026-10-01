@@ -1,8 +1,8 @@
 # Journal write contention (in progress)
 
 **Status:** investigated 2026-10-01. Page faults in the monitor are fixed by fault-ahead
-(`FaultAhead`, see "Fault-ahead" below). Helidon's tail at one shard and the defaults are still
-open; see the questions at the end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
+(`FaultAhead`, see "Fault-ahead" below), and `shard_count` now defaults to 2. Helidon's tail is
+still open; see the questions at the end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
 `benchmark/results/jdeg-*` on the machine that made them (not checked in).
 
 ## Symptom
@@ -125,8 +125,9 @@ That beats `pre_fault` everywhere, without its memory.
   outside the monitor (claim the slot under it, copy after) would shorten the hold further. The
   magic-as-commit rule (`FORMAT.md` §5) still holds there, because a reader stops at the first
   zero magic, but rotation and the seal record need care; see `design/journal-invariants.md`.
-- **Default `shard_count`.** 4 removes most of Helidon's monitor contention and its tail, and
-  costs no memory without `pre_fault`. It does cost files, and disk while segments are written.
+- **Default `shard_count`: decided, 2.** With fault-ahead, one shard keeps up on throughput,
+  and 4 halved Helidon's tail. 2 was chosen as the balance between the two: half the writers per
+  shard for one more open segment. 2 was not measured with fault-ahead on.
 - **Leave `pre_fault` off by default.** With fault-ahead it is never a win where fault-ahead
   works. `docs/config.md` and `docs/performance_tuning.md` say so.
 - **Journal page cache fills the container limit within seconds at full load.** Whether that
