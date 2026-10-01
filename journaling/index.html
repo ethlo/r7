@@ -1074,9 +1074,11 @@ actually read. A sealed (<code>.r7f</code>) segment is deleted once it has exist
 <code>ttl</code>, whether every tailer sharing the directory has read it or not. Set <code>ttl</code> comfortably
 longer than the slowest tailer's realistic lag — including time to recover from a restart —
 or a slow or temporarily-down tailer will lose data it never got a chance to read. A
-quarantined segment (<code>*.corrupt</code>, see <code>docs/journaling.md</code>'s tailer sections and
+segment the gateway's recovery quarantined (<code>*.corrupt</code>, see
 <code>design/journal-invariants.md</code>) is reaped under the same <code>ttl</code>, since nothing will ever read
-it. Active (<code>.flux</code>) segments are never reaped, at any age — they belong exclusively to the
+it. A segment a <em>tailer</em> cannot read keeps its name: the tailer records that in its own
+checkpoint file and logs it, because the journal directory is read-only to it, and the
+file is reaped like any other sealed segment. Active (<code>.flux</code>) segments are never reaped, at any age — they belong exclusively to the
 gateway process that may still be writing to them.</p>
 <p>Age is read from the timestamp embedded in the segment's own filename, never from the
 file's filesystem last-modified time: mtime is reset by a backup restore, an <code>rsync</code> run
