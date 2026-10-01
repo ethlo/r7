@@ -1,7 +1,7 @@
 # r7f format version 2: block framing (plan)
 
-**Status:** step 1 done 2026-10-01: `FORMAT.md` now specifies version 2 and is the normative
-text. Steps 2 and 3 are open, so until step 2 lands the code still writes version 1.
+**Status:** steps 1 and 2 done 2026-10-01: `FORMAT.md` specifies version 2 and is the
+normative text, and the code writes and reads it. Step 3, the user-facing docs, is open.
 
 ## Why
 
