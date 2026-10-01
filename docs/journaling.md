@@ -104,8 +104,12 @@ to their defaults below (so a bare container with no config volume still starts 
 | `journal_dir`     | `/journals` | Directory the tailer reads binary journals from                          |
 | `checkpoint_dir`  | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside `journal_dir`, so `journal_dir` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `journal_dir` |
 | `output_path`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
+| `output_dir`      | unset       | Write to rotating files in this directory instead of `output_path` (set one or the other). Each file is written as `<file_prefix>-<millis>-<uuid>.jsonl.open` and renamed to `.jsonl` once finished, so a shipper that picks up `*.jsonl` never reads one still being written. A file left `.open` by a crash is sealed on the next start, minus a torn last line, whose record is written again |
+| `file_prefix`     | `r7`        | Filename prefix for rotating files                                       |
+| `max_file_size`   | `256mb`     | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
+| `max_file_age`    | `15m`       | Roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
 | `poll_interval`   | `1s`        | Delay between tailer ticks. Supports `ms`, `s`, `m`, `h`, `d`             |
-| `pretty_print`    | `false`     | Pretty-print the JSON output                                              |
+| `pretty_print`    | `false`     | Pretty-print the JSON output. Not with `output_dir`: a record over several lines cannot be cut back cleanly after a crash |
 | `hide_empty_fields` | `true`    | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out explicitly. Set to `false` to always emit every field with the same schema on every line, e.g. for consumers that require a fixed columnar schema |
 
 **Record format.** One JSON object per line, one object per leg of the exchange. A proxied
