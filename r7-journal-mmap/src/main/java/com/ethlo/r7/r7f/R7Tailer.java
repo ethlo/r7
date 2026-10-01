@@ -85,6 +85,10 @@ public final class R7Tailer
     private long totalBytesRead = 0;
     private long totalMissingEntries = 0;
     private long totalCorruptEntries = 0;
+    // The reassembler's orphan counters are cumulative; these hold their values at the start of
+    // the tick so logStats() can report what this tick added.
+    private long orphanedEndsBefore = 0;
+    private long orphanedBodiesBefore = 0;
 
     public R7Tailer(final Path logDir, final ExchangeCompletionListener output)
     {
@@ -181,6 +185,8 @@ public final class R7Tailer
             totalBytesRead = 0;
             totalMissingEntries = 0;
             totalCorruptEntries = 0;
+            orphanedEndsBefore = reassembler.getOrphanedEndCount();
+            orphanedBodiesBefore = reassembler.getOrphanedBodyCount();
             metaCache.clear();
 
             try
@@ -738,6 +744,21 @@ public final class R7Tailer
         {
             logger.error("Tailer Stats: {} entries missing and {} corrupt regions skipped this tick.",
                     totalMissingEntries, totalCorruptEntries);
+        }
+
+        // An orphan is the visible half of an exchange whose start this tailer never saw. After a
+        // hard crash (SIGKILL, OOM kill) it is the only trace left of the exchanges that were in
+        // flight: their earlier entries were checkpointed as read and their assembled state died
+        // with the process. The reassembler logs an orphaned end at debug only, and a consumer
+        // is free to ignore the callback, so without this summary that loss went unreported.
+        final long orphanedEnds = reassembler.getOrphanedEndCount() - orphanedEndsBefore;
+        final long orphanedBodies = reassembler.getOrphanedBodyCount() - orphanedBodiesBefore;
+        if (orphanedEnds > 0 || orphanedBodies > 0)
+        {
+            logger.warn("Tailer Stats: {} exchange end(s) and {} body chunk(s) arrived this tick with no start event; "
+                            + "those exchanges are lost. Expected after an unclean tailer restart or when starting "
+                            + "mid-stream, suspicious otherwise.",
+                    orphanedEnds, orphanedBodies);
         }
     }
 
