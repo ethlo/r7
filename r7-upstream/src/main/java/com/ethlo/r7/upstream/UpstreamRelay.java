@@ -134,6 +134,16 @@ public final class UpstreamRelay
                 attempt.requestFlushed = false;
                 response = exchangeHead(connection, exchange, head, framing, options, attempt);
             }
+            if (response.status == 101)
+            {
+                // The connection is the tunnel's from here: no longer bounded by max_request_time,
+                // never pooled, and closed by the tunnel or by switchProtocols on failure.
+                HttpUpstream.untrack(connection);
+                final HttpUpstream.Connection upgraded = connection;
+                connection = null;
+                switchProtocols(upgraded, exchange, response);
+                return;
+            }
             final boolean reusable = relayResponse(connection, exchange, response, options);
             HttpUpstream.untrack(connection);
             if (reusable && !connection.expired)
@@ -355,13 +365,6 @@ public final class UpstreamRelay
      */
     private static boolean relayResponse(final HttpUpstream.Connection connection, final ProxiedExchange exchange, final Http1.ResponseHead head, final UpstreamOptions options) throws IOException, ProxyFailure
     {
-        if (head.status == 101)
-        {
-            // The upgrade request went upstream sanitised like any other; tunnelling the upgraded
-            // connection is not done yet.
-            connection.close();
-            throw new ProxyFailure(502, "WebSocket tunnelling is not supported by this server (experimental)", null);
-        }
         final MutableGatewayResponse response = exchange.clientResponse();
         response.status(head.status);
         for (int i = 0; i < head.relayed.size(); i += 2)
@@ -410,6 +413,50 @@ public final class UpstreamRelay
         }
         out.close();
         return reusable;
+    }
+
+    /**
+     * The upstream answered 101: relay the switch to the client and hand both connections to a
+     * {@link Tunnel}. Closes the upstream connection on every path that does not hand it over.
+     */
+    private static void switchProtocols(final HttpUpstream.Connection connection, final ProxiedExchange exchange, final Http1.ResponseHead head) throws IOException, ProxyFailure
+    {
+        final Tunnel tunnel = new Tunnel(connection);
+        boolean handedOver = false;
+        try
+        {
+            // The sanitiser forwards Upgrade only for a WebSocket handshake. A 101 to anything
+            // else is an upstream speaking a protocol the client never asked for, on a
+            // connection that would carry it to the client unchecked.
+            final String upgrade = exchange.forwardHeaders().getFirst("Upgrade");
+            if (upgrade == null)
+            {
+                throw new UpstreamProtocolException("Upstream switched protocols on a request that did not ask to upgrade");
+            }
+            if (!exchange.canUpgrade())
+            {
+                throw new ProxyFailure(502, "WebSocket tunnelling is not supported by this server", null);
+            }
+            final MutableGatewayResponse response = exchange.clientResponse();
+            response.status(101);
+            for (int i = 0; i < head.relayed.size(); i += 2)
+            {
+                response.headers().add(head.relayed.get(i), head.relayed.get(i + 1));
+            }
+            // Upgrade and Connection are hop-by-hop and were not relayed; the switch has to be
+            // announced on the client's hop too. The handshake headers (Sec-WebSocket-*) were.
+            response.headers().set("Upgrade", upgrade);
+            response.headers().set("Connection", "Upgrade");
+            exchange.upgrade(tunnel);
+            handedOver = true;
+        }
+        finally
+        {
+            if (!handedOver)
+            {
+                tunnel.close();
+            }
+        }
     }
 
     private static void relayExactly(final HttpUpstream.LineReader in, final OutputStream out, final ProxiedExchange exchange, final long length) throws IOException
