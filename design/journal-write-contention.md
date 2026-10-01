@@ -1,7 +1,8 @@
 # Journal write contention (in progress)
 
-**Status:** investigated 2026-10-01; findings only, nothing changed yet. Open questions at the
-end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
+**Status:** investigated 2026-10-01. Page faults in the monitor are fixed by fault-ahead
+(`FaultAhead`, see "Fault-ahead" below). Helidon's tail at one shard and the defaults are still
+open; see the questions at the end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
 `benchmark/results/jdeg-*` on the machine that made them (not checked in).
 
 ## Symptom
@@ -86,21 +87,48 @@ noted, and **not** deleted, so this is the realistic case. The figures are cgrou
   charged to the container. r7 has no retention of its own, so without a tailer deleting
   sealed segments, this ends in an OOM kill whatever the settings.
 
+## Fault-ahead
+
+`FaultAhead` keeps the 8 MB past each shard's write position populated, using
+`madvise(MADV_POPULATE_WRITE)` through FFM, on one platform thread per shard, in 2 MB chunks.
+The writer claims each chunk under the monitor it already holds (a compare, and now and then a
+queue offer). The populate call runs outside it.
+
+- **Why `madvise` and not a touching write:** populate prepares a page for writing without
+  writing to it. A writer that overtakes the window has already committed entries there, and a
+  zeroing touch racing with that would destroy them. Populate leaves them as they are
+  (`FaultAheadTest.populatingNeverChangesWhatTheWriterHasWritten`).
+- **Arena lifetime:** a shared arena refuses to close while a downcall holds one of its
+  segments. The rotation finalizer and `close()` therefore drain the fault-ahead queue before
+  closing a segment's arena. Chunks run in order on one thread, so a no-op task submitted after
+  them is a fence.
+- **Off where it cannot help:** not Linux, a kernel older than 5.14 (probed once, on an
+  anonymous page), a failed link (native image), or `pre_fault` on. A failure while running
+  costs nothing: the writer faults as before.
+- **Native access:** the gateway jars carry `Enable-Native-Access: ALL-UNNAMED` in their
+  manifests, as the images' entrypoints do not pass the flag.
+
+Measured, the defaults (1 shard, no `pre_fault`):
+
+| | Undertow before / after | Helidon before / after |
+|---|---|---|
+| tmpfs | 64k / 94k req/s | 41k / 98k req/s |
+| disk | 67k / 82k req/s | 63k / 84k req/s |
+| container, `-m 8g` | - | 48k / 54k req/s, idle memory unchanged |
+
+That beats `pre_fault` everywhere, without its memory.
+
 ## Open questions
 
-- **Take the faults out of the monitor without paying for the whole segment up front.** Some
-  options:
-  - a toucher that keeps a small window ahead of the write position faulted (a few MB per
-    shard, not 1.2 GB);
-  - `madvise(MADV_POPULATE_WRITE)` over that window, through FFM;
-  - claim the slot under the monitor and copy outside it. Faults then happen in parallel, and
-    the magic-as-commit rule (`FORMAT.md` §5) still holds, because a reader stops at the first
-    zero magic. Rotation and the seal record are where that gets hard; see
-    `design/journal-invariants.md`.
+- **Helidon's tail at one shard.** p99 stays around 50 ms against Undertow's 11 ms; 4 shards
+  bring it to 24 ms. What remains is the monitor's unfair handoff among 200 writers. Copying
+  outside the monitor (claim the slot under it, copy after) would shorten the hold further. The
+  magic-as-commit rule (`FORMAT.md` §5) still holds there, because a reader stops at the first
+  zero magic, but rotation and the seal record need care; see `design/journal-invariants.md`.
 - **Default `shard_count`.** 4 removes most of Helidon's monitor contention and its tail, and
   costs no memory without `pre_fault`. It does cost files, and disk while segments are written.
-- **Leave `pre_fault` off by default.** It is a win only with memory to spare. The `pre_fault`
-  row in `docs/config.md` should say what it costs in a container.
+- **Leave `pre_fault` off by default.** With fault-ahead it is never a win where fault-ahead
+  works. `docs/config.md` and `docs/performance_tuning.md` say so.
 - **Journal page cache fills the container limit within seconds at full load.** Whether that
   matters depends on how fast a tailer consumes and deletes. That is a deployment question for
   `docs/journaling.md`.

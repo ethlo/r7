@@ -48,6 +48,23 @@
                     </includeOnlyProperties>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <!--
+                                The journal populates pages ahead of its writer through FFM
+                                (madvise); this grants that to java -jar without a command-line
+                                flag, which the image's entrypoint does not pass.
+                            -->
+                            <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
             <!-- One executable jar, as r7-undertow ships, for Dockerfile.helidon.jvm -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>

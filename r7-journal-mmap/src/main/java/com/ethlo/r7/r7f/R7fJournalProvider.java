@@ -541,6 +541,11 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
                 + ": warming it has failed permanently", cause);
     }
 
+    public boolean isPreFault()
+    {
+        return preFault;
+    }
+
     public long getSegmentSizeBytes()
     {
         return segmentSizeBytes;

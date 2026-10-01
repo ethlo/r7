@@ -99,6 +99,25 @@ But it MUST NOT be part of the durability contract.
 
 ---
 
+## 3.4 Page Population Ahead of the Writer
+
+Entries are placed in the segment under the journal's monitor, so a page fault taken there
+stalls every writer to the shard. Where the platform supports it (Linux 5.14 and later), a
+background thread keeps the pages just ahead of the write position populated with
+`madvise(MADV_POPULATE_WRITE)` (`FaultAhead`).
+
+Population:
+
+* MUST NOT write to the segment. A writer may already have committed entries in a range that
+  is still to be populated, and population must leave them exactly as they are
+* MUST finish with a segment before that segment's arena is closed
+* is an optimisation only: if it falls behind, fails, or is unavailable, the writer faults the
+  pages itself, as without it
+
+`pre_fault` touches whole segments in the warmer instead, and disables this.
+
+---
+
 # 4. Commit Semantics
 
 ## 4.1 Logical Commit

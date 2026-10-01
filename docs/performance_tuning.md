@@ -41,59 +41,75 @@ How much a stall costs depends on how many writers are waiting. Undertow writes 
 fixed set of threads (one I/O thread per core by default). A thread-per-connection server can
 have a writer for every open connection, all queued on the same shard.
 
+### What r7 does about it: fault-ahead
+
+On Linux 5.14 and later, r7 handles page faults without any configuration. A background thread
+per shard keeps the next 8 MB past the write position faulted in, using
+`madvise(MADV_POPULATE_WRITE)`, so writers almost never fault. That costs about 8 MB of memory
+per shard beyond what has been written, and nothing up front. The call prepares pages without
+writing to them, so it never touches journal data.
+
+Fault-ahead switches itself off where it can't work: on other operating systems, on older
+kernels, or when `pre_fault` is on. Writers then fault as before. It uses the JDK's native
+interface, which the gateway jars allow in their manifest (`Enable-Native-Access`). If you start
+r7 some other way than `java -jar`, add `--enable-native-access=ALL-UNNAMED` (already part of
+the recommended JVM flags), or the JVM prints a warning.
+
+Fault-ahead does nothing about writeback throttling, which depends on the disk and on how
+quickly a tailer consumes sealed segments.
+
 ### The settings
 
 | Setting | Effect | Cost |
 |---|---|---|
 | `storage.shard_count` | Fewer writers per shard: less queueing and a shorter tail. Must be a power of two. | More segment files open at once. No memory cost unless `pre_fault` is on. |
-| `storage.pre_fault` | Touches each segment's pages while warming it, off the request path, so writes never fault. | Each shard's warmed segments are charged to memory at once: the active segment plus 4 queued plus 1 being warmed. That is about 1.2 GB per shard at the default `shard_size` of 200 MB. They also take real disk space immediately rather than as written. |
+| `storage.pre_fault` | Touches each segment's pages while warming it, off the request path. With fault-ahead available, it was slower than leaving it off in every case measured. Use it only where fault-ahead is not available. | Each shard's warmed segments are charged to memory at once: the active segment plus 4 queued plus 1 being warmed. That is about 1.2 GB per shard at the default `shard_size` of 200 MB. They also take real disk space immediately rather than as written. |
 | `storage.shard_size` | Scales what `pre_fault` charges per shard (about 6 × `shard_size`). Smaller segments also rotate more often. | Each rotation does a little work under the shard's lock, so very small segments add their own stalls. |
 | Journal medium | Where `work_dir` lives: a disk-backed volume or tmpfs. | tmpfs is memory that cannot be reclaimed. See below. |
 
 ### What they did, measured
 
-On tmpfs, which removes disk writeback and isolates the writer lock. `HEADERS` journaling,
-header-heavy workload, 200 connections at saturation:
+`HEADERS` journaling, header-heavy workload, 200 connections at saturation. On tmpfs, which
+removes disk writeback and isolates the writer lock:
 
 | Storage | Undertow | Helidon (experimental) |
 |---|---|---|
-| defaults (1 shard) | 64k req/s, p99 14 ms | 41k req/s, p99 20 ms |
-| 4 shards | 81k req/s, p99 12 ms | 81k req/s, p99 22 ms |
+| 1 shard, without fault-ahead (before r7 had it) | 64k req/s, p99 14 ms | 41k req/s, p99 20 ms |
 | 1 shard, `pre_fault: true` | 89k req/s, p99 12 ms | 93k req/s, p99 55 ms |
-| 4 shards, `pre_fault: true` | 88k req/s, p99 12 ms | 95k req/s, p99 17 ms |
+| **1 shard (the defaults, with fault-ahead)** | **94k req/s, p99 11 ms** | **98k req/s, p99 50 ms** |
+| 4 shards | 89k req/s, p99 12 ms | 96k req/s, p99 24 ms |
 
-On a local disk with spare memory, `pre_fault: true` raised throughput by 15–25% on both
-servers.
+On a local disk, one shard: without fault-ahead, 67k (Undertow) and 63k (Helidon) req/s. With
+`pre_fault`, 80k and 77k. With fault-ahead, 82k and 84k.
 
-**In a container with a memory limit (`-m 8g`), `pre_fault` did the opposite.** Throughput fell
-30–40% compared with leaving it off: the journal's page cache fills the container's limit within
-seconds at full load either way, and the pre-faulted pages crowd out what the kernel can
-reclaim. Measured with cgroup v2 `memory.stat`, journals on a disk volume:
+Under a container memory limit (`-m 8g`), journals on a disk volume, with cgroup v2
+`memory.stat`:
 
 | Storage | Mapped journal at idle | Working set at idle | Throughput under load |
 |---|---|---|---|
-| 1 shard | ~190 MB | ~340 MB | 48k req/s |
+| 1 shard, without fault-ahead | ~190 MB | ~340 MB | 48k req/s |
 | 1 shard, `pre_fault: true` | ~1.4 GB | ~1.6 GB | 34k req/s |
-| 4 shards | ~180 MB | ~340 MB | 48k req/s |
 | 4 shards, `pre_fault: true` | ~5.0 GB | ~5.3 GB | 30k req/s |
+| **1 shard (the defaults, with fault-ahead)** | **~190 MB** | **~330 MB** | **54k req/s** |
+| 4 shards | ~220 MB | ~380 MB | 52k req/s |
+
+In the container, the journal's page cache fills the memory limit within seconds at full load,
+and reclaiming it, not the writers' lock, sets the pace. That is why every setting is slower
+there than on the host. `pre_fault` makes it worse, because the pages it maps up front are the
+ones the kernel can least easily reclaim.
 
 ### Recommendations
 
-**In a container or anywhere memory is limited (the common case):**
-
-- **Leave `pre_fault` off.** Its memory is charged up front, and under a limit it costs more
-  than it saves.
-- **Set `shard_count: 4` when running a thread-per-connection server, or many concurrent
-  connections.** Without `pre_fault`, extra shards cost no memory.
-- **Give the container headroom for page cache, not just heap.** The journal is written through
+- **Leave `pre_fault` off.** Fault-ahead does its job at a fraction of the memory. Turn it on
+  only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
+  spare and outside a memory-limited container.
+- **Set `shard_count: 4` for a thread-per-connection server, or many concurrent connections.**
+  Throughput is already level at one shard. More shards halve the experimental Helidon
+  gateway's p99, by spreading its many writers. Without `pre_fault`, extra shards cost no
+  memory.
+- **Give a container headroom for page cache, not just heap.** The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.
-
-**On a host or VM with memory to spare:**
-
-- **`pre_fault: true` with `shard_count: 4`** gave the best throughput and tail of any setting
-  measured. Budget about 6 × `shard_size` × `shard_count` of memory and disk for it: about
-  4.8 GB at the defaults. Lower `shard_size` to shrink that.
 
 **Never put journals on tmpfs** (`emptyDir: {medium: Memory}`, `--tmpfs`, `/dev/shm`) unless
 something deletes sealed segments as fast as they are written. tmpfs pages cannot be reclaimed
