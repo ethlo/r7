@@ -71,7 +71,7 @@ class JsonLdWriterTest
         assertThat(lines).as("exactly one clean record, not the first attempt's wreckage plus the retry").hasSize(1);
 
         final JsonNode node = MAPPER.readTree(lines.get(0));
-        assertThat(node.path("gateway_request_id").asString()).isEqualTo("req-1");
+        assertThat(node.path("request_id").asString()).isEqualTo("req-1");
 
         // A second, independent record must still come out clean - proof the generator's own
         // nesting state was never touched by the earlier failure.
@@ -112,9 +112,8 @@ class JsonLdWriterTest
 
         assertThat(writer.getIncompleteEndCount()).isEqualTo(1);
         final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
-        assertThat(node.path("record_type").asString()).isEqualTo("incomplete_end");
-        assertThat(node.path("incomplete_reason").asString()).isEqualTo("NO_STATUS");
-        assertThat(node.path("gateway_request_id").asString()).isEqualTo("req-partial");
+        assertThat(node.path("incomplete").asString()).isEqualTo("NO_STATUS");
+        assertThat(node.path("request_id").asString()).isEqualTo("req-partial");
     }
 
     /**
@@ -139,12 +138,74 @@ class JsonLdWriterTest
 
         assertThat(writer.getAbandonedCount()).isEqualTo(1);
         final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
-        assertThat(node.path("record_type").asString()).isEqualTo("abandoned");
-        assertThat(node.path("incomplete_reason").asString()).isEqualTo("TIMED_OUT");
-        assertThat(node.path("status").isNull())
+        assertThat(node.path("incomplete").asString()).isEqualTo("TIMED_OUT");
+        assertThat(node.path("client_response").path("status").isNull())
                 .as("status was never set by an End event that never arrived - it must not read as 0")
                 .isTrue();
         assertThat(node.path("start").isNull()).isTrue();
+    }
+
+    /**
+     * One object per leg, and nothing another field already says: no proxied flag (the
+     * upstream objects are there or not), no error flag, no totals, no separate content type.
+     */
+    @Test
+    void aRecordHasOneObjectPerLegAndNoDerivedFields() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JsonLdWriter writer = new JsonLdWriter(out, false, true);
+
+        final JournalExchange exchange = completeExchange("req-legs");
+        exchange.setClientRequest("GET /items?page=2 HTTP/1.1", JournalLevel.FULL,
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        exchange.setUpstreamRequest("GET /v1/items?page=2 HTTP/1.1", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setUpstreamResponse("HTTP/1.1 503 Service Unavailable", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setClientResponse("HTTP/1.1 503 Service Unavailable", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setTiming(1_000L, 9_000L, 2_000L, 5_000L, 8_000L);
+        exchange.setStatus(503);
+        exchange.setJournalChecksums(BodyChecksum.ofUnsigned32(7), BodyChecksum.NOT_RECORDED);
+
+        writer.onComplete(exchange);
+
+        final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
+        assertThat(node.propertyNames()).containsExactlyInAnyOrder(
+                "request_id", "start", "end", "duration", "remote_address", "remote_address_source",
+                "client_request", "upstream_request", "upstream_response", "client_response");
+
+        final JsonNode clientRequest = node.path("client_request");
+        assertThat(clientRequest.path("method").asString()).isEqualTo("GET");
+        assertThat(clientRequest.path("path").asString()).isEqualTo("/items");
+        assertThat(clientRequest.path("query").asString()).isEqualTo("page=2");
+        assertThat(clientRequest.path("protocol").asString()).isEqualTo("HTTP/1.1");
+        assertThat(clientRequest.path("level").asString()).isEqualTo("FULL");
+        assertThat(clientRequest.path("checksum").asLong()).isEqualTo(7);
+        assertThat(clientRequest.has("observed_checksum")).as("matches nothing it differs from").isFalse();
+
+        assertThat(node.path("upstream_request").path("path").asString()).isEqualTo("/v1/items");
+        assertThat(node.path("upstream_request").has("start")).isTrue();
+        assertThat(node.path("upstream_response").path("status").asInt()).isEqualTo(503);
+        assertThat(node.path("upstream_response").path("reason").asString()).isEqualTo("Service Unavailable");
+        assertThat(node.path("upstream_response").has("duration")).isTrue();
+        assertThat(node.path("client_response").path("status").asInt()).isEqualTo(503);
+    }
+
+    /**
+     * The status is in the end event at every journal level, so a response whose start line
+     * was not journaled still has one.
+     */
+    @Test
+    void theStatusIsWrittenWhenTheStartLineWasNotJournaled() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JsonLdWriter writer = new JsonLdWriter(out, false, true);
+
+        final JournalExchange exchange = completeExchange("req-metadata");
+        exchange.setStatus(404);
+        writer.onComplete(exchange);
+
+        final JsonNode response = MAPPER.readTree(linesOf(out).get(0)).path("client_response");
+        assertThat(response.path("status").asInt()).isEqualTo(404);
+        assertThat(response.path("level").asString()).isEqualTo("NONE");
     }
 
     @Test

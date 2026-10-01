@@ -108,6 +108,45 @@ to their defaults below (so a bare container with no config volume still starts 
 | `pretty_print`    | `false`     | Pretty-print the JSON output                                              |
 | `hide_empty_fields` | `true`    | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out explicitly. Set to `false` to always emit every field with the same schema on every line, e.g. for consumers that require a fixed columnar schema |
 
+**Record format.** One JSON object per line, one object per leg of the exchange. A proxied
+`GET` with headers journaled looks like this (pretty-printed here; empty fields omitted):
+
+```json
+{
+  "request_id": "01JA0Q6R8X4V2N7M3K5T9B1C0D",
+  "start": "2026-10-01T12:00:00.000120Z",
+  "end": "2026-10-01T12:00:00.004410Z",
+  "duration": 0.004290,
+  "remote_address": "10.0.0.7",
+  "remote_address_source": "SOCKET",
+  "client_request": {
+    "level": "HEADERS", "method": "GET", "path": "/items", "query": "page=2", "protocol": "HTTP/1.1",
+    "headers": {"host": "api.example.com"}, "header_bytes": 142, "body_bytes": 0
+  },
+  "upstream_request": {
+    "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=2", "protocol": "HTTP/1.1",
+    "headers": {"host": "backend:8080"}, "start": "2026-10-01T12:00:00.000300Z"
+  },
+  "upstream_response": {
+    "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
+    "headers": {"content-type": "application/json"},
+    "first_byte": "2026-10-01T12:00:00.004100Z", "end": "2026-10-01T12:00:00.004380Z", "duration": 0.004080
+  },
+  "client_response": {
+    "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
+    "headers": {"content-type": "application/json"}, "header_bytes": 98, "body_bytes": 1274
+  }
+}
+```
+
+The `upstream_*` objects are present only when the request was proxied. At `FULL`, a leg with a
+body adds `body` (base64) and `checksum` (the CRC32C the gateway recorded); `observed_checksum`
+appears beside it only when the body read back does not match. A record that is not a complete
+exchange carries `incomplete` with the reason; without an end event (`TIMED_OUT`, `SHUTDOWN`,
+`CAPACITY_EVICTED`) timing, status and sizes are unknown and left out. Attributes the gateway
+recorded are under `attributes`. A header with one value is a string, one sent more than once
+an array of its values.
+
 **Example `config/jsonld-tailer.yaml`:**
 
 ```yaml
@@ -266,6 +305,6 @@ volumes:
 
 Once your data is routed through a tailer:
 
-* **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like `duration`, `status`, or specific headers).
+* **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like `duration`, `client_response.status` — `client_response_status` after LogQL's `json` parser — or specific headers).
 * **If using the WARC Tailer:** WARC files are for archival/replay, not dashboards — feed them to a WARC-aware tool (e.g. [pywb](https://github.com/webrecorder/pywb)) to replay captured traffic, or to an indexer for forensic search.
 * **Into ClickHouse:** r7 ships no ClickHouse tailer. Point the JSON Tailer's `output_path` at a file and batch-insert its lines with a loader of your own (they are one JSON object per line, which ClickHouse reads as `JSONEachRow`), then query them from Grafana with the ClickHouse plugin.

@@ -15,15 +15,12 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.time.ClockSource;
 import com.ethlo.r7.util.GatewayUtils;
-import com.ethlo.r7.util.constants.HttpHeaders;
-import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.time.ITU;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.core.JsonGenerator;
@@ -100,7 +97,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, null, null);
+            writeExchangeObject(exchange, null);
             flushRecord();
         }
         catch (IOException e)
@@ -121,7 +118,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, "incomplete_end", reason);
+            writeExchangeObject(exchange, reason);
             flushRecord();
         }
         catch (IOException e)
@@ -136,8 +133,8 @@ public class JsonLdWriter implements ExchangeCompletionListener
         final long total = incompleteEndCount.incrementAndGet();
         if (total == 1)
         {
-            logger.warn("Exchange {} ended but was not a complete record ({}); emitted flagged as "
-                            + "\"incomplete_end\". Further occurrences are counted, not logged.",
+            logger.warn("Exchange {} ended but was not a complete record ({}); emitted with "
+                            + "\"incomplete\" set. Further occurrences are counted, not logged.",
                     exchange.getRequestId(), reason);
         }
         else if (logger.isDebugEnabled())
@@ -160,7 +157,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, "abandoned", reason);
+            writeExchangeObject(exchange, reason);
             flushRecord();
         }
         catch (final IOException | RuntimeException e)
@@ -266,320 +263,267 @@ public class JsonLdWriter implements ExchangeCompletionListener
 
     /**
      * Writes one exchange as a JSON object into {@link #generator} (and so into
-     * {@link #scratch}), without touching {@link #out}.
+     * {@link #scratch}), without touching {@link #out}. One object per exchange, one object
+     * per leg of it:
+     * <pre>
+     * {
+     *   "request_id": "...",
+     *   "incomplete": "TIMED_OUT",            only when this is not a complete record
+     *   "start": "...", "end": "...", "duration": 0.012345,
+     *   "remote_address": "...", "remote_address_source": "SOCKET",
+     *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body, checksum},
+     *   "upstream_request":  {level, method, path, query, protocol, headers, start},
+     *   "upstream_response": {level, protocol, status, reason, headers, first_byte, end, duration},
+     *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body, checksum},
+     *   "attributes": {...}
+     * }
+     * </pre>
+     * Nothing is written that another field already says: whether the request was proxied is
+     * whether the upstream objects are there, an error is a status, a total is a sum, and the
+     * content type is a header. The upstream objects are present only for a proxied exchange.
+     * {@code observed_checksum} appears beside {@code checksum} only when the body read back
+     * does not match what the gateway recorded.
+     * <p>
+     * Without an end event (an abandoned exchange) timing, status, sizes and checksums are
+     * unknown rather than zero (README.md §11.4), and are written as {@code null} or, with
+     * {@link #hideEmptyFields}, left out.
      *
-     * @param recordType null for a complete record, otherwise {@code "incomplete_end"} or
-     *                   {@code "abandoned"}
-     * @param reason     null for a complete record, otherwise why it is not one
+     * @param reason null for a complete record, otherwise why it is not one
      */
-    private void writeExchangeObject(final JournalExchange exchange, final String recordType, final IncompleteReason reason) throws IOException
+    private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason) throws IOException
     {
-        // Whether the EndExchange event was ever seen - and so whether status, timing,
-        // traffic and checksums were ever applied to this exchange at all (README.md
-        // §11.4). Treating an abandoned exchange's unset fields as zero would quietly lie
-        // about response status and duration in the audit trail.
         final boolean hasEndEvent = reason == null || reason.hasEndEvent();
 
         generator.writeStartObject();
 
-        // --- Metadata ---
-        generator.writeStringProperty("gateway_request_id", exchange.getRequestId());
-        if (recordType != null)
+        generator.writeStringProperty("request_id", exchange.getRequestId());
+        if (reason != null)
         {
-            generator.writeStringProperty("record_type", recordType);
-            generator.writeStringProperty("incomplete_reason", reason.name());
+            generator.writeStringProperty("incomplete", reason.name());
+        }
+
+        if (hasEndEvent)
+        {
+            generator.writeStringProperty("start", timestamp(exchange.getClientStartTs()));
+            generator.writeStringProperty("end", timestamp(exchange.getClientEndTs()));
+            writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
+        }
+        else
+        {
+            writeNull("start");
+            writeNull("end");
+            writeNull("duration");
         }
         writeString("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
         writeString("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
 
-        // wasProxied() reads proxyStartTs, which is only meaningful once the End event has
-        // set it; for an abandoned exchange it is still its zero default; falling back to
-        // whether an upstream leg was ever recorded avoids reporting "proxied" for a
-        // request whose proxy timing simply never arrived.
+        // wasProxied() reads proxyStartTs, which only the end event sets; without one, an
+        // upstream leg having been journaled is the evidence there is.
         final boolean proxied = hasEndEvent
                 ? exchange.wasProxied()
                 : (exchange.getUpstreamRequestStartLine() != null || exchange.getUpstreamResponseStartLine() != null);
 
-        if (hasEndEvent)
-        {
-            generator.writeStringProperty("start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientStartTs())));
-            writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
-            generator.writeStringProperty("end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getClientEndTs())));
+        // client_request
+        generator.writeName("client_request");
+        generator.writeStartObject();
+        writeLevel(exchange.getClientRequestLevel());
+        writeRequestLine(exchange.getClientRequestStartLine());
+        writeMap("headers", GatewayUtils.toMap(exchange.getClientRequestHeaders()));
+        writeSizes(hasEndEvent, exchange.getRequestHeaderBytes(), exchange.getRequestBodyBytes());
+        writeBody(exchange.getRequestBodyFragments());
+        writeChecksums(exchange.getJournaledRequestChecksum(), exchange.getObservedRequestChecksum());
+        generator.writeEndObject();
 
-            generator.writeBooleanProperty("was_proxied", proxied);
-
-            if (proxied)
-            {
-                generator.writeStringProperty("proxy_start", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyStartTs())));
-                generator.writeStringProperty("proxy_first_byte", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyFirstByteReceivedTs())));
-                generator.writeStringProperty("proxy_end", ITU.formatUtcMicro(ClockSource.convertToUtc(exchange.getProxyEndTs())));
-                writePlainDouble(generator, "proxy_duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
-            }
-
-            // --- Metrics ---
-            final int status = exchange.getStatus();
-            generator.writeNumberProperty("status", status);
-            generator.writeBooleanProperty("is_error", status >= HttpStatuses.BAD_REQUEST);
-            writeNumber("request_header_bytes", exchange.getRequestHeaderBytes());
-            writeNumber("request_body_bytes", exchange.getRequestBodyBytes());
-            writeNumber("request_total_bytes", exchange.getRequestTotalBytes());
-            writeNumber("response_header_bytes", exchange.getResponseHeaderBytes());
-            writeNumber("response_body_bytes", exchange.getResponseBodyBytes());
-            writeNumber("response_total_bytes", exchange.getResponseTotalBytes());
-
-            // --- Checksums ---
-            // "Journaled" is what the gateway recorded to disk; "observed" is what this reader
-            // actually saw. A mismatch between the two means the segment was damaged in transit.
-            // Named "checksum", not "crc32": the algorithm is CRC32C (see BodyChecksum), a
-            // different polynomial than CRC-32, and the field name must not claim otherwise.
-            writeChecksum("journaled_request_checksum", exchange.getJournaledRequestChecksum());
-            writeChecksum("journaled_response_checksum", exchange.getJournaledResponseChecksum());
-            writeChecksum("observed_request_checksum", exchange.getObservedRequestChecksum());
-            writeChecksum("observed_response_checksum", exchange.getObservedResponseChecksum());
-        }
-        else
-        {
-            // No End event: timing, status and traffic counters are unknown, not zero
-            // (README.md §11.4) - explicit nulls, subject to the same hideEmptyFields choice
-            // as every other absent field, rather than a value that never applied. The
-            // journaled checksums are equally unknown (they only ever come from the End
-            // event, and writeChecksum already renders NOT_RECORDED as null); the observed
-            // ones are still worth writing, because they reflect whatever body fragments
-            // were actually seen before the exchange was abandoned - real evidence, not a
-            // guess, for a truncated upload or download.
-            generator.writeBooleanProperty("was_proxied", proxied);
-            writeNull("start");
-            writeNull("duration");
-            writeNull("end");
-            writeNull("status");
-            writeNull("is_error");
-            writeNull("request_header_bytes");
-            writeNull("request_body_bytes");
-            writeNull("request_total_bytes");
-            writeNull("response_header_bytes");
-            writeNull("response_body_bytes");
-            writeNull("response_total_bytes");
-            writeChecksum("journaled_request_checksum", exchange.getJournaledRequestChecksum());
-            writeChecksum("journaled_response_checksum", exchange.getJournaledResponseChecksum());
-            writeChecksum("observed_request_checksum", exchange.getObservedRequestChecksum());
-            writeChecksum("observed_response_checksum", exchange.getObservedResponseChecksum());
-        }
-
-        // --- Client Object ---
-        generator.writeName("client");
-        writeExchangeNode(
-                exchange.getClientRequestLevel(),
-                exchange.getClientRequestStartLine(),
-                exchange.getClientRequestHeaders(),
-                exchange.getClientResponseLevel(),
-                exchange.getClientResponseStartLine(),
-                exchange.getClientResponseHeaders()
-        );
-
-        // --- Upstream Object ---
         if (proxied)
         {
-            generator.writeName("upstream");
-            writeExchangeNode(
-                    exchange.getUpstreamRequestLevel(),
-                    exchange.getUpstreamRequestStartLine(),
-                    exchange.getUpstreamRequestHeaders(),
-                    exchange.getUpstreamResponseLevel(),
-                    exchange.getUpstreamResponseStartLine(),
-                    exchange.getUpstreamResponseHeaders()
-            );
+            generator.writeName("upstream_request");
+            generator.writeStartObject();
+            writeLevel(exchange.getUpstreamRequestLevel());
+            writeRequestLine(exchange.getUpstreamRequestStartLine());
+            writeMap("headers", GatewayUtils.toMap(exchange.getUpstreamRequestHeaders()));
+            if (hasEndEvent)
+            {
+                generator.writeStringProperty("start", timestamp(exchange.getProxyStartTs()));
+            }
+            generator.writeEndObject();
+
+            generator.writeName("upstream_response");
+            generator.writeStartObject();
+            writeLevel(exchange.getUpstreamResponseLevel());
+            writeResponseLine(exchange.getUpstreamResponseStartLine(), null);
+            writeMap("headers", GatewayUtils.toMap(exchange.getUpstreamResponseHeaders()));
+            if (hasEndEvent)
+            {
+                generator.writeStringProperty("first_byte", timestamp(exchange.getProxyFirstByteReceivedTs()));
+                generator.writeStringProperty("end", timestamp(exchange.getProxyEndTs()));
+                writePlainDouble(generator, "duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
+            }
+            generator.writeEndObject();
         }
 
-        // --- Payload Debugging ---
-        writeBody("request_body", exchange.getRequestBodyFragments());
-        writeBody("response_body", exchange.getResponseBodyFragments());
+        // client_response: the status comes from the end event, which every journal level
+        // records, so it is there even when the start line was not journaled.
+        generator.writeName("client_response");
+        generator.writeStartObject();
+        writeLevel(exchange.getClientResponseLevel());
+        writeResponseLine(exchange.getClientResponseStartLine(), hasEndEvent ? exchange.getStatus() : null);
+        writeMap("headers", GatewayUtils.toMap(exchange.getClientResponseHeaders()));
+        writeSizes(hasEndEvent, exchange.getResponseHeaderBytes(), exchange.getResponseBodyBytes());
+        writeBody(exchange.getResponseBodyFragments());
+        writeChecksums(exchange.getJournaledResponseChecksum(), exchange.getObservedResponseChecksum());
+        generator.writeEndObject();
 
-        // --- Context ---
         writeMap("attributes", GatewayUtils.toMap(exchange.getAttributes()));
 
         generator.writeEndObject();
     }
 
-    private void writeExchangeNode(
-            final JournalLevel reqLevel, final String reqLine, final GatewayHeaders reqHeaders,
-            final JournalLevel resLevel, final String resLine, final GatewayHeaders resHeaders) throws IOException
+    private static String timestamp(final long clockTs)
     {
-        generator.writeStartObject();
-
-        // Request half
-        generator.writeStringProperty("request_journal_level", reqLevel != null ? reqLevel.name() : "NONE");
-
-        if (reqLine != null)
-        {
-            writeRequestLine(generator, reqLine);
-        }
-        else
-        {
-            // Maintain strict JSON schema consistency for columnar databases, unless the
-            // caller has opted into hiding empty fields
-            writeNull("method");
-            writeNull("path");
-            writeNull("query_string");
-            writeNull("request_protocol");
-        }
-
-        writeMap("request_headers", GatewayUtils.toMap(reqHeaders));
-
-        // Response half
-        generator.writeStringProperty("response_journal_level", resLevel != null ? resLevel.name() : "NONE");
-        writeMap("response_headers", GatewayUtils.toMap(resHeaders));
-        writeString("content_type", getHeader(resHeaders, HttpHeaders.CONTENT_TYPE));
-
-        writeResponseLine(generator, resLine);
-
-        generator.writeEndObject();
+        return ITU.formatUtcMicro(ClockSource.convertToUtc(clockTs));
     }
 
-    private void writeResponseLine(final JsonGenerator generator, final String resLine)
+    private void writeLevel(final JournalLevel level)
     {
-        // Expected format: "{PROTOCOL} {CODE} {REASON}"
-        // Example: "HTTP/1.1 503 Service Unavailable"
-        // Only "protocol" needs a request_/response_ prefix here: it is the one field that
-        // exists on both start lines. "status_code" and "reason" are response-only concepts
-        // and get no prefix, same as "method"/"path"/"query_string" on the request side.
-        if (resLine == null)
+        generator.writeStringProperty("level", level != null ? level.name() : JournalLevel.NONE.name());
+    }
+
+    private void writeSizes(final boolean known, final long headerBytes, final long bodyBytes)
+    {
+        if (known)
         {
-            writeNull("response_protocol");
-            writeNull("status_code");
-            writeNull("reason");
-            return;
-        }
-
-        final int firstSpace = resLine.indexOf(' ');
-
-        if (firstSpace != -1)
-        {
-            // 1. Protocol (e.g., "HTTP/1.1")
-            generator.writeStringProperty("response_protocol", resLine.substring(0, firstSpace));
-
-            // Find the space separating the Code and the Reason phrase
-            final int secondSpace = resLine.indexOf(' ', firstSpace + 1);
-
-            if (secondSpace != -1)
-            {
-                // 2. Status Code
-                writeStatusCode(resLine.substring(firstSpace + 1, secondSpace));
-
-                // 3. Reason Phrase (everything after the second space)
-                generator.writeStringProperty("reason", resLine.substring(secondSpace + 1));
-            }
-            else
-            {
-                // Fallback if there is no reason phrase
-                writeStatusCode(resLine.substring(firstSpace + 1));
-                writeNull("reason");
-            }
+            generator.writeNumberProperty("header_bytes", headerBytes);
+            generator.writeNumberProperty("body_bytes", bodyBytes);
         }
         else
         {
-            // Graceful fallback for completely malformed lines
-            writeNull("response_protocol");
-            writeStatusCode(resLine);
-            writeNull("reason");
+            writeNull("header_bytes");
+            writeNull("body_bytes");
         }
     }
 
     /**
-     * Writes {@code status_code} as a number, matching the top-level {@code status} field's
-     * type. A start line that fails to parse is malformed, not merely absent, so it is
-     * reported as null rather than silently smuggled through as a string.
+     * The checksum the gateway recorded, and the one computed from the body read back only
+     * when they differ: a match is the normal case and says nothing new.
+     */
+    private void writeChecksums(final BodyChecksum journaled, final BodyChecksum observed)
+    {
+        if (journaled.isRecorded())
+        {
+            generator.writeNumberProperty("checksum", journaled.value());
+            if (observed.isRecorded() && observed.value() != journaled.value())
+            {
+                generator.writeNumberProperty("observed_checksum", observed.value());
+            }
+        }
+        else
+        {
+            writeNull("checksum");
+        }
+    }
+
+    /**
+     * @param status the status from the end event, which wins over the start line's; {@code null}
+     *               to take it from the start line
+     */
+    private void writeResponseLine(final String line, final Integer status)
+    {
+        // "{PROTOCOL} {CODE} {REASON}", e.g. "HTTP/1.1 503 Service Unavailable"
+        String protocol = null;
+        String code = null;
+        String reason = null;
+        if (line != null)
+        {
+            final int firstSpace = line.indexOf(' ');
+            if (firstSpace < 0)
+            {
+                code = line;
+            }
+            else
+            {
+                protocol = line.substring(0, firstSpace);
+                final int secondSpace = line.indexOf(' ', firstSpace + 1);
+                code = secondSpace < 0 ? line.substring(firstSpace + 1) : line.substring(firstSpace + 1, secondSpace);
+                reason = secondSpace < 0 ? null : line.substring(secondSpace + 1);
+            }
+        }
+
+        writeString("protocol", protocol);
+        if (status != null)
+        {
+            generator.writeNumberProperty("status", status);
+        }
+        else
+        {
+            writeStatusCode(code);
+        }
+        writeString("reason", reason);
+    }
+
+    /**
+     * A start line whose code does not parse is malformed, not merely absent, so it is
+     * written as null rather than smuggled through as a string.
      */
     private void writeStatusCode(final String code)
     {
         try
         {
-            generator.writeNumberProperty("status_code", Integer.parseInt(code));
+            if (code != null)
+            {
+                generator.writeNumberProperty("status", Integer.parseInt(code));
+                return;
+            }
         }
         catch (final NumberFormatException e)
         {
-            writeNull("status_code");
+            // fall through
         }
+        writeNull("status");
     }
 
-    private void writeRequestLine(final JsonGenerator generator, final String reqLine)
+    private void writeRequestLine(final String line)
     {
-        // Expected format: "{METHOD} {URI}{?QUERY} {PROTOCOL}"
-        // Example: "GET /api/v1/foo?tenant=123 HTTP/2.0"
-        final int firstSpace = reqLine.indexOf(' ');
-        final int lastSpace = reqLine.lastIndexOf(' ');
-
-        if (firstSpace != -1 && lastSpace != -1 && firstSpace != lastSpace)
+        // "{METHOD} {URI}{?QUERY} {PROTOCOL}", e.g. "GET /api/v1/foo?tenant=123 HTTP/1.1"
+        if (line == null)
         {
-            // 1. Method
-            generator.writeStringProperty("method", reqLine.substring(0, firstSpace));
-
-            // 2. Protocol
-            generator.writeStringProperty("request_protocol", reqLine.substring(lastSpace + 1));
-
-            // 3. Path & Query String
-            final String fullUri = reqLine.substring(firstSpace + 1, lastSpace);
-            final int questionMark = fullUri.indexOf('?');
-
-            if (questionMark != -1)
-            {
-                final String path = fullUri.substring(0, questionMark);
-                final String query = fullUri.substring(questionMark + 1);
-                generator.writeStringProperty("path", path);
-                generator.writeStringProperty("query_string", query);
-            }
-            else
-            {
-                generator.writeStringProperty("path", fullUri);
-                writeNull("query_string");
-            }
-        }
-        else
-        {
-            // Graceful fallback for completely malformed start lines
             writeNull("method");
-            generator.writeStringProperty("path", reqLine);
-            writeNull("query_string");
-            writeNull("request_protocol");
+            writeNull("path");
+            writeNull("query");
+            writeNull("protocol");
+            return;
         }
-    }
 
-    private void writeNumber(String name, long value) throws IOException
-    {
-        generator.writeNumberProperty(name, value);
-    }
-
-    private void writeChecksum(String name, BodyChecksum checksum) throws IOException
-    {
-        if (checksum.isRecorded())
+        final int firstSpace = line.indexOf(' ');
+        final int lastSpace = line.lastIndexOf(' ');
+        if (firstSpace < 0 || firstSpace == lastSpace)
         {
-            generator.writeNumberProperty(name, checksum.value());
+            // Malformed: keep what there is rather than drop it.
+            writeNull("method");
+            generator.writeStringProperty("path", line);
+            writeNull("query");
+            writeNull("protocol");
+            return;
         }
-        else
-        {
-            writeNull(name);
-        }
+
+        generator.writeStringProperty("method", line.substring(0, firstSpace));
+        final String uri = line.substring(firstSpace + 1, lastSpace);
+        final int questionMark = uri.indexOf('?');
+        generator.writeStringProperty("path", questionMark < 0 ? uri : uri.substring(0, questionMark));
+        writeString("query", questionMark < 0 ? null : uri.substring(questionMark + 1));
+        generator.writeStringProperty("protocol", line.substring(lastSpace + 1));
     }
 
-    private void writeBody(String fieldName, List<ByteBuffer> fragments) throws IOException
+    private void writeBody(final List<ByteBuffer> fragments) throws IOException
     {
         if (fragments != null && !fragments.isEmpty())
         {
-            generator.writeName(fieldName);
+            generator.writeName("body");
             generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
         }
         else
         {
-            writeNull(fieldName);
+            writeNull("body");
         }
-    }
-
-    private String getHeader(GatewayHeaders headers, String key)
-    {
-        if (headers == null)
-        {
-            return null;
-        }
-        return Optional.ofNullable(headers.getFirst(key)).map(String::toString).orElse(null);
     }
 
     /**
