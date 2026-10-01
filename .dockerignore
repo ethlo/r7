@@ -1,0 +1,12 @@
+# Build context for the Dockerfiles. Dockerfile.native copies the whole tree (COPY . .) and the
+# JVM ones copy jars out of */target, so target/ stays in. What is excluded here is local output
+# that runs to tens of GB: benchmark runs and test gateways leave pre-allocated 200 MB journal
+# segments behind, and without this every image build shipped them all to the Docker daemon.
+benchmark/results/
+**/journals/
+**/*.r7f
+**/*.flux
+**/*.corrupt
+**/node_modules/
+.claude/
+.idea/
