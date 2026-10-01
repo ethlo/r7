@@ -911,7 +911,7 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <h2 id="core-capabilities">Core capabilities</h2>
 <ul>
 <li>Composable routing engine (predicates + filters)</li>
-<li>High-throughput HTTP entrypoint (Undertow-based)</li>
+<li>High-throughput HTTP entrypoint (Helidon Níma, a virtual thread per connection)</li>
 <li>Memory-mapped journaling for full request/response auditing</li>
 <li>Real-time operational dashboard</li>
 <li>Plugin system via JVM ServiceLoader (SPI)</li>
@@ -999,7 +999,7 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 <h2 id="technical-profile">Technical profile</h2>
 <ul>
 <li>Platform: Java 25+</li>
-<li>Server: Undertow (XNIO)</li>
+<li>Server: Helidon Níma (virtual threads)</li>
 <li>Design: JVM-native, high-throughput gateway architecture</li>
 </ul>
 

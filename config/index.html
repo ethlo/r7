@@ -1664,17 +1664,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#advanced-advanced" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Advanced (<code>advanced</code>)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#storage-journaling-storage" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2126,7 +2115,7 @@
 <ul>
 <li><strong>Regex Semantics:</strong> All regex predicates and <code>RequireMatch*</code> filters use standard Java Regex syntax and must match the <strong>whole value</strong>, as if anchored with <code>^</code> and <code>$</code>: <code>user</code> does not match <code>superuser</code>. Use <code>.*user.*</code> to match anywhere in the value. Matching is <strong>case-sensitive</strong> unless the inline flag <code>(?i)</code> is used.</li>
 <li><strong>Repeated Values:</strong> When a query parameter, header or cookie occurs more than once, a value check (<code>QueryParameter</code>, <code>MatchQueryParameter</code>, <code>RequestHeader</code>, <code>MatchRequestHeader</code>, <code>Cookie</code>, <code>MatchCookie</code>, and the <code>RequireMatch*</code> filters) passes only if <strong>every</strong> occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so <code>?role=user&amp;role=admin</code> must not satisfy a check on <code>role</code> that the upstream then reads as <code>admin</code>. A header value that is a comma-separated list on one line is matched as one value. Presence checks (<code>Has*</code>, <code>Require*</code> without a pattern) are unaffected.</li>
-<li><strong>Regex Cost:</strong> Every match of a configured pattern against request data (predicates, <code>RequireMatch*</code>, <code>RewritePath</code>, <code>TemplateRedirect</code>) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around <code>.*</code> (<code>^(.*a){12}$</code>), several <code>.*</code> in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with <code>500</code> instead of stalling an I/O thread. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.</li>
+<li><strong>Regex Cost:</strong> Every match of a configured pattern against request data (predicates, <code>RequireMatch*</code>, <code>RewritePath</code>, <code>TemplateRedirect</code>) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around <code>.*</code> (<code>^(.*a){12}$</code>), several <code>.*</code> in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with <code>500</code> instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.</li>
 <li><strong>Empty Matches:</strong> An empty match block (<code>match: []</code>) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.</li>
 </ul>
 <h3 id="logical-meta-predicates">Logical Meta-Predicates</h3>
@@ -3143,7 +3132,7 @@
 </span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"</span>
 </span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"bob:${BOB_HTPASSWD_ENTRY}"</span>
 </span></code></pre></div>
-<p>Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash.</p>
+<p>Because bcrypt is deliberately expensive, successful credentials are cached so that repeat requests do not re-run the hash.</p>
 <p><strong>Password guessing.</strong> <code>BasicAuth</code> has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a <code>RateLimiter</code> before <code>BasicAuth</code>, so a client is refused before its guess costs a bcrypt:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
@@ -3370,7 +3359,7 @@
 </tbody>
 </table>
 <h4 id="staticcontent">StaticContent</h4>
-<p>Short-circuits the pipeline to serve static files directly from the disk: on Undertow with its native handler, on the other servers with r7's own, and with the same rules on each. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), every answer carries <code>X-Content-Type-Options: nosniff</code>, and a directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> (and an <code>ETag</code> on servers other than Undertow), answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>.</p>
+<p>Short-circuits the pipeline to serve static files directly from the disk. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), every answer carries <code>X-Content-Type-Options: nosniff</code>, and a directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> and an <code>ETag</code>, answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>.</p>
 <table>
 <thead>
 <tr>
@@ -3655,7 +3644,7 @@
 <h2 id="9-server-configuration">9. Server Configuration</h2>
 <p>The <code>server.yaml</code> file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.</p>
 <h3 id="server-configuration-server">Server Configuration (<code>server</code>)</h3>
-<p>Defines the primary listening interfaces and ports for the gateway.</p>
+<p>Defines the gateway's listening interface and port, and how many connections it holds.</p>
 <table>
 <thead>
 <tr>
@@ -3675,8 +3664,25 @@
 <td>Integer</td>
 <td>The primary port the gateway listens on for incoming traffic.</td>
 </tr>
+<tr>
+<td><code>max_connections</code></td>
+<td>Integer</td>
+<td>When this many client connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to <code>20000</code>. Keep it below the process's open-file limit, less what upstream connections and journals need.</td>
+</tr>
+<tr>
+<td><code>idle_timeout</code></td>
+<td>Duration</td>
+<td>Closes a connection that sits between requests for this long, and a WebSocket that carries nothing either way for this long - a client that keeps a quiet WebSocket open must ping more often. Defaults to <code>30s</code>; at most <code>24d</code>.</td>
+</tr>
+<tr>
+<td><code>backlog</code></td>
+<td>Integer</td>
+<td>Length of the kernel's accept backlog. Defaults to <code>1000</code>.</td>
+</tr>
 </tbody>
 </table>
+<p>None of the three can be turned off: a listener without them lets a client hold file descriptors until the gateway stops accepting traffic.</p>
+<p>Each connection runs on a virtual thread of its own, and so does every request on it: a filter that blocks (<code>BasicAuth</code>'s bcrypt, a lookup) parks its thread and holds up nothing else.</p>
 <h3 id="management-configuration-management">Management Configuration (<code>management</code>)</h3>
 <p>Defines the interfaces for the internal status and metrics endpoints.</p>
 <table>
@@ -3702,11 +3708,6 @@
 <td><code>request_parse_timeout</code></td>
 <td>Duration</td>
 <td>Time allowed to receive a complete request head. Defaults to <code>2s</code>.</td>
-</tr>
-<tr>
-<td><code>read_timeout</code></td>
-<td>Duration</td>
-<td>Closes a connection that sends nothing for this long. Defaults to <code>30s</code>.</td>
 </tr>
 <tr>
 <td><code>idle_timeout</code></td>
@@ -3750,12 +3751,7 @@
 <tr>
 <td><code>enable_http2</code></td>
 <td>Boolean</td>
-<td>Enables HTTP/2. Defaults to <code>false</code>. The listener is plaintext, so this means h2c (prior knowledge or <code>Upgrade: h2c</code>): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and with the r7 upstream client a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its <code>Content-Length</code> - is answered <code>400</code> rather than forwarded.</td>
-</tr>
-<tr>
-<td><code>always_set_keep_alive</code></td>
-<td>Boolean</td>
-<td>Forces the server to send the <code>Connection: keep-alive</code> header to maintain persistent connections.</td>
+<td>Enables HTTP/2. Defaults to <code>false</code>. The listener is plaintext, so this means h2c (prior knowledge or <code>Upgrade: h2c</code>): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its <code>Content-Length</code> - is answered <code>400</code> rather than forwarded.</td>
 </tr>
 <tr>
 <td><code>request_parse_timeout</code></td>
@@ -3766,7 +3762,7 @@
 </table>
 <h3 id="limits-configuration-limits">Limits Configuration (<code>limits</code>)</h3>
 <p>Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.</p>
-<p>A request over <code>max_header_size</code> or <code>max_header_count</code> is refused before any filter runs, with <code>400</code> or <code>431</code> depending on which layer caught it. A body over <code>max_entity_size</code> is refused with <code>413</code> when its <code>Content-Length</code> declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental Helidon and servlet hosts, whatever the server's own parser settings.</p>
+<p>A request over <code>max_header_size</code> or <code>max_header_count</code> is refused before any filter runs, with <code>400</code> or <code>431</code> depending on which layer caught it. A body over <code>max_entity_size</code> is refused with <code>413</code> when its <code>Content-Length</code> declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.</p>
 <table>
 <thead>
 <tr>
@@ -3792,16 +3788,6 @@
 <td>The maximum allowed request payload/entity size (e.g., <code>2MB</code>).</td>
 </tr>
 <tr>
-<td><code>max_parameter_count</code></td>
-<td>Integer</td>
-<td>The maximum number of parameters allowed per request.</td>
-</tr>
-<tr>
-<td><code>max_cookie_count</code></td>
-<td>Integer</td>
-<td>The maximum number of cookies allowed per request.</td>
-</tr>
-<tr>
 <td><code>trusted_proxies</code></td>
 <td>List of Strings</td>
 <td>CIDR ranges (e.g., <code>["10.0.0.0/8"]</code>) of reverse proxies allowed to set <code>X-Forwarded-For</code>/<code>X-Real-IP</code>. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When <code>X-Forwarded-For</code> is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in <code>trusted_proxies</code>; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended.</td>
@@ -3816,7 +3802,7 @@
 </ul>
 <p>r7 then sets <code>X-Forwarded-For</code>, <code>-Proto</code>, <code>-Host</code>, <code>-Port</code> and <code>-Server</code> itself. For a trusted proxy it extends that proxy's values (its client's address stays in <code>X-Forwarded-For</code>, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the <code>X-Forwarded-*</code> headers they receive from r7.</p>
 <h3 id="proxy-client-proxy">Proxy Client (<code>proxy</code>)</h3>
-<p>Configures the behavior of the internal reverse proxy client that connects to upstream targets.</p>
+<p>Configures r7's upstream client, an HTTP/1.1 client with a keep-alive pool per target.</p>
 <table>
 <thead>
 <tr>
@@ -3827,85 +3813,28 @@
 </thead>
 <tbody>
 <tr>
-<td><code>connections_per_thread</code></td>
+<td><code>max_connections_per_target</code></td>
 <td>Integer</td>
-<td>The maximum number of pooled upstream connections allowed <em>per worker thread</em>.</td>
+<td>Requests in flight to one upstream target, each on a connection of its own. Defaults to <code>4096</code>.</td>
 </tr>
 <tr>
 <td><code>max_queue_size</code></td>
 <td>Integer</td>
-<td>The maximum number of pending requests allowed to queue while waiting for an available upstream connection.</td>
+<td>Requests that may wait for one of those to finish; past it a request is answered <code>503</code>. Defaults to <code>1000</code>.</td>
 </tr>
 <tr>
 <td><code>max_request_time</code></td>
 <td>Duration</td>
-<td>The absolute maximum time (e.g., <code>60s</code>) a proxy request is allowed to take before timing out. At most <code>24d</code> (2147483647 ms).</td>
+<td>The longest a proxied exchange may take, waiting for a connection included, before it is answered <code>504</code>. Defaults to <code>60s</code>; at most <code>24d</code> (2147483647 ms).</td>
 </tr>
 <tr>
 <td><code>ttl</code></td>
 <td>Duration</td>
-<td>The time-to-live (e.g., <code>30s</code>) for idle upstream connections in the pool. At most <code>24d</code> (2147483647 ms).</td>
-</tr>
-<tr>
-<td><code>client</code></td>
-<td>String</td>
-<td><strong>Experimental.</strong> Which upstream client proxies requests: <code>undertow</code> (Undertow's own proxy; the default) or <code>r7</code>, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With <code>r7</code>, response framing is checked strictly (conflicting <code>Content-Length</code>, folded headers, malformed chunks and transfer codings other than <code>chunked</code> are answered with <code>502</code>), a request that fails on a reused connection is retried only when it is idempotent, and a target that refuses the connection is skipped for the next. <code>connections_per_thread</code> is scaled by <code>advanced.io_threads</code> into a per-target limit on requests in flight, with up to <code>max_queue_size</code> waiting; <code>max_request_time</code> bounds the whole exchange, waiting included. <code>https</code> targets are verified against the JVM's trust store, host name included. On Undertow, <code>r7</code> does not tunnel WebSocket upgrades: a <code>101</code> from the upstream is answered with <code>502</code>, so keep <code>undertow</code> for routes that carry WebSockets. The experimental Helidon and servlet hosts, which always use <code>r7</code>, do tunnel them.</td>
+<td>How long an idle pooled connection is kept (e.g., <code>30s</code>): below the upstream's own keep-alive timeout, since a request that fails on a connection the upstream already closed is retried only when it is idempotent. At most <code>24d</code> (2147483647 ms).</td>
 </tr>
 </tbody>
 </table>
-<h3 id="advanced-advanced">Advanced (<code>advanced</code>)</h3>
-<p>Worker threads and socket options of the gateway listener.</p>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>io_threads</code></td>
-<td>Integer</td>
-<td>I/O threads. Defaults to the number of processors, at least 2.</td>
-</tr>
-<tr>
-<td><code>task_threads</code></td>
-<td>Integer</td>
-<td>Worker task threads. Defaults to <code>io_threads</code> × 8.</td>
-</tr>
-<tr>
-<td><code>connection_high_water</code></td>
-<td>Integer</td>
-<td>When this many connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to <code>20000</code>. Keep it below the process's open-file limit, less what upstream connections and journals need.</td>
-</tr>
-<tr>
-<td><code>connection_low_water</code></td>
-<td>Integer</td>
-<td>Once accepting has stopped, it resumes when open connections fall to this many. Defaults to <code>10000</code>; must be at least 1 and at most <code>connection_high_water</code>.</td>
-</tr>
-<tr>
-<td><code>tcp_no_delay</code></td>
-<td>Boolean</td>
-<td>Disables Nagle's algorithm. Defaults to <code>true</code>.</td>
-</tr>
-<tr>
-<td><code>reuse_addresses</code></td>
-<td>Boolean</td>
-<td>Sets <code>SO_REUSEADDR</code> on the listener. Defaults to <code>true</code>.</td>
-</tr>
-<tr>
-<td><code>socket_backlog</code></td>
-<td>Integer</td>
-<td>Length of the accept backlog. Defaults to <code>1000</code>.</td>
-</tr>
-<tr>
-<td><code>socket_read_timeout</code></td>
-<td>Duration</td>
-<td>Closes a connection that sends nothing for this long. Defaults to <code>30s</code>; at most <code>24d</code>.</td>
-</tr>
-</tbody>
-</table>
+<p>Response framing is checked strictly: conflicting <code>Content-Length</code>s, folded headers, malformed chunks and transfer codings other than <code>chunked</code> are answered <code>502</code>, and the connection is not reused. A target that refuses the connection is skipped for the next. <code>https</code> targets are verified against the JVM's trust store, host name included. A WebSocket handshake the upstream accepts (<code>101</code>) becomes a tunnel that carries bytes both ways until either side closes; see <code>idle_timeout</code> above.</p>
 <h3 id="storage-journaling-storage">Storage &amp; Journaling (<code>storage</code>)</h3>
 <p>Configures the disk-backed storage mechanism used for high-speed request and response journaling.</p>
 <table>
