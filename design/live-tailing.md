@@ -1,6 +1,6 @@
 # Live tailing: microseconds between write and read
 
-Status: step 1 done; steps 2–4 proposed.
+Status: steps 1–3 done; step 4 proposed.
 
 ## The question
 
@@ -107,6 +107,28 @@ and renames the segment on another thread; until the rename landed the tailer re
 still-active-named segment as active, called it unfinished, and blocked its shard, so the new
 segment went unread for as long as the fsync took. A segment carrying the seal magic is now
 read as sealed whatever its name.
+
+## Steps 2 and 3: measured
+
+`CommitSignal` is the control file (`shard-<id>.ctl`, one cache line holding a counter the
+writer release-stores after every commit and rotation) and `R7Tailer.awaitNewData` the wait:
+it spins 20 µs, then parks from 10 µs doubling to 1 ms, comparing the counters with their
+values at the start of the tick. The tailer apps call it instead of sleeping.
+
+`TailerLatencyBenchmarkTest` (opt-in), commit of the end event to delivery, one writer:
+
+| gap between exchanges | p50 | p99 |
+| --- | --- | --- |
+| 50 µs | 46 µs | 0.9 ms |
+| 1 ms (tailer parked between them) | 158 µs | 0.8 ms |
+
+Before, with the default 1 s poll, the median was half a second. When the tailer is idle the
+latency is set by the park, which is capped at 1 ms to keep an idle tailer at around a
+thousand cheap wake-ups a second; step 4 would remove it.
+
+Gateway cost, `perf stat` instructions per request (`compare.sh`, two JVMs each): HEADERS
+journaling 398k and 382k before, 392k and 388k after; passthrough and filtered routes moved
+by the same amount either way. The one store per entry is inside the noise.
 
 ## Order
 

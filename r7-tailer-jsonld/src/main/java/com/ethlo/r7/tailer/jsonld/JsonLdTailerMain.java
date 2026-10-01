@@ -111,7 +111,8 @@ public final class JsonLdTailerMain
             {
                 logger.error("Error while tailing journals in {}", journalDir, e);
             }
-            Thread.sleep(pollInterval.toMillis());
+            // Returns as soon as the gateway commits something, or after poll_interval.
+            tailer.awaitNewData(pollInterval);
         }
     }
 

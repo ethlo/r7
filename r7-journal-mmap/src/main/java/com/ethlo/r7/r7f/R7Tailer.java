@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Stream;
 
 import org.slf4j.Logger;
@@ -145,6 +146,22 @@ public final class R7Tailer
     private static final long RELIST_INTERVAL_NANOS = Duration.ofSeconds(5).toNanos();
 
     /**
+     * The shards' {@link CommitSignal}s, found at each listing, and their values when the
+     * current tick began. Replaced whole, never mutated, so {@link #awaitNewData} can read them
+     * without the lock.
+     */
+    private volatile Map<Path, ByteBuffer> signals = Map.of();
+    private volatile ByteBuffer[] signalBuffers = new ByteBuffer[0];
+    private volatile long[] signalsSeen = new long[0];
+
+    /** How long {@link #awaitNewData} spins before it starts to park. */
+    private static final long SPIN_NANOS = 20_000L;
+    /** The first park, doubled on each one after it up to {@link #MAX_PARK_NANOS}. */
+    private static final long MIN_PARK_NANOS = 10_000L;
+    /** The longest an idle tailer sleeps between looks at the signals. */
+    private static final long MAX_PARK_NANOS = 1_000_000L;
+
+    /**
      * What the checkpoint file on disk holds, so an unchanged state is not written again.
      * Rewriting it was a third of an idle tick.
      */
@@ -252,6 +269,7 @@ public final class R7Tailer
     {
         synchronized (lock)
         {
+            snapshotSignals();
             totalBytesRead = 0;
             totalMissingEntries = 0;
             totalCorruptEntries = 0;
@@ -406,6 +424,7 @@ public final class R7Tailer
                 }
             });
             activeMappings.keySet().retainAll(activeKeys);
+            refreshSignals();
         }
     }
 
@@ -489,6 +508,101 @@ public final class R7Tailer
     {
         final Checkpoint checkpoint = checkpoints.get(getStableKey(path));
         return checkpoint != null && (checkpoint.offset() == FULLY_READ_UNDELIVERED || checkpoint.offset() == QUARANTINED);
+    }
+
+    /**
+     * Waits until a writer has committed something since the current tick began, or until
+     * {@code timeout}, whichever is first (design/live-tailing.md, step 3). Returns at once if
+     * something was committed while the tick ran, which costs at most one tick that finds
+     * nothing.
+     * <p>
+     * It spins for {@link #SPIN_NANOS}, then parks for growing intervals up to
+     * {@link #MAX_PARK_NANOS}, looking at the shards' commit counters in between: under load it
+     * never sleeps, and idle it costs a few loads a millisecond. Without any signal to watch (a
+     * writer that could not create one) it simply sleeps for {@code timeout}, which is how the
+     * tailer polled before.
+     *
+     * @return whether a commit was seen; {@code false} on timeout
+     */
+    public boolean awaitNewData(final Duration timeout) throws InterruptedException
+    {
+        final ByteBuffer[] buffers = signalBuffers;
+        final long[] seen = signalsSeen;
+        if (buffers.length == 0 || seen.length != buffers.length)
+        {
+            Thread.sleep(timeout);
+            return false;
+        }
+
+        final long start = System.nanoTime();
+        final long deadline = start + timeout.toNanos();
+        long park = MIN_PARK_NANOS;
+        while (true)
+        {
+            for (int i = 0; i < buffers.length; i++)
+            {
+                if (CommitSignal.read(buffers[i]) != seen[i])
+                {
+                    return true;
+                }
+            }
+            final long now = System.nanoTime();
+            if (now - deadline >= 0)
+            {
+                return false;
+            }
+            if (now - start < SPIN_NANOS)
+            {
+                Thread.onSpinWait();
+                continue;
+            }
+            LockSupport.parkNanos(Math.min(park, deadline - now));
+            if (Thread.interrupted())
+            {
+                throw new InterruptedException();
+            }
+            park = Math.min(park * 2, MAX_PARK_NANOS);
+        }
+    }
+
+    private void snapshotSignals()
+    {
+        final ByteBuffer[] buffers = signalBuffers;
+        final long[] seen = new long[buffers.length];
+        for (int i = 0; i < buffers.length; i++)
+        {
+            seen[i] = CommitSignal.read(buffers[i]);
+        }
+        signalsSeen = seen;
+    }
+
+    private void refreshSignals() throws IOException
+    {
+        final Map<Path, ByteBuffer> found = new HashMap<>();
+        try (Stream<Path> files = Files.list(logDir))
+        {
+            for (final Path path : files.filter(CommitSignal::isSignalFile).toList())
+            {
+                final ByteBuffer existing = signals.get(path);
+                final ByteBuffer mapped = existing != null ? existing : CommitSignal.mapForReading(path);
+                if (mapped != null)
+                {
+                    found.put(path, mapped);
+                }
+            }
+        }
+        if (!found.keySet().equals(signals.keySet()))
+        {
+            final ByteBuffer[] buffers = found.values().toArray(new ByteBuffer[0]);
+            signals = Map.copyOf(found);
+            signalBuffers = buffers;
+            // Not "seen as of now": something may have been committed during the tick that
+            // found these, after the point it read to. Never seen, so the next wait returns at
+            // once and the tick after it looks; that costs one tick, a stale value one interval.
+            final long[] seen = new long[buffers.length];
+            java.util.Arrays.fill(seen, Long.MIN_VALUE);
+            signalsSeen = seen;
+        }
     }
 
     private boolean isSteady()

@@ -108,7 +108,7 @@ to their defaults below (so a bare container with no config volume still starts 
 | `file_prefix`     | `r7`        | Filename prefix for rotating files                                       |
 | `max_file_size`   | `256mb`     | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`    | `15m`       | Roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
-| `poll_interval`   | `1s`        | Delay between tailer ticks. Supports `ms`, `s`, `m`, `h`, `d`             |
+| `poll_interval`   | `1s`        | The longest the tailer waits between reads. It wakes as soon as the gateway commits an entry (the gateway bumps a counter in `shard-<id>.ctl` beside the segments), so on the same host an exchange is read within microseconds to about a millisecond; this interval only matters where that file is not shared, such as across hosts. Supports `ms`, `s`, `m`, `h`, `d` |
 | `pretty_print`    | `false`     | Pretty-print the JSON output. Not with `output_dir`: a record over several lines cannot be cut back cleanly after a crash |
 | `hide_empty_fields` | `true`    | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out explicitly. Set to `false` to always emit every field with the same schema on every line, e.g. for consumers that require a fixed columnar schema |
 
@@ -205,7 +205,7 @@ by default, overridable via the `WARC_TAILER_CONFIG` env var.
 | `max_file_age`              | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
 | `zstd_level`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
 | `dedup_cache_entries`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
-| `poll_interval`             | `1s`        | Delay between tailer ticks. Supports `ms`, `s`, `m`, `h`, `d`           |
+| `poll_interval`             | `1s`        | The longest the tailer waits between reads; it wakes as soon as the gateway commits, as for the JSON tailer. Supports `ms`, `s`, `m`, `h`, `d` |
 
 **Example `config/warc-tailer.yaml`:**
 
