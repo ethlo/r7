@@ -13,8 +13,7 @@ client also has costs r7 cannot remove while Undertow owns it:
   package-private `HttpClientConnection.connection` field, because Undertow's "clean" close of a
   chunked upstream request writes the terminating `0\r\n\r\n` and hands the upstream a truncated
   body as a complete one. `DiagnosticProxyClient` reads `LoadBalancingProxyClient.ATTEMPTED_HOSTS`
-  by reflection to report which target failed. Both break silently on an Undertow upgrade, and
-  both need `R7ReflectionFeature` entries for the native image.
+  by reflection to report which target failed. Both break silently on an Undertow upgrade.
 - **Syscalls r7 cannot drop.** The step 1 profile in server-spi.md: a proxied request needs four
   socket syscalls, and Undertow's client makes five; after every upstream response it reads once
   more and gets nothing. That, `epoll_ctl` churn (2.8% of CPU) and read-timeout bookkeeping (~2%)

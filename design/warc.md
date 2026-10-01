@@ -181,8 +181,7 @@ r7f offers, and it is free here.
 ## Implementation
 
 **jwarc**, on the JVM. Two constraints that normally rule out a library do not apply: it will
-buffer and allocate per record, and it has not been through the native-image reachability work
-— but the sidecar is a separate JVM process (`Dockerfile.tailer.jvm` already exists) and
+buffer and allocate per record — but the sidecar is a separate JVM process (`Dockerfile.tailer.jvm` already exists) and
 buffering is exactly its job. That separation is what earns the right to use a normal library.
 
 Use **WARC 1.1**: 1.0 rounds away the sub-second precision the gateway keeps.

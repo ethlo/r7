@@ -140,7 +140,7 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     public void testFollowSymlinksDisabledByDefaultBlocksNestedSymlinks() throws Exception
     {
         // symlinkAtomic needs host filesystem access, unavailable against the distroless
-        // Docker gateway images used by jvm-docker/native-docker test modes.
+        // Docker gateway image used by the jvm-docker test mode.
         Assumptions.assumeTrue(R7_GATEWAY == null, "requires host filesystem access for symlink creation");
         writeContainerOrHostFile("/tmp/static-symlink-target/content.txt", "symlinked-content");
         symlinkAtomic("/tmp/static-symlink-test/linked", "/tmp/static-symlink-target");

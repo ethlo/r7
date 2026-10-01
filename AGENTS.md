@@ -40,7 +40,6 @@ R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override conf
 docker compose up -d                                             # nginx test backend on :11111
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
 ./build-helidon.sh  # the same for the EXPERIMENTAL Helidon gateway, Dockerfile.helidon.jvm (r7-gateway-helidon)
-./build-native.sh   # GraalVM native image via Dockerfile.native
 ```
 
 Recommended JVM flags (used by benchmarks, docs and CI images):
@@ -48,8 +47,9 @@ Recommended JVM flags (used by benchmarks, docs and CI images):
 
 Data plane defaults to `:8888`, management/status/dashboard to `:18888`.
 
-Integration tests in `r7-undertow` pick their target via `-Dr7.test.mode=in-process` (default),
-`jvm-docker` or `native-docker`; the Docker modes need locally built `r7-gateway` / `r7-gateway-native` images.
+Integration tests in `r7-undertow` pick their target via `-Dr7.test.mode=in-process` (default)
+or `jvm-docker`; the Docker mode needs a locally built `r7-gateway` image. There is no native
+image, by decision: see `design/native-image.md`.
 
 Benchmarks live in `benchmark/` (`./run.sh --quick`); read `benchmark/README.md` before quoting
 any number — only the `vs r7` (passthrough-relative) deltas are meaningful, and `--repeat 3`

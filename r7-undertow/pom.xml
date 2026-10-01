@@ -52,12 +52,6 @@
             <version>${logback.version}</version>
             <scope>compile</scope>
         </dependency>
-        <dependency>
-            <groupId>org.graalvm.sdk</groupId>
-            <artifactId>nativeimage</artifactId>
-            <version>25.4.4.1.1</version>
-            <scope>provided</scope>
-        </dependency>
 
         <!-- TEST -->
         <dependency>
@@ -183,43 +177,4 @@
             </plugin>
         </plugins>
     </build>
-    <profiles>
-        <profile>
-            <id>native</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.graalvm.buildtools</groupId>
-                        <artifactId>native-maven-plugin</artifactId>
-                        <configuration>
-                            <imageName>r7-server</imageName>
-                            <mainClass>com.ethlo.r7.undertow.R7Main</mainClass>
-                            <metadataRepository>
-                                <enabled>true</enabled>
-                            </metadataRepository>
-                            <buildArgs>
-                                <!-- G1 is Oracle GraalVM-only (unavailable in the community edition); it trades
-                                     some memory footprint for far shorter stop-the-world pauses than the default
-                                     Serial GC, which matters for this gateway's p99 latency target. -->
-                                <buildArg>--gc=G1</buildArg>
-                                <buildArg>-H:IncludeResources=dashboard/.*</buildArg>
-                                <buildArg>-H:+SharedArenaSupport</buildArg>
-                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-                                <buildArg>--no-fallback</buildArg>
-                                <buildArg>-H:+StaticExecutableWithDynamicLibC</buildArg>
-                                <buildArg>-H:+AllowIncompleteClasspath</buildArg>
-                                <buildArg>--features=com.ethlo.r7.graal.R7ReflectionFeature</buildArg>
-                                <buildArg>
-                                    --initialize-at-build-time=org.slf4j,ch.qos.logback,org.jboss.logging,io.undertow.util,io.undertow.client.http
-                                </buildArg>
-                                <buildArg>
-                                    --initialize-at-run-time=io.undertow.server.protocol.http.AlpnOpenListener,org.xnio.nio.NioXnio,tools.jackson,com.fasterxml.jackson,org.snakeyaml,com.github.benmanes.caffeine
-                                </buildArg>
-                            </buildArgs>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 </project>
