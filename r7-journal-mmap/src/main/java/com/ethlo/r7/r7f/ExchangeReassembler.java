@@ -349,6 +349,9 @@ public class ExchangeReassembler implements JournalEventListener
     /**
      * Reports every exchange still in flight as abandoned, regardless of {@code maxAge}.
      * <p>
+     * For a reader that cannot resume open exchanges itself. {@code R7Tailer} can, by
+     * recording where each began ({@code OpenExchanges}), and does not call this.
+     * <p>
      * A process restart loses this reader's entire in-flight set — it lives in memory only —
      * while the segments that produced it are already checkpointed as delivered, because
      * decoding those bytes and completing the exchange they belong to are different things
@@ -607,6 +610,16 @@ public class ExchangeReassembler implements JournalEventListener
         // At minimum, we must have the original ClientRequest to know the Method/URI
         // and a status > 0 from the EndExchange event.
         return exchange.getClientRequestStartLine() != null && exchange.getStatus() > 0;
+    }
+
+    /**
+     * Whether this reassembler holds state for the exchange: still being assembled, or
+     * complete and held for a consumer that refused it. Either way it exists only in memory,
+     * so a reader that wants it to survive a restart has to be able to rebuild it.
+     */
+    public boolean isOpen(final String reqId)
+    {
+        return inFlight.get(reqId) != null || awaitingRedelivery.containsKey(reqId);
     }
 
     public int getInFlightCount()

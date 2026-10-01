@@ -126,8 +126,8 @@ public interface ExchangeCompletionListener
          * The reader is stopping (a graceful process shutdown) with the exchange still in
          * flight. Reported so the exchange is not simply lost with no trace: the segment
          * holding its start has already been checkpointed as delivered by the time this
-         * fires, so a hard crash instead of a graceful stop would lose it with no report at
-         * all — this is the one case a clean shutdown can still make visible.
+         * fires. Only a reader that cannot resume the exchange later reports this:
+         * {@code R7Tailer} does not, because it rebuilds open exchanges after a restart.
          */
         SHUTDOWN(false);
 

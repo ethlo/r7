@@ -101,6 +101,15 @@ outside both the age sweep and the capacity ceiling: they are not in flight, not
 coming for them, and the bound is the number of stalled segments — each of which is being held
 on disk anyway.
 
+**A restart is a reader too.** Reading an entry is not delivering its exchange: an exchange is
+held in memory until its end event, so the checkpoint had already moved past the earlier
+entries of every exchange open when a tailer stopped, and a hard kill lost them all. The
+checkpoint cannot simply be moved back to the oldest open exchange without re-delivering
+everything completed after it. So it stays a read position, and the checkpoint file records
+beside it where each shard's oldest open exchange began and which request ids were open; the
+first tick replays that window for those ids only (`OpenExchanges`). Delivery is therefore at
+least once, with the duplicates bounded by the time since the last checkpoint write.
+
 **Three collisions of the same shape** turned up across rounds 7–11, and the shape is the
 lesson:
 
@@ -120,8 +129,11 @@ and that answer belongs next to the policy, not at each site that might be holdi
 `anEntryTheConsumerRefusesIsOfferedAgainRatherThanSkipped`,
 `theSweepNeverReturnsAnExchangeItJustEvicted`,
 `anExchangeAwaitingRedeliverySurvivesTheSweep`,
-`aResponseBodyIsNeverJournaledAheadOfItsClientRequest` and
-`aResponseBodyJournaledAtFullIsDeliveredWithARequestBelowFull`.
+`aResponseBodyIsNeverJournaledAheadOfItsClientRequest`,
+`aResponseBodyJournaledAtFullIsDeliveredWithARequestBelowFull`,
+`anExchangeOpenAtAHardKillIsCompletedAfterTheRestart`,
+`anExchangeRefusedByTheConsumerSurvivesARestart` and
+`aSecondRestartBeforeTheReplayKeepsTheExchange`.
 
 The writer has a share in this invariant too. A reader can only deliver what it can attach, and
 a body entry for a request id it has not seen is discarded as an orphan. So every body fragment

@@ -19,6 +19,8 @@ import com.ethlo.r7.journal.api.JournalIntegrityListener;
 public final class CollectingSink implements ExchangeCompletionListener, JournalIntegrityListener
 {
     public final Map<String, JournalExchange> completed = new LinkedHashMap<>();
+    /** Every onComplete, in order: unlike {@link #completed}, shows a duplicate delivery. */
+    public final List<String> deliveries = new ArrayList<>();
     public final List<String> incompleteEnds = new ArrayList<>();
     public final List<String> abandoned = new ArrayList<>();
     public final List<String> orphanedEnds = new ArrayList<>();
@@ -39,6 +41,7 @@ public final class CollectingSink implements ExchangeCompletionListener, Journal
     public void onComplete(final JournalExchange exchange)
     {
         completed.put(exchange.getRequestId(), exchange);
+        deliveries.add(exchange.getRequestId());
     }
 
     @Override

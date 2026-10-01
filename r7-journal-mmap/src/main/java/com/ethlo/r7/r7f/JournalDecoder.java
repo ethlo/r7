@@ -38,6 +38,18 @@ public final class JournalDecoder
      */
     public static final int UNKNOWN_SEQUENCE = -1;
 
+    /**
+     * Told where each entry starts, just before its event is dispatched. A reader that must be
+     * able to come back to an entry later (the tailer does, to resume exchanges still in flight
+     * after a restart) records it here: the offset is where reading can resume, and the
+     * sequence is the one to expect there.
+     */
+    @FunctionalInterface
+    public interface EntryObserver
+    {
+        void onEntry(long offset, int sequence);
+    }
+
     private JournalDecoder()
     {
     }
@@ -111,6 +123,21 @@ public final class JournalDecoder
                                      String sourceName,
                                      JournalIntegrityListener integrity,
                                      boolean activeSegment)
+    {
+        return decode(buffer, listener, expectedSequence, sourceName, integrity, activeSegment, null);
+    }
+
+    /**
+     * As {@link #decode(ByteBuffer, JournalEventListener, int, String, JournalIntegrityListener, boolean)},
+     * additionally telling {@code entryObserver} (if not {@code null}) where each entry starts.
+     */
+    public static DecodeStats decode(ByteBuffer buffer,
+                                     JournalEventListener listener,
+                                     int expectedSequence,
+                                     String sourceName,
+                                     JournalIntegrityListener integrity,
+                                     boolean activeSegment,
+                                     EntryObserver entryObserver)
     {
         // Skip preamble
         if (buffer.position() == 0)
@@ -278,6 +305,10 @@ public final class JournalDecoder
             try
             {
                 final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(reader.fbSlice());
+                if (entryObserver != null)
+                {
+                    entryObserver.onEntry(startPos, sequence);
+                }
                 dispatch(journalEvent, reader.rawSlice(), guarded);
                 entries++;
             }

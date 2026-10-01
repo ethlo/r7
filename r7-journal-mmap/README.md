@@ -435,6 +435,26 @@ An exception thrown by `onAbandoned` during `sweep()` is outside the decoder's r
 mechanism. `ExchangeReassembler` catches and logs it because there is no journal entry to
 rewind, so the abandoned exchange is not offered again.
 
+## 11.6 Restarting a tailer
+
+`R7Tailer` writes its checkpoint file at the end of every tick and on `shutdown()`. A restart,
+graceful or a hard kill, loses nothing:
+
+* **Exchanges still being assembled are rebuilt.** The checkpoint file records, per shard,
+  where the oldest open exchange began and the request ids of every open exchange (including
+  one held for a consumer that refused it). On its first tick the tailer replays from there
+  up to the checkpoint for those ids only, then reads on as usual, so they complete as if
+  the tailer had never stopped. Nothing that was already delivered is delivered again by
+  the replay.
+* **Delivery is at least once.** Exchanges completed after the last write of the checkpoint
+  file, which after a hard kill means since the last tick, are delivered again. Consumers
+  must be idempotent, as §11.5 already requires.
+* **The replay needs the segment each open exchange began in.** If retention deleted it in
+  the meantime, the exchange cannot be rebuilt: the tailer logs how many were lost, and their
+  remaining events arrive as orphans. Keep a reaper's `ttl` above the longest a tailer may be
+  down plus `maxAge`.
+* **`maxAge` restarts** for a rebuilt exchange, since its clock is reader-side (§11.1).
+
 ---
 
 # 12. Text Encoding
