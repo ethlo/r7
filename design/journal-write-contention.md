@@ -1,7 +1,8 @@
 # Journal write contention (in progress)
 
 **Status:** investigated 2026-10-01; findings only, nothing changed yet. Open questions at the
-end. Raw runs are under `benchmark/results/jdeg-*` on the machine that made them (not checked in).
+end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
+`benchmark/results/jdeg-*` on the machine that made them (not checked in).
 
 ## Symptom
 

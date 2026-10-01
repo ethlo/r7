@@ -995,8 +995,8 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 | --- | --- | --- |
 | `work_dir` | String | The directory path where the memory-mapped journal files are stored. Defaults to `journals` (relative to the working directory), or to the `R7_JOURNAL_DIR` environment variable when set; the container images set it to `/journals`. Created with mode `0750`, and journal segments with `0640` (owner read-write, group read): a sidecar tailer running as another user needs to share the gateway's group. The umask can only narrow these; an existing directory or file keeps its mode. |
 | `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). |
-| `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. |
-| `pre_fault` | Boolean | When `true`, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. |
+| `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. Defaults to `1`; must be a power of two. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
+| `pre_fault` | Boolean | When `true`, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. Defaults to `false`. It charges every warmed segment to memory at once (about 6 × `shard_size` per shard), and under a container memory limit it lowered throughput; see [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
 | `journal_security` | Object | Shapes the whitelist of header names journaled in plain text. See below. |
 
 #### Journal Header Redaction (`storage.journal_security`)
