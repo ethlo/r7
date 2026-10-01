@@ -174,13 +174,13 @@ services:
     volumes:
       - ./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro
       - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
-      - r7-checkpoints:/checkpoints:rw # .r7_checkpoints lives here by default
+      - r7-json-checkpoints:/checkpoints:rw # .r7_checkpoints lives here by default
     # The output of this container goes to Docker's stdout, 
     # ready to be scraped by your infrastructure's logging driver.
 
 volumes:
   r7-journals:
-  r7-checkpoints:
+  r7-json-checkpoints:
 
 ```
 
@@ -198,7 +198,7 @@ by default, overridable via the `WARC_TAILER_CONFIG` env var.
 | Field                      | Default     | Meaning                                                                    |
 |----------------------------|-------------|-----------------------------------------------------------------------------|
 | `journal_dir`               | `/journals` | Directory the tailer reads binary journals from                             |
-| `checkpoint_dir`            | `<output_dir>/.checkpoints` | Directory `.r7_checkpoints` is read from and written to; a subdirectory of `output_dir` (not `journal_dir`), so `journal_dir` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `journal_dir` |
+| `checkpoint_dir`            | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside both `journal_dir` (mounted `:ro`) and `output_dir` (a reaper reads this directory and has no business in the archive). Give each tailer its own to run more than one against the same `journal_dir` |
 | `output_dir`                | `/warc`     | Directory rotated `.warc.zst` files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete record and sealed on the next start |
 | `file_prefix`               | `r7`        | Filename prefix for rotated WARC files                                      |
 | `max_file_size`             | `1gb`       | Rotate to a new file once the current one reaches this size (at least `64kb`; a size that couldn't hold a single record is refused at startup). Supports `b`, `kb`, `mb`, `gb` |
@@ -229,10 +229,12 @@ services:
       - ./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro
       - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
       - r7-warc:/warc:rw
+      - r7-warc-checkpoints:/checkpoints:rw
 
 volumes:
   r7-journals:
   r7-warc:
+  r7-warc-checkpoints:
 
 ```
 
@@ -286,6 +288,19 @@ tailers:
   - /checkpoints/warc
 ```
 
+**Who may write what.** Each component writes only what it owns and reads the rest, and the
+mounts enforce it:
+
+| | `r7-journals` | a tailer's checkpoints | a tailer's output |
+| --- | --- | --- | --- |
+| gateway | writes (segments, `.seq`, `.ctl`) | — | — |
+| tailer | reads | writes its own | writes its own |
+| reaper | deletes sealed and quarantined segments | reads | — |
+
+So the reaper can delete what the gateway wrote, a tailer cannot, and the reaper cannot touch
+anything a tailer wrote. The one thing that crosses a boundary, the reaper trusting a tailer's
+checkpoint file, can only keep a segment longer: anything short of "done" leaves it for `ttl`.
+
 **Example Docker Compose Integration:**
 
 ```yaml
@@ -298,16 +313,29 @@ services:
   r7-tailer-json:
     image: ghcr.io/ethlo/r7-tailer-json:latest
     volumes:
-      - r7-journals:/journals:ro # this tailer only ever reads; retention is the reaper's job
+      - r7-journals:/journals:ro             # reads only; retention is the reaper's job
+      - r7-json-checkpoints:/checkpoints:rw  # its own progress
+
+  r7-tailer-warc:
+    image: ghcr.io/ethlo/r7-tailer-warc:latest
+    volumes:
+      - r7-journals:/journals:ro
+      - r7-warc:/warc:rw
+      - r7-warc-checkpoints:/checkpoints:rw
 
   r7-reaper:
     image: ghcr.io/ethlo/r7-reaper:latest
     volumes:
       - ./config/reaper.yaml:/app/config/reaper.yaml:ro
-      - r7-journals:/journals:rw # the only container that needs write access to this volume
+      - r7-journals:/journals:rw                     # the only container that deletes from it
+      - r7-json-checkpoints:/checkpoints/json:ro    # read to learn what each tailer is done with;
+      - r7-warc-checkpoints:/checkpoints/warc:ro    # never the tailers' output
 
 volumes:
   r7-journals:
+  r7-json-checkpoints:
+  r7-warc:
+  r7-warc-checkpoints:
 
 ```
 

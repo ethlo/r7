@@ -7,7 +7,7 @@
 # mounted host directories are not affected by this - their ownership is the operator's
 # responsibility.
 FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
-RUN mkdir -p /journals /warc && chown 65532:65532 /journals /warc
+RUN mkdir -p /journals /warc /checkpoints && chown 65532:65532 /journals /warc /checkpoints
 
 FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
 WORKDIR /app
@@ -16,17 +16,18 @@ WORKDIR /app
 COPY r7-tailer-warc/target/r7-tailer-warc-*.jar /app/tailer.jar
 COPY --from=dirs --chown=65532:65532 /journals /journals
 COPY --from=dirs --chown=65532:65532 /warc /warc
+COPY --from=dirs --chown=65532:65532 /checkpoints /checkpoints
 
 # Ensure the tailer has read-write access to the shared journal mount
 # Both the gateway container and tailer container must mount the same volume to this path
-VOLUME ["/journals", "/warc"]
+VOLUME ["/journals", "/warc", "/checkpoints"]
 
 # JOURNAL_DIR:         where the gateway's binary journals are read from (the shared volume above).
 #                      Mount this read-only if a different tailer instance already owns
-#                      retention for this directory (see docs/journaling.md). CHECKPOINT_DIR
-#                      defaults to a subdirectory of OUTPUT_DIR, deliberately not under here,
-#                      so a read-only mount never prevents this tailer's own progress from
-#                      being written.
+#                      retention for this directory (see docs/journaling.md).
+# CHECKPOINT_DIR:      this tailer's own progress, a volume of its own: written by this tailer
+#                      only, and read (read-only) by a reaper that deletes segments once every
+#                      tailer is done with them.
 # OUTPUT_DIR:          where completed exchanges are written as rotating .warc.zst files.
 # WARC_FILE_PREFIX:    filename prefix for rotated WARC files.
 # WARC_MAX_FILE_SIZE:  rotate to a new file once the current one reaches this size (size-or-age rollover).
@@ -35,6 +36,7 @@ VOLUME ["/journals", "/warc"]
 # DEDUP_CACHE_ENTRIES: max number of payload digests remembered for revisit-record dedup.
 ENV JOURNAL_DIR=/journals
 ENV OUTPUT_DIR=/warc
+ENV CHECKPOINT_DIR=/checkpoints
 ENV WARC_FILE_PREFIX=r7
 ENV WARC_MAX_FILE_SIZE=1gb
 ENV WARC_MAX_FILE_AGE=15m
