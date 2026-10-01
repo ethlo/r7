@@ -841,7 +841,7 @@ gets worse the longer the load lasts. Header-heavy traffic at <code>HEADERS</cod
 first. It is worst on servers that run a thread per connection, such as the experimental
 Helidon gateway, and grows with the number of open connections.</p>
 <h3 id="why-it-happens">Why it happens</h3>
-<p>The journal is split into <code>shard_count</code> shards (default <code>1</code>). Each request goes to one shard,
+<p>The journal is split into <code>shard_count</code> shards (default <code>2</code>). Each request goes to one shard,
 chosen by its request id. Each shard writes into one memory-mapped segment at a time, and
 writers take turns: encoding happens in parallel, but placing each entry in the segment is done
 one writer at a time per shard. That step is a short copy, cheap unless something stalls it.
@@ -925,9 +925,9 @@ removes disk writeback and isolates the writer lock:</p>
 <td>93k req/s, p99 55 ms</td>
 </tr>
 <tr>
-<td><strong>1 shard (the defaults, with fault-ahead)</strong></td>
-<td><strong>94k req/s, p99 11 ms</strong></td>
-<td><strong>98k req/s, p99 50 ms</strong></td>
+<td>1 shard, with fault-ahead</td>
+<td>94k req/s, p99 11 ms</td>
+<td>98k req/s, p99 50 ms</td>
 </tr>
 <tr>
 <td>4 shards</td>
@@ -969,10 +969,10 @@ removes disk writeback and isolates the writer lock:</p>
 <td>30k req/s</td>
 </tr>
 <tr>
-<td><strong>1 shard (the defaults, with fault-ahead)</strong></td>
-<td><strong>~190 MB</strong></td>
-<td><strong>~330 MB</strong></td>
-<td><strong>54k req/s</strong></td>
+<td>1 shard, with fault-ahead</td>
+<td>~190 MB</td>
+<td>~330 MB</td>
+<td>54k req/s</td>
 </tr>
 <tr>
 <td>4 shards</td>
@@ -991,10 +991,11 @@ ones the kernel can least easily reclaim.</p>
 <li><strong>Leave <code>pre_fault</code> off.</strong> Fault-ahead does its job at a fraction of the memory. Turn it on
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.</li>
-<li><strong>Set <code>shard_count: 4</code> for a thread-per-connection server, or many concurrent connections.</strong>
-  Throughput is already level at one shard. More shards halve the experimental Helidon
-  gateway's p99, by spreading its many writers. Without <code>pre_fault</code>, extra shards cost no
-  memory.</li>
+<li><strong>Keep the default of 2 shards, or raise it to 4 for a thread-per-connection server with
+  many concurrent connections.</strong> With fault-ahead, throughput is already level at one shard;
+  more shards shorten the tail by spreading the writers. On the experimental Helidon gateway,
+  4 shards halved p99 compared with one. Each shard is one more open segment and, without
+  <code>pre_fault</code>, costs no memory of note.</li>
 <li><strong>Give a container headroom for page cache, not just heap.</strong> The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.</li>
