@@ -324,9 +324,8 @@ class JournalBlockFramingTest
     }
 
     /**
-     * There is no compatibility path between versions (FORMAT.md 11). A version-1 segment left
-     * behind by an upgrade is set aside, never deleted: having read nothing from it is no proof
-     * that it holds nothing, and a version-1 build can still read it.
+     * A segment of another format version is refused (FORMAT.md 11) and set aside, never
+     * deleted: having read nothing from it is no proof that it holds nothing.
      */
     @Test
     void aVersionOneSegmentIsSetAsideByRecoveryNotDeleted() throws IOException

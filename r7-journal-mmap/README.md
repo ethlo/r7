@@ -271,8 +271,7 @@ CRC32C is an integrity check, not an authenticity one, and the format does not n
 one. Fragments never cross a block boundary, so every boundary holds a header the writer put
 there, and resynchronising never reads payload bytes as framing: a request or response body
 crafted to look like entries is stepped over with the rest of its block, never delivered
-(FORMAT.md §6.1). Version 1 resynchronised by scanning for the next Magic and had exactly that
-gap; version 2 was introduced to close it.
+(FORMAT.md §6.1).
 
 ---
 

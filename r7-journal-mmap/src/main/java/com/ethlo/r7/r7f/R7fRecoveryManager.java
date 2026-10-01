@@ -375,11 +375,9 @@ public final class R7fRecoveryManager
         if (version != R7fConstants.CURRENT_VERSION)
         {
             // Quarantined, never deleted: having read nothing from a file is no proof that it
-            // holds nothing. A version-1 segment left by an upgrade still holds every entry it
-            // was written with, for a version-1 build to read (FORMAT.md 11).
+            // holds nothing (FORMAT.md 11).
             throw new UnreadableSegmentException("unsupported format version " + version
-                    + " (this build writes and reads version " + R7fConstants.CURRENT_VERSION
-                    + "; read it with a build of that version)");
+                    + " (this build writes and reads version " + R7fConstants.CURRENT_VERSION + ")");
         }
 
         final int blockSize = segment.get(INT_BE, R7fConstants.PREAMBLE_OFF_BLOCK_SIZE);

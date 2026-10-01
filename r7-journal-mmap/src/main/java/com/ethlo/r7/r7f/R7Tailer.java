@@ -684,9 +684,7 @@ public final class R7Tailer
         final short version = header.getShort(R7fConstants.PREAMBLE_OFF_VERSION);
         if (version != R7fConstants.CURRENT_VERSION)
         {
-            // Quarantined by the caller, not decoded and not deleted. FORMAT.md 11: there is
-            // no compatibility path, so a segment written by another version is read by a
-            // build of that version, and it has to still be there for that.
+            // Quarantined by the caller, not decoded and not deleted (FORMAT.md 11).
             return "unsupported format version " + version + " (this build reads version "
                     + R7fConstants.CURRENT_VERSION + ")";
         }
