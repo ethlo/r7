@@ -141,3 +141,46 @@ benchmark/run.sh --scenario journal --journal-levels HEADERS,FULL --workload hea
 Run it once with your current `storage` settings and once with the change, against the same
 backend. Compare the `vs r7` column, and the p99 at the rate you actually serve, not only
 saturation throughput. In a container, also watch `memory.stat` while it runs.
+
+---
+
+## Journal compression: `compression` and `compression_level`
+
+### What it does
+
+With `compression: zstd`, the default, each 32KB block of a journal segment carries one zstd
+stream. Every entry is fed into it and flushed as it is written, so it is still its own
+committed record: a tailer reads it as soon as it is written, a crash loses at most the entry
+being written, and damage still costs at most the rest of one block. Because an entry is
+compressed against the entries before it in the block, repetitive traffic — the same headers,
+similar bodies — compresses far better than any entry would on its own.
+
+### What it costs
+
+Compression runs on the writing thread, under the shard's lock, because a block's stream is
+shared and its order is the journal's order. That costs CPU per request, which shows only near
+saturation:
+
+| Workload, journal level | Throughput at saturation | Latency at 1,000 req/s (p50 / p99) | Journal bytes per request |
+|---|---|---|---|
+| headers, `HEADERS`, none | 76,500 req/s | 1.21 / 2.88 ms | 3,659 |
+| headers, `HEADERS`, zstd 1 | 63,500 req/s (-17%) | 1.29 / 2.66 ms | 273 |
+| POST, `FULL`, none | 108,700 req/s | 1.28 / 2.56 ms | 2,872 |
+| POST, `FULL`, zstd 1 | 65,800 req/s (-39%) | 1.24 / 2.72 ms | 329 |
+
+Single short runs on the machine described above; the benchmark sends near-identical requests,
+so real traffic compresses less than this. Levels above 1 gave a few percent less disk for
+another 5-15% of throughput, and 4 shards instead of 2 won back only a little: the cost is CPU,
+not lock contention.
+
+What it saves is everything downstream of the write: about a tenth of the disk, of the page
+cache charged to a container's memory limit, of the writeback, and of what a tailer reads.
+
+### Recommendations
+
+- **Leave it on.** At any load a real deployment sees, the cost does not show, and the
+  journal is a fraction of the size.
+- **Turn it off (`compression: none`) only if the gateway runs close to its CPU limit with
+  journaling at `FULL`,** and disk and page cache are cheap where it runs.
+- **Leave `compression_level` at 1.**
+

@@ -14,7 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayHeaders;
@@ -47,13 +48,18 @@ class JournalConcurrentWriteTest
      */
     private static final long SEGMENT_BYTES = 1024L * 1024L;
 
-    @Test
-    void concurrentWritersLoseNoEntriesAndCorruptNone() throws Exception
+    /**
+     * @param compressionLevel 0 and zstd: with compression the block's stream is shared state
+     *                         under the same monitor, and its order has to be the sequence order
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void concurrentWritersLoseNoEntriesAndCorruptNone(final int compressionLevel) throws Exception
     {
         final Path dir = Files.createTempDirectory("r7f-concurrent");
         try
         {
-            final R7fJournalProvider provider = new R7fJournalProvider(dir, 0, SEGMENT_BYTES, false);
+            final R7fJournalProvider provider = new R7fJournalProvider(dir, 0, SEGMENT_BYTES, false, compressionLevel);
             final AtomicReference<Throwable> failure = new AtomicReference<>();
             final CountDownLatch start = new CountDownLatch(1);
             final CountDownLatch done = new CountDownLatch(THREADS);

@@ -120,6 +120,15 @@ Population:
 
 # 4. Commit Semantics
 
+## 4.0 Compression
+
+By default (`storage.compression: zstd`) each 32 KB block carries one zstd stream, and every
+entry is flushed into it as its own fragment (FORMAT.md §4.4). An entry is therefore still
+committed by its own magic and readable as soon as it is written. The cost is that compression
+happens under the shard's monitor, because the stream's order is the sequence order; the
+encoding before it does not. A reader that starts mid-block rebuilds the stream from the
+block's start.
+
 ## 4.1 Logical Commit
 
 A journal entry is considered logically complete when:
