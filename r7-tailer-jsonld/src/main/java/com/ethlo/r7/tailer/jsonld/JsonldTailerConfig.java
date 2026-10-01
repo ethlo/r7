@@ -3,6 +3,8 @@ package com.ethlo.r7.tailer.jsonld;
 import java.time.Duration;
 import java.util.Optional;
 
+import com.ethlo.r7.config.model.DataSize;
+
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -24,6 +26,10 @@ public record JsonldTailerConfig(
         String journalDir,
         String checkpointDir,
         String outputPath,
+        String outputDir,
+        String filePrefix,
+        DataSize maxFileSize,
+        Duration maxFileAge,
         Boolean prettyPrint,
         Boolean hideEmptyFields,
         Duration pollInterval
@@ -31,7 +37,7 @@ public record JsonldTailerConfig(
 {
     public static JsonldTailerConfig standard()
     {
-        return new JsonldTailerConfig(null, null, null, null, null, null);
+        return new JsonldTailerConfig(null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -61,6 +67,35 @@ public record JsonldTailerConfig(
         return Optional.ofNullable(this.outputPath).orElse("-");
     }
 
+    /**
+     * When set, records go to rotating files in this directory instead of {@link #outputPath()}:
+     * rolled on {@link #maxFileSize()} or {@link #maxFileAge()}, whichever comes first, and
+     * renamed from {@code .jsonl.open} to {@code .jsonl} when finished.
+     */
+    @Override
+    public String outputDir()
+    {
+        return this.outputDir;
+    }
+
+    @Override
+    public String filePrefix()
+    {
+        return Optional.ofNullable(this.filePrefix).orElse("r7");
+    }
+
+    @Override
+    public DataSize maxFileSize()
+    {
+        return Optional.ofNullable(this.maxFileSize).orElse(DataSize.ofMegabytes(256));
+    }
+
+    @Override
+    public Duration maxFileAge()
+    {
+        return Optional.ofNullable(this.maxFileAge).orElse(Duration.ofMinutes(15));
+    }
+
     @Override
     public Boolean prettyPrint()
     {
@@ -87,7 +122,25 @@ public record JsonldTailerConfig(
     @Override
     public void validate(final ValidationResult result)
     {
-        // Nothing to validate: every remaining field is either a plain string/boolean or
-        // already range-checked by HumanUnits at parse time.
+        if (this.outputDir != null && this.outputPath != null)
+        {
+            result.addError("output_dir", "cannot be combined with output_path: set one, for rotating files or a single stream");
+        }
+        if (this.outputDir != null && this.prettyPrint())
+        {
+            // A pretty-printed record spans lines, and after a crash a rotating file is cut
+            // back to its last complete line: that could keep half a record.
+            result.addError("pretty_print", "cannot be combined with output_dir");
+        }
+        final long maxFileSizeBytes = this.maxFileSize().bytes();
+        if (maxFileSizeBytes < RollingFileOutputStream.MIN_ROLLOVER_SIZE)
+        {
+            result.addError("max_file_size", "must be at least " + RollingFileOutputStream.MIN_ROLLOVER_SIZE
+                    + " bytes, but was " + maxFileSizeBytes);
+        }
+        if (this.maxFileAge().isNegative() || this.maxFileAge().isZero())
+        {
+            result.addError("max_file_age", "must be positive, but was " + this.maxFileAge());
+        }
     }
 }

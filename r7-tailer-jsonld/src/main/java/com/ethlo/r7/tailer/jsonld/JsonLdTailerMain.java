@@ -54,11 +54,17 @@ public final class JsonLdTailerMain
         final boolean hideEmptyFields = config.hideEmptyFields();
         final Duration pollInterval = config.pollInterval();
 
-        final boolean toStdOut = "-".equals(outputPath) || "stdout".equalsIgnoreCase(outputPath);
-        final OutputStream out = toStdOut ? System.out : openOutputFile(Paths.get(outputPath));
+        final boolean toStdOut = config.outputDir() == null && ("-".equals(outputPath) || "stdout".equalsIgnoreCase(outputPath));
+        final RollingFileOutputStream rolling = config.outputDir() == null ? null
+                : new RollingFileOutputStream(Paths.get(config.outputDir()), config.filePrefix(),
+                config.maxFileSize().bytes(), config.maxFileAge().toMillis());
+        final OutputStream out = rolling != null ? rolling : toStdOut ? System.out : openOutputFile(Paths.get(outputPath));
 
         logger.info("Tailing journals from '{}' -> '{}' (checkpoints in '{}', poll every {})",
-                journalDir, toStdOut ? "stdout" : outputPath, checkpointDir, pollInterval);
+                journalDir,
+                rolling != null ? "rotating files in " + config.outputDir() + " (max " + config.maxFileSize() + ", " + config.maxFileAge() + ")"
+                        : toStdOut ? "stdout" : outputPath,
+                checkpointDir, pollInterval);
 
         final JsonLdWriter jsonWriter = new JsonLdWriter(out, prettyPrint, hideEmptyFields);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
@@ -79,7 +85,14 @@ public final class JsonLdTailerMain
             tailer.shutdown();
             try
             {
-                out.flush();
+                if (rolling != null)
+                {
+                    rolling.close();
+                }
+                else
+                {
+                    out.flush();
+                }
             }
             catch (IOException e)
             {
@@ -92,6 +105,10 @@ public final class JsonLdTailerMain
             try
             {
                 tailer.runTick();
+                if (rolling != null)
+                {
+                    rolling.rollIfStale();
+                }
             }
             catch (IOException e)
             {
