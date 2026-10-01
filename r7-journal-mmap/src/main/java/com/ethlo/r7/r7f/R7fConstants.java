@@ -16,25 +16,74 @@ public final class R7fConstants
     public static final int PREAMBLE_SIZE = 1024;
 
     /**
-     * The one format version. See FORMAT.md.
+     * The first format version: self-delimiting entries, resynchronised by scanning for the
+     * entry magic. Not readable by this build; named so that the refusal can say what it found.
      */
     public static final short VERSION_1 = 1;
 
     /**
-     * The version written by this implementation.
+     * Block framing. See FORMAT.md.
      */
-    public static final short CURRENT_VERSION = VERSION_1;
-
-    // --- Entry framing ---
-    /**
-     * magic + sequence + payloadLen + fbLen + rawLen
-     */
-    public static final int ENTRY_HEADER_SIZE = 5 * Integer.BYTES;
+    public static final short VERSION_2 = 2;
 
     /**
-     * Entry header plus the trailing CRC32C; the size of an entry carrying no payload.
+     * The version written by this implementation, and the only one it reads. FORMAT.md 11:
+     * there is no compatibility path between versions.
      */
-    public static final int MIN_ENTRY_SIZE = ENTRY_HEADER_SIZE + Integer.BYTES;
+    public static final short CURRENT_VERSION = VERSION_2;
+
+    // --- Blocks ---
+    /**
+     * The block size this implementation writes. Recorded in every segment's preamble, so a
+     * reader never assumes it; a constant rather than a setting until there is a reason to
+     * tune it.
+     * <p>
+     * It bounds what damage costs: after a hole or a bad checksum the reader resumes at the
+     * next block boundary, so up to one block of intact entries is lost per damaged region. It
+     * also sets how many entries are split across blocks, which costs the reader a copy.
+     */
+    public static final int DEFAULT_BLOCK_SIZE = 32 * 1024;
+
+    public static final int MIN_BLOCK_SIZE = 4 * 1024;
+    public static final int MAX_BLOCK_SIZE = 1024 * 1024;
+
+    /**
+     * The one codec this version defines: fragment data stored as written.
+     */
+    public static final short CODEC_NONE = 0;
+
+    // --- Fragment framing ---
+    /**
+     * Magic of every fragment: 'R7F2'. For a FULL or FIRST fragment it is the entry's commit,
+     * written last.
+     */
+    public static final int FRAGMENT_MAGIC = 0x52374632;
+
+    /**
+     * magic(4) type(1) flags(1) reserved(2) length(4) crc32c(4)
+     */
+    public static final int FRAGMENT_HEADER_SIZE = 16;
+
+    /**
+     * A header and one data byte. A block with less than this left is padding, by position.
+     */
+    public static final int MIN_FRAGMENT_SIZE = FRAGMENT_HEADER_SIZE + 1;
+
+    public static final int FRAGMENT_OFF_TYPE = 4;
+    public static final int FRAGMENT_OFF_FLAGS = 5;
+    public static final int FRAGMENT_OFF_RESERVED = 6;
+    public static final int FRAGMENT_OFF_LENGTH = 8;
+    public static final int FRAGMENT_OFF_CRC = 12;
+
+    public static final byte FRAGMENT_FULL = 1;
+    public static final byte FRAGMENT_FIRST = 2;
+    public static final byte FRAGMENT_MIDDLE = 3;
+    public static final byte FRAGMENT_LAST = 4;
+
+    /**
+     * The start of an entry's content: sequence(4) fbLen(4) rawLen(4). The payloads follow.
+     */
+    public static final int ENTRY_CONTENT_HEADER_SIZE = 3 * Integer.BYTES;
 
     /**
      * Sequence number of the first entry in every segment.
@@ -86,7 +135,7 @@ public final class R7fConstants
     public static final int PREAMBLE_OFF_LAST_SEQUENCE = 34;
 
     /**
-     * Offset one past the segment's last entry. This is what a reader bounds itself by, so
+     * Offset one past the last fragment of the segment's last entry. This is what a reader bounds itself by, so
      * that the zero-filled remainder of the pre-allocation is not data and not a hole — it
      * is simply outside the file's contents.
      * <p>
@@ -101,6 +150,13 @@ public final class R7fConstants
      * Seal flags. Zero for a segment sealed by a healthy writer.
      */
     public static final int PREAMBLE_OFF_SEAL_FLAGS = 46;
+
+    /**
+     * Not part of the seal record: written with the rest of the preamble when the segment is
+     * claimed, and never changed.
+     */
+    public static final int PREAMBLE_OFF_BLOCK_SIZE = 50;
+    public static final int PREAMBLE_OFF_CODEC = 54;
 
     /**
      * Content past Data End that a reader declined to deliver, rather than content that was

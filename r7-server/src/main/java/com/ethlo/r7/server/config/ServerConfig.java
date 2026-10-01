@@ -486,6 +486,12 @@ public record ServerConfig(
                         + " bytes, but was " + shardSizeBytes
                         + ". Readers address segment offsets with ints.");
             }
+            else if (shardSizeBytes % R7fJournalProvider.SEGMENT_SIZE_MULTIPLE != 0)
+            {
+                result.addError("shard_size", "must be a multiple of " + R7fJournalProvider.SEGMENT_SIZE_MULTIPLE
+                        + " bytes (" + R7fJournalProvider.SEGMENT_SIZE_MULTIPLE / 1024 + "KB), but was " + shardSizeBytes
+                        + ". Journal segments are cut into blocks of that size.");
+            }
         }
 
         private static boolean isPowerOfTwo(final int value)

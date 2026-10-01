@@ -1,5 +1,7 @@
 package com.ethlo.r7;
 
+import static com.ethlo.r7.R7fTestFraming.entriesOf;
+import static com.ethlo.r7.R7fTestFraming.rewriteSequence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -20,7 +22,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.zip.CRC32C;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Assumptions;
@@ -36,6 +37,7 @@ import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.ExchangeReassembler;
 import com.ethlo.r7.r7f.R7Tailer;
+import com.ethlo.r7.R7fTestFraming.EntryRef;
 import com.ethlo.r7.r7f.R7fConstants;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.r7f.R7fJournalProvider;
@@ -65,47 +67,51 @@ class JournalIntegrityTest
     Path journalDir;
 
     /**
-     * A flipped bit inside one entry must cost exactly that entry. Everything before and
-     * after it still decodes, and the damage is reported.
+     * A flipped bit inside one entry costs that entry and the rest of its block, and nothing
+     * more: everything before it, and everything from the next block boundary on, still
+     * decodes, and the damage is reported.
+     * <p>
+     * The rest of the block goes because the reader resumes only at block boundaries, the one
+     * place it can trust to hold framing (FORMAT.md 6.1). The count is checked exactly, so a
+     * reader that lost more, or one that resumed inside the block, would both fail here.
      */
     @Test
     void corruptEntryIsSkippedAndReported() throws IOException
     {
-        writeExchanges(6);
+        writeExchanges(200);
         final Path segment = onlySealedSegment();
 
         final List<EntryRef> entries = entriesOf(segment);
-        assertThat(entries).hasSizeGreaterThan(6);
-
-        // Corrupt the payload of an entry in the middle, leaving the framing intact so the
-        // CRC is what catches it.
         final EntryRef victim = entries.get(entries.size() / 2);
+        final long lost = entriesLostWithTheBlockOf(segment, entries, victim);
+
+        // Corrupt the payload, leaving the framing intact so the CRC is what catches it.
         flipByte(segment, victim.payloadOffset() + 1);
 
         final CollectingSink sink = tail();
 
-        assertThat(sink.corruptRegions).as("damage must be reported").isNotEmpty();
-        assertThat(sink.completed).as("entries after the damage must still decode").isNotEmpty();
-        assertThat(sink.completed.size() + sink.incompleteEnds.size() + sink.orphanedBodies.size())
-                .as("the reader kept going past the corrupt entry")
-                .isGreaterThan(1);
+        assertThat(sink.corruptRegions).as("damage must be reported").hasSize(1);
+        assertThat(sink.missingEntries).as("sink: %s", sink).isEqualTo(lost);
+        assertThat(sink.completed).as("entries before the damage").containsKey("req-0");
+        assertThat(sink.completed).as("entries after the next block boundary").containsKey("req-199");
     }
 
     /**
      * An entry overwritten wholesale, rather than subtly corrupted, leaves a hole. The
-     * reader must resynchronise on the next entry and then notice, from the sequence
+     * reader must resynchronise at the next block boundary and then notice, from the sequence
      * numbers, that something is missing — the case that is invisible without them.
      */
     @Test
     void holeInTheMiddleIsDetectedAsMissingEntries() throws IOException
     {
-        writeExchanges(8);
+        writeExchanges(200);
         final Path segment = onlySealedSegment();
 
         final List<EntryRef> entries = entriesOf(segment);
         final EntryRef victim = entries.get(entries.size() / 2);
+        final long lost = entriesLostWithTheBlockOf(segment, entries, victim);
 
-        // 0xFF rather than 0x00: zeros mean "never written" and legitimately stop the scan.
+        // 0xFF rather than 0x00: zeros mean "never written", which the next test covers.
         final byte[] rubbish = new byte[victim.totalLength()];
         java.util.Arrays.fill(rubbish, (byte) 0xFF);
         overwrite(segment, victim.offset(), rubbish);
@@ -114,8 +120,9 @@ class JournalIntegrityTest
 
         assertThat(sink.missingEntries)
                 .as("the sequence numbers are what make this detectable; sink: %s", sink)
-                .isGreaterThan(0);
-        assertThat(sink.corruptRegions).isNotEmpty();
+                .isEqualTo(lost);
+        assertThat(sink.corruptRegions).hasSize(1);
+        assertThat(sink.completed).containsKey("req-199");
     }
 
     /**
@@ -221,11 +228,12 @@ class JournalIntegrityTest
     @Test
     void holeOfZeroesInSealedSegmentIsDetected() throws IOException
     {
-        writeExchanges(8);
+        writeExchanges(200);
         final Path segment = onlySealedSegment();
 
         final List<EntryRef> entries = entriesOf(segment);
         final EntryRef victim = entries.get(entries.size() / 2);
+        final long lost = entriesLostWithTheBlockOf(segment, entries, victim);
 
         overwrite(segment, victim.offset(), new byte[victim.totalLength()]);
 
@@ -233,10 +241,10 @@ class JournalIntegrityTest
 
         assertThat(sink.missingEntries)
                 .as("zeroes in a sealed segment are a hole, not an end; sink: %s", sink)
-                .isGreaterThan(0);
+                .isEqualTo(lost);
         assertThat(sink.completed)
                 .as("entries after the hole must still be read")
-                .isNotEmpty();
+                .containsKey("req-199");
     }
 
     /**
@@ -826,7 +834,9 @@ class JournalIntegrityTest
     @Test
     void holeAtTheStartOfASealedSegmentIsCrossed() throws IOException
     {
-        writeExchanges(6);
+        // Enough to fill several blocks. After a hole the reader resumes at the next block
+        // boundary, so the survivors it has to reach must lie beyond the damaged block.
+        writeExchanges(200);
         final Path segment = onlySealedSegment();
 
         final List<EntryRef> entries = entriesOf(segment);
@@ -1944,74 +1954,19 @@ class JournalIntegrityTest
     /* ---------- on-disk framing, encoded on purpose ---------- */
 
     /**
-     * Entry framing, format version 1:
-     * {@code magic(4) sequence(4) payloadLen(4) fbLen(4) rawLen(4) payload crc(4)}.
+     * The entries a reader gives up when {@code victim} is damaged: it and every entry that
+     * starts after it in the same block, the one straddling the next boundary included. The
+     * reader resumes at that boundary, steps over the straddler's tail, and loses nothing else.
      */
-    private record EntryRef(int offset, int sequence, int fbLen, int rawLen)
+    private static long entriesLostWithTheBlockOf(final Path segment, final List<EntryRef> entries, final EntryRef victim)
+            throws IOException
     {
-        int payloadOffset()
-        {
-            return offset + R7fConstants.ENTRY_HEADER_SIZE;
-        }
-
-        int totalLength()
-        {
-            return R7fConstants.ENTRY_HEADER_SIZE + fbLen + rawLen + Integer.BYTES;
-        }
-    }
-
-    private static List<EntryRef> entriesOf(final Path segment) throws IOException
-    {
-        final ByteBuffer buffer = ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN);
-        final List<EntryRef> entries = new ArrayList<>();
-
-        int pos = R7fConstants.PREAMBLE_SIZE;
-        while (pos + R7fConstants.MIN_ENTRY_SIZE <= buffer.limit())
-        {
-            if (buffer.getInt(pos) != R7fConstants.MAGIC)
-            {
-                break;
-            }
-            final int sequence = buffer.getInt(pos + 4);
-            final int fbLen = buffer.getInt(pos + 12);
-            final int rawLen = buffer.getInt(pos + 16);
-            final EntryRef entry = new EntryRef(pos, sequence, fbLen, rawLen);
-            entries.add(entry);
-            pos += entry.totalLength();
-        }
-        return entries;
-    }
-
-    /**
-     * Rewrites an entry's sequence number and repairs its CRC, so the entry stays
-     * structurally valid and only the sequence is wrong. Mirrors the writer's CRC
-     * coverage: sequence, the three lengths, then the payload.
-     */
-    private static void rewriteSequence(final Path file, final EntryRef entry, final int newSequence) throws IOException
-    {
-        final byte[] bytes = Files.readAllBytes(file);
-        final ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
-
-        buffer.putInt(entry.offset() + 4, newSequence);
-
-        final CRC32C crc = new CRC32C();
-        for (int field = 0; field < 4; field++)
-        {
-            final int value = buffer.getInt(entry.offset() + 4 + (field * Integer.BYTES));
-            crc.update((value >>> 24) & 0xFF);
-            crc.update((value >>> 16) & 0xFF);
-            crc.update((value >>> 8) & 0xFF);
-            crc.update(value & 0xFF);
-        }
-
-        final int dataLen = entry.fbLen() + entry.rawLen();
-        if (dataLen > 0)
-        {
-            crc.update(bytes, entry.payloadOffset(), dataLen);
-        }
-
-        buffer.putInt(entry.payloadOffset() + dataLen, (int) crc.getValue());
-        Files.write(file, bytes);
+        final int blockSize = R7fTestFraming.blockSize(ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN));
+        final int nextBoundary = (victim.offset() / blockSize + 1) * blockSize;
+        assertThat(nextBoundary)
+                .as("the test needs entries beyond the damaged block")
+                .isLessThan(entries.getLast().offset());
+        return entries.stream().filter(e -> e.offset() >= victim.offset() && e.offset() < nextBoundary).count();
     }
 
     private static void flipByte(final Path file, final int offset) throws IOException

@@ -133,73 +133,23 @@ final class JournalInvariants
     }
 
     /**
-     * The sequence number of every structurally valid entry, in file order. Walks the framing
-     * directly, for the same reason {@link #endOfLastEntry} does.
+     * The sequence number of every committed entry, in file order. Walks the framing with
+     * {@link R7fTestFraming}, for the same reason {@link #endOfLastEntry} does.
      */
     private static List<Integer> entrySequences(final ByteBuffer buffer)
     {
-        final List<Integer> sequences = new ArrayList<>();
-        int position = R7fConstants.PREAMBLE_SIZE;
-
-        while (position + R7fConstants.MIN_ENTRY_SIZE <= buffer.limit())
-        {
-            if (buffer.getInt(position) != R7fConstants.MAGIC)
-            {
-                break;
-            }
-            final int fbLen = buffer.getInt(position + 12);
-            final int rawLen = buffer.getInt(position + 16);
-            if (fbLen < 0 || rawLen < 0)
-            {
-                break;
-            }
-            final long end = position + (long) R7fConstants.ENTRY_HEADER_SIZE + fbLen + rawLen + Integer.BYTES;
-            if (end > buffer.limit())
-            {
-                break;
-            }
-            sequences.add(buffer.getInt(position + Integer.BYTES));
-            position = (int) end;
-        }
-        return sequences;
+        return R7fTestFraming.entriesOf(buffer).stream().map(R7fTestFraming.EntryRef::sequence).toList();
     }
 
     /**
-     * Offset just past the last structurally valid entry, walking the framing directly.
-     * Deliberately independent of the production reader: a check that used the same code
-     * it is checking would agree with it about anything.
+     * Offset just past the last committed entry, walking the framing with
+     * {@link R7fTestFraming}. Deliberately independent of the production reader: a check that
+     * used the same code it is checking would agree with it about anything.
      */
     private static long endOfLastEntry(final Path segment) throws IOException
     {
-        final ByteBuffer buffer = ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN);
-
-        long position = R7fConstants.PREAMBLE_SIZE;
-        long lastEnd = R7fConstants.PREAMBLE_SIZE;
-
-        while (position + R7fConstants.MIN_ENTRY_SIZE <= buffer.limit())
-        {
-            if (buffer.getInt((int) position) != R7fConstants.MAGIC)
-            {
-                break;
-            }
-            final int fbLen = buffer.getInt((int) position + 12);
-            final int rawLen = buffer.getInt((int) position + 16);
-            if (fbLen < 0 || rawLen < 0)
-            {
-                break;
-            }
-
-            final long end = position + R7fConstants.ENTRY_HEADER_SIZE + fbLen + rawLen + Integer.BYTES;
-            if (end > buffer.limit())
-            {
-                break;
-            }
-
-            position = end;
-            lastEnd = end;
-        }
-
-        return lastEnd;
+        final List<R7fTestFraming.EntryRef> entries = R7fTestFraming.entriesOf(segment);
+        return entries.isEmpty() ? R7fConstants.PREAMBLE_SIZE : entries.getLast().end();
     }
 
     private static List<Path> segments(final Path dir, final String suffix) throws IOException

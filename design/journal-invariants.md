@@ -47,8 +47,16 @@ End and Seal Flags are written first, the Seal Magic last, behind the same fence
 It rests on two things the implementation must keep true: segments are pre-allocated
 zero-filled, and a segment is never reused.
 
-*Checked by* `partialTrailingEntryInAnActiveSegmentIsRetriedNotConsumed` and
-`recoverySealsAtAnUnpublishedEntryWithoutReportingDamage`.
+Format version 2 splits an entry that does not fit the rest of its block (`FORMAT.md` §4.3),
+and the rule extends without a second mechanism: the continuations are written first, magics
+and all, and the FIRST fragment's magic is the one stamped last. A reader stops at that zero
+and never reaches continuations it could mistake for anything, and recovery treats complete
+continuations behind an uncommitted FIRST as the ordinary tail of a crash, not as damage.
+
+*Checked by* `partialTrailingEntryInAnActiveSegmentIsRetriedNotConsumed`,
+`recoverySealsAtAnUnpublishedEntryWithoutReportingDamage`,
+`recoverySealsBeforeAnUncommittedSplitEntry` and
+`anActiveSegmentIsTailedAcrossSplitEntries`.
 
 ## 2. A checkpoint means exactly "everything up to here reached the consumer"
 
@@ -182,6 +190,14 @@ recorded checksum is then the *whole* condition for verifying: requiring the sta
 level and a positive byte count as well turned a sufficient condition into a conjunction that
 fails open.
 
+**A reader only interprets bytes the writer placed as framing.** Version 1 resynchronised
+after damage by scanning for the next magic and trusting what parsed there, so a request or
+response body could carry a forged entry that resync would deliver as genuine (`FORMAT.md`
+§6.1). Version 2 resumes only at block boundaries, which a fragment never crosses, so payload
+bytes are never in a position where they are read as a header. The cost is stated, not hidden:
+damage now loses the rest of its block, and the tests count exactly that much, so a reader
+that lost more, or one that resumed inside a block, fails them.
+
 **An oracle that can call a lossy state clean is worse than no oracle.** Both `CollectingSink`
 and `JournalAnalyzer` recorded `discardedBytes` without asking about it, so a recovery that
 discarded journal content reported itself clean. Both now include it.
@@ -194,8 +210,14 @@ discarded journal content reported itself clean. Both now include it.
 `aSealedSegmentThatLostItsTailIsReportedNotSilentlyAcceptedAsClean`,
 `recoveryReportsOnlyTheContentItCouldNotRead`,
 `checksumsRoundTripThroughTheJournal`,
-`aChecksumOfAllOnesIsNotMistakenForAnAbsentOne` and
-`aRecordedChecksumIsVerifiedEvenWithoutTheStartEvent`.
+`aChecksumOfAllOnesIsNotMistakenForAnAbsentOne`,
+`aRecordedChecksumIsVerifiedEvenWithoutTheStartEvent`,
+`aPayloadThatForgesEntriesIsNeverDelivered`,
+`corruptEntryIsSkippedAndReported`,
+`aDamagedContinuationCostsOnlyItsEntry`,
+`continuationsWhoseFirstFragmentWasLostAreSkipped`,
+`entriesStartingAtEveryAwkwardOffsetNearABlockEndRoundTrip` and
+`aVersionOneSegmentIsSetAsideByRecoveryNotDeleted`.
 
 ---
 
@@ -293,6 +315,9 @@ detectable, not survivable. The sequence marker is the single exception (§3).
 
 Checksum computation costs a CRC32C over bytes already in cache — only at `FULL` level, where
 those bytes are being copied into the journal anyway.
+
+Damage in a sealed segment costs the rest of its block (up to 32 KB of intact entries), because
+the reader only resumes where the writer is known to have put a header (§4).
 
 Publishing the magic last costs a saved offset and one store-store fence per entry. It does not
 make the writer any less append-only: the magic slot is part of the entry being appended, not a

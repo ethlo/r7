@@ -93,7 +93,9 @@ apart (§11).
 
 **Block Size** is recorded per segment, so every segment describes itself and a reader needs
 no configuration to read it. A reader MUST reject a segment whose Block Size is not a power
-of two within the bounds above, or does not divide the file size.
+of two within the bounds above. A file size that is not a multiple of it is not a reason to
+reject the segment: a writer never produces one, so it means the file lost bytes, and what
+remains is read and the loss reported (§3.2, Data End).
 
 **Codec** is reserved for per-block compression. This version defines only `0`, meaning
 fragment data is stored as written. A reader MUST reject a segment with any other Codec
