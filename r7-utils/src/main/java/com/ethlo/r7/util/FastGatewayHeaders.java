@@ -4,7 +4,7 @@ import com.ethlo.r7.api.GatewayHeaders;
 
 /**
  * A standalone header container. Names compare ASCII case-insensitively, as HTTP header names
- * do and as the Undertow-backed view already does, and keep the casing they were stored with
+ * do, and keep the casing they were stored with
  * for iteration and journaling.
  * <p>
  * Case folding lives here rather than in {@link BaseGatewayAttributes} because that base is

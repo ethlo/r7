@@ -2,7 +2,7 @@ r7-core/src/test/resources/.cifuzz-corpus
 site
 docker/journals
 /journals
-/r7-undertow/journals
+/r7-helidon/journals
 /benchmark/results
 gc.log*
 target/

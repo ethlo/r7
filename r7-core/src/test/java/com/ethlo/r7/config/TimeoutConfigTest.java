@@ -18,8 +18,8 @@ import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
- * The read timeout becomes XNIO's int-millisecond {@code READ_TIMEOUT} when the route's proxy
- * client is built. A longer value has to be refused here, naming the field, rather than by
+ * The read timeout becomes an int-millisecond socket timeout when the route's upstream client is
+ * built. A longer value has to be refused here, naming the field, rather than by
  * {@code Math.toIntExact} at that point: a stack trace at startup, or a hot reload rejected
  * without saying which value was wrong.
  */

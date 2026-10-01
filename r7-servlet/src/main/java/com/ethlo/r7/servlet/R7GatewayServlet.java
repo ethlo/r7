@@ -11,7 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * EXPERIMENTAL: r7 as a servlet. Every request the container maps to it goes through the same
- * routes, filters, journal and pipeline as on Undertow, and is proxied by r7's own upstream
+ * routes, filters, journal and pipeline as on the gateway's own server, and is proxied by r7's own upstream
  * client; the container supplies only the socket and the HTTP parsing.
  * <p>
  * Mount it at {@code /*}. Routes match the request path below the context path, so a servlet

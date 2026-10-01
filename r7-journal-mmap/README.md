@@ -486,7 +486,7 @@ database, a JSON field.
 Therefore **values set programmatically are validated at the point of modification**.
 Every `MutableGatewayHeaders` implementation rejects an out-of-range value on `set` and
 `add`, throwing `InvalidTextValueException` with the field name and the index of the
-offending character — including `UndertowGatewayHeaders`, which is the view filters
+offending character — including `MutableFastGatewayHeaders`, which is what filters
 actually mutate at runtime. Validating only the standalone containers would leave the
 guarantee true in tests and false in production. The mutable attribute containers are
 covered the same way. A `null` name or value is refused the same way, reporting

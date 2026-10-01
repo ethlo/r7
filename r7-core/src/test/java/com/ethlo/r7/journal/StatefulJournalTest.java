@@ -47,7 +47,7 @@ class StatefulJournalTest
         final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
         headers.add("Host", "example.com");
 
-        // The order R7UndertowHandler drives it in: request at ingress, response body while it
+        // The order the pipeline drives it in: request at ingress, response body while it
         // streams, the rest from the completion listener.
         journal.clientRequest(requestLevel, "r1", latin1("GET / HTTP/1.1"), headers, InetAddress.getLoopbackAddress(), IpSource.SOCKET);
         journal.responseBody("r1", latin1("hello "));

@@ -56,8 +56,7 @@ class RepeatedValuesTest
     }
 
     /**
-     * The parsed view is asked first: that parse is where Undertow enforces the cookie-count
-     * limit, and a name it does not know is refused without scanning.
+     * The parsed view is asked first: a name it does not know is refused without scanning.
      */
     @Test
     void theParsedCookiesAreConsultedFirst()
@@ -93,8 +92,8 @@ class RepeatedValuesTest
     }
 
     /**
-     * Undertow keeps only the last cookie of a name and many upstream parsers the first, so the
-     * check reads the raw header: both orders, and both one line and two, are refused.
+     * Cookie parsers disagree on which of several cookies with one name they keep, so the check
+     * reads the raw header: both orders, and both one line and two, are refused.
      */
     @Test
     void everyCookieWithTheNameMustMatch()

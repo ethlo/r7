@@ -13,7 +13,7 @@ routes:
     filters:
       - RequireAuthorizationHeader
 
-  - id: undertow-internal-backend
+  - id: internal-backend
     match:
       - PathPrefix:
           prefix: /hello

@@ -12,9 +12,8 @@ import com.ethlo.r7.api.MutableGatewayResponse;
  * The client side of a proxied exchange, as {@link UpstreamRelay} needs it. Implemented by the
  * server's own exchange rather than an adapter around it, so relaying adds no per-request object.
  * <p>
- * Teeing, counting and the request body limit are the server's: it already sees every byte at its
- * own layer (Undertow in its conduits), and the relay reports each block it moves through
- * {@link #onRequestBody} and {@link #onResponseBody} for a server that does not.
+ * Teeing, counting and the request body limit are the server's; the relay reports each block it
+ * moves through {@link #onRequestBody} and {@link #onResponseBody}.
  */
 public interface ProxiedExchange
 {

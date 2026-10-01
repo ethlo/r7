@@ -21,7 +21,7 @@ class LimitsConfigValidationTest
     @Test
     void theDefaultTrustedProxiesListIsEmpty()
     {
-        assertThat(new ServerConfig.LimitsConfig(null, null, null, null, null, null).trustedProxies()).isEmpty();
+        assertThat(new ServerConfig.LimitsConfig(null, null, null, null).trustedProxies()).isEmpty();
     }
 
     @Test
@@ -50,11 +50,11 @@ class LimitsConfigValidationTest
     void aHeaderSizeBeyondTheRegexBudgetIsRefusedNamingTheBound()
     {
         final ValidationResult atBound = new ValidationResult();
-        new ServerConfig.LimitsConfig(DataSize.ofBytes(RegexBudget.MAX_INPUT_LENGTH), null, null, null, null, null).validate(atBound);
+        new ServerConfig.LimitsConfig(DataSize.ofBytes(RegexBudget.MAX_INPUT_LENGTH), null, null, null).validate(atBound);
         assertThat(atBound.getErrors()).isEmpty();
 
         final ValidationResult beyond = new ValidationResult();
-        new ServerConfig.LimitsConfig(DataSize.ofBytes(RegexBudget.MAX_INPUT_LENGTH + 1L), null, null, null, null, null).validate(beyond);
+        new ServerConfig.LimitsConfig(DataSize.ofBytes(RegexBudget.MAX_INPUT_LENGTH + 1L), null, null, null).validate(beyond);
         assertThat(beyond.getErrors()).singleElement().asString()
                 .contains("max_header_size")
                 .contains(String.valueOf(RegexBudget.MAX_INPUT_LENGTH));
@@ -62,7 +62,7 @@ class LimitsConfigValidationTest
 
     private static List<String> errorsFor(final List<String> trustedProxies)
     {
-        final ServerConfig.LimitsConfig config = new ServerConfig.LimitsConfig(null, null, null, null, null, trustedProxies);
+        final ServerConfig.LimitsConfig config = new ServerConfig.LimitsConfig(null, null, null, trustedProxies);
         final ValidationResult result = new ValidationResult();
         config.validate(result);
         return result.getErrors();

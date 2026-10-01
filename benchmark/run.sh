@@ -74,7 +74,7 @@ Options:
   --sweep-levels LIST        journal levels to sweep (default: NONE,FULL)
   --journal-levels LIST      levels for the journal scenario
                              (default: METADATA,HEADERS,FULL)
-  --jar PATH                 gateway jar (default: newest r7-undertow/target/*.jar)
+  --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
   --quick                    5s warmup, 10s runs, browser workload only
   --keep-running             leave backend/gateway up after the run
@@ -153,7 +153,7 @@ preflight() {
   if [[ "$MODE" == "jvm-local" ]]; then
     need java
     if [[ -z "$JAR" ]]; then
-      JAR="$(ls -t "$REPO"/r7-undertow/target/r7-undertow-*.jar 2>/dev/null | grep -v sources | grep -v javadoc | head -n1 || true)"
+      JAR="$(ls -t "$REPO"/r7-helidon/target/r7-helidon-*.jar 2>/dev/null | grep -v sources | grep -v javadoc | head -n1 || true)"
     fi
     [[ -n "$JAR" && -f "$JAR" ]] || die "no gateway jar found; run 'mvn -q -DskipTests install' or pass --jar"
     log "jar: $JAR"

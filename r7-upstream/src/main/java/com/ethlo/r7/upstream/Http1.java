@@ -59,8 +59,8 @@ final class Http1
 
     /**
      * The request line and headers to send upstream: the headers as the pipeline left them, with
-     * Host rewritten to the target, the gateway's X-Forwarded-* added the way Undertow's proxy
-     * adds them (extending a trusted proxy's chain, starting one otherwise), and framing and
+     * Host rewritten to the target, the gateway's X-Forwarded-* added (extending a trusted
+     * proxy's chain, starting one otherwise), and framing and
      * Expect left to this hop.
      */
     static byte[] requestHead(final HttpUpstream.Target target, final ProxiedExchange exchange) throws ClientProtocolException
@@ -184,7 +184,7 @@ final class Http1
     }
 
     /**
-     * The port the client addressed, as Undertow's proxy reports it in X-Forwarded-Port: the
+     * The port the client addressed, as reported in X-Forwarded-Port: the
      * Host header's, or the scheme's default.
      */
     static int portOf(final String host, final String scheme)
@@ -214,8 +214,8 @@ final class Http1
     }
 
     /**
-     * The host the client addressed, without its port, as Undertow's proxy reports it in
-     * X-Forwarded-Server; an IPv6 literal keeps its brackets.
+     * The host the client addressed, without its port, as reported in X-Forwarded-Server; an
+     * IPv6 literal keeps its brackets.
      */
     static String hostNameOf(final String host)
     {

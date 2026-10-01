@@ -20,11 +20,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 /**
- * What the {@code StaticContent} filter serves, checked the same way on every server: Undertow
- * serves it with its own {@code ResourceHandler}, the thread-per-request servers with r7's
- * {@code StaticFiles}, and this kit is what keeps the two the same where it matters - hidden
- * files, symbolic links, directory handling, a replaced base directory, and the caching and
- * range headers a browser relies on.
+ * What the {@code StaticContent} filter serves, checked the same way on every server: each
+ * serves it with r7's {@code StaticFiles}, and this kit pins what matters - hidden files,
+ * symbolic links, directory handling, a replaced base directory, and the caching and range
+ * headers a browser relies on.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class StaticContentKit
@@ -137,7 +136,7 @@ public abstract class StaticContentKit
         assertThat(response.body()).isEqualTo(TEXT);
         assertThat(response.headers().firstValue("Content-Type")).get().asString().startsWith("text/plain");
         assertThat(response.headers().firstValue("X-Content-Type-Options")).contains("nosniff");
-        // An ETag is optional (Undertow sends none); Last-Modified is not.
+        // An ETag is optional; Last-Modified is not.
         assertThat(response.headers().firstValue("Last-Modified")).isPresent();
         assertThat(get("/static/page.html").headers().firstValue("Content-Type")).get().asString().startsWith("text/html");
     }

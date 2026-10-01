@@ -7,11 +7,10 @@ import java.util.concurrent.atomic.LongAdder;
 import com.ethlo.r7.status.dto.ConnectorStatisticsDto;
 
 /**
- * The data-plane listener's counters for the management port, counted the way Undertow's
- * {@code ConnectorStatistics} counts them so the dashboard reads the same on every server: an
- * error is a response with status 500, and processing time runs from the request's arrival to its
- * completion. Bytes are what the exchange carried, head and body; Undertow counts at the socket,
- * so the two differ by framing (chunk sizes, TLS records).
+ * The data-plane listener's counters for the management port: an error is a response with status
+ * 500, and processing time runs from the request's arrival to its completion. Bytes are what the
+ * exchange carried, head and body - not what crossed the socket, which differs by framing (chunk
+ * sizes, TLS records).
  * <p>
  * Requests are counted by {@link BlockingGateway}. Connections only by a server that reports them
  * through {@link #connectionOpened()} and {@link #connectionClosed()}; a servlet container does not,
@@ -19,7 +18,7 @@ import com.ethlo.r7.status.dto.ConnectorStatisticsDto;
  * <p>
  * Totals are {@link LongAdder}s, which do not contend. The two in-flight gauges are single atomics,
  * as their peaks need the exact current value; that is one contended increment and decrement per
- * request and per connection, as on Undertow.
+ * request and per connection.
  */
 public final class ListenerStatistics
 {

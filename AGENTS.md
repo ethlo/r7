@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## What this is
 
-`ethlo r7` is a JVM HTTP gateway (Java 25 bytecode, built with JDK 27; Undertow/XNIO) that routes and filters requests and
+`ethlo r7` is a JVM HTTP gateway (Java 25 bytecode, built with JDK 27; Helidon Níma, a virtual thread per connection) that routes and filters requests and
 audits them into memory-mapped binary journals. Pre-release. Docs source lives in `docs/`
 (published to https://r7.ethlo.com); `docs/config.md`, `docs/extensibility.md` and
 `docs/journaling.md` are the user-facing contracts and should be updated when behaviour changes.
@@ -17,7 +17,7 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 ./mvnw test -pl r7-journal-mmap            # one module
 ./mvnw test -pl r7-core -Dtest=RedactingHeadersTest             # one test class
 ./mvnw test -pl r7-journal-mmap -Dtest=JournalIntegrityTest#recoveryReportsOnlyTheContentItCouldNotRead
-./mvnw package -DskipTests -pl r7-undertow,r7-tailer-jsonld -am  # what CI builds for images
+./mvnw package -DskipTests -pl r7-helidon,r7-tailer-jsonld -am   # what CI builds for images
 ```
 
 - `r7-journal-mmap` runs `bin/flatc` (checked into the repo) over
@@ -35,11 +35,10 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 ## Running
 
 ```bash
-java -jar r7-undertow/target/r7-undertow-1.0-SNAPSHOT.jar        # reads ./config/{routes,server}.yaml
+java -jar r7-helidon/target/r7-helidon-1.0-SNAPSHOT.jar          # reads ./config/{routes,server}.yaml
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
 docker compose up -d                                             # nginx test backend on :11111
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
-./build-helidon.sh  # the same for the EXPERIMENTAL Helidon gateway, Dockerfile.helidon.jvm (r7-gateway-helidon)
 ```
 
 Recommended JVM flags (used by benchmarks, docs and CI images):
@@ -47,7 +46,7 @@ Recommended JVM flags (used by benchmarks, docs and CI images):
 
 Data plane defaults to `:8888`, management/status/dashboard to `:18888`.
 
-Integration tests in `r7-undertow` pick their target via `-Dr7.test.mode=in-process` (default)
+Integration tests in `r7-helidon` pick their target via `-Dr7.test.mode=in-process` (default)
 or `jvm-docker`; the Docker mode needs a locally built `r7-gateway` image. There is no native
 image, by decision: see `design/native-image.md`.
 
@@ -68,24 +67,23 @@ r7-core         the engine: YAML config model, route registry, built-in filters/
 r7-journal-api  Journal, JournalExchange, JournalLevel, integrity listeners
 r7-journal-mmap the r7f format: writer, decoder, recovery, reassembler, R7Tailer
 r7-server       server-neutral runtime: ServerConfig, request guards, management metrics and DTOs
-r7-undertow     the Undertow server: R7Main, R7UndertowHandler, proxy, status/dashboard handlers
-r7-upstream     the blocking HTTP/1.1 upstream client every server is to share: HttpUpstream, UpstreamRelay
-r7-server-blocking EXPERIMENTAL thread-per-request base: BlockingServerExchange, BlockingGateway
-r7-helidon      EXPERIMENTAL Helidon Níma server: R7Helidon, an adapter over r7-server-blocking
+r7-upstream     the blocking HTTP/1.1 upstream client every server shares: HttpUpstream, UpstreamRelay, Tunnel
+r7-server-blocking thread-per-request base: BlockingServerExchange, BlockingGateway
+r7-helidon      the gateway: R7Helidon on Helidon Níma, an adapter over r7-server-blocking
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
 r7-tailer-jsonld sidecar app that turns journals into JSON lines
 ```
 
 `api` is the contract and `core` the engine; keep the separation strict — `r7-api` must not
-depend on the engine, and nothing in the request path should reach into `r7-undertow` types.
+depend on the engine, and nothing in the request path should reach into `r7-helidon` types.
 `r7-server` sits between the engine and a server implementation: code that any HTTP server would
-share goes there, and code that names an Undertow or XNIO type stays in `r7-undertow`. `r7-core`
+share goes there, and code that names a Helidon type stays in `r7-helidon`. `r7-core`
 must not depend on `r7-server` or on `r7-journal-mmap` (see `design/server-spi.md`).
 `r7-editor` (Vite + Monaco) and `benchmark/` are not Maven modules.
 
 ## Request lifecycle
 
-`R7UndertowHandler.handleRequest` is the hot path, and the ordering it implements is specified in
+`GatewayPipeline.handle` (r7-server) is the hot path, and the ordering it implements is specified in
 `docs/config.md` §3:
 
 1. global request filters → 2. route predicates in declaration order, first match wins (404 if
@@ -100,8 +98,10 @@ Things that are load-bearing here:
   registered during the request phase and executed on the way out, onion-style.
 - Rejecting a request means `exchange.shortCircuit(...)`, never an exception. A thrown exception
   is a runtime failure: the pipeline **fails closed**, skips remaining filters and returns 500.
-- `ClientRequestGatewayFilter.requiresDispatch()` returning true moves execution onto a virtual
-  thread. Anything blocking (I/O, DB) must declare it or it stalls an XNIO I/O thread.
+- `ClientRequestGatewayFilter.requiresDispatch()` returning true moves execution off a thread
+  that must not block. On Níma every request already runs on a virtual thread of its own, so it
+  costs nothing there; a blocking filter (I/O, DB) must still declare it, for a server with an
+  event loop.
 - `exchange.attributes()` is for telemetry/journaling only; functional state between filters goes
   through typed `StateKey` attachments.
 - Config is hot-reloadable (`HotReloadService`); stateful filters (rate limiter buckets, circuit

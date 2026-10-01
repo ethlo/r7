@@ -58,7 +58,7 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  * the 101 through {@link #switchProtocols}, and once {@link BlockingGateway#handle} has returned
  * the server passes the client connection to {@link #runTunnel} - or, if it never gets it, calls
  * {@link #abandonTunnel}. Either one ends the exchange for the journal and the metrics, which
- * wait for the connection to close as they do on Undertow.
+ * wait for the connection to close.
  */
 public abstract class BlockingServerExchange extends ServerExchange implements TrafficMetrics, ProxiedExchange
 {
@@ -116,8 +116,8 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         super(pipeline);
         this.protocol = protocol;
         this.method = method;
-        this.rawPath = rawPath;
-        this.decodedPath = RequestPaths.decode(rawPath);
+        this.rawPath = RequestPaths.originForm(rawPath);
+        this.decodedPath = RequestPaths.decode(this.rawPath);
         this.rawQuery = rawQuery == null ? "" : rawQuery;
         this.liveHeaders = headers;
         // [0]: bytes of the head as sent, [1]: header lines
@@ -570,7 +570,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     }
 
     /**
-     * What the Undertow commit listener does: once, just before the response head goes out.
+     * The pipeline's commit work: once, just before the response head goes out.
      */
     private void commit()
     {

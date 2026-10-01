@@ -12,9 +12,9 @@ import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.MultiAttributes;
 
 /**
- * HTTP header names are case-insensitive (RFC 9110), and the Undertow-backed view already
- * treats them that way. The standalone containers - what short-circuit responses carry and what
- * a journal consumer reads - must answer the same, or a filter or tailer that asks for
+ * HTTP header names are case-insensitive (RFC 9110). Every container - what the server
+ * parses a request into, what short-circuit responses carry and what a journal consumer reads -
+ * must answer the same, or a filter or tailer that asks for
  * {@code content-type} misses a header written as {@code Content-Type}.
  */
 class HeaderNameCaseTest

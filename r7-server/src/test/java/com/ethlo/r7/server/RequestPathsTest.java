@@ -7,6 +7,15 @@ import org.junit.jupiter.api.Test;
 class RequestPathsTest
 {
     @Test
+    void reducesTheAbsoluteFormToItsPathAsSent()
+    {
+        assertThat(RequestPaths.originForm("http://localhost:8888/a//b/%2e%2e/c")).isEqualTo("/a//b/%2e%2e/c");
+        assertThat(RequestPaths.originForm("https://example.com")).isEqualTo("/");
+        assertThat(RequestPaths.originForm("/already/origin")).isEqualTo("/already/origin");
+        assertThat(RequestPaths.originForm("*")).isEqualTo("*");
+    }
+
+    @Test
     void decodesWithoutNormalising()
     {
         assertThat(RequestPaths.decode("/kit/./x")).isEqualTo("/kit/./x");

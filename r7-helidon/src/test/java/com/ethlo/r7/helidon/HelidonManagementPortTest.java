@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 /**
- * The management port on Helidon: the same endpoint as Undertow's, on a listener of its own.
+ * The management port on Helidon: the management endpoint, on a listener of its own.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HelidonManagementPortTest

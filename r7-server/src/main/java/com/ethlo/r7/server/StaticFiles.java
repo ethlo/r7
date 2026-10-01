@@ -23,9 +23,8 @@ import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.filters.StaticContentFactory;
 
 /**
- * Serves the {@code StaticContent} filter's files on the thread-per-request servers, and decides
- * for Undertow what its {@code ResourceHandler} would get wrong, so that a route behaves the same
- * on every server (the static content kit checks it):
+ * Serves the {@code StaticContent} filter's files, so that a route behaves the same on every
+ * server (the static content kit checks it):
  * <ul>
  *   <li>a path segment starting with '.' is answered 404, as if absent, unless the route opts in;
  *   {@code .well-known/} is always served;</li>

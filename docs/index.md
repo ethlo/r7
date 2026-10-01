@@ -54,7 +54,7 @@ r7 is built for environments where performance consistency matters more than pea
 ## Core capabilities
 
 - Composable routing engine (predicates + filters)
-- High-throughput HTTP entrypoint (Undertow-based)
+- High-throughput HTTP entrypoint (Helidon Níma, a virtual thread per connection)
 - Memory-mapped journaling for full request/response auditing
 - Real-time operational dashboard
 - Plugin system via JVM ServiceLoader (SPI)
@@ -178,6 +178,6 @@ r7 is designed for stable behavior under constrained environments, where traditi
 ## Technical profile
 
 * Platform: Java 25+
-* Server: Undertow (XNIO)
+* Server: Helidon Níma (virtual threads)
 * Design: JVM-native, high-throughput gateway architecture
 

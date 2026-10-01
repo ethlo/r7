@@ -167,11 +167,11 @@ public final class BlockingGateway implements AutoCloseable
     }
 
     /**
-     * {@code limits.*} as Undertow applies them, checked here so that they hold on every server
-     * whatever its own parser allows: Helidon has no header count limit, and a servlet container
-     * has its own settings, which the operator may not have aligned. A server that enforces a
-     * limit in its parser just never lets such a request get this far. The head is measured as
-     * sent, request line included, as Undertow's max_header_size measures it.
+     * {@code limits.*}, checked here so that they hold on every server whatever its own parser
+     * allows: Helidon has no header count limit, and a servlet container has its own settings,
+     * which the operator may not have aligned. A server that enforces a limit in its parser just
+     * never lets such a request get this far. The head is measured as sent, request line
+     * included.
      */
     private boolean withinLimits(final BlockingServerExchange exchange)
     {

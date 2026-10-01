@@ -117,14 +117,14 @@ public final class RepeatedValues
      * As {@link #allMatch(Iterable, Pattern)}, over every cookie with this name in the request's
      * {@code Cookie} header lines.
      * <p>
-     * Read from the raw header rather than a parsed cookie map: Undertow keeps only the last of
-     * several cookies with the same name, while many upstream parsers keep the first, so
-     * {@code role=admin; role=user} would pass a check on {@code role} that the upstream reads as
-     * {@code admin}.
+     * Read from the raw header rather than a parsed cookie map: a map keeps one of several cookies
+     * with the same name, and parsers disagree on which - some the last, many upstream ones the
+     * first - so {@code role=admin; role=user} would pass a check on {@code role} that the
+     * upstream reads as {@code admin}.
      * <p>
-     * The parsed cookies are consulted first, and not only as a fast path for an absent name:
-     * parsing is where Undertow enforces {@code limits.max_cookie_count}, and scanning the raw
-     * header alone would let a request over that limit through.
+     * The parsed cookies are consulted first, so that a name the request does not carry is
+     * refused without scanning. How many cookies a request may carry is bounded by
+     * {@code limits.max_header_size}.
      */
     public static boolean allCookiesMatch(final Cookies cookies, final MultiAttributes headers, final String name, final Pattern pattern)
     {
@@ -209,7 +209,7 @@ public final class RepeatedValues
 
     /**
      * The value between {@code from} and {@code to}, without surrounding spaces or the optional
-     * double quotes of RFC 6265 §4.1.1, as Undertow presents a parsed cookie's value.
+     * double quotes of RFC 6265 §4.1.1, as a parsed cookie's value is presented.
      */
     private static String cookieValue(final String line, final int from, final int to)
     {

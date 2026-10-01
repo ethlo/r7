@@ -41,8 +41,8 @@ public final class RequestPathGuard
 
         /**
          * Percent-encoding of {@code .}, {@code /}, {@code \} or {@code %} still present
-         * after decoding: either an encoded slash Undertow leaves alone
-         * ({@code ALLOW_ENCODED_SLASH=false}) or double-encoding such as {@code %252e}. An
+         * after decoding: either an encoded slash, which decoding leaves alone
+         * (RequestPaths), or double-encoding such as {@code %252e}. An
          * upstream that decodes once more would see a separator or dot-segment that route
          * matching never saw.
          */
@@ -50,7 +50,7 @@ public final class RequestPathGuard
     }
 
     /**
-     * @param decodedPath the request path as Undertow decoded it
+     * @param decodedPath the request path as RequestPaths decoded it
      * @return the first reason the path is ambiguous, or {@code null} if it is not
      */
     public static Violation check(final String decodedPath)

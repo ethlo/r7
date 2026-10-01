@@ -20,19 +20,18 @@ public record ServerConfig(
         HttpConfig http,
         ProxyConfig proxy,
         LimitsConfig limits,
-        StorageConfig storage,
-        AdvancedConfig advanced
+        StorageConfig storage
 ) implements ValidatableConfig
 {
     public static ServerConfig standard()
     {
-        return new ServerConfig(null, null, null, null, null, null, null);
+        return new ServerConfig(null, null, null, null, null, null);
     }
 
     @Override
     public ServerCoreConfig server()
     {
-        return Optional.ofNullable(this.server).orElse(new ServerCoreConfig(null, null));
+        return Optional.ofNullable(this.server).orElse(new ServerCoreConfig(null, null, null, null, null));
     }
 
     @Override
@@ -44,31 +43,25 @@ public record ServerConfig(
     @Override
     public HttpConfig http()
     {
-        return Optional.ofNullable(this.http).orElse(new HttpConfig(null, null, null));
+        return Optional.ofNullable(this.http).orElse(new HttpConfig(null, null));
     }
 
     @Override
     public ProxyConfig proxy()
     {
-        return Optional.ofNullable(this.proxy).orElse(new ProxyConfig(null, null, null, null, null));
+        return Optional.ofNullable(this.proxy).orElse(new ProxyConfig(null, null, null, null));
     }
 
     @Override
     public LimitsConfig limits()
     {
-        return Optional.ofNullable(this.limits).orElse(new LimitsConfig(null, null, null, null, null, null));
+        return Optional.ofNullable(this.limits).orElse(new LimitsConfig(null, null, null, null));
     }
 
     @Override
     public StorageConfig storage()
     {
         return Optional.ofNullable(this.storage).orElse(new StorageConfig(null, null, null, null, null, null, null));
-    }
-
-    @Override
-    public AdvancedConfig advanced()
-    {
-        return Optional.ofNullable(this.advanced).orElse(new AdvancedConfig(null, null, null, null, null, null, null, null));
     }
 
     @Override
@@ -81,14 +74,24 @@ public record ServerConfig(
         this.proxy().validate(result.nested("proxy"));
         this.limits().validate(result.nested("limits"));
         this.storage().validate(result.nested("storage"));
-        this.advanced().validate(result.nested("advanced"));
     }
 
     // =========================================================
     // Core Server (Data Plane)
     // =========================================================
-    public record ServerCoreConfig(String host, Integer port) implements ValidatableConfig
+    public record ServerCoreConfig(
+            String host,
+            Integer port,
+            Integer maxConnections,
+            Duration idleTimeout,
+            Integer backlog
+    ) implements ValidatableConfig
     {
+        public ServerCoreConfig(final String host, final Integer port)
+        {
+            this(host, port, null, null, null);
+        }
+
         @Override
         public void validate(final ValidationResult result)
         {
@@ -100,6 +103,41 @@ public record ServerConfig(
             {
                 result.addError("port", "must be between 1 and 65535");
             }
+            // Neither may be off: a connection that is never timed out, and a listener that
+            // accepts without limit, hold file descriptors until the process runs out of them.
+            v.requirePositive("max_connections", this.maxConnections());
+            v.requirePositive("idle_timeout", this.idleTimeout(), ValidatorUtils.MAX_INT_MILLIS);
+            v.requirePositive("backlog", this.backlog());
+        }
+
+        /**
+         * Open client connections past which the gateway stops accepting; further ones wait in the
+         * kernel's accept backlog. Keep it below the process's open-file limit, less what upstream
+         * connections and journals need.
+         */
+        @Override
+        public Integer maxConnections()
+        {
+            return Optional.ofNullable(this.maxConnections).orElse(20_000);
+        }
+
+        /**
+         * How long a connection may sit idle - between requests, or a WebSocket with nothing
+         * going either way - before it is closed.
+         */
+        @Override
+        public Duration idleTimeout()
+        {
+            return Optional.ofNullable(this.idleTimeout).orElse(Duration.ofSeconds(30));
+        }
+
+        /**
+         * Length of the kernel's accept backlog.
+         */
+        @Override
+        public Integer backlog()
+        {
+            return Optional.ofNullable(this.backlog).orElse(1000);
         }
 
         @Override
@@ -122,7 +160,6 @@ public record ServerConfig(
             String host,
             Integer port,
             Duration requestParseTimeout,
-            Duration readTimeout,
             Duration idleTimeout,
             Integer maxConnections,
             List<String> allowedHosts
@@ -130,7 +167,7 @@ public record ServerConfig(
     {
         public ManagementConfig(final String host, final Integer port)
         {
-            this(host, port, null, null, null, null, null);
+            this(host, port, null, null, null, null);
         }
 
         @Override
@@ -140,11 +177,10 @@ public record ServerConfig(
             {
                 result.addError("port", "must be between 1 and 65535");
             }
-            // All three go to Undertow/XNIO as int milliseconds, and none may be off: a management
-            // connection that is never timed out holds a file descriptor the data plane shares.
+            // Neither may be off: a management connection that is never timed out holds a file
+            // descriptor the data plane shares.
             final ValidatorUtils v = new ValidatorUtils(result);
             v.requirePositive("request_parse_timeout", this.requestParseTimeout(), ValidatorUtils.MAX_INT_MILLIS);
-            v.requirePositive("read_timeout", this.readTimeout(), ValidatorUtils.MAX_INT_MILLIS);
             v.requirePositive("idle_timeout", this.idleTimeout(), ValidatorUtils.MAX_INT_MILLIS);
             v.requirePositive("max_connections", this.maxConnections());
             for (final String allowedHost : this.allowedHosts())
@@ -191,12 +227,6 @@ public record ServerConfig(
             return Optional.ofNullable(this.requestParseTimeout).orElse(Duration.ofSeconds(2));
         }
 
-        @Override
-        public Duration readTimeout()
-        {
-            return Optional.ofNullable(this.readTimeout).orElse(Duration.ofSeconds(30));
-        }
-
         /**
          * How long a connection may sit between requests before it is closed.
          */
@@ -233,8 +263,7 @@ public record ServerConfig(
     // =========================================================
     public record HttpConfig(
             Boolean enableHttp2,
-            Duration requestParseTimeout,
-            Boolean alwaysSetKeepAlive
+            Duration requestParseTimeout
     ) implements ValidatableConfig
     {
         @Override
@@ -244,7 +273,6 @@ public record ServerConfig(
             {
                 result.addError("request_parse_timeout", "must be >= -1");
             }
-            // Undertow's REQUEST_PARSE_TIMEOUT is an int of milliseconds
             new ValidatorUtils(result).fitsIntMillis("request_parse_timeout", this.requestParseTimeout());
         }
 
@@ -265,52 +293,40 @@ public record ServerConfig(
         {
             return Optional.ofNullable(this.requestParseTimeout).orElse(Duration.ofSeconds(2));
         }
-
-        @Override
-        public Boolean alwaysSetKeepAlive()
-        {
-            return Optional.ofNullable(this.alwaysSetKeepAlive).orElse(true);
-        }
     }
 
     // =========================================================
     // Proxy
     // =========================================================
     public record ProxyConfig(
-            Integer connectionsPerThread,
+            Integer maxConnectionsPerTarget,
             Integer maxQueueSize,
             Duration maxRequestTime,
-            Duration ttl,
-            @Description("Which upstream client proxies requests on Undertow: 'undertow' (its own proxy, the default) or 'r7' "
-                    + "(the blocking client every r7 server shares, on virtual threads). Experimental; see design/upstream.md.")
-            String client
+            Duration ttl
     ) implements ValidatableConfig
     {
-        public static final String CLIENT_UNDERTOW = "undertow";
-        public static final String CLIENT_R7 = "r7";
-
         @Override
         public void validate(final ValidationResult result)
         {
-            if (!CLIENT_UNDERTOW.equals(this.client()) && !CLIENT_R7.equals(this.client()))
+            if (this.maxConnectionsPerTarget() < 1)
             {
-                result.addError("client", "must be '" + CLIENT_UNDERTOW + "' or '" + CLIENT_R7 + "'");
+                result.addError("max_connections_per_target", "must be >= 1");
             }
-            if (this.connectionsPerThread() < 1)
-            {
-                result.addError("connections_per_thread", "must be >= 1");
-            }
-            // Both are handed to Undertow's proxy as int milliseconds when a route's upstream
-            // context is built, which on a hot reload is long after this could name the field.
+            // Both become int milliseconds when a route's upstream client is built, which on a hot
+            // reload is long after this could name the field.
             final ValidatorUtils v = new ValidatorUtils(result);
             v.fitsIntMillis("max_request_time", this.maxRequestTime());
             v.fitsIntMillis("ttl", this.ttl());
         }
 
+        /**
+         * Requests in flight to one target, each on a connection of its own; past it, requests
+         * wait (up to {@link #maxQueueSize()}) for one to finish.
+         */
         @Override
-        public Integer connectionsPerThread()
+        public Integer maxConnectionsPerTarget()
         {
-            return Optional.ofNullable(this.connectionsPerThread).orElse(512);
+            return Optional.ofNullable(this.maxConnectionsPerTarget).orElse(4096);
         }
 
         @Override
@@ -330,12 +346,6 @@ public record ServerConfig(
         {
             return Optional.ofNullable(this.ttl).orElse(Duration.ofSeconds(30));
         }
-
-        @Override
-        public String client()
-        {
-            return this.client == null ? CLIENT_UNDERTOW : this.client.trim().toLowerCase(java.util.Locale.ROOT);
-        }
     }
 
     // =========================================================
@@ -345,8 +355,6 @@ public record ServerConfig(
             DataSize maxHeaderSize,
             Integer maxHeaderCount,
             DataSize maxEntitySize,
-            Integer maxParameterCount,
-            Integer maxCookieCount,
 
             @Description("CIDR ranges of reverse proxies allowed to set X-Forwarded-For/X-Real-IP. "
                     + "Empty by default: the socket address is always used unless the immediate peer is in this list, "
@@ -375,14 +383,6 @@ public record ServerConfig(
             if (this.maxHeaderCount() < 1)
             {
                 result.addError("max_header_count", "must be >= 1");
-            }
-            if (this.maxParameterCount() < 1)
-            {
-                result.addError("max_parameters", "must be >= 1");
-            }
-            if (this.maxCookieCount() < 1)
-            {
-                result.addError("max_cookies", "must be >= 1");
             }
             for (final String cidr : this.trustedProxies())
             {
@@ -413,18 +413,6 @@ public record ServerConfig(
         public DataSize maxEntitySize()
         {
             return Optional.ofNullable(this.maxEntitySize).orElse(DataSize.ofMegabytes(2));
-        }
-
-        @Override
-        public Integer maxParameterCount()
-        {
-            return Optional.ofNullable(this.maxParameterCount).orElse(1000);
-        }
-
-        @Override
-        public Integer maxCookieCount()
-        {
-            return Optional.ofNullable(this.maxCookieCount).orElse(200);
         }
 
         @Override
@@ -718,97 +706,6 @@ public record ServerConfig(
                     + ", safeRequestHeaders=" + this.safeRequestHeaders()
                     + ", safeResponseHeaders=" + this.safeResponseHeaders()
                     + ", fingerprintKey=" + (this.fingerprintKey == null ? "unset" : "******") + "]";
-        }
-    }
-
-    // =========================================================
-    // Advanced (Undertow Internals & System)
-    // =========================================================
-    public record AdvancedConfig(
-            Integer ioThreads,
-            Integer taskThreads,
-            Integer connectionHighWater,
-            Integer connectionLowWater,
-            Boolean tcpNoDelay,
-            Boolean reuseAddresses,
-            Integer socketBacklog,
-            Duration socketReadTimeout
-    ) implements ValidatableConfig
-    {
-        @Override
-        public void validate(final ValidationResult result)
-        {
-            if (this.ioThreads() < 1)
-            {
-                result.addError("io_threads", "must be >= 1");
-            }
-            if (this.taskThreads() < 1)
-            {
-                result.addError("task_threads", "must be >= 1");
-            }
-            if (this.socketBacklog() < 1)
-            {
-                result.addError("socket_backlog", "must be >= 1");
-            }
-            // XNIO's READ_TIMEOUT is an int of milliseconds
-            new ValidatorUtils(result).fitsIntMillis("socket_read_timeout", this.socketReadTimeout());
-            if (this.connectionLowWater() < 1)
-            {
-                result.addError("connection_low_water", "must be >= 1");
-            }
-            if (this.connectionHighWater() < this.connectionLowWater())
-            {
-                result.addError("connection_high_water", "must be >= connection_low_water (" + this.connectionLowWater() + ")");
-            }
-        }
-
-        @Override
-        public Integer ioThreads()
-        {
-            return Optional.ofNullable(this.ioThreads)
-                    .orElse(Math.max(2, Runtime.getRuntime().availableProcessors()));
-        }
-
-        @Override
-        public Integer taskThreads()
-        {
-            return Optional.ofNullable(this.taskThreads).orElse(this.ioThreads() * 8);
-        }
-
-        @Override
-        public Integer connectionHighWater()
-        {
-            return Optional.ofNullable(this.connectionHighWater).orElse(20000);
-        }
-
-        @Override
-        public Integer connectionLowWater()
-        {
-            return Optional.ofNullable(this.connectionLowWater).orElse(10000);
-        }
-
-        @Override
-        public Boolean tcpNoDelay()
-        {
-            return Optional.ofNullable(this.tcpNoDelay).orElse(true);
-        }
-
-        @Override
-        public Boolean reuseAddresses()
-        {
-            return Optional.ofNullable(this.reuseAddresses).orElse(true);
-        }
-
-        @Override
-        public Integer socketBacklog()
-        {
-            return Optional.ofNullable(this.socketBacklog).orElse(1000);
-        }
-
-        @Override
-        public Duration socketReadTimeout()
-        {
-            return Optional.ofNullable(this.socketReadTimeout).orElse(Duration.ofSeconds(30));
         }
     }
 }

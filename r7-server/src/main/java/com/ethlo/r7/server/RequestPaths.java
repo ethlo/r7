@@ -13,8 +13,8 @@ import java.nio.charset.StandardCharsets;
  * matched and the path guard approved one resource while the upstream resolves another. Decoding
  * the raw path here keeps the dot segments in view, where the guard refuses them.
  * <p>
- * Percent-escapes are decoded as UTF-8, as Undertow decodes them, except an encoded {@code /}:
- * like Undertow with {@code ALLOW_ENCODED_SLASH} off, it stays encoded, so the guard sees it as
+ * Percent-escapes are decoded as UTF-8, except an encoded {@code /}: it stays encoded, so the
+ * guard sees it as
  * residual encoding rather than as a separator the upstream never received. A malformed escape is
  * kept as it was sent. A server whose decoded path already has these properties need not use this.
  */
@@ -22,6 +22,28 @@ public final class RequestPaths
 {
     private RequestPaths()
     {
+    }
+
+    /**
+     * The path of a request target in absolute form (RFC 9112 §3.2.2, {@code GET http://host/p}),
+     * which a server must accept; any other target is returned as it is. Servlet containers reduce
+     * the absolute form themselves, Helidon hands it over whole - and a route
+     * prefix never matches {@code http://...}. Only the scheme and authority are dropped: the
+     * path after them is kept as sent, double slashes and escapes included.
+     */
+    public static String originForm(final String target)
+    {
+        if (target.isEmpty() || target.charAt(0) == '/')
+        {
+            return target;
+        }
+        final int scheme = target.indexOf("://");
+        if (scheme <= 0)
+        {
+            return target;
+        }
+        final int path = target.indexOf('/', scheme + 3);
+        return path < 0 ? "/" : target.substring(path);
     }
 
     public static String decode(final String rawPath)

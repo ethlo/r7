@@ -7,7 +7,7 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 /**
  * The client response while the pipeline and filters shape it. Nothing reaches the server until
  * the exchange commits, which is what lets response filters change the upstream's status and
- * headers the way they can on Undertow before its response commits.
+ * headers.
  */
 public final class BlockingGatewayResponse implements MutableGatewayResponse
 {

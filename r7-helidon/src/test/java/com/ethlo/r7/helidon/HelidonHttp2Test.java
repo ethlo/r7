@@ -21,7 +21,7 @@ import org.junit.jupiter.api.TestInstance;
 import com.ethlo.r7.server.kit.ScriptedUpstream;
 
 /**
- * HTTP/2 (h2c) on Helidon, on only with http.enable_http2 as on Undertow. The upstream hop stays
+ * HTTP/2 (h2c) on Helidon, on only with http.enable_http2. The upstream hop stays
  * HTTP/1.1, so what matters is that a request arriving over HTTP/2 is proxied, its body intact,
  * and that the response carries nothing HTTP/2 forbids.
  */

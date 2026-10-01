@@ -26,8 +26,8 @@ import com.google.auto.service.AutoService;
 public final class StaticContentFactory implements GatewayFilterFactory<StaticContentFactory.Config>
 {
     /**
-     * Functional handoff to {@code R7UndertowHandler}, telling it which base directory (and
-     * options) to serve the response from natively. Deliberately a {@link StateKey} attachment,
+     * Functional handoff to the server, telling it which base directory (and options) to serve
+     * the response from. Deliberately a {@link StateKey} attachment,
      * not an {@code attributes()} entry - this is routing state, not telemetry, and must not
      * leak the server's filesystem layout into the journal/log output.
      */

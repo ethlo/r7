@@ -41,17 +41,14 @@ public record UpstreamOptions(Duration readTimeout, Duration connectTimeout, Dur
     }
 
     /**
-     * A route's options. {@code proxy.connections_per_thread} is Undertow's per-I/O-thread pool
-     * size; this client has no I/O threads, so it is scaled by {@code advanced.io_threads} to
-     * give a target the same capacity on either client.
+     * A route's options: its own timeouts, and the server's proxy limits.
      */
     public static UpstreamOptions of(final ServerConfig serverConfig, final UpstreamConfig upstream)
     {
         final ServerConfig.ProxyConfig proxy = serverConfig.proxy();
         final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(new TimeoutConfig(null));
-        final long connections = (long) proxy.connectionsPerThread() * serverConfig.advanced().ioThreads();
         return new UpstreamOptions(timeouts.read(), CONNECT_TIMEOUT, proxy.ttl(), MAX_HEAD_BYTES, MAX_HEADER_COUNT,
-                (int) Math.min(Integer.MAX_VALUE, connections), proxy.maxQueueSize(), proxy.maxRequestTime(), null);
+                proxy.maxConnectionsPerTarget(), proxy.maxQueueSize(), proxy.maxRequestTime(), null);
     }
 
     public UpstreamOptions withSslContext(final SSLContext context)

@@ -7,9 +7,9 @@ import java.util.regex.Pattern;
  * Bounds the work a single regular-expression match may do.
  * <p>
  * Route predicates and filters match operator-supplied patterns against client-supplied text -
- * paths, headers, cookies, query parameters - on the XNIO I/O threads. {@link Pattern} backtracks,
+ * paths, headers, cookies, query parameters - on the request's thread. {@link Pattern} backtracks,
  * so a pattern such as {@code ^(a+)+$} takes exponential time on a crafted input, and a handful of
- * such requests would stall every I/O thread. The engine reads its input only through
+ * such requests would keep every core busy. The engine reads its input only through
  * {@link CharSequence#charAt}, so counting those reads bounds the CPU a match can take whatever the
  * pattern; a match that exceeds the budget throws, and the pipeline fails closed with a 500 rather
  * than guessing whether the text would have matched.
