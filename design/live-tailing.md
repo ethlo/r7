@@ -95,7 +95,7 @@ segments, one tailer. Before and after:
 | after | ~13 µs | ~60 µs |
 
 Where the idle tick went: listing and resolving the directory (~150 µs, growing with retained
-segments), mapping the active segments again (~60 µs), and rewriting an unchanged checkpoint
+segments), walking every segment and mapping the active ones again (~60 µs), and rewriting an unchanged checkpoint
 file (~90 µs, and ~200 µs when it had changed). So step 1 became three changes: active
 segments stay mapped; while every shard is reading its active segment the listing is skipped
 until a seal magic shows up in one of those mappings (or 5 s pass); and the checkpoint file is
