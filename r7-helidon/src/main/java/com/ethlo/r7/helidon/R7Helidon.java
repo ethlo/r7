@@ -10,7 +10,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 
+import com.ethlo.r7.logging.LogbackConfiguration;
 import com.ethlo.r7.server.blocking.BlockingGateway;
 import com.ethlo.r7.server.blocking.ListenerStatistics;
 import com.ethlo.r7.server.config.ServerConfig;
@@ -192,6 +194,14 @@ public final class R7Helidon
     public static void main(final String[] args) throws IOException
     {
         preferPerCarrierPollers();
+        LogbackConfiguration.configure();
+
+        // Helidon's System.Logger ends in java.util.logging in the repackaged jar; route that into
+        // logback too. The configuration's LevelChangePropagator keeps JUL's levels in step, so a
+        // disabled record is dropped before the bridge builds an event for it.
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
+
         final R7Helidon gateway = new R7Helidon(BlockingGateway.fromEnvironment());
         Runtime.getRuntime().addShutdownHook(new Thread(gateway::stop, "r7-shutdown-hook"));
     }
