@@ -2,7 +2,11 @@ r7f Journal File Format
 
 ## Status of This Memo
 
-This document specifies the r7f journal file format used by r7 for high-throughput event logging.
+This document specifies version 2 of the r7f journal file format used by r7 for
+high-throughput event logging. Version 2 replaces version 1's self-delimiting entries with
+block framing, so that resynchronisation after damage never interprets payload bytes as
+framing (§6.1). The reasoning and the implementation plan are in
+`design/journal-format-v2.md`.
 
 It defines only:
 
@@ -30,9 +34,12 @@ This document MUST NOT be used to interpret event payload structure.
 # 2. Conventions
 
 * MUST / SHOULD / MAY are as per RFC 2119.
-* All integers in the preamble and entry framing MUST be big-endian. (The FlatBuffer
+* All integers in the preamble and fragment framing MUST be big-endian. (The FlatBuffer
   payload is little-endian, as defined by its own specification.)
 * File is strictly append-only.
+* An **entry** is one journal record. A **fragment** is a framed piece of an entry; an entry
+  is stored as one fragment or as several (§4). A **block** is a fixed-size, aligned region
+  of the file (§3.1).
 
 ---
 
@@ -43,8 +50,16 @@ This document MUST NOT be used to interpret event payload structure.
 A r7f file MUST have the following layout:
 
 ```
-[1024-byte preamble][entry][entry]...[entry]
+[1024-byte preamble][fragment][fragment]...[fragment]
 ```
+
+The file is divided into **blocks** of Block Size bytes (§3.2), aligned to file offset 0.
+Block 0 begins with the preamble; the first fragment MUST begin at offset 1024. The file
+size MUST be a multiple of Block Size.
+
+A fragment MUST NOT cross a block boundary. Every block boundary at or before Data End is
+therefore either the start of a fragment the writer placed there, or an unwritten zero. That
+is the property resynchronisation rests on (§6).
 
 A journal directory MAY also hold files that are not segments and carry no journal data.
 A writer keeps its per-shard segment-sequence high-water mark in `shard-<shardId>.seq`,
@@ -61,17 +76,28 @@ The first 1024 bytes MUST be reserved as a file header:
 | Offset | Field              | Size | Requirement                                     |
 | ------ | ------------------ | ---- | ----------------------------------------------- |
 | 0      | File Magic         | 4    | MUST be `0x52374631` (`R7F1`)                   |
-| 4      | Version            | 2    | MUST identify format version; `1` for this spec |
+| 4      | Version            | 2    | MUST identify format version; `2` for this spec |
 | 6      | Segment Sequence   | 8    | MUST be monotonic per shard                     |
 | 14     | Created (epoch ms) | 8    | Wall-clock creation time of the segment         |
 | 22     | Seal Magic         | 4    | Zero until sealed; then `0x52374653` (`R7FS`)   |
 | 26     | Entry Count        | 8    | Entries the segment holds; valid only when sealed |
 | 34     | Last Sequence      | 4    | Highest entry Sequence; valid only when sealed  |
-| 38     | Data End           | 8    | Offset one past the last entry; valid only when sealed |
+| 38     | Data End           | 8    | Offset one past the last fragment of the last entry; valid only when sealed |
 | 46     | Seal Flags         | 4    | Bit flags; valid only when sealed. Zero for a healthy seal |
-| 50     | Reserved           | 974  | MUST be zero-filled                             |
+| 50     | Block Size         | 4    | Power of two, from 4096 to 1048576              |
+| 54     | Codec              | 2    | `0` (none); any other value MUST be rejected    |
+| 56     | Reserved           | 968  | MUST be zero-filled                             |
 
-The first entry MUST begin at offset 1024.
+File Magic names the format family and is unchanged across versions; Version tells them
+apart (§11).
+
+**Block Size** is recorded per segment, so every segment describes itself and a reader needs
+no configuration to read it. A reader MUST reject a segment whose Block Size is not a power
+of two within the bounds above, or does not divide the file size.
+
+**Codec** is reserved for per-block compression. This version defines only `0`, meaning
+fragment data is stored as written. A reader MUST reject a segment with any other Codec
+rather than misread compressed data as an entry.
 
 ### The Seal Record
 
@@ -132,30 +158,77 @@ those.
 
 ---
 
-# 4. Entry Format
+# 4. Fragments and Entries
 
-Each entry MUST be encoded as:
+## 4.1 Fragment Format
+
+Each fragment MUST be encoded as:
 
 ```
 Magic (4)
+Type (1)
+Flags (1)
+Reserved (2)
+Length (4)
+CRC32C (4)
+Data (Length)
+```
+
+The 16 bytes before Data are the **fragment header**.
+
+### Magic
+
+MUST equal `0x52374632` (`R7F2`). For a FULL or FIRST fragment it is the entry's commit
+record and is written last (§5.1).
+
+### Type
+
+| Value | Name   | Meaning                                  |
+| ----- | ------ | ---------------------------------------- |
+| 1     | FULL   | The whole entry                          |
+| 2     | FIRST  | The first fragment of a split entry      |
+| 3     | MIDDLE | An interior fragment of a split entry    |
+| 4     | LAST   | The final fragment of a split entry      |
+
+Any other value is damage.
+
+### Flags
+
+Reserved for codec use. With Codec `0` a writer MUST write zero and a reader MUST ignore it.
+
+### Reserved
+
+MUST be zero.
+
+### Length
+
+The number of Data bytes in this fragment. MUST be at least 1, and MUST NOT carry the
+fragment past the end of its block.
+
+### CRC32C
+
+MUST be computed over Type, Flags, Reserved, Length and Data, in that order. A fragment
+whose CRC does not match MUST be considered corrupted.
+
+The Magic is NOT covered: it is the commit record, and a reader learns a fragment's
+position from the framing that led to it, never by searching for the Magic (§6).
+
+---
+
+## 4.2 Entry Content
+
+An entry's content is the concatenation of the Data of its fragments, in file order:
+
+```
 Sequence (4)
-PayloadLen (4)
 FBLen (4)
 RawLen (4)
 FlatBufferPayload (FBLen)
 RawPayload (RawLen)
-CRC32C (4)
 ```
 
----
-
-## 4.1 Field Definitions
-
-### Magic
-
-MUST equal `0x52374631`.
-
----
+The content's length MUST equal `FBLen + RawLen + 12`. Every byte of it is covered by the
+CRC of the fragment that carries it.
 
 ### Sequence
 
@@ -165,18 +238,6 @@ MUST equal `0x52374631`.
 
 The sequence number is what allows a reader to distinguish *end of data* from *missing
 data*. See §6.
-
----
-
-### PayloadLen
-
-MUST equal:
-
-```
-FBLen + RawLen + 8
-```
-
----
 
 ### FlatBufferPayload
 
@@ -188,31 +249,36 @@ FBLen + RawLen + 8
   ```
 * This RFC does NOT define or interpret its contents.
 
----
-
 ### RawPayload
 
-* MAY be present
+* MAY be present (RawLen MAY be zero)
 * If present, MUST follow FlatBufferPayload immediately
 * MUST NOT be interpreted by the journal layer
 
 ---
 
-### CRC32C
+## 4.3 Placement
 
-CRC MUST be computed over:
+A writer places an entry at the current position as follows.
 
-* Sequence
-* PayloadLen
-* FBLen
-* RawLen
-* FlatBufferPayload
-* RawPayload (if present)
+1. If fewer than 17 bytes (a fragment header plus one Data byte) remain in the current
+   block, the writer MUST leave them zero and move to the start of the next block. This is
+   **padding**. A reader applies the same arithmetic and skips it by position alone; it
+   never inspects padding to decide that it is padding.
+2. If the whole entry fits in the rest of the block, the writer MUST store it as one FULL
+   fragment.
+3. Otherwise the writer MUST split it: a FIRST fragment that fills the rest of the current
+   block, MIDDLE fragments that each fill a whole block, and a LAST fragment, each
+   continuation starting at a block boundary. An entry that fits in the current block MUST
+   NOT be split.
 
-The Magic is NOT covered by the CRC; it is the resynchronisation marker used to find entry
-boundaries in a damaged file.
+So a FIRST or MIDDLE fragment always ends exactly at a block boundary, and a MIDDLE or LAST
+fragment always starts at one. A reader MUST treat a split entry that departs from this
+shape as damage.
 
-Entries with invalid CRC MUST be considered corrupted.
+An entry, with its fragment headers and any padding before it, MUST fit in the remainder of
+the segment; a writer that cannot place it there rotates to a new segment first. An entry
+never spans segments.
 
 ---
 
@@ -228,26 +294,36 @@ Specifically:
 
 ## 5.1 The Magic Is the Commit
 
-A writer MUST write an entry's Magic **last**, after the Sequence, the three length fields,
-the payload and the CRC32C are all in place, and MUST issue a store-store barrier between
-them. The field order on disk is unchanged (§4); this is a requirement on the order of the
+An entry is committed by the Magic of its FULL or FIRST fragment, and that Magic MUST be
+written **last**:
+
+* For a FULL fragment, the writer MUST write the rest of the fragment first, then issue a
+  store-store barrier, then write the Magic.
+* For a split entry, the writer MUST write every MIDDLE and LAST fragment completely, Magic
+  included, then the FIRST fragment's header fields and Data, then issue a store-store
+  barrier, then write the FIRST fragment's Magic.
+
+The field order on disk is unchanged (§4.1); this is a requirement on the order of the
 stores, not on the layout.
 
-The Magic is therefore the entry's commit record. A reader MUST treat its presence as the
-guarantee that the rest of the entry is there, and its absence — a zero where a Magic
-belongs — as the end of the committed data, not as damage. A reader sharing the mapping
-with a live writer, which is the normal deployment, MUST pair the writer's barrier with an
-acquire barrier after reading the Magic.
+The Magic of a FULL or FIRST fragment is therefore the entry's commit record. A reader MUST
+treat its presence as the guarantee that the rest of the entry — every continuation of a
+split entry included — is there, and its absence — a zero where a Magic belongs — as the
+end of the committed data, not as damage. A reader sharing the mapping with a live writer,
+which is the normal deployment, MUST pair the writer's barrier with an acquire barrier after
+reading the Magic.
 
 This is what lets a reader tail a segment that is being written without guessing. Stamping
 the Magic first would make a half-written entry byte-for-byte indistinguishable from a
-corrupt one, and every reader would need a heuristic to tell "not yet" from "never".
+corrupt one, and every reader would need a heuristic to tell "not yet" from "never". A
+sequential reader stops at an uncommitted FIRST and so never reaches its continuations,
+whose Magics are already in place.
 
 Two consequences follow, and implementations depend on both:
 
 * A pre-allocated segment MUST be zero-filled, and a segment MUST NOT be reused, or a stale
   Magic could be mistaken for a commit.
-* A Magic followed by an entry that does not parse is real damage, not a partial write.
+* A Magic followed by a fragment that does not parse is real damage, not a partial write.
 
 ---
 
@@ -255,23 +331,29 @@ Two consequences follow, and implementations depend on both:
 
 A compliant reader MUST:
 
-1. Scan entries sequentially from offset 1024
-2. Validate CRC32C per entry
-3. Skip corrupted entries, resynchronising on the next Magic
-4. Treat entries as opaque byte records
-5. Pass FlatBufferPayload to external decoder if needed
+1. Start at offset 1024, or at a checkpoint, which MUST be the offset of a FULL or FIRST
+   fragment the reader previously reached by the rules below
+2. At each position, skip padding (§4.3), then read a fragment header
+3. Validate CRC32C per fragment, and the placement rules of §4.3 for split entries
+4. Deliver a FULL fragment's Data as an entry; reassemble FIRST, MIDDLE… LAST into one entry
+   and deliver that
+5. Reach the next position only through a verified Length and the padding arithmetic, or by
+   resynchronising at a block boundary as described below — **never by scanning for a
+   Magic**
+6. Treat entries as opaque byte records, and pass FlatBufferPayload to an external decoder
+   if needed
 
 A compliant reader MUST additionally track the Sequence field and MUST report any
 discontinuity:
 
-* A **zero byte** where a Magic is expected means no entry was ever written at that
+* A **zero byte** where a Magic is expected means no fragment was ever written at that
   offset. What that implies depends on the segment:
   * In a segment that still carries its pre-allocation — the active one being written —
     this is the normal end of data and the reader stops.
   * In a **sealed** segment, before Data End (§3.2), it is not a tail but a region that
-    never reached the device. The reader MUST scan past it for a later entry, and MUST
-    report the region and the resulting Sequence gap. Treating it as end-of-data is what
-    makes power-loss holes invisible, because an unwritten page reads back as zeroes and is
+    never reached the device. The reader MUST resynchronise (below), and MUST report the
+    region and the resulting Sequence gap. Treating it as end-of-data is what makes
+    power-loss holes invisible, because an unwritten page reads back as zeroes and is
     indistinguishable from an unused tail by inspection of that byte alone. Data End is what
     tells the two apart; a reader that has no seal record to consult MUST fall back to
     treating the whole file as data, and SHOULD report that it could not be sure.
@@ -279,18 +361,21 @@ discontinuity:
   reader MUST NOT treat this as end of data, and MUST report the count of missing entries.
 * A **backward step** in Sequence means the file is not a valid append-only segment and the
   reader MUST stop.
-* An entry that **fails to parse** — bad framing, or a CRC that does not match — in a
-  segment that still carries its pre-allocation is real damage, because §5.1 makes an
-  unpublished entry read as a zero rather than as a broken one. The reader MUST NOT consume
-  the remainder of such a segment on that basis: it MUST leave its position at the start of
-  that entry and re-read from there. The segment belongs to its writer until it is sealed,
-  and the damage MUST be reported once sealing makes the file final.
+* A fragment that **fails to parse** — an unknown Type, a Length that crosses its block, a
+  CRC that does not match, or a split entry that breaks §4.3 — in a segment that still
+  carries its pre-allocation is real damage, because §5.1 makes an unpublished entry read
+  as a zero rather than as a broken one. The reader MUST NOT consume the remainder of such a
+  segment on that basis: it MUST leave its position at the start of that entry and re-read
+  from there. The segment belongs to its writer until it is sealed, and the damage MUST be
+  reported once sealing makes the file final.
 
   This is a requirement about progress, not about tolerance: consuming to the end of a
   pre-allocated segment tells a reader that checkpoints by offset that it has read the
   whole file, and every entry the writer appends afterwards is then skipped without a
   word.
-* An entry a **consumer refuses** — one whose framing and CRC are sound but whose delivery
+* In a **sealed** segment, the same failure means the entry is lost: the reader MUST
+  report it and resynchronise.
+* An entry a **consumer refuses** — one whose framing and CRCs are sound but whose delivery
   the reader's own client rejects — MUST NOT be passed over. The reader MUST leave its
   position at the start of that entry and offer it again on a later pass, and MUST NOT
   advance any Sequence expectation past it. Nothing later in that segment is read until it
@@ -307,41 +392,46 @@ discontinuity:
   refusal. A stall names the segment, offset and Sequence and can be diagnosed; the opposite
   mistake is silent and irreversible.
 
+**Resynchronisation** happens only in a sealed segment, and only within Data End:
+
+1. From the damaged position, the reader moves to the next block boundary. The rest of the
+   damaged block is lost, even where entries in it are intact.
+2. At the boundary, a zero Magic, an unknown Type, or a failing CRC means the reader moves
+   to the next boundary.
+3. A valid MIDDLE or LAST at the boundary belongs to an entry whose start was lost. The
+   reader MUST skip it, following its Length, and report it.
+4. The reader resumes at the first FULL or FIRST it reaches this way.
+
+Everything skipped is reported as one region, and the entries lost in it show as a Sequence
+gap at the next entry delivered.
+
 Replay semantics of `JournalEvent` are defined in the FlatBuffer specification, not here.
 
-## 6.1 Resynchronisation Trusts the Bytes It Finds
+## 6.1 Resynchronisation Never Reads Payload as Framing
 
-Resynchronising after damage (this section, "Skip corrupted entries, resynchronising on the
-next Magic") scans forward for the next occurrence of the four Magic bytes and resumes
-decoding there, exactly as if that position began a real entry. The CRC32C (§4.1) then
-catches a forged entry whose framing does not hold together — but framing that happens to be
-internally consistent, with a CRC that matches its own (attacker-chosen) bytes, is
-indistinguishable from a genuine entry. Magic is not a MAC: it identifies where an entry
-starts, not who wrote it.
+A reader interprets bytes as a fragment header only at a position it reached from offset
+1024, from a checkpoint, or from a block boundary, through Lengths whose CRCs it has
+verified. By §3.1 and §4.3 every such position holds a header the writer placed there, or
+zeroes: Data never begins at a block boundary, never ends past one, and is never reached
+except by skipping it whole. Bytes that arrived as payload — a request or response body
+carried in RawPayload, which this layer never inspects — are therefore never read as
+framing, however they are crafted and wherever damage leaves the reader.
 
-RawPayload (§4.1) is opaque to this layer and MAY contain the Magic byte sequence as
-ordinary data — a response body, for instance, is never inspected for it. A payload crafted
-to contain `0x52374631` at a chosen offset, followed by bytes that parse as a plausible
-entry with a correct CRC over themselves, would be accepted by resync as a real entry if the
-scan ever lands inside that payload. The scan only lands there after real damage — a hole, a
-flipped bit, a truncated write — put the reader out of alignment with the true entry
-boundaries in the first place; a segment with no damage is decoded entry-by-length (§4) and
-never scans for Magic at all. This is a real, currently unclosed gap, not merely a
-theoretical one: whether the surrounding damage is itself accidental or adversarial, the
-bytes resync lands on afterwards are trusted the same way genuine framing would be.
+This closes the gap of version 1, whose reader resynchronised by scanning forward for the
+next Magic and trusted whatever parsed there. A body crafted to contain a Magic followed by
+self-consistent framing with a matching CRC was indistinguishable from a genuine entry once
+damage put the scan inside it. CRC32C is still not a MAC, and version 2 does not make it
+one: it does not need to, because no payload byte is ever in a position where a CRC is
+checked as framing.
 
-Closing this needs authenticity the current framing cannot express: CRC32C is an integrity
-check against accidental corruption, not a MAC, so no per-entry field in the format as
-specified today lets a reader tell "byte-compatible forgery embedded in a payload" apart
-from "genuine entry" once resync has landed inside attacker-influenced content. A real fix —
-a per-entry MAC or HMAC chained across entries, verified before Magic is trusted rather than
-after — is a format change (a new field, a new version per §11) and is deliberately **not**
-made here. Format versions have no compatibility path (§11): changing the framing to add
-authentication is significant enough to warrant its own version and its own review, not a
-rider on a bug fix. Operators for whom this matters MUST treat resynchronised regions as
-lower-trust than entries decoded without damage, and SHOULD restrict who can influence
-RawPayload content (request/response bodies) on routes journaled at a level that stores them
-verbatim.
+What this does not cover is an adversary who can write the segment file itself. Such a
+writer can produce any framing it likes, and only authenticating the writer could defend
+against it; that is outside this format. Accidental damage to a header that leaves a
+matching CRC is the ordinary CRC32C residual, as for any other field.
+
+A compliant implementation MUST have a test that places a complete, CRC-valid forged
+fragment inside a payload after damage and shows that it is never delivered, while the
+genuine entries after the next block boundary are.
 
 ---
 
@@ -366,16 +456,17 @@ Implementations:
 
 | Condition               | Behavior                                                       |
 | ----------------------- | -------------------------------------------------------------- |
-| Process crash / SIGKILL | Page cache survives; at most the final entry is torn            |
+| Process crash / SIGKILL | Page cache survives; at most the final entry is uncommitted    |
 | Power loss / host reset | Unflushed pages are lost, anywhere in the file, not only at the tail |
 | Disk full               | Writes fail; ingestion must halt upstream                      |
-| Corruption              | Entry is dropped via CRC failure; reader resynchronises         |
+| Corruption              | The damaged block's remainder is dropped; the reader resumes at the next block boundary |
 
 Because writeback is left to the OS (§7), the format makes **no durability guarantee under
 power loss**. The kernel may write dirty pages in any order, so a segment can contain valid
-entries after a region that never reached the device. This is why Sequence (§4.1) is
-mandatory: the format does not promise that data survives a power cut, but it does promise
-that a reader can tell when data did not.
+entries after a region that never reached the device, and a split entry can lose its FIRST
+fragment while its continuations survive. This is why Sequence (§4.2) is mandatory: the
+format does not promise that data survives a power cut, but it does promise that a reader
+can tell when data did not.
 
 ---
 
@@ -390,6 +481,7 @@ This specification explicitly does NOT define:
 * Distributed replication
 * Indexing or query systems
 * Durability under power loss (see §8)
+* Authenticity against a party that can write segment files (see §6.1)
 
 ---
 
@@ -410,13 +502,16 @@ The FlatBuffer schema is intentionally external to preserve:
 
 # 11. Version History
 
-| Version | Change          |
-| ------- | --------------- |
-| 1       | Initial format  |
+| Version | Change |
+| ------- | ------ |
+| 1       | Initial format: self-delimiting entries, resynchronised by scanning for the Magic |
+| 2       | Block framing: fragments that never cross a block boundary, a CRC per fragment, resynchronisation at block boundaries only (§6.1); Block Size and Codec in the preamble |
 
 A reader MUST reject a file whose Version it does not recognise, rather than attempt to
-interpret it. There is no compatibility path between versions; the format is small enough
-that a new version means a new reader.
+interpret it, and MUST NOT delete such a file on the strength of having read nothing from
+it. There is no compatibility path between versions; the format is small enough that a new
+version means a new reader. Segments written by a previous version are drained by a reader
+of that version before the writer is upgraded.
 
 ---
 
@@ -425,8 +520,9 @@ that a new version means a new reader.
 r7f is:
 
 * append-only binary log format
-* framed by fixed-size preamble
-* entry-based CRC32C integrity model
+* framed by fixed-size preamble and fixed-size blocks
+* fragment-based CRC32C integrity model
 * sequence-numbered, so loss is detectable
+* resynchronised at block boundaries, so payload is never read as framing
 * schema-agnostic payload container
 * replayable via sequential scan
