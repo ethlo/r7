@@ -124,8 +124,8 @@ Population:
 
 A journal entry is considered logically complete when:
 
-* all required fields are written
-* CRC32C is valid
+* all its fragments are written and each one's CRC32C is valid
+* the magic of its FULL or FIRST fragment, written last, is present
 * END marker (in FlatBuffer event model) is present
 
 This is independent of physical disk state.

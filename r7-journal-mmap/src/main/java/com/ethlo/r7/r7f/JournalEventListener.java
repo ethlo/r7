@@ -10,6 +10,14 @@ import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.fbs.HeaderDelta;
 
+/**
+ * Receives decoded journal entries.
+ * <p>
+ * Every buffer and FlatBuffers view passed in is valid only for the duration of the call. Most
+ * are views of the mapped segment, but an entry split across blocks is reassembled into a
+ * buffer the reader reuses for the next split entry, so a listener that keeps a slice instead
+ * of copying it would see it change, and only on split entries.
+ */
 public interface JournalEventListener
 {
     void onClientRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource);
