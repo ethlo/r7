@@ -65,11 +65,10 @@ public final class WarcTailerMain
 
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
-            // SIGTERM (a container restart, a rolling deploy) is the one chance to report the
-            // exchanges the reassembler still holds in flight: their segments are already
-            // checkpointed as read, so the next run never sees their start events. shutdown()
-            // reports them as abandoned, which this writer logs, and must run before the WARC
-            // file is closed. A hard crash runs no hook; see the JSON tailer's for that limit.
+            // SIGTERM (a container restart, a rolling deploy) saves the checkpoint, so the next
+            // run resumes from where reading got to rather than from the last tick; it must run
+            // before the WARC file is closed. Exchanges still being assembled are completed
+            // after the restart either way, as after a hard crash.
             tailer.shutdown();
             try
             {

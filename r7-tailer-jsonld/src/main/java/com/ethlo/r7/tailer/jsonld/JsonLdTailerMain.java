@@ -69,13 +69,10 @@ public final class JsonLdTailerMain
         Runtime.getRuntime().addShutdownHook(new Thread(() ->
         {
             // A container restart or rolling deploy stops this process with SIGTERM, which
-            // runs this hook - the one chance to report exchanges the reassembler still holds
-            // in flight before they are lost with no trace at all. Their segments are already
-            // checkpointed as delivered (decoding an entry and completing the exchange it
-            // belongs to are different things), so nothing revisits those bytes on the next
-            // run; only a report made now survives the restart. A hard crash (SIGKILL, a
-            // kernel panic) runs no code at all and this cannot help - that loss is inherent
-            // to in-memory reassembly state, not something this hook can fix.
+            // runs this hook. Saving the checkpoint here resumes from where reading got to,
+            // not from the last tick. Exchanges still being assembled are completed after the
+            // restart either way, from where the checkpoint file says they began; a hard
+            // crash, which runs no hook, only loses the progress since the last tick.
             tailer.shutdown();
             try
             {

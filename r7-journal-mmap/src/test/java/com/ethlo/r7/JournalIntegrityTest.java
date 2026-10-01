@@ -1865,57 +1865,6 @@ class JournalIntegrityTest
     }
 
     /**
-     * A process restart loses whatever the reassembler still holds in flight — it lives in
-     * memory only, while the segment that produced it is already checkpointed as delivered.
-     * A graceful shutdown can still report it as abandoned instead of losing it with no
-     * trace at all; that is the one thing {@link R7Tailer#shutdown()} buys, and this test
-     * pins it down against the case it does not and cannot help: a restart with no shutdown
-     * call, standing in for a hard crash.
-     */
-    @Test
-    void shutdownReportsInFlightExchangesARestartWouldOtherwiseLoseSilently() throws IOException
-    {
-        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
-        {
-            writeClientRequest(journal, "never-ends");
-        }
-
-        final CollectingSink sink = new CollectingSink();
-        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
-                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
-        tailer.runTick();
-
-        assertThat(sink.completed).as("sink: %s", sink).isEmpty();
-        assertThat(sink.abandoned).as("not aged out yet - maxAge is an hour. sink: %s", sink).isEmpty();
-
-        // A second tick without shutdown must not re-read the segment: its bytes were
-        // already delivered to the reassembler, whether or not the exchange they belong to
-        // ever completes.
-        tailer.runTick();
-        assertThat(sink.completed).isEmpty();
-        assertThat(sink.abandoned).isEmpty();
-
-        tailer.shutdown();
-
-        assertThat(sink.abandoned)
-                .as("a graceful shutdown reports what a restart would otherwise lose with no trace. sink: %s", sink)
-                .containsExactly("never-ends:SHUTDOWN");
-
-        // Simulating the restart: a brand-new tailer, same journal and checkpoint state.
-        // Nothing further is reported for "never-ends" - its segment was already
-        // checkpointed as delivered before the first tailer ever stopped, so there is
-        // nothing left on disk that could tell a fresh process it was ever open. That gap
-        // is exactly why shutdown() has to report it before the process actually exits.
-        final CollectingSink afterRestart = new CollectingSink();
-        new R7Tailer(journalDir, afterRestart, afterRestart,
-                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
-
-        assertThat(afterRestart.completed).isEmpty();
-        assertThat(afterRestart.abandoned).isEmpty();
-        assertThat(afterRestart.orphanedEnds).isEmpty();
-    }
-
-    /**
      * {@code R7Tailer#shutdown()} was added so a graceful stop (a container's SIGTERM
      * handler, run from a JVM shutdown hook thread) can report in-flight exchanges before
      * the process exits. But the hook thread has no coordination with whatever thread is

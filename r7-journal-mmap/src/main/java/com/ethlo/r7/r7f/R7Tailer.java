@@ -18,8 +18,11 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -103,6 +106,19 @@ public final class R7Tailer
     private long orphanedEndsBefore = 0;
     private long orphanedBodiesBefore = 0;
 
+    /**
+     * Records where each open exchange began, so a restart can rebuild it; every segment is
+     * decoded through it. See {@link OpenExchanges}.
+     */
+    private final OpenExchanges open;
+
+    /**
+     * Exchanges that were open when the checkpoint file was last written, still to be rebuilt
+     * by replaying their entries. Loaded at construction, replayed on the first tick, and
+     * carried into every save until then so that a restart before that tick loses nothing.
+     */
+    private Map<Integer, OpenExchanges.Resume> pendingReplay = Map.of();
+
     public R7Tailer(final Path logDir, final ExchangeCompletionListener output)
     {
         this(logDir, output, JournalIntegrityListener.NOOP, ReassemblyOptions.DEFAULTS);
@@ -154,6 +170,7 @@ public final class R7Tailer
     {
         this.logDir = logDir;
         this.reassembler = new ExchangeReassembler(output, options, integrity);
+        this.open = new OpenExchanges(reassembler);
         this.integrity = integrity;
         final Path resolvedCheckpointDir = checkpointDir != null ? checkpointDir : logDir;
         try
@@ -169,24 +186,19 @@ public final class R7Tailer
     }
 
     /**
-     * Reports whatever the reassembler still holds in flight as abandoned, and persists the
-     * checkpoint state one last time.
+     * Persists the checkpoint state one last time, so that a graceful stop resumes from where
+     * reading actually got to rather than from the last tick.
      * <p>
-     * A process restart otherwise loses in-flight exchanges with no trace at all: their
-     * segments are already checkpointed as delivered (decoding an entry and completing the
-     * exchange it belongs to are different things), so nothing revisits those bytes on the
-     * next run and the reassembler's in-memory state — the only place recording that an
-     * exchange was ever open — is gone with the process. Calling this from a graceful
-     * shutdown path (a caller's shutdown hook, or before an orderly stop) turns that into a
-     * reported loss instead of a silent one. It does nothing for a hard crash, which runs no
-     * code at all; that remains an inherent limit of in-memory reassembly state, not
-     * something a checkpoint file can fix.
+     * Exchanges still being assembled are not reported as abandoned: the checkpoint file
+     * records where each began, and the next run rebuilds and completes them
+     * ({@link OpenExchanges}). The same holds after a hard crash, which runs no code at all,
+     * as of the last completed tick. What a restart cannot rebuild — an exchange whose first
+     * segment was deleted in the meantime — is reported then.
      */
     public void shutdown()
     {
         synchronized (lock)
         {
-            reassembler.shutdown();
             saveCheckpoints();
         }
     }
@@ -249,6 +261,11 @@ public final class R7Tailer
                             resolvedFiles.put(key, path);
                         }
                     });
+
+            if (!pendingReplay.isEmpty())
+            {
+                replayOpenExchanges(resolvedFiles);
+            }
 
             // Sort the resolved files and process them sequentially.
             // Segment sequence is a monotonic counter per shard, so it orders segments
@@ -499,13 +516,16 @@ public final class R7Tailer
 
             // Carry the sequence across ticks: resuming mid-segment without it would let
             // entries go missing across the resume boundary unnoticed.
+            final FileMeta meta = parseMeta(path);
+            open.enterSegment(meta.shardId(), meta.segmentSequence());
             final JournalDecoder.DecodeStats stats = JournalDecoder.decode(
                     processingBuffer,
-                    reassembler,
+                    open,
                     checkpoint.nextSequence(),
                     path.getFileName().toString(),
                     integrity,
-                    isActive);
+                    isActive,
+                    open);
 
             totalBytesRead += before - processingBuffer.remaining();
             totalMissingEntries += stats.missingEntries();
@@ -571,6 +591,126 @@ public final class R7Tailer
             // same way as the Files.size race above: skip it for this tick and let the next
             // tick's file listing settle whether it is really gone.
             return false;
+        }
+    }
+
+    /**
+     * Rebuilds the exchanges that were open when the checkpoint file was written, by replaying
+     * each shard from the earliest of their starts up to the checkpoint, for those request ids
+     * only. Nothing is delivered here: an exchange open at the checkpoint had not had its end
+     * event read by then, and the replay stops at the checkpoint. Damage in the replayed range
+     * was reported when it was first read, so it is not reported again.
+     */
+    private void replayOpenExchanges(final Map<String, Path> resolvedFiles)
+    {
+        final Map<Integer, OpenExchanges.Resume> replay = pendingReplay;
+        pendingReplay = Map.of();
+
+        replay.forEach((shard, resume) ->
+        {
+            final OpenExchanges.Start from = resume.from();
+            final List<Path> segments = resolvedFiles.values().stream()
+                    .filter(p -> parseMeta(p).shardId() == shard && parseMeta(p).segmentSequence() >= from.segment())
+                    .sorted(Comparator.comparingLong(p -> parseMeta(p).segmentSequence()))
+                    .toList();
+
+            open.acceptOnly(resume.requestIds());
+            try
+            {
+                if (!segments.isEmpty() && parseMeta(segments.getFirst()).segmentSequence() == from.segment())
+                {
+                    for (final Path path : segments)
+                    {
+                        final Checkpoint read = checkpoints.get(getStableKey(path));
+                        if (read == null)
+                        {
+                            // Never read, so nothing in it was lost.
+                            break;
+                        }
+                        if (read.offset() == QUARANTINED)
+                        {
+                            continue;
+                        }
+                        final boolean first = parseMeta(path).segmentSequence() == from.segment();
+                        replaySegment(path,
+                                first ? from.offset() : 0L,
+                                first ? from.sequence() : R7fConstants.FIRST_ENTRY_SEQUENCE,
+                                read.offset());
+                        if (read.offset() >= 0)
+                        {
+                            // The checkpoint is inside this segment: everything after it is
+                            // still to be read normally.
+                            break;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                open.acceptAll();
+            }
+
+            final long rebuilt = resume.requestIds().stream().filter(reassembler::isOpen).count();
+            final long lost = resume.requestIds().size() - rebuilt;
+            if (rebuilt > 0)
+            {
+                logger.info("Rebuilt {} exchange(s) that were open at the last checkpoint of shard {}", rebuilt, shard);
+            }
+            if (lost > 0)
+            {
+                logger.error("Could not rebuild {} exchange(s) that were open at the last checkpoint of shard {}: "
+                                + "segment {} or a later one in the replayed range is gone or unreadable. They are lost.",
+                        lost, shard, from.segment());
+            }
+        });
+    }
+
+    /**
+     * Decodes {@code path} from {@code fromOffset} up to {@code readOffset}, the tailer's
+     * checkpoint for it ({@link #FULLY_READ} and the like meaning the end of its data).
+     */
+    private void replaySegment(final Path path, final long fromOffset, final int fromSequence, final long readOffset)
+    {
+        try (final RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r");
+             final FileChannel channel = raf.getChannel())
+        {
+            final long fileSize = channel.size();
+            final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
+            buffer.order(ByteOrder.LITTLE_ENDIAN);
+            if (readOffset >= 0)
+            {
+                buffer.limit((int) Math.min(readOffset, fileSize));
+            }
+            else if (!path.toString().endsWith(ACTIVE_FILE_EXTENSION))
+            {
+                // As boundBySealedDataEnd, but silent: a bad data end was reported when the
+                // segment was first read.
+                final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+                if (fileSize >= R7fConstants.PREAMBLE_SIZE && header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) == R7fConstants.SEAL_MAGIC)
+                {
+                    final long dataEnd = header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END);
+                    if (dataEnd >= R7fConstants.PREAMBLE_SIZE && dataEnd <= fileSize)
+                    {
+                        buffer.limit((int) dataEnd);
+                    }
+                }
+            }
+            final long start = Math.max(fromOffset, R7fConstants.PREAMBLE_SIZE);
+            if (start >= buffer.limit())
+            {
+                return;
+            }
+            buffer.position((int) start);
+
+            final FileMeta meta = parseMeta(path);
+            open.enterSegment(meta.shardId(), meta.segmentSequence());
+            // Treated as active so that reaching the bound is not reported as a truncation.
+            JournalDecoder.decode(buffer, open, fromSequence, path.getFileName().toString(),
+                    JournalIntegrityListener.NOOP, true, open);
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            logger.error("Could not replay {} to rebuild open exchanges: {}", path.getFileName(), e.toString());
         }
     }
 
@@ -874,6 +1014,9 @@ public final class R7Tailer
         {
             final Properties props = new Properties();
             props.load(in);
+            final List<String> problems = new ArrayList<>();
+            pendingReplay = OpenExchanges.read(props, problems);
+            problems.forEach(problem -> logger.warn("Discarding unparsable open-exchange record {}", problem));
             props.forEach((k, v) -> {
                 final Checkpoint parsed = Checkpoint.parse((String) v);
                 if (parsed != null)
@@ -886,6 +1029,11 @@ public final class R7Tailer
                 }
             });
             logger.info("Restored {} stable checkpoints from {}", checkpoints.size(), checkpointPath.toAbsolutePath());
+            if (!pendingReplay.isEmpty())
+            {
+                logger.info("{} exchange(s) were open at the last checkpoint and will be rebuilt",
+                        pendingReplay.values().stream().mapToInt(r -> r.requestIds().size()).sum());
+            }
         }
         catch (final IOException e)
         {
@@ -895,7 +1043,11 @@ public final class R7Tailer
 
     private void saveCheckpoints()
     {
-        if (checkpoints.isEmpty())
+        // Not yet replayed is still owed: written again until the first tick has rebuilt it.
+        final Map<Integer, OpenExchanges.Resume> resumePoints = new HashMap<>(pendingReplay);
+        resumePoints.putAll(open.resumePoints());
+
+        if (checkpoints.isEmpty() && resumePoints.isEmpty())
         {
             // Returning here would leave the previous file on disk with every entry it had
             // — which is precisely the state that makes a reused segment sequence
@@ -920,6 +1072,7 @@ public final class R7Tailer
         {
             final Properties props = new Properties();
             checkpoints.forEach((k, v) -> props.setProperty(k, v.serialize()));
+            OpenExchanges.write(resumePoints, props);
 
             try (final OutputStream out = Files.newOutputStream(tempFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))
             {
