@@ -37,16 +37,17 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.journal.api.TailerProgress;
 
 public final class R7Tailer
 {
     private static final Logger logger = LoggerFactory.getLogger(R7Tailer.class);
-    private static final String CHECKPOINT_FILE = ".r7_checkpoints";
+    private static final String CHECKPOINT_FILE = TailerProgress.FILE_NAME;
 
     /**
      * Sentinel offset meaning "this segment has been read to the end".
      */
-    private static final long FULLY_READ = -1L;
+    private static final long FULLY_READ = TailerProgress.FINISHED;
 
     /**
      * Read to the end, but the reader gave up on entries it could still have decoded — a
@@ -1256,7 +1257,7 @@ public final class R7Tailer
             // caller which does reach here cannot have two files share a checkpoint.
             return "unparsed-" + path.getFileName();
         }
-        return "journal-" + meta.shardId() + "-" + meta.segmentSequence();
+        return TailerProgress.segmentKey(meta.shardId(), (long) meta.segmentSequence());
     }
 
     private void loadCheckpoints()

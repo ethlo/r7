@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.journal.api.R7fFileNaming;
+import com.ethlo.r7.journal.api.TailerProgress;
 
 /**
  * The dumbest retention policy that can work: delete sealed segments once they are older
@@ -59,10 +62,26 @@ public final class JournalReaper
     private final Path journalDir;
     private final Duration ttl;
 
+    private final List<Path> tailers;
+    private final Duration minAge;
+    private boolean warnedMissingProgress;
+
     public JournalReaper(final Path journalDir, final Duration ttl)
+    {
+        this(journalDir, ttl, List.of(), Duration.ZERO);
+    }
+
+    /**
+     * @param tailers checkpoint directories of the tailers that must all be done with a segment
+     *                before it is reaped ahead of {@code ttl}; empty for age alone
+     * @param minAge  how old a segment must be before it is reaped ahead of {@code ttl}
+     */
+    public JournalReaper(final Path journalDir, final Duration ttl, final List<Path> tailers, final Duration minAge)
     {
         this.journalDir = journalDir;
         this.ttl = ttl;
+        this.tailers = List.copyOf(tailers);
+        this.minAge = minAge;
     }
 
     /**
@@ -80,7 +99,10 @@ public final class JournalReaper
             return 0;
         }
 
-        final Instant cutoff = Instant.now().minus(ttl);
+        final Instant now = Instant.now();
+        final Instant cutoff = now.minus(ttl);
+        final Instant earlyCutoff = now.minus(minAge);
+        final List<TailerProgress> progress = readProgress();
         int deleted = 0;
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(journalDir, this::isReapable))
         {
@@ -88,12 +110,79 @@ public final class JournalReaper
             {
                 if (isExpired(path, cutoff))
                 {
-                    deleteQuietly(path);
+                    deleteQuietly(path, "older than " + ttl);
+                    deleted++;
+                }
+                else if (progress != null && isExpired(path, earlyCutoff) && allDoneWith(progress, path))
+                {
+                    deleteQuietly(path, "every tailer is done with it");
                     deleted++;
                 }
             }
         }
         return deleted;
+    }
+
+    /**
+     * Every listed tailer's progress, or {@code null} when there are none to consult or one of
+     * them cannot be read: without all of them nothing is proven, and only {@code ttl} applies.
+     */
+    private List<TailerProgress> readProgress()
+    {
+        if (tailers.isEmpty())
+        {
+            return null;
+        }
+        final List<TailerProgress> all = new ArrayList<>(tailers.size());
+        for (final Path tailer : tailers)
+        {
+            final TailerProgress progress = TailerProgress.read(tailer);
+            if (progress == null)
+            {
+                if (!warnedMissingProgress)
+                {
+                    logger.warn("No readable checkpoint file in {}; reaping by age only until there is", tailer);
+                    warnedMissingProgress = true;
+                }
+                return null;
+            }
+            all.add(progress);
+        }
+        warnedMissingProgress = false;
+        return all;
+    }
+
+    /**
+     * Only a sealed segment whose name gives its shard and sequence can be matched against a
+     * tailer's progress; a quarantined one is never "done", it waits for {@code ttl}.
+     */
+    private static boolean allDoneWith(final List<TailerProgress> progress, final Path path)
+    {
+        final String name = path.getFileName().toString();
+        if (!name.endsWith(R7fFileNaming.SEALED_FILE_EXTENSION))
+        {
+            return false;
+        }
+        final String[] parts = name.substring(0, name.length() - R7fFileNaming.SEALED_FILE_EXTENSION.length()).split("-");
+        final int shard;
+        final long sequence;
+        try
+        {
+            shard = Integer.parseInt(parts[1]);
+            sequence = Long.parseLong(parts[3]);
+        }
+        catch (final RuntimeException e)
+        {
+            return false;
+        }
+        for (final TailerProgress tailer : progress)
+        {
+            if (!tailer.isDoneWith(shard, sequence))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isReapable(final Path path)
@@ -164,12 +253,12 @@ public final class JournalReaper
         return null;
     }
 
-    private void deleteQuietly(final Path path)
+    private void deleteQuietly(final Path path, final String why)
     {
         try
         {
             Files.delete(path);
-            logger.info("Reaped {} (older than {})", path.getFileName(), ttl);
+            logger.info("Reaped {} ({})", path.getFileName(), why);
         }
         catch (final FileSystemException e)
         {

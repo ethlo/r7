@@ -1,6 +1,7 @@
 package com.ethlo.r7.reaper;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -11,23 +12,46 @@ import com.ethlo.r7.validation.ValidationResult;
  * ${VAR:default}} interpolation, human duration units) as every other component in this
  * repository.
  * <p>
- * This is deliberately the dumbest retention policy that can work: age is the only signal.
- * There is no coordination with any tailer's checkpoint - a segment is reaped once it has sat
- * on disk, sealed, for longer than {@code ttl}, whether or not every tailer sharing the
- * directory has actually read it. Set {@code ttl} well beyond the slowest tailer's realistic
- * lag (restart time included) or a slow/down tailer will lose data it never got a chance to
- * read. A future, checkpoint-aware reaper can replace this one without changing how any
- * tailer is deployed - see {@code docs/journaling.md}.
+ * A sealed segment is reaped once it is older than {@code ttl}, whether or not every tailer has
+ * read it: that is the bound on disk use, and it holds even for a tailer that is down. With
+ * {@code tailers} listed it is reaped earlier, as soon as it is {@code min_age} old and every
+ * listed tailer's checkpoint file says it is done with it (see {@code TailerProgress}). A
+ * listed tailer whose file is missing or unreadable proves nothing, so only {@code ttl} applies
+ * until it is back.
  */
 public record ReaperConfig(
         String journalDir,
         Duration ttl,
+        List<String> tailers,
+        Duration minAge,
         Duration pollInterval
 ) implements ValidatableConfig
 {
     public static ReaperConfig standard()
     {
-        return new ReaperConfig(null, null, null);
+        return new ReaperConfig(null, null, null, null, null);
+    }
+
+    /**
+     * The checkpoint directories of every tailer that must be done with a segment before it is
+     * reaped early. Empty: age is the only signal.
+     */
+    @Override
+    public List<String> tailers()
+    {
+        return Optional.ofNullable(this.tailers).orElse(List.of());
+    }
+
+    /**
+     * How old a segment must be before it is reaped early. A tailer records a segment as done
+     * once its output reached the OS, not the disk; this keeps the journal's copy until the
+     * tailers' output files have been sealed and fsync'd (their {@code max_file_age}, 15 minutes
+     * by default), so a power loss cannot take both.
+     */
+    @Override
+    public Duration minAge()
+    {
+        return Optional.ofNullable(this.minAge).orElse(Duration.ofHours(1));
     }
 
     @Override
@@ -58,6 +82,17 @@ public record ReaperConfig(
         if (!ttl().isPositive())
         {
             result.addError("ttl", "must be positive, was " + ttl());
+        }
+        if (minAge().isNegative())
+        {
+            result.addError("min_age", "must not be negative, was " + minAge());
+        }
+        for (final String tailer : tailers())
+        {
+            if (tailer == null || tailer.isBlank())
+            {
+                result.addError("tailers", "must not contain a blank entry");
+            }
         }
         if (!pollInterval().isPositive())
         {
