@@ -18,6 +18,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 import org.slf4j.Logger;
@@ -118,6 +120,49 @@ public final class R7Tailer
      * carried into every save until then so that a restart before that tick loses nothing.
      */
     private Map<Integer, OpenExchanges.Resume> pendingReplay = Map.of();
+
+    /**
+     * Mappings of active segments, kept across ticks; see {@link #map}.
+     */
+    private final Map<String, ActiveMapping> activeMappings = new HashMap<>();
+
+    /**
+     * Listing the directory is most of what an idle tick costs, and grows with every retained
+     * segment, yet in steady state it can only say what the last one said: each shard is
+     * reading its active segment. So a listing that finds exactly that leaves those segments
+     * here, and the ticks after it read them directly, until one is sealed (its seal magic is
+     * in the mapping, stamped before the writer renames it) or {@link #RELIST_INTERVAL_NANOS}
+     * has passed. {@code null} when the last listing found anything else: a shard catching
+     * up, a stall, a shard with no active segment, an open-exchange replay to run.
+     */
+    private List<Path> steadySegments;
+    private long lastListingNanos;
+
+    /**
+     * How long the steady path may go without a listing. Rotation is seen through the seal
+     * magic; this covers what is not, such as a gateway restarting with a new set of shards.
+     */
+    private static final long RELIST_INTERVAL_NANOS = Duration.ofSeconds(5).toNanos();
+
+    /**
+     * What the checkpoint file on disk holds, so an unchanged state is not written again.
+     * Rewriting it was a third of an idle tick.
+     */
+    private Map<String, Checkpoint> savedCheckpoints = Map.of();
+    private Map<Integer, OpenExchanges.Resume> savedResumePoints = Map.of();
+
+    /**
+     * While only read positions move, the checkpoint file is written at most this often, and
+     * always by {@link #shutdown()}; a change in which segments there are or what state they
+     * are in is written at once ({@link #segmentStateChanged()}).
+     * Writing it is the whole file each time, a few hundred microseconds with a realistic
+     * number of retained segments, which bounded how short a tick could usefully be. A hard
+     * kill re-delivers what completed since the last write (README.md §11.6), so this is also
+     * the bound on that window, the same as the default poll interval gave before.
+     */
+    private static final long SAVE_INTERVAL_NANOS = Duration.ofSeconds(1).toNanos();
+    private long lastSaveNanos;
+    private boolean savedOnce;
 
     public R7Tailer(final Path logDir, final ExchangeCompletionListener output)
     {
@@ -229,7 +274,10 @@ public final class R7Tailer
                 // traffic resumed. A tick boundary is a natural pause.
                 reassembler.sweep();
                 logStats();
-                saveCheckpoints();
+                if (!savedOnce || segmentStateChanged() || System.nanoTime() - lastSaveNanos >= SAVE_INTERVAL_NANOS)
+                {
+                    saveCheckpoints();
+                }
             }
 
             return totalBytesRead;
@@ -238,6 +286,16 @@ public final class R7Tailer
 
     private void runTickBody() throws IOException
     {
+        if (isSteady())
+        {
+            for (final Path path : steadySegments)
+            {
+                processFile(path);
+            }
+            return;
+        }
+        steadySegments = null;
+
         try (final Stream<Path> s = Files.list(logDir))
         {
             // Collect and deduplicate files by their stable key, which resolves an active
@@ -284,6 +342,7 @@ public final class R7Tailer
             // (a sequence regression the reader will never revisit) rather than something a
             // later tick might finish, so it must not block the shard forever.
             final Set<Integer> blockedShards = new HashSet<>();
+            final Map<Integer, Path> firstUnfinished = new TreeMap<>();
             resolvedFiles.values().stream()
                     .sorted((p1, p2) -> {
                         final FileMeta m1 = parseMeta(p1);
@@ -314,6 +373,7 @@ public final class R7Tailer
                         if (!finished && !isTerminallyUnfinished(path))
                         {
                             blockedShards.add(meta.shardId());
+                            firstUnfinished.put(meta.shardId(), path);
                         }
                     });
 
@@ -328,6 +388,24 @@ public final class R7Tailer
             final Set<String> keysOnDisk = new HashSet<>(resolvedFiles.keySet());
             keysOnDisk.addAll(setAsideKeys);
             forgetCheckpointsWithoutSegments(keysOnDisk);
+
+            final Set<Integer> shards = new HashSet<>();
+            resolvedFiles.values().forEach(p -> shards.add(parseMeta(p).shardId()));
+            final boolean steady = !firstUnfinished.isEmpty()
+                    && firstUnfinished.keySet().equals(shards)
+                    && firstUnfinished.values().stream().allMatch(p -> p.toString().endsWith(ACTIVE_FILE_EXTENSION));
+            steadySegments = steady ? List.copyOf(firstUnfinished.values()) : null;
+            lastListingNanos = System.nanoTime();
+
+            final Set<String> activeKeys = new HashSet<>();
+            resolvedFiles.forEach((key, p) ->
+            {
+                if (p.toString().endsWith(ACTIVE_FILE_EXTENSION))
+                {
+                    activeKeys.add(key);
+                }
+            });
+            activeMappings.keySet().retainAll(activeKeys);
         }
     }
 
@@ -413,6 +491,24 @@ public final class R7Tailer
         return checkpoint != null && (checkpoint.offset() == FULLY_READ_UNDELIVERED || checkpoint.offset() == QUARANTINED);
     }
 
+    private boolean isSteady()
+    {
+        if (steadySegments == null || !pendingReplay.isEmpty()
+                || System.nanoTime() - lastListingNanos >= RELIST_INTERVAL_NANOS)
+        {
+            return false;
+        }
+        for (final Path path : steadySegments)
+        {
+            final ActiveMapping mapping = activeMappings.get(getStableKey(path));
+            if (mapping == null || !mapping.path().equals(path) || mapping.isSealed())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean processFile(final Path path) throws IOException
     {
         final String key = getStableKey(path);
@@ -435,27 +531,28 @@ public final class R7Tailer
             return false;
         }
 
-        final boolean isActive = path.toString().endsWith(ACTIVE_FILE_EXTENSION);
+        // Named as the writer's: it may still be appending, and it is never ours to set aside.
+        final boolean writerOwned = path.toString().endsWith(ACTIVE_FILE_EXTENSION);
 
         // Enforce the preamble boundary so FlatBuffers never sees the manual binary header
         final long startOffset = Math.max(checkpoint.offset(), R7fConstants.PREAMBLE_SIZE);
 
-        final long fileSize;
-        try
-        {
-            fileSize = Files.size(path);
-        }
-        catch (final NoSuchFileException e)
+        final ByteBuffer mappedBuffer = map(path, key, writerOwned);
+        if (mappedBuffer == null)
         {
             return false;
         }
+        final long fileSize = mappedBuffer.capacity();
 
-        try (final RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r");
-             final FileChannel channel = raf.getChannel())
+        // The writer stamps the seal record the moment it rotates, but fsyncs and renames the
+        // segment on another thread. Until that rename lands the segment still carries its
+        // active name, and reading it as active left it "unfinished": its shard was blocked,
+        // and the next segment, where the writer already was, went unread for as long as the
+        // fsync took. The seal magic is the writer's commit of the seal record, so a segment
+        // that carries it is read as sealed, whatever its name.
+        final boolean isActive = writerOwned && !hasSealMagic(mappedBuffer);
+
         {
-            final MappedByteBuffer mappedBuffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
-            mappedBuffer.order(ByteOrder.LITTLE_ENDIAN);
-
             if (isActive && fileSize <= startOffset)
             {
                 // Nothing to read at this offset, and the writer will extend it. The only
@@ -483,7 +580,7 @@ public final class R7Tailer
             final String preambleProblem = preambleProblem(processingBuffer);
             if (preambleProblem != null)
             {
-                if (isActive)
+                if (writerOwned)
                 {
                     // An active file belongs to the writer. The warmer pre-allocates the
                     // next segment and the writer stamps its preamble only when it claims
@@ -583,14 +680,59 @@ public final class R7Tailer
 
             return isFinished;
         }
-        catch (final FileNotFoundException e)
+    }
+
+    /**
+     * Maps a segment for reading, or returns {@code null} if it is gone.
+     * <p>
+     * An active segment's mapping is kept across ticks (design/live-tailing.md): the file is
+     * the writer's pre-allocation, created at its full size and never shrunk, so one mapping
+     * covers everything the writer will put in it, and mapping it again every tick only cost
+     * a syscall pair. A sealed segment is mapped per read; it is read to the end once.
+     */
+    private ByteBuffer map(final Path path, final String key, final boolean isActive) throws IOException
+    {
+        if (isActive)
         {
-            // The segment vanished between the Files.size() check above and this open. An
-            // external reaper can delete a fully-read segment at any time now, so this window
-            // is an expected, recurring race rather than a rare hypothetical - handle it the
-            // same way as the Files.size race above: skip it for this tick and let the next
-            // tick's file listing settle whether it is really gone.
-            return false;
+            final ActiveMapping cached = activeMappings.get(key);
+            if (cached != null && cached.path().equals(path))
+            {
+                return cached.buffer().duplicate().order(ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+
+        final MappedByteBuffer mapped;
+        try (final FileChannel channel = FileChannel.open(path, StandardOpenOption.READ))
+        {
+            mapped = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+        }
+        catch (final NoSuchFileException | FileNotFoundException e)
+        {
+            // Gone between the listing and here: a reaper may delete a fully read segment at
+            // any time. The next listing settles whether it is really gone.
+            return null;
+        }
+
+        // A file shorter than its preamble is one the writer has created but not yet sized;
+        // keeping that mapping would leave it short for good.
+        if (isActive && mapped.capacity() > R7fConstants.PREAMBLE_SIZE)
+        {
+            activeMappings.put(key, new ActiveMapping(path, mapped));
+        }
+        return mapped.duplicate().order(ByteOrder.LITTLE_ENDIAN);
+    }
+
+    private static boolean hasSealMagic(final ByteBuffer segment)
+    {
+        return segment.capacity() >= R7fConstants.PREAMBLE_SIZE
+                && segment.duplicate().order(ByteOrder.BIG_ENDIAN).getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) == R7fConstants.SEAL_MAGIC;
+    }
+
+    private record ActiveMapping(Path path, MappedByteBuffer buffer)
+    {
+        boolean isSealed()
+        {
+            return hasSealMagic(buffer);
         }
     }
 
@@ -681,7 +823,7 @@ public final class R7Tailer
             {
                 buffer.limit((int) Math.min(readOffset, fileSize));
             }
-            else if (!path.toString().endsWith(ACTIVE_FILE_EXTENSION))
+            else
             {
                 // As boundBySealedDataEnd, but silent: a bad data end was reported when the
                 // segment was first read.
@@ -1029,6 +1171,7 @@ public final class R7Tailer
                 }
             });
             logger.info("Restored {} stable checkpoints from {}", checkpoints.size(), checkpointPath.toAbsolutePath());
+            rememberSaved(pendingReplay);
             if (!pendingReplay.isEmpty())
             {
                 logger.info("{} exchange(s) were open at the last checkpoint and will be rebuilt",
@@ -1046,6 +1189,10 @@ public final class R7Tailer
         // Not yet replayed is still owed: written again until the first tick has rebuilt it.
         final Map<Integer, OpenExchanges.Resume> resumePoints = new HashMap<>(pendingReplay);
         resumePoints.putAll(open.resumePoints());
+        if (checkpoints.equals(savedCheckpoints) && resumePoints.equals(savedResumePoints))
+        {
+            return;
+        }
 
         if (checkpoints.isEmpty() && resumePoints.isEmpty())
         {
@@ -1059,6 +1206,7 @@ public final class R7Tailer
             try
             {
                 Files.deleteIfExists(checkpointPath);
+                rememberSaved(resumePoints);
             }
             catch (final IOException e)
             {
@@ -1079,11 +1227,43 @@ public final class R7Tailer
                 props.store(out, "R7 Tailer Progress");
             }
             Files.move(tempFile, checkpointPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            rememberSaved(resumePoints);
         }
         catch (final IOException e)
         {
             logger.error("Save failed: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Whether something other than a read position changed since the last write: a segment
+     * appeared or was forgotten, or entered or left a state (read to the end, held back,
+     * quarantined). Those are what retention and a restart act on, and they are rare.
+     */
+    private boolean segmentStateChanged()
+    {
+        if (!checkpoints.keySet().equals(savedCheckpoints.keySet()))
+        {
+            return true;
+        }
+        for (final Map.Entry<String, Checkpoint> entry : checkpoints.entrySet())
+        {
+            final Checkpoint saved = savedCheckpoints.get(entry.getKey());
+            final long offset = entry.getValue().offset();
+            if (offset != saved.offset() && (offset < 0 || saved.offset() < 0))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void rememberSaved(final Map<Integer, OpenExchanges.Resume> resumePoints)
+    {
+        savedOnce = true;
+        lastSaveNanos = System.nanoTime();
+        savedCheckpoints = Map.copyOf(checkpoints);
+        savedResumePoints = Map.copyOf(resumePoints);
     }
 
     /**

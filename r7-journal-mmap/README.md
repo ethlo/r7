@@ -437,8 +437,9 @@ rewind, so the abandoned exchange is not offered again.
 
 ## 11.6 Restarting a tailer
 
-`R7Tailer` writes its checkpoint file at the end of every tick and on `shutdown()`. A restart,
-graceful or a hard kill, loses nothing:
+`R7Tailer` writes its checkpoint file on `shutdown()`, at once when a segment appears, is
+finished or changes state, and otherwise at most once a second while only read positions
+move. A restart, graceful or a hard kill, loses nothing:
 
 * **Exchanges still being assembled are rebuilt.** The checkpoint file records, per shard,
   where the oldest open exchange began and the request ids of every open exchange (including
@@ -447,7 +448,7 @@ graceful or a hard kill, loses nothing:
   the tailer had never stopped. Nothing that was already delivered is delivered again by
   the replay.
 * **Delivery is at least once.** Exchanges completed after the last write of the checkpoint
-  file, which after a hard kill means since the last tick, are delivered again. Consumers
+  file, which after a hard kill means within about the last second, are delivered again. Consumers
   must be idempotent, as §11.5 already requires.
 * **The replay needs the segment each open exchange began in.** If retention deleted it in
   the meantime, the exchange cannot be rebuilt: the tailer logs how many were lost, and their

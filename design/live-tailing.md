@@ -1,6 +1,6 @@
 # Live tailing: microseconds between write and read
 
-Status: proposal, not started.
+Status: step 1 done; steps 2–4 proposed.
 
 ## The question
 
@@ -83,6 +83,30 @@ from being live.
 - The hot-path addition is one release store per commit (and, with the doorbell, one load).
   That has to show up as nothing in `RequestPathCostTest` and in `perf stat` instructions per
   request before it ships.
+
+## Step 1: measured
+
+`TailerTickBenchmarkTest` (opt-in, `-Dr7.bench=true`): two shards, 200+ retained sealed
+segments, one tailer. Before and after:
+
+| | idle tick | tick with one new exchange per shard |
+| --- | --- | --- |
+| before | ~300 µs | ~500 µs |
+| after | ~13 µs | ~60 µs |
+
+Where the idle tick went: listing and resolving the directory (~150 µs, growing with retained
+segments), walking every segment and mapping the active ones again (~60 µs), and rewriting an unchanged checkpoint
+file (~90 µs, and ~200 µs when it had changed). So step 1 became three changes: active
+segments stay mapped; while every shard is reading its active segment the listing is skipped
+until a seal magic shows up in one of those mappings (or 5 s pass); and the checkpoint file is
+written only when it changed, at once for a change in segment state and at most once a second
+while only read positions move.
+
+It also found a delay at every rotation. The writer stamps the seal record at once but fsyncs
+and renames the segment on another thread; until the rename landed the tailer read the
+still-active-named segment as active, called it unfinished, and blocked its shard, so the new
+segment went unread for as long as the fsync took. A segment carrying the seal magic is now
+read as sealed whatever its name.
 
 ## Order
 
