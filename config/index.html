@@ -3932,7 +3932,7 @@
 <tr>
 <td><code>pre_fault</code></td>
 <td>Boolean</td>
-<td>When <code>true</code>, pre-allocates and forces the OS to fault the memory-mapped pages immediately, trading startup time for reduced runtime latency. Defaults to <code>false</code>. It charges every warmed segment to memory at once (about 6 × <code>shard_size</code> per shard), and under a container memory limit it lowered throughput; see <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
+<td>When <code>true</code>, the warmer touches every page of each segment before the writer gets it. Defaults to <code>false</code>, and best left so: on Linux 5.14 and later r7 already faults pages in a few MB ahead of the writer (fault-ahead), which was faster in every measurement and costs a fraction of the memory. <code>pre_fault</code> charges every warmed segment to memory at once (about 6 × <code>shard_size</code> per shard) and disables fault-ahead. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>journal_security</code></td>

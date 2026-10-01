@@ -649,6 +649,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#what-r7-does-about-it-fault-ahead" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What r7 does about it: fault-ahead
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-settings" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -846,6 +857,19 @@ Two things do:</p>
 <p>How much a stall costs depends on how many writers are waiting. Undertow writes from a small,
 fixed set of threads (one I/O thread per core by default). A thread-per-connection server can
 have a writer for every open connection, all queued on the same shard.</p>
+<h3 id="what-r7-does-about-it-fault-ahead">What r7 does about it: fault-ahead</h3>
+<p>On Linux 5.14 and later, r7 handles page faults without any configuration. A background thread
+per shard keeps the next 8 MB past the write position faulted in, using
+<code>madvise(MADV_POPULATE_WRITE)</code>, so writers almost never fault. That costs about 8 MB of memory
+per shard beyond what has been written, and nothing up front. The call prepares pages without
+writing to them, so it never touches journal data.</p>
+<p>Fault-ahead switches itself off where it can't work: on other operating systems, on older
+kernels, or when <code>pre_fault</code> is on. Writers then fault as before. It uses the JDK's native
+interface, which the gateway jars allow in their manifest (<code>Enable-Native-Access</code>). If you start
+r7 some other way than <code>java -jar</code>, add <code>--enable-native-access=ALL-UNNAMED</code> (already part of
+the recommended JVM flags), or the JVM prints a warning.</p>
+<p>Fault-ahead does nothing about writeback throttling, which depends on the disk and on how
+quickly a tailer consumes sealed segments.</p>
 <h3 id="the-settings">The settings</h3>
 <table>
 <thead>
@@ -863,7 +887,7 @@ have a writer for every open connection, all queued on the same shard.</p>
 </tr>
 <tr>
 <td><code>storage.pre_fault</code></td>
-<td>Touches each segment's pages while warming it, off the request path, so writes never fault.</td>
+<td>Touches each segment's pages while warming it, off the request path. With fault-ahead available, it was slower than leaving it off in every case measured. Use it only where fault-ahead is not available.</td>
 <td>Each shard's warmed segments are charged to memory at once: the active segment plus 4 queued plus 1 being warmed. That is about 1.2 GB per shard at the default <code>shard_size</code> of 200 MB. They also take real disk space immediately rather than as written.</td>
 </tr>
 <tr>
@@ -879,8 +903,8 @@ have a writer for every open connection, all queued on the same shard.</p>
 </tbody>
 </table>
 <h3 id="what-they-did-measured">What they did, measured</h3>
-<p>On tmpfs, which removes disk writeback and isolates the writer lock. <code>HEADERS</code> journaling,
-header-heavy workload, 200 connections at saturation:</p>
+<p><code>HEADERS</code> journaling, header-heavy workload, 200 connections at saturation. On tmpfs, which
+removes disk writeback and isolates the writer lock:</p>
 <table>
 <thead>
 <tr>
@@ -891,14 +915,9 @@ header-heavy workload, 200 connections at saturation:</p>
 </thead>
 <tbody>
 <tr>
-<td>defaults (1 shard)</td>
+<td>1 shard, without fault-ahead (before r7 had it)</td>
 <td>64k req/s, p99 14 ms</td>
 <td>41k req/s, p99 20 ms</td>
-</tr>
-<tr>
-<td>4 shards</td>
-<td>81k req/s, p99 12 ms</td>
-<td>81k req/s, p99 22 ms</td>
 </tr>
 <tr>
 <td>1 shard, <code>pre_fault: true</code></td>
@@ -906,18 +925,21 @@ header-heavy workload, 200 connections at saturation:</p>
 <td>93k req/s, p99 55 ms</td>
 </tr>
 <tr>
-<td>4 shards, <code>pre_fault: true</code></td>
-<td>88k req/s, p99 12 ms</td>
-<td>95k req/s, p99 17 ms</td>
+<td><strong>1 shard (the defaults, with fault-ahead)</strong></td>
+<td><strong>94k req/s, p99 11 ms</strong></td>
+<td><strong>98k req/s, p99 50 ms</strong></td>
+</tr>
+<tr>
+<td>4 shards</td>
+<td>89k req/s, p99 12 ms</td>
+<td>96k req/s, p99 24 ms</td>
 </tr>
 </tbody>
 </table>
-<p>On a local disk with spare memory, <code>pre_fault: true</code> raised throughput by 15–25% on both
-servers.</p>
-<p><strong>In a container with a memory limit (<code>-m 8g</code>), <code>pre_fault</code> did the opposite.</strong> Throughput fell
-30–40% compared with leaving it off: the journal's page cache fills the container's limit within
-seconds at full load either way, and the pre-faulted pages crowd out what the kernel can
-reclaim. Measured with cgroup v2 <code>memory.stat</code>, journals on a disk volume:</p>
+<p>On a local disk, one shard: without fault-ahead, 67k (Undertow) and 63k (Helidon) req/s. With
+<code>pre_fault</code>, 80k and 77k. With fault-ahead, 82k and 84k.</p>
+<p>Under a container memory limit (<code>-m 8g</code>), journals on a disk volume, with cgroup v2
+<code>memory.stat</code>:</p>
 <table>
 <thead>
 <tr>
@@ -929,7 +951,7 @@ reclaim. Measured with cgroup v2 <code>memory.stat</code>, journals on a disk vo
 </thead>
 <tbody>
 <tr>
-<td>1 shard</td>
+<td>1 shard, without fault-ahead</td>
 <td>~190 MB</td>
 <td>~340 MB</td>
 <td>48k req/s</td>
@@ -941,35 +963,41 @@ reclaim. Measured with cgroup v2 <code>memory.stat</code>, journals on a disk vo
 <td>34k req/s</td>
 </tr>
 <tr>
-<td>4 shards</td>
-<td>~180 MB</td>
-<td>~340 MB</td>
-<td>48k req/s</td>
-</tr>
-<tr>
 <td>4 shards, <code>pre_fault: true</code></td>
 <td>~5.0 GB</td>
 <td>~5.3 GB</td>
 <td>30k req/s</td>
 </tr>
+<tr>
+<td><strong>1 shard (the defaults, with fault-ahead)</strong></td>
+<td><strong>~190 MB</strong></td>
+<td><strong>~330 MB</strong></td>
+<td><strong>54k req/s</strong></td>
+</tr>
+<tr>
+<td>4 shards</td>
+<td>~220 MB</td>
+<td>~380 MB</td>
+<td>52k req/s</td>
+</tr>
 </tbody>
 </table>
+<p>In the container, the journal's page cache fills the memory limit within seconds at full load,
+and reclaiming it, not the writers' lock, sets the pace. That is why every setting is slower
+there than on the host. <code>pre_fault</code> makes it worse, because the pages it maps up front are the
+ones the kernel can least easily reclaim.</p>
 <h3 id="recommendations">Recommendations</h3>
-<p><strong>In a container or anywhere memory is limited (the common case):</strong></p>
 <ul>
-<li><strong>Leave <code>pre_fault</code> off.</strong> Its memory is charged up front, and under a limit it costs more
-  than it saves.</li>
-<li><strong>Set <code>shard_count: 4</code> when running a thread-per-connection server, or many concurrent
-  connections.</strong> Without <code>pre_fault</code>, extra shards cost no memory.</li>
-<li><strong>Give the container headroom for page cache, not just heap.</strong> The journal is written through
+<li><strong>Leave <code>pre_fault</code> off.</strong> Fault-ahead does its job at a fraction of the memory. Turn it on
+  only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
+  spare and outside a memory-limited container.</li>
+<li><strong>Set <code>shard_count: 4</code> for a thread-per-connection server, or many concurrent connections.</strong>
+  Throughput is already level at one shard. More shards halve the experimental Helidon
+  gateway's p99, by spreading its many writers. Without <code>pre_fault</code>, extra shards cost no
+  memory.</li>
+<li><strong>Give a container headroom for page cache, not just heap.</strong> The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.</li>
-</ul>
-<p><strong>On a host or VM with memory to spare:</strong></p>
-<ul>
-<li><strong><code>pre_fault: true</code> with <code>shard_count: 4</code></strong> gave the best throughput and tail of any setting
-  measured. Budget about 6 × <code>shard_size</code> × <code>shard_count</code> of memory and disk for it: about
-  4.8 GB at the defaults. Lower <code>shard_size</code> to shrink that.</li>
 </ul>
 <p><strong>Never put journals on tmpfs</strong> (<code>emptyDir: {medium: Memory}</code>, <code>--tmpfs</code>, <code>/dev/shm</code>) unless
 something deletes sealed segments as fast as they are written. tmpfs pages cannot be reclaimed
