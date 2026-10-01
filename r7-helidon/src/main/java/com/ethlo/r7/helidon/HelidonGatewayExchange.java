@@ -14,6 +14,8 @@ import com.ethlo.r7.server.blocking.WireHeaders;
 import com.ethlo.r7.upstream.RequestBodyTooLargeException;
 import io.helidon.http.Header;
 import io.helidon.http.HeaderNames;
+import io.helidon.http.Headers;
+import io.helidon.http.HttpPrologue;
 import io.helidon.http.RequestException;
 import io.helidon.webserver.http.ServerRequest;
 import io.helidon.webserver.http.ServerResponse;
@@ -30,8 +32,8 @@ final class HelidonGatewayExchange extends BlockingServerExchange
     HelidonGatewayExchange(final GatewayPipeline pipeline, final ServerRequest req, final ServerResponse res)
     {
         // Not UriPath.path(): Helidon resolves dot segments there, and the guard must see them.
-        super(pipeline, protocolOf(req), req.prologue().method().text(),
-                req.prologue().uriPath().rawPath(), req.prologue().query().rawValue(), headersOf(req));
+        super(pipeline, protocolOf(req.prologue()), req.prologue().method().text(),
+                req.prologue().uriPath().rawPath(), req.prologue().query().rawValue(), headersOf(req.headers()));
         this.req = req;
         this.res = res;
     }
@@ -39,16 +41,16 @@ final class HelidonGatewayExchange extends BlockingServerExchange
     /**
      * "HTTP/1.1" or "HTTP/2.0", without building a string for the common case.
      */
-    private static String protocolOf(final ServerRequest req)
+    static String protocolOf(final HttpPrologue prologue)
     {
-        final String version = req.prologue().protocolVersion();
-        return "1.1".equals(version) ? "HTTP/1.1" : req.prologue().protocol() + '/' + version;
+        final String version = prologue.protocolVersion();
+        return "1.1".equals(version) ? "HTTP/1.1" : prologue.protocol() + '/' + version;
     }
 
-    private static WireHeaders headersOf(final ServerRequest req)
+    static WireHeaders headersOf(final Headers wire)
     {
         final WireHeaders headers = new WireHeaders();
-        for (final Header header : req.headers())
+        for (final Header header : wire)
         {
             final String name = header.name();
             for (final String value : header.allValues())

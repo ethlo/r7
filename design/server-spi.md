@@ -210,8 +210,8 @@ its own change.
 6. **Helidon Níma spike.** Done, as `r7-helidon` (experimental): `R7Helidon` on Helidon 27.0.0
    with `HttpUpstream`, a blocking HTTP/1.1 client of its own (round-robin targets, per-target
    keep-alive pools, Content-Length and chunked bodies both ways, X-Forwarded-* as Undertow
-   writes them) that names no Helidon type. Not yet: management port, static content,
-   WebSocket tunnelling, https upstreams, retries. Helidon pairs its releases with Java's:
+   writes them) that names no Helidon type. Not yet at the time: management port, static content,
+   WebSocket tunnelling, https upstreams, retries - all since done (design/upstream.md). Helidon pairs its releases with Java's:
    4.5.x is the LTS line for Java 25, 27 is compiled for Java 27 (class file version 71) and 29
    will be the next LTS. `r7-helidon` builds on 4.5.x by default, released for 25 like every
    other module - the floor `r7-journal-mmap`'s use of the FFM API sets - and `-Phelidon-27`

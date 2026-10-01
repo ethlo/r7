@@ -144,7 +144,7 @@ the servlet host need them too, which is why they come before Undertow depends o
 | Gap | Today on Undertow | Plan |
 |---|---|---|
 | https upstreams | `UndertowXnioSsl` | Done: `SSLSocket` from the JDK's default `SSLContext`, SNI and hostname verification on. |
-| WebSocket / 101 | `ProxyHandler` tunnels | After a 101, hand both sockets to two virtual threads copying bytes until either side closes. The server adapter exposes the client connection's raw streams. |
+| WebSocket / 101 | `ProxyHandler` tunnels | Done on Níma and the servlet host: after a 101 the relay hands the upstream connection to a `Tunnel`, which copies bytes both ways on two threads until either side closes. Not on Undertow with `r7` (see "WebSocket", below). |
 | Pool limits and queueing | `connections_per_thread`, `max_queue_size` | A per-target semaphore, with waiters bounded by `max_queue_size`; beyond it, 503. |
 | `ttl` | idle-connection TTL | Idle connections carry their release time and are closed on acquire when older than `ttl`. |
 | `max_request_time` | whole-exchange deadline | A deadline checked between reads, plus the socket timeout set to the time remaining. |
@@ -378,7 +378,7 @@ check.
    So Undertow keeps its own client by default. Sharing one client with Undertow now means the
    non-blocking transport (the fallback under "The decision"), not a flag flip.
 
-5. **Close the gaps.** Done except WebSocket (below). `HttpUpstreamClientTest`:
+5. **Close the gaps.** Done; WebSocket under "Helidon parity", below. `HttpUpstreamClientTest`:
    - a target that refuses the connection is skipped for the next, once per target up;
    - `max_request_time` bounds the whole exchange, pool wait included: one daemon thread
      sweeps a registry of in-flight connections every 250 ms and closes the overdue ones,
@@ -515,5 +515,37 @@ later. Meanwhile Níma gains what it lacks, one PR each:
 - **Container image.** Done: `Dockerfile.helidon.jvm`, the same distroless Java 25 image,
   user, journal volume and environment as the Undertow image, so it drops in for it; built by CI
   as `r7-gateway-helidon`, locally by `build-helidon.sh`.
-- **WebSocket** last. HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
+- **WebSocket.** Done. A 101 from the upstream is relayed with `Upgrade` and `Connection`
+  (hop-by-hop, so set for the client's hop, not copied) and the handshake headers, and the
+  upstream connection becomes a `Tunnel` (r7-upstream): untracked from `max_request_time`, its
+  pool slot released - it is no longer a request - and its read timeout lifted. Bytes are copied
+  uninterpreted, client to upstream on the server's thread and back on a virtual thread, and
+  either side ending ends both: after the closing handshake the server side closes TCP first
+  (RFC 6455 §7.1.1), and a tunnel that waited for a half-close to complete would hold a thread
+  and two sockets for a peer that never closes. The upstream's first frames can arrive in the
+  same read as its 101, so the tunnel reads through the head's buffer. A 101 for a request that
+  did not ask to upgrade is refused with 502, and its bytes never reach the client.
+
+  The server has to give up the client connection, which neither does from a routed handler.
+  On Níma, `WebSocketUpgrader` is an `Http1Upgrader` for `websocket` - the public SPI Helidon's
+  own WebSocket module uses - registered by r7 rather than found on the class path; it takes the
+  handshake before routing and runs the whole exchange over the raw connection
+  (`UpgradeExchange`), so a handshake that is not switched is answered with
+  `Connection: close`. Helidon routes an upgrade with a body normally, and matches the Upgrade
+  value exactly; those requests reach the ordinary handler, which cannot switch, and a 101 for
+  them is answered 502. On a servlet container it is `HttpServletRequest.upgrade`, with the
+  tunnel started from `HttpUpgradeHandler.init` on a thread of its own. Tomcat's
+  `WebConnection.close()` only marks the streams closed and closes the socket on the next event
+  it dispatches, which a blocking stream never asks for: a client waiting for the server to close
+  after the closing handshake would wait for the connection timeout. Setting a write listener
+  makes Tomcat dispatch a write event at once, and closing the output from it closes the socket.
+
+  The journal's end of the exchange and the active-WebSocket gauge wait for the tunnel to end,
+  as they wait for the connection to close on Undertow; the bytes tunnelled count as the
+  exchange's body bytes. `WebSocketKit` (r7-server test-jar, six cases) holds Níma, the servlet
+  host and Undertow's own client to the same behaviour; Undertow refuses an unasked 101 with 503
+  rather than 502. Undertow with `proxy.client: r7` still answers a 101 with 502: its client
+  connection would need the same bridge as the relay's body copies.
+
+HTTP/3 is out: none of the servers, and not the JDK, has an HTTP/3 server.
 

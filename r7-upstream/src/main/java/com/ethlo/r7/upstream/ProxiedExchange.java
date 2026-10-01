@@ -93,6 +93,26 @@ public interface ProxiedExchange
     void abortResponse();
 
     /**
+     * Whether this server can hand the client connection over to a {@link Tunnel}. Asked before
+     * anything of a 101 is committed, so that a server that cannot answers 502 instead.
+     */
+    default boolean canUpgrade()
+    {
+        return false;
+    }
+
+    /**
+     * Commits the 101 the relay has set on {@link #clientResponse()} and takes over the tunnel:
+     * the server {@link Tunnel#run}s it with the client connection's raw streams once it has
+     * them, or {@link Tunnel#close}s it if it never gets them. Only called when
+     * {@link #canUpgrade()} is true.
+     */
+    default void upgrade(final Tunnel tunnel) throws IOException
+    {
+        throw new UnsupportedOperationException("This server does not tunnel upgraded connections");
+    }
+
+    /**
      * Called with each block of response body, before it is written to the client.
      */
     default void onResponseBody(final byte[] buffer, final int offset, final int length)

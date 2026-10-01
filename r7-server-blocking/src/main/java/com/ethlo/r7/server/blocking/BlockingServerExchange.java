@@ -11,6 +11,7 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import com.ethlo.r7.api.GatewayHeaders;
@@ -32,6 +33,7 @@ import com.ethlo.r7.upstream.HttpUpstream;
 import com.ethlo.r7.upstream.ProxiedExchange;
 import com.ethlo.r7.upstream.ProxyFailure;
 import com.ethlo.r7.upstream.RequestBodyTooLargeException;
+import com.ethlo.r7.upstream.Tunnel;
 import com.ethlo.r7.upstream.UpstreamRelay;
 import com.ethlo.r7.util.ImmutableGatewayRequest;
 import com.ethlo.r7.util.ImmutableGatewayResponse;
@@ -51,6 +53,12 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  * A server supplies the parsed request to the constructor and implements the few methods that
  * touch its own request and response objects; error answers, byte counts and the journal tees
  * live here, once, and the upstream exchange itself in the relay.
+ * <p>
+ * A WebSocket handshake the upstream accepts becomes a {@link Tunnel}: {@link #upgrade} commits
+ * the 101 through {@link #switchProtocols}, and once {@link BlockingGateway#handle} has returned
+ * the server passes the client connection to {@link #runTunnel} - or, if it never gets it, calls
+ * {@link #abandonTunnel}. Either one ends the exchange for the journal and the metrics, which
+ * wait for the connection to close as they do on Undertow.
  */
 public abstract class BlockingServerExchange extends ServerExchange implements TrafficMetrics, ProxiedExchange
 {
@@ -76,6 +84,9 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private Consumer<ByteBuffer> responseTee;
     private long requestBodyLimit = Long.MAX_VALUE;
     private String attempted;
+    private Tunnel tunnel;
+    private Runnable[] closeListeners;
+    private final AtomicBoolean connectionClosed = new AtomicBoolean();
 
     private long requestBodyBytes;
     private long responseHeaderBytes;
@@ -153,6 +164,25 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
      * become an error response.
      */
     protected abstract boolean isResponseStarted();
+
+    /**
+     * Whether this server can hand over the client connection after a 101; false by default,
+     * and the relay then answers 502 rather than commit a switch nothing can carry.
+     */
+    protected boolean canSwitchProtocols()
+    {
+        return false;
+    }
+
+    /**
+     * Sends the 101 head, its headers already on the response, and arranges for the client
+     * connection to reach {@link #runTunnel} once the handler has returned. Only called when
+     * {@link #canSwitchProtocols()} is true.
+     */
+    protected void switchProtocols(final GatewayHeaders headers) throws IOException
+    {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * The scheme the client used, for X-Forwarded-Proto when no trusted proxy set one.
@@ -407,7 +437,118 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     public void onConnectionClose(final Runnable listener)
     {
-        // Only called for an upgraded websocket, which is not proxied here yet.
+        // Registered at commit, on the request's thread, for an upgraded WebSocket only: by the
+        // pipeline for the journal's end of the exchange, and by the metrics filter.
+        if (this.closeListeners == null)
+        {
+            this.closeListeners = new Runnable[]{listener};
+        }
+        else
+        {
+            this.closeListeners = java.util.Arrays.copyOf(this.closeListeners, this.closeListeners.length + 1);
+            this.closeListeners[this.closeListeners.length - 1] = listener;
+        }
+    }
+
+    /**
+     * Whether the handler switched the client connection to a tunnel, which the server must now
+     * {@link #runTunnel run} or {@link #abandonTunnel abandon}.
+     */
+    public final boolean switchedProtocols()
+    {
+        return this.tunnel != null;
+    }
+
+    /**
+     * Runs the tunnel over the client connection until either side closes, then ends the
+     * exchange. The bytes tunnelled each way count as the exchange's body bytes, as the journal's
+     * end of the exchange reports them. Call after {@link BlockingGateway#handle} has returned:
+     * the journal's entries for the handshake are written there, and its end must follow them.
+     */
+    public final void runTunnel(final Tunnel.Client client)
+    {
+        try
+        {
+            this.tunnel.run(new CountingClient(client));
+        }
+        finally
+        {
+            connectionClosed();
+        }
+    }
+
+    /**
+     * For a server that will not get the client connection after all (it failed, or is stopping):
+     * releases the upstream connection and ends the exchange. Safe to call after
+     * {@link #runTunnel}, from any thread; only the first of the two ends the exchange.
+     */
+    public final void abandonTunnel()
+    {
+        try
+        {
+            this.tunnel.close();
+        }
+        finally
+        {
+            connectionClosed();
+        }
+    }
+
+    /**
+     * The tunnel, for a server that has to close it from outside or report its idle time.
+     */
+    protected final Tunnel tunnel()
+    {
+        return this.tunnel;
+    }
+
+    private void connectionClosed()
+    {
+        if (this.connectionClosed.compareAndSet(false, true) && this.closeListeners != null)
+        {
+            for (final Runnable listener : this.closeListeners)
+            {
+                listener.run();
+            }
+        }
+    }
+
+    /**
+     * Counts what goes through the tunnel. Each counter is written by one direction's thread only,
+     * and read once {@link Tunnel#run} has joined both.
+     */
+    private final class CountingClient implements Tunnel.Client
+    {
+        private final Tunnel.Client client;
+
+        CountingClient(final Tunnel.Client client)
+        {
+            this.client = client;
+        }
+
+        @Override
+        public int read(final byte[] buffer, final int offset, final int length) throws IOException
+        {
+            final int n = this.client.read(buffer, offset, length);
+            if (n > 0)
+            {
+                requestBodyBytes += n;
+            }
+            return n;
+        }
+
+        @Override
+        public void write(final byte[] buffer, final int offset, final int length) throws IOException
+        {
+            this.client.write(buffer, offset, length);
+            responseBodyBytes += length;
+        }
+
+        @Override
+        public void close()
+        {
+            this.client.close();
+        }
     }
 
     @Override
@@ -551,6 +692,35 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         if (this.responseTee != null)
         {
             this.responseTee.accept(ByteBuffer.wrap(buffer, offset, length).asReadOnlyBuffer());
+        }
+    }
+
+    @Override
+    public boolean canUpgrade()
+    {
+        // Over HTTP/2 a WebSocket is bootstrapped differently (RFC 8441), and Upgrade is not
+        // even allowed; a 101 for such a request has no connection to switch.
+        return parsedAsHttp1() && canSwitchProtocols() && !this.headWritten && !isResponseStarted();
+    }
+
+    @Override
+    public void upgrade(final Tunnel tunnel) throws IOException
+    {
+        // The pipeline's commit work first: it sees the 101, marks the exchange an upgraded
+        // WebSocket and registers what must run when the connection closes.
+        commit();
+        this.headWritten = true;
+        this.tunnel = tunnel;
+        try
+        {
+            switchProtocols(clientResponse().headers());
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            // Some of the 101 may be out, or the status set where the server will send it; no
+            // error answer can follow, so the connection is dropped.
+            this.aborted = true;
+            throw e;
         }
     }
 

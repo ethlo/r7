@@ -11,6 +11,7 @@ import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.blocking.BlockingServerExchange;
 import com.ethlo.r7.server.blocking.WireHeaders;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -81,6 +82,28 @@ final class ServletGatewayExchange extends BlockingServerExchange
         this.resp.setStatus(status);
         // Added, not set: a name that repeats (Set-Cookie above all) must keep every line.
         headers.forEach(this.resp, HttpServletResponse::addHeader);
+    }
+
+    @Override
+    protected boolean canSwitchProtocols()
+    {
+        return true;
+    }
+
+    @Override
+    protected void switchProtocols(final GatewayHeaders headers) throws IOException
+    {
+        writeHead(101, headers);
+        // The container sends the 101 and upgrades the connection once service() has returned;
+        // the handler then gets the connection (TunnelHandler.init).
+        try
+        {
+            this.req.upgrade(TunnelHandler.class).exchange(this);
+        }
+        catch (final ServletException e)
+        {
+            throw new IOException("The container refused the upgrade", e);
+        }
     }
 
     @Override

@@ -102,7 +102,20 @@ public class R7GatewayServlet extends HttpServlet
     @Override
     protected void service(final HttpServletRequest req, final HttpServletResponse resp)
     {
-        this.gateway.handle(new ServletGatewayExchange(this.gateway.pipeline(), req, resp));
+        final ServletGatewayExchange exchange = new ServletGatewayExchange(this.gateway.pipeline(), req, resp);
+        try
+        {
+            this.gateway.handle(exchange);
+        }
+        catch (final RuntimeException e)
+        {
+            // A switch the handler failed after: the container will not upgrade the connection.
+            if (exchange.switchedProtocols())
+            {
+                exchange.abandonTunnel();
+            }
+            throw e;
+        }
     }
 
     @Override

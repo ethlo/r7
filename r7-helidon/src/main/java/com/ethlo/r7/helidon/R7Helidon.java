@@ -14,7 +14,6 @@ import org.slf4j.bridge.SLF4JBridgeHandler;
 
 import com.ethlo.r7.logging.LogbackConfiguration;
 import com.ethlo.r7.server.blocking.BlockingGateway;
-import com.ethlo.r7.server.blocking.ListenerStatistics;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.status.ManagementEndpoint;
 import io.helidon.http.HeaderNames;
@@ -22,9 +21,11 @@ import io.helidon.http.Status;
 import io.helidon.webserver.ProtocolConfigs;
 import io.helidon.webserver.WebServer;
 import io.helidon.webserver.http1.Http1Config;
-import io.helidon.webserver.http1.Http1ConnectionProvider;
+import io.helidon.webserver.http1.Http1ConnectionSelector;
+import io.helidon.webserver.http1.Http1ConnectionSelectorConfig;
 import io.helidon.webserver.http2.Http2Config;
 import io.helidon.webserver.http2.Http2ConnectionProvider;
+import io.helidon.webserver.http2.Http2UpgradeProvider;
 import io.helidon.webserver.spi.ProtocolConfig;
 import io.helidon.webserver.spi.ServerConnectionSelector;
 import io.helidon.webserver.http.ServerRequest;
@@ -33,8 +34,8 @@ import io.helidon.webserver.http.ServerResponse;
 /**
  * EXPERIMENTAL: r7 on Helidon's Níma web server. The same configuration files, routes, filters,
  * journal and pipeline as the Undertow build; a different HTTP server and upstream client
- * underneath, and the management port with the same dashboard. Not yet included: WebSocket
- * proxying (design/server-spi.md, step 6).
+ * underneath, and the management port with the same dashboard. WebSocket handshakes are taken
+ * off Helidon's routing by {@link WebSocketUpgrader} and tunnelled once the upstream switches.
  */
 public final class R7Helidon
 {
@@ -80,7 +81,7 @@ public final class R7Helidon
                 .port(core.port())
                 .protocolsDiscoverServices(false)
                 .protocols(protocols)
-                .connectionSelectors(countingSelectors(protocols, gateway.statistics()))
+                .connectionSelectors(countingSelectors(protocols, gateway))
                 // Refused as the body arrives, before r7 sees the request; BlockingGateway holds a
                 // server without this setting (a servlet container) to the same limit.
                 .maxPayloadSize(limits.maxEntitySize().bytes())
@@ -110,7 +111,7 @@ public final class R7Helidon
      * The data plane's protocol selectors, built as Helidon would build them from these protocols
      * and wrapped to count the connections each accepts (CountingSelector).
      */
-    private static List<ServerConnectionSelector> countingSelectors(final List<ProtocolConfig> protocols, final ListenerStatistics statistics)
+    private static List<ServerConnectionSelector> countingSelectors(final List<ProtocolConfig> protocols, final BlockingGateway gateway)
     {
         final ProtocolConfigs configs = ProtocolConfigs.create(protocols);
         final List<ServerConnectionSelector> selectors = new ArrayList<>();
@@ -118,13 +119,33 @@ public final class R7Helidon
         {
             final ServerConnectionSelector selector = switch (protocol)
             {
-                case Http1Config http1 -> new Http1ConnectionProvider().create(DATA_SOCKET, http1, configs);
+                case Http1Config http1 -> http1Selector(http1, protocols, configs, gateway);
                 case Http2Config http2 -> new Http2ConnectionProvider().create(DATA_SOCKET, http2, configs);
                 default -> throw new IllegalStateException("No selector for " + protocol.type());
             };
-            selectors.add(new CountingSelector(selector, statistics));
+            selectors.add(new CountingSelector(selector, gateway.statistics()));
         }
         return selectors;
+    }
+
+    /**
+     * HTTP/1.1 with its upgraders named here rather than found on the class path, as
+     * Http1ConnectionProvider would: WebSocket always, h2c only when HTTP/2 is configured.
+     */
+    private static ServerConnectionSelector http1Selector(final Http1Config http1, final List<ProtocolConfig> protocols, final ProtocolConfigs configs,
+                                                          final BlockingGateway gateway)
+    {
+        final Http1ConnectionSelectorConfig.Builder builder = Http1ConnectionSelector.builder()
+                .config(http1)
+                .addUpgrader(new WebSocketUpgrader(gateway));
+        for (final ProtocolConfig protocol : protocols)
+        {
+            if (protocol instanceof Http2Config http2)
+            {
+                builder.addUpgrader(new Http2UpgradeProvider().create(http2, configs));
+            }
+        }
+        return builder.build();
     }
 
 

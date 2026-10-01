@@ -211,6 +211,25 @@ public final class ScriptedUpstream implements AutoCloseable
             return request;
         }
 
+        /**
+         * The connection's raw input, for a script that leaves HTTP behind (a tunnel); nothing
+         * of it is buffered by the other primitives.
+         */
+        public InputStream in()
+        {
+            return this.in;
+        }
+
+        public OutputStream out()
+        {
+            return this.out;
+        }
+
+        public Socket socket()
+        {
+            return this.socket;
+        }
+
         public void write(final String bytes) throws IOException
         {
             this.out.write(bytes.getBytes(StandardCharsets.ISO_8859_1));
