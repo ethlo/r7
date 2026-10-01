@@ -284,11 +284,94 @@ class JournalIntegrityTest
         content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
         Files.write(sealed, content.array());
 
-        final CollectingSink sink = tail();
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
+        tailer.runTick();
+
+        assertThat(sink.quarantined).as("reported once, not on every tick. sink: %s", sink).hasSize(1);
+        assertThat(sink.completed).isEmpty();
+        assertThat(Files.readAllBytes(sealed)).as("left in place, byte for byte").isEqualTo(content.array());
+        assertThat(quarantinedFiles()).as("the journal directory is not the tailer's to rename in").isEmpty();
+    }
+
+    /**
+     * A tailer gets the journal directory read-only: it belongs to the gateway, and retention
+     * to the reaper. Quarantine used to be a rename, which failed there on every tick, so the
+     * unreadable segment was reported again and again and never set aside. The verdict is now
+     * kept in the tailer's own checkpoint file, so it needs no write access to the journal.
+     */
+    @Test
+    void quarantineNeedsNoWriteAccessToTheJournalDirectory(@TempDir final Path checkpointDir) throws IOException
+    {
+        Assumptions.assumeTrue(journalDir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+
+        final Path sealed = journalDir.resolve("shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION);
+        final ByteBuffer content = ByteBuffer.allocate(R7fConstants.PREAMBLE_SIZE + 64).order(ByteOrder.BIG_ENDIAN);
+        content.putInt(R7fConstants.PREAMBLE_OFF_MAGIC, R7fConstants.MAGIC);
+        content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
+        Files.write(sealed, content.array());
+
+        final Set<PosixFilePermission> original = Files.getPosixFilePermissions(journalDir);
+        Files.setPosixFilePermissions(journalDir, PosixFilePermissions.fromString("r-xr-xr-x"));
+        try
+        {
+            Assumptions.assumeFalse(Files.isWritable(journalDir), "running as a user that ignores directory permissions");
+
+            final CollectingSink sink = new CollectingSink();
+            final ReassemblyOptions options = ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1));
+            final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, sink, sink, options);
+            tailer.runTick();
+            tailer.runTick();
+            assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+
+            // The verdict survives a restart: a new process does not report it again.
+            final CollectingSink afterRestart = new CollectingSink();
+            new R7Tailer(journalDir, checkpointDir, afterRestart, afterRestart, options).runTick();
+            assertThat(afterRestart.quarantined).as("sink: %s", afterRestart).isEmpty();
+        }
+        finally
+        {
+            Files.setPosixFilePermissions(journalDir, original);
+        }
+        assertThat(Files.exists(sealed)).isTrue();
+    }
+
+    /**
+     * Quarantine is this tailer's verdict on a file, not a property of the file. A newer
+     * build that reads the format, or an operator replacing the file, must not need the
+     * checkpoint file edited before the segment is read; and a segment set aside must not hold
+     * up the segments after it in its shard, as the rename it replaces never did.
+     */
+    @Test
+    void aQuarantinedSegmentIsReadOnceItBecomesReadableAndNeverBlocksItsShard() throws IOException
+    {
+        writeExchanges(3);
+        final Path good = onlySealedSegment();
+        final byte[] goodBytes = Files.readAllBytes(good);
+
+        // Sequence 0 sorts ahead of the real segment in shard 0.
+        final Path unreadable = journalDir.resolve("shard-0-1700000000000-0-1-2" + R7fConstants.R7F_FILE_EXTENSION);
+        final ByteBuffer content = ByteBuffer.allocate(R7fConstants.PREAMBLE_SIZE + 64).order(ByteOrder.BIG_ENDIAN);
+        content.putInt(R7fConstants.PREAMBLE_OFF_MAGIC, R7fConstants.MAGIC);
+        content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
+        Files.write(unreadable, content.array());
+
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
 
         assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
-        assertThat(Files.exists(sealed)).as("must not be left in place to be rescanned").isFalse();
-        assertThat(quarantinedFiles()).hasSize(1);
+        assertThat(sink.completed).as("the next segment in the shard is still read. sink: %s", sink).hasSize(3);
+
+        // The real segment moves under the quarantined segment's key: readable now.
+        Files.delete(good);
+        Files.write(unreadable, goodBytes);
+        final CollectingSink afterFix = new CollectingSink();
+        new R7Tailer(journalDir, afterFix, afterFix, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(afterFix.quarantined).as("sink: %s", afterFix).isEmpty();
+        assertThat(afterFix.completed).as("read from the start once readable. sink: %s", afterFix).hasSize(3);
     }
 
     /**
@@ -1300,7 +1383,8 @@ class JournalIntegrityTest
      * so order is correctness, not presentation. Unparsable names were all given the same
      * {@code (-1, -1)}, which sorted them equal to each other and ahead of every real shard —
      * leaving the actual order to whatever {@code Files.list} returned, which is unspecified.
-     * Quarantine keeps the bytes and says why; a rename puts the file back in the stream.
+     * Quarantine leaves the bytes where they are and says why; a rename puts the file back in
+     * the stream.
      */
     @Test
     void aSegmentWithAnUnreadableNameIsSetAsideRatherThanReplayedOutOfOrder() throws IOException
@@ -1314,15 +1398,17 @@ class JournalIntegrityTest
         Files.move(sealed, restored);
 
         final CollectingSink sink = new CollectingSink();
-        new R7Tailer(journalDir, sink, sink,
-                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
+        tailer.runTick();
 
-        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(sink.quarantined).as("reported once, not on every tick. sink: %s", sink).hasSize(1);
         assertThat(sink.completed)
                 .as("its records must not be replayed at an arbitrary position. sink: %s", sink)
                 .isEmpty();
-        assertThat(Files.exists(restored)).as("and the original must not be left to be rescanned").isFalse();
-        assertThat(quarantinedFiles()).as("the bytes are kept, under a name a reader ignores").hasSize(1);
+        assertThat(Files.exists(restored)).as("the bytes are kept where they are").isTrue();
+        assertThat(quarantinedFiles()).isEmpty();
     }
 
     /**

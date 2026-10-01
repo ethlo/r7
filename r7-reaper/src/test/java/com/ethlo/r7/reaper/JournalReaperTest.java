@@ -98,7 +98,7 @@ class JournalReaperTest
     @Test
     void reapsRepeatedlyQuarantinedSegmentsWithANumericSuffix() throws IOException
     {
-        // R7Tailer.nonCollidingQuarantinePath appends ".<n>" rather than overwrite an
+        // R7fRecoveryManager.nonCollidingQuarantinePath appends ".<n>" rather than overwrite an
         // existing quarantine of the same name (recovery partially succeeding twice, or an
         // operator restoring an old copy) - these numbered files must be just as reapable as
         // a plain ".corrupt" one, or they accumulate forever.

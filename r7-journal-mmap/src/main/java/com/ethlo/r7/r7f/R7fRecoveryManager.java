@@ -494,9 +494,34 @@ public final class R7fRecoveryManager
         return new ScanResult(lastValidPosition, recordCount, missingRecords, expectedSequence - 1, stoppedOnRegression);
     }
 
+    /**
+     * A {@code .corrupt} name that is not already taken. A repeated quarantine of the same
+     * segment — recovery partially succeeding twice, or an operator having restored a copy
+     * — must not overwrite what is already set aside.
+     */
+    static Path nonCollidingQuarantinePath(final Path path)
+    {
+        final Path first = path.resolveSibling(path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION);
+        if (!Files.exists(first))
+        {
+            return first;
+        }
+        for (int n = 2; n < 1000; n++)
+        {
+            final Path candidate = path.resolveSibling(
+                    path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION + "." + n);
+            if (!Files.exists(candidate))
+            {
+                return candidate;
+            }
+        }
+        // Give up distinguishing rather than loop: the move will fail and be logged.
+        return first;
+    }
+
     private static void quarantine(final Path file, final String reason, final JournalIntegrityListener integrity)
     {
-        final Path target = R7Tailer.nonCollidingQuarantinePath(file);
+        final Path target = nonCollidingQuarantinePath(file);
         try
         {
             // No REPLACE_EXISTING: quarantine preserves what could not be proven good, so it
