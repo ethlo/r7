@@ -67,7 +67,7 @@ public final class BlockingGateway implements AutoCloseable
         JournalFiles.createDirectories(workDir);
         R7fRecoveryManager.cleanAndRecover(workDir);
         this.journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
-                new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault())));
+                new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault(), storage.journalCompressionLevel())));
 
         final MetricsRegistry metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
         final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(

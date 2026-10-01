@@ -387,7 +387,7 @@ public final class R7fRecoveryManager
         }
 
         final short codec = segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC);
-        if (codec != R7fConstants.CODEC_NONE)
+        if (!R7fConstants.isKnownCodec(codec))
         {
             throw new UnreadableSegmentException("unsupported codec " + codec);
         }
@@ -416,7 +416,8 @@ public final class R7fRecoveryManager
     private static ScanResult scan(final MemorySegment segment, final long size, final int blockSize,
                                    final Path file, final JournalIntegrityListener integrity)
     {
-        final FragmentReader reader = new FragmentReader(segment.asByteBuffer(), size, blockSize);
+        final FragmentReader reader = new FragmentReader(segment.asByteBuffer(), size, blockSize,
+                segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC));
 
         long position = R7fConstants.PREAMBLE_SIZE;
         long lastValidPosition = R7fConstants.PREAMBLE_SIZE;

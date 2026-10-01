@@ -126,7 +126,8 @@ public final class JournalDecoder
             throw new IllegalArgumentException("Segment " + sourceName + " declares an invalid block size of "
                     + blockSize + " bytes; it is not a version " + R7fConstants.CURRENT_VERSION + " segment");
         }
-        final FragmentReader reader = new FragmentReader(buffer, buffer.limit(), blockSize);
+        final short codec = buffer.duplicate().order(ByteOrder.BIG_ENDIAN).getShort(R7fConstants.PREAMBLE_OFF_CODEC);
+        final FragmentReader reader = new FragmentReader(buffer, buffer.limit(), blockSize, codec);
         final int limit = buffer.limit();
 
         // Everything the consumer throws comes back wrapped, so that a consumer failure and
@@ -179,12 +180,18 @@ public final class JournalDecoder
 
                 if (status == FragmentReader.Status.END)
                 {
-                    if (startPos < limit && damageStart < 0)
+                    // entryStart, not startPos: the reader may have stepped over padding first
+                    if (reader.entryStart() < limit && damageStart < 0)
                     {
                         // Bytes before the declared end that cannot hold even a fragment. A
                         // writer never ends a segment that way, so something was cut short.
                         damageStart = startPos;
                         damageReason = "truncated entry at the end of a sealed segment";
+                    }
+                    else if (reader.entryStart() >= limit)
+                    {
+                        // Only padding was left: consumed, so the caller sees the segment finished
+                        buffer.position(limit);
                     }
                     break;
                 }

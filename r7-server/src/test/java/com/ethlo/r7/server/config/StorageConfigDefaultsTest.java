@@ -13,13 +13,13 @@ class StorageConfigDefaultsTest
         assumeTrue(System.getenv(ServerConfig.StorageConfig.WORK_DIR_ENVIRONMENT_VARIABLE) == null,
                 "R7_JOURNAL_DIR is set in this environment");
 
-        assertThat(new ServerConfig.StorageConfig(null, null, null, null, null).workDir()).isEqualTo("journals");
+        assertThat(new ServerConfig.StorageConfig(null, null, null, null, null, null, null).workDir()).isEqualTo("journals");
         assertThat(ServerConfig.standard().storage().workDir()).isEqualTo("journals");
     }
 
     @Test
     void anExplicitWorkDirWins()
     {
-        assertThat(new ServerConfig.StorageConfig("/data/r7", null, null, null, null).workDir()).isEqualTo("/data/r7");
+        assertThat(new ServerConfig.StorageConfig("/data/r7", null, null, null, null, null, null).workDir()).isEqualTo("/data/r7");
     }
 }

@@ -698,7 +698,7 @@ public final class R7Tailer
         }
 
         final short codec = header.getShort(R7fConstants.PREAMBLE_OFF_CODEC);
-        if (codec != R7fConstants.CODEC_NONE)
+        if (!R7fConstants.isKnownCodec(codec))
         {
             return "unsupported codec " + codec;
         }

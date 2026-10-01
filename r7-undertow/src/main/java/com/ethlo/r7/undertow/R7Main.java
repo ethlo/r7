@@ -93,7 +93,7 @@ public final class R7Main
 
         this.journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
         {
-            final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault());
+            final R7fJournalProvider provider = new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault(), storage.journalCompressionLevel());
             return new R7fJournal(provider);
         }
         );
