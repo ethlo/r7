@@ -123,7 +123,7 @@ That beats `pre_fault` everywhere, without its memory.
 - **Helidon's tail at one shard.** p99 stays around 50 ms against Undertow's 11 ms; 4 shards
   bring it to 24 ms. What remains is the monitor's unfair handoff among 200 writers. Copying
   outside the monitor (claim the slot under it, copy after) would shorten the hold further. The
-  magic-as-commit rule (`FORMAT.md` §5) still holds there, because a reader stops at the first
+  magic-as-commit rule (`FORMAT.md` §5.1) still holds there, because a reader stops at the first
   zero magic, but rotation and the seal record need care; see `design/journal-invariants.md`.
 - **Default `shard_count`: decided, 2.** With fault-ahead, one shard keeps up on throughput,
   and 4 halved Helidon's tail. 2 was chosen as the balance between the two: half the writers per

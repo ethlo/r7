@@ -129,8 +129,9 @@ variable with no default fails validation. Header matching is case-insensitive t
 This is the most intricate part of the system and it has its own written specifications. Read
 them before changing anything in `r7-journal-mmap` or `ShardedJournalWriter`/`StatefulJournal`:
 
-- `r7-journal-mmap/FORMAT.md` — the r7f on-disk format: 1024-byte preamble, big-endian framing,
-  seal record, `RETAIN` flag, `.flux` → `.r7f` lifecycle. Payloads are FlatBuffers
+- `r7-journal-mmap/FORMAT.md` — the r7f on-disk format (version 2): 1024-byte preamble, 32 KB
+  blocks holding big-endian, CRC-checked fragments, seal record, `RETAIN` flag, `.flux` → `.r7f`
+  lifecycle. `design/journal-format-v2.md` records why the format is shaped this way. Payloads are FlatBuffers
   (little-endian) per `src/main/flatbuffers/journal.fbs`.
 - `r7-journal-mmap/README.md` — write-path semantics, no-fsync durability model, backpressure,
   and `ExchangeReassembler`/`ReassemblyOptions` tuning and consumer-callback contract.
@@ -144,8 +145,14 @@ them before changing anything in `r7-journal-mmap` or `ShardedJournalWriter`/`St
 
 The rules most easily broken by a well-intentioned local fix:
 
-- **The magic is the commit.** Entry magic and seal magic are written *last*, behind a
+- **The magic is the commit.** An entry's magic (on its FULL or FIRST fragment; a split
+  entry's continuations are written before it) and the seal magic are written *last*, behind a
   store-store fence. Zero where a magic belongs means "no committed entry".
+- **Never scan for a magic.** After damage a reader resumes only at a block boundary, the one
+  place guaranteed to hold a header the writer put there. Reading payload as framing is how a
+  request body could forge entries (`FORMAT.md` §6.1). Block arithmetic lives in `R7fFraming`
+  and fragment parsing in `FragmentReader`, shared by writer, decoder and recovery; do not
+  re-derive either.
 - **A reader must either advance or prove end-of-data**, on every exit path including the loop
   condition; and it must never advance without delivering. A consumer that throws is *refusing*
   the record — rewind and stall, do not skip. Counters increment after the callback, not before.
