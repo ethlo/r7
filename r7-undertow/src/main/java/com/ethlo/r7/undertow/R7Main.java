@@ -1,11 +1,9 @@
 package com.ethlo.r7.undertow;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,9 +16,6 @@ import org.xnio.Xnio;
 import org.xnio.XnioWorker;
 
 import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.joran.JoranConfigurator;
-import ch.qos.logback.core.joran.spi.JoranException;
-import ch.qos.logback.core.util.StatusPrinter2;
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayErrorHandler;
@@ -29,6 +24,7 @@ import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.core.StandardErrorHandler;
+import com.ethlo.r7.logging.LogbackConfiguration;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.r7f.JournalFiles;
 import com.ethlo.r7.r7f.R7fJournal;
@@ -204,55 +200,12 @@ public final class R7Main
 
     private static void setupLogging()
     {
-        final LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
-        try (final InputStream configStream = getLoggerConfigStream())
-        {
-            final JoranConfigurator configurator = new JoranConfigurator();
-            configurator.setContext(context);
+        final LoggerContext context = LogbackConfiguration.configure();
 
-            // This clears all existing configuration
-            context.reset();
-
-            // Load the user's XML configuration
-            configurator.doConfigure(configStream);
-
-            // Inject the telemetry appender after XML is loaded so it is not reset
-            final ParserRejectionAppender appender = new ParserRejectionAppender();
-            appender.setContext(context);
-            appender.start();
-        }
-        catch (final JoranException | IOException je)
-        {
-            System.err.println("FATAL: Logback failed to configure from XML: " + je.getMessage());
-        } finally
-        {
-            new StatusPrinter2().printInCaseOfErrorsOrWarnings(context);
-        }
-    }
-
-    private static InputStream getLoggerConfigStream()
-    {
-        final String logbackConfigPath = System.getenv().getOrDefault("R7_LOGBACK_CONFIG", "config/logback.xml");
-        final Path configFilePath = Paths.get(logbackConfigPath).toAbsolutePath();
-        if (Files.exists(configFilePath) && Files.isRegularFile(configFilePath))
-        {
-            try
-            {
-                return Files.newInputStream(configFilePath, StandardOpenOption.READ);
-            }
-            catch (IOException e)
-            {
-                System.err.println("FATAL: Logback failed to read from config file: " + e.getMessage());
-            }
-        }
-
-        final InputStream defaultConfig = R7Main.class.getResourceAsStream("/default-logback.xml");
-        if (defaultConfig == null)
-        {
-            throw new IllegalStateException("FATAL: Unable to load classpath:/default-logback.xml");
-        }
-
-        return defaultConfig;
+        // Added after configuring, which resets the context
+        final ParserRejectionAppender appender = new ParserRejectionAppender();
+        appender.setContext(context);
+        appender.start();
     }
 
     private XnioWorker createSharedWorker(final ServerConfig config) throws IOException

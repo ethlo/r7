@@ -28,6 +28,16 @@
             <artifactId>r7-journal-mmap</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
+        <!--
+            Optional: LogbackConfiguration is for servers that own the process and bring logback
+            themselves; a servlet container brings its own logging.
+        -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <optional>true</optional>
+        </dependency>
 
         <!-- TEST -->
         <dependency>
@@ -40,12 +50,6 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>6.1.3</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
