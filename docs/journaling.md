@@ -208,9 +208,11 @@ journal volume.
     `ttl`, whether every tailer sharing the directory has read it or not. Set `ttl` comfortably
     longer than the slowest tailer's realistic lag — including time to recover from a restart —
     or a slow or temporarily-down tailer will lose data it never got a chance to read. A
-    quarantined segment (`*.corrupt`, see `docs/journaling.md`'s tailer sections and
+    segment the gateway's recovery quarantined (`*.corrupt`, see
     `design/journal-invariants.md`) is reaped under the same `ttl`, since nothing will ever read
-    it. Active (`.flux`) segments are never reaped, at any age — they belong exclusively to the
+    it. A segment a *tailer* cannot read keeps its name: the tailer records that in its own
+    checkpoint file and logs it, because the journal directory is read-only to it, and the
+    file is reaped like any other sealed segment. Active (`.flux`) segments are never reaped, at any age — they belong exclusively to the
     gateway process that may still be writing to them.
 
     Age is read from the timestamp embedded in the segment's own filename, never from the

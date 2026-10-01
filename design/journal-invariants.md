@@ -151,11 +151,19 @@ A name this parser cannot read therefore has no position in the stream at all, a
 quarantined rather than replayed at a guess — the writer cannot produce such a name, so it only
 happens when someone puts a file there by hand.
 
+**A reader quarantines in its own state, not in the journal.** The gateway's recovery renames
+what it cannot read to `.corrupt`; it owns the directory. A tailer does not, and gets it
+read-only, so its quarantine is a checkpoint marker: the file stays where it is, is reported
+once, and is re-checked every tick so a newer reader or a replaced file is picked up. A
+quarantined segment never blocks its shard, exactly as the rename it replaced did not.
+
 *Checked by* `JournalInvariants.assertSegmentKeysAreUnique`,
 `segmentSequencesDoNotCollideAcrossRestart`,
 `segmentSequenceDoesNotRestartAfterEverySegmentIsDeleted`,
 `entriesLostAtTheStartOfASegmentAreReported` and
-`aSegmentWithAnUnreadableNameIsSetAsideRatherThanReplayedOutOfOrder`.
+`aSegmentWithAnUnreadableNameIsSetAsideRatherThanReplayedOutOfOrder`,
+`quarantineNeedsNoWriteAccessToTheJournalDirectory` and
+`aQuarantinedSegmentIsReadOnceItBecomesReadableAndNeverBlocksItsShard`.
 
 ## 4. Destroying data requires proof, and every claim is about bytes that were really there
 

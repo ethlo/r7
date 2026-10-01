@@ -55,6 +55,19 @@ public final class R7Tailer
      */
     private static final long FULLY_READ_UNDELIVERED = -2L;
 
+    /**
+     * Set aside: a sealed segment this tailer cannot read (a foreign file, an unsupported
+     * format version or codec) or a file whose name gives it no place in the stream.
+     * <p>
+     * Recorded here rather than by renaming the file, because the journal directory belongs to
+     * the gateway and is mounted read-only into a tailer: the rename failed on every tick, and
+     * the file was neither read nor set aside, only reported again. It is also the tailer's own
+     * verdict, and another tailer (a newer build that reads the version this one does not) may
+     * well read the same file. Reported once, when first recorded; re-checked every tick, so a
+     * tailer upgrade or a replaced file is picked up without editing the checkpoint file.
+     */
+    private static final long QUARANTINED = -3L;
+
     private final Map<String, Checkpoint> checkpoints = new HashMap<>();
 
     /**
@@ -218,13 +231,14 @@ public final class R7Tailer
             // Collect and deduplicate files by their stable key, which resolves an active
             // file and the sealed file it rotates into to the same segment.
             final Map<String, Path> resolvedFiles = new HashMap<>();
+            final Set<String> setAsideKeys = new HashSet<>();
 
             s.filter(p -> {
                         final String name = p.getFileName().toString();
                         return name.endsWith(R7F_FILE_EXTENSION) ||
                                 name.endsWith(ACTIVE_FILE_EXTENSION);
                     })
-                    .filter(this::hasReadableIdentity)
+                    .filter(p -> hasReadableIdentity(p, setAsideKeys))
                     .forEach(path -> {
                         final String key = getStableKey(path);
                         final Path existing = resolvedFiles.get(key);
@@ -294,7 +308,9 @@ public final class R7Tailer
             // those entries. They are not merely a leak: a checkpoint outliving its segment
             // is what lets a reused (shard, sequence) resume a brand-new segment at a dead
             // one's offset.
-            forgetCheckpointsWithoutSegments(resolvedFiles.keySet());
+            final Set<String> keysOnDisk = new HashSet<>(resolvedFiles.keySet());
+            keysOnDisk.addAll(setAsideKeys);
+            forgetCheckpointsWithoutSegments(keysOnDisk);
         }
     }
 
@@ -311,17 +327,17 @@ public final class R7Tailer
      * {@link Files#list} happened to return. That is unspecified, so the outcome varied by
      * filesystem.
      * <p>
-     * The writer cannot produce such a name — sealing preserves the stem, and quarantining
-     * moves the file out of the tailer's filter entirely — so this only happens when someone
-     * puts a file here by hand, usually restoring one. Quarantine says so and keeps the
-     * contents; a rename puts it back in the stream. Guessing at the order and replaying it
+     * The writer cannot produce such a name — sealing preserves the stem, and the gateway's
+     * recovery quarantine moves the file out of the tailer's filter entirely — so this only
+     * happens when someone puts a file here by hand, usually restoring one. Quarantine says so
+     * and leaves the contents alone; a rename puts it back in the stream. Guessing at the order and replaying it
      * would risk assembling records that never happened, and an audit log may not do that
      * even once.
      * <p>
      * An active file is left alone whatever its name: it may belong to a writer, and renaming
      * a file a writer has mapped would leave rotation unable to seal it.
      */
-    private boolean hasReadableIdentity(final Path path)
+    private boolean hasReadableIdentity(final Path path, final Set<String> setAsideKeys)
     {
         if (parseMeta(path).segmentSequence() >= 0)
         {
@@ -334,7 +350,9 @@ public final class R7Tailer
             return false;
         }
 
-        quarantine(path, "the file name carries no shard and sequence, so the segment has no "
+        final String key = getStableKey(path);
+        setAsideKeys.add(key);
+        quarantine(path, key, "the file name carries no shard and sequence, so the segment has no "
                 + "position in the stream and cannot be replayed in order");
         return false;
     }
@@ -366,7 +384,8 @@ public final class R7Tailer
      * {@code FULLY_READ_UNDELIVERED} means the reader already read to the end and decided,
      * once, to keep entries back (a sequence regression) - nothing about that changes on a
      * later tick, so it must not be allowed to block every later segment in the shard
-     * forever. Anything else that did not finish - an active segment still being written, a
+     * forever. {@code QUARANTINED} is the same: a segment this tailer cannot read used to be
+     * renamed out of the listing, and recording it instead must not turn it into a block. Anything else that did not finish - an active segment still being written, a
      * corrupt entry left for the segment to be sealed, a delivery stall awaiting a retry, or
      * simply a segment that vanished mid-check - may still finish on its own, and the shard
      * must not be advanced past it in the meantime.
@@ -374,13 +393,17 @@ public final class R7Tailer
     private boolean isTerminallyUnfinished(final Path path)
     {
         final Checkpoint checkpoint = checkpoints.get(getStableKey(path));
-        return checkpoint != null && checkpoint.offset() == FULLY_READ_UNDELIVERED;
+        return checkpoint != null && (checkpoint.offset() == FULLY_READ_UNDELIVERED || checkpoint.offset() == QUARANTINED);
     }
 
     private boolean processFile(final Path path) throws IOException
     {
         final String key = getStableKey(path);
-        final Checkpoint checkpoint = checkpoints.getOrDefault(key, Checkpoint.START);
+        final Checkpoint recorded = checkpoints.getOrDefault(key, Checkpoint.START);
+        final boolean wasQuarantined = recorded.offset() == QUARANTINED;
+        // A quarantined segment is re-checked from the start: if it is readable now, nothing
+        // of it was ever delivered.
+        final Checkpoint checkpoint = wasQuarantined ? Checkpoint.START : recorded;
 
         // Sentinel check: the file has been read to the end, so do not map it again.
         if (checkpoint.offset() == FULLY_READ)
@@ -457,9 +480,14 @@ public final class R7Tailer
                 // A sealed file is nobody's to write any more. Without this
                 // check it would be decoded as whatever its bytes happened to look like,
                 // and then checkpointed as "processed" for a reaper to act on.
-                quarantine(path, preambleProblem);
-                checkpoints.remove(key);
+                quarantine(path, key, preambleProblem);
                 return false;
+            }
+
+            if (wasQuarantined)
+            {
+                logger.info("Segment {} was quarantined by this tailer but is readable now; reading it", path.getFileName());
+                checkpoints.put(key, Checkpoint.START);
             }
 
             if (!isActive)
@@ -714,23 +742,18 @@ public final class R7Tailer
 
     /**
      * Sets aside a file the tailer cannot read, rather than decoding its bytes as whatever
-     * they resemble and then checkpointing it as processed.
+     * they resemble and then checkpointing it as processed. The file is left where it is
+     * (see {@link #QUARANTINED}); retention stays with whatever owns the journal directory.
      */
-    private void quarantine(final Path path, final String reason)
+    private void quarantine(final Path path, final String key, final String reason)
     {
-        final Path target = nonCollidingQuarantinePath(path);
-        try
+        final Checkpoint previous = checkpoints.put(key, new Checkpoint(QUARANTINED, JournalDecoder.UNKNOWN_SEQUENCE));
+        if (previous != null && previous.offset() == QUARANTINED)
         {
-            // No REPLACE_EXISTING: quarantine exists to preserve what could not be proven
-            // good, so it must never be the thing that destroys an earlier copy.
-            Files.move(path, target, StandardCopyOption.ATOMIC_MOVE);
-            integrity.onSegmentQuarantined(path.getFileName().toString(), reason);
-            logger.error("Quarantined unreadable segment {} as {}: {}", path.getFileName(), target.getFileName(), reason);
+            return;
         }
-        catch (final IOException e)
-        {
-            logger.error("Unable to quarantine unreadable segment {}", path.getFileName(), e);
-        }
+        logger.error("Quarantined unreadable segment {}: {}. It is left in place and not read by this tailer.", path.getFileName(), reason);
+        integrity.onSegmentQuarantined(path.getFileName().toString(), reason);
     }
 
     private void logStats()
@@ -771,7 +794,6 @@ public final class R7Tailer
     {
         return totalCorruptEntries;
     }
-
 
     /**
      * Parses a segment file name.
@@ -827,31 +849,6 @@ public final class R7Tailer
      * monotonic segment sequence are the two fields that never change, so the checkpoint
      * survives the rename.
      */
-    /**
-     * A {@code .corrupt} name that is not already taken. A repeated quarantine of the same
-     * segment — recovery partially succeeding twice, or an operator having restored a copy
-     * — must not overwrite what is already set aside.
-     */
-    static Path nonCollidingQuarantinePath(final Path path)
-    {
-        final Path first = path.resolveSibling(path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION);
-        if (!Files.exists(first))
-        {
-            return first;
-        }
-        for (int n = 2; n < 1000; n++)
-        {
-            final Path candidate = path.resolveSibling(
-                    path.getFileName() + R7fConstants.CORRUPT_FILE_EXTENSION + "." + n);
-            if (!Files.exists(candidate))
-            {
-                return candidate;
-            }
-        }
-        // Give up distinguishing rather than loop: the move will fail and be logged.
-        return first;
-    }
-
     private String getStableKey(final Path path)
     {
         final FileMeta meta = parseMeta(path);

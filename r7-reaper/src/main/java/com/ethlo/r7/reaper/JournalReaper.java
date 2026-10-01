@@ -46,7 +46,7 @@ public final class JournalReaper
     private static final Logger logger = LoggerFactory.getLogger(JournalReaper.class);
 
     /**
-     * Matches the {@code .corrupt} suffix {@code R7Tailer.nonCollidingQuarantinePath} appends,
+     * Matches the {@code .corrupt} suffix {@code R7fRecoveryManager.nonCollidingQuarantinePath} appends,
      * including the {@code .corrupt.<n>} shape it falls back to when an earlier quarantine of
      * the same name already exists (recovery partially succeeding twice, or an operator
      * restoring an old copy). A plain {@code name.endsWith(".corrupt")} check misses that
