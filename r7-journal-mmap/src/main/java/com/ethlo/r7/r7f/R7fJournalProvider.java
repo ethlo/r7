@@ -594,20 +594,45 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
     }
 
     /**
-     * Whether zstd's JNI library loads here. It is a native library extracted at runtime, so a
-     * platform it was not built for, or a native image without its metadata, can refuse it; an
-     * audit journal written uncompressed beats a gateway that will not start.
+     * Whether zstd works here, proven by doing what the journal does with it: a streamed,
+     * flushed compression and its decompression.
+     * <p>
+     * Loading the library is not proof. zstd-jni binds through FFM on JDK 22 and later, and a
+     * native image without those downcalls registered loads the library fine and then fails
+     * on first use — with an {@link Error}, inside a request, so every journaled request
+     * failed closed with a 500. Anything that goes wrong here goes wrong at startup instead,
+     * and an audit journal written uncompressed beats a gateway that cannot serve.
      */
     private static boolean zstdAvailable(final int shardId)
     {
         try
         {
-            com.github.luben.zstd.util.Native.load();
-            return true;
+            final byte[] sample = "r7 journal compression probe".getBytes(StandardCharsets.ISO_8859_1);
+            final ByteBuffer plain = ByteBuffer.allocateDirect(sample.length).put(sample).flip();
+            final ByteBuffer packed = ByteBuffer.allocateDirect(1024);
+            try (com.github.luben.zstd.ZstdCompressCtx compressor = new com.github.luben.zstd.ZstdCompressCtx().setLevel(MIN_COMPRESSION_LEVEL);
+                 com.github.luben.zstd.ZstdDecompressCtx decompressor = new com.github.luben.zstd.ZstdDecompressCtx())
+            {
+                while (!compressor.compressDirectByteBufferStream(packed, plain, com.github.luben.zstd.EndDirective.FLUSH))
+                {
+                    // until flushed
+                }
+                packed.flip();
+                final ByteBuffer restored = ByteBuffer.allocateDirect(sample.length * 2);
+                decompressor.decompressDirectByteBufferStream(restored, packed);
+                restored.flip();
+                final byte[] back = new byte[restored.remaining()];
+                restored.get(back);
+                if (java.util.Arrays.equals(sample, back))
+                {
+                    return true;
+                }
+                throw new IllegalStateException("zstd round trip returned different bytes");
+            }
         }
         catch (final Throwable e)
         {
-            log.warn("Shard {}: zstd is not available on this platform ({}); writing the journal uncompressed",
+            log.warn("Shard {}: zstd does not work on this platform ({}); writing the journal uncompressed",
                     shardId, e.toString());
             return false;
         }
