@@ -5,8 +5,12 @@ import java.util.regex.Pattern;
 
 public final class EnvInterpolator
 {
-    // Matches ${VAR_NAME} or ${VAR_NAME:default_value}
-    private static final Pattern ENV_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
+    // Matches ${VAR_NAME} or ${VAR_NAME:default_value}, and the escape $${...}. The escape exists
+    // because ${...} is also syntax elsewhere in a config value: TemplateRedirect's target names a
+    // capture group as ${name}. Without it such a value is read as a variable and either fails
+    // validation as "missing" or, worse, silently takes the value of a variable that happens to
+    // share the group's name.
+    private static final Pattern ENV_PATTERN = Pattern.compile("(\\$?)\\$\\{([^}]+)}");
 
     private EnvInterpolator()
     {
@@ -25,7 +29,14 @@ public final class EnvInterpolator
 
         while (matcher.find())
         {
-            final String group = matcher.group(1);
+            if (!matcher.group(1).isEmpty())
+            {
+                // $${...} is the literal text ${...}
+                matcher.appendReplacement(sb, Matcher.quoteReplacement("${" + matcher.group(2) + "}"));
+                continue;
+            }
+
+            final String group = matcher.group(2);
             final int separatorIndex = group.indexOf(':');
             final String envName;
             final String defaultValue;
