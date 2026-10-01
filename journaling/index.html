@@ -1060,7 +1060,7 @@ by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 <tr>
 <td><code>output_dir</code></td>
 <td><code>/warc</code></td>
-<td>Directory rotated <code>.warc.zst</code> files are written to</td>
+<td>Directory rotated <code>.warc.zst</code> files are written to. A file is written as <code>.warc.zst.open</code> and renamed once finished; one left <code>.open</code> by a crash is cut back to its last complete record and sealed on the next start</td>
 </tr>
 <tr>
 <td><code>file_prefix</code></td>
