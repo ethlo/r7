@@ -12,9 +12,9 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
- * Durations that R7Main and R7UndertowHandler hand to Undertow/XNIO as int milliseconds. Past
- * that range the conversion throws (or, for a plain cast, silently wraps), so validation has to
- * refuse the value first and say which field to change.
+ * Durations that the server and the upstream client take as int milliseconds. Past that range the
+ * conversion throws (or, for a plain cast, silently wraps), so validation has to refuse the value
+ * first and say which field to change.
  */
 class DurationLimitsValidationTest
 {
@@ -24,41 +24,43 @@ class DurationLimitsValidationTest
     @Test
     void proxyMaxRequestTime()
     {
-        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, AT_LIMIT, null, null))).isEmpty();
-        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, BEYOND_LIMIT, null, null), "max_request_time");
+        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, AT_LIMIT, null))).isEmpty();
+        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, BEYOND_LIMIT, null), "max_request_time");
     }
 
     @Test
     void proxyTtl()
     {
-        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, AT_LIMIT, null))).isEmpty();
-        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, null, BEYOND_LIMIT, null), "ttl");
+        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, AT_LIMIT))).isEmpty();
+        assertRefusedNaming(new ServerConfig.ProxyConfig(null, null, null, BEYOND_LIMIT), "ttl");
     }
 
     @Test
     void proxyTtlOfMinusOneStillMeansNoLimit()
     {
-        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, Duration.ofMillis(-1), null))).isEmpty();
+        assertThat(errorsFor(new ServerConfig.ProxyConfig(null, null, null, Duration.ofMillis(-1)))).isEmpty();
     }
 
     @Test
     void httpRequestParseTimeout()
     {
-        assertThat(errorsFor(new ServerConfig.HttpConfig(null, AT_LIMIT, null))).isEmpty();
-        assertRefusedNaming(new ServerConfig.HttpConfig(null, BEYOND_LIMIT, null), "request_parse_timeout");
+        assertThat(errorsFor(new ServerConfig.HttpConfig(null, AT_LIMIT))).isEmpty();
+        assertRefusedNaming(new ServerConfig.HttpConfig(null, BEYOND_LIMIT), "request_parse_timeout");
     }
 
     @Test
-    void advancedSocketReadTimeout()
+    void serverIdleTimeout()
     {
-        assertThat(errorsFor(new ServerConfig.AdvancedConfig(null, null, null, null, null, null, null, AT_LIMIT))).isEmpty();
-        assertRefusedNaming(new ServerConfig.AdvancedConfig(null, null, null, null, null, null, null, BEYOND_LIMIT), "socket_read_timeout");
+        assertThat(errorsFor(new ServerConfig.ServerCoreConfig(null, null, null, AT_LIMIT, null))).isEmpty();
+        assertThat(errorsFor(new ServerConfig.ServerCoreConfig(null, null, null, BEYOND_LIMIT, null))).singleElement().asString()
+                .contains("idle_timeout")
+                .contains(ValidatorUtils.MAX_INT_MILLIS.toString());
     }
 
     @Test
     void theErrorIsReportedUnderTheFullPathFromTheServerConfigRoot()
     {
-        final ServerConfig config = new ServerConfig(null, null, null, new ServerConfig.ProxyConfig(null, null, null, Duration.ofDays(30), null), null, null, null);
+        final ServerConfig config = new ServerConfig(null, null, null, new ServerConfig.ProxyConfig(null, null, null, Duration.ofDays(30)), null, null);
         final ValidationResult result = new ValidationResult();
         config.validate(result);
         assertThat(result.getErrors()).singleElement().asString().contains("proxy.ttl").contains("24d");

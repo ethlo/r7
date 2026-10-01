@@ -294,7 +294,8 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         }
 
         /**
-         * bcrypt is deliberately expensive, so verification must never run on an XNIO I/O thread.
+         * bcrypt is deliberately expensive, so verification must never run on a thread that may
+         * not block, such as an event loop's.
          */
         @Override
         public boolean requiresDispatch()

@@ -512,9 +512,8 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   `ServerConnection.handle` call, so `CountingSelector` wraps the protocol selectors a listener
   derives from its protocols - a listener tries the selectors it is given first - and brackets
   that call. A servlet container's connections are its own; there they read 0.
-- **Container image.** Done: `Dockerfile.helidon.jvm`, the same distroless Java 25 image,
-  user, journal volume and environment as the Undertow image, so it drops in for it; built by CI
-  as `r7-gateway-helidon`, locally by `build-helidon.sh`.
+- **Container image.** Done, and since folded in: with Undertow removed, `Dockerfile.jvm`
+  builds the Helidon gateway as `r7-gateway`.
 - **WebSocket.** Done. A 101 from the upstream is relayed with `Upgrade` and `Connection`
   (hop-by-hop, so set for the client's hop, not copied) and the handshake headers, and the
   upstream connection becomes a `Tunnel` (r7-upstream): untracked from `max_request_time`, its

@@ -161,9 +161,8 @@ public final class TextValues
 
     /**
      * As {@link #requireStorable(String, String)}, and also refuses the control characters a
-     * header value may never carry: every C0 control except HTAB, and DEL. Undertow blanks CR
-     * and LF when it writes a response, but its client writes upstream request headers
-     * verbatim, so a line break in a value set by a filter would split the upstream request.
+     * header value may never carry: every C0 control except HTAB, and DEL. A line break in a
+     * value set by a filter would otherwise split the upstream request, or the response.
      *
      * @param field the header name, used in the error message
      * @throws InvalidTextValueException if the value is {@code null}, has a character above

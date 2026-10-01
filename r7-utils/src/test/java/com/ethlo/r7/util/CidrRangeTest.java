@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link CidrRange} is shared by the {@code RemoteAddr} predicate and the trusted-proxy check
- * in {@code UndertowGatewayRequest}; both need identical containment semantics for an operator's
+ * in {@code RemoteAddressResolver}; both need identical containment semantics for an operator's
  * mental model of a CIDR to hold in both places.
  */
 class CidrRangeTest

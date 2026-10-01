@@ -372,7 +372,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             if (matcher.find())
             {
                 // Two renderings of the same substitution, as Matcher.replaceFirst would build
-                // it: the request text as Undertow decoded it, and percent-encoded for the
+                // it: the request text as the server decoded it, and percent-encoded for the
                 // component it lands in. Only the encoded one is sent - left raw, a decoded %3F
                 // or %23 in a capture group would start a query or fragment of its own in the
                 // Location, and a '&' add a parameter to a query the template started. The raw

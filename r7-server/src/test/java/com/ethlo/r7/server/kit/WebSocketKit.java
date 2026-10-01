@@ -334,7 +334,7 @@ public abstract class WebSocketKit
             socket.getOutputStream().write("GET /unasked HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1));
             final InputStream in = socket.getInputStream();
             final Head head = readHead(in);
-            // A gateway error of either kind (Undertow's client answers 503); what matters is
+            // A gateway error of any kind; what matters is
             // that the upstream's bytes never reach a client that is not expecting them.
             assertThat(head.status).isBetween(500, 599);
             final byte[] rest = in.readNBytes(head.contentLength());

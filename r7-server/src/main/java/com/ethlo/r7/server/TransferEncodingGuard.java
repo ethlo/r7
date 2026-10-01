@@ -8,8 +8,9 @@ import com.ethlo.r7.api.GatewayHeaders;
  * Accepts a request {@code Transfer-Encoding} only in the one form every HTTP/1.1 parser reads
  * the same way: absent, or exactly {@code chunked}.
  * <p>
- * Undertow accepts a list such as {@code chunked, identity} and the proxy copies the header to
- * the upstream verbatim. RFC 9112 §6.3 requires a server to reject a request whose final coding
+ * Parsers differ on lists: Undertow accepted {@code chunked, identity} and its proxy copied the
+ * header to the upstream verbatim; Níma refuses both that and {@code gzip, chunked} itself, so on
+ * Níma this guard is a second line that its parser keeps from ever firing. RFC 9112 §6.3 requires a server to reject a request whose final coding
  * is not {@code chunked}; a backend that reads such a list differently from the gateway frames
  * the body differently too, and the difference is where request smuggling lives. No client has
  * a reason to send anything but {@code chunked}, so nothing else is let through to be argued

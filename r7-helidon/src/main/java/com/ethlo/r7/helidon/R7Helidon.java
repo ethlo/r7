@@ -16,6 +16,8 @@ import com.ethlo.r7.logging.LogbackConfiguration;
 import com.ethlo.r7.server.blocking.BlockingGateway;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.status.ManagementEndpoint;
+import com.ethlo.r7.status.VersionProvider;
+import com.ethlo.r7.util.SystemUtil;
 import io.helidon.http.HeaderNames;
 import io.helidon.http.Status;
 import io.helidon.webserver.ProtocolConfigs;
@@ -32,10 +34,10 @@ import io.helidon.webserver.http.ServerRequest;
 import io.helidon.webserver.http.ServerResponse;
 
 /**
- * EXPERIMENTAL: r7 on Helidon's Níma web server. The same configuration files, routes, filters,
- * journal and pipeline as the Undertow build; a different HTTP server and upstream client
- * underneath, and the management port with the same dashboard. WebSocket handshakes are taken
- * off Helidon's routing by {@link WebSocketUpgrader} and tunnelled once the upstream switches.
+ * The r7 gateway on Helidon's Níma web server: the data plane, proxied by r7's own upstream
+ * client (r7-upstream), and the management port with the dashboard. Every request runs on the
+ * virtual thread of its connection. WebSocket handshakes are taken off Helidon's routing by
+ * {@link WebSocketUpgrader} and tunnelled once the upstream switches.
  */
 public final class R7Helidon
 {
@@ -65,12 +67,12 @@ public final class R7Helidon
         this.dataHeadTimeouts = new HeadTimeouts("data", gateway.serverConfig().http().requestParseTimeout());
         this.managementHeadTimeouts = new HeadTimeouts("management", management.requestParseTimeout());
         // Protocols by configuration, not by what is on the classpath: HTTP/2 (h2c, the listener
-        // is plaintext) only with http.enable_http2, as on Undertow - it adds a second protocol
-        // parser to the attack surface. The upstream hop stays HTTP/1.1.
+        // is plaintext) only with http.enable_http2 - it adds a second protocol parser to the
+        // attack surface. The upstream hop stays HTTP/1.1.
         // request_parse_timeout is enforced by r7, which Helidon cannot do (HeadTimeouts).
         final List<ProtocolConfig> protocols = new ArrayList<>();
-        // max_header_size bounds the whole head on Undertow; Helidon bounds the request line and
-        // the header fields separately, so each gets the limit and BlockingGateway checks the sum.
+        // max_header_size bounds the whole head; Helidon bounds the request line and the header
+        // fields separately, so each gets the limit and BlockingGateway checks the sum.
         protocols.add(Http1Config.builder().addReceiveListener(this.dataHeadTimeouts).maxPrologueLength(maxHeadBytes).maxHeadersSize(maxHeadBytes).build());
         if (gateway.serverConfig().http().enableHttp2())
         {
@@ -79,6 +81,14 @@ public final class R7Helidon
         this.server = WebServer.builder()
                 .host(core.host())
                 .port(core.port())
+                // Past max_connections the listener stops accepting and new connections wait in
+                // the backlog; an idle connection, a quiet WebSocket included, is closed after
+                // idle_timeout, checked every second so that it holds to about that.
+                .maxTcpConnections(core.maxConnections())
+                .backlog(core.backlog())
+                .idleConnectionTimeout(core.idleTimeout())
+                .idleConnectionPeriod(Duration.ofSeconds(1))
+                .connectionOptions(socket -> socket.tcpNoDelay(true))
                 .protocolsDiscoverServices(false)
                 .protocols(protocols)
                 .connectionSelectors(countingSelectors(protocols, gateway))
@@ -87,8 +97,8 @@ public final class R7Helidon
                 .maxPayloadSize(limits.maxEntitySize().bytes())
                 .routing(routing -> routing.any((req, res) -> gateway.handle(new HelidonGatewayExchange(gateway.pipeline(), req, res))))
                 // The management port: its own listener, with its own connection cap and idle
-                // timeout, as on Undertow - it shares the process's descriptors with the data
-                // plane, and a client holding connections open must not starve the latter.
+                // timeout - it shares the process's descriptors with the data plane, and a client
+                // holding connections open must not starve the latter.
                 .putSocket(MANAGEMENT_SOCKET, socket -> socket
                         .protocolsDiscoverServices(false)
                         .addProtocol(Http1Config.builder().addReceiveListener(this.managementHeadTimeouts).build())
@@ -103,7 +113,8 @@ public final class R7Helidon
                         .routing(routing -> routing.any((req, res) -> serveManagement(endpoint, req, res))))
                 .build()
                 .start();
-        logger.info("ethlo r7 (Helidon Níma, experimental) listening on {}:{}, management on {}:{}", core.host(), this.server.port(),
+        logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms", VersionProvider.getVersion(), SystemUtil.getUptime().toMillis());
+        logger.info("Gateway listening on {}:{}, management on {}:{}", core.host(), this.server.port(),
                 management.host(), this.server.port(MANAGEMENT_SOCKET));
     }
 

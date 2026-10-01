@@ -163,7 +163,7 @@ Predicates determine whether an incoming request matches a route.
 
 * **Regex Semantics:** All regex predicates and `RequireMatch*` filters use standard Java Regex syntax and must match the **whole value**, as if anchored with `^` and `$`: `user` does not match `superuser`. Use `.*user.*` to match anywhere in the value. Matching is **case-sensitive** unless the inline flag `(?i)` is used.
 * **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
-* **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of stalling an I/O thread. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
+* **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.
 
 ### Logical Meta-Predicates
@@ -584,7 +584,7 @@ filters:
         - "bob:${BOB_HTPASSWD_ENTRY}"
 ```
 
-Because bcrypt is deliberately expensive, verification runs on a virtual thread rather than an I/O thread, and successful credentials are cached so that repeat requests do not re-run the hash.
+Because bcrypt is deliberately expensive, successful credentials are cached so that repeat requests do not re-run the hash.
 
 **Password guessing.** `BasicAuth` has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a `RateLimiter` before `BasicAuth`, so a client is refused before its guess costs a bcrypt:
 
@@ -692,7 +692,7 @@ Short-circuits the routing pipeline, halting execution and immediately returning
 
 #### StaticContent
 
-Short-circuits the pipeline to serve static files directly from the disk: on Undertow with its native handler, on the other servers with r7's own, and with the same rules on each. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), every answer carries `X-Content-Type-Options: nosniff`, and a directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` (and an `ETag` on servers other than Undertow), answer conditional requests with `304`, and serve a single byte `Range`.
+Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), every answer carries `X-Content-Type-Options: nosniff`, and a directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -894,12 +894,19 @@ The `server.yaml` file controls the foundational infrastructure of the r7 gatewa
 
 ### Server Configuration (`server`)
 
-Defines the primary listening interfaces and ports for the gateway.
+Defines the gateway's listening interface and port, and how many connections it holds.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `host` | String | The IP address or interface the primary gateway binds to (e.g., `0.0.0.0` for all interfaces). |
 | `port` | Integer | The primary port the gateway listens on for incoming traffic. |
+| `max_connections` | Integer | When this many client connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to `20000`. Keep it below the process's open-file limit, less what upstream connections and journals need. |
+| `idle_timeout` | Duration | Closes a connection that sits between requests for this long, and a WebSocket that carries nothing either way for this long - a client that keeps a quiet WebSocket open must ping more often. Defaults to `30s`; at most `24d`. |
+| `backlog` | Integer | Length of the kernel's accept backlog. Defaults to `1000`. |
+
+None of the three can be turned off: a listener without them lets a client hold file descriptors until the gateway stops accepting traffic.
+
+Each connection runs on a virtual thread of its own, and so does every request on it: a filter that blocks (`BasicAuth`'s bcrypt, a lookup) parks its thread and holds up nothing else.
 
 ### Management Configuration (`management`)
 
@@ -910,7 +917,6 @@ Defines the interfaces for the internal status and metrics endpoints.
 | `host` | String | The interface for the internal management server. Defaults to `127.0.0.1`, or to the `R7_MANAGEMENT_HOST` environment variable when set; the container images set it to `0.0.0.0` so the published status port works. The endpoint has no authentication: publish it only on a private network. |
 | `port` | Integer | The port for the internal management server. |
 | `request_parse_timeout` | Duration | Time allowed to receive a complete request head. Defaults to `2s`. |
-| `read_timeout` | Duration | Closes a connection that sends nothing for this long. Defaults to `30s`. |
 | `idle_timeout` | Duration | Closes a connection that sits between requests for this long. Defaults to `30s`. |
 | `max_connections` | Integer | Connections the management port accepts at once; more wait in the accept backlog until one closes. Defaults to `64`. |
 | `allowed_hosts` | List of Strings | Host names, besides `localhost` and `host`, that a request's `Host` header may name. Empty by default. |
@@ -935,23 +941,20 @@ Configures the HTTP server layer, including protocol support and request parsing
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and with the r7 upstream client a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its `Content-Length` - is answered `400` rather than forwarded. |
-| `always_set_keep_alive` | Boolean | Forces the server to send the `Connection: keep-alive` header to maintain persistent connections. |
+| `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its `Content-Length` - is answered `400` rather than forwarded. |
 | `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. At most `24d` (2147483647 ms). |
 
 ### Limits Configuration (`limits`)
 
 Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.
 
-A request over `max_header_size` or `max_header_count` is refused before any filter runs, with `400` or `431` depending on which layer caught it. A body over `max_entity_size` is refused with `413` when its `Content-Length` declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental Helidon and servlet hosts, whatever the server's own parser settings.
+A request over `max_header_size` or `max_header_count` is refused before any filter runs, with `400` or `431` depending on which layer caught it. A body over `max_entity_size` is refused with `413` when its `Content-Length` declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `max_header_size` | Size | The maximum size of the request line and all request headers combined (e.g., `8KB`), not of each header separately. At most 62500 bytes, the longest input configured regular expressions are budgeted for. |
 | `max_header_count` | Integer | The maximum number of HTTP headers allowed per request. |
 | `max_entity_size` | Size | The maximum allowed request payload/entity size (e.g., `2MB`). |
-| `max_parameter_count` | Integer | The maximum number of parameters allowed per request. |
-| `max_cookie_count` | Integer | The maximum number of cookies allowed per request. |
 | `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When `X-Forwarded-For` is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in `trusted_proxies`; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended. |
 
 #### Headers forwarded to the upstream
@@ -965,30 +968,16 @@ r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself.
 
 ### Proxy Client (`proxy`)
 
-Configures the behavior of the internal reverse proxy client that connects to upstream targets.
+Configures r7's upstream client, an HTTP/1.1 client with a keep-alive pool per target.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `connections_per_thread` | Integer | The maximum number of pooled upstream connections allowed *per worker thread*. |
-| `max_queue_size` | Integer | The maximum number of pending requests allowed to queue while waiting for an available upstream connection. |
-| `max_request_time` | Duration | The absolute maximum time (e.g., `60s`) a proxy request is allowed to take before timing out. At most `24d` (2147483647 ms). |
-| `ttl` | Duration | The time-to-live (e.g., `30s`) for idle upstream connections in the pool. At most `24d` (2147483647 ms). |
-| `client` | String | **Experimental.** Which upstream client proxies requests: `undertow` (Undertow's own proxy; the default) or `r7`, the blocking HTTP/1.1 client every r7 server shares, run on virtual threads. With `r7`, response framing is checked strictly (conflicting `Content-Length`, folded headers, malformed chunks and transfer codings other than `chunked` are answered with `502`), a request that fails on a reused connection is retried only when it is idempotent, and a target that refuses the connection is skipped for the next. `connections_per_thread` is scaled by `advanced.io_threads` into a per-target limit on requests in flight, with up to `max_queue_size` waiting; `max_request_time` bounds the whole exchange, waiting included. `https` targets are verified against the JVM's trust store, host name included. On Undertow, `r7` does not tunnel WebSocket upgrades: a `101` from the upstream is answered with `502`, so keep `undertow` for routes that carry WebSockets. The experimental Helidon and servlet hosts, which always use `r7`, do tunnel them. |
+| `max_connections_per_target` | Integer | Requests in flight to one upstream target, each on a connection of its own. Defaults to `4096`. |
+| `max_queue_size` | Integer | Requests that may wait for one of those to finish; past it a request is answered `503`. Defaults to `1000`. |
+| `max_request_time` | Duration | The longest a proxied exchange may take, waiting for a connection included, before it is answered `504`. Defaults to `60s`; at most `24d` (2147483647 ms). |
+| `ttl` | Duration | How long an idle pooled connection is kept (e.g., `30s`): below the upstream's own keep-alive timeout, since a request that fails on a connection the upstream already closed is retried only when it is idempotent. At most `24d` (2147483647 ms). |
 
-### Advanced (`advanced`)
-
-Worker threads and socket options of the gateway listener.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `io_threads` | Integer | I/O threads. Defaults to the number of processors, at least 2. |
-| `task_threads` | Integer | Worker task threads. Defaults to `io_threads` × 8. |
-| `connection_high_water` | Integer | When this many connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to `20000`. Keep it below the process's open-file limit, less what upstream connections and journals need. |
-| `connection_low_water` | Integer | Once accepting has stopped, it resumes when open connections fall to this many. Defaults to `10000`; must be at least 1 and at most `connection_high_water`. |
-| `tcp_no_delay` | Boolean | Disables Nagle's algorithm. Defaults to `true`. |
-| `reuse_addresses` | Boolean | Sets `SO_REUSEADDR` on the listener. Defaults to `true`. |
-| `socket_backlog` | Integer | Length of the accept backlog. Defaults to `1000`. |
-| `socket_read_timeout` | Duration | Closes a connection that sends nothing for this long. Defaults to `30s`; at most `24d`. |
+Response framing is checked strictly: conflicting `Content-Length`s, folded headers, malformed chunks and transfer codings other than `chunked` are answered `502`, and the connection is not reused. A target that refuses the connection is skipped for the next. `https` targets are verified against the JVM's trust store, host name included. A WebSocket handshake the upstream accepts (`101`) becomes a tunnel that carries bytes both ways until either side closes; see `idle_timeout` above.
 
 ### Storage & Journaling (`storage`)
 

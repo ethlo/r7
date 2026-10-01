@@ -115,9 +115,9 @@ public class ValidatorUtils
     }
 
     /**
-     * The longest duration an {@code int} count of milliseconds can hold, about 24.8 days. XNIO's
-     * {@code READ_TIMEOUT} and Undertow's proxy TTL, max request time and request parse timeout
-     * all take their value in that form.
+     * The longest duration an {@code int} count of milliseconds can hold, about 24.8 days. Socket
+     * timeouts and the upstream client's TTL, max request time and read timeout all take their
+     * value in that form.
      */
     public static final Duration MAX_INT_MILLIS = Duration.ofMillis(Integer.MAX_VALUE);
 

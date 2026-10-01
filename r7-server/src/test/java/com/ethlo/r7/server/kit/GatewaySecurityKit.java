@@ -23,7 +23,7 @@ import org.junit.jupiter.api.TestInstance;
  * <p>
  * Each case sends raw bytes to a running gateway and asserts two things: what the client got
  * back, and what a {@link RecordingUpstream} received - byte-exact, not as some HTTP library
- * re-reads it. That makes the kit black-box: it holds for Undertow, for Helidon Níma, and for a
+ * re-reads it. That makes the kit black-box: it holds for Helidon Níma and for a
  * servlet container hosting r7, whatever each server's parser rejects or normalises before the
  * pipeline sees the request. A server where the parser already refuses something the pipeline
  * would have refused passes just the same; a server that lets something through to the upstream

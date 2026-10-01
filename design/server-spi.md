@@ -1,6 +1,7 @@
 # A server SPI: moving the pipeline out of `r7-undertow`
 
-**Status:** proposed. Step 1 (measurement) is done; see "Measured". Nothing else here changes the
+**Status:** historical. The pipeline moved out, and `r7-undertow` has since been removed:
+Helidon Níma (`r7-helidon`) is the gateway. Step 1 (measurement) is done; see "Measured". Nothing else here changes the
 request path until it has a number behind it.
 
 **Why.** `r7-api`, `r7-core`, `r7-utils` and both journal modules have no `io.undertow` or

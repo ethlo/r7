@@ -1,7 +1,2 @@
 # Advisories accepted after review. Each entry names why it does not apply and expires, so it is
 # re-examined rather than forgotten. Anything not listed here fails the dependency scan.
-
-[[IgnoredVulns]]
-id = "GHSA-3x3v-w654-m28m"
-ignoreUntil = 2027-03-31
-reason = "CVE-2026-3260: Undertow parses multipart bodies of GET requests via the servlet getParameterMap(). r7 uses undertow-core without servlets and never parses form bodies. No fixed Undertow release yet."

@@ -10,8 +10,7 @@ import org.junit.jupiter.api.Test;
 import com.ethlo.r7.api.InvalidTextValueException;
 
 /**
- * The standalone container holds the same line as the Undertow-backed view: a value that
- * could split a message is refused when set, not discovered on the wire.
+ * The container filters mutate at runtime: a value that could split a message is refused when set, not discovered on the wire.
  */
 class MutableFastGatewayHeadersTest
 {

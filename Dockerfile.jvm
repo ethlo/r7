@@ -11,7 +11,7 @@ FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6
 WORKDIR /app
 
 # We assume the JAR is already compiled by the CI runner
-COPY r7-undertow/target/r7-undertow-*.jar /app/server.jar
+COPY r7-helidon/target/r7-helidon-*.jar /app/server.jar
 COPY --from=dirs --chown=65532:65532 /journals /journals
 
 USER 65532:65532

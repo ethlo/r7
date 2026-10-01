@@ -154,8 +154,8 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     // --- Threading ---------------------------------------------------------------------------
 
     /**
-     * Whether a filter may block the calling thread: false on an event loop's I/O thread
-     * (Undertow), true on a thread of the request's own (a Níma virtual thread, a servlet
+     * Whether a filter may block the calling thread: false on an event loop's I/O thread, true
+     * on a thread of the request's own (a Níma virtual thread, a servlet
      * container's request thread, or a thread {@link #resumeOnBlockingThread} moved it to).
      */
     protected abstract boolean mayBlock();

@@ -19,8 +19,8 @@ passthrough-relative deltas carry over to other hardware.
 With journaling on at high request rates, throughput falls well below what the same gateway
 does with journaling off. p99 latency climbs into tens or hundreds of milliseconds, and it often
 gets worse the longer the load lasts. Header-heavy traffic at `HEADERS` or `FULL` shows it
-first. It is worst on servers that run a thread per connection, such as the experimental
-Helidon gateway, and grows with the number of open connections.
+first. It grows with the number of open connections, since every connection has a thread of its
+own that may be writing.
 
 ### Why it happens
 
@@ -37,9 +37,9 @@ Two things do:
   the writing thread wait for the disk to catch up. That happens at the same moment, and it
   builds up as dirty pages accumulate, which is why the slowdown grows over a run.
 
-How much a stall costs depends on how many writers are waiting. Undertow writes from a small,
-fixed set of threads (one I/O thread per core by default). A thread-per-connection server can
-have a writer for every open connection, all queued on the same shard.
+How much a stall costs depends on how many writers are waiting. The gateway runs each
+connection on a virtual thread of its own, so there can be a writer for every open connection,
+all queued on the same shard.
 
 ### What r7 does about it: fault-ahead
 
@@ -72,15 +72,15 @@ quickly a tailer consumes sealed segments.
 `HEADERS` journaling, header-heavy workload, 200 connections at saturation. On tmpfs, which
 removes disk writeback and isolates the writer lock:
 
-| Storage | Undertow | Helidon (experimental) |
-|---|---|---|
-| 1 shard, without fault-ahead (before r7 had it) | 64k req/s, p99 14 ms | 41k req/s, p99 20 ms |
-| 1 shard, `pre_fault: true` | 89k req/s, p99 12 ms | 93k req/s, p99 55 ms |
-| 1 shard, with fault-ahead | 94k req/s, p99 11 ms | 98k req/s, p99 50 ms |
-| 4 shards | 89k req/s, p99 12 ms | 96k req/s, p99 24 ms |
+| Storage | Throughput and tail |
+|---|---|
+| 1 shard, without fault-ahead (before r7 had it) | 41k req/s, p99 20 ms |
+| 1 shard, `pre_fault: true` | 93k req/s, p99 55 ms |
+| 1 shard, with fault-ahead | 98k req/s, p99 50 ms |
+| 4 shards | 96k req/s, p99 24 ms |
 
-On a local disk, one shard: without fault-ahead, 67k (Undertow) and 63k (Helidon) req/s. With
-`pre_fault`, 80k and 77k. With fault-ahead, 82k and 84k.
+On a local disk, one shard: 63k req/s without fault-ahead, 77k with `pre_fault`, 84k with
+fault-ahead.
 
 Under a container memory limit (`-m 8g`), journals on a disk volume, with cgroup v2
 `memory.stat`:
@@ -103,10 +103,9 @@ ones the kernel can least easily reclaim.
 - **Leave `pre_fault` off.** Fault-ahead does its job at a fraction of the memory. Turn it on
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.
-- **Keep the default of 2 shards, or raise it to 4 for a thread-per-connection server with
-  many concurrent connections.** With fault-ahead, throughput is already level at one shard;
-  more shards shorten the tail by spreading the writers. On the experimental Helidon gateway,
-  4 shards halved p99 compared with one. Each shard is one more open segment and, without
+- **Keep the default of 2 shards, or raise it to 4 with many concurrent connections.** With
+  fault-ahead, throughput is already level at one shard; more shards shorten the tail by
+  spreading the writers: 4 shards halved p99 compared with one. Each shard is one more open segment and, without
   `pre_fault`, costs no memory of note.
 - **Give a container headroom for page cache, not just heap.** The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
@@ -183,4 +182,36 @@ cache charged to a container's memory limit, of the writeback, and of what a tai
 - **Turn it off (`compression: none`) only if the gateway runs close to its CPU limit with
   journaling at `FULL`,** and disk and page cache are cheap where it runs.
 - **Leave `compression_level` at 1.**
+
+---
+
+## Latency at saturation: the JDK's I/O pollers
+
+### Symptom
+
+Driven past the request rate it can sustain, the gateway answers a few requests very late -
+hundreds of milliseconds where p99 is single-digit milliseconds - and a load generator with a
+short timeout may report a handful of timeouts. Below saturation it does not happen.
+
+### Why it happens
+
+Every connection runs on a virtual thread, and when it waits for the network the JDK parks it
+and hands the socket to an I/O poller. On Java 25 those pollers are themselves virtual threads,
+scheduled on the same carrier threads as the requests. When every carrier is busy, a poller can
+wait for one, and every connection registered with it waits too, then resumes in the same
+millisecond. Measured at saturation (200 connections, 20 cores): about 141k req/s, p99 7 ms,
+worst case about 540 ms.
+
+Java 27 has per-carrier pollers (`-Djdk.pollerMode=3`), which poll as part of each carrier's own
+scheduling; with them the worst case is about 20 ms. The gateway turns them on by itself on Java
+27 and later. They do not exist on Java 25, and r7 stays on Java 25, the long-term support
+release, until the next one.
+
+### What to do
+
+- **Do not run the gateway at saturation.** Size it so that peak load stays below the rate it
+  sustains; the tail appears only past that point.
+- **Do not switch to platform-thread pollers** (`-Djdk.pollerMode=1`) to hide it. They end the
+  long stalls, but compete with the carriers for the cores: on Java 25 they took p99 from 7 ms
+  to 15-50 ms at every load, a worse trade than a rare outlier at saturation.
 

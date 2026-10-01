@@ -57,8 +57,7 @@ public final class UpstreamHeaderSanitizer
     {
         // One pass to see what is there, then removals for what is there and must go. Asking
         // the container to remove each of a dozen names an ordinary request never carries costs
-        // a name conversion and a lookup apiece on every request (on Undertow, an HttpString
-        // built from scratch for every name outside its own table), to remove nothing. The pass
+        // a name conversion and a lookup apiece on every request, to remove nothing. The pass
         // screens each name by length first, so an ordinary header costs a switch and at most
         // two comparisons.
         final Scan scan = new Scan();

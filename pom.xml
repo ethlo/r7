@@ -10,7 +10,6 @@
     <modules>
         <module>r7-api</module>
         <module>r7-server</module>
-        <module>r7-undertow</module>
         <module>r7-upstream</module>
         <module>r7-server-blocking</module>
         <module>r7-helidon</module>
@@ -60,8 +59,8 @@
                             <packages>com.ethlo.r7.api*</packages>
                         </group>
                         <group>
-                            <title>Undertow Engine</title>
-                            <packages>com.ethlo.r7.undertow*</packages>
+                            <title>Helidon Server</title>
+                            <packages>com.ethlo.r7.helidon*</packages>
                         </group>
                         <group>
                             <title>Journaling System</title>

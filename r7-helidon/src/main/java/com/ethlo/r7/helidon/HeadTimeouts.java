@@ -19,8 +19,7 @@ import io.helidon.webserver.http1.Http1ConnectionListener;
  * Helidon reads through a {@code SocketChannel}, which ignores {@code SO_TIMEOUT}, and its idle
  * sweep does not count a connection whose request line has arrived as idle. So a client that opens connections and
  * trickles a byte of head now and then held each one - a file descriptor the data plane and the
- * management port share - for as long as it liked. Undertow bounds this with
- * {@code REQUEST_PARSE_TIMEOUT}.
+ * management port share - for as long as it liked.
  * <p>
  * Registered as a receive listener on Helidon's HTTP/1 connections, which Helidon calls when a
  * request line has been read and when the head is complete - not per read. The clock runs

@@ -24,7 +24,7 @@ import com.ethlo.r7.util.PathEncoder;
  * taken once off the wire (server header APIs are read-only); everything the upstream receives is
  * read from here.
  * <p>
- * The mutators follow {@code UndertowGatewayRequest}: a new path re-encodes the forwarded URI,
+ * The mutators: a new path re-encodes the forwarded URI,
  * a new URI is taken verbatim once checked to be storable and free of control characters, and a
  * changed query or cookie is written back into what is forwarded.
  */
@@ -139,8 +139,8 @@ public final class BlockingGatewayRequest implements MutableGatewayRequest
 
     /**
      * Query parameters decoded once from the raw query. The raw query is forwarded untouched
-     * until a filter changes a parameter; only then is it rebuilt, encoded the way the Undertow
-     * implementation encodes it.
+     * until a filter changes a parameter; only then is it rebuilt, each name and value
+     * percent-encoded as UTF-8.
      */
     static final class Query implements MutableQueryParams
     {

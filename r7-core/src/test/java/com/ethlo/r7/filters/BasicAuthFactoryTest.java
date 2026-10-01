@@ -185,7 +185,7 @@ class BasicAuthFactoryTest
     }
 
     /**
-     * bcrypt costs tens of milliseconds by design, which is far too long to hold an XNIO I/O thread.
+     * bcrypt costs tens of milliseconds by design, which is far too long to hold an event loop's thread.
      */
     @Test
     void verificationIsDispatchedOffTheIoThread()

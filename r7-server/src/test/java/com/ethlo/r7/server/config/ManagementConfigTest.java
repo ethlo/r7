@@ -41,10 +41,9 @@ class ManagementConfigTest
     void timeoutsAndTheConnectionCapMustBePositive()
     {
         final ServerConfig.ManagementConfig config = new ServerConfig.ManagementConfig(null, null,
-                Duration.ZERO, Duration.ofMillis(-1), Duration.ZERO, 0, List.of(" "));
-        assertThat(errorsFor(config)).hasSize(5)
+                Duration.ZERO, Duration.ZERO, 0, List.of(" "));
+        assertThat(errorsFor(config)).hasSize(4)
                 .anySatisfy(e -> assertThat(e).contains("request_parse_timeout"))
-                .anySatisfy(e -> assertThat(e).contains("read_timeout"))
                 .anySatisfy(e -> assertThat(e).contains("idle_timeout"))
                 .anySatisfy(e -> assertThat(e).contains("max_connections"))
                 .anySatisfy(e -> assertThat(e).contains("allowed_hosts"));
@@ -54,9 +53,9 @@ class ManagementConfigTest
     void timeoutsMustFitIntMilliseconds()
     {
         final Duration beyond = ValidatorUtils.MAX_INT_MILLIS.plusMillis(1);
-        assertThat(errorsFor(new ServerConfig.ManagementConfig(null, null, beyond, null, null, null, null)))
+        assertThat(errorsFor(new ServerConfig.ManagementConfig(null, null, beyond, null, null, null)))
                 .singleElement().asString().contains("request_parse_timeout");
-        assertThat(errorsFor(new ServerConfig.ManagementConfig(null, null, null, null, ValidatorUtils.MAX_INT_MILLIS, null, null))).isEmpty();
+        assertThat(errorsFor(new ServerConfig.ManagementConfig(null, null, null, ValidatorUtils.MAX_INT_MILLIS, null, null))).isEmpty();
     }
 
     @Test
@@ -65,18 +64,23 @@ class ManagementConfigTest
         final ServerConfig.ManagementConfig config = new ServerConfig.ManagementConfig(null, null);
         assertThat(errorsFor(config)).isEmpty();
         assertThat(config.requestParseTimeout()).isEqualTo(Duration.ofSeconds(2));
-        assertThat(config.readTimeout()).isEqualTo(Duration.ofSeconds(30));
         assertThat(config.idleTimeout()).isEqualTo(Duration.ofSeconds(30));
         assertThat(config.maxConnections()).isEqualTo(64);
         assertThat(config.allowedHosts()).isEmpty();
     }
 
+    /**
+     * The data plane is bounded the same way: no idle timeout of zero, no unlimited listener.
+     */
     @Test
-    void connectionLowWaterMayNotExceedHighWater()
+    void theDataPlaneConnectionLimitsMustBePositive()
     {
         final ValidationResult result = new ValidationResult();
-        new ServerConfig.AdvancedConfig(null, null, 100, 200, null, null, null, null).validate(result);
-        assertThat(result.getErrors()).singleElement().asString().contains("connection_high_water");
+        new ServerConfig.ServerCoreConfig(null, null, 0, Duration.ZERO, 0).validate(result);
+        assertThat(result.getErrors().stream().map(String::valueOf).toList()).hasSize(3)
+                .anySatisfy(e -> assertThat(e).contains("max_connections"))
+                .anySatisfy(e -> assertThat(e).contains("idle_timeout"))
+                .anySatisfy(e -> assertThat(e).contains("backlog"));
     }
 
     private static List<String> errorsFor(final ServerConfig.ManagementConfig config)

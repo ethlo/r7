@@ -29,7 +29,7 @@ public record TimeoutConfig(
         {
             result.addError("read", "Read timeout must be greater than 0");
         }
-        // The route's proxy client takes this as XNIO's int-millisecond READ_TIMEOUT
+        // The route's upstream client takes this as an int-millisecond socket timeout
         new ValidatorUtils(result).fitsIntMillis("read", this.read);
     }
 }
