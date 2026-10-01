@@ -935,6 +935,26 @@ to their defaults below (so a bare container with no config volume still starts 
 <td>Where JSON lines are written; <code>-</code> (or <code>stdout</code>) means standard output, any other value is a file path (appended to, parent directories created if missing)</td>
 </tr>
 <tr>
+<td><code>output_dir</code></td>
+<td>unset</td>
+<td>Write to rotating files in this directory instead of <code>output_path</code> (set one or the other). Each file is written as <code>&lt;file_prefix&gt;-&lt;millis&gt;-&lt;uuid&gt;.jsonl.open</code> and renamed to <code>.jsonl</code> once finished, so a shipper that picks up <code>*.jsonl</code> never reads one still being written. A file left <code>.open</code> by a crash is sealed on the next start, minus a torn last line, whose record is written again</td>
+</tr>
+<tr>
+<td><code>file_prefix</code></td>
+<td><code>r7</code></td>
+<td>Filename prefix for rotating files</td>
+</tr>
+<tr>
+<td><code>max_file_size</code></td>
+<td><code>256mb</code></td>
+<td>Roll to a new file once the current one reaches this size (at least <code>64kb</code>). Supports <code>b</code>, <code>kb</code>, <code>mb</code>, <code>gb</code></td>
+</tr>
+<tr>
+<td><code>max_file_age</code></td>
+<td><code>15m</code></td>
+<td>Roll to a new file once the current one is this old, even with little traffic. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
+</tr>
+<tr>
 <td><code>poll_interval</code></td>
 <td><code>1s</code></td>
 <td>Delay between tailer ticks. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
@@ -942,7 +962,7 @@ to their defaults below (so a bare container with no config volume still starts 
 <tr>
 <td><code>pretty_print</code></td>
 <td><code>false</code></td>
-<td>Pretty-print the JSON output</td>
+<td>Pretty-print the JSON output. Not with <code>output_dir</code>: a record over several lines cannot be cut back cleanly after a crash</td>
 </tr>
 <tr>
 <td><code>hide_empty_fields</code></td>
