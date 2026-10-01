@@ -216,8 +216,11 @@ discarded journal content reported itself clean. Both now include it.
 `corruptEntryIsSkippedAndReported`,
 `aDamagedContinuationCostsOnlyItsEntry`,
 `continuationsWhoseFirstFragmentWasLostAreSkipped`,
-`entriesStartingAtEveryAwkwardOffsetNearABlockEndRoundTrip` and
-`aVersionOneSegmentIsSetAsideByRecoveryNotDeleted`.
+`entriesStartingAtEveryAwkwardOffsetNearABlockEndRoundTrip`,
+`aVersionOneSegmentIsSetAsideByRecoveryNotDeleted`,
+`damageInAStreamCostsTheRestOfItsBlock`,
+`recoverySealsBeforeAnUncommittedCompressedEntry` and
+`anUnknownCodecIsSetAside`.
 
 ---
 

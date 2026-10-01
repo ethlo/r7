@@ -43,6 +43,9 @@ import com.ethlo.r7.r7f.fbs.ResponseBody;
 import com.ethlo.r7.r7f.fbs.UpstreamRequest;
 import com.ethlo.r7.r7f.fbs.UpstreamResponse;
 import com.ethlo.r7.util.IndexedGatewayHeaders;
+import com.github.luben.zstd.EndDirective;
+import com.github.luben.zstd.Zstd;
+import com.github.luben.zstd.ZstdCompressCtx;
 import com.google.flatbuffers.FlatBufferBuilder;
 
 public final class R7fJournal implements Journal
@@ -107,6 +110,21 @@ public final class R7fJournal implements Journal
      */
     private static final int BLOCK_SIZE = R7fConstants.DEFAULT_BLOCK_SIZE;
 
+    /**
+     * zstd level (FORMAT.md 4.4), or 0 for none: the provider's, which has already fallen back
+     * to 0 where zstd cannot be loaded.
+     */
+    private final int compressionLevel;
+    private final short codec;
+
+    // Compression state, all of it guarded by this journal's monitor
+    private ZstdCompressCtx stream;
+    private ZstdCompressCtx single;
+    /** The block whose stream {@link #stream} is in, or -1 when the next stream entry starts one. */
+    private long streamBlock = -1;
+    private ByteBuffer packed;
+    private MemorySegment packedSegment;
+
     private MemorySegment segment;
     /**
      * A buffer view of {@link #segment}, for computing fragment CRCs over what was just
@@ -164,6 +182,8 @@ public final class R7fJournal implements Journal
         this.provider = provider;
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
         this.faultAhead = FaultAhead.create(provider.isPreFault());
+        this.compressionLevel = provider.getCompressionLevel();
+        this.codec = compressionLevel > 0 ? R7fConstants.CODEC_ZSTD : R7fConstants.CODEC_NONE;
         rotateSegment();
     }
 
@@ -374,6 +394,13 @@ public final class R7fJournal implements Journal
         JournalEvent.addEventType(fbb, type);
         JournalEvent.addEvent(fbb, offset);
         fbb.finish(JournalEvent.endJournalEvent(fbb));
+        if (compressionLevel > 0)
+        {
+            // The copy into one contiguous buffer happens outside the monitor; compression
+            // cannot, because the block's stream is shared and its order is the sequence order.
+            enc.fillPlain(fbb.dataBuffer(), rawData);
+            return writeCompressed(enc, rawData);
+        }
         return writeEntry(enc, rawData);
     }
 
@@ -464,6 +491,183 @@ public final class R7fJournal implements Journal
     }
 
     /**
+     * {@link #writeEntry} for {@link R7fConstants#CODEC_ZSTD}.
+     * <p>
+     * Compression happens under the monitor, because the block's stream is shared and its order
+     * is the sequence order. Each entry is flushed, so its bytes decode without waiting for the
+     * next one, and it is committed by its own magic like any other entry.
+     */
+    private synchronized int writeCompressed(final EntryEncoder enc, final ByteBuffer rawData)
+    {
+        if (closed)
+        {
+            throw new IllegalStateException("Journal is closed");
+        }
+        if (segment == null)
+        {
+            rotateSegment();
+        }
+        final int plainLength = enc.plainLength;
+
+        final long perBlock = R7fFraming.continuationCapacity(BLOCK_SIZE);
+        final long bound = Zstd.compressBound(plainLength) + 64;
+        ensurePacked(Math.max(bound + Integer.BYTES, 2L * BLOCK_SIZE));
+        final long claimedFrom = position;
+        final long publishAt;
+
+        if (bound <= perBlock)
+        {
+            long start = R7fFraming.entryStart(position, BLOCK_SIZE);
+            if (R7fFraming.firstCapacity(start, BLOCK_SIZE) < bound)
+            {
+                // The worst case might not fit what is left of the block, and a stream cannot
+                // take an entry back once it has been fed. Close the block off.
+                writePad(start);
+                start = R7fFraming.nextBoundary(start, BLOCK_SIZE);
+            }
+            if (start + R7fConstants.FRAGMENT_HEADER_SIZE + bound > segment.byteSize())
+            {
+                rotateSegment();
+                start = R7fFraming.entryStart(position, BLOCK_SIZE);
+            }
+
+            // Only now: placing the entry may have rotated, and rotation restarts the sequence
+            enc.plain.putInt(0, nextSequence);
+            final long block = start / BLOCK_SIZE;
+            final byte flags;
+            if (block != streamBlock)
+            {
+                if (stream == null)
+                {
+                    stream = new ZstdCompressCtx();
+                }
+                stream.reset();
+                stream.setLevel(compressionLevel).setChecksum(false).setContentSize(false);
+                streamBlock = block;
+                flags = R7fConstants.FLAG_STREAM_START;
+            }
+            else
+            {
+                flags = R7fConstants.FLAG_STREAM_CONTINUE;
+            }
+
+            packed.clear();
+            enc.plain.limit(plainLength).position(0);
+            while (!stream.compressDirectByteBufferStream(packed, enc.plain, EndDirective.FLUSH))
+            {
+                // FLUSH returns true once everything fed so far is out
+            }
+            final int length = packed.position();
+            if (length > R7fFraming.firstCapacity(start, BLOCK_SIZE))
+            {
+                // Cannot happen while the bound holds. If it ever did, writing it would put a
+                // fragment across a block boundary, which every reader relies on never seeing.
+                throw new IllegalStateException("Compressed entry of " + length + " bytes exceeds its bound of " + bound);
+            }
+            enc.preparePackedSources(packedSegment, length);
+            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FULL, flags, 0, length);
+            publishAt = start;
+            position = start + R7fConstants.FRAGMENT_HEADER_SIZE + length;
+        }
+        else
+        {
+            if (single == null)
+            {
+                single = new ZstdCompressCtx().setLevel(compressionLevel).setChecksum(false);
+            }
+            // Rotate on the worst case first, so the sequence stamped below is this segment's
+            ensureCapacity(Integer.BYTES + bound);
+            enc.plain.putInt(0, nextSequence);
+            final int frame = single.compressDirectByteBuffer(packed, Integer.BYTES, packed.capacity() - Integer.BYTES,
+                    enc.plain, 0, plainLength);
+            packed.putInt(0, plainLength);
+            final long contentLength = Integer.BYTES + (long) frame;
+            enc.preparePackedSources(packedSegment, contentLength);
+            publishAt = writeFragments(enc, contentLength, R7fConstants.FLAG_STANDALONE);
+            streamBlock = -1;
+        }
+
+        VarHandle.releaseFence();
+        segment.set(INT_BE, publishAt, R7fConstants.FRAGMENT_MAGIC);
+
+        if (rawData != null && rawData.hasRemaining())
+        {
+            rawData.position(rawData.limit());
+        }
+        enc.releaseSources();
+        nextSequence++;
+        if (faultAhead != null)
+        {
+            faultAhead.advance(segment, position);
+        }
+        return (int) (position - claimedFrom);
+    }
+
+    /**
+     * Places the content the encoder's sources describe from {@link #position}, every fragment
+     * but the commit magic, and returns where that magic belongs.
+     */
+    private long writeFragments(final EntryEncoder enc, final long contentLength, final byte flags)
+    {
+        final long start = R7fFraming.entryStart(position, BLOCK_SIZE);
+        final long firstCapacity = R7fFraming.firstCapacity(start, BLOCK_SIZE);
+        if (contentLength <= firstCapacity)
+        {
+            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FULL, flags, 0, contentLength);
+            position = start + R7fConstants.FRAGMENT_HEADER_SIZE + contentLength;
+            return start;
+        }
+        final int perBlock = R7fFraming.continuationCapacity(BLOCK_SIZE);
+        long logical = firstCapacity;
+        long at = R7fFraming.nextBoundary(start, BLOCK_SIZE);
+        long last = at;
+        while (logical < contentLength)
+        {
+            final long length = Math.min(perBlock, contentLength - logical);
+            final byte type = logical + length == contentLength ? R7fConstants.FRAGMENT_LAST : R7fConstants.FRAGMENT_MIDDLE;
+            writeFragmentBody(enc, at, type, flags, logical, length);
+            segment.set(INT_BE, at, R7fConstants.FRAGMENT_MAGIC);
+            logical += length;
+            last = at + R7fConstants.FRAGMENT_HEADER_SIZE + length;
+            at += BLOCK_SIZE;
+        }
+        writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FIRST, flags, 0, firstCapacity);
+        position = last;
+        return start;
+    }
+
+    /**
+     * A committed fragment that is not an entry, filling the rest of the block from
+     * {@code start}. Its data is the segment's own zero fill.
+     */
+    private void writePad(final long start)
+    {
+        final long length = R7fFraming.firstCapacity(start, BLOCK_SIZE);
+        segment.set(ValueLayout.JAVA_BYTE, start + R7fConstants.FRAGMENT_OFF_TYPE, R7fConstants.FRAGMENT_FULL);
+        segment.set(ValueLayout.JAVA_BYTE, start + R7fConstants.FRAGMENT_OFF_FLAGS, R7fConstants.FLAG_PAD);
+        segment.set(INT_BE, start + R7fConstants.FRAGMENT_OFF_LENGTH, (int) length);
+        final CRC32C crc = new CRC32C();
+        final long dataAt = start + R7fConstants.FRAGMENT_HEADER_SIZE;
+        crc.update(segmentView.limit((int) (start + R7fConstants.FRAGMENT_OFF_CRC)).position((int) (start + R7fConstants.FRAGMENT_OFF_TYPE)));
+        segmentView.clear();
+        crc.update(segmentView.limit((int) (dataAt + length)).position((int) dataAt));
+        segmentView.clear();
+        segment.set(INT_BE, start + R7fConstants.FRAGMENT_OFF_CRC, (int) crc.getValue());
+        VarHandle.releaseFence();
+        segment.set(INT_BE, start, R7fConstants.FRAGMENT_MAGIC);
+        position = start + R7fConstants.FRAGMENT_HEADER_SIZE + length;
+    }
+
+    private void ensurePacked(final long capacity)
+    {
+        if (packed == null || packed.capacity() < capacity)
+        {
+            packed = ByteBuffer.allocateDirect((int) capacity);
+            packedSegment = MemorySegment.ofBuffer(packed);
+        }
+    }
+
+    /**
      * Writes everything of a fragment but its magic: the header fields, the data (bytes
      * {@code [from, from + length)} of the entry's content) and the CRC over both.
      * <p>
@@ -472,7 +676,13 @@ public final class R7fJournal implements Journal
      */
     private void writeFragmentBody(final EntryEncoder enc, final long at, final byte type, final long from, final long length)
     {
+        writeFragmentBody(enc, at, type, (byte) 0, from, length);
+    }
+
+    private void writeFragmentBody(final EntryEncoder enc, final long at, final byte type, final byte flags, final long from, final long length)
+    {
         segment.set(ValueLayout.JAVA_BYTE, at + R7fConstants.FRAGMENT_OFF_TYPE, type);
+        segment.set(ValueLayout.JAVA_BYTE, at + R7fConstants.FRAGMENT_OFF_FLAGS, flags);
         segment.set(INT_BE, at + R7fConstants.FRAGMENT_OFF_LENGTH, (int) length);
         final long dataAt = at + R7fConstants.FRAGMENT_HEADER_SIZE;
         enc.copyContent(segment, from, length, dataAt);
@@ -671,6 +881,38 @@ public final class R7fJournal implements Journal
          * boundaries fall, which can be inside any of the three.
          */
         private final MemorySegment head = MemorySegment.ofArray(new byte[R7fConstants.ENTRY_CONTENT_HEADER_SIZE]);
+        private long headLength = R7fConstants.ENTRY_CONTENT_HEADER_SIZE;
+
+        // Compression only: the whole content in one direct buffer, sequence left to fill in
+        private ByteBuffer plain;
+        private int plainLength;
+
+        private void fillPlain(final ByteBuffer fbBuf, final ByteBuffer rawData)
+        {
+            final int fbLen = fbBuf.remaining();
+            final int rawLen = rawData != null ? rawData.remaining() : 0;
+            plainLength = R7fConstants.ENTRY_CONTENT_HEADER_SIZE + fbLen + rawLen;
+            if (plain == null || plain.capacity() < plainLength)
+            {
+                plain = ByteBuffer.allocateDirect(Math.max(plainLength, 64 * 1024));
+            }
+            plain.clear();
+            plain.putInt(0).putInt(fbLen).putInt(rawLen).put(fbBuf.duplicate());
+            if (rawLen > 0)
+            {
+                plain.put(rawData.duplicate());
+            }
+        }
+
+        /** The content is {@code length} bytes of {@code source}, with no head of its own. */
+        private void preparePackedSources(final MemorySegment source, final long length)
+        {
+            headLength = 0;
+            fbSource = source.asSlice(0, length);
+            rawSource = null;
+            fbEnd = length;
+        }
+
         private MemorySegment fbSource;
         private MemorySegment rawSource;
         private long fbEnd;
@@ -680,6 +922,7 @@ public final class R7fJournal implements Journal
             head.set(INT_BE, 0, sequence);
             head.set(INT_BE, Integer.BYTES, fbLen);
             head.set(INT_BE, 2 * Integer.BYTES, rawLen);
+            headLength = R7fConstants.ENTRY_CONTENT_HEADER_SIZE;
             fbSource = MemorySegment.ofBuffer(fbBuf);
             rawSource = rawLen > 0 ? MemorySegment.ofBuffer(rawData) : null;
             fbEnd = R7fConstants.ENTRY_CONTENT_HEADER_SIZE + (long) fbLen;
@@ -709,16 +952,16 @@ public final class R7fJournal implements Journal
                 final MemorySegment source;
                 final long offset;
                 final long available;
-                if (logical < R7fConstants.ENTRY_CONTENT_HEADER_SIZE)
+                if (logical < headLength)
                 {
                     source = head;
                     offset = logical;
-                    available = R7fConstants.ENTRY_CONTENT_HEADER_SIZE - logical;
+                    available = headLength - logical;
                 }
                 else if (logical < fbEnd)
                 {
                     source = fbSource;
-                    offset = logical - R7fConstants.ENTRY_CONTENT_HEADER_SIZE;
+                    offset = logical - headLength;
                     available = fbEnd - logical;
                 }
                 else
@@ -763,6 +1006,14 @@ public final class R7fJournal implements Journal
             if (faultAhead != null)
             {
                 faultAhead.close();
+            }
+            if (stream != null)
+            {
+                stream.close();
+            }
+            if (single != null)
+            {
+                single.close();
             }
 
             // The provider is this journal's to close. Its warmer thread runs ahead of the
@@ -1052,7 +1303,8 @@ if (finalizer.isAlive())
         putLong(segmentSequence);
         putLong(segmentStartEpochMillis);
         segment.set(INT_BE, R7fConstants.PREAMBLE_OFF_BLOCK_SIZE, BLOCK_SIZE);
-        segment.set(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC, R7fConstants.CODEC_NONE);
+        segment.set(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC, codec);
+        streamBlock = -1;
         position = R7fConstants.PREAMBLE_SIZE;
     }
 

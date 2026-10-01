@@ -52,6 +52,28 @@ public final class R7fConstants
      */
     public static final short CODEC_NONE = 0;
 
+    /**
+     * A zstd stream per block (FORMAT.md 4.4). Every entry is fed into it and flushed, and its
+     * compressed bytes are that entry's FULL fragment, so each entry is still committed by its
+     * own magic. A fragment's Flags say how its data relates to the stream. Entries too large
+     * for a block are compressed on their own and split as usual.
+     */
+    public static final short CODEC_ZSTD = 1;
+
+    /** First entry of a block's stream: the decompressor starts fresh here. */
+    public static final byte FLAG_STREAM_START = 1;
+    /** Continues the block's stream: needs every earlier stream fragment in the block. */
+    public static final byte FLAG_STREAM_CONTINUE = 2;
+    /** Not an entry: the rest of the block, skipped because the next entry might not fit. */
+    public static final byte FLAG_PAD = 4;
+    /** {@code plainLen(4)} then a zstd frame of its own; split across blocks like any entry. */
+    public static final byte FLAG_STANDALONE = 8;
+
+    public static boolean isKnownCodec(final short codec)
+    {
+        return codec == CODEC_NONE || codec == CODEC_ZSTD;
+    }
+
     // --- Fragment framing ---
     /**
      * Magic of every fragment: 'R7F2'. For a FULL or FIRST fragment it is the entry's commit,

@@ -62,7 +62,7 @@ public record ServerConfig(
     @Override
     public StorageConfig storage()
     {
-        return Optional.ofNullable(this.storage).orElse(new StorageConfig(null, null, null, null, null));
+        return Optional.ofNullable(this.storage).orElse(new StorageConfig(null, null, null, null, null, null, null));
     }
 
     @Override
@@ -442,15 +442,33 @@ public record ServerConfig(
             Integer shardCount,
             DataSize shardSize,
             Boolean preFault,
-            JournalSecurityConfig journalSecurity
+            JournalSecurityConfig journalSecurity,
+            String compression,
+            Integer compressionLevel
     ) implements ValidatableConfig
     {
+        public static final String COMPRESSION_ZSTD = "zstd";
+        public static final String COMPRESSION_NONE = "none";
+
         @Override
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils v = new ValidatorUtils(result);
             v.required("work_dir", this.workDir());
             this.journalSecurity().validate(result.nested("journal_security"));
+
+            if (!COMPRESSION_ZSTD.equals(this.compression()) && !COMPRESSION_NONE.equals(this.compression()))
+            {
+                result.addError("compression", "must be '" + COMPRESSION_ZSTD + "' or '" + COMPRESSION_NONE
+                        + "', but was '" + this.compression + "'");
+            }
+            final int level = this.compressionLevel();
+            if (level < R7fJournalProvider.MIN_COMPRESSION_LEVEL || level > R7fJournalProvider.MAX_COMPRESSION_LEVEL)
+            {
+                result.addError("compression_level", "must be from " + R7fJournalProvider.MIN_COMPRESSION_LEVEL
+                        + " to " + R7fJournalProvider.MAX_COMPRESSION_LEVEL + ", but was " + level
+                        + ". Level 1 is the default and the measured sweet spot; higher levels cost throughput for little gain.");
+            }
 
             final int shardCount = this.shardCount();
             if (shardCount < 1)
@@ -559,6 +577,31 @@ public record ServerConfig(
         public JournalSecurityConfig journalSecurity()
         {
             return Optional.ofNullable(this.journalSecurity).orElse(new JournalSecurityConfig(null, null, null, null, null));
+        }
+
+        /**
+         * zstd by default: at level 1 it made the journal 9-15x smaller on benchmark traffic,
+         * with no measurable latency at 1,000 req/s, for 17-40% of peak throughput at
+         * saturation. See docs/performance_tuning.md.
+         */
+        @Override
+        public String compression()
+        {
+            return this.compression == null ? COMPRESSION_ZSTD : this.compression.trim().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        @Override
+        public Integer compressionLevel()
+        {
+            return Optional.ofNullable(this.compressionLevel).orElse(1);
+        }
+
+        /**
+         * The zstd level the journal writes with, or 0 for no compression.
+         */
+        public int journalCompressionLevel()
+        {
+            return COMPRESSION_ZSTD.equals(this.compression()) ? this.compressionLevel() : 0;
         }
     }
 

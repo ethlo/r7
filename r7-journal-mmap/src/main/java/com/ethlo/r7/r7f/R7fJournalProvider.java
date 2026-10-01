@@ -45,6 +45,13 @@ public class R7fJournalProvider implements AutoCloseable
      * an int can address: the largest whole number of blocks below that. Public for the same
      * reason as {@link #MIN_SEGMENT_SIZE}.
      */
+    /**
+     * zstd levels the journal accepts (FORMAT.md 4.4). Above 19 zstd needs far more memory per
+     * context for little gain on records this small. Public for configuration validation.
+     */
+    public static final int MIN_COMPRESSION_LEVEL = 1;
+    public static final int MAX_COMPRESSION_LEVEL = 19;
+
     public static final long MAX_SEGMENT_SIZE = Integer.MAX_VALUE / SEGMENT_SIZE_MULTIPLE * SEGMENT_SIZE_MULTIPLE;
 
     /**
@@ -139,10 +146,29 @@ public class R7fJournalProvider implements AutoCloseable
      */
     private volatile Exception warmupFailure;
     private final boolean preFault;
+    private final int compressionLevel;
     private volatile boolean running = true;
 
+    /**
+     * An uncompressed journal.
+     */
     public R7fJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)
     {
+        this(tempDir, shardId, segmentSizeBytes, preFault, 0);
+    }
+
+    /**
+     * @param compressionLevel zstd level for the journal's segments (FORMAT.md 4.4), or 0 for
+     *                         none. Where zstd's native library cannot be loaded the journal is
+     *                         written uncompressed, with a warning, rather than not at all.
+     */
+    public R7fJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault, int compressionLevel)
+    {
+        if (compressionLevel != 0 && (compressionLevel < MIN_COMPRESSION_LEVEL || compressionLevel > MAX_COMPRESSION_LEVEL))
+        {
+            throw new IllegalArgumentException("compressionLevel must be 0 or from " + MIN_COMPRESSION_LEVEL
+                    + " to " + MAX_COMPRESSION_LEVEL + ", got " + compressionLevel);
+        }
         if (segmentSizeBytes < MIN_SEGMENT_SIZE)
         {
             throw new IllegalArgumentException("segmentSizeBytes must be at least " + MIN_SEGMENT_SIZE
@@ -163,6 +189,7 @@ public class R7fJournalProvider implements AutoCloseable
 
         this.tempDir = tempDir;
         this.shardId = shardId;
+        this.compressionLevel = compressionLevel > 0 && !zstdAvailable(shardId) ? 0 : compressionLevel;
         this.segmentSizeBytes = segmentSizeBytes;
 this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").resolve("shard-" + shardId + SEQUENCE_MARKER_EXTENSION);
         // Whichever is higher: the marker can lag if a write of it failed, and the segments
@@ -556,6 +583,34 @@ this.sequenceMarkerPath = java.util.Objects.requireNonNull(tempDir, "tempDir").r
     public boolean isPreFault()
     {
         return preFault;
+    }
+
+    /**
+     * The zstd level this provider's journal writes with, or 0 for none.
+     */
+    public int getCompressionLevel()
+    {
+        return compressionLevel;
+    }
+
+    /**
+     * Whether zstd's JNI library loads here. It is a native library extracted at runtime, so a
+     * platform it was not built for, or a native image without its metadata, can refuse it; an
+     * audit journal written uncompressed beats a gateway that will not start.
+     */
+    private static boolean zstdAvailable(final int shardId)
+    {
+        try
+        {
+            com.github.luben.zstd.util.Native.load();
+            return true;
+        }
+        catch (final Throwable e)
+        {
+            log.warn("Shard {}: zstd is not available on this platform ({}); writing the journal uncompressed",
+                    shardId, e.toString());
+            return false;
+        }
     }
 
     public long getSegmentSizeBytes()

@@ -5,6 +5,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.zip.CRC32C;
 
+import com.github.luben.zstd.ZstdDecompressCtx;
+
 /**
  * Reads format-version-2 entries out of a segment: the one place the fragment framing is
  * interpreted, shared by the decoder and by recovery so that the two cannot disagree about
@@ -41,7 +43,15 @@ final class FragmentReader
     private final ByteBuffer crcView;
     private final long limit;
     private final int blockSize;
+    private final short codec;
     private final CRC32C crc = new CRC32C();
+
+    // zstd state (FORMAT.md 4.4), created on the first compressed entry
+    private final ByteBuffer streamSource;
+    private ZstdDecompressCtx zstd;
+    private ByteBuffer inflated;
+    /** Where the next stream fragment must start for the decompressor's context to fit it. */
+    private long streamNext = -1;
 
     private ByteBuffer assembly;
 
@@ -61,6 +71,11 @@ final class FragmentReader
      */
     FragmentReader(final ByteBuffer file, final long limit, final int blockSize)
     {
+        this(file, limit, blockSize, R7fConstants.CODEC_NONE);
+    }
+
+    FragmentReader(final ByteBuffer file, final long limit, final int blockSize, final short codec)
+    {
         if (!R7fFraming.isValidBlockSize(blockSize))
         {
             throw new IllegalArgumentException("Invalid block size " + blockSize);
@@ -69,6 +84,8 @@ final class FragmentReader
         this.crcView = file.duplicate();
         this.limit = Math.min(limit, file.capacity());
         this.blockSize = blockSize;
+        this.codec = codec;
+        this.streamSource = file.duplicate();
     }
 
     /**
@@ -111,6 +128,14 @@ final class FragmentReader
             return Status.DAMAGED;
         }
 
+        final byte flags = file.get((int) (start + R7fConstants.FRAGMENT_OFF_FLAGS));
+        if (codec == R7fConstants.CODEC_ZSTD && fragmentType == R7fConstants.FRAGMENT_FULL
+                && flags == R7fConstants.FLAG_PAD)
+        {
+            // Not an entry: the writer closed the block off here
+            return read(start + R7fConstants.FRAGMENT_HEADER_SIZE + firstLength);
+        }
+
         final ByteBuffer content;
         final int contentBase;
         final long contentLength;
@@ -139,6 +164,168 @@ final class FragmentReader
             return damaged("continuation fragment where an entry should start");
         }
 
+        if (codec == R7fConstants.CODEC_ZSTD)
+        {
+            final long produced = (flags & R7fConstants.FLAG_STANDALONE) != 0
+                    ? inflateStandalone(content, contentBase, contentLength)
+                    : inflateStream(start, flags, contentBase, contentLength);
+            if (produced < 0)
+            {
+                return Status.DAMAGED;
+            }
+            return parse(inflated, 0, produced);
+        }
+        return parse(content, contentBase, contentLength);
+    }
+
+    /**
+     * A stream fragment's entry, decompressed with the context of every earlier
+     * stream fragment in its block. When this reader did not just decode the previous one —
+     * it started mid-block, from a checkpoint — the context is rebuilt from the block's start.
+     *
+     * @return the entry's plain length, or -1 with {@link #problem} set
+     */
+    private long inflateStream(final long start, final byte flags, final int base, final long length)
+    {
+        final long expected = streamNext;
+        streamNext = -1;
+        ensureZstd(4L * blockSize);
+        if (flags == R7fConstants.FLAG_STREAM_START)
+        {
+            zstd.reset();
+        }
+        else if (flags != R7fConstants.FLAG_STREAM_CONTINUE)
+        {
+            damaged("unknown fragment flags " + flags);
+            return -1;
+        }
+        else if (expected != start && !replayStream(start))
+        {
+            damaged("cannot rebuild the block's compression context before offset " + start);
+            return -1;
+        }
+        final long produced = decompressStream(base, length);
+        if (produced < 0)
+        {
+            damaged("cannot decompress stream fragment at offset " + start);
+            return -1;
+        }
+        streamNext = start + R7fConstants.FRAGMENT_HEADER_SIZE + length;
+        return produced;
+    }
+
+    /**
+     * Feeds every stream fragment from the start of {@code target}'s block up to it through the
+     * decompressor, output discarded.
+     */
+    private boolean replayStream(final long target)
+    {
+        long at = Math.max(target & -blockSize, R7fConstants.PREAMBLE_SIZE);
+        boolean started = false;
+        while (at < target)
+        {
+            if (file.getInt((int) at) != R7fConstants.FRAGMENT_MAGIC)
+            {
+                return false;
+            }
+            final long length = checkFragment(at);
+            if (length < 0)
+            {
+                return false;
+            }
+            final byte flags = file.get((int) (at + R7fConstants.FRAGMENT_OFF_FLAGS));
+            if (fragmentType == R7fConstants.FRAGMENT_FULL
+                    && (flags == R7fConstants.FLAG_STREAM_START || flags == R7fConstants.FLAG_STREAM_CONTINUE))
+            {
+                if (flags == R7fConstants.FLAG_STREAM_START)
+                {
+                    zstd.reset();
+                    started = true;
+                }
+                if (!started || decompressStream((int) (at + R7fConstants.FRAGMENT_HEADER_SIZE), length) < 0)
+                {
+                    return false;
+                }
+            }
+            at += R7fConstants.FRAGMENT_HEADER_SIZE + length;
+        }
+        return started && at == target;
+    }
+
+    /**
+     * Decompresses one flushed piece of the block's stream into {@link #inflated}.
+     */
+    private long decompressStream(final int base, final long length)
+    {
+        inflated.clear();
+        streamSource.clear();
+        streamSource.limit((int) (base + length)).position(base);
+        try
+        {
+            while (true)
+            {
+                final int consumed = streamSource.position();
+                final int produced = inflated.position();
+                zstd.decompressDirectByteBufferStream(inflated, streamSource);
+                if (streamSource.position() == consumed && inflated.position() == produced)
+                {
+                    break;
+                }
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            return -1;
+        }
+        return streamSource.hasRemaining() ? -1 : inflated.position();
+    }
+
+    /**
+     * {@code plainLen(4)} then a zstd frame of its own.
+     */
+    private long inflateStandalone(final ByteBuffer content, final int base, final long length)
+    {
+        if (length < Integer.BYTES + 1)
+        {
+            damaged("standalone entry too short");
+            return -1;
+        }
+        final int plainLength = content.getInt(base);
+        ensureZstd(Math.max(plainLength, 4L * blockSize));
+        try
+        {
+            final int produced = zstd.decompressDirectByteBuffer(inflated, 0, plainLength, content,
+                    base + Integer.BYTES, (int) (length - Integer.BYTES));
+            if (produced == plainLength)
+            {
+                return produced;
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            // reported below
+        }
+        damaged("cannot decompress standalone entry");
+        return -1;
+    }
+
+    private void ensureZstd(final long capacity)
+    {
+        if (zstd == null)
+        {
+            zstd = new ZstdDecompressCtx();
+        }
+        if (inflated == null || inflated.capacity() < capacity)
+        {
+            inflated = ByteBuffer.allocateDirect((int) capacity);
+        }
+    }
+
+    /**
+     * The entry's plain content: {@code sequence fbLen rawLen fb raw}.
+     */
+    private Status parse(final ByteBuffer content, final int contentBase, final long contentLength)
+    {
         if (contentLength < R7fConstants.ENTRY_CONTENT_HEADER_SIZE)
         {
             return damaged("entry too short to hold its header (" + contentLength + " bytes)");
@@ -266,7 +453,10 @@ final class FragmentReader
     {
         if (assembly == null || assembly.capacity() < contentLength)
         {
-            assembly = ByteBuffer.allocate((int) Math.max(contentLength, 2L * blockSize)).order(ByteOrder.BIG_ENDIAN);
+            final int capacity = (int) Math.max(contentLength, 2L * blockSize);
+            // Direct when compressed: zstd-jni decompresses from direct buffers only
+            assembly = (codec == R7fConstants.CODEC_NONE ? ByteBuffer.allocate(capacity) : ByteBuffer.allocateDirect(capacity))
+                    .order(ByteOrder.BIG_ENDIAN);
         }
         assembly.clear();
         final int perBlock = R7fFraming.continuationCapacity(blockSize);

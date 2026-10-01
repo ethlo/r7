@@ -128,17 +128,61 @@ class StorageConfigValidationTest
     @Test
     void theDefaultShardCountAndSizeAreValid()
     {
-        assertEquals(List.of(), errorsForConfig(new ServerConfig.StorageConfig("journals", null, null, null, null)));
+        assertEquals(List.of(), errorsForConfig(new ServerConfig.StorageConfig("journals", null, null, null, null, null, null)));
     }
 
     private static List<String> errorsFor(final int shardCount)
     {
-        return errorsForConfig(new ServerConfig.StorageConfig("journals", shardCount, null, null, null));
+        return errorsForConfig(new ServerConfig.StorageConfig("journals", shardCount, null, null, null, null, null));
+    }
+
+    @Test
+    void compressionIsZstdAtLevelOneByDefault()
+    {
+        final ServerConfig.StorageConfig storage = new ServerConfig.StorageConfig("journals", null, null, null, null, null, null);
+        assertEquals("zstd", storage.compression());
+        assertEquals(1, storage.journalCompressionLevel());
+    }
+
+    @Test
+    void compressionNoneMeansLevelZeroWhateverTheLevelSays()
+    {
+        final ServerConfig.StorageConfig storage = new ServerConfig.StorageConfig("journals", null, null, null, null, "None", 5);
+        assertEquals(List.of(), errorsForConfig(storage));
+        assertEquals(0, storage.journalCompressionLevel());
+    }
+
+    @Test
+    void anUnknownCompressionIsRefusedByName()
+    {
+        final List<String> errors = errorsForConfig(new ServerConfig.StorageConfig("journals", null, null, null, null, "gzip", null));
+        assertEquals(1, errors.size(), () -> "expected exactly one error, got " + errors);
+        assertTrue(errors.getFirst().contains("compression"), () -> errors.getFirst());
+    }
+
+    /**
+     * The bounds are the provider's own, so a level validation accepts is never refused when the
+     * journal is constructed.
+     */
+    @Test
+    void theCompressionLevelBoundsMatchTheProvider()
+    {
+        assertTrue(errorsForLevel(R7fJournalProvider.MIN_COMPRESSION_LEVEL).isEmpty());
+        assertTrue(errorsForLevel(R7fJournalProvider.MAX_COMPRESSION_LEVEL).isEmpty());
+        assertFalse(errorsForLevel(R7fJournalProvider.MIN_COMPRESSION_LEVEL - 1).isEmpty());
+        final List<String> errors = errorsForLevel(R7fJournalProvider.MAX_COMPRESSION_LEVEL + 1);
+        assertEquals(1, errors.size(), () -> "expected exactly one error, got " + errors);
+        assertTrue(errors.getFirst().contains("compression_level"), () -> errors.getFirst());
+    }
+
+    private static List<String> errorsForLevel(final int level)
+    {
+        return errorsForConfig(new ServerConfig.StorageConfig("journals", null, null, null, null, "zstd", level));
     }
 
     private static List<String> errorsForSize(final DataSize shardSize)
     {
-        return errorsForConfig(new ServerConfig.StorageConfig("journals", null, shardSize, null, null));
+        return errorsForConfig(new ServerConfig.StorageConfig("journals", null, shardSize, null, null, null, null));
     }
 
     private static List<String> errorsForConfig(final ServerConfig.StorageConfig config)

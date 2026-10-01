@@ -182,7 +182,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void theStorageConfigDefaultsToNoJournalSecurityOverrides()
     {
-        final ServerConfig.StorageConfig storage = new ServerConfig.StorageConfig(null, null, null, null, null);
+        final ServerConfig.StorageConfig storage = new ServerConfig.StorageConfig(null, null, null, null, null, null, null);
 
         assertThat(storage.journalSecurity().additionalSafeRequestHeaders()).isEmpty();
         assertThat(storage.journalSecurity().safeResponseHeaders()).isEmpty();
