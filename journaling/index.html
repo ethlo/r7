@@ -1123,10 +1123,10 @@ sealed segment once it is no longer needed, or <code>journal_dir</code> grows wi
 is the reaper: a small standalone process whose only job is deleting old segments from a shared
 journal volume.</p>
 <div class="admonition warning">
-<p class="admonition-title">This is a dumb, age-only policy</p>
-<p>The reaper does not look at any tailer's checkpoint, and does not confirm anything was
-actually read. A sealed (<code>.r7f</code>) segment is deleted once it has existed for longer than
-<code>ttl</code>, whether every tailer sharing the directory has read it or not. Set <code>ttl</code> comfortably
+<p class="admonition-title"><code>ttl</code> deletes whether or not a segment was read</p>
+<p>With <code>tailers</code> listed, a segment is deleted early once every one of them is done with it
+(see the table below). Whatever the tailers say, a sealed (<code>.r7f</code>) segment is deleted once
+it has existed for longer than <code>ttl</code>, read or not: that is the bound on disk use. Set <code>ttl</code> comfortably
 longer than the slowest tailer's realistic lag — including time to recover from a restart —
 or a slow or temporarily-down tailer will lose data it never got a chance to read. A
 segment the gateway's recovery quarantined (<code>*.corrupt</code>, see
@@ -1163,6 +1163,16 @@ overridable via the <code>REAPER_CONFIG</code> env var.</p>
 <td>How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (not the file's filesystem mtime — see below), before it is deleted. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
 </tr>
 <tr>
+<td><code>tailers</code></td>
+<td>none</td>
+<td>Checkpoint directories of the tailers that must all be done with a segment before it is deleted ahead of <code>ttl</code> (mount them read-only). A segment is done for a tailer when its checkpoint file says it was read to the end and everything in it delivered, and the tailer does not need it to rebuild an exchange still open. A listed tailer with no readable checkpoint file stops early deletion, so a tailer that is down keeps everything for up to <code>ttl</code></td>
+</tr>
+<tr>
+<td><code>min_age</code></td>
+<td><code>1h</code></td>
+<td>How old a segment must be before it is deleted ahead of <code>ttl</code>. A tailer counts a segment as done once its output reached the OS, not the disk; keep this above the tailers' <code>max_file_age</code> (15 minutes by default), after which their output files are fsync'd, so a power loss cannot take both copies</td>
+</tr>
+<tr>
 <td><code>poll_interval</code></td>
 <td><code>1m</code></td>
 <td>Delay between sweeps. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
@@ -1172,6 +1182,10 @@ overridable via the <code>REAPER_CONFIG</code> env var.</p>
 <p><strong>Example <code>config/reaper.yaml</code>:</strong></p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
 </span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7d</span>
+</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># Delete as soon as both tailers are done with a segment (and it is an hour old), not after 7 days</span>
+</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nt">tailers</span><span class="p">:</span>
+</span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints/json</span>
+</span><span id="True-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints/warc</span>
 </span></code></pre></div>
 <p><strong>Example Docker Compose Integration:</strong></p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">services</span><span class="p">:</span>
