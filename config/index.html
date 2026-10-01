@@ -1911,6 +1911,9 @@
   was substituted into.</li>
 <li>Values are injected prior to type-casting.</li>
 <li>If a variable is missing and no default is provided, configuration validation fails.</li>
+<li><code>$${...}</code> is not interpolated: it stands for the literal text <code>${...}</code>. Use it where a value
+  needs <code>${</code> for its own syntax, such as a named capture group in a <code>TemplateRedirect</code> target
+  (<code>/new/$${rest}</code>). Written as <code>${rest}</code>, it would be read as a variable called <code>rest</code>.</li>
 </ul>
 <h3 id="header-case-sensitivity">Header Case Sensitivity</h3>
 <p>In strict accordance with RFC 7230, <strong>all HTTP header evaluations in r7 are case-insensitive</strong>. This applies to predicate matching (<code>RequestHeader</code>), filter mutations (<code>SetRequestHeader</code>), and CORS validations. It also holds for the headers a journal consumer reads back through <code>R7Tailer</code>: a lookup for <code>content-type</code> finds a header journaled as <code>Content-Type</code>, while iteration still shows each name as it was written. Folding is ASCII-only and does not depend on the JVM's default locale.</p>
@@ -2906,7 +2909,7 @@
 <td><code>target</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The destination URL template. Regex capture groups are referenced by number as in Java's <code>Matcher.replaceFirst</code> (<code>$1</code>, <code>$2</code>, ...); <code>\$</code> is a literal <code>$</code>.</td>
+<td>The destination URL template. Regex capture groups are referenced as in Java's <code>Matcher.replaceFirst</code>: by number (<code>$1</code>, <code>$2</code>, ...) or by name, written <code>$${name}</code> because <code>${...}</code> on its own is <a href="#environment-variable-interpolation">environment variable interpolation</a>. <code>\$</code> is a literal <code>$</code>.</td>
 </tr>
 <tr>
 <td><code>status</code></td>
