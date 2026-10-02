@@ -1676,13 +1676,30 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#journal-header-redaction-storagejournal_security" class="md-nav__link">
+  <a href="#journal-redaction-storagejournal_security" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Journal Header Redaction (<code>storage.journal_security</code>)
+        Journal Redaction (<code>storage.journal_security</code>)
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Journal Redaction (storage.journal_security)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#query-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Query parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -3881,11 +3898,11 @@
 <tr>
 <td><code>journal_security</code></td>
 <td>Object</td>
-<td>Shapes the whitelist of header names journaled in plain text. See below.</td>
+<td>Shapes the whitelists of header and query parameter names journaled in plain text. See below.</td>
 </tr>
 </tbody>
 </table>
-<h4 id="journal-header-redaction-storagejournal_security">Journal Header Redaction (<code>storage.journal_security</code>)</h4>
+<h4 id="journal-redaction-storagejournal_security">Journal Redaction (<code>storage.journal_security</code>)</h4>
 <p>At <code>HEADERS</code>/<code>FULL</code> journal levels, r7 journals every header name but only writes a header's
 <em>value</em> verbatim when the name is on a built-in whitelist (things like <code>host</code>, <code>user-agent</code>,
 <code>content-type</code>, <code>etag</code>, <code>x-forwarded-for</code>, <code>sec-fetch-site</code>, <code>sec-fetch-mode</code>); everything else —
@@ -3923,9 +3940,19 @@ fingerprint of its value instead of the value itself. This list is separate per 
 <td>If non-empty, replaces the built-in response whitelist entirely.</td>
 </tr>
 <tr>
+<td><code>safe_query_parameters</code></td>
+<td>List of Strings</td>
+<td>Query parameter names whose values are journaled in plain text. Empty by default, so every query parameter value is fingerprinted. See <a href="#query-parameters">Query parameters</a> below.</td>
+</tr>
+<tr>
+<td><code>safe_query_parameters_case_sensitive</code></td>
+<td>Boolean</td>
+<td>Match <code>safe_query_parameters</code> exactly, case included. Defaults to <code>false</code>: <code>page</code> on the list also covers <code>Page</code> and <code>PAGE</code>.</td>
+</tr>
+<tr>
 <td><code>fingerprint_key</code></td>
 <td>String</td>
-<td>Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (<code>id:hmac:</code> + 16 hex digits) rather than the default unkeyed SHA-256 (<code>id:sha256:</code> + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with <code>${VAR}</code> interpolation. See <a href="../journaling/#redacted-header-values">Journaling: redacted header values</a>.</td>
+<td>Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (<code>id:hmac:</code> + 16 hex digits) rather than the default unkeyed SHA-256 (<code>id:sha256:</code> + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with <code>${VAR}</code> interpolation. See <a href="../journaling/#redacted-header-and-query-parameter-values">Journaling: redacted header and query parameter values</a>.</td>
 </tr>
 </tbody>
 </table>
@@ -3951,7 +3978,39 @@ are sent to clients or upstreams.</p>
 </span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="c1"># safe_response_headers:</span>
 </span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="c1">#   - content-type</span>
 </span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="c1">#   - etag</span>
+</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
+</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">    </span><span class="c1"># Query parameters journaled in plain text; every other value is fingerprinted.</span>
+</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">safe_query_parameters</span><span class="p">:</span>
+</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">page</span>
+</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sort</span>
 </span></code></pre></div>
+<h5 id="query-parameters">Query parameters</h5>
+<p>The query is part of the request line, which every journal level records, <code>METADATA</code> included.
+The same rule as for headers applies to it: each parameter name is journaled as sent, and its
+value is written verbatim only when the name is on <code>safe_query_parameters</code>; every other value is
+replaced by the same fingerprint a header value gets. There is no built-in list, because no
+parameter name is safe everywhere, so with nothing configured every value is fingerprinted:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>GET /search?page=2&amp;api_key=s3cret&amp;q=shoes HTTP/1.1                       # as sent
+</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>GET /search?page=2&amp;api_key=id:sha256:1ec1c2&amp;q=id:sha256:01ea5d HTTP/1.1     # journaled, with page safe
+</span></code></pre></div>
+<ul>
+<li><strong>Case.</strong> Names on <code>safe_query_parameters</code> match regardless of case, as header names do:
+  <code>page</code> also covers <code>Page</code> and <code>PAGE</code>. Query parameter names are case sensitive on the wire,
+  so when your upstreams tell <code>id</code> from <code>ID</code>, set <code>safe_query_parameters_case_sensitive: true</code>
+  and only the exact spelling on the list is journaled in plain text.</li>
+<li><strong>Encoding.</strong> Names are matched after percent-decoding, as the upstream reads them: <code>p%61ge</code>
+  and <code>page</code> are the same parameter, and <code>user+id</code> and <code>user%20id</code> both match <code>user id</code>. Write
+  names in <code>safe_query_parameters</code> decoded; a name containing a percent-escape is refused at
+  startup with the decoded form to use instead. Values are fingerprinted decoded too, so
+  <code>q=a+b</code> and <code>q=a%20b</code> get the same fingerprint.</li>
+<li><strong>Repeats.</strong> Each occurrence of a repeated parameter is redacted on its own; a safe name is
+  safe every time it appears.</li>
+<li><strong>Bare parameters.</strong> A parameter without <code>=</code> (<code>?s3cret-token</code>) is fingerprinted whole unless
+  its name is safe: it is the only thing it carries. Empty values (<code>?q=</code>) stay empty.</li>
+</ul>
+<p>Both request lines are redacted the same way: the one the client sent and the one forwarded
+upstream, after filters such as <code>SetQueryParameter</code> have changed it. Redaction applies to the
+journal only; it never changes the query an upstream receives.</p>
 
 
 

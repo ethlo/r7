@@ -601,10 +601,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#redacted-header-values" class="md-nav__link">
+  <a href="#redacted-header-and-query-parameter-values" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Redacted header values
+        Redacted header and query parameter values
       </span>
     </span>
   </a>
@@ -849,9 +849,11 @@ controls where and how those journals are written on disk.</p>
 <p>Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (<code>gateway.route.id</code>, <code>gateway.target</code>), and the journal stores ISO-8859-1 text only. A route
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.</p>
-<h3 id="redacted-header-values">Redacted header values</h3>
+<h3 id="redacted-header-and-query-parameter-values">Redacted header and query parameter values</h3>
 <p>At <code>HEADERS</code> and <code>FULL</code>, a header whose name is not on the <code>journal_security</code> whitelist is
-journaled with a fingerprint in place of its value. There are two forms:</p>
+journaled with a fingerprint in place of its value. Query parameter values in the request lines
+get the same treatment at every level, unless the parameter is on <code>safe_query_parameters</code>
+(see <a href="../config/#query-parameters">Configuration: query parameters</a>). There are two forms:</p>
 <table>
 <thead>
 <tr>
@@ -885,7 +887,7 @@ Set a key in production:</p>
 <p>Keep the key out of anything a journal reader can see. Changing it changes every fingerprint
 from then on, so values journaled before and after the change no longer correlate. The
 unkeyed form is still the default so that existing consumers that match on <code>id:sha256:</code> keep
-working until you opt in. The key applies to journaled header values only: the
+working until you opt in. The key applies to journaled header and query parameter values only: the
 <code>gateway.auth.basic.user</code> attribute and the management endpoint's summaries still use the
 unkeyed form.</p>
 <h2 id="2-pick-a-sidecar-and-mount-the-shared-volume">2. Pick a sidecar and mount the shared volume</h2>
@@ -981,11 +983,11 @@ to their defaults below (so a bare container with no config volume still starts 
 </span><span id="True-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">"remote_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"10.0.0.7"</span><span class="p">,</span>
 </span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">"remote_address_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SOCKET"</span><span class="p">,</span>
 </span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=2"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
+</span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=id:sha256:d4735e"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
 </span><span id="True-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"api.example.com"</span><span class="p">},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">142</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
 </span><span id="True-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="p">},</span>
 </span><span id="True-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">"upstream_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/v1/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=2"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
+</span><span id="True-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/v1/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=id:sha256:d4735e"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
 </span><span id="True-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"backend:8080"</span><span class="p">},</span><span class="w"> </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000300Z"</span>
 </span><span id="True-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="p">},</span>
 </span><span id="True-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">"upstream_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
