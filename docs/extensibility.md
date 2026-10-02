@@ -48,7 +48,7 @@ public final class HasHeaderFactory implements GatewayPredicateFactory<HasHeader
     public record Config(String headerName) implements ValidatableConfig {
         @Override
         public void validate(final ValidationResult result) {
-            new ValidatorUtils(result).required(PREDICATE_NAME, "header_name", this.headerName());
+            new ValidatorUtils(result).required("header_name", this.headerName());
         }
     }
 
@@ -85,6 +85,7 @@ public final class HasHeaderFactory implements GatewayPredicateFactory<HasHeader
 
 **YAML Usage:**
 
+<!-- docs-check: skip, the predicate and filter only exist with this page's plugin on the classpath -->
 ```yaml
 match:
   - HasHeader:
@@ -113,7 +114,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.FastTerminationGatewayResponse;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -145,8 +146,8 @@ public final class BlockTokenFilterFactory implements GatewayFilterFactory<Block
         @Override
         public void validate(final ValidationResult result) {
             new ValidatorUtils(result)
-                    .required(FILTER_NAME, "token_header", this.tokenHeader())
-                    .required(FILTER_NAME, "blocked_token", this.blockedToken());
+                    .required("token_header", this.tokenHeader())
+                    .required("blocked_token", this.blockedToken());
         }
     }
 
@@ -167,9 +168,9 @@ public final class BlockTokenFilterFactory implements GatewayFilterFactory<Block
             if (incomingToken != null) {
                 if (incomingToken.toString().equals(this.blockedToken)) {
                     // Short-circuit the request immediately. Do not route upstream.
-                    exchange.shortCircuit(new FastTerminationGatewayResponse(
+                    exchange.shortCircuit(new ShortCircuitGatewayResponse(
                             HttpStatuses.FORBIDDEN,
-                            MediaTypes.TEXT_PLAIN,
+                            MediaTypes.TEXT_PLAIN_UTF8,
                             ByteBuffer.wrap(REJECT_PAYLOAD)
                     ));
                 }
@@ -192,6 +193,7 @@ public final class BlockTokenFilterFactory implements GatewayFilterFactory<Block
 
 **YAML Usage:**
 
+<!-- docs-check: skip, the predicate and filter only exist with this page's plugin on the classpath -->
 ```yaml
 filters:
   - BlockToken:
@@ -232,11 +234,24 @@ com.example.r7.filters.BlockTokenFilterFactory
 
 Once your code is written and registered via the SPI files, compile it into a standard Java JAR file (e.g., `my-custom-r7-extensions-1.0.jar`).
 
-To use this with the r7 Docker container, you simply need to mount the JAR into the container and append it to the JVM classpath.
+r7 finds extensions on its classpath. The gateway jar starts with `java -jar`, which takes its
+classpath from the jar's manifest alone (`r7.jar` plus the jars in `lib/` beside it) and ignores
+`-cp` and `CLASSPATH`. To add your jar, start the main class instead, with your jar after
+`r7.jar`; `r7.jar`'s manifest still brings in `lib/`:
+
+```bash
+java -cp "r7.jar:plugins/*" com.ethlo.r7.helidon.R7Helidon
+```
 
 ### Docker Compose Example
 
-```yaml
+The image's entrypoint is `java -jar`, so mount your jars and override the entrypoint with the
+image's own flags plus the classpath. The image's AOT cache still applies, since your jars come
+after the classpath it was built with. Copy the flags from the entrypoint of the image you run
+(`docker inspect --format '{{json .Config.Entrypoint}}' ghcr.io/ethlo/r7-gateway:latest`) when
+you upgrade.
+
+```yaml title="docker-compose.yaml"
 services:
   r7-api:
     image: ghcr.io/ethlo/r7-gateway:latest
@@ -245,12 +260,16 @@ services:
       - "9999:8888"
     volumes:
       - ./config:/app/config:ro
-      # 1. Mount your custom jar directory into the container
-      - ./plugins:/app/plugins:ro 
-    environment:
-      # 2. Add the jar to the Java classpath
-      - JAVA_TOOL_OPTIONS=-cp "/app/r7.jar:/app/plugins/my-custom-r7-extensions-1.0.jar"
-
+      - ./plugins:/app/plugins:ro   # your extension jars
+    entrypoint:
+      - java
+      - -XX:AOTCache=/app/r7.aot
+      - --enable-native-access=ALL-UNNAMED
+      - --sun-misc-unsafe-memory-access=allow
+      - -Djava.security.egd=file:/dev/./urandom
+      - -cp
+      - /app/r7.jar:/app/plugins/*
+      - com.ethlo.r7.helidon.R7Helidon
 ```
 
 The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (`HasHeader` and `BlockToken`) will be fully operational alongside the native r7 filters.

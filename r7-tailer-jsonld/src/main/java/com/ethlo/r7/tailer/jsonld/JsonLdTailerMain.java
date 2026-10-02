@@ -143,7 +143,7 @@ public final class JsonLdTailerMain
                         JournalFiles.fileAttributes(attributeSource))));
     }
 
-    private static JsonldTailerConfig loadConfig(final Path configFile)
+    static JsonldTailerConfig loadConfig(final Path configFile)
     {
         if (!Files.exists(configFile))
         {

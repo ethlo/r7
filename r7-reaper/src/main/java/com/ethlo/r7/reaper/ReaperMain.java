@@ -70,7 +70,7 @@ public final class ReaperMain
         }
     }
 
-    private static ReaperConfig loadConfig(final Path configFile)
+    static ReaperConfig loadConfig(final Path configFile)
     {
         if (!Files.exists(configFile))
         {

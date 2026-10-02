@@ -35,6 +35,13 @@
             <version>6.1.3</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.ethlo.r7</groupId>
+            <artifactId>r7-config</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
