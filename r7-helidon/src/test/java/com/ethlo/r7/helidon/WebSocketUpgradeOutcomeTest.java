@@ -79,7 +79,7 @@ class WebSocketUpgradeOutcomeTest extends AbstractR7IntegrationTest
             // client would keep using - so the gauge cannot be relying on it closing.
             //
             // Telemetry is flushed to the readable snapshot on a background 2s tick (see
-            // TelemetryFlusher), not synchronously: route_metrics reads empty until the first
+            // MetricsRegistry), not synchronously: route_metrics reads empty until the first
             // tick after startup, which a bare "poll until 0" would misread as success before
             // this request was ever accounted for. Instead, wait for the first snapshot that has
             // actually counted this request (total >= 1) and judge that one.

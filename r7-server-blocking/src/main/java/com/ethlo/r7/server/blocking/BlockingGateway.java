@@ -58,6 +58,7 @@ public final class BlockingGateway implements AutoCloseable
     private final GatewayPipeline pipeline;
     private final ShardedJournalWriter<R7fJournal> journalWriter;
     private final GatewayScheduler scheduler;
+    private final MetricsRegistry metricsRegistry;
     private final ManagementEndpoint managementEndpoint;
     private final ListenerStatistics statistics = new ListenerStatistics();
     private final long maxHeadBytes;
@@ -76,46 +77,81 @@ public final class BlockingGateway implements AutoCloseable
         requireRoutesFile(routesFile);
         final RouteRegistry routeRegistry = new RouteRegistry();
         this.scheduler = new GatewayScheduler(5);
-        this.serverConfig = loadServerSettings(serverFile);
-        final ServerConfig.LimitsConfig limits = this.serverConfig.limits();
-        this.maxHeadBytes = limits.maxHeaderSize().bytes();
-        this.maxHeaderCount = limits.maxHeaderCount();
-        this.maxEntityBytes = limits.maxEntitySize().bytes();
-
-        final ServerConfig.StorageConfig storage = this.serverConfig.storage();
-        final Path workDir = Paths.get(storage.workDir());
-        JournalFiles.createDirectories(workDir);
-        R7fRecoveryManager.cleanAndRecover(workDir);
-        // Opened while the routes load, not before: opening proves zstd works (loading its native
-        // library and binding it through FFM), which takes about as long as loading the routes.
-        final FutureTask<ShardedJournalWriter<R7fJournal>> journalOpening = new FutureTask<>(() -> new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
-                new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault(), storage.journalCompressionLevel()))));
-        Thread.ofPlatform().daemon().name("r7-journal-open").start(journalOpening);
-
-        final MetricsRegistry metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
-        final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(
-                GatewayScheduler.class, this.scheduler,
-                MetricsRegistry.class, metricsRegistry)));
-        final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
-        this.journalWriter = opened(journalOpening);
-
-        this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
-        final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
-        this.managementEndpoint = new ManagementEndpoint(metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, this.statistics::snapshot);
-        hotReloadService.onReload(new RouteGenerationListener()
+        FutureTask<ShardedJournalWriter<R7fJournal>> journalOpening = null;
+        try
         {
-            @Override
-            public void prepare(final List<GatewayRoute> routes)
-            {
-                pipeline.prepare(routes);
-            }
+            this.serverConfig = loadServerSettings(serverFile);
+            final ServerConfig.LimitsConfig limits = this.serverConfig.limits();
+            this.maxHeadBytes = limits.maxHeaderSize().bytes();
+            this.maxHeaderCount = limits.maxHeaderCount();
+            this.maxEntityBytes = limits.maxEntitySize().bytes();
 
-            @Override
-            public void retire(final List<GatewayRoute> routes)
+            final ServerConfig.StorageConfig storage = this.serverConfig.storage();
+            final Path workDir = Paths.get(storage.workDir());
+            JournalFiles.createDirectories(workDir);
+            R7fRecoveryManager.cleanAndRecover(workDir);
+            // Opened while the routes load, not before: opening proves zstd works (loading its native
+            // library and binding it through FFM), which takes about as long as loading the routes.
+            journalOpening = new FutureTask<>(() -> new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
+                    new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault(), storage.journalCompressionLevel()))));
+            Thread.ofPlatform().daemon().name("r7-journal-open").start(journalOpening);
+
+            this.metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
+            final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(
+                    GatewayScheduler.class, this.scheduler,
+                    MetricsRegistry.class, this.metricsRegistry)));
+            final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
+            this.journalWriter = opened(journalOpening);
+
+            this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
+            final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
+            this.managementEndpoint = new ManagementEndpoint(this.metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, this.statistics::snapshot);
+            hotReloadService.onReload(new RouteGenerationListener()
             {
-                pipeline.retire(routes);
-            }
-        });
+                @Override
+                public void prepare(final List<GatewayRoute> routes)
+                {
+                    pipeline.prepare(routes);
+                }
+
+                @Override
+                public void retire(final List<GatewayRoute> routes)
+                {
+                    pipeline.retire(routes);
+                }
+            });
+        }
+        catch (final IOException | RuntimeException | Error e)
+        {
+            // Nothing of a gateway that failed to start may keep running: a servlet container
+            // retries a failed deploy in the same JVM.
+            abandon(journalOpening);
+            this.scheduler.shutdown();
+            throw e;
+        }
+    }
+
+    /**
+     * Shuts down the journal of a gateway that failed to start, once it has finished opening.
+     */
+    private static void abandon(final FutureTask<ShardedJournalWriter<R7fJournal>> journalOpening)
+    {
+        if (journalOpening == null)
+        {
+            return;
+        }
+        try
+        {
+            journalOpening.get().shutdown();
+        }
+        catch (final ExecutionException e)
+        {
+            // It never opened, so there is nothing to shut down
+        }
+        catch (final InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static <T> T opened(final FutureTask<T> opening) throws IOException
@@ -332,6 +368,7 @@ public final class BlockingGateway implements AutoCloseable
             return;
         }
         this.journalWriter.shutdown();
+        this.metricsRegistry.close();
         this.scheduler.shutdown();
     }
 }
