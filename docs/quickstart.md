@@ -19,7 +19,7 @@ r7-quickstart/
 
 Create `docker-compose.yaml`:
 
-```yaml
+```yaml title="docker-compose.yaml"
 services:
   r7:
     image: ghcr.io/ethlo/r7-gateway:latest
@@ -55,7 +55,7 @@ authenticates, and list the name you use for it under `management.allowed_hosts`
 
 Create `routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.
 
-```yaml
+```yaml title="routes.yaml"
 global_filters:
   - AddCorrelationId
   - SimpleMetrics

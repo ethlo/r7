@@ -100,7 +100,7 @@ public final class WarcTailerMain
         }
     }
 
-    private static WarcTailerConfig loadConfig(final Path configFile)
+    static WarcTailerConfig loadConfig(final Path configFile)
     {
         if (!Files.exists(configFile))
         {

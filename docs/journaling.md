@@ -22,6 +22,12 @@ override it by response status) in `routes.yaml`:
 ```yaml
 routes:
   - id: my-route
+    match:
+      - PathPrefix:
+          prefix: /api
+    upstream:
+      targets:
+        - url: http://backend:8080
     journal:
       request:
         level: METADATA
@@ -59,7 +65,7 @@ compare, so a low-entropy secret such as `Authorization: Basic` with a known use
 common password, a short API key or a `role=admin` cookie can be found with a dictionary.
 Set a key in production:
 
-```yaml
+```yaml title="server.yaml"
 storage:
   journal_security:
     fingerprint_key: ${R7_FINGERPRINT_KEY}   # at least 32 characters, e.g. `openssl rand -base64 48`
@@ -155,7 +161,7 @@ an array of its values.
 
 **Example `config/jsonld-tailer.yaml`:**
 
-```yaml
+```yaml title="jsonld-tailer.yaml"
 journal_dir: /journals
 checkpoint_dir: /checkpoints
 output_path: "-"
@@ -163,7 +169,7 @@ output_path: "-"
 
 **Example Docker Compose Integration:**
 
-```yaml
+```yaml title="docker-compose.yaml"
 services:
   r7-api:
     image: ghcr.io/ethlo/r7-gateway:latest
@@ -211,14 +217,14 @@ by default, overridable via the `WARC_TAILER_CONFIG` env var.
 
 **Example `config/warc-tailer.yaml`:**
 
-```yaml
+```yaml title="warc-tailer.yaml"
 journal_dir: /journals
 output_dir: /warc
 ```
 
 **Example Docker Compose Integration:**
 
-```yaml
+```yaml title="docker-compose.yaml"
 services:
   r7-api:
     image: ghcr.io/ethlo/r7-gateway:latest
@@ -281,7 +287,7 @@ overridable via the `REAPER_CONFIG` env var.
 
 **Example `config/reaper.yaml`:**
 
-```yaml
+```yaml title="reaper.yaml"
 journal_dir: /journals
 ttl: 7d
 # Delete as soon as both tailers are done with a segment (and it is an hour old), not after 7 days
@@ -305,7 +311,7 @@ checkpoint file, can only keep a segment longer: anything short of "done" leaves
 
 **Example Docker Compose Integration:**
 
-```yaml
+```yaml title="docker-compose.yaml"
 services:
   r7-api:
     image: ghcr.io/ethlo/r7-gateway:latest

@@ -21,7 +21,7 @@ YAML file to start. No plugins to assemble, no scripting language to learn.
 
 All r7 needs is a `routes.yaml`:
 
-```yaml
+```yaml title="routes.yaml"
 routes:
   - id: api
     match:

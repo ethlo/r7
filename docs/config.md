@@ -789,7 +789,7 @@ Levels and `status_overrides` work as for a route, except that `FULL` is refused
 
 The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.
 
-```yaml
+```yaml title="routes.yaml"
 version: '{{git.rev.abbr}}'
 
 # Global filters applied to all routes
@@ -1027,7 +1027,7 @@ is fingerprinted, no exceptions (unkeyed unless `fingerprint_key` is set, which 
 in production). This affects only journaling; it has no effect on what headers
 are sent to clients or upstreams.
 
-```yaml
+```yaml title="server.yaml"
 storage:
   journal_security:
     # Add a couple of names to the built-in defaults. Only ever add headers whose values
