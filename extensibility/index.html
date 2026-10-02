@@ -984,7 +984,7 @@ Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.Gat
 </span><span id="True-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./plugins:/app/plugins:ro</span><span class="w"> </span>
 </span><span id="True-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
 </span><span id="True-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">      </span><span class="c1"># 2. Add the jar to the Java classpath</span>
-</span><span id="True-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JAVA_TOOL_OPTIONS=-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -cp "/app/r7.jar:/app/plugins/my-custom-r7-extensions-1.0.jar"</span>
+</span><span id="True-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JAVA_TOOL_OPTIONS=-cp "/app/r7.jar:/app/plugins/my-custom-r7-extensions-1.0.jar"</span>
 </span></code></pre></div>
 <p>The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
 
