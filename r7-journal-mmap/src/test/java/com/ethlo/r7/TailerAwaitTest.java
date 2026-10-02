@@ -28,7 +28,7 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 
 /**
  * A tailer waiting between ticks wakes when the gateway commits, not when its poll interval
- * runs out (design/live-tailing.md, steps 2 and 3).
+ * runs out (design/history/live-tailing.md, steps 2 and 3).
  */
 class TailerAwaitTest
 {

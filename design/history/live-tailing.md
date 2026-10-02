@@ -1,5 +1,7 @@
 # Live tailing: microseconds between write and read
 
+> **History, not maintained.** Steps 1 to 3 shipped and describe how tailers wait today (`CommitSignal`, `R7Tailer.awaitNewData`). Step 4, the doorbell, is parked and not planned: see [`../plans/README.md`](../plans/README.md).
+
 Status: steps 1–3 done; step 4 proposed.
 
 ## The question

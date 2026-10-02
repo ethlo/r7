@@ -7,11 +7,11 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
     <!--
-        EXPERIMENTAL. What a server with a thread per request shares: the exchange base class that
+        What a server with a thread per request shares: the exchange base class that
         proxies through r7-upstream's client, and the composition of config,
-        journal and pipeline. r7-helidon (Níma, a virtual thread per request) is a thin adapter
-        over this, and a servlet host is to be the next. Names no server type. See
-        design/server-spi.md, steps 6 and 7.
+        journal and pipeline. r7-helidon (Níma, a virtual thread per request) and the
+        experimental r7-servlet host are thin adapters over this. Names no server type. See
+        design/history/server-spi.md, steps 6 and 7.
     -->
     <artifactId>r7-server-blocking</artifactId>
     <packaging>jar</packaging>

@@ -1,5 +1,7 @@
 # One upstream client for every server: `r7-upstream`
 
+> **History, not maintained.** This is the plan and measurements for `r7-upstream`, written while Undertow was still the default server (September to October 2026). Steps 1 to 5 shipped. Step 6 and the `proxy.client` setting became moot when Undertow was removed. How the upstream client works now is in [`../upstream.md`](../upstream.md).
+
 **Status:** proposed. Nothing here changes the request path until step 1 lands with instructions
 per request unchanged, and Undertow's default does not move until step 4 has numbers behind it.
 

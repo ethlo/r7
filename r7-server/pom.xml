@@ -11,7 +11,7 @@
         configuration, the management plane's metrics and DTOs, the request guards - composed
         from the engine (r7-core) and the r7f journal (r7-journal-mmap). Server modules such as
         r7-helidon depend on this; r7-core does not, so the engine stays free of any journal
-        implementation. See design/server-spi.md.
+        implementation. See design/history/server-spi.md.
     -->
     <artifactId>r7-server</artifactId>
     <packaging>jar</packaging>

@@ -7,10 +7,9 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
     <!--
-        EXPERIMENTAL. r7 on Helidon's Níma web server: the second implementation of the server SPI
-        (r7-server's ServerExchange): a thin adapter over r7-server-blocking, which it shares
-        with a servlet host, proxying through r7-upstream. Not a supported
-        deployment; see design/server-spi.md, step 6.
+        The gateway: r7 on Helidon's Níma web server, the only supported server. A thin adapter
+        over r7-server-blocking (r7-server's ServerExchange), which it shares with the servlet
+        host, proxying through r7-upstream. How it got here: design/history/server-spi.md, step 6.
     -->
     <artifactId>r7-helidon</artifactId>
     <packaging>jar</packaging>
@@ -20,7 +19,7 @@
         <!-- Helidon pairs its releases with Java's: 4.5.x is the LTS line for Java 25, 27 is for
              Java 27 only, and 29 will be the LTS for Java 29. The default is the LTS pairing, so
              r7-helidon runs on the same Java as the rest of r7; -Phelidon-27 builds the Java 27
-             line, which is the only one with per-carrier I/O pollers (design/upstream.md). -->
+             line, which is the only one with per-carrier I/O pollers (design/history/upstream-client.md). -->
         <helidon.version>4.5.5</helidon.version>
     </properties>
     <build>

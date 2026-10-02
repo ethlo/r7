@@ -69,8 +69,8 @@ elsewhere, put it behind something that authenticates, and list the name you use
 Create `config/routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.
 
 ```yaml
-filters:
-  - CorrelationIdHeader
+global_filters:
+  - AddCorrelationId
   - SimpleMetrics
 routes:
   - id: quickstart-echo-route
@@ -78,7 +78,7 @@ routes:
       targets:
         - url: http://echo-server:8080
     match:
-      - PathStartsWith:
+      - PathPrefix:
           prefix: /
     filters:
       - AddResponseHeader:
@@ -92,7 +92,7 @@ routes:
 
 ```
 
-## 4. Running and Testing
+## Running and Testing
 
 Start the stack using Docker Compose:
 

@@ -1,5 +1,7 @@
 # r7f format version 2: block framing (plan)
 
+> **History, not maintained.** This is why r7f moved to block framing (version 2) and what it cost. The normative format is [`r7-journal-mmap/FORMAT.md`](../../r7-journal-mmap/FORMAT.md).
+
 **Status:** done 2026-10-01 (#126 spec, #127 implementation, docs after). `FORMAT.md` is the
 normative text; this note keeps the reasoning and what was given up for it.
 

@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  * fault. {@code pre_fault} avoids that by touching the whole segment up front, which charges
  * every warmed segment to memory at once (about 1.2 GB a shard at the default size), and under
  * a container's memory limit cost more than it saved. This keeps a window of
- * {@link #LOOKAHEAD} bytes populated instead. See {@code design/journal-write-contention.md}.
+ * {@link #LOOKAHEAD} bytes populated instead. See {@code design/history/journal-write-contention.md}.
  * <p>
  * Pages are populated with {@code madvise(MADV_POPULATE_WRITE)} (Linux 5.14), which prepares
  * them for writing without writing to them. That is what makes it safe to run beside the

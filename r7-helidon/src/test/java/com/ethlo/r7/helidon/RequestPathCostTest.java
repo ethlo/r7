@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Allocation is gated, but not because it is expensive: short-lived garbage on this path is a
  * TLAB bump and dies young, and GC does not register in a CPU profile of passthrough (see
- * design/server-spi.md, "Measured"). It is gated because it is deterministic enough for CI and it
+ * design/history/server-spi.md, "Measured"). It is gated because it is deterministic enough for CI and it
  * moves when a layer of per-request objects is added. The headroom is about 10%, so it catches a
  * new wrapper graph, not a single stray lambda; perf stat and a profile catch the rest.
  * <p>
@@ -43,7 +43,7 @@ import org.slf4j.LoggerFactory;
  * at this test's light load that is dominated by the virtual-thread scheduler's carriers spinning
  * for work between short tasks - about 13 cores busy for 8 connections - not by requests. Compare
  * CPU between builds with {@code perf stat} instructions and cycles per request at load
- * (design/server-spi.md, "Order").
+ * (design/history/server-spi.md, "Order").
  * <p>
  * The budgets were reset when the test moved from Undertow to Níma: the whole JVM's allocation
  * per request is about 2.5 times what Undertow's I/O threads allocated (21 KB against 8 KB

@@ -10,7 +10,7 @@
         EXPERIMENTAL. r7 as a servlet inside someone else's container (Servlet 6.1: Tomcat 11,
         Jetty 12.1 ee11, ...), the way Spring Cloud Gateway can run on Servlet: the third
         implementation of the server SPI, a thin adapter over r7-server-blocking. The container is
-        provided; the tests run it in embedded Tomcat. See design/server-spi.md, step 7.
+        provided; the tests run it in embedded Tomcat. See design/history/server-spi.md, step 7.
     -->
     <artifactId>r7-servlet</artifactId>
     <packaging>jar</packaging>
