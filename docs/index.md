@@ -42,11 +42,12 @@ Start it:
 docker run --rm -p 8888:8888 -p 127.0.0.1:18888:18888 \
   --add-host=host.docker.internal:host-gateway \
   -v "$PWD/routes.yaml:/app/config/routes.yaml:ro" \
+  -v r7-journals:/journals \
   ghcr.io/ethlo/r7-gateway:latest
 ```
 
 Requests to `http://localhost:8888/api/...` now reach your service on port 3000, and every one of
-them is written to the journal with its headers. Open `http://localhost:18888` to see your routes,
+them is written with its headers to the journal, kept in the `r7-journals` volume. Open `http://localhost:18888` to see your routes,
 their upstream health and live response times.
 
 That is the whole setup. When you need to tune ports, limits or journal storage, add a
