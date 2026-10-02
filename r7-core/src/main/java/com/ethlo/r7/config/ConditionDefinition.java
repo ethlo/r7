@@ -58,7 +58,7 @@ public final class ConditionDefinition
             // silently dropped into an empty (always-true) node instead of matching anything.
             throw new ConfigurationException(
                     "Invalid match entry '" + s + "': the 'Name=value' shorthand is not supported. " +
-                            "Use the map form instead, e.g. '- Path: {path: /admin/**}' or '- PathPrefix: {prefix: /admin}'.");
+                            "Use the map form instead, e.g. '- Path: {path: /admin}' or '- PathPrefix: {prefix: /admin/}'.");
         }
         return def;
     }

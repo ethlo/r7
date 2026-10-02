@@ -96,7 +96,7 @@ public final class HotReloadService
         try
         {
             log.info("Loading routes from {}", configFilePath.toAbsolutePath());
-            RoutesDefinition routesConfig = ConfigurationManager.load(this.configFilePath, RoutesDefinition.class);
+            RoutesDefinition routesConfig = this.configManager.loadRoutes(this.configFilePath);
 
             if (routesConfig == null)
             {

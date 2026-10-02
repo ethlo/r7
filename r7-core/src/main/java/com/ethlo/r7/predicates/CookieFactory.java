@@ -6,6 +6,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.ExactMatch;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -43,6 +44,7 @@ public final class CookieFactory implements GatewayPredicateFactory<CookieFactor
             String name,
 
             @Description("The exact value the cookie must hold.")
+            @ExactMatch(alternative = "Use MatchCookie with a regexp to match a pattern.")
             String value) implements ValidatableConfig
     {
         @Override

@@ -20,6 +20,8 @@ import com.ethlo.r7.util.PredicateRegistry;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.core.JsonParser;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.ObjectMapper;
@@ -37,6 +39,8 @@ public final class ConfigurationManager
      * would misleadingly claim ownership by whichever route happened to build first.
      */
     private static final String GLOBAL_FILTER_ROUTE_ID = "<global>";
+
+    private static final Logger log = LoggerFactory.getLogger(ConfigurationManager.class);
 
     private static final ObjectMapper mapper;
 
@@ -70,6 +74,17 @@ public final class ConfigurationManager
     public static <T> T load(Path yamlFile, Class<T> type)
     {
         return YamlConfigSupport.load(mapper, yamlFile, type);
+    }
+
+    /**
+     * Loads a routes file as {@link #load(Path, Class)} does, and logs a warning for each value
+     * that is valid but almost certainly not what was meant: see {@link RegexLookalikeCheck}.
+     */
+    public RoutesDefinition loadRoutes(final Path yamlFile)
+    {
+        final RegexLookalikeCheck check = new RegexLookalikeCheck(this.predicateRegistry);
+        return YamlConfigSupport.load(mapper, yamlFile, RoutesDefinition.class, (root, positions) ->
+                check.check(root, positions).forEach(warning -> log.warn("{} {}", yamlFile, warning)));
     }
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)

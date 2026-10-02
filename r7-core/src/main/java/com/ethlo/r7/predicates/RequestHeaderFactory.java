@@ -5,6 +5,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.ExactMatch;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -42,6 +43,7 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
             String name,
 
             @Description("The exact value the header must hold.")
+            @ExactMatch(alternative = "Use MatchRequestHeader with a regexp to match a pattern.")
             String value) implements ValidatableConfig
     {
         @Override
