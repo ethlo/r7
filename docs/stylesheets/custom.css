@@ -26,6 +26,9 @@ body {
 /* Light */
 body[data-md-color-scheme="default"][data-md-color-primary][data-md-color-accent] {
     --md-primary-fg-color: var(--r7-ink);
+    --md-primary-fg-color--light: #27272a;
+    --md-primary-fg-color--dark: var(--r7-ink);
+    --md-accent-fg-color--transparent: rgba(185, 60, 0, 0.1);
     --md-primary-bg-color: #f4f4f5;
     --md-accent-fg-color: #b93c00;            /* 5.9:1 on white */
     --md-typeset-a-color: #b93c00;
@@ -42,6 +45,9 @@ body[data-md-color-scheme="default"][data-md-color-primary][data-md-color-accent
 /* Dark */
 body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] {
     --md-primary-fg-color: var(--r7-ink);
+    --md-primary-fg-color--light: #27272a;
+    --md-primary-fg-color--dark: var(--r7-ink);
+    --md-accent-fg-color--transparent: rgba(255, 122, 46, 0.12);
     --md-primary-bg-color: #e4e4e7;
     --md-accent-fg-color: #ff7a2e;            /* 7.4:1 on the dark bg */
     --md-typeset-a-color: #ff8a47;
@@ -211,3 +217,7 @@ body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] 
 .md-nav__link:is(:hover, :focus) { color: var(--md-typeset-a-color); }
 .md-typeset .md-button { text-decoration: none; }
 .md-banner__button { color: #e4e4e7; }
+
+/* Mobile drawer: the repo block and title bar are brand surfaces, so they stay ink, not the theme's indigo. */
+.md-nav__source,
+.md-nav--primary > .md-nav__title { background-color: var(--r7-ink); color: #e4e4e7; }
