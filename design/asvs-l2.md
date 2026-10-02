@@ -39,11 +39,11 @@ The point is transparency, not a clean sheet: an Accepted row is a legitimate ou
 | V11 Cryptography | 5 | 2 |  | 1 |  | 6 |
 | V12 Secure Communication | 1 |  |  | 2 | 5 | 1 |
 | V13 Configuration | 5 | 1 |  | 1 | 6 |  |
-| V14 Data Protection | 2 | 3 |  | 2 | 1 | 1 |
+| V14 Data Protection | 4 | 2 |  | 1 | 1 | 1 |
 | V15 Secure Coding and Architecture | 9 | 4 |  |  |  |  |
-| V16 Security Logging and Error Handling | 7 | 3 |  |  | 6 |  |
+| V16 Security Logging and Error Handling | 8 | 2 |  |  | 6 |  |
 | V17 WebRTC |  |  |  |  |  | 7 |
-| **Total** | **62** | **16** | **0** | **9** | **36** | **130** |
+| **Total** | **65** | **14** | **0** | **8** | **36** | **130** |
 
 ## Gaps
 
@@ -64,7 +64,6 @@ The Partial and Gap rows refer to these by number. Gaps 1–6 and 10 are closed 
 
 Also recorded:
 
-- **Accepted:** query strings are journaled unredacted (V14.2.1). This was a deliberate decision during the security review; revisit it if journals leave the host.
 - **Accepted:** the listener is plaintext and `BasicAuth` is single-factor (V12.2.1, V12.3.1, V4.4.1, V6.3.3); see Scope.
 - **Accepted:** each `BasicAuth` filter instance caches SHA-256 digests of verified credentials in memory, up to 1,024 per instance, to avoid a bcrypt round per request (V14.2.2).
 - **Accepted:** only static credentials towards upstreams (V13.2.1), and bcrypt's 72-byte password limit (V6.2.8).
@@ -367,10 +366,10 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 |---|---|---|---|---|
 | V14.1.1 | 2 | Sensitive data identified and classified | Partial | In code: journal header allowlist (`RedactingHeadersTest`), `@Sensitive` config ([#46](https://github.com/ethlo/r7/pull/46)). Not written down as a classification (gap 7). |
 | V14.1.2 | 2 | Protection requirements per level | Partial | As V14.1.1. |
-| V14.2.1 | 1 | No sensitive data in URLs | Accepted | r7 cannot stop clients putting secrets in query strings. It journals the start line unredacted, a deliberate decision recorded against F10. The client request line is journaled from a snapshot taken before any filter runs (`GatewayPipeline`), so `RemoveQueryParameter`, which edits only the upstream request, keeps a parameter from the upstream but not out of the journal. The only mitigation is the route's journal level (`NONE`). |
+| V14.2.1 | 1 | No sensitive data in URLs | Met | r7 cannot stop clients putting secrets in query strings, so it keeps them out of what it records: every query parameter value in a journaled request line is fingerprinted unless the operator names the parameter in `storage.journal_security.safe_query_parameters` (`RedactingQuery`, `RedactingQueryTest`), at every journal level. Log lines carry the request path, never the query (`StandardErrorHandler` logs `uri()`, the raw path). |
 | V14.2.2 | 2 | Sensitive data not cached in server components | Accepted | r7 has no response cache, and bodies are streamed. One kind of in-memory cache holds sensitive data: each `BasicAuth` filter instance keeps the SHA-256 digest of each verified `Authorization` value, at most 1,024 entries per instance (so a gateway with several `BasicAuth` routes holds up to 1,024 per route), expiring 15 minutes after last use, so bcrypt does not run on every request. It is never persisted or journaled, and a reload empties it. The accepted risk: a heap dump would let someone guess the cached passwords at SHA-256 speed rather than bcrypt speed. Journals, the only persistent copy of request data, are 0640 ([#48](https://github.com/ethlo/r7/pull/48)) and retained by the reaper. |
 | V14.2.3 | 2 | No sensitive data to untrusted parties | Met | r7 sends data only to configured upstreams and local journals; the dashboard loads no third-party resources. |
-| V14.2.4 | 2 | Controls for sensitive data (retention, logging) | Partial | Journal levels per route and direction, header allowlist, reaper retention. Query values are the recorded exception (Accepted, V14.2.1): short of journal level `NONE`, no filter keeps them out of the journal. |
+| V14.2.4 | 2 | Controls for sensitive data (retention, logging) | Met | Journal levels per route and direction, header and query parameter allowlists, reaper retention. |
 | V14.3.1 | 1 | Client storage cleared on logout | N/A | No sessions. |
 | V14.3.2 | 2 | Anti-caching headers for sensitive data | Operator | The management port sends `Cache-Control: no-store` ([#46](https://github.com/ethlo/r7/pull/46)). Data-plane responses keep the upstream's caching headers; only the operator knows which carry sensitive data, and can add `Cache-Control: no-store` to them with `SetResponseHeader`. (`RemoveCacheHeaders` acts on the upstream request, not the response.) |
 | V14.3.3 | 2 | No sensitive data in browser storage | Met | The dashboard stores nothing. |
@@ -402,7 +401,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V16.2.2 | 2 | Synchronised time, UTC or explicit offset | Operator | Journals record epoch timestamps and logs are ISO-8601 in UTC with the date ([#74](https://github.com/ethlo/r7/pull/74)). Synchronising the clock is the host's job. |
 | V16.2.3 | 2 | Logs only to documented destinations | Partial | Journals go to `work_dir`, logs to stdout, and nothing else, but the destinations are not yet in a logging inventory (V16.1.1, gap 7). |
 | V16.2.4 | 2 | Logs readable by the log processor | Met | The tailers convert journals to JSON-LD lines and WARC records. |
-| V16.2.5 | 2 | Sensitive data logged by protection level | Partial | The header allowlist and journal levels do this. Query strings are the recorded exception (Accepted, V14.2.1): the client request line is journaled as received, whatever the route's filters remove; upstream-failure log lines include the request URI (`StandardErrorHandler`). |
+| V16.2.5 | 2 | Sensitive data logged by protection level | Met | The header and query parameter allowlists and journal levels do this. Upstream-failure log lines include the request path, without the query (`StandardErrorHandler`). |
 | V16.3.1 | 2 | All authentication operations logged | Operator | When the route journals requests, or has `status_overrides` covering 401 as the `BasicAuth` docs show ([#74](https://github.com/ethlo/r7/pull/74)), every refusal is recorded with request ID, client address and time. Route journaling defaults to `NONE`, so this depends on configuration. Successful logins carry the user's fingerprint (`gateway.auth.basic.user`) on journaled routes. |
 | V16.3.2 | 2 | Failed authorisation logged | Operator | As V16.3.1: `Require*` refusals are journaled with their status when route journaling or a matching `status_overrides` entry covers it. |
 | V16.3.3 | 2 | Security control bypass attempts logged | Operator | Refusals after routing (rate limits, size limits, regex budget) are journaled when the route journals them. Refusals before routing (no route, ambiguous path, bad `Transfer-Encoding`, TRACE, regex budget during matching) are journaled under `<unrouted>`, with the reason in `gateway.unrouted.reason`, once the `unrouted` section is configured ([#82](https://github.com/ethlo/r7/pull/82), `UnroutedJournalTest`). |

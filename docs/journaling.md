@@ -41,10 +41,12 @@ Route ids and upstream target URLs are recorded in every exchange's journal attr
 (`gateway.route.id`, `gateway.target`), and the journal stores ISO-8859-1 text only. A route
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.
 
-### Redacted header values
+### Redacted header and query parameter values
 
 At `HEADERS` and `FULL`, a header whose name is not on the `journal_security` whitelist is
-journaled with a fingerprint in place of its value. There are two forms:
+journaled with a fingerprint in place of its value. Query parameter values in the request lines
+get the same treatment at every level, unless the parameter is on `safe_query_parameters`
+(see [Configuration: query parameters](config.md#query-parameters)). There are two forms:
 
 | Form | Example | When |
 | --- | --- | --- |
@@ -66,7 +68,7 @@ storage:
 Keep the key out of anything a journal reader can see. Changing it changes every fingerprint
 from then on, so values journaled before and after the change no longer correlate. The
 unkeyed form is still the default so that existing consumers that match on `id:sha256:` keep
-working until you opt in. The key applies to journaled header values only: the
+working until you opt in. The key applies to journaled header and query parameter values only: the
 `gateway.auth.basic.user` attribute and the management endpoint's summaries still use the
 unkeyed form.
 
@@ -124,11 +126,11 @@ to their defaults below (so a bare container with no config volume still starts 
   "remote_address": "10.0.0.7",
   "remote_address_source": "SOCKET",
   "client_request": {
-    "level": "HEADERS", "method": "GET", "path": "/items", "query": "page=2", "protocol": "HTTP/1.1",
+    "level": "HEADERS", "method": "GET", "path": "/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
     "headers": {"host": "api.example.com"}, "header_bytes": 142, "body_bytes": 0
   },
   "upstream_request": {
-    "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=2", "protocol": "HTTP/1.1",
+    "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
     "headers": {"host": "backend:8080"}, "start": "2026-10-01T12:00:00.000300Z"
   },
   "upstream_response": {

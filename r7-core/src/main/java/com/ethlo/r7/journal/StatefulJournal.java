@@ -21,6 +21,8 @@ public final class StatefulJournal implements Journal
     private final CompletedGatewayExchange exchange;
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
+    private final QueryParameterNameSet safeQueryParameters;
+    private final HeaderFingerprint fingerprint;
     /**
      * Checksums of the body bytes this journal actually passed to the delegate, created on
      * the first fragment of that direction.
@@ -105,6 +107,22 @@ public final class StatefulJournal implements Journal
                             final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders,
                             final HeaderFingerprint fingerprint)
     {
+        this(delegate, config, exchange, safeRequestHeaders, safeResponseHeaders, QueryParameterNameSet.NONE, fingerprint);
+    }
+
+    /**
+     * @param safeQueryParameters query parameters whose values the request lines keep; every
+     *                            other value is fingerprinted like an unsafe header's
+     * @param fingerprint         how values of headers and query parameters not on the safe
+     *                            lists are written; see {@link HeaderFingerprint} for why a
+     *                            deployment should key it
+     */
+    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
+                            final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders,
+                            final QueryParameterNameSet safeQueryParameters, final HeaderFingerprint fingerprint)
+    {
+        this.fingerprint = fingerprint;
+        this.safeQueryParameters = safeQueryParameters;
         this.fingerprints = new FingerprintMemo(fingerprint);
         this.delegate = delegate;
         this.config = config;
@@ -117,7 +135,7 @@ public final class StatefulJournal implements Journal
     public int clientRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers, final InetAddress remoteAddress, IpSource ipSource)
     {
         this.requestId = reqId;
-        this.clientReqLine = cloneBuffer(startLine);
+        this.clientReqLine = redactRequestLine(startLine);
         this.clientReqHeaders = headers;
         this.remoteAddress = remoteAddress;
         this.remoteAddressSource = ipSource;
@@ -132,7 +150,7 @@ public final class StatefulJournal implements Journal
     @Override
     public int upstreamRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers, final GatewayHeaders ignoredBase)
     {
-        this.upstreamReqLine = cloneBuffer(startLine);
+        this.upstreamReqLine = redactRequestLine(startLine);
         this.upstreamReqHeaders = headers;
 
         if (config.request().level() == JournalLevel.FULL)
@@ -365,6 +383,21 @@ public final class StatefulJournal implements Journal
         // delta against headers the journal never held; the gateway passes immutable snapshots,
         // so that never happened there, but the base no longer depends on it.
         return new RedactingHeaders(original, safeHeaders, fingerprints).snapshot();
+    }
+
+    /**
+     * Applied to the request line at every journal level, METADATA included: unlike headers,
+     * the query is part of the start line, which every level records.
+     */
+    private ByteBuffer redactRequestLine(final ByteBuffer startLine)
+    {
+        if (startLine == null)
+        {
+            return null;
+        }
+        final ByteBuffer redacted = RedactingQuery.redactRequestLine(startLine, safeQueryParameters, fingerprint);
+        // A new buffer is already this journal's own; the caller's buffer is per-thread and reused.
+        return redacted == startLine ? cloneBuffer(startLine) : redacted;
     }
 
     private ByteBuffer cloneBuffer(final ByteBuffer original)
