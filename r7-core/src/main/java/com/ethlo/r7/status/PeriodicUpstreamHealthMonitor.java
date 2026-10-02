@@ -18,7 +18,10 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
 {
     private final Set<URI> allTargets;
     private final Set<URI> healthyTargets;
-    private final HttpClient httpClient;
+    // Built at the first probe, on the scheduler's thread rather than the one starting the
+    // gateway: building one sets up TLS (the JDK's trust store included) even for plain-HTTP
+    // targets.
+    private HttpClient httpClient;
     private final UpstreamTargetObserver targetObserver;
     private final HealthCheckConfig config;
     private final Map<URI, Integer> consecutiveSuccesses;
@@ -37,10 +40,6 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
         this.consecutiveFailures = new ConcurrentHashMap<>();
         this.overrides = new ConcurrentHashMap<>();
 
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
-                .build();
-
         for (final URI target : targets)
         {
             // Prime the counters assuming healthy, just in case there is no override
@@ -56,7 +55,9 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
 
     public void start(final GatewayScheduler scheduler)
     {
-        this.scheduledTask = scheduler.scheduleEvery(this.config.interval(), this::pingAll);
+        // The first probe goes out at once, not an interval later, so that a target that is down
+        // is known to be down as soon after startup (or a reload) as it can be
+        this.scheduledTask = scheduler.scheduleEvery(Duration.ZERO, this.config.interval(), this::pingAll);
     }
 
     @Override
@@ -79,6 +80,13 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
 
     private void pingAll()
     {
+        if (this.httpClient == null)
+        {
+            // Only ever called from the one scheduled task, so never concurrently
+            this.httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(2))
+                    .build();
+        }
         final String safePath = config.path();
 
         for (final URI target : this.allTargets)

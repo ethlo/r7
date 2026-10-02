@@ -31,6 +31,14 @@ public final class GatewayScheduler
 
     public ScheduledFuture<?> scheduleEvery(final Duration period, final Runnable task)
     {
+        return scheduleEvery(period, period, task);
+    }
+
+    /**
+     * @param initialDelay until the first run; zero runs it as soon as a scheduler thread is free
+     */
+    public ScheduledFuture<?> scheduleEvery(final Duration initialDelay, final Duration period, final Runnable task)
+    {
         return this.executor.scheduleAtFixedRate(() ->
                 {
                     try
@@ -41,7 +49,7 @@ public final class GatewayScheduler
                     {
                         log.error("Uncaught exception in scheduled task. Catching to prevent schedule termination.", e);
                     }
-                }, period.toMillis(), period.toMillis(), TimeUnit.MILLISECONDS
+                }, initialDelay.toMillis(), period.toMillis(), TimeUnit.MILLISECONDS
         );
     }
 

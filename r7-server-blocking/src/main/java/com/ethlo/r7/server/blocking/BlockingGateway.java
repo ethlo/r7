@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
@@ -84,14 +86,18 @@ public final class BlockingGateway implements AutoCloseable
         final Path workDir = Paths.get(storage.workDir());
         JournalFiles.createDirectories(workDir);
         R7fRecoveryManager.cleanAndRecover(workDir);
-        this.journalWriter = new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
-                new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault(), storage.journalCompressionLevel())));
+        // Opened while the routes load, not before: opening proves zstd works (loading its native
+        // library and binding it through FFM), which takes about as long as loading the routes.
+        final FutureTask<ShardedJournalWriter<R7fJournal>> journalOpening = new FutureTask<>(() -> new ShardedJournalWriter<>(storage.shardCount(), shardIdx ->
+                new R7fJournal(new R7fJournalProvider(workDir, shardIdx, storage.shardSize().bytes(), storage.preFault(), storage.journalCompressionLevel()))));
+        Thread.ofPlatform().daemon().name("r7-journal-open").start(journalOpening);
 
         final MetricsRegistry metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
         final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(
                 GatewayScheduler.class, this.scheduler,
                 MetricsRegistry.class, metricsRegistry)));
         final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
+        this.journalWriter = opened(journalOpening);
 
         this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
         final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
@@ -110,6 +116,29 @@ public final class BlockingGateway implements AutoCloseable
                 pipeline.retire(routes);
             }
         });
+    }
+
+    private static <T> T opened(final FutureTask<T> opening) throws IOException
+    {
+        try
+        {
+            return opening.get();
+        }
+        catch (final InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while opening the journal", e);
+        }
+        catch (final ExecutionException e)
+        {
+            switch (e.getCause())
+            {
+                case IOException io -> throw io;
+                case RuntimeException runtime -> throw runtime;
+                case Error error -> throw error;
+                default -> throw new IOException("Could not open the journal", e.getCause());
+            }
+        }
     }
 
     /**
