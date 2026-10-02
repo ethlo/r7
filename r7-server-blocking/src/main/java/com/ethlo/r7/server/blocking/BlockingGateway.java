@@ -47,8 +47,8 @@ public final class BlockingGateway implements AutoCloseable
 {
     static final String ROUTES_ENVIRONMENT_VARIABLE = "R7_ROUTES_CONFIG";
     static final String SERVER_ENVIRONMENT_VARIABLE = "R7_SERVER_CONFIG";
-    static final String DEFAULT_ROUTES_FILE = "config/routes.yaml";
-    static final String DEFAULT_SERVER_FILE = "config/server.yaml";
+    static final String DEFAULT_ROUTES_FILE = "routes.yaml";
+    static final String DEFAULT_SERVER_FILE = "server.yaml";
 
     private static final Logger logger = LoggerFactory.getLogger(BlockingGateway.class);
 
@@ -123,7 +123,7 @@ public final class BlockingGateway implements AutoCloseable
     }
 
     /**
-     * The server settings to load: {@code config/server.yaml} when nothing names one, and it may
+     * The server settings to load: {@code server.yaml} in the working directory when nothing names one, and it may
      * be absent. A file that is named, by {@code source}, must exist: falling back to the defaults
      * when an operator mistyped the path would quietly drop their limits and trusted proxies.
      *

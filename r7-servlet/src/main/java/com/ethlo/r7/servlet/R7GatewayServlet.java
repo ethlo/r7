@@ -37,13 +37,13 @@ public class R7GatewayServlet extends HttpServlet
 {
     /**
      * Init parameter naming the routes file; defaults to {@code R7_ROUTES_CONFIG}, then
-     * {@code config/routes.yaml}.
+     * {@code routes.yaml} in the working directory.
      */
     public static final String ROUTES_PARAM = "r7.routes";
 
     /**
      * Init parameter naming the server file; defaults to {@code R7_SERVER_CONFIG}, then
-     * {@code config/server.yaml}. Only that last default may be absent, for the built-in settings.
+     * {@code server.yaml} in the working directory. Only that last default may be absent, for the built-in settings.
      */
     public static final String SERVER_PARAM = "r7.server";
 
@@ -73,7 +73,7 @@ public class R7GatewayServlet extends HttpServlet
         {
             return;
         }
-        final String routes = parameter(ROUTES_PARAM, "R7_ROUTES_CONFIG", "config/routes.yaml");
+        final String routes = parameter(ROUTES_PARAM, "R7_ROUTES_CONFIG", "routes.yaml");
         final String serverParameter = getInitParameter(SERVER_PARAM);
         final Path server = serverParameter != null
                 ? BlockingGateway.serverFile(serverParameter, "Init parameter " + SERVER_PARAM)

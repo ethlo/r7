@@ -16,7 +16,7 @@ import ch.qos.logback.core.util.StatusPrinter2;
 
 /**
  * Configures logback the same way for every standalone server: from {@code R7_LOGBACK_CONFIG}
- * (default {@code config/logback.xml}) when that file exists, otherwise from the bundled
+ * (default {@code logback.xml} in the working directory) when that file exists, otherwise from the bundled
  * {@code default-logback.xml}. Without this, logback falls back to its built-in configuration,
  * which logs everything at DEBUG.
  * <p>
@@ -55,7 +55,7 @@ public final class LogbackConfiguration
 
     private static InputStream configStream()
     {
-        final String logbackConfigPath = System.getenv().getOrDefault("R7_LOGBACK_CONFIG", "config/logback.xml");
+        final String logbackConfigPath = System.getenv().getOrDefault("R7_LOGBACK_CONFIG", "logback.xml");
         final Path configFilePath = Paths.get(logbackConfigPath).toAbsolutePath();
         if (Files.isRegularFile(configFilePath))
         {

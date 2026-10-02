@@ -77,8 +77,8 @@ class BlockingGatewayConfigFilesTest
     @Test
     void theDefaultServerFileMayBeAbsent()
     {
-        assertThat(BlockingGateway.serverFile(null, "R7_SERVER_CONFIG")).isEqualTo(Paths.get("config/server.yaml"));
-        assertThat(BlockingGateway.serverFile(" ", "R7_SERVER_CONFIG")).isEqualTo(Paths.get("config/server.yaml"));
+        assertThat(BlockingGateway.serverFile(null, "R7_SERVER_CONFIG")).isEqualTo(Paths.get("server.yaml"));
+        assertThat(BlockingGateway.serverFile(" ", "R7_SERVER_CONFIG")).isEqualTo(Paths.get("server.yaml"));
     }
 
     @Test

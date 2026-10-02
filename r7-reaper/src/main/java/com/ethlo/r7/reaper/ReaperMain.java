@@ -32,7 +32,7 @@ public final class ReaperMain
 
     public static void main(final String[] args) throws InterruptedException
     {
-        final Path configFile = Paths.get(System.getenv().getOrDefault("REAPER_CONFIG", "config/reaper.yaml"));
+        final Path configFile = Paths.get(System.getenv().getOrDefault("REAPER_CONFIG", "reaper.yaml"));
         final ReaperConfig config = loadConfig(configFile);
 
         final Path journalDir = Paths.get(config.journalDir());

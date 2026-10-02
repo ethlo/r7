@@ -35,7 +35,7 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 ## Running
 
 ```bash
-java -jar r7-helidon/target/r7-helidon-1.0-SNAPSHOT.jar          # reads ./config/{routes,server}.yaml
+java -jar r7-helidon/target/r7-helidon-1.0-SNAPSHOT.jar          # reads ./routes.yaml, optional ./server.yaml
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
 docker compose up -d                                             # nginx test backend on :11111
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
@@ -120,7 +120,7 @@ Things that are load-bearing here:
 
 ## Configuration model
 
-`config/routes.yaml` + optional `config/server.yaml`, Jackson 3 (`tools.jackson`) YAML with
+`routes.yaml` + optional `server.yaml` from the working directory (`/app/config` in the images), Jackson 3 (`tools.jackson`) YAML with
 `SNAKE_CASE` naming and `FAIL_ON_UNKNOWN_PROPERTIES`. Config records are Java records
 implementing `ValidatableConfig`; defaults are expressed as overridden accessors returning
 `Optional.ofNullable(field).orElse(default)` (see `ServerConfig`), and `validate(...)` builds
