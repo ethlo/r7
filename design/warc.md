@@ -3,7 +3,8 @@
 **Status:** built as `r7-tailer-warc` (`Dockerfile.tailer-warc.jvm`); the operator docs are in
 `docs/journaling.md`. Two parts are not built. The WARC profile (`WARC.md`, under "Scope") does
 not exist yet. "The index layer" and "MCP" are ideas, and by this document's own "Scope"
-section they are not r7's to build: see `plans/README.md`.
+section they are not r7's to build: see `plans/README.md`. The one exception is the opt-in
+per-file CDXJ index (`cdxj_index`), described at the end of "The index layer".
 
 ---
 
@@ -222,6 +223,21 @@ is part of the audit guarantee and the fail-closed story has a hole in it.
 
 Prefer a *second* consumer reading finished WARCs over having the sidecar write both: slower,
 but self-healing, and it keeps the sidecar's job down to one thing.
+
+### The per-file CDXJ index
+
+`cdxj_index: true` makes the tailer write a sorted CDXJ index beside each WARC file. It is the
+standard sidecar the archiving world already reads (pywb, OutbackCDX), so it needs no consumer
+of r7's own, and it keeps to the rule above in spirit: it is built by reading the finished
+file back (jwarc's CDXJ formatter, `CdxjIndex`), never from what the writer remembers, so it is
+derived, rebuildable, and identical for a file sealed normally or after a crash. It is sealed
+before its WARC file, so a sealed `.warc.zst` always has one.
+
+One line per exchange, for the client response (or its `revisit`): the record a replay should
+serve. The upstream response is recognised by being followed directly by the client response
+that names it in `WARC-Concurrent-To`, and skipped. Non-GET keys get pywb's
+`__wb_method=<method>`; pywb's `__wb_post_data` is left out on purpose, because it copies up to
+4 KB of request body into a file that travels further than the archive.
 
 ### MCP
 

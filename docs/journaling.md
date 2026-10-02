@@ -214,12 +214,16 @@ by default, overridable via the `WARC_TAILER_CONFIG` env var.
 | `zstd_level`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
 | `dedup_cache_entries`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
 | `poll_interval`             | `1s`        | The longest the tailer waits between reads; it wakes as soon as the gateway commits, as for the JSON tailer. Supports `ms`, `s`, `m`, `h`, `d` |
+| `cdxj_index`                | `false`     | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each WARC file; see below |
+
+**CDXJ index.** With `cdxj_index: true`, every sealed `r7-….warc.zst` gets an `r7-….cdxj` beside it: one line per exchange, sorted by SURT key and timestamp, holding the URL, status, mime type, payload digest and the file name, offset and length of the client response record. This is the index format pywb and OutbackCDX read, so a lookup by URL and time goes straight to the record without scanning the archive. The index is built from the finished WARC file and renamed into place before the WARC file is, so a sealed `.warc.zst` always has its index; one sealed after a crash is indexed on the next start. Requests other than `GET` carry `__wb_method=<method>` in their key, as pywb does; request bodies are never copied into the index.
 
 **Example `config/warc-tailer.yaml`:**
 
 ```yaml title="warc-tailer.yaml"
 journal_dir: /journals
 output_dir: /warc
+cdxj_index: true
 ```
 
 **Example Docker Compose Integration:**

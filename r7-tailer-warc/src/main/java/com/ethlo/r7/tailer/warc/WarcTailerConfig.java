@@ -32,12 +32,13 @@ public record WarcTailerConfig(
         Duration maxFileAge,
         Integer zstdLevel,
         Integer dedupCacheEntries,
-        Duration pollInterval
+        Duration pollInterval,
+        Boolean cdxjIndex
 ) implements ValidatableConfig
 {
     public static WarcTailerConfig standard()
     {
-        return new WarcTailerConfig(null, null, null, null, null, null, null, null, null);
+        return new WarcTailerConfig(null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -96,6 +97,12 @@ public record WarcTailerConfig(
     public Duration pollInterval()
     {
         return Optional.ofNullable(this.pollInterval).orElse(Duration.ofSeconds(1));
+    }
+
+    @Override
+    public Boolean cdxjIndex()
+    {
+        return Optional.ofNullable(this.cdxjIndex).orElse(false);
     }
 
     @Override

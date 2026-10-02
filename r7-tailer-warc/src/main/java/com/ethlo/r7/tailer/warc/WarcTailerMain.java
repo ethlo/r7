@@ -50,12 +50,14 @@ public final class WarcTailerMain
         final int zstdLevel = config.zstdLevel();
         final int dedupCacheEntries = config.dedupCacheEntries();
         final Duration pollInterval = config.pollInterval();
+        final boolean cdxjIndex = config.cdxjIndex();
 
         logger.info("Tailing journals from '{}' -> WARC files in '{}' (checkpoints in '{}', max file size {} bytes, max file age {}, "
-                        + "zstd level {}, dedup cache {} entries, poll every {})",
-                journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, pollInterval);
+                        + "zstd level {}, dedup cache {} entries, poll every {}, CDXJ index {})",
+                journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, pollInterval,
+                cdxjIndex ? "on" : "off");
 
-        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAge.toMillis(), zstdLevel);
+        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAge.toMillis(), zstdLevel, cdxjIndex);
         final PayloadDedupIndex dedupIndex = new PayloadDedupIndex(dedupCacheEntries);
         final WarcExchangeWriter warcWriter = new WarcExchangeWriter(warcFileWriter, dedupIndex);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
