@@ -43,6 +43,10 @@ import org.slf4j.LoggerFactory;
  * output directory for finished files could see a "final" name while the last frame was still
  * buffered, and a crash mid-write would leave a truncated file with no way to tell it apart from
  * one that finished cleanly.
+ * <p>
+ * <b>CDXJ index</b>, when enabled: each file gets a sorted {@code .cdxj} index next to it (see
+ * {@link CdxjIndex}), built from the finished file and sealed the same way, before the WARC file
+ * itself is renamed. Wherever a sealed {@code .warc.zst} exists, its index already does.
  */
 public final class WarcFileWriter implements AutoCloseable
 {
@@ -55,11 +59,15 @@ public final class WarcFileWriter implements AutoCloseable
      */
     public static final long MIN_ROLLOVER_SIZE = 64L * 1024L;
 
+    private static final String WARC_SUFFIX = ".warc.zst";
+    private static final String INDEX_SUFFIX = ".cdxj";
+
     private final Path directory;
     private final String filePrefix;
     private final long maxFileSizeBytes;
     private final long maxFileAgeMillis;
     private final int zstdLevel;
+    private final boolean cdxjIndex;
     private final ScheduledExecutorService rotationScheduler;
 
     private FileChannel channel;
@@ -84,6 +92,15 @@ public final class WarcFileWriter implements AutoCloseable
 
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel) throws IOException
     {
+        this(directory, filePrefix, maxFileSizeBytes, maxFileAgeMillis, zstdLevel, false);
+    }
+
+    /**
+     * @param cdxjIndex write a CDXJ index next to every file this writer seals
+     */
+    public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel,
+                          final boolean cdxjIndex) throws IOException
+    {
         if (maxFileSizeBytes < MIN_ROLLOVER_SIZE)
         {
             throw new IllegalArgumentException("maxFileSizeBytes must be at least " + MIN_ROLLOVER_SIZE + ", but was " + maxFileSizeBytes);
@@ -97,6 +114,7 @@ public final class WarcFileWriter implements AutoCloseable
         this.maxFileSizeBytes = maxFileSizeBytes;
         this.maxFileAgeMillis = maxFileAgeMillis;
         this.zstdLevel = zstdLevel;
+        this.cdxjIndex = cdxjIndex;
         Files.createDirectories(directory);
         sealLeftovers();
         rotate();
@@ -267,7 +285,7 @@ public final class WarcFileWriter implements AutoCloseable
     {
         seal();
 
-        final String fileName = filePrefix + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID() + ".warc.zst";
+        final String fileName = filePrefix + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID() + WARC_SUFFIX;
         this.sealedPath = directory.resolve(fileName);
         this.openPath = directory.resolve(fileName + ".open");
         this.channel = FileChannel.open(openPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
@@ -303,14 +321,24 @@ public final class WarcFileWriter implements AutoCloseable
      */
     private void sealLeftovers() throws IOException
     {
-        final List<Path> leftovers;
+        final List<Path> ownFiles;
         try (Stream<Path> files = Files.list(directory))
         {
-            leftovers = files.filter(p ->
+            ownFiles = files.filter(p -> p.getFileName().toString().startsWith(filePrefix + "-")).toList();
+        }
+        final List<Path> leftovers = new ArrayList<>();
+        for (final Path file : ownFiles)
+        {
+            final String name = file.getFileName().toString();
+            if (name.endsWith(WARC_SUFFIX + ".open"))
             {
-                final String name = p.getFileName().toString();
-                return name.startsWith(filePrefix + "-") && name.endsWith(".warc.zst.open");
-            }).toList();
+                leftovers.add(file);
+            }
+            else if (name.endsWith(INDEX_SUFFIX + ".open"))
+            {
+                // An index is rebuilt from its WARC file, so one cut short by a crash is removed.
+                Files.delete(file);
+            }
         }
         for (final Path leftover : leftovers)
         {
@@ -333,6 +361,7 @@ public final class WarcFileWriter implements AutoCloseable
             }
             final String name = leftover.getFileName().toString();
             final Path sealed = leftover.resolveSibling(name.substring(0, name.length() - ".open".length()));
+            sealIndex(leftover, sealed);
             Files.move(leftover, sealed, StandardCopyOption.ATOMIC_MOVE);
             logger.info("Sealed WARC file left open by an earlier run: {}", sealed);
         }
@@ -379,6 +408,26 @@ public final class WarcFileWriter implements AutoCloseable
     }
 
     /**
+     * Writes the CDXJ index of a finished WARC file under an {@code .open} name and renames it
+     * to {@code <name>.cdxj}, replacing any index an interrupted earlier seal left. A no-op when
+     * indexing is off.
+     */
+    private void sealIndex(final Path warcFile, final Path sealedWarc) throws IOException
+    {
+        if (!cdxjIndex)
+        {
+            return;
+        }
+        final String warcName = sealedWarc.getFileName().toString();
+        final String baseName = warcName.substring(0, warcName.length() - WARC_SUFFIX.length());
+        final Path openIndex = sealedWarc.resolveSibling(baseName + INDEX_SUFFIX + ".open");
+        final Path index = sealedWarc.resolveSibling(baseName + INDEX_SUFFIX);
+        CdxjIndex.write(warcFile, warcName, openIndex);
+        Files.move(openIndex, index, StandardCopyOption.ATOMIC_MOVE);
+        logger.info("Sealed CDXJ index: {}", index);
+    }
+
+    /**
      * Flushes, fsyncs and atomically renames the current file from its {@code .open} name to
      * its final {@code .warc.zst} name, so a consumer watching the directory never observes a
      * final name before every byte behind it is durable. A no-op if nothing is currently open.
@@ -400,6 +449,8 @@ public final class WarcFileWriter implements AutoCloseable
         }
         if (openPath != null)
         {
+            // A failure here leaves the file open and is retried by the next seal.
+            sealIndex(openPath, sealedPath);
             Files.move(openPath, sealedPath, StandardCopyOption.ATOMIC_MOVE);
             logger.info("Sealed WARC file: {}", sealedPath);
             openPath = null;
