@@ -93,8 +93,8 @@ Gateway and tailer share the `journal_dir` volume: the gateway writes, the taile
 
 This tailer converts the binary journal entries into verbose JSON and streams them to standard output (`stdout`) by default. This is the recommended approach if you use generic log forwarders like **Promtail (for Grafana Loki)**, **Fluent Bit**, or **Vector**.
 
-**Configuration:** like the gateway, this tailer reads a YAML file — `config/jsonld-tailer.yaml`
-by default, overridable via the `JSONLD_TAILER_CONFIG` env var — with the same `${VAR:default}`
+**Configuration:** like the gateway, this tailer reads a YAML file — `jsonld-tailer.yaml` in
+the working directory by default (`/app/config` in the image), overridable via the `JSONLD_TAILER_CONFIG` env var — with the same `${VAR:default}`
 interpolation support as `routes.yaml`/`server.yaml`. If the file is missing, all fields fall back
 to their defaults below (so a bare container with no config volume still starts and tails
 `/journals` to stdout).
@@ -192,7 +192,7 @@ This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc
 
 Each exchange becomes up to four linked records (client request, upstream request, upstream response, client response); duplicate payloads across exchanges are deduplicated as WARC `revisit` records; and a checksum mismatch on read is marked rather than silently archived. See [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full record-shape and dedup rationale.
 
-**Configuration:** same YAML config mechanism as the JSON tailer above — `config/warc-tailer.yaml`
+**Configuration:** same YAML config mechanism as the JSON tailer above — `warc-tailer.yaml`
 by default, overridable via the `WARC_TAILER_CONFIG` env var.
 
 | Field                      | Default     | Meaning                                                                    |
@@ -266,7 +266,7 @@ journal volume.
     segment whose name the reaper cannot parse is left alone rather than guessed at from
     mtime — it is simply never a deletion candidate.
 
-**Configuration:** same YAML config mechanism as the tailers — `config/reaper.yaml` by default,
+**Configuration:** same YAML config mechanism as the tailers — `reaper.yaml` by default,
 overridable via the `REAPER_CONFIG` env var.
 
 | Field           | Default     | Meaning                                                                 |

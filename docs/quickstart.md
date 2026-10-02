@@ -12,8 +12,7 @@ Create a new directory with two files:
 ```text
 r7-quickstart/
 ├── docker-compose.yaml
-└── config/
-    └── routes.yaml
+└── routes.yaml
 ```
 
 ## Docker Compose Setup
@@ -28,7 +27,7 @@ services:
       - "9999:8888"              # the gateway
       - "127.0.0.1:19999:18888"  # the dashboard, on this machine only (see below)
     volumes:
-      - ./config:/app/config:ro
+      - ./routes.yaml:/app/config/routes.yaml:ro
       - r7-journals:/journals
     depends_on:
       - echo-server
@@ -54,7 +53,7 @@ authenticates, and list the name you use for it under `management.allowed_hosts`
 
 ## Routes Configuration
 
-Create `config/routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.
+Create `routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.
 
 ```yaml
 global_filters:
@@ -146,5 +145,5 @@ times on the dashboard.
 * Add routes, predicates and filters: see the [config reference](config.md).
 * Decide what each route records in its journal, and read it back: see [Journaling](journaling.md).
 * Change ports, connection limits, timeouts, trusted proxies or the journal location only when you
-  need to, in an optional `config/server.yaml`: see [Server Configuration](config.md#9-server-configuration).
+  need to, in an optional `server.yaml` mounted beside it at `/app/config/server.yaml`: see [Server Configuration](config.md#9-server-configuration).
 * For production JVM flags and journal storage, see [Performance tuning](performance_tuning.md).

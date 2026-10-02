@@ -44,7 +44,7 @@ public final class JsonLdTailerMain
 
     public static void main(final String[] args) throws Exception
     {
-        final Path configFile = Paths.get(System.getenv().getOrDefault("JSONLD_TAILER_CONFIG", "config/jsonld-tailer.yaml"));
+        final Path configFile = Paths.get(System.getenv().getOrDefault("JSONLD_TAILER_CONFIG", "jsonld-tailer.yaml"));
         final JsonldTailerConfig config = loadConfig(configFile);
 
         final Path journalDir = Paths.get(config.journalDir());

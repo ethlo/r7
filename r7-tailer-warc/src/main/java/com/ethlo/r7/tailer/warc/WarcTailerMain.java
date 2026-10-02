@@ -38,7 +38,7 @@ public final class WarcTailerMain
 
     public static void main(final String[] args) throws Exception
     {
-        final Path configFile = Paths.get(System.getenv().getOrDefault("WARC_TAILER_CONFIG", "config/warc-tailer.yaml"));
+        final Path configFile = Paths.get(System.getenv().getOrDefault("WARC_TAILER_CONFIG", "warc-tailer.yaml"));
         final WarcTailerConfig config = loadConfig(configFile);
 
         final Path journalDir = Paths.get(config.journalDir());

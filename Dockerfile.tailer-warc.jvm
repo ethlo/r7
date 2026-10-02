@@ -45,5 +45,9 @@ ENV DEDUP_CACHE_ENTRIES=100000
 
 USER 65532:65532
 
+# Config files are read from the working directory; containers keep them in /app/config, the
+# directory the docs mount. A named WARC_TAILER_CONFIG still wins.
+WORKDIR /app/config
+
 # Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.
 ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/tailer.jar"]
