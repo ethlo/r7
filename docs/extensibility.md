@@ -249,7 +249,7 @@ services:
       - ./plugins:/app/plugins:ro 
     environment:
       # 2. Add the jar to the Java classpath
-      - JAVA_TOOL_OPTIONS=-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -cp "/app/r7.jar:/app/plugins/my-custom-r7-extensions-1.0.jar"
+      - JAVA_TOOL_OPTIONS=-cp "/app/r7.jar:/app/plugins/my-custom-r7-extensions-1.0.jar"
 
 ```
 
