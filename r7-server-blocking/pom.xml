@@ -36,4 +36,18 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <environmentVariables>
+                        <!-- A gateway started without a server.yaml journals here, not in the module directory. -->
+                        <R7_JOURNAL_DIR>${project.build.directory}/journals</R7_JOURNAL_DIR>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

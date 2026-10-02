@@ -1,68 +1,56 @@
 # Quickstart Guide
 
-This guide will get you up and running with the r7 gateway using Docker Compose. We will deploy the gateway alongside a simple echo server backend to demonstrate routing, header injection, and traffic journaling in action.
+All r7 needs is a `routes.yaml` that says where to send traffic. Ports, limits, timeouts and
+where journals go all have safe defaults, so there is no server configuration to write before
+your first request. This guide runs r7 with Docker Compose in front of a small echo server, so
+you can see routing, header injection and the request journal working.
 
 ## Directory Structure
 
-Create a new directory for your project and set up the following structure. The `config` directory will hold our YAML configurations, and the `journals` directory will be used for memory-mapped logging.
+Create a new directory with two files:
 
 ```text
 r7-quickstart/
 ├── docker-compose.yaml
-├── config/
-│   ├── server.yaml # optional
-│   └── routes.yaml
-└── journals/
-
+└── config/
+    └── routes.yaml
 ```
 
 ## Docker Compose Setup
 
-Create `docker-compose.yaml`. This includes the r7 gateway configured with ZGC and native memory access, alongside an `echo-server` acting as our dummy backend.
+Create `docker-compose.yaml`:
 
 ```yaml
 services:
-  r7-api:
+  r7:
     image: ghcr.io/ethlo/r7-gateway:latest
-    container_name: ethlo-r7-gateway
     ports:
-      - "9999:8888"   # Main gateway port
-      - "127.0.0.1:19999:18888" # Status and metrics port, on loopback only (see below)
+      - "9999:8888"              # the gateway
+      - "127.0.0.1:19999:18888"  # the dashboard, on this machine only (see below)
     volumes:
       - ./config:/app/config:ro
-      - ./journals:/journals:rw
-    environment:
-      # Formatted as a single string to ensure Docker Compose parses it correctly
-      - JAVA_TOOL_OPTIONS=-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow
-    deploy:
-      resources:
-        limits:
-          memory: 600M
-          cpus: "16.0"
-        reservations:
-          memory: 400M
-    # No healthcheck: the image is distroless, with no shell, curl or wget for one to run. Probe
-    # the gateway port from outside instead (a TCP connect to 8888, or the orchestrator's check).
-    restart: unless-stopped
+      - r7-journals:/journals
     depends_on:
       - echo-server
 
   echo-server:
     image: ealen/echo-server:latest
-    container_name: r7-echo-backend
     environment:
       - PORT=8080
-    restart: unless-stopped
 
+volumes:
+  r7-journals:
 ```
 
-The status and metrics port has no authentication and shows the gateway's configuration. Inside
-the container the image listens on all interfaces, which the port mapping needs, so the mapping is
-what decides who can reach it. `127.0.0.1:19999:18888` keeps it on this machine: a bare
-`19999:18888` would publish it on every host interface, and Docker's own firewall rules bypass
-host firewalls such as ufw. Do not route a path on the gateway port to it either. To reach it from
-elsewhere, put it behind something that authenticates, and list the name you use for it under
-`management.allowed_hosts` (see the [config reference](config.md#management-configuration-management)).
+Journals go to a named volume rather than a host directory: Docker prepares a new named volume
+so the image's non-root user can write to it, which a directory you create yourself would not be.
+
+The dashboard port has no authentication and shows the gateway's configuration.
+`127.0.0.1:19999:18888` keeps it on this machine: a bare `19999:18888` would publish it on every
+host interface, and Docker's own firewall rules bypass host firewalls such as ufw. Do not route a
+path on the gateway port to it either. To reach it from elsewhere, put it behind something that
+authenticates, and list the name you use for it under `management.allowed_hosts` (see the
+[config reference](config.md#management-configuration-management)).
 
 ## Routes Configuration
 
@@ -101,7 +89,7 @@ docker compose up -d
 
 ```
 
-Once the containers are healthy, test the gateway by sending a request to the mapped port (`9999`):
+Once the containers are up, test the gateway by sending a request to the mapped port (`9999`):
 
 ```bash
 curl -i http://localhost:9999/api/test
@@ -149,3 +137,14 @@ Content-Type: application/json; charset=utf-8
 }
 
 ```
+
+Open [http://localhost:19999](http://localhost:19999) to see the route, its traffic and response
+times on the dashboard.
+
+## Next steps
+
+* Add routes, predicates and filters: see the [config reference](config.md).
+* Decide what each route records in its journal, and read it back: see [Journaling](journaling.md).
+* Change ports, connection limits, timeouts, trusted proxies or the journal location only when you
+  need to, in an optional `config/server.yaml`: see [Server Configuration](config.md#9-server-configuration).
+* For production JVM flags and journal storage, see [Performance tuning](performance_tuning.md).

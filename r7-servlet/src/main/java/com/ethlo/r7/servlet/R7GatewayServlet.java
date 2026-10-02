@@ -1,6 +1,7 @@
 package com.ethlo.r7.servlet;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import com.ethlo.r7.server.blocking.BlockingGateway;
@@ -42,7 +43,7 @@ public class R7GatewayServlet extends HttpServlet
 
     /**
      * Init parameter naming the server file; defaults to {@code R7_SERVER_CONFIG}, then
-     * {@code config/server.yaml}.
+     * {@code config/server.yaml}. Only that last default may be absent, for the built-in settings.
      */
     public static final String SERVER_PARAM = "r7.server";
 
@@ -73,10 +74,13 @@ public class R7GatewayServlet extends HttpServlet
             return;
         }
         final String routes = parameter(ROUTES_PARAM, "R7_ROUTES_CONFIG", "config/routes.yaml");
-        final String server = parameter(SERVER_PARAM, "R7_SERVER_CONFIG", "config/server.yaml");
+        final String serverParameter = getInitParameter(SERVER_PARAM);
+        final Path server = serverParameter != null
+                ? BlockingGateway.serverFile(serverParameter, "Init parameter " + SERVER_PARAM)
+                : BlockingGateway.serverFile(System.getenv("R7_SERVER_CONFIG"), "R7_SERVER_CONFIG");
         try
         {
-            this.gateway = new BlockingGateway(Paths.get(routes), Paths.get(server));
+            this.gateway = new BlockingGateway(Paths.get(routes), server);
             this.owned = true;
         }
         catch (final IOException e)
