@@ -35,14 +35,20 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 ## Running
 
 ```bash
-java -jar r7-helidon/target/r7-helidon-1.0-SNAPSHOT.jar          # reads ./config/{routes,server}.yaml
+java -jar r7-helidon/target/r7-helidon-1.0-SNAPSHOT.jar          # reads ./config/{routes,server}.yaml (needs target/lib/)
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
 docker compose up -d                                             # nginx test backend on :11111
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
 ```
 
-Recommended JVM flags (used by benchmarks, and part of the container images' entrypoints):
-`-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow`.
+Recommended JVM flags (used by benchmarks):
+`-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow`. The
+container images pass the access flags and leave the collector to the JVM; the gateway image also
+starts from an AOT cache that Dockerfile.jvm trains while building (`-Dr7.aot.training=true`
+against `docker/aot-training/routes.yaml`; see `docs/performance_tuning.md`).
+
+The gateway jar is a plain jar with its dependencies in `target/lib/` (Class-Path manifest), not
+a fat jar: the AOT cache cannot hold classes from nested jars.
 
 Data plane defaults to `:8888`, management/status/dashboard to `:18888`.
 

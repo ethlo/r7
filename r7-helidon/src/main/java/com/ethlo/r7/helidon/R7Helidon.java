@@ -1,6 +1,11 @@
 package com.ethlo.r7.helidon;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -44,6 +49,10 @@ public final class R7Helidon
     private static final Logger logger = LoggerFactory.getLogger(R7Helidon.class);
     private static final String MANAGEMENT_SOCKET = "management";
     private static final String DATA_SOCKET = "@default";
+    /**
+     * Set only by Dockerfile.jvm's AOT training run: start, serve a few requests, stop and exit.
+     */
+    static final String AOT_TRAINING_PROPERTY = "r7.aot.training";
 
     private final BlockingGateway gateway;
     private final HeadTimeouts dataHeadTimeouts;
@@ -235,6 +244,48 @@ public final class R7Helidon
         SLF4JBridgeHandler.install();
 
         final R7Helidon gateway = new R7Helidon(BlockingGateway.fromEnvironment());
+        if (Boolean.getBoolean(AOT_TRAINING_PROPERTY))
+        {
+            train(gateway);
+            gateway.stop();
+            // The JVM writes the AOT cache as it exits; the gateway's own threads would keep it up
+            System.exit(0);
+        }
         Runtime.getRuntime().addShutdownHook(new Thread(gateway::stop, "r7-shutdown-hook"));
+    }
+
+    /**
+     * The AOT training run (Dockerfile.jvm): requests through the data plane and to the
+     * management port, so that the classes a request needs are in the cache along with those of
+     * startup, and the first requests after a cold start do not load them. A failed request fails
+     * the image build rather than leaving a cache that covers less than it should.
+     */
+    static void train(final R7Helidon gateway) throws IOException
+    {
+        for (int i = 0; i < 20; i++)
+        {
+            trainingRequest(gateway.port(), "GET /training/" + i + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+            trainingRequest(gateway.port(), "POST /training HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
+                    + "Content-Length: 17\r\nConnection: close\r\n\r\n{\"training\":true}");
+            trainingRequest(gateway.managementPort(), "GET / HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\nConnection: close\r\n\r\n");
+        }
+    }
+
+    private static void trainingRequest(final int port, final String request) throws IOException
+    {
+        try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), port))
+        {
+            socket.setSoTimeout(10_000);
+            final OutputStream out = socket.getOutputStream();
+            out.write(request.getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            final InputStream in = socket.getInputStream();
+            final byte[] head = in.readNBytes(12);
+            if (head.length < 12 || !new String(head, StandardCharsets.US_ASCII).startsWith("HTTP/1.1 "))
+            {
+                throw new IOException("AOT training request to port " + port + " got no HTTP response");
+            }
+            in.transferTo(OutputStream.nullOutputStream());
+        }
     }
 }

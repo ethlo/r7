@@ -215,3 +215,45 @@ release, until the next one.
   long stalls, but compete with the carriers for the cores: on Java 25 they took p99 from 7 ms
   to 15-50 ms at every load, a worse trade than a rare outlier at saturation.
 
+
+---
+
+## Startup: the AOT cache and the garbage collector
+
+### What the image does
+
+The gateway image starts from an AOT cache (the JDK's ahead-of-time cache, JEP 483): while the
+image is built, a training run starts the gateway, sends requests through it, and records the
+classes it loaded and linked. The image then starts from that record instead of reading and
+linking those classes from the jars again, which is most of what a JVM does while it starts.
+The first requests after a start benefit too, as the classes they need are in the cache.
+Nothing needs configuring: the cache is at `/app/r7.aot` and the entrypoint uses it.
+
+A cache only fits the exact JDK, jars and JVM flags it was made with. A JVM that finds it does
+not fit prints a warning and starts without it, as it would with no cache.
+
+### Choosing a garbage collector
+
+The image names no collector, so the JVM picks one for the container: G1, or SerialGC with
+fewer than two CPUs or less than about 2 GB of memory. To choose one, set it in
+`JAVA_TOOL_OPTIONS`, for example `-XX:+UseZGC` for the shortest pauses under load. The
+throughput and latency numbers on this page were measured with ZGC.
+
+On Java 25, ZGC cannot use the objects the AOT cache holds ready-made, only its classes, so with
+ZGC the gateway starts noticeably slower than with G1 or SerialGC. Where startup matters more
+than pause times (an autoscaled or frequently restarted gateway, a gateway with little CPU),
+leave the collector to the JVM.
+
+### Running the jar yourself
+
+`java -jar r7-helidon-<version>.jar` needs the `lib/` directory beside the jar, as the build
+leaves it. To make a cache for it, run the training once with the JDK and flags you will run
+with, then start with the cache:
+
+```bash
+R7_ROUTES_CONFIG=docker/aot-training/routes.yaml R7_JOURNAL_DIR=/tmp/aot-training \
+  java -XX:AOTCacheOutput=r7.aot -Dr7.aot.training=true -jar r7-helidon-<version>.jar
+java -XX:AOTCache=r7.aot -jar r7-helidon-<version>.jar
+```
+
+The training run exits by itself once it has served its requests.
