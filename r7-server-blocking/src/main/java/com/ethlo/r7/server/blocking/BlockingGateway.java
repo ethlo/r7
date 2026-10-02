@@ -8,9 +8,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.HotReloadService;
@@ -41,6 +45,13 @@ import com.ethlo.r7.validation.ValidationResult;
  */
 public final class BlockingGateway implements AutoCloseable
 {
+    static final String ROUTES_ENVIRONMENT_VARIABLE = "R7_ROUTES_CONFIG";
+    static final String SERVER_ENVIRONMENT_VARIABLE = "R7_SERVER_CONFIG";
+    static final String DEFAULT_ROUTES_FILE = "config/routes.yaml";
+    static final String DEFAULT_SERVER_FILE = "config/server.yaml";
+
+    private static final Logger logger = LoggerFactory.getLogger(BlockingGateway.class);
+
     private final ServerConfig serverConfig;
     private final GatewayPipeline pipeline;
     private final ShardedJournalWriter<R7fJournal> journalWriter;
@@ -52,8 +63,15 @@ public final class BlockingGateway implements AutoCloseable
     private final long maxEntityBytes;
     private final AtomicBoolean closed = new AtomicBoolean();
 
+    /**
+     * @param routesFile the routes, which must exist: a gateway with nothing to route is a mistake
+     * @param serverFile the server settings, or a path with no file at it to run on the built-in
+     *                   defaults
+     */
     public BlockingGateway(final Path routesFile, final Path serverFile) throws IOException
     {
+        // Before anything is created on disk, so a mistyped path leaves no journal directory behind.
+        requireRoutesFile(routesFile);
         final RouteRegistry routeRegistry = new RouteRegistry();
         this.scheduler = new GatewayScheduler(5);
         this.serverConfig = loadServerSettings(serverFile);
@@ -99,9 +117,41 @@ public final class BlockingGateway implements AutoCloseable
      */
     public static BlockingGateway fromEnvironment() throws IOException
     {
-        final String routesPath = System.getenv().getOrDefault("R7_ROUTES_CONFIG", "config/routes.yaml");
-        final String serverPath = System.getenv().getOrDefault("R7_SERVER_CONFIG", "config/server.yaml");
-        return new BlockingGateway(Paths.get(routesPath), Paths.get(serverPath));
+        final Map<String, String> environment = System.getenv();
+        final Path routesFile = Paths.get(environment.getOrDefault(ROUTES_ENVIRONMENT_VARIABLE, DEFAULT_ROUTES_FILE));
+        return new BlockingGateway(routesFile, serverFile(environment.get(SERVER_ENVIRONMENT_VARIABLE), SERVER_ENVIRONMENT_VARIABLE));
+    }
+
+    /**
+     * The server settings to load: {@code config/server.yaml} when nothing names one, and it may
+     * be absent. A file that is named, by {@code source}, must exist: falling back to the defaults
+     * when an operator mistyped the path would quietly drop their limits and trusted proxies.
+     *
+     * @param configured the path as configured, or null when nothing names one
+     * @param source     what named it, for the error
+     */
+    public static Path serverFile(final String configured, final String source)
+    {
+        if (configured == null || configured.isBlank())
+        {
+            return Paths.get(DEFAULT_SERVER_FILE);
+        }
+        final Path path = Paths.get(configured.strip());
+        if (!Files.isRegularFile(path))
+        {
+            throw new ConfigurationException(source + " names " + path.toAbsolutePath() + ", which is not a file. "
+                    + "Create it, or leave " + source + " unset to run on the built-in server defaults.");
+        }
+        return path;
+    }
+
+    private static void requireRoutesFile(final Path routesFile)
+    {
+        if (!Files.isRegularFile(routesFile))
+        {
+            throw new ConfigurationException("No routes file at " + routesFile.toAbsolutePath() + ". "
+                    + "r7 needs a routes.yaml: create one there, or set " + ROUTES_ENVIRONMENT_VARIABLE + " to where yours is.");
+        }
     }
 
     public ServerConfig serverConfig()
@@ -228,7 +278,11 @@ public final class BlockingGateway implements AutoCloseable
     {
         if (!Files.exists(serverFile))
         {
-            return ServerConfig.standard();
+            final ServerConfig defaults = ServerConfig.standard();
+            logger.info("No {}, running on the built-in server defaults: gateway on {}:{}, management on {}:{}, journals in {}",
+                    serverFile, defaults.server().host(), defaults.server().port(), defaults.management().host(),
+                    defaults.management().port(), Paths.get(defaults.storage().workDir()).toAbsolutePath());
+            return defaults;
         }
         ServerConfig serverConfig = ConfigurationManager.load(serverFile, ServerConfig.class);
         if (serverConfig == null)

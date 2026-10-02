@@ -892,6 +892,10 @@ routes:
 
 The `server.yaml` file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
 
+`server.yaml` is optional. Without one, r7 runs on the defaults in the tables below: the gateway listens on `0.0.0.0:8888`, the management endpoint on `127.0.0.1:18888`, journals go to `./journals` (or `R7_JOURNAL_DIR`), and `X-Forwarded-For` is never trusted. The startup log says when the defaults are in use. Add a `server.yaml` only for the settings you need to change; anything it leaves out keeps its default.
+
+r7 reads `config/routes.yaml` and `config/server.yaml` relative to its working directory; `R7_ROUTES_CONFIG` and `R7_SERVER_CONFIG` name other paths. `routes.yaml` is required, and r7 refuses to start without it. A `server.yaml` named by `R7_SERVER_CONFIG` must exist too: r7 will not fall back to the defaults when the file you pointed it at is missing, since that would quietly drop your limits and trusted proxies.
+
 ### Server Configuration (`server`)
 
 Defines the gateway's listening interface and port, and how many connections it holds.
