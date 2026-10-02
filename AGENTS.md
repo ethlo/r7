@@ -41,7 +41,7 @@ docker compose up -d                                             # nginx test ba
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
 ```
 
-Recommended JVM flags (used by benchmarks, docs and CI images):
+Recommended JVM flags (used by benchmarks, and part of the container images' entrypoints):
 `-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow`.
 
 Data plane defaults to `:8888`, management/status/dashboard to `:18888`.

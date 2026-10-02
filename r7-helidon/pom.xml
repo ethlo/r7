@@ -57,7 +57,7 @@
                             <!--
                                 The journal populates pages ahead of its writer through FFM
                                 (madvise); this grants that to java -jar without a command-line
-                                flag, which the image's entrypoint does not pass.
+                                flag. The container image also passes the flag on its entrypoint.
                             -->
                             <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
                         </manifestEntries>

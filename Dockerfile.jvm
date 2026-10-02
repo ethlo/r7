@@ -24,4 +24,8 @@ ENV R7_MANAGEMENT_HOST=0.0.0.0
 # docs use; without it a container started with no server.yaml tries to create /app/journals,
 # which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
 ENV R7_JOURNAL_DIR=/journals
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]
+# The recommended JVM flags are part of the entrypoint, so a plain `docker run` needs none:
+# ZGC for short pauses, and native and Unsafe memory access granted up front so the JVM prints no
+# warnings about them. JAVA_TOOL_OPTIONS still adds flags such as -Xmx; choosing another
+# collector means overriding the entrypoint, since the JVM refuses two.
+ENTRYPOINT ["java", "-XX:+UseZGC", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]

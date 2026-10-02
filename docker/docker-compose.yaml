@@ -12,11 +12,6 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./journals:/journals:rw
-    environment:
-      - JAVA_TOOL_OPTIONS=
-        -XX:+UseZGC
-        --enable-native-access=ALL-UNNAMED
-        --sun-misc-unsafe-memory-access=allow
     deploy:
       resources:
         limits:
