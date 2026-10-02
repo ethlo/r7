@@ -88,12 +88,12 @@ public final class CdxjIndex
             long windowStart = 0;
             while (windowStart < size)
             {
-                final long windowSize = Math.min(size - windowStart, Integer.MAX_VALUE);
+                final int windowSize = (int) Math.min(size - windowStart, Integer.MAX_VALUE);
                 final MappedByteBuffer window = file.map(FileChannel.MapMode.READ_ONLY, windowStart, windowSize);
                 int within = 0;
                 while (within < windowSize)
                 {
-                    final long frameSize = Zstd.findFrameCompressedSize(window.slice(within, (int) (windowSize - within)));
+                    final long frameSize = Zstd.findFrameCompressedSize(window.slice(within, windowSize - within));
                     if (Zstd.isError(frameSize) || frameSize <= 0)
                     {
                         break;
@@ -103,7 +103,7 @@ public final class CdxjIndex
                 }
                 if (within == 0)
                 {
-                    throw new IOException("No complete Zstandard frame at offset " + (windowStart + within) + " of " + warcFile);
+                    throw new IOException("No complete Zstandard frame at offset " + windowStart + " of " + warcFile);
                 }
                 windowStart += within;
             }
