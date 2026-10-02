@@ -3564,7 +3564,7 @@
 <hr />
 <h2 id="8-complete-example-configuration">8. Complete Example Configuration</h2>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">'{{git.rev.abbr}}'</span>
+<div class="language-yaml highlight"><span class="filename">routes.yaml</span><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">'{{git.rev.abbr}}'</span>
 </span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 </span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># Global filters applied to all routes</span>
 </span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="nt">global_filters</span><span class="p">:</span>
@@ -3965,7 +3965,7 @@ replaces is a contradiction, not something to guess at. Anything not on the resu
 is fingerprinted, no exceptions (unkeyed unless <code>fingerprint_key</code> is set, which it should be
 in production). This affects only journaling; it has no effect on what headers
 are sent to clients or upstreams.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">storage</span><span class="p">:</span>
+<div class="language-yaml highlight"><span class="filename">server.yaml</span><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">storage</span><span class="p">:</span>
 </span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
 </span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="c1"># Add a couple of names to the built-in defaults. Only ever add headers whose values</span>
 </span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="c1"># are not secrets or credentials - anything on this list is journaled in plain text.</span>
