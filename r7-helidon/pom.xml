@@ -53,6 +53,11 @@
                 <version>3.5.1</version>
                 <configuration>
                     <archive>
+                        <manifest>
+                            <mainClass>com.ethlo.r7.helidon.R7Helidon</mainClass>
+                            <addClasspath>true</addClasspath>
+                            <classpathPrefix>lib/</classpathPrefix>
+                        </manifest>
                         <manifestEntries>
                             <!--
                                 The journal populates pages ahead of its writer through FFM
@@ -64,24 +69,29 @@
                     </archive>
                 </configuration>
             </plugin>
-            <!-- One executable jar, for Dockerfile.jvm -->
+            <!--
+                A plain jar with its dependencies in lib/ beside it, not one jar nesting the others:
+                the JVM's AOT cache (Dockerfile.jvm) can only hold classes from the plain class
+                path, and reading nested jars costs startup time of its own. java -jar still
+                works, with lib/ next to the jar.
+            -->
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>4.1.1</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.9.0</version>
                 <executions>
                     <execution>
+                        <id>copy-runtime-dependencies</id>
+                        <phase>package</phase>
                         <goals>
-                            <goal>repackage</goal>
+                            <goal>copy-dependencies</goal>
                         </goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                        </configuration>
                     </execution>
                 </executions>
-                <configuration>
-                    <mainClass>com.ethlo.r7.helidon.R7Helidon</mainClass>
-                    <layers>
-                        <enabled>true</enabled>
-                    </layers>
-                </configuration>
             </plugin>
         </plugins>
     </build>

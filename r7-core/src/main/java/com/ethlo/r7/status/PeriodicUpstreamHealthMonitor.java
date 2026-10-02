@@ -18,7 +18,9 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
 {
     private final Set<URI> allTargets;
     private final Set<URI> healthyTargets;
-    private final HttpClient httpClient;
+    // Built at the first probe, on the scheduler's thread: building one sets up TLS (the JDK's
+    // trust store included) even for plain-HTTP targets, which would otherwise hold up startup.
+    private HttpClient httpClient;
     private final UpstreamTargetObserver targetObserver;
     private final HealthCheckConfig config;
     private final Map<URI, Integer> consecutiveSuccesses;
@@ -36,10 +38,6 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
         this.consecutiveSuccesses = new ConcurrentHashMap<>();
         this.consecutiveFailures = new ConcurrentHashMap<>();
         this.overrides = new ConcurrentHashMap<>();
-
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
-                .build();
 
         for (final URI target : targets)
         {
@@ -79,6 +77,13 @@ public final class PeriodicUpstreamHealthMonitor implements UpstreamHealthMonito
 
     private void pingAll()
     {
+        if (this.httpClient == null)
+        {
+            // Only ever called from the one scheduled task, so never concurrently
+            this.httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(2))
+                    .build();
+        }
         final String safePath = config.path();
 
         for (final URI target : this.allTargets)

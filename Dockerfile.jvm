@@ -7,11 +7,32 @@
 FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
 RUN mkdir -p /journals && chown 65532:65532 /journals
 
+# The AOT cache (JEP 483): a training run of the gateway records the classes it loads and links
+# while starting and serving its first requests, and the image starts from that record instead of
+# loading them from the jars again. The cache only fits the exact JDK, jars and flags it was made
+# with, so it is made here, in the same base image, with the same java flags as the entrypoint
+# below; a JVM that finds it does not fit says so and starts without it. Training writes journals,
+# so it runs in a stage of its own and only the cache is kept.
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629 AS aot
+WORKDIR /app
+
+# We assume the jar and its lib/ are already built by the CI runner. The pattern skips the
+# -javadoc and -sources jars beside it.
+COPY r7-helidon/target/r7-helidon-*[0-9T].jar /app/r7.jar
+COPY r7-helidon/target/lib /app/lib
+COPY docker/aot-training/routes.yaml /aot-training/routes.yaml
+ENV R7_ROUTES_CONFIG=/aot-training/routes.yaml
+ENV R7_JOURNAL_DIR=/tmp/aot-training-journals
+RUN ["java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-jar", "/app/r7.jar"]
+
 FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
 WORKDIR /app
 
-# We assume the JAR is already compiled by the CI runner
-COPY r7-helidon/target/r7-helidon-*.jar /app/server.jar
+# From the training stage, not the build context, so that they are the very files the cache was
+# made from
+COPY --from=aot /app/r7.jar /app/r7.jar
+COPY --from=aot /app/lib /app/lib
+COPY --from=aot /tmp/r7.aot /app/r7.aot
 COPY --from=dirs --chown=65532:65532 /journals /journals
 
 USER 65532:65532
@@ -24,8 +45,9 @@ ENV R7_MANAGEMENT_HOST=0.0.0.0
 # docs use; without it a container started with no server.yaml tries to create /app/journals,
 # which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
 ENV R7_JOURNAL_DIR=/journals
-# The recommended JVM flags are part of the entrypoint, so a plain `docker run` needs none:
-# ZGC for short pauses, and native and Unsafe memory access granted up front so the JVM prints no
-# warnings about them. JAVA_TOOL_OPTIONS still adds flags such as -Xmx; choosing another
-# collector means overriding the entrypoint, since the JVM refuses two.
-ENTRYPOINT ["java", "-XX:+UseZGC", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/server.jar"]
+# Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.
+# No garbage collector is named: the JVM picks one for the container's CPUs and memory, and one
+# set in JAVA_TOOL_OPTIONS (-XX:+UseZGC for the shortest pauses) applies as it is. On JDK 25 the
+# AOT cache's pre-built objects only work with the JVM's other collectors, so ZGC starts slower
+# (docs/performance_tuning.md).
+ENTRYPOINT ["java", "-XX:AOTCache=/app/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/r7.jar"]

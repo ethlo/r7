@@ -14,8 +14,8 @@ costs kept growing.
   `FULL` (5 s runs, one machine): about 41,000 req/s uncompressed against about 108,000 on the
   JVM, and about 8,400 req/s with zstd against about 66,000 — zstd-jni's FFM calls cost far more
   in the native image than in a warm JVM.
-- **Startup** is about a second on the JVM. That matters only for scale-to-zero, which a
-  journaling gateway does not do. The JDK's AOT cache can narrow it further if it ever matters.
+- **Startup** is covered on the JVM by the JDK's AOT cache, which the gateway image is built
+  with (`Dockerfile.jvm`, `docs/performance_tuning.md`).
 - **Memory.** The native image's smaller heap and RSS are dwarfed by the page cache the journal
   occupies under load, which the container's memory limit is charged for anyway.
 - **It drifted, silently.** Three native-only bugs were found in one session, none caught by CI:
