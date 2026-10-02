@@ -1015,7 +1015,7 @@ fingerprint of its value instead of the value itself. This list is separate per 
 | `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list. |
 | `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response whitelist entirely. |
 | `safe_query_parameters` | List of Strings | Query parameter names whose values are journaled in plain text. Empty by default, so every query parameter value is fingerprinted. See [Query parameters](#query-parameters) below. |
-| `safe_query_parameters_ignore_case` | Boolean | Match `safe_query_parameters` regardless of case. Defaults to `false`: query parameter names are case sensitive. |
+| `safe_query_parameters_case_sensitive` | Boolean | Match `safe_query_parameters` exactly, case included. Defaults to `false`: `page` on the list also covers `Page` and `PAGE`. |
 | `fingerprint_key` | String | Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (`id:hmac:` + 16 hex digits) rather than the default unkeyed SHA-256 (`id:sha256:` + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with `${VAR}` interpolation. See [Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values). |
 
 Header names are matched case-insensitively. There is no way to remove a single header from the
@@ -1062,9 +1062,10 @@ GET /search?page=2&api_key=s3cret&q=shoes HTTP/1.1                       # as se
 GET /search?page=2&api_key=id:sha256:1ec1c2&q=id:sha256:01ea5d HTTP/1.1     # journaled, with page safe
 ```
 
-- **Case.** Query parameter names are case sensitive, unlike header names, so `Page` does not
-  match a safe `page` and its value is fingerprinted. Set `safe_query_parameters_ignore_case: true`
-  when your upstreams fold case (ASP.NET does, for example) and `Page` means `page` to them.
+- **Case.** Names on `safe_query_parameters` match regardless of case, as header names do:
+  `page` also covers `Page` and `PAGE`. Query parameter names are case sensitive on the wire,
+  so when your upstreams tell `id` from `ID`, set `safe_query_parameters_case_sensitive: true`
+  and only the exact spelling on the list is journaled in plain text.
 - **Encoding.** Names are matched after percent-decoding, as the upstream reads them: `p%61ge`
   and `page` are the same parameter, and `user+id` and `user%20id` both match `user id`. Write
   names in `safe_query_parameters` decoded; a name containing a percent-escape is refused at

@@ -9,12 +9,11 @@ import java.util.TreeSet;
  * parameter's value is fingerprinted, exactly as a header outside the safe header list is.
  * <p>
  * Names are compared after percent-decoding, so {@code user%5Fid} and {@code user_id} are the
- * same parameter, as they are to the upstream. Unlike header names, query parameter names are
- * case sensitive (RFC 3986 gives them no case rules, and most frameworks distinguish
- * {@code id} from {@code ID}), so matching is exact by default. An upstream that folds case
- * would read {@code Page} as {@code page}; {@code ignoreCase} lets the safe list follow it.
- * Exact matching is the default because the safe list only ever decides what is shown: a name
- * that fails to match is fingerprinted, never exposed.
+ * same parameter, as they are to the upstream. Query parameter names are case sensitive on the
+ * wire (RFC 3986 gives them no case rules), but an operator who lists {@code page} means that
+ * parameter however a client spells it, so the server configuration matches regardless of case
+ * unless told otherwise. Exact matching is there for upstreams that distinguish {@code id}
+ * from {@code ID}, where a safe {@code id} says nothing about {@code ID}.
  */
 public final class QueryParameterNameSet
 {

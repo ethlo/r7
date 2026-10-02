@@ -180,12 +180,12 @@ class JournalSecurityConfigValidationTest
     }
 
     @Test
-    void queryParametersDefaultToNoneSafeAndExactCase()
+    void queryParametersDefaultToNoneSafeAndAnyCase()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, null, null, null);
 
         assertThat(config.safeQueryParameters()).isEmpty();
-        assertThat(config.safeQueryParametersIgnoreCase()).isFalse();
+        assertThat(config.safeQueryParametersCaseSensitive()).isFalse();
     }
 
     @Test

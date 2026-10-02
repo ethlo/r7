@@ -133,7 +133,7 @@ public final class GatewayPipeline
         this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
         this.safeQueryParameters = QueryParameterNameSet.of(
-                journalSecurity.safeQueryParameters(), journalSecurity.safeQueryParametersIgnoreCase());
+                journalSecurity.safeQueryParameters(), !journalSecurity.safeQueryParametersCaseSensitive());
         this.headerFingerprint = HeaderFingerprint.of(journalSecurity.fingerprintKey());
         if (!this.headerFingerprint.isKeyed())
         {

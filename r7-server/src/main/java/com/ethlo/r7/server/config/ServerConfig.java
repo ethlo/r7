@@ -611,9 +611,9 @@ public record ServerConfig(
      * {@code safe_query_parameters} is the same rule for the query in journaled request lines
      * (see {@link com.ethlo.r7.journal.RedactingQuery}). There is no built-in list, so there is
      * nothing to add to and the list is the whole of it: every parameter not named is
-     * fingerprinted. Names match exactly, since query parameter names are case sensitive;
-     * {@code safe_query_parameters_ignore_case} matches them as an upstream that folds case
-     * reads them.
+     * fingerprinted. Names match regardless of case by default, so a list entry covers every
+     * spelling a client may send; {@code safe_query_parameters_case_sensitive} matches them
+     * exactly, for upstreams that tell {@code id} from {@code ID}.
      * <p>
      * {@code fingerprint_key}, when set, keys the fingerprint written in place of a redacted
      * value, so that a reader of the journal cannot confirm a guessed value by hashing it
@@ -627,7 +627,7 @@ public record ServerConfig(
             List<String> safeResponseHeaders,
             String fingerprintKey,
             List<String> safeQueryParameters,
-            Boolean safeQueryParametersIgnoreCase
+            Boolean safeQueryParametersCaseSensitive
     ) implements ValidatableConfig
     {
         @Override
@@ -733,13 +733,14 @@ public record ServerConfig(
         }
 
         /**
-         * False by default: query parameter names are case sensitive, and a name that fails
-         * to match is fingerprinted, never shown.
+         * False by default: an operator who lists {@code page} means the parameter, whatever
+         * case a client spells it in. True matches the names exactly, as an upstream that
+         * distinguishes {@code id} from {@code ID} reads them.
          */
         @Override
-        public Boolean safeQueryParametersIgnoreCase()
+        public Boolean safeQueryParametersCaseSensitive()
         {
-            return Optional.ofNullable(this.safeQueryParametersIgnoreCase).orElse(false);
+            return Optional.ofNullable(this.safeQueryParametersCaseSensitive).orElse(false);
         }
 
         @Override
@@ -778,7 +779,7 @@ public record ServerConfig(
                     + ", safeResponseHeaders=" + this.safeResponseHeaders()
                     + ", fingerprintKey=" + (this.fingerprintKey == null ? "unset" : "******")
                     + ", safeQueryParameters=" + this.safeQueryParameters()
-                    + ", safeQueryParametersIgnoreCase=" + this.safeQueryParametersIgnoreCase() + "]";
+                    + ", safeQueryParametersCaseSensitive=" + this.safeQueryParametersCaseSensitive() + "]";
         }
     }
 }

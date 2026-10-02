@@ -44,20 +44,20 @@ class RedactingQueryTest
     }
 
     @Test
-    void namesAreCaseSensitiveByDefault()
+    void anExactMatchSetTellsCasesApart()
     {
         assertThat(redact("Page=2&PAGE=3&page=4", SAFE)).isEqualTo("Page=" + fp("2") + "&PAGE=" + fp("3") + "&page=4");
     }
 
     @Test
-    void ignoreCaseMatchesNamesWhateverTheirCase()
+    void aCaseInsensitiveSetMatchesNamesWhateverTheirCase()
     {
         final QueryParameterNameSet safe = QueryParameterNameSet.of(List.of("page"), true);
         assertThat(redact("Page=2&PAGE=3&token=x", safe)).isEqualTo("Page=2&PAGE=3&token=" + fp("x"));
     }
 
     @Test
-    void ignoreCaseDoesNotDependOnTheDefaultLocale()
+    void caseInsensitiveMatchingDoesNotDependOnTheDefaultLocale()
     {
         final Locale original = Locale.getDefault();
         try
