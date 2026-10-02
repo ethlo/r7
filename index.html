@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The Performant Java Gateway">
+        <meta name="description" content="The gateway that remembers every request">
       
       
       
@@ -83,7 +83,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#r7-gateway" class="md-skip">
+        <a href="#r7-the-gateway-that-remembers-every-request" class="md-skip">
           Skip to content
         </a>
       
@@ -380,7 +380,9 @@
           
             
               
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -483,10 +485,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#designed-for-predictable-systems" class="md-nav__link">
+  <a href="#your-first-gateway" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Designed for predictable systems
+        Your first gateway
       </span>
     </span>
   </a>
@@ -494,77 +496,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#core-capabilities" class="md-nav__link">
+  <a href="#three-things-r7-does-well" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Core capabilities
+        Three things r7 does well
       </span>
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#execution-model-runtime-guarantees" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Execution model &amp; runtime guarantees
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#live-dashboard" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Live Dashboard
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#declarative-configuration-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Declarative configuration model
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Example configuration
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#architecture-overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Architecture overview
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Architecture overview">
+    <nav class="md-nav" aria-label="Three things r7 does well">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#data-plane" class="md-nav__link">
+  <a href="#it-remembers-every-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Data plane
+        It remembers every request
       </span>
     </span>
   </a>
@@ -572,10 +519,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#internal-observability" class="md-nav__link">
+  <a href="#your-configuration-is-checked-before-it-runs" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Internal observability
+        Your configuration is checked before it runs
       </span>
     </span>
   </a>
@@ -583,10 +530,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#journal-durability-model" class="md-nav__link">
+  <a href="#routing-you-can-read-top-to-bottom" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Journal durability model
+        Routing you can read top to bottom
       </span>
     </span>
   </a>
@@ -599,10 +546,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#extensibility" class="md-nav__link">
+  <a href="#is-r7-for-you" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Extensibility
+        Is r7 for you?
       </span>
     </span>
   </a>
@@ -610,21 +557,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#performance-characteristics" class="md-nav__link">
+  <a href="#under-the-hood" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Performance characteristics
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#technical-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Technical profile
+        Under the hood
       </span>
     </span>
   </a>
@@ -865,143 +801,120 @@
   
 
 
-<h1 id="r7-gateway">r7 Gateway</h1>
-<p><img alt="r7 Dashboard Snapshot" src="assets/overview.png" /></p>
-<p>A high-performance JVM gateway for routing, filtering, and observability with minimal runtime overhead.</p>
-<p>r7 sits between services and traffic sources, providing a stable and predictable execution layer for HTTP request handling, routing, and auditing.</p>
-<pre class="mermaid"><code>graph LR
-
-%% External systems (top / context)
-Up[Upstream Services]
-
-Client[Clients / APIs] --&gt; Edge[Edge Layer&lt;br/&gt;TLS + WAF]
-Edge --&gt; R7[r7 Gateway]
-
-Up --&gt; DP
-
-%% r7 core
-subgraph CORE[r7 Execution System]
-
-DP[Data Plane&lt;br/&gt;Routing + Filters]
-JOURNAL[Journal&lt;br/&gt;r7F Memory-mapped state]
-DASH[Live Dashboard&lt;br/&gt;Runtime projection]
-
-R7 --&gt; DP
-R7 --&gt; JOURNAL
-R7 --&gt; DASH
-
-end
-
-DP --&gt; Up
-
-%% right-side consumers
-JOURNAL --&gt; Exp[External Tailers / Exporters&lt;br/&gt;ClickHouse / S3 / Vector]
-
-DASH --&gt; Ops[Operators / SREs]</code></pre>
+<h1 id="r7-the-gateway-that-remembers-every-request">r7: the gateway that remembers every request</h1>
+<p>Put r7 in front of your services and write down where traffic should go. It routes the requests,
+checks your configuration before it ever runs, and keeps a record of what passed through, so when
+someone asks "what did that client actually send us?", you have the answer.</p>
+<p>It is fast out of the box, with high throughput and a short tail and nothing to tune first. One
+YAML file to start. No plugins to assemble, no scripting language to learn.</p>
+<p><a class="md-button md-button--primary" href="quickstart/">Get started in five minutes</a>
+<a class="md-button" href="editor/">Try the config editor</a></p>
 <hr />
-<h2 id="designed-for-predictable-systems">Designed for predictable systems</h2>
-<p>r7 is built for environments where performance consistency matters more than peak benchmarks:</p>
-<ul>
-<li>Stable low-latency request processing under load</li>
-<li>Predictable behavior under memory constraints</li>
-<li>Minimal garbage collection pressure in the hot path</li>
-<li>Full request visibility without blocking execution</li>
-</ul>
-<hr />
-<h2 id="core-capabilities">Core capabilities</h2>
-<ul>
-<li>Composable routing engine (predicates + filters)</li>
-<li>High-throughput HTTP entrypoint (Helidon Níma, a virtual thread per connection)</li>
-<li>Memory-mapped journaling for full request/response auditing</li>
-<li>Real-time operational dashboard</li>
-<li>Plugin system via JVM ServiceLoader (SPI)</li>
-</ul>
-<hr />
-<h2 id="execution-model-runtime-guarantees">Execution model &amp; runtime guarantees</h2>
-<p>r7 uses a deterministic, streaming execution model for HTTP request processing.</p>
-<p>Requests are handled synchronously in a single logical flow, without reactive pipelines or coroutine-based scheduling.</p>
-<p>Payloads are processed as streams and are not buffered or modified within the gateway. This ensures strict memory control and predictable runtime behavior under load.</p>
-<p>This design leads to:</p>
-<ul>
-<li>Deterministic request lifecycle from ingress to response</li>
-<li>No hidden buffering or allocation spikes in the hot path</li>
-<li>Stable tail latency under memory-constrained environments</li>
-<li>Reduced complexity in failure analysis and debugging</li>
-</ul>
-<p>See <a href="benchmarks/">Benchmarks</a> for measured results under controlled memory and load conditions.</p>
-<hr />
-<h2 id="live-dashboard">Live Dashboard</h2>
-<p>r7 includes a built-in dashboard for live system introspection:</p>
-<ul>
-<li>Route-level inspection: match order, predicates, filters with their configuration, upstream targets and their health</li>
-<li>Current performance per route: request rate, error share and p50/p95/p99 response time over a sliding window</li>
-<li>Request and response journaling levels and overrides</li>
-<li>The effective <code>server.yaml</code>, with changes from the defaults marked, and whether the last <code>routes.yaml</code> edit loaded</li>
-</ul>
-<p><img alt="r7 Dashboard Snapshot" src="assets/overview.png" /></p>
-<hr />
-<h2 id="declarative-configuration-model">Declarative configuration model</h2>
-<p>r7 is fully configured using a simple, self-documenting YAML model.</p>
-<p>Routes, predicates, filters, and journaling behavior are defined declaratively and evaluated consistently at runtime without hidden conventions or external orchestration systems.</p>
-<p>This allows:</p>
-<ul>
-<li>Fast onboarding without framework-specific knowledge</li>
-<li>Explicit routing behavior that is easy to reason about</li>
-<li>Configuration that can be reviewed, versioned, and audited like code</li>
-<li>No runtime DSLs or embedded scripting required</li>
-</ul>
-<hr />
-<h2 id="example-configuration">Example configuration</h2>
+<h2 id="your-first-gateway">Your first gateway</h2>
+<p>All r7 needs is a <code>routes.yaml</code>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">routes</span><span class="p">:</span>
-</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">static-content</span>
+</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api</span>
 </span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Method</span><span class="p">:</span>
-</span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">          </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">GET</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">POST</span><span class="p p-Indicator">]</span>
+</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
+</span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/api</span>
 </span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
 </span><span id="True-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
-</span><span id="True-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:1111</span>
-</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
-</span><span id="True-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
-</span><span id="True-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50000</span>
-</span><span id="True-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PT1s</span>
-</span><span id="True-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
-</span><span id="True-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
-</span><span id="True-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span>
+</span><span id="True-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://host.docker.internal:3000</span>
+</span><span id="True-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span><span id="True-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
 </span></code></pre></div>
-<p><img alt="r7 Dashboard Snapshot - route view" src="assets/route_view.png" /></p>
+<p>Start it:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-p<span class="w"> </span><span class="m">8888</span>:8888<span class="w"> </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:18888:18888<span class="w"> </span><span class="se">\</span>
+</span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--add-host<span class="o">=</span>host.docker.internal:host-gateway<span class="w"> </span><span class="se">\</span>
+</span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/routes.yaml:/app/config/routes.yaml:ro"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="True-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>-v<span class="w"> </span>r7-journals:/journals<span class="w"> </span><span class="se">\</span>
+</span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:latest
+</span></code></pre></div>
+<p>Requests to <code>http://localhost:8888/api/...</code> now reach your service on port 3000, and every one of
+them is written with its headers to the journal, kept in the <code>r7-journals</code> volume. Open <code>http://localhost:18888</code> to see your routes,
+their upstream health and live response times.</p>
+<p>That is the whole setup. When you need to tune ports, limits or journal storage, add a
+<code>server.yaml</code>; until then the defaults are chosen to be safe.</p>
+<p><img alt="The r7 dashboard" src="assets/overview.png" /></p>
 <hr />
-<h2 id="architecture-overview">Architecture overview</h2>
-<p>r7 separates execution into two planes:</p>
-<h3 id="data-plane">Data plane</h3>
-<p>Handles request routing and filtering in a low-allocation hot path executed per request.</p>
-<h3 id="internal-observability">Internal observability</h3>
-<p>Derived from request execution state, r7 maintains an asynchronous journal and live runtime projection without impacting request latency.</p>
-<h3 id="journal-durability-model">Journal durability model</h3>
-<p>The r7 journal is crash-consistent at segment level.</p>
-<p>Under abrupt termination (e.g. SIGKILL), partial entries at the tail may be discarded during recovery. Only fully validated entries are retained during journal replay.</p>
+<h2 id="three-things-r7-does-well">Three things r7 does well</h2>
+<h3 id="it-remembers-every-request">It remembers every request</h3>
+<p>Every request and response can be recorded to a journal on local disk: just the essentials
+(method, path, status, timing), the headers too, or the full bodies. You choose per route, and you
+can turn the detail up only when something goes wrong:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">status_overrides</span><span class="p">:</span>
+</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">   </span><span class="c1"># keep the headers whenever the upstream fails</span>
+</span></code></pre></div>
+<p>Journaling never sits in the way of a request: entries are written to memory-mapped files, not
+sent over the network while the client waits. Separate tailers ship them on to where you want them,
+such as a JSON pipeline for ClickHouse or Elasticsearch, or a standard WARC archive. Secrets stay
+out by default: header values that are not on an allow-list are stored as fingerprints, not as
+plain text.</p>
+<p><a href="journaling/">How journaling works</a></p>
+<h3 id="your-configuration-is-checked-before-it-runs">Your configuration is checked before it runs</h3>
+<p>A typo in a gateway config usually shows up as a silent misroute in production. r7 refuses to
+start instead, and tells you exactly what is wrong:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Unknown filter: 'AddResponseHeadr'. Did you mean 'AddResponseHeader'? Available filters are: …
+</span></code></pre></div>
+<p>Unknown keys, invalid regular expressions, duplicate route ids, fallback loops and missing
+environment variables are all caught at startup. A misspelled option or broken YAML is reported
+with its line and column. Edit
+<code>routes.yaml</code> while r7 runs and it reloads on its own; an edit that does not validate is rejected,
+and the routes you had keep serving traffic.</p>
+<p>The <a href="editor/">online config editor</a> checks your routes against the full schema as you type,
+with autocomplete for every filter and predicate.</p>
+<h3 id="routing-you-can-read-top-to-bottom">Routing you can read top to bottom</h3>
+<p>Routes are tried in the order you wrote them, and the first one that matches wins. There are no
+priority rules to memorise and no hidden precedence between prefix and regex matches. Each filter
+does one job and runs in the order it is listed.</p>
+<p>r7 also refuses requests that could be read one way by the gateway and another by your service,
+such as <code>/public/../admin</code> or an encoded slash, so a route that protects a path really does
+protect it.</p>
+<p><a href="config/">Configuration reference</a></p>
 <hr />
-<h2 id="extensibility">Extensibility</h2>
-<p>Custom behavior can be added via JVM ServiceLoader (SPI):</p>
+<h2 id="is-r7-for-you">Is r7 for you?</h2>
+<p>r7 is a good fit if you want:</p>
 <ul>
-<li>Authentication and JWT validation</li>
-<li>Rate limiting strategies</li>
-<li>Request enrichment</li>
+<li>an audit trail of the HTTP traffic in front of your services, without bolting on a separate system</li>
+<li>a gateway whose behaviour you can understand from its config file alone</li>
+<li>strict, early feedback on configuration mistakes, before they reach traffic</li>
+<li>a small, focused tool you can run as a single container or a sidecar</li>
 </ul>
-<p>See <a href="extensibility/">Extensibility</a> page for documentation.</p>
-<p>Note: Audit and telemetry pipelines operate on the journal stream via external tailers and are not part of the request execution runtime.</p>
+<p>r7 is deliberately not a programmable platform. There is no embedded scripting language; if you
+need custom behaviour, you write a filter in Java and register it as a <a href="extensibility/">plugin</a>.</p>
+<p>r7 is pre-release. Configuration and APIs may still change before 1.0.</p>
 <hr />
-<h2 id="performance-characteristics">Performance characteristics</h2>
-<p>r7 is designed for stable behavior under constrained environments, where traditional gateways begin to exhibit tail latency degradation due to memory pressure.</p>
-<hr />
-<h2 id="technical-profile">Technical profile</h2>
+<h2 id="under-the-hood">Under the hood</h2>
+<p>For those who want to know how it works. r7 is built for high throughput and a low, steady tail
+together; none of the choices below trades one for the other.</p>
+<pre class="mermaid"><code>graph LR
+    Client[Clients] --&gt; R7[r7 gateway]
+    R7 --&gt;|routes + filters| Up[Your services]
+    R7 --&gt;|memory-mapped write| Journal[(Journal on disk)]
+    Journal --&gt; Tailers[Tailers&lt;br/&gt;JSON / WARC]
+    Tailers --&gt; Store[ClickHouse / S3 / Elasticsearch]
+    R7 --&gt; Dash[Live dashboard]</code></pre>
 <ul>
-<li>Platform: Java 25+</li>
-<li>Server: Helidon Níma (virtual threads)</li>
-<li>Design: JVM-native, high-throughput gateway architecture</li>
+<li><strong>Runtime:</strong> Java 25+, on Helidon Níma with one virtual thread per connection. Each request is
+  handled in a single synchronous flow, with no reactive pipelines.</li>
+<li><strong>Streaming:</strong> request and response bodies are streamed through, not buffered or modified, which
+  keeps memory use predictable under load.</li>
+<li><strong>Journal:</strong> an append-only binary format (r7f) in memory-mapped segments. It is crash-consistent
+  at segment level: after an abrupt kill, a partially written entry at the tail is discarded on
+  recovery and every complete entry is kept.</li>
+<li><strong>Hot path:</strong> routing and filtering are written to keep allocation per request low; a test in the
+  build holds it to a budget.</li>
+<li><strong>Extensibility:</strong> filters and predicates are discovered through the JVM <code>ServiceLoader</code>.</li>
 </ul>
+<p><a href="benchmarks/">Benchmarks</a> · <a href="performance_tuning/">Performance tuning</a> · <a href="licensing/">Licensing</a></p>
+
+  
 
 
 
@@ -1011,8 +924,13 @@ DASH --&gt; Ops[Operators / SREs]</code></pre>
 
 
 
+  
+  
 
 
+
+
+  
 
 
 

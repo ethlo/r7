@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The Performant Java Gateway">
+        <meta name="description" content="The gateway that remembers every request">
       
       
       
@@ -924,8 +924,8 @@
 
 
 <h1 id="performance-tuning">Performance tuning</h1>
-<p>r7's defaults favour a small, predictable footprint over peak throughput. Most deployments never
-need to change them. When you do, each setting below trades one resource for another, and the
+<p>r7's defaults aim for high throughput, a short tail and a small footprint at the same time. Most
+deployments never need to change them. When you do, each setting below trades one resource for another, and the
 right side of that trade depends on where r7 runs. Each entry says what to tune, when it helps,
 what it costs, and how to check the result on your own hardware.</p>
 <p>Numbers on this page were measured on one machine (20 cores, JDK 25, ZGC, an nginx backend on
