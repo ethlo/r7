@@ -42,6 +42,7 @@ import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.journal.HeaderFingerprint;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.journal.JournalSecurity;
+import com.ethlo.r7.journal.QueryParameterNameSet;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
@@ -104,6 +105,7 @@ public final class GatewayPipeline
     private final UpstreamConnector upstreamConnector;
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
+    private final QueryParameterNameSet safeQueryParameters;
     private final HeaderFingerprint headerFingerprint;
     private final RemoteAddressResolver remoteAddressResolver;
 
@@ -130,12 +132,14 @@ public final class GatewayPipeline
                 journalSecurity.additionalSafeRequestHeaders(), journalSecurity.safeRequestHeaders());
         this.safeResponseHeaders = JournalSecurity.resolveSafeResponseHeaders(
                 journalSecurity.additionalSafeResponseHeaders(), journalSecurity.safeResponseHeaders());
+        this.safeQueryParameters = QueryParameterNameSet.of(
+                journalSecurity.safeQueryParameters(), journalSecurity.safeQueryParametersIgnoreCase());
         this.headerFingerprint = HeaderFingerprint.of(journalSecurity.fingerprintKey());
         if (!this.headerFingerprint.isKeyed())
         {
             // Once, at startup: the unkeyed form is kept for compatibility, but it is only as
             // strong as the entropy of the value it hides, and an operator should know that.
-            logger.info("Redacted header values are journaled as unkeyed SHA-256 fingerprints; set "
+            logger.info("Redacted header and query parameter values are journaled as unkeyed SHA-256 fingerprints; set "
                     + "storage.journal_security.fingerprint_key so that low-entropy secrets cannot be recovered by guessing.");
         }
     }
@@ -239,7 +243,7 @@ public final class GatewayPipeline
         ex.webSocketRequested = "websocket".equalsIgnoreCase(ex.liveRequest.headers().getFirst(UPGRADE));
 
         final Journal rawJournal = journalWriter.getJournal(requestId);
-        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, ex, safeRequestHeaders, safeResponseHeaders, headerFingerprint);
+        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, ex, safeRequestHeaders, safeResponseHeaders, safeQueryParameters, headerFingerprint);
         ex.journal = statefulJournal;
         setupJournaling(statefulJournal, ex, journalConfig, requestId);
     }

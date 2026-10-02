@@ -1,8 +1,11 @@
 package com.ethlo.r7.server.config;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.doc.Description;
@@ -564,7 +567,7 @@ public record ServerConfig(
         @Override
         public JournalSecurityConfig journalSecurity()
         {
-            return Optional.ofNullable(this.journalSecurity).orElse(new JournalSecurityConfig(null, null, null, null, null));
+            return Optional.ofNullable(this.journalSecurity).orElse(new JournalSecurityConfig(null, null, null, null, null, null, null));
         }
 
         /**
@@ -605,6 +608,13 @@ public record ServerConfig(
      * Setting both for the same direction is rejected: a full replacement and an addition to
      * the defaults it replaces is a contradiction, not a merge to guess at.
      * <p>
+     * {@code safe_query_parameters} is the same rule for the query in journaled request lines
+     * (see {@link com.ethlo.r7.journal.RedactingQuery}). There is no built-in list, so there is
+     * nothing to add to and the list is the whole of it: every parameter not named is
+     * fingerprinted. Names match exactly, since query parameter names are case sensitive;
+     * {@code safe_query_parameters_ignore_case} matches them as an upstream that folds case
+     * reads them.
+     * <p>
      * {@code fingerprint_key}, when set, keys the fingerprint written in place of a redacted
      * value, so that a reader of the journal cannot confirm a guessed value by hashing it
      * (see {@link com.ethlo.r7.journal.HeaderFingerprint}). Normally supplied through
@@ -615,7 +625,9 @@ public record ServerConfig(
             List<String> additionalSafeResponseHeaders,
             List<String> safeRequestHeaders,
             List<String> safeResponseHeaders,
-            String fingerprintKey
+            String fingerprintKey,
+            List<String> safeQueryParameters,
+            Boolean safeQueryParametersIgnoreCase
     ) implements ValidatableConfig
     {
         @Override
@@ -634,6 +646,8 @@ public record ServerConfig(
             requireValidHeaderTokens(result, "additional_safe_response_headers", this.additionalSafeResponseHeaders());
             requireValidHeaderTokens(result, "safe_request_headers", this.safeRequestHeaders());
             requireValidHeaderTokens(result, "safe_response_headers", this.safeResponseHeaders());
+
+            requireValidQueryParameterNames(result, "safe_query_parameters", this.safeQueryParameters());
 
             if (!this.safeRequestHeaders().isEmpty() && !this.additionalSafeRequestHeaders().isEmpty())
             {
@@ -671,6 +685,63 @@ public record ServerConfig(
             }
         }
 
+        /**
+         * Query parameter names are compared decoded, so the list holds them decoded. An escape
+         * in a configured name is almost certainly the encoded spelling copied from a URL, and
+         * it would only ever match a parameter whose name decodes to that literal escape - the
+         * entry would silently do nothing. Names are otherwise free text: the server decodes
+         * parameters as UTF-8, so any character can appear in one.
+         */
+        private static void requireValidQueryParameterNames(final ValidationResult result, final String field, final List<String> names)
+        {
+            for (final String name : names)
+            {
+                if (name == null)
+                {
+                    result.addError(field, "query parameter names must not be null");
+                }
+                else if (name.isEmpty())
+                {
+                    result.addError(field, "query parameter names must not be empty");
+                }
+                else if (PERCENT_ESCAPE.matcher(name).find())
+                {
+                    result.addError(field, "'" + name + "' contains a percent-escape, but names are matched after decoding; write '"
+                            + decodeForAdvice(name) + "' instead");
+                }
+            }
+        }
+
+        private static final Pattern PERCENT_ESCAPE = Pattern.compile("%[0-9A-Fa-f]{2}");
+
+        private static String decodeForAdvice(final String name)
+        {
+            try
+            {
+                return URLDecoder.decode(name.replace("+", "%2B"), StandardCharsets.UTF_8);
+            }
+            catch (final IllegalArgumentException e)
+            {
+                return name;
+            }
+        }
+
+        @Override
+        public List<String> safeQueryParameters()
+        {
+            return Optional.ofNullable(this.safeQueryParameters).orElse(List.of());
+        }
+
+        /**
+         * False by default: query parameter names are case sensitive, and a name that fails
+         * to match is fingerprinted, never shown.
+         */
+        @Override
+        public Boolean safeQueryParametersIgnoreCase()
+        {
+            return Optional.ofNullable(this.safeQueryParametersIgnoreCase).orElse(false);
+        }
+
         @Override
         public List<String> additionalSafeRequestHeaders()
         {
@@ -705,7 +776,9 @@ public record ServerConfig(
                     + ", additionalSafeResponseHeaders=" + this.additionalSafeResponseHeaders()
                     + ", safeRequestHeaders=" + this.safeRequestHeaders()
                     + ", safeResponseHeaders=" + this.safeResponseHeaders()
-                    + ", fingerprintKey=" + (this.fingerprintKey == null ? "unset" : "******") + "]";
+                    + ", fingerprintKey=" + (this.fingerprintKey == null ? "unset" : "******")
+                    + ", safeQueryParameters=" + this.safeQueryParameters()
+                    + ", safeQueryParametersIgnoreCase=" + this.safeQueryParametersIgnoreCase() + "]";
         }
     }
 }

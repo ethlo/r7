@@ -21,7 +21,6 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   trusted ([`asvs-l2.md`](asvs-l2.md), V12.3.4 and V13.2.1).
 - **No lockout in `BasicAuth`.** Put a `RateLimiter` in front of it on any route that untrusted
   clients can reach (`docs/config.md`, "Password guessing").
-- **Query strings are journaled unredacted** ([`asvs-l2.md`](asvs-l2.md), V14.2.1).
 
 ## Upstream client
 

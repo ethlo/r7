@@ -26,6 +26,7 @@ import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
+import com.ethlo.r7.util.RedactUtil;
 
 import io.restassured.RestAssured;
 
@@ -60,6 +61,21 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         Assertions.assertEquals("no_route", entry.getAttributes().getFirst("gateway.unrouted.reason"));
         Assertions.assertEquals(JournalLevel.HEADERS, entry.getClientRequestLevel());
         Assertions.assertEquals(JournalLevel.METADATA, entry.getClientResponseLevel());
+    }
+
+    /**
+     * Probes are where secrets in URLs turn up, and the request line is journaled at every
+     * level: with no safe query parameters configured, no query value reaches the journal.
+     */
+    @Test
+    public void queryValuesAreFingerprintedInTheJournal() throws Exception
+    {
+        final String marker = "/query-" + UUID.randomUUID();
+        sendRaw("GET " + marker + "?api_key=s3cret&api_key=other&flag HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+
+        final String startLine = awaitEntry(marker).getClientRequestStartLine();
+        Assertions.assertEquals("GET " + marker + "?api_key=" + RedactUtil.fingerprint("s3cret") + "&api_key=" + RedactUtil.fingerprint("other")
+                + "&" + RedactUtil.fingerprint("flag") + " HTTP/1.1", startLine);
     }
 
     @Test

@@ -20,7 +20,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void defaultsToNoAdditionsOrOverride()
     {
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, null, null, null);
 
         assertThat(config.additionalSafeRequestHeaders()).isEmpty();
         assertThat(config.additionalSafeResponseHeaders()).isEmpty();
@@ -33,7 +33,7 @@ class JournalSecurityConfigValidationTest
     void additionsAloneProduceNoErrors()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                List.of("x-api-key"), List.of("x-internal-token"), null, null, null);
+                List.of("x-api-key"), List.of("x-internal-token"), null, null, null, null, null);
 
         assertThat(errorsFor(config)).isEmpty();
     }
@@ -42,7 +42,7 @@ class JournalSecurityConfigValidationTest
     void overridesAloneProduceNoErrors()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                null, null, List.of("x-only-this"), List.of("x-only-that"), null);
+                null, null, List.of("x-only-this"), List.of("x-only-that"), null, null, null);
 
         assertThat(errorsFor(config)).isEmpty();
     }
@@ -50,7 +50,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void aBlankAdditionalSafeRequestHeaderIsRejected()
     {
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(List.of(" "), null, null, null, null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(List.of(" "), null, null, null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("additional_safe_request_headers"));
     }
@@ -58,7 +58,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void aBlankAdditionalSafeResponseHeaderIsRejected()
     {
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, List.of(""), null, null, null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, List.of(""), null, null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("additional_safe_response_headers"));
     }
@@ -66,7 +66,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void aBlankSafeRequestHeaderIsRejected()
     {
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, List.of(" "), null, null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, List.of(" "), null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_request_headers"));
     }
@@ -74,7 +74,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void aBlankSafeResponseHeaderIsRejected()
     {
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, List.of(""), null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, List.of(""), null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_response_headers"));
     }
@@ -87,7 +87,7 @@ class JournalSecurityConfigValidationTest
     void aStructurallyInvalidAdditionalSafeRequestHeaderIsRejected()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                List.of("bad name"), null, null, null, null);
+                List.of("bad name"), null, null, null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("additional_safe_request_headers"));
     }
@@ -96,7 +96,7 @@ class JournalSecurityConfigValidationTest
     void aColonInAHeaderNameIsRejected()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                null, null, List.of("x:y"), null, null);
+                null, null, List.of("x:y"), null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_request_headers"));
     }
@@ -105,7 +105,7 @@ class JournalSecurityConfigValidationTest
     void aNonAsciiHeaderNameIsRejected()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                null, null, null, List.of("x-\u00e9tag"), null);
+                null, null, null, List.of("x-\u00e9tag"), null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_response_headers"));
     }
@@ -114,7 +114,7 @@ class JournalSecurityConfigValidationTest
     void aStructurallyValidHeaderNameIsAccepted()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                List.of("x-tenant-id"), null, null, null, null);
+                List.of("x-tenant-id"), null, null, null, null, null, null);
 
         assertThat(errorsFor(config)).isEmpty();
     }
@@ -125,7 +125,7 @@ class JournalSecurityConfigValidationTest
         final List<String> withNull = new java.util.ArrayList<>();
         withNull.add(null);
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                withNull, null, null, null, null);
+                withNull, null, null, null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("additional_safe_request_headers"));
     }
@@ -134,7 +134,7 @@ class JournalSecurityConfigValidationTest
     void settingBothRequestFormsTogetherIsRejected()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                List.of("x-api-key"), null, List.of("x-only-this"), null, null);
+                List.of("x-api-key"), null, List.of("x-only-this"), null, null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_request_headers"));
     }
@@ -143,7 +143,7 @@ class JournalSecurityConfigValidationTest
     void settingBothResponseFormsTogetherIsRejected()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                null, List.of("x-internal-token"), null, List.of("x-only-that"), null);
+                null, List.of("x-internal-token"), null, List.of("x-only-that"), null, null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_response_headers"));
     }
@@ -156,7 +156,7 @@ class JournalSecurityConfigValidationTest
     void theTwoFormsCanDifferByDirectionWithoutConflict()
     {
         final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
-                null, List.of("x-internal-token"), List.of("x-only-this"), null, null);
+                null, List.of("x-internal-token"), List.of("x-only-this"), null, null, null, null);
 
         assertThat(errorsFor(config)).isEmpty();
     }
@@ -164,7 +164,7 @@ class JournalSecurityConfigValidationTest
     @Test
     void aShortFingerprintKeyIsRejectedByName()
     {
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, "too-short");
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, "too-short", null, null);
 
         assertThat(errorsFor(config)).anyMatch(e -> e.contains("fingerprint_key") && e.contains("32"));
     }
@@ -173,10 +173,61 @@ class JournalSecurityConfigValidationTest
     void aLongEnoughFingerprintKeyIsAcceptedAndNeverPrinted()
     {
         final String key = "k".repeat(48);
-        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, key);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, key, null, null);
 
         assertThat(errorsFor(config)).isEmpty();
         assertThat(config.toString()).doesNotContain(key).contains("fingerprintKey=******");
+    }
+
+    @Test
+    void queryParametersDefaultToNoneSafeAndExactCase()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, null, null, null);
+
+        assertThat(config.safeQueryParameters()).isEmpty();
+        assertThat(config.safeQueryParametersIgnoreCase()).isFalse();
+    }
+
+    @Test
+    void decodedQueryParameterNamesOfAnyCharacterAreAccepted()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                null, null, null, null, null, List.of("page", "user id", "filter[status]", "s\u00f8k"), true);
+
+        assertThat(errorsFor(config)).isEmpty();
+    }
+
+    @Test
+    void anEmptyQueryParameterNameIsRejectedByName()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                null, null, null, null, null, List.of(""), null);
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_query_parameters") && e.contains("empty"));
+    }
+
+    @Test
+    void aNullQueryParameterNameIsRejectedByName()
+    {
+        final List<String> withNull = new java.util.ArrayList<>();
+        withNull.add(null);
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                null, null, null, null, null, withNull, null);
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_query_parameters") && e.contains("null"));
+    }
+
+    /**
+     * Names are matched decoded, so the encoded spelling copied from a URL would never match
+     * anything. The error says what to write instead.
+     */
+    @Test
+    void aPercentEncodedQueryParameterNameIsRejectedWithTheDecodedForm()
+    {
+        final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(
+                null, null, null, null, null, List.of("user%20id"), null);
+
+        assertThat(errorsFor(config)).anyMatch(e -> e.contains("safe_query_parameters") && e.contains("'user id'"));
     }
 
     @Test

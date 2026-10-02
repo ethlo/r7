@@ -995,9 +995,9 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 | `pre_fault` | Boolean | When `true`, the warmer touches every page of each segment before the writer gets it. Defaults to `false`, and best left so: on Linux 5.14 and later r7 already faults pages in a few MB ahead of the writer (fault-ahead), which was faster in every measurement and costs a fraction of the memory. `pre_fault` charges every warmed segment to memory at once (about 6 × `shard_size` per shard) and disables fault-ahead. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
 | `compression` | String | `zstd` (the default) or `none`. With `zstd`, each 32KB block of a journal segment carries one zstd stream and every entry is flushed into it as it is written, so entries stay individually committed and readable. On benchmark traffic it made the journal 9-15x smaller with no measurable latency at 1,000 req/s; it costs CPU on the writing thread, which shows only near saturation. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See [Performance tuning](performance_tuning.md#journal-compression-compression-and-compression_level). |
 | `compression_level` | Integer | zstd level, `1` to `19`. Defaults to `1`, which measured best: higher levels cost noticeably more CPU for a few percent less disk. Ignored when `compression` is `none`. |
-| `journal_security` | Object | Shapes the whitelist of header names journaled in plain text. See below. |
+| `journal_security` | Object | Shapes the whitelists of header and query parameter names journaled in plain text. See below. |
 
-#### Journal Header Redaction (`storage.journal_security`)
+#### Journal Redaction (`storage.journal_security`)
 
 At `HEADERS`/`FULL` journal levels, r7 journals every header name but only writes a header's
 *value* verbatim when the name is on a built-in whitelist (things like `host`, `user-agent`,
@@ -1014,7 +1014,9 @@ fingerprint of its value instead of the value itself. This list is separate per 
 | `additional_safe_response_headers` | List of Strings | Response header names to add on top of the built-in whitelist. |
 | `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list. |
 | `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response whitelist entirely. |
-| `fingerprint_key` | String | Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (`id:hmac:` + 16 hex digits) rather than the default unkeyed SHA-256 (`id:sha256:` + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with `${VAR}` interpolation. See [Journaling: redacted header values](journaling.md#redacted-header-values). |
+| `safe_query_parameters` | List of Strings | Query parameter names whose values are journaled in plain text. Empty by default, so every query parameter value is fingerprinted. See [Query parameters](#query-parameters) below. |
+| `safe_query_parameters_ignore_case` | Boolean | Match `safe_query_parameters` regardless of case. Defaults to `false`: query parameter names are case sensitive. |
+| `fingerprint_key` | String | Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (`id:hmac:` + 16 hex digits) rather than the default unkeyed SHA-256 (`id:sha256:` + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with `${VAR}` interpolation. See [Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values). |
 
 Header names are matched case-insensitively. There is no way to remove a single header from the
 built-in whitelist while keeping the rest — use `safe_*_headers` to replace the whole list if
@@ -1040,4 +1042,39 @@ storage:
     # safe_response_headers:
     #   - content-type
     #   - etag
+
+    # Query parameters journaled in plain text; every other value is fingerprinted.
+    safe_query_parameters:
+      - page
+      - sort
 ```
+
+##### Query parameters
+
+The query is part of the request line, which every journal level records, `METADATA` included.
+The same rule as for headers applies to it: each parameter name is journaled as sent, and its
+value is written verbatim only when the name is on `safe_query_parameters`; every other value is
+replaced by the same fingerprint a header value gets. There is no built-in list, because no
+parameter name is safe everywhere, so with nothing configured every value is fingerprinted:
+
+```
+GET /search?page=2&api_key=s3cret&q=shoes HTTP/1.1                       # as sent
+GET /search?page=2&api_key=id:sha256:1ec1c2&q=id:sha256:01ea5d HTTP/1.1     # journaled, with page safe
+```
+
+- **Case.** Query parameter names are case sensitive, unlike header names, so `Page` does not
+  match a safe `page` and its value is fingerprinted. Set `safe_query_parameters_ignore_case: true`
+  when your upstreams fold case (ASP.NET does, for example) and `Page` means `page` to them.
+- **Encoding.** Names are matched after percent-decoding, as the upstream reads them: `p%61ge`
+  and `page` are the same parameter, and `user+id` and `user%20id` both match `user id`. Write
+  names in `safe_query_parameters` decoded; a name containing a percent-escape is refused at
+  startup with the decoded form to use instead. Values are fingerprinted decoded too, so
+  `q=a+b` and `q=a%20b` get the same fingerprint.
+- **Repeats.** Each occurrence of a repeated parameter is redacted on its own; a safe name is
+  safe every time it appears.
+- **Bare parameters.** A parameter without `=` (`?s3cret-token`) is fingerprinted whole unless
+  its name is safe: it is the only thing it carries. Empty values (`?q=`) stay empty.
+
+Both request lines are redacted the same way: the one the client sent and the one forwarded
+upstream, after filters such as `SetQueryParameter` have changed it. Redaction applies to the
+journal only; it never changes the query an upstream receives.

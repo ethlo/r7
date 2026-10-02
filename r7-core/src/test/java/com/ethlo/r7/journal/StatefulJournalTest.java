@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -66,6 +67,45 @@ class StatefulJournalTest
         assertThat(events).last().isEqualTo("endExchange");
     }
 
+    /**
+     * The query is part of the request line, which every level records, so its values are
+     * redacted at METADATA too - not only at the levels that journal headers.
+     */
+    @ParameterizedTest
+    @EnumSource(value = JournalLevel.class, names = {"METADATA", "HEADERS", "FULL"})
+    void queryValuesInBothRequestLinesAreRedactedAtEveryLevel(final JournalLevel level)
+    {
+        final List<String> lines = new ArrayList<>();
+        final HeaderFingerprint fingerprint = HeaderFingerprint.UNKEYED;
+        final StatefulJournal journal = new StatefulJournal(recording(new ArrayList<>(), lines),
+                new RouteJournalConfig(new JournalDirectionConfig(level, null), new JournalDirectionConfig(level, null)),
+                exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
+                QueryParameterNameSet.of(List.of("page"), false), fingerprint);
+
+        final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
+        journal.clientRequest(level, "r1", latin1("GET /items?page=2&api_key=s3cret HTTP/1.1"), headers, InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        journal.upstreamRequest(level, "r1", latin1("GET /v1/items?page=2&api_key=s3cret&added=x HTTP/1.1"), headers, null);
+        journal.endExchange("r1", new FastGatewayAttributes(), 1, 2, 200, 0, 0, 0, 0, 0, 0, 0, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+
+        assertThat(lines).containsExactly(
+                "GET /items?page=2&api_key=" + fingerprint.fingerprint("s3cret") + " HTTP/1.1",
+                "GET /v1/items?page=2&api_key=" + fingerprint.fingerprint("s3cret") + "&added=" + fingerprint.fingerprint("x") + " HTTP/1.1");
+    }
+
+    @Test
+    void aRequestLineWithoutAQueryIsJournaledAsIs()
+    {
+        final List<String> lines = new ArrayList<>();
+        final StatefulJournal journal = new StatefulJournal(recording(new ArrayList<>(), lines),
+                new RouteJournalConfig(new JournalDirectionConfig(JournalLevel.METADATA, null), new JournalDirectionConfig(JournalLevel.METADATA, null)),
+                exchangeWithStatus(200));
+
+        journal.clientRequest(JournalLevel.METADATA, "r1", latin1("GET /items HTTP/1.1"), new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        journal.endExchange("r1", new FastGatewayAttributes(), 1, 2, 200, 0, 0, 0, 0, 0, 0, 0, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+
+        assertThat(lines).containsExactly("GET /items HTTP/1.1");
+    }
+
     private static CompletedGatewayExchange exchangeWithStatus(final int status)
     {
         final GatewayResponse response = mock(GatewayResponse.class);
@@ -82,12 +122,25 @@ class StatefulJournalTest
 
     private static Journal recording(final List<String> events)
     {
+        return recording(events, new ArrayList<>());
+    }
+
+    private static String latin1(final ByteBuffer buffer)
+    {
+        final byte[] bytes = new byte[buffer.remaining()];
+        buffer.duplicate().get(bytes);
+        return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
+    private static Journal recording(final List<String> events, final List<String> requestLines)
+    {
         return new Journal()
         {
             @Override
             public int clientRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers, final InetAddress remoteAddress, final IpSource ipSource)
             {
                 events.add("clientRequest");
+                requestLines.add(latin1(startLine));
                 return 1;
             }
 
@@ -95,6 +148,7 @@ class StatefulJournalTest
             public int upstreamRequest(final JournalLevel level, final String reqId, final ByteBuffer startLine, final GatewayHeaders headers, final GatewayHeaders base)
             {
                 events.add("upstreamRequest");
+                requestLines.add(latin1(startLine));
                 return 1;
             }
 
