@@ -57,5 +57,17 @@ public final class GatewayScheduler
     {
         log.info("Shutting down gateway scheduler...");
         this.executor.shutdownNow();
+        try
+        {
+            // Waited for, so that a gateway that has been closed has no thread left running
+            if (!this.executor.awaitTermination(5, TimeUnit.SECONDS))
+            {
+                log.warn("Gateway scheduler threads did not stop within 5 s");
+            }
+        }
+        catch (final InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+        }
     }
 }
