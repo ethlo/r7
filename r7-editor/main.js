@@ -152,9 +152,15 @@ async function initializeEditor() {
     document.getElementById('theme-selector').value = savedTheme;
     updateThemeVariables(savedTheme);
 
+    // Dark uses the r7 ink background so the editor matches the console and the docs site.
+    monaco.editor.defineTheme('r7-dark', {
+        base: 'vs-dark', inherit: true, rules: [],
+        colors: {'editor.background': '#0a0a0b', 'editorGutter.background': '#0a0a0b'}
+    });
+
     const editor = monaco.editor.create(document.getElementById('app'), {
         model: monaco.editor.createModel(initialConfig, 'yaml', modelUri),
-        theme: savedTheme, automaticLayout: true, minimap: {enabled: false},
+        theme: savedTheme === 'vs-dark' ? 'r7-dark' : savedTheme, automaticLayout: true, minimap: {enabled: false},
         fontFamily: "'Consolas', 'Courier New', monospace", wordBasedSuggestions: 'off',
         suggest: {showSnippets: true, showInlineDetails: true}
     });
@@ -324,11 +330,11 @@ function updateThemeVariables(theme) {
         root.style.setProperty('--text-main', '#ffffff');
         root.style.setProperty('--btn-hover', 'rgba(111, 195, 223, 0.2)');
     } else { // vs-dark
-        root.style.setProperty('--bg-main', '#1e1e1e');
-        root.style.setProperty('--bg-toolbar', '#252526');
-        root.style.setProperty('--border-color', '#333333');
-        root.style.setProperty('--text-main', '#cccccc');
-        root.style.setProperty('--btn-hover', 'rgba(255, 255, 255, 0.1)');
+        root.style.setProperty('--bg-main', '#0a0a0b');
+        root.style.setProperty('--bg-toolbar', '#111112');
+        root.style.setProperty('--border-color', '#27272a');
+        root.style.setProperty('--text-main', '#e4e4e7');
+        root.style.setProperty('--btn-hover', 'rgba(255, 255, 255, 0.08)');
     }
 }
 

@@ -1,6 +1,12 @@
 /*
- * r7 docs identity: near-black ink, one signal orange (the 7), plain system fonts.
- * Everything is driven by the tokens below so light and dark stay in step.
+ * r7 design tokens. The docs site, the console (r7-server dashboard page.html) and the
+ * config editor (r7-editor) share these values; they are copied by hand, so change all three.
+ *
+ *   ink        #0a0a0b   page background (dark)       panel   #111112   code, cards, toolbar
+ *   border     #27272a   all dividers (dark)          text    #e4e4e7   body text (dark)
+ *   dim        #a1a1aa   secondary text (dark)        orange  #ff5e00   the only accent
+ *   fonts      sans for reading, mono for labels, code and the wordmark
+ *
  * Text accents use a deeper orange on light backgrounds to keep AA contrast.
  */
 
@@ -39,13 +45,13 @@ body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] 
     --md-primary-bg-color: #e4e4e7;
     --md-accent-fg-color: #ff7a2e;            /* 7.4:1 on the dark bg */
     --md-typeset-a-color: #ff8a47;
-    --md-default-bg-color: #0f0f12;
-    --md-default-bg-color--light: #131316;
+    --md-default-bg-color: #0a0a0b;
+    --md-default-bg-color--light: #111112;
     --md-default-fg-color: #e4e4e7;
     --md-default-fg-color--light: #a1a1aa;
-    --md-code-bg-color: #17171b;
+    --md-code-bg-color: #111112;
     --md-code-fg-color: #e4e4e7;
-    --r7-edge: #26262c;
+    --r7-edge: #27272a;
     --r7-btn-fg: var(--r7-ink);
     --r7-tint: rgba(255, 94, 0, 0.1);
 }
@@ -59,8 +65,8 @@ body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] 
 .md-header { box-shadow: none; }
 .md-tabs { border-bottom: 1px solid #26262c; }
 .md-banner { background-color: var(--r7-ink-2); color: #e4e4e7; }
-.md-header__title { font-weight: 700; letter-spacing: -0.01em; }
-.md-tabs__link { opacity: 0.75; font-weight: 500; }
+.md-header__title { font-family: var(--r7-mono); font-weight: 700; letter-spacing: 0.02em; }
+.md-tabs__link { opacity: 0.75; font-family: var(--r7-mono); font-size: 0.68rem; letter-spacing: 0.02em; }
 .md-tabs__link:hover,
 .md-tabs__item--active .md-tabs__link { opacity: 1; }
 .md-tabs__item--active .md-tabs__link { box-shadow: 0 2px 0 var(--r7-orange); padding-bottom: 4px; }
