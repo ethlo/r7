@@ -44,7 +44,6 @@ import com.ethlo.r7.r7f.fbs.UpstreamRequest;
 import com.ethlo.r7.r7f.fbs.UpstreamResponse;
 import com.ethlo.r7.util.IndexedGatewayHeaders;
 import com.github.luben.zstd.EndDirective;
-import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdCompressCtx;
 import com.google.flatbuffers.FlatBufferBuilder;
 
@@ -518,7 +517,7 @@ public final class R7fJournal implements Journal
         final int plainLength = enc.plainLength;
 
         final long perBlock = R7fFraming.continuationCapacity(BLOCK_SIZE);
-        final long bound = Zstd.compressBound(plainLength) + 64;
+        final long bound = compressBound(plainLength) + 64;
         ensurePacked(Math.max(bound + Integer.BYTES, 2L * BLOCK_SIZE));
         final long claimedFrom = position;
         final long publishAt;
@@ -610,6 +609,19 @@ public final class R7fJournal implements Journal
             faultAhead.advance(segment, position);
         }
         return (int) (position - claimedFrom);
+    }
+
+    /**
+     * zstd's {@code ZSTD_COMPRESSBOUND}: the most a single-shot compression of
+     * {@code plainLength} bytes can produce. Computed here rather than by
+     * {@code Zstd.compressBound}, which is a JNI transition per entry made while holding this
+     * journal's monitor, for what is a line of arithmetic. {@code compressBoundMatchesZstd}
+     * keeps the two equal.
+     */
+    static long compressBound(final int plainLength)
+    {
+        final int smallInput = 128 << 10;
+        return plainLength + (plainLength >>> 8) + (plainLength < smallInput ? (smallInput - plainLength) >>> 11 : 0);
     }
 
     /**
