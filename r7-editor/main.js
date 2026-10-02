@@ -15,7 +15,6 @@ window.MonacoEnvironment = {
 };
 
 const STORAGE_KEY = 'r7_editor_draft';
-const THEME_KEY = 'r7_editor_theme';
 
 // --- CUSTOM MODAL SYSTEM ---
 function showModal({title, message, type = 'confirm', inputValue = '', confirmText = 'OK', danger = false}) {
@@ -147,14 +146,16 @@ async function initializeEditor() {
     }
 
     const initialConfig = localStorage.getItem(STORAGE_KEY) || defaultTemplate;
-    const savedTheme = localStorage.getItem(THEME_KEY) || 'vs-dark';
 
-    document.getElementById('theme-selector').value = savedTheme;
-    updateThemeVariables(savedTheme);
+    // Dark only, on the r7 ink background to match the console and the docs site.
+    monaco.editor.defineTheme('r7-dark', {
+        base: 'vs-dark', inherit: true, rules: [],
+        colors: {'editor.background': '#0a0a0b', 'editorGutter.background': '#0a0a0b'}
+    });
 
     const editor = monaco.editor.create(document.getElementById('app'), {
         model: monaco.editor.createModel(initialConfig, 'yaml', modelUri),
-        theme: savedTheme, automaticLayout: true, minimap: {enabled: false},
+        theme: 'r7-dark', automaticLayout: true, minimap: {enabled: false},
         fontFamily: "'Consolas', 'Courier New', monospace", wordBasedSuggestions: 'off',
         suggest: {showSnippets: true, showInlineDetails: true}
     });
@@ -307,29 +308,6 @@ async function initializeEditor() {
             btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zm5 14h-5v-2h3v-3h2v5zm-14 0v-5h2v3h3v2H5z"/></svg> Fullscreen`;
         }
     });
-}
-
-function updateThemeVariables(theme) {
-    const root = document.documentElement;
-    if (theme === 'vs') {
-        root.style.setProperty('--bg-main', '#fffffe');
-        root.style.setProperty('--bg-toolbar', '#f3f3f3');
-        root.style.setProperty('--border-color', '#cccccc');
-        root.style.setProperty('--text-main', '#333333');
-        root.style.setProperty('--btn-hover', 'rgba(0, 0, 0, 0.05)');
-    } else if (theme === 'hc-black') {
-        root.style.setProperty('--bg-main', '#000000');
-        root.style.setProperty('--bg-toolbar', '#000000');
-        root.style.setProperty('--border-color', '#6fc3df');
-        root.style.setProperty('--text-main', '#ffffff');
-        root.style.setProperty('--btn-hover', 'rgba(111, 195, 223, 0.2)');
-    } else { // vs-dark
-        root.style.setProperty('--bg-main', '#1e1e1e');
-        root.style.setProperty('--bg-toolbar', '#252526');
-        root.style.setProperty('--border-color', '#333333');
-        root.style.setProperty('--text-main', '#cccccc');
-        root.style.setProperty('--btn-hover', 'rgba(255, 255, 255, 0.1)');
-    }
 }
 
 initializeEditor();

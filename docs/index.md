@@ -3,7 +3,7 @@ hide:
   - navigation
 ---
 
-# r7: the gateway that remembers every request
+# r7: the gateway that remembers every request { .r7-hero }
 
 Put r7 in front of your services and write down where traffic should go. It routes the requests,
 checks your configuration before it ever runs, and keeps a record of what passed through, so when
