@@ -544,10 +544,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-running-and-testing" class="md-nav__link">
+  <a href="#running-and-testing" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        4. Running and Testing
+        Running and Testing
       </span>
     </span>
   </a>
@@ -817,8 +817,8 @@ elsewhere, put it behind something that authenticates, and list the name you use
 <code>management.allowed_hosts</code> (see the <a href="../config/#management-configuration-management">config reference</a>).</p>
 <h2 id="routes-configuration">Routes Configuration</h2>
 <p>Create <code>config/routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CorrelationIdHeader</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">global_filters</span><span class="p">:</span>
+</span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
 </span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
 </span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nt">routes</span><span class="p">:</span>
 </span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">quickstart-echo-route</span>
@@ -826,7 +826,7 @@ elsewhere, put it behind something that authenticates, and list the name you use
 </span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
 </span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://echo-server:8080</span>
 </span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathStartsWith</span><span class="p">:</span>
+</span><span id="True-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
 </span><span id="True-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/</span>
 </span><span id="True-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">AddResponseHeader</span><span class="p">:</span>
@@ -838,7 +838,7 @@ elsewhere, put it behind something that authenticates, and list the name you use
 </span><span id="True-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
 </span><span id="True-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span>
 </span></code></pre></div>
-<h2 id="4-running-and-testing">4. Running and Testing</h2>
+<h2 id="running-and-testing">Running and Testing</h2>
 <p>Start the stack using Docker Compose:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
 </span></code></pre></div>
