@@ -905,8 +905,8 @@ a "wait for every tailer" policy — see §4 for what that means for you).</p>
 <h3 id="json-tailer-universal">JSON Tailer (Universal)</h3>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-tailer-json:latest</code></p>
 <p>This tailer converts the binary journal entries into verbose JSON and streams them to standard output (<code>stdout</code>) by default. This is the recommended approach if you use generic log forwarders like <strong>Promtail (for Grafana Loki)</strong>, <strong>Fluent Bit</strong>, or <strong>Vector</strong>.</p>
-<p><strong>Configuration:</strong> like the gateway, this tailer reads a YAML file — <code>config/jsonld-tailer.yaml</code>
-by default, overridable via the <code>JSONLD_TAILER_CONFIG</code> env var — with the same <code>${VAR:default}</code>
+<p><strong>Configuration:</strong> like the gateway, this tailer reads a YAML file — <code>jsonld-tailer.yaml</code> in
+the working directory by default (<code>/app/config</code> in the image), overridable via the <code>JSONLD_TAILER_CONFIG</code> env var — with the same <code>${VAR:default}</code>
 interpolation support as <code>routes.yaml</code>/<code>server.yaml</code>. If the file is missing, all fields fall back
 to their defaults below (so a bare container with no config volume still starts and tails
 <code>/journals</code> to stdout).</p>
@@ -1036,7 +1036,7 @@ an array of its values.</p>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-tailer-warc:latest</code></p>
 <p>This tailer writes completed exchanges as <a href="https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/">WARC 1.1</a> records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating <code>.warc.zst</code> files (one independent Zstandard frame per record, so <code>zstd -d</code> alone decompresses a file back to plain WARC). Use this when you need a durable, replayable, tool-interoperable record of actual traffic (compliance archiving, incident forensics, replaying traffic against a new backend), rather than a queryable log stream — feed the output to <a href="https://github.com/webrecorder/pywb">pywb</a> or any WARC-aware tool.</p>
 <p>Each exchange becomes up to four linked records (client request, upstream request, upstream response, client response); duplicate payloads across exchanges are deduplicated as WARC <code>revisit</code> records; and a checksum mismatch on read is marked rather than silently archived. See <a href="https://github.com/ethlo/r7/blob/main/design/warc.md"><code>design/warc.md</code></a> for the full record-shape and dedup rationale.</p>
-<p><strong>Configuration:</strong> same YAML config mechanism as the JSON tailer above — <code>config/warc-tailer.yaml</code>
+<p><strong>Configuration:</strong> same YAML config mechanism as the JSON tailer above — <code>warc-tailer.yaml</code>
 by default, overridable via the <code>WARC_TAILER_CONFIG</code> env var.</p>
 <table>
 <thead>
@@ -1143,7 +1143,7 @@ without <code>-a</code>, or a volume migration, any of which would otherwise sil
 segment whose name the reaper cannot parse is left alone rather than guessed at from
 mtime — it is simply never a deletion candidate.</p>
 </div>
-<p><strong>Configuration:</strong> same YAML config mechanism as the tailers — <code>config/reaper.yaml</code> by default,
+<p><strong>Configuration:</strong> same YAML config mechanism as the tailers — <code>reaper.yaml</code> by default,
 overridable via the <code>REAPER_CONFIG</code> env var.</p>
 <table>
 <thead>

@@ -782,8 +782,7 @@ you can see routing, header injection and the request journal working.</p>
 <p>Create a new directory with two files:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>r7-quickstart/
 </span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── docker-compose.yaml
-</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└── config/
-</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    └── routes.yaml
+</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└── routes.yaml
 </span></code></pre></div>
 <h2 id="docker-compose-setup">Docker Compose Setup</h2>
 <p>Create <code>docker-compose.yaml</code>:</p>
@@ -794,7 +793,7 @@ you can see routing, header injection and the request journal working.</p>
 </span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"9999:8888"</span><span class="w">              </span><span class="c1"># the gateway</span>
 </span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"127.0.0.1:19999:18888"</span><span class="w">  </span><span class="c1"># the dashboard, on this machine only (see below)</span>
 </span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
+</span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./routes.yaml:/app/config/routes.yaml:ro</span>
 </span><span id="True-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals</span>
 </span><span id="True-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">depends_on</span><span class="p">:</span>
 </span><span id="True-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">echo-server</span>
@@ -816,7 +815,7 @@ path on the gateway port to it either. To reach it from elsewhere, put it behind
 authenticates, and list the name you use for it under <code>management.allowed_hosts</code> (see the
 <a href="../config/#management-configuration-management">config reference</a>).</p>
 <h2 id="routes-configuration">Routes Configuration</h2>
-<p>Create <code>config/routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.</p>
+<p>Create <code>routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">global_filters</span><span class="p">:</span>
 </span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
 </span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
@@ -889,7 +888,7 @@ times on the dashboard.</p>
 <li>Add routes, predicates and filters: see the <a href="../config/">config reference</a>.</li>
 <li>Decide what each route records in its journal, and read it back: see <a href="../journaling/">Journaling</a>.</li>
 <li>Change ports, connection limits, timeouts, trusted proxies or the journal location only when you
-  need to, in an optional <code>config/server.yaml</code>: see <a href="../config/#9-server-configuration">Server Configuration</a>.</li>
+  need to, in an optional <code>server.yaml</code> mounted beside it at <code>/app/config/server.yaml</code>: see <a href="../config/#9-server-configuration">Server Configuration</a>.</li>
 <li>For production JVM flags and journal storage, see <a href="../performance_tuning/">Performance tuning</a>.</li>
 </ul>
 
