@@ -1,34 +1,207 @@
+/*
+ * r7 docs identity: near-black ink, one signal orange (the 7), plain system fonts.
+ * Everything is driven by the tokens below so light and dark stay in step.
+ * Text accents use a deeper orange on light backgrounds to keep AA contrast.
+ */
+
+:root {
+    --r7-ink: #0a0a0b;
+    --r7-ink-2: #131316;
+    --r7-orange: #ff5e00;
+    --r7-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --r7-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+body {
+    --md-text-font: var(--r7-font);
+    --md-code-font: var(--r7-mono);
+}
+
+/* Light */
+body[data-md-color-scheme="default"][data-md-color-primary][data-md-color-accent] {
+    --md-primary-fg-color: var(--r7-ink);
+    --md-primary-bg-color: #f4f4f5;
+    --md-accent-fg-color: #b93c00;            /* 5.9:1 on white */
+    --md-typeset-a-color: #b93c00;
+    --md-default-bg-color: #ffffff;
+    --md-default-fg-color: #18181b;
+    --md-default-fg-color--light: #52525b;
+    --md-code-bg-color: #f6f6f7;
+    --md-code-fg-color: #27272a;
+    --r7-edge: #e4e4e7;
+    --r7-btn-fg: var(--r7-ink);
+    --r7-tint: rgba(255, 94, 0, 0.07);
+}
+
+/* Dark */
+body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] {
+    --md-primary-fg-color: var(--r7-ink);
+    --md-primary-bg-color: #e4e4e7;
+    --md-accent-fg-color: #ff7a2e;            /* 7.4:1 on the dark bg */
+    --md-typeset-a-color: #ff8a47;
+    --md-default-bg-color: #0f0f12;
+    --md-default-bg-color--light: #131316;
+    --md-default-fg-color: #e4e4e7;
+    --md-default-fg-color--light: #a1a1aa;
+    --md-code-bg-color: #17171b;
+    --md-code-fg-color: #e4e4e7;
+    --r7-edge: #26262c;
+    --r7-btn-fg: var(--r7-ink);
+    --r7-tint: rgba(255, 94, 0, 0.1);
+}
+
+/* Header, tabs and announcement stay ink-black in both schemes: the brand bar. */
+.md-header,
+.md-tabs {
+    background-color: var(--r7-ink);
+    color: #f4f4f5;
+}
+.md-header { box-shadow: none; }
+.md-tabs { border-bottom: 1px solid #26262c; }
+.md-banner { background-color: var(--r7-ink-2); color: #e4e4e7; }
+.md-header__title { font-weight: 700; letter-spacing: -0.01em; }
+.md-tabs__link { opacity: 0.75; font-weight: 500; }
+.md-tabs__link:hover,
+.md-tabs__item--active .md-tabs__link { opacity: 1; }
+.md-tabs__item--active .md-tabs__link { box-shadow: 0 2px 0 var(--r7-orange); padding-bottom: 4px; }
+
 .r7-banner {
-    padding: 0.4rem 0.6rem;
-
-    background-color: var(--zn-surface-color, #232830);
-    border: 2px solid #ffb300;
-
-    border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-
-    font-size: 0.8em;
-
+    padding: 0.35rem 0.8rem;
+    background: var(--r7-ink-2);
+    border: 1px solid #3a2a1e;
+    border-left: 3px solid var(--r7-orange);
+    border-radius: 6px;
+    font-size: 0.78em;
+    color: #e4e4e7;
     margin: 0.5rem auto;
     max-width: fit-content;
     text-align: center;
 }
 
-.md-banner {
-    background-color: #111;
+/* Type */
+.md-typeset { color: var(--md-default-fg-color); }
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+    color: var(--md-default-fg-color);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+.md-typeset h1 { font-size: 2.1em; line-height: 1.15; }
+.md-typeset h2 {
+    font-size: 1.5em;
+    margin-top: 2.2em;
+    padding-top: 0.9em;
+    border-top: 1px solid var(--r7-edge);
+}
+.md-typeset h3 { font-size: 1.15em; }
+.md-typeset hr { border-bottom: 1px solid var(--r7-edge); }
+.md-typeset hr + h2 { border-top: 0; padding-top: 0; margin-top: 1.4em; }
+.md-typeset a { text-underline-offset: 0.18em; }
+
+/* Code: a ruled "journal" panel with an orange spine */
+.md-typeset pre > code {
+    font-size: 0.82em;
+    line-height: 1.6;
+}
+.md-typeset .highlight {
+    border: 1px solid var(--r7-edge);
+    border-left: 3px solid var(--r7-orange);
+    border-radius: 6px;
+    background: var(--md-code-bg-color);
+    overflow: hidden;
+}
+.md-typeset .highlight pre,
+.md-typeset .highlight code { background: transparent; }
+.md-typeset :not(pre) > code {
+    background: var(--md-code-bg-color);
+    border: 1px solid var(--r7-edge);
+    border-radius: 4px;
+    padding: 0.05em 0.35em;
+    font-size: 0.86em;
 }
 
-.md-header {
-    background-color: #111;
+/* Tables and admonitions */
+.md-typeset table:not([class]) {
+    border: 1px solid var(--r7-edge);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.md-typeset table:not([class]) th {
+    background: var(--md-code-bg-color);
+    color: var(--md-default-fg-color);
+}
+.md-typeset .admonition,
+.md-typeset details { border-radius: 6px; }
+
+/* Buttons: signal orange fill, ink text (9:1), restrained outline for the secondary */
+.md-typeset .md-button {
+    border-radius: 6px;
+    font-weight: 600;
+    padding: 0.7em 1.4em;
+    color: var(--md-default-fg-color);
+    border: 1px solid var(--md-default-fg-color--light);
+    background: transparent;
+}
+.md-typeset .md-button:hover,
+.md-typeset .md-button:focus {
+    color: var(--md-default-fg-color);
+    border-color: var(--r7-orange);
+    background: var(--r7-tint);
+}
+.md-typeset .md-button--primary {
+    background: var(--r7-orange);
+    border-color: var(--r7-orange);
+    color: var(--r7-btn-fg);
+}
+.md-typeset .md-button--primary:hover,
+.md-typeset .md-button--primary:focus {
+    background: #ff7a2e;
+    border-color: #ff7a2e;
+    color: var(--r7-btn-fg);
 }
 
-.md-tabs {
-    background-color: #111;
+/* Focus must stay visible everywhere */
+.md-typeset a:focus-visible,
+.md-header a:focus-visible,
+.md-tabs a:focus-visible,
+.md-typeset .md-button:focus-visible {
+    outline: 2px solid var(--r7-orange);
+    outline-offset: 2px;
 }
 
-
-
-:root[data-theme="dark"] {
-    --zn-bg-color: #1e212b;
-    --zn-surface-color: #232830;
+/* Landing hero: a soft signal glow behind the h1 marked .r7-hero */
+.md-content__inner:has(> h1.r7-hero) {
+    background: radial-gradient(60rem 22rem at 0% 0%, var(--r7-tint), transparent 70%) no-repeat;
 }
+
+.md-typeset h1.r7-hero {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    margin: 0.6em 0 0.6em;
+    padding-left: 0.5em;
+    border-left: 6px solid var(--r7-orange);
+    max-width: 22ch;
+}
+.md-typeset h1.r7-hero ~ p:first-of-type,
+.md-typeset h1.r7-hero + p {
+    font-size: 1.1em;
+    max-width: 62ch;
+    color: var(--md-default-fg-color);
+}
+
+@media (max-width: 600px) {
+    .md-typeset h1.r7-hero { max-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+}
+
+/* Material's own indigo accent wins on specificity; pin links, toc and dismiss to the palette. */
+.md-typeset a,
+.md-nav__link--active,
+.md-nav__link:is(:hover, :focus) { color: var(--md-typeset-a-color); }
+.md-typeset .md-button { text-decoration: none; }
+.md-banner__button { color: #e4e4e7; }
