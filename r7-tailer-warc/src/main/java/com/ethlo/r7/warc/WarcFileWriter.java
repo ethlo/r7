@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import com.github.luben.zstd.Zstd;
@@ -68,6 +69,7 @@ public final class WarcFileWriter implements AutoCloseable
     private final long maxFileAgeMillis;
     private final int zstdLevel;
     private final boolean cdxjIndex;
+    private final Consumer<String> indexStream;
     private final ScheduledExecutorService rotationScheduler;
 
     private FileChannel channel;
@@ -92,14 +94,16 @@ public final class WarcFileWriter implements AutoCloseable
 
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel) throws IOException
     {
-        this(directory, filePrefix, maxFileSizeBytes, maxFileAgeMillis, zstdLevel, false);
+        this(directory, filePrefix, maxFileSizeBytes, maxFileAgeMillis, zstdLevel, false, null);
     }
 
     /**
-     * @param cdxjIndex write a CDXJ index next to every file this writer seals
+     * @param cdxjIndex   write a CDXJ index next to every file this writer seals
+     * @param indexStream receives each exchange's CDXJ line as soon as its records are written,
+     *                    or {@code null} for none
      */
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel,
-                          final boolean cdxjIndex) throws IOException
+                          final boolean cdxjIndex, final Consumer<String> indexStream) throws IOException
     {
         if (maxFileSizeBytes < MIN_ROLLOVER_SIZE)
         {
@@ -115,6 +119,7 @@ public final class WarcFileWriter implements AutoCloseable
         this.maxFileAgeMillis = maxFileAgeMillis;
         this.zstdLevel = zstdLevel;
         this.cdxjIndex = cdxjIndex;
+        this.indexStream = indexStream;
         Files.createDirectories(directory);
         sealLeftovers();
         rotate();
@@ -205,12 +210,35 @@ public final class WarcFileWriter implements AutoCloseable
         }
 
         final List<byte[]> frames = new ArrayList<>(records.size());
+        final List<Map.Entry<byte[], Long>> indexed = indexStream != null ? new ArrayList<>(records.size()) : null;
+        final List<String> indexLines;
         long totalBytes = 0;
-        for (final PendingRecord record : records)
+        final long sequenceBefore = sequence;
+        try
         {
-            final byte[] frame = buildFrame(record.recordId(), record.warcType(), record.fields(), record.block());
-            frames.add(frame);
-            totalBytes += frame.length;
+            for (final PendingRecord record : records)
+            {
+                final byte[] uncompressed = buildRecord(record.recordId(), record.warcType(), record.fields(), record.block());
+                final byte[] frame = compressor.compress(uncompressed);
+                frames.add(frame);
+                if (indexed != null)
+                {
+                    indexed.add(Map.entry(uncompressed, (long) frame.length));
+                }
+                totalBytes += frame.length;
+            }
+            // Built before the write, like the frames: once the batch is on disk nothing may
+            // throw, or the tailer would retry the exchange and write it twice.
+            indexLines = indexed != null
+                    ? CdxjIndex.linesFor(sealedPath.getFileName().toString(), bytesWrittenToCurrentFile, indexed)
+                    : List.of();
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            // Nothing was written: hand the sequence numbers back, or the retry would leave a
+            // gap that reads as lost records.
+            sequence = sequenceBefore;
+            throw e;
         }
 
         final byte[] combined = new byte[Math.toIntExact(totalBytes)];
@@ -233,9 +261,13 @@ public final class WarcFileWriter implements AutoCloseable
         }
         bytesWrittenToCurrentFile += totalBytes;
         hasRecordsSinceRotate = true;
+        for (final String line : indexLines)
+        {
+            indexStream.accept(line);
+        }
     }
 
-    private byte[] buildFrame(final String recordId, final String warcType, final List<Map.Entry<String, String>> fields, final byte[] block)
+    private byte[] buildRecord(final String recordId, final String warcType, final List<Map.Entry<String, String>> fields, final byte[] block)
     {
         final List<Map.Entry<String, String>> headers = new ArrayList<>(fields.size() + 5);
         headers.add(Map.entry("WARC-Type", warcType));
@@ -252,10 +284,10 @@ public final class WarcFileWriter implements AutoCloseable
         headers.add(Map.entry("WARC-X-R7-Sequence", Long.toString(sequence++)));
         headers.add(Map.entry("Content-Length", Long.toString(block.length)));
 
-        return frameBytes(headers, block);
+        return recordBytes(headers, block);
     }
 
-    private byte[] frameBytes(final List<Map.Entry<String, String>> headers, final byte[] block)
+    private static byte[] recordBytes(final List<Map.Entry<String, String>> headers, final byte[] block)
     {
         final StringBuilder sb = new StringBuilder(256);
         sb.append("WARC/1.1\r\n");
@@ -277,8 +309,7 @@ public final class WarcFileWriter implements AutoCloseable
         uncompressed[uncompressed.length - 3] = '\n';
         uncompressed[uncompressed.length - 2] = '\r';
         uncompressed[uncompressed.length - 1] = '\n';
-
-        return compressor.compress(uncompressed);
+        return uncompressed;
     }
 
     private void rotate() throws IOException

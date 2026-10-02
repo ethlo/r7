@@ -1,6 +1,7 @@
 package com.ethlo.r7.warc;
 
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
@@ -15,6 +16,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 import org.netpreserve.jwarc.MediaType;
 import org.netpreserve.jwarc.URIs;
@@ -78,7 +81,7 @@ public final class CdxjIndex
     static List<String> lines(final Path warcFile, final String filename) throws IOException
     {
         final List<String> lines = new ArrayList<>();
-        final RecordVisitor visitor = new RecordVisitor(filename, lines);
+        final RecordVisitor visitor = new RecordVisitor(filename, lines::add);
         try (FileChannel file = FileChannel.open(warcFile, StandardOpenOption.READ))
         {
             // One record per Zstandard frame (see WarcFileWriter), so a record's offset and
@@ -98,7 +101,10 @@ public final class CdxjIndex
                     {
                         break;
                     }
-                    visitor.visit(windowStart + within, frameSize, window.slice(within, (int) frameSize));
+                    try (InputStream record = new ZstdInputStream(new ByteBufferInputStream(window.slice(within, (int) frameSize))))
+                    {
+                        visitor.visit(windowStart + within, frameSize, record);
+                    }
                     within += (int) frameSize;
                 }
                 if (within == 0)
@@ -113,13 +119,36 @@ public final class CdxjIndex
     }
 
     /**
+     * The index lines for one batch of records about to be appended to a WARC file, as
+     * {@link #write} will later find them in the finished file. A batch is written whole (see
+     * {@link WarcFileWriter#writeRecords}), and an exchange is never split across batches.
+     *
+     * @param filename the final name of the WARC file the batch goes into
+     * @param offset   where the batch's first record will start in that file
+     * @param records  each record's uncompressed bytes and its compressed (frame) length
+     */
+    static List<String> linesFor(final String filename, final long offset, final List<Map.Entry<byte[], Long>> records) throws IOException
+    {
+        final List<String> lines = new ArrayList<>(1);
+        final RecordVisitor visitor = new RecordVisitor(filename, lines::add);
+        long position = offset;
+        for (final Map.Entry<byte[], Long> record : records)
+        {
+            visitor.visit(position, record.getValue(), new ByteArrayInputStream(record.getKey()));
+            position += record.getValue();
+        }
+        visitor.finish();
+        return lines;
+    }
+
+    /**
      * Sees the records in file order and decides each response once the record after it is
      * known.
      */
     private static final class RecordVisitor
     {
         private final String filename;
-        private final List<String> lines;
+        private final Consumer<String> lines;
 
         private String clientRequestExchange;
         private URI clientRequestId;
@@ -130,20 +159,20 @@ public final class CdxjIndex
         private long pendingLength;
         private String pendingMethod;
 
-        RecordVisitor(final String filename, final List<String> lines)
+        RecordVisitor(final String filename, final Consumer<String> lines)
         {
             this.filename = filename;
             this.lines = lines;
         }
 
-        void visit(final long offset, final long length, final ByteBuffer frame) throws IOException
+        void visit(final long offset, final long length, final InputStream uncompressed) throws IOException
         {
-            try (WarcReader reader = new WarcReader(new ZstdInputStream(new ByteBufferInputStream(frame))))
+            try (WarcReader reader = new WarcReader(uncompressed))
             {
                 final WarcRecord record = reader.next().orElseThrow(() -> new IOException("Empty WARC record at offset " + offset));
                 if (pending != null && !isClientResponseOf(record, pending))
                 {
-                    lines.add(CdxFormat.CDXJ.format(pending, filename, pendingOffset, pendingLength, urlKey(pending, pendingMethod)));
+                    lines.accept(line(pending, filename, pendingOffset, pendingLength, pendingMethod));
                 }
                 pending = null;
 
@@ -187,7 +216,7 @@ public final class CdxjIndex
         {
             if (pending != null)
             {
-                lines.add(CdxFormat.CDXJ.format(pending, filename, pendingOffset, pendingLength, urlKey(pending, pendingMethod)));
+                lines.accept(line(pending, filename, pendingOffset, pendingLength, pendingMethod));
                 pending = null;
             }
         }
@@ -201,6 +230,44 @@ public final class CdxjIndex
     {
         return (next instanceof WarcResponse || next instanceof WarcRevisit)
                 && ((WarcCaptureRecord) next).concurrentTo().contains(upstream.id());
+    }
+
+    /**
+     * A CDXJ line as pywb writes it, plus {@code request_id}: the r7 request id the JSON tailer
+     * and the journal use, so an index line joins to the rest of its exchange. pywb and
+     * OutbackCDX ignore fields they do not know.
+     */
+    private static String line(final WarcCaptureRecord capture, final String filename, final long offset, final long length, final String method)
+    {
+        final String line = CdxFormat.CDXJ.format(capture, filename, offset, length, urlKey(capture, method));
+        final String requestId = capture.headers().first("WARC-R7-Request-Id").orElse(null);
+        if (requestId == null || !line.endsWith("}"))
+        {
+            return line;
+        }
+        return line.substring(0, line.length() - 1) + ", \"request_id\": " + jsonString(requestId) + "}";
+    }
+
+    private static String jsonString(final String value)
+    {
+        final StringBuilder sb = new StringBuilder(value.length() + 2).append('"');
+        for (int i = 0; i < value.length(); i++)
+        {
+            final char c = value.charAt(i);
+            if (c == '"' || c == '\\')
+            {
+                sb.append('\\').append(c);
+            }
+            else if (c < 0x20)
+            {
+                sb.append(String.format("\\u%04x", (int) c));
+            }
+            else
+            {
+                sb.append(c);
+            }
+        }
+        return sb.append('"').toString();
     }
 
     private static String urlKey(final WarcCaptureRecord capture, final String method)

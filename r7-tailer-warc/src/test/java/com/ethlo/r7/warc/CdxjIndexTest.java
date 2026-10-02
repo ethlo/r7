@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
@@ -59,6 +60,30 @@ class CdxjIndexTest
         assertThat(getJson.get("digest").asString()).isNotBlank();
 
         assertThat(lineFor(lines, "req-2")).startsWith("com,example,api)/v1/items/7?__wb_method=delete ");
+    }
+
+    /**
+     * A consumer feeding ClickHouse or Loki cannot wait for a file to seal: each line is
+     * streamed as its exchange is written, the same line the sealed index will hold.
+     */
+    @Test
+    void streamsEachLineAsItsExchangeIsWritten() throws IOException
+    {
+        final List<String> streamed = new ArrayList<>();
+        try (WarcFileWriter files = new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3, true, streamed::add))
+        {
+            final WarcExchangeWriter warc = new WarcExchangeWriter(files, new PayloadDedupIndex(100));
+            warc.onComplete(exchange("req-1", "GET", "/v1/items", "{\"items\":[]}"));
+            assertThat(streamed).hasSize(1);
+            assertThat(namesEndingWith(".cdxj")).as("nothing sealed yet").isEmpty();
+            warc.onComplete(exchange("req-2", "DELETE", "/v1/items/7", "{}"));
+            warc.onComplete(exchange("req-3", "GET", "/logo", "same bytes"));
+            warc.onComplete(exchange("req-4", "GET", "/logo", "same bytes"));
+        }
+
+        assertThat(streamed).containsExactlyInAnyOrderElementsOf(Files.readAllLines(only(".cdxj")));
+        assertThat(streamed.stream().map(line -> json(line).get("request_id").asString()))
+                .containsExactly("req-1", "req-2", "req-3", "req-4");
     }
 
     @Test
@@ -136,7 +161,7 @@ class CdxjIndexTest
 
     private WarcFileWriter writer(final boolean cdxjIndex) throws IOException
     {
-        return new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3, cdxjIndex);
+        return new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3, cdxjIndex, null);
     }
 
     /**

@@ -1,10 +1,15 @@
 package com.ethlo.r7.tailer.warc;
 
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,13 +56,15 @@ public final class WarcTailerMain
         final int dedupCacheEntries = config.dedupCacheEntries();
         final Duration pollInterval = config.pollInterval();
         final boolean cdxjIndex = config.cdxjIndex();
+        final boolean cdxjStdout = config.cdxjStdout();
 
         logger.info("Tailing journals from '{}' -> WARC files in '{}' (checkpoints in '{}', max file size {} bytes, max file age {}, "
-                        + "zstd level {}, dedup cache {} entries, poll every {}, CDXJ index {})",
+                        + "zstd level {}, dedup cache {} entries, poll every {}, CDXJ index {}, CDXJ to stdout {})",
                 journalDir, outputDir, checkpointDir, maxFileSizeBytes, maxFileAge, zstdLevel, dedupCacheEntries, pollInterval,
-                cdxjIndex ? "on" : "off");
+                cdxjIndex ? "on" : "off", cdxjStdout ? "on" : "off");
 
-        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAge.toMillis(), zstdLevel, cdxjIndex);
+        final WarcFileWriter warcFileWriter = new WarcFileWriter(outputDir, filePrefix, maxFileSizeBytes, maxFileAge.toMillis(), zstdLevel, cdxjIndex,
+                cdxjStdout ? stdoutLines() : null);
         final PayloadDedupIndex dedupIndex = new PayloadDedupIndex(dedupCacheEntries);
         final WarcExchangeWriter warcWriter = new WarcExchangeWriter(warcFileWriter, dedupIndex);
         final JournalIntegrityListener integrity = new LoggingIntegrityListener();
@@ -100,6 +107,20 @@ public final class WarcTailerMain
             // Returns as soon as the gateway commits something, or after poll_interval.
             tailer.awaitNewData(pollInterval);
         }
+    }
+
+    /**
+     * Each line flushed as it is written, for a log shipper following stdout. Logging goes to
+     * stderr (see logback.xml), so stdout carries nothing else.
+     */
+    private static Consumer<String> stdoutLines()
+    {
+        final PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), false, StandardCharsets.UTF_8);
+        return line ->
+        {
+            out.println(line);
+            out.flush();
+        };
     }
 
     static WarcTailerConfig loadConfig(final Path configFile)

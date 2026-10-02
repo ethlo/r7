@@ -239,6 +239,13 @@ that names it in `WARC-Concurrent-To`, and skipped. Non-GET keys get pywb's
 `__wb_method=<method>`; pywb's `__wb_post_data` is left out on purpose, because it copies up to
 4 KB of request body into a file that travels further than the archive.
 
+A sealed index arrives up to `max_file_age` late, which is too late for the live locator
+columns described above. `cdxj_stdout: true` prints each exchange's line as its records are
+written, computed by the same code from the uncompressed records and the offsets they are about
+to land at, so the live line and the sealed one are the same. The `request_id` field in every
+line is the join key to the JSON tailer's row. Feeding that into ClickHouse is a log shipper's
+job, which keeps the loader out of r7 as "Scope" says.
+
 ### MCP
 
 ClickHouse ships an MCP server, which gives `search` for free. It does not give `fetch` —

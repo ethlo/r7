@@ -33,12 +33,13 @@ public record WarcTailerConfig(
         Integer zstdLevel,
         Integer dedupCacheEntries,
         Duration pollInterval,
-        Boolean cdxjIndex
+        Boolean cdxjIndex,
+        Boolean cdxjStdout
 ) implements ValidatableConfig
 {
     public static WarcTailerConfig standard()
     {
-        return new WarcTailerConfig(null, null, null, null, null, null, null, null, null, null);
+        return new WarcTailerConfig(null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Override
@@ -103,6 +104,12 @@ public record WarcTailerConfig(
     public Boolean cdxjIndex()
     {
         return Optional.ofNullable(this.cdxjIndex).orElse(false);
+    }
+
+    @Override
+    public Boolean cdxjStdout()
+    {
+        return Optional.ofNullable(this.cdxjStdout).orElse(false);
     }
 
     @Override
