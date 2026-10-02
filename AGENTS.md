@@ -58,11 +58,19 @@ is the minimum for believing a small difference.
 running `com.ethlo.r7.schema.JsonSchemaGenerator` from the repo root; it writes that path
 directly. Regenerate it after adding or changing any filter/predicate config record.
 
+## Design notes
+
+Design notes are in `design/`; start at `design/README.md`. Documents directly in `design/` are
+kept current, `design/plans/` is unbuilt work, and `design/history/` is the record of how things
+got here: read it for the why, but never as a description of the current code.
+`design/limitations.md` lists known limitations; update it when you add or remove one.
+
 ## Module layout and dependency direction
 
 ```
 r7-api          contracts only: GatewayExchange/Request/Response, Headers, the filter interfaces
 r7-utils        allocation-conscious containers (PackedGatewayHeaders, FastGatewayHeaders, …)
+r7-config       config plumbing shared by gateway and sidecars: YAML loading, ${VAR} interpolation, validation
 r7-core         the engine: YAML config model, route registry, built-in filters/predicates, SPI
 r7-journal-api  Journal, JournalExchange, JournalLevel, integrity listeners
 r7-journal-mmap the r7f format: writer, decoder, recovery, reassembler, R7Tailer
@@ -71,14 +79,17 @@ r7-upstream     the blocking HTTP/1.1 upstream client every server shares: HttpU
 r7-server-blocking thread-per-request base: BlockingServerExchange, BlockingGateway
 r7-helidon      the gateway: R7Helidon on Helidon Níma, an adapter over r7-server-blocking
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
+r7-tailer-api   no code: the dependencies the tailer apps share
 r7-tailer-jsonld sidecar app that turns journals into JSON lines
+r7-tailer-warc  sidecar app that turns journals into WARC files (design/warc.md)
+r7-reaper       sidecar app that deletes sealed segments once tailers are done with them
 ```
 
 `api` is the contract and `core` the engine; keep the separation strict — `r7-api` must not
 depend on the engine, and nothing in the request path should reach into `r7-helidon` types.
 `r7-server` sits between the engine and a server implementation: code that any HTTP server would
 share goes there, and code that names a Helidon type stays in `r7-helidon`. `r7-core`
-must not depend on `r7-server` or on `r7-journal-mmap` (see `design/server-spi.md`).
+must not depend on `r7-server` or on `r7-journal-mmap` (see `design/history/server-spi.md`).
 `r7-editor` (Vite + Monaco) and `benchmark/` are not Maven modules.
 
 ## Request lifecycle
@@ -132,14 +143,14 @@ them before changing anything in `r7-journal-mmap` or `ShardedJournalWriter`/`St
 
 - `r7-journal-mmap/FORMAT.md` — the r7f on-disk format (version 2): 1024-byte preamble, 32 KB
   blocks holding big-endian, CRC-checked fragments, seal record, `RETAIN` flag, `.flux` → `.r7f`
-  lifecycle. `design/journal-format-v2.md` records why the format is shaped this way. Payloads are FlatBuffers
+  lifecycle. `design/history/journal-format-v2.md` records why the format is shaped this way. Payloads are FlatBuffers
   (little-endian) per `src/main/flatbuffers/journal.fbs`.
 - `r7-journal-mmap/README.md` — write-path semantics, no-fsync durability model, backpressure,
   and `ExchangeReassembler`/`ReassemblyOptions` tuning and consumer-callback contract.
 - `design/journal-invariants.md` — the four invariants and the test names that enforce each. If
   a change touches recovery, deletion, checkpointing or eviction, find the invariant it belongs
   to and the named test, and extend that test.
-- `design/journal-write-contention.md` — findings: page faults and writeback inside
+- `design/history/journal-write-contention.md` — findings: page faults and writeback inside
   `writeEntry`'s monitor, why they hurt thread-per-connection servers most, and what
   `pre_fault` and `shard_count` cost in a memory-limited container, and what the monitor costs
   on virtual threads (JFR cannot see that contention on JDK 25). Read before changing those

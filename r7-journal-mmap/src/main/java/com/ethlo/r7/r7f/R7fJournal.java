@@ -98,7 +98,7 @@ public final class R7fJournal implements Journal
 
     /**
      * Bumped after every commit and rotation, so a tailer can wait for news without polling
-     * the segment (design/live-tailing.md).
+     * the segment (design/history/live-tailing.md).
      */
     private final CommitSignal commitSignal;
     private final Consumer<Path> finishedJournalFileSupplier;

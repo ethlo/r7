@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 /**
  * A per-shard counter the writer bumps after every commit, so a reader sharing the page cache
  * can tell that a shard has something new without decoding or listing anything
- * (design/live-tailing.md, step 2).
+ * (design/history/live-tailing.md, step 2).
  * <p>
  * {@code shard-<id>.ctl}, one cache line: the magic {@code R7CS} at 0, the counter at 8, big-endian
  * like the rest of the framing. The counter is a hint and nothing else. It says "look again", never

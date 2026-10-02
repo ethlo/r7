@@ -1,5 +1,7 @@
 # A server SPI: moving the pipeline out of `r7-undertow`
 
+> **History, not maintained.** This is the plan and measurements from moving the request pipeline out of `r7-undertow` (September 2026). The work is done and Undertow has since been removed, so the Undertow parts describe code that no longer exists. Current design: [`../README.md`](../README.md).
+
 **Status:** historical. The pipeline moved out, and `r7-undertow` has since been removed:
 Helidon Níma (`r7-helidon`) is the gateway. Step 1 (measurement) is done; see "Measured". Nothing else here changes the
 request path until it has a number behind it.
@@ -212,7 +214,7 @@ its own change.
    with `HttpUpstream`, a blocking HTTP/1.1 client of its own (round-robin targets, per-target
    keep-alive pools, Content-Length and chunked bodies both ways, X-Forwarded-* as Undertow
    writes them) that names no Helidon type. Not yet at the time: management port, static content,
-   WebSocket tunnelling, https upstreams, retries - all since done (design/upstream.md). Helidon pairs its releases with Java's:
+   WebSocket tunnelling, https upstreams, retries - all since done (design/history/upstream-client.md). Helidon pairs its releases with Java's:
    4.5.x is the LTS line for Java 25, 27 is compiled for Java 27 (class file version 71) and 29
    will be the next LTS. `r7-helidon` builds on 4.5.x by default, released for 25 like every
    other module - the floor `r7-journal-mmap`'s use of the FFM API sets - and `-Phelidon-27`
@@ -246,7 +248,7 @@ its own change.
    implements six small methods over its own request and response objects; `r7-helidon` is now
    that adapter and nothing more. Instructions per request unchanged.
    `HttpUpstream` and the relay have since moved to `r7-upstream`, to be shared with Undertow
-   too (design/upstream.md).
+   too (design/history/upstream-client.md).
 
    Second half done, as `r7-servlet` (experimental): `R7GatewayServlet`, mounted at `/*` in any
    Servlet 6.1 container, is ~150 lines over `r7-server-blocking`, and the security kit passes

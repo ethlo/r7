@@ -120,7 +120,7 @@ routes:
       targets:
         - url: http://localhost:1111
     filters:
-      - CorrelationIdHeader
+      - AddCorrelationId
       - RateLimiter:
           capacity: 50000
           refill_period: PT1s

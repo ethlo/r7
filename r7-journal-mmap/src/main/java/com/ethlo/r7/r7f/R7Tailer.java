@@ -513,7 +513,7 @@ public final class R7Tailer
 
     /**
      * Waits until a writer has committed something since the current tick began, or until
-     * {@code timeout}, whichever is first (design/live-tailing.md, step 3). Returns at once if
+     * {@code timeout}, whichever is first (design/history/live-tailing.md, step 3). Returns at once if
      * something was committed while the tick ran, which costs at most one tick that finds
      * nothing.
      * <p>
@@ -800,7 +800,7 @@ public final class R7Tailer
     /**
      * Maps a segment for reading, or returns {@code null} if it is gone.
      * <p>
-     * An active segment's mapping is kept across ticks (design/live-tailing.md): the file is
+     * An active segment's mapping is kept across ticks (design/history/live-tailing.md): the file is
      * the writer's pre-allocation, created at its full size and never shrunk, so one mapping
      * covers everything the writer will put in it, and mapping it again every tick only cost
      * a syscall pair. A sealed segment is mapped per read; it is read to the end once.

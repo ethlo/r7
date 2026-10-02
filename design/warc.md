@@ -1,7 +1,9 @@
 # The WARC sidecar: why, and what it has to carry over
 
-Design agreed in conversation, not yet built. This is the next piece of work after the
-journal hardening PR merged.
+**Status:** built as `r7-tailer-warc` (`Dockerfile.tailer-warc.jvm`); the operator docs are in
+`docs/journaling.md`. Two parts are not built. The WARC profile (`WARC.md`, under "Scope") does
+not exist yet. "The index layer" and "MCP" are ideas, and by this document's own "Scope"
+section they are not r7's to build: see `plans/README.md`.
 
 ---
 

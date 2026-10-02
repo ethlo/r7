@@ -294,7 +294,7 @@ sequence rather than byte offset would make "didn't advance" self-correcting rat
 
 Target: two invariants — the magic is the commit, and readers make progress.
 
-**The real answer is `warc-sidecar-plan.md`.** Rounds 7–11 found almost nothing about the
+**The real answer is [`warc.md`](warc.md).** Rounds 7–11 found almost nothing about the
 format and almost everything about the consumer contract. A consumer that reads finished
 records needs none of that machinery; it moves into the sidecar, written once.
 

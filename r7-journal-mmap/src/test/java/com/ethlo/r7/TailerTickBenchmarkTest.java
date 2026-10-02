@@ -28,7 +28,7 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 /**
  * What one tailer tick costs, idle and with one new exchange per shard, against a directory
  * holding a realistic number of retained sealed segments. The baseline for keeping active
- * segments mapped between ticks (design/live-tailing.md, step 1).
+ * segments mapped between ticks (design/history/live-tailing.md, step 1).
  *
  * <pre>./mvnw -pl r7-journal-mmap test -Dr7.bench=true -Dtest=TailerTickBenchmarkTest</pre>
  */

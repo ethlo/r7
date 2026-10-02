@@ -16,4 +16,4 @@ The system utilizes a decoupled **Producer/Consumer** model:
 
 ## 2. Storage Format
 
-[R7F format](FORMAT.md)
+[R7F format](../r7-journal-mmap/FORMAT.md)

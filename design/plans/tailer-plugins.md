@@ -1,5 +1,7 @@
 # Sidecar plugins: one reader, N handlers
 
+> **Plan, not built and not scheduled.** On 2026-10-02 the product focus was set to the audit journal, clean configuration and fixed, predictable routing, with no scripting. That rules out the field-path and pattern language below (the Pebble-style `|first`, `|nth` and `|count` filters, and the projection language). Whatever is built from this should use fixed output formats. See [`README.md`](README.md).
+
 Design under discussion, not yet built. Follows on from `warc.md`; this is the piece that
 generalizes what that document decided for WARC+ClickHouse specifically.
 
@@ -84,7 +86,7 @@ The access log stays one pattern, sidecar-wide — no per-route pattern selectio
 that cheaply because the location block handling the request *is* the log call site; here the
 sidecar is a separate process reading a flattened stream, and "which route" is a string pulled
 out of the generic `attributes` bag by convention (`gateway.route.id`, set in
-`R7UndertowHandler.tagExchangeAttributes` before every `journal.endExchange` call — confirmed
+`GatewayPipeline.tagExchangeAttributes` before every `journal.endExchange` call — confirmed
 present for every exchange, not gated by `JournalLevel`), not a first-class dispatch key a
 pattern compiler can switch on cleanly.
 
@@ -211,8 +213,10 @@ the JSON projection's gates, not via a per-request map/reflection lookup. A dott
 config, resolved once; per-exchange cost is calling the same small set of accessor functions
 either mechanism would have called anyway.
 
+*(The start of the next paragraph was lost when this document was first committed. What
+survives is below.)*
 
-between "working" and "the disk this process writes to is out of space" — there's no slow,
+…between "working" and "the disk this process writes to is out of space" — there's no slow,
 no partial, no "up but behind." That's the point of keeping the fan-out local-only, and it's
 what lets the checkpoint section stay simple.
 
@@ -220,7 +224,7 @@ what lets the checkpoint section stay simple.
 
 **Correction:** this was previously written as a per-route setting; it isn't, and the reason
 is more precise than "the journal has no route field." `journal.fbs` doesn't carry a dedicated
-route column on any table — but `R7UndertowHandler.tagExchangeAttributes` does set
+route column on any table — but `GatewayPipeline.tagExchangeAttributes` does set
 `gateway.route.id` into `attributes()` unconditionally, before every `journal.endExchange`
 call, so the route *is* recoverable, just as a generic attribute key by convention, not a
 typed schema field. `warc.mode` stays a sidecar-wide setting anyway, by choice rather than

@@ -1,5 +1,7 @@
 # Journal write contention
 
+> **History, not maintained.** This is the investigation behind fault-ahead, the `shard_count` default of 2 and leaving `pre_fault` off (2026-10-01 to 2026-10-02). The Undertow comparisons date from before Undertow was removed. Operator guidance is in [`docs/performance_tuning.md`](../../docs/performance_tuning.md), and what is still open is in [`../limitations.md`](../limitations.md).
+
 **Status:** investigated 2026-10-01, lock measured 2026-10-02. Page faults in the monitor are
 fixed by fault-ahead (`FaultAhead`, see "Fault-ahead" below), and `shard_count` now defaults to 2.
 "The lock on Níma" records what the monitor itself costs, now that Níma is the only server; the
