@@ -247,9 +247,12 @@ public final class R7Helidon
         if (Boolean.getBoolean(AOT_TRAINING_PROPERTY))
         {
             train(gateway);
-            gateway.stop();
-            // The JVM writes the AOT cache as it exits; the gateway's own threads would keep it up
-            System.exit(0);
+            // Halt, not stop() or exit: the JVM writes the AOT cache as it halts, and nothing
+            // outlives this throwaway build stage. Stopping Helidon's listeners (which exit's
+            // shutdown hooks also do) closes their sockets to wake a thread blocked in accept;
+            // under emulation, as in the arm64 half of the image build, that wake-up never
+            // comes, and the build hung.
+            Runtime.getRuntime().halt(0);
         }
         Runtime.getRuntime().addShutdownHook(new Thread(gateway::stop, "r7-shutdown-hook"));
     }
