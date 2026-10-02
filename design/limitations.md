@@ -21,6 +21,13 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   trusted ([`asvs-l2.md`](asvs-l2.md), V12.3.4 and V13.2.1).
 - **No lockout in `BasicAuth`.** Put a `RateLimiter` in front of it on any route that untrusted
   clients can reach (`docs/config.md`, "Password guessing").
+- **The journal fingerprints sensitive values and never removes them.** A header or query
+  parameter value outside the safe lists is replaced by a fingerprint, keyed with HMAC when
+  `fingerprint_key` is set. The name and the fact that a value was there stay in the record.
+  There is no option to remove values, because removal changes the recorded exchange without
+  leaving a trace. To keep values out of the journal entirely, lower the route's journal level:
+  `METADATA` records no headers, and `NONE` records no request line (`docs/config.md`,
+  "Journal Redaction").
 
 ## Upstream client
 
