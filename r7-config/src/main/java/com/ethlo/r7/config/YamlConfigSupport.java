@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 
 import com.ethlo.r7.config.model.DataSize;
 import tools.jackson.core.JacksonException;
@@ -76,6 +77,30 @@ public final class YamlConfigSupport
      */
     public static <T> T load(final ObjectMapper mapper, final Path yamlFile, final Class<T> type)
     {
+        return load(mapper, yamlFile, type, (root, positions) ->
+        {
+        });
+    }
+
+    /**
+     * Looks at a config file's tree after it has bound without error, for findings that are not
+     * errors (a value that is valid but probably not what was meant).
+     */
+    @FunctionalInterface
+    public interface TreeInspector
+    {
+        /**
+         * @param root      the interpolated tree, as it was bound
+         * @param positions where each scalar of {@code root} was written
+         */
+        void inspect(JsonNode root, YamlSourcePositions positions);
+    }
+
+    /**
+     * As {@link #load(ObjectMapper, Path, Class)}, then hands the bound tree to {@code inspector}.
+     */
+    public static <T> T load(final ObjectMapper mapper, final Path yamlFile, final Class<T> type, final TreeInspector inspector)
+    {
         final String contents;
         try
         {
@@ -90,7 +115,9 @@ public final class YamlConfigSupport
         {
             final JsonNode root = mapper.readTree(contents);
             interpolateTree(root);
-            return mapper.treeToValue(root, type);
+            final T value = mapper.treeToValue(root, type);
+            inspector.inspect(root, new YamlSourcePositions(mapper, contents));
+            return value;
         }
         catch (JacksonYAMLParseException e)
         {
@@ -221,16 +248,9 @@ public final class YamlConfigSupport
 
         if (!e.getPath().isEmpty())
         {
-            sb.append("Property path: ");
-
-            for (JacksonException.Reference ref : e.getPath())
-            {
-                sb.append(ref.getPropertyName()).append(".");
-            }
-
-            sb.setLength(sb.length() - 1);
-
-            sb.append(System.lineSeparator());
+            sb.append("Property path: ")
+                    .append(formatPath(e.getPath()))
+                    .append(System.lineSeparator());
         }
 
         sb.append(e.getOriginalMessage());
@@ -256,25 +276,7 @@ public final class YamlConfigSupport
 
         if (!e.getPath().isEmpty())
         {
-            sb.append(" at [");
-            final StringBuilder pathBuilder = new StringBuilder();
-
-            for (final JacksonException.Reference ref : e.getPath())
-            {
-                if (ref.getPropertyName() != null)
-                {
-                    if (!pathBuilder.isEmpty() && pathBuilder.charAt(pathBuilder.length() - 1) != ']')
-                    {
-                        pathBuilder.append(".");
-                    }
-                    pathBuilder.append(ref.getPropertyName());
-                }
-                else if (ref.getIndex() >= 0)
-                {
-                    pathBuilder.append("[").append(ref.getIndex()).append("]");
-                }
-            }
-            sb.append(pathBuilder).append("]");
+            sb.append(" at [").append(formatPath(e.getPath())).append("]");
         }
 
         sb.append(System.lineSeparator());
@@ -300,6 +302,32 @@ public final class YamlConfigSupport
 
         sb.append("Remove the option or check for spelling mistakes.");
 
+        return sb.toString();
+    }
+
+    /**
+     * Renders a Jackson reference path the way the YAML is navigated: {@code routes[0].upstream.targets[1].url}.
+     * A property after a list index still needs its dot; leaving it out ({@code routes[0]upstrem})
+     * made the very errors meant to point at a typo look like one themselves.
+     */
+    public static String formatPath(final List<JacksonException.Reference> path)
+    {
+        final StringBuilder sb = new StringBuilder();
+        for (final JacksonException.Reference ref : path)
+        {
+            if (ref.getPropertyName() != null)
+            {
+                if (!sb.isEmpty())
+                {
+                    sb.append('.');
+                }
+                sb.append(ref.getPropertyName());
+            }
+            else if (ref.getIndex() >= 0)
+            {
+                sb.append('[').append(ref.getIndex()).append(']');
+            }
+        }
         return sb.toString();
     }
 

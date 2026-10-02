@@ -6,6 +6,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.ExactMatch;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -39,6 +40,7 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
 
     public record Config(
             @Description("List of hostnames to match against.")
+            @ExactMatch(alternative = "To match a pattern, use MatchRequestHeader on the Host header with a regexp.", wildcards = true)
             List<String> hosts) implements ValidatableConfig
     {
         @Override

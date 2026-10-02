@@ -4,6 +4,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.ExactMatch;
 import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.ValidatorUtils;
@@ -39,6 +40,7 @@ public final class PathPrefixFactory implements GatewayPredicateFactory<PathPref
     public record Config(
             @Description("The path prefix to match.")
             @FormatPattern("^/.*$")
+            @ExactMatch(alternative = "PathPrefix already matches every path that starts with the prefix; use MatchPath for a regular expression.", wildcards = true)
             String prefix) implements ValidatableConfig
     {
         @Override

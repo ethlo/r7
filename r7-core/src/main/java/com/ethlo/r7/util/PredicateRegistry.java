@@ -4,6 +4,7 @@ import static com.ethlo.r7.util.Levenshtein.findClosestMatch;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 
@@ -35,6 +36,14 @@ public class PredicateRegistry
     public boolean exists(String name)
     {
         return factories.containsKey(name);
+    }
+
+    /**
+     * @return the config record class of the named predicate, or empty for an unknown name
+     */
+    public Optional<Class<?>> configClass(final String name)
+    {
+        return Optional.ofNullable(factories.get(name)).map(factory -> factory.configClass());
     }
 
     public GatewayPredicate create(String predicateName, Object yamlValue)
