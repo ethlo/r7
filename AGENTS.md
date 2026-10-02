@@ -139,9 +139,10 @@ them before changing anything in `r7-journal-mmap` or `ShardedJournalWriter`/`St
 - `design/journal-invariants.md` — the four invariants and the test names that enforce each. If
   a change touches recovery, deletion, checkpointing or eviction, find the invariant it belongs
   to and the named test, and extend that test.
-- `design/journal-write-contention.md` — in-progress findings: page faults and writeback inside
+- `design/journal-write-contention.md` — findings: page faults and writeback inside
   `writeEntry`'s monitor, why they hurt thread-per-connection servers most, and what
-  `pre_fault` and `shard_count` cost in a memory-limited container. Read before changing those
+  `pre_fault` and `shard_count` cost in a memory-limited container, and what the monitor costs
+  on virtual threads (JFR cannot see that contention on JDK 25). Read before changing those
   defaults or the write path's locking.
 
 The rules most easily broken by a well-intentioned local fix:

@@ -1,8 +1,9 @@
-# Journal write contention (in progress)
+# Journal write contention
 
-**Status:** investigated 2026-10-01. Page faults in the monitor are fixed by fault-ahead
-(`FaultAhead`, see "Fault-ahead" below), and `shard_count` now defaults to 2. Helidon's tail is
-still open; see the questions at the end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
+**Status:** investigated 2026-10-01, lock measured 2026-10-02. Page faults in the monitor are
+fixed by fault-ahead (`FaultAhead`, see "Fault-ahead" below), and `shard_count` now defaults to 2.
+"The lock on Níma" records what the monitor itself costs, now that Níma is the only server; the
+remaining levers are in the questions at the end. The operator-facing guidance is in `docs/performance_tuning.md`. Raw runs are under
 `benchmark/results/jdeg-*` on the machine that made them (not checked in).
 
 ## Symptom
@@ -118,13 +119,47 @@ Measured, the defaults (1 shard, no `pre_fault`):
 
 That beats `pre_fault` everywhere, without its memory.
 
+## The lock on Níma
+
+Measured 2026-10-02 with two shards, HEADERS on both directions, 200 connections, the browser
+workload, wrk2 at 20k req/s unless noted; one-minute runs on a shared laptop, so directional.
+
+**JFR cannot see this.** On JDK 25, `jdk.JavaMonitorEnter` is not emitted for a virtual thread
+blocked on a monitor: 200 virtual threads taking turns on one monitor held 2 ms at a time
+(about 8 s of contention) produced no events. The numbers below come from a temporary probe that
+timed the wait to enter and the hold around `writeEntry` and `writeCompressed`, with a
+log2-bucketed histogram reset after warmup.
+
+| | hold p99 | wait p99 | wait p99.9 | wait max |
+|---|---|---|---|---|
+| zstd (default) | 33 µs | 4.2 ms | 16.8 ms | 34 ms |
+| uncompressed | 8 µs | 16 µs | 1 ms | 67 ms |
+
+- **Holds are short; waits are not.** zstd is about 85% of the hold time, and keeps each shard's
+  monitor busy about a third of the time. A virtual thread that blocks unmounts and has to be
+  rescheduled onto a busy carrier when the monitor frees, while others barge, so waits run two
+  orders of magnitude past holds. Rotation is not a factor: 2–6 per run.
+- **The waits are not the request tail.** With a `ReentrantLock` that spins on `tryLock`
+  before parking, total wait fell fivefold but request p99.9 barely moved (21 → 18 ms).
+  Uncompressed, where waits are negligible, request p99.9 is still about 24 ms against 7 ms
+  with the journal off, and identical runs ranged 9–24 ms. Whatever adds the p99.9 is mostly
+  outside the monitor. A plain `ReentrantLock` without the spin produced one run at 923 ms
+  p99.9, so neither variant was adopted.
+- **At saturation the journal is about half the CPU.** Without the journal 157k req/s; HEADERS
+  with zstd 77k, uncompressed 88k (p99 1 s, from writeback). Of sampled CPU with zstd: 17.5% in
+  zstd under the monitor, 6.7% entering it, 4.6% in `Zstd.compressBound`, 16% encoding outside
+  it. `compressBound` is now computed in Java; the difference was below the run-to-run noise
+  of instructions per request (about 4%) at 20k req/s, so it is a cleanup, not a measured gain.
+
 ## Open questions
 
-- **Helidon's tail at one shard.** p99 stays around 50 ms against Undertow's 11 ms; 4 shards
-  bring it to 24 ms. What remains is the monitor's unfair handoff among 200 writers. Copying
-  outside the monitor (claim the slot under it, copy after) would shorten the hold further. The
-  magic-as-commit rule (`FORMAT.md` §5.1) still holds there, because a reader stops at the first
-  zero magic, but rotation and the seal record need care; see `design/journal-invariants.md`.
+- **Compression is the lever left, and both ways out cost something.** A writer thread per
+  shard would take every wait off the request threads, but one writer is about 35% busy at 20k
+  req/s, so two shards would cap near 55–60k req/s, below today's 77k; it needs four shards to
+  come out ahead. Compressing each entry on its own, outside the monitor, is a format change and
+  gives up the shared per-block stream's ratio. Neither is worth it unless journaled throughput
+  is what limits a deployment. Claiming a slot under the monitor and copying after shortens
+  only the uncompressed hold, which is already 8 µs at p99.
 - **Default `shard_count`: decided, 2.** With fault-ahead, one shard keeps up on throughput,
   and 4 halved Helidon's tail. 2 was chosen as the balance between the two: half the writers per
   shard for one more open segment. 2 was not measured with fault-ahead on.
