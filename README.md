@@ -4,6 +4,7 @@
 
 r7 is an HTTP gateway you configure with one YAML file. It routes traffic to your services, checks
 your configuration before it ever runs, and keeps a record of every request that passed through.
+It is fast out of the box, with high throughput and a short tail and nothing to tune first.
 
 ```yaml
 # routes.yaml

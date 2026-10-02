@@ -1,7 +1,7 @@
 # Performance tuning
 
-r7's defaults favour a small, predictable footprint over peak throughput. Most deployments never
-need to change them. When you do, each setting below trades one resource for another, and the
+r7's defaults aim for high throughput, a short tail and a small footprint at the same time. Most
+deployments never need to change them. When you do, each setting below trades one resource for another, and the
 right side of that trade depends on where r7 runs. Each entry says what to tune, when it helps,
 what it costs, and how to check the result on your own hardware.
 

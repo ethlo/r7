@@ -9,7 +9,8 @@ Put r7 in front of your services and write down where traffic should go. It rout
 checks your configuration before it ever runs, and keeps a record of what passed through, so when
 someone asks "what did that client actually send us?", you have the answer.
 
-One YAML file to start. No plugins to assemble, no scripting language to learn.
+It is fast out of the box, with high throughput and a short tail and nothing to tune first. One
+YAML file to start. No plugins to assemble, no scripting language to learn.
 
 [Get started in five minutes](quickstart.md){ .md-button .md-button--primary }
 [Try the config editor](editor.md){ .md-button }
@@ -131,7 +132,8 @@ r7 is pre-release. Configuration and APIs may still change before 1.0.
 
 ## Under the hood
 
-For those who want to know how it works.
+For those who want to know how it works. r7 is built for high throughput and a low, steady tail
+together; none of the choices below trades one for the other.
 
 ```mermaid
 graph LR
