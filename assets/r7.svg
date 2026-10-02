@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="r7">
     <rect width="64" height="64" rx="12" fill="#0a0a0b"/>
-    <text x="6" y="48" font-family="monospace" font-size="48" font-weight="bold" fill="#e4e4e7">r</text>
-    <text x="30" y="48" font-family="monospace" font-size="48" font-weight="bold" fill="#ff5e00">7</text>
+    <!-- r: stem and shoulder -->
+    <path d="M13 44V24M13 32c0-6 4-8 9-8" fill="none" stroke="#f4f4f5" stroke-width="6" stroke-linecap="square"/>
+    <!-- 7: bar and diagonal -->
+    <path d="M32 21h20L40 45" fill="none" stroke="#ff5e00" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter"/>
 </svg>
