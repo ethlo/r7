@@ -107,9 +107,10 @@ The tailer reads the journals once and writes each exchange to one or both of tw
   Fluent Bit, Vector or a Docker logging driver, or to rotating files. This is the log.
 
 With both on, a body is stored once, in the WARC file: the JSON line carries a `warc` pointer to
-the exchange's records instead of the bodies. An exchange the WARC output does not hold (an
-incomplete one, or one without a body under `exchanges: with_body`) keeps its bodies in the
-JSON line.
+the exchange's records instead of the bodies. A body the WARC output does not store (one of an
+incomplete exchange, or any body with `warc.bodies: false`) goes into the JSON line when `json.bodies` is `true`. With both
+`bodies` settings `false`, no body is stored anywhere; the records and lines still say there was
+one, and which, by its size and checksums.
 
 If writing the JSON line fails, the exchange's WARC records are taken back before the tailer
 retries it, so a retry never archives an exchange twice.
@@ -118,7 +119,8 @@ retries it, so a retry never archives an exchange twice.
 directory by default (`/app/config` in the image), or the path in the `TAILER_CONFIG`
 environment variable. It supports the same `${VAR:default}` interpolation as
 `routes.yaml`/`server.yaml`. Without a file, every field takes its default, so a bare container
-tails `/journals` to standard output as JSON.
+tails `/journals` to standard output as JSON lines without bodies, and archives the exchanges
+that have a captured body in WARC files under `/warc`.
 
 | Field            | Default        | Meaning |
 |------------------|----------------|---------|
@@ -134,8 +136,8 @@ At least one output must be enabled.
 
 | Field                 | Default  | Meaning |
 |-----------------------|----------|---------|
-| `enabled`             | `false`  | Write WARC files |
-| `exchanges`           | `all`    | `all` archives every exchange, so the WARC files are the complete record and every JSON line points into them. `with_body` archives only exchanges with a captured request or response body: the WARC files store the bodies, and the JSON lines are the full log |
+| `enabled`             | `true`   | Write WARC files |
+| `exchanges`           | `with_body` | Which exchanges get records. `with_body` archives only exchanges with a captured request or response body; `all` archives every exchange, so every JSON line points into the WARC files. Whether the records hold the bodies is `bodies` |
 | `output_dir`          | `/warc`  | Directory the files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete exchange and sealed on the next start |
 | `file_prefix`         | `r7`     | Filename prefix |
 | `max_file_size`       | `1gb`    | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
@@ -143,6 +145,7 @@ At least one output must be enabled.
 | `zstd_level`          | `9`      | Zstandard compression level (1-22), applied per record |
 | `dedup_cache_entries` | `100000` | How many payload digests are remembered for deduplicating identical payloads across exchanges |
 | `cdxj_index`          | `false`  | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each file; see below |
+| `bodies`              | `true`   | Store captured bodies in the records. `false` writes the headers with `WARC-Truncated: unspecified` and the body's `WARC-Payload-Digest`, and leaves the body to the JSON line when that output is on with `bodies: true`; otherwise the body is not stored |
 
 Each exchange becomes up to four linked records (client request, upstream request, upstream
 response, client response); a payload already archived by an earlier exchange is written as a
@@ -163,10 +166,11 @@ shapes and why.
 | `max_file_size`     | `256mb`  | With `output: file`: roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`      | `15m`    | With `output: file`: roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
 | `pretty_print`      | `false`  | Pretty-print each object. Not with `output: file`: a record over several lines cannot be cut back cleanly after a crash |
+| `bodies`            | `false`  | Write captured bodies into a line when no WARC record stores them, base64 encoded. Off, payloads stay out of the log; `body_bytes` and the checksums still show there was a body |
 | `hide_empty_fields` | `true`   | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out. Set to `false` to emit every field on every line, e.g. for consumers that require a fixed columnar schema |
 
 **Record format.** One JSON object per line, one object per leg of the exchange. A proxied
-`GET` with headers journaled, archived in a WARC file, looks like this (pretty-printed here;
+`GET` with headers journaled, archived in a WARC file under `exchanges: all`, looks like this (pretty-printed here;
 empty fields omitted):
 
 ```json
@@ -200,8 +204,8 @@ empty fields omitted):
 
 The `upstream_*` objects are present only when the request was proxied. Headers are written in
 full on every line. At `FULL`, a leg has `checksum` (the CRC32C the gateway recorded), and
-`observed_checksum` beside it only when the body read back does not match. When no WARC file
-holds the exchange, a leg with a body also has `body` (base64). `warc` gives the sealed file's
+`observed_checksum` beside it only when the body read back does not match. When no WARC record
+stores it, a leg with a body also has `body` (base64) when `bodies` is `true`. `warc` gives the sealed file's
 name, the byte offset of the exchange's first record and the compressed length of all of them:
 read `length` bytes at `offset` and decompress them with `zstd -d` to get that exchange's
 records. A record that is not a complete exchange carries `incomplete` with the reason; without
@@ -209,29 +213,35 @@ an end event (`TIMED_OUT`, `SHUTDOWN`, `CAPACITY_EVICTED`) timing, status and si
 and left out. Attributes the gateway recorded are under `attributes`. A header with one value is
 a string, one sent more than once an array of its values.
 
-**Example `config/tailer.yaml`:** a WARC archive with its index, and JSON lines on standard output.
+**Example `config/tailer.yaml`:** every exchange in a WARC archive with its index, and JSON lines on standard output.
 
 ```yaml title="tailer.yaml"
 journal_dir: /journals
 checkpoint_dir: /checkpoints
 warc:
-  enabled: true
   output_dir: /warc
+  exchanges: all
   cdxj_index: true
 json:
   output: stdout
 ```
 
-Bodies archived, everything logged, JSON to files for a loader:
+The defaults (bodies archived, everything logged), with JSON to files for a loader:
 
 ```yaml title="tailer.yaml"
-warc:
-  enabled: true
-  exchanges: with_body
 json:
   output: file
   output_dir: /json
   max_file_age: 5m
+```
+
+JSON lines alone, bodies included:
+
+```yaml title="tailer.yaml"
+warc:
+  enabled: false
+json:
+  bodies: true
 ```
 
 **Example Docker Compose Integration:**

@@ -69,6 +69,11 @@ final class WarcFields
      * it without r7-specific knowledge, without resorting to {@code WARC-Refers-To} (forbidden
      * on {@code request}/{@code response} records) or a {@code revisit} record (wrong semantics
      * for a second hop of the same capture, not a revisitation of previously archived content).
+     * <p>
+     * The same shape serves a body left out by configuration ({@code warc.bodies: false}): the
+     * payload was captured but is not in this archive (the tailer's JSON line holds it when that
+     * output is on and writes bodies; otherwise nothing does), so the record states that there
+     * was one, and which by its digest, without storing it.
      */
     static List<Map.Entry<String, String>> notStoredElsewhere(final String msgType, final String targetUri,
                                                                final List<String> concurrentToIds, final String requestId,

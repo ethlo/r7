@@ -174,6 +174,25 @@ class JsonLdWriterTest
     }
 
     /**
+     * With bodies off, a line never carries a payload, and the sizes still show there was one.
+     */
+    @Test
+    void withBodiesOffALineCarriesNoPayload() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JsonLdWriter writer = new JsonLdWriter(out, false, false, false);
+        final JournalExchange exchange = completeExchange("req-no-bodies");
+        exchange.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+        exchange.setTraffic(10L, 7L, 0L, 0L);
+
+        writer.onComplete(exchange);
+
+        final JsonNode line = MAPPER.readTree(linesOf(out).get(0));
+        assertThat(line.path("client_request").has("body")).as("not even as null").isFalse();
+        assertThat(line.path("client_request").path("body_bytes").asLong()).isEqualTo(7);
+    }
+
+    /**
      * One object per leg, and nothing another field already says: no proxied flag (the
      * upstream objects are there or not), no error flag, no totals, no separate content type.
      */

@@ -64,9 +64,15 @@ everything the reader does was done twice.
 
 - **A body is stored once.** With WARC on, a JSON line carries a `warc` pointer (sealed file
   name, offset of the exchange's first Zstandard frame, compressed length of its records)
-  instead of the bodies. An exchange the WARC output does not hold keeps its bodies in the line.
-- **Which exchanges get WARC records** is one setting, `exchanges`: `all`, or `with_body` (a
-  captured request or response body). Under `with_body`, a line without a pointer is explained
+  instead of the bodies. A body the WARC output does not store goes into the line when JSON is
+  on with `json.bodies: true`, and is not stored otherwise. `warc.bodies: false` writes
+  headers-only records with `WARC-Truncated` and the payload digest, the shape already used for
+  the upstream legs, so the archive keeps metadata and headers while the bodies go to the lines;
+  it is unusual, not invalid. With both off, no body is stored anywhere.
+- **Defaults: WARC on with `exchanges: with_body`, JSON on with `bodies: false`.** Out of the
+  box the archive holds the bodies and the log holds every exchange without them.
+- **Which exchanges get WARC records** is one setting, `exchanges`: `with_body` (a captured
+  request or response body), or `all`. Under `with_body`, a line without a pointer is explained
   by the line itself: no captured body, which its `level` and `body_bytes` show.
 - **Headers are written in full on every line**, not as a delta like the binary journal: the
   lines are for jq, ClickHouse and log shippers, and a delta would make each of them rebuild

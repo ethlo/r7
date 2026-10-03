@@ -22,7 +22,8 @@ public record JsonOutputConfig(
         DataSize maxFileSize,
         Duration maxFileAge,
         Boolean prettyPrint,
-        Boolean hideEmptyFields
+        Boolean hideEmptyFields,
+        Boolean bodies
 ) implements RollingFilesConfig, ValidatableConfig
 {
     public enum Output
@@ -44,7 +45,7 @@ public record JsonOutputConfig(
 
     public static JsonOutputConfig standard()
     {
-        return new JsonOutputConfig(null, null, null, null, null, null, null, null);
+        return new JsonOutputConfig(null, null, null, null, null, null, null, null, null);
     }
 
     public Boolean enabled()
@@ -94,6 +95,15 @@ public record JsonOutputConfig(
     public Boolean hideEmptyFields()
     {
         return Optional.ofNullable(this.hideEmptyFields).orElse(true);
+    }
+
+    /**
+     * Whether a line carries the captured bodies when no WARC file holds them. Off for a log
+     * that should never hold payloads, such as a rerun over journals that captured them.
+     */
+    public Boolean bodies()
+    {
+        return Optional.ofNullable(this.bodies).orElse(false);
     }
 
     @Override

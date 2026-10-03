@@ -68,7 +68,7 @@ final class ExchangeFanOut implements ExchangeCompletionListener
             {
                 json.writeComplete(exchange, written != null
                         ? new JsonLdWriter.WarcPointer(written.location().file(), written.location().offset(), written.location().length())
-                        : null);
+                        : null, warc != null && warc.storesBodies());
             }
             catch (final RuntimeException e)
             {

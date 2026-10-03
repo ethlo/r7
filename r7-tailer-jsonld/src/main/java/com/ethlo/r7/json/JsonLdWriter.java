@@ -36,6 +36,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
 
     private final OutputStream out;
     private final boolean hideEmptyFields;
+    private final boolean bodies;
 
     /**
      * Scratch buffer the generator writes into, never {@link #out} directly.
@@ -71,8 +72,20 @@ public class JsonLdWriter implements ExchangeCompletionListener
      */
     public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields)
     {
+        this(out, prettyPrint, hideEmptyFields, true);
+    }
+
+    /**
+     * @param bodies write captured bodies into the line when no WARC file holds them; when
+     *               false a line never carries a body, and {@code body_bytes} and the checksums
+     *               still show that there was one. With this and the WARC output's bodies both
+     *               off, no body is stored anywhere.
+     */
+    public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields, boolean bodies)
+    {
         this.out = out;
         this.hideEmptyFields = hideEmptyFields;
+        this.bodies = bodies;
         final JsonMapper mapper = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, false) // Ensure numbers stay as numbers
@@ -107,17 +120,31 @@ public class JsonLdWriter implements ExchangeCompletionListener
     }
 
     /**
-     * Writes a complete exchange whose records a WARC file holds. The line points at them
-     * instead of carrying the bodies: they are stored once, where a WARC reader expects them.
+     * Writes a complete exchange whose records a WARC file holds, bodies included. The line
+     * points at them instead of carrying the bodies: they are stored once, where a WARC reader
+     * expects them.
      *
      * @param warc where the records are, or {@code null} when no WARC file holds them; the
      *             bodies are then written into the line
      */
     public void writeComplete(final JournalExchange exchange, final WarcPointer warc)
     {
+        writeComplete(exchange, warc, true);
+    }
+
+    /**
+     * Writes a complete exchange, pointing at its WARC records when there are any. A body goes
+     * into the line when bodies are on here and no WARC record stores it, so it is stored once
+     * at most.
+     *
+     * @param warc         where the records are, or {@code null} when no WARC file holds them
+     * @param bodiesInWarc whether those records store the bodies; ignored without {@code warc}
+     */
+    public void writeComplete(final JournalExchange exchange, final WarcPointer warc, final boolean bodiesInWarc)
+    {
         try
         {
-            writeExchangeObject(exchange, null, warc);
+            writeExchangeObject(exchange, null, warc, bodies && (warc == null || !bodiesInWarc));
             flushRecord();
         }
         catch (IOException e)
@@ -138,7 +165,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, reason, null);
+            writeExchangeObject(exchange, reason, null, bodies);
             flushRecord();
         }
         catch (IOException e)
@@ -177,7 +204,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, reason, null);
+            writeExchangeObject(exchange, reason, null, bodies);
             flushRecord();
         }
         catch (final IOException | RuntimeException e)
@@ -296,7 +323,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
      *   "upstream_response": {level, protocol, status, reason, headers, first_byte, end, duration},
      *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body, checksum},
      *   "attributes": {...},
-     *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies then
+     *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies when it stores them
      * }
      * </pre>
      * Nothing is written that another field already says: whether the request was proxied is
@@ -310,10 +337,11 @@ public class JsonLdWriter implements ExchangeCompletionListener
      * {@link #hideEmptyFields}, left out.
      *
      * @param reason null for a complete record, otherwise why it is not one
-     * @param warc   where a WARC file holds the exchange, written as {@code "warc"} in place of
-     *               the bodies; null to write the bodies
+     * @param warc        where a WARC file holds the exchange, written as {@code "warc"}; null for none
+     * @param writeBodies whether the captured bodies go into this line
      */
-    private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason, final WarcPointer warc) throws IOException
+    private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason, final WarcPointer warc,
+                                     final boolean writeBodies) throws IOException
     {
         final boolean hasEndEvent = reason == null || reason.hasEndEvent();
 
@@ -353,7 +381,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeRequestLine(exchange.getClientRequestStartLine());
         writeMap("headers", GatewayUtils.toMap(exchange.getClientRequestHeaders()));
         writeSizes(hasEndEvent, exchange.getRequestHeaderBytes(), exchange.getRequestBodyBytes());
-        if (warc == null)
+        if (writeBodies)
         {
             writeBody(exchange.getRequestBodyFragments());
         }
@@ -395,7 +423,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeResponseLine(exchange.getClientResponseStartLine(), hasEndEvent ? exchange.getStatus() : null);
         writeMap("headers", GatewayUtils.toMap(exchange.getClientResponseHeaders()));
         writeSizes(hasEndEvent, exchange.getResponseHeaderBytes(), exchange.getResponseBodyBytes());
-        if (warc == null)
+        if (writeBodies)
         {
             writeBody(exchange.getResponseBodyFragments());
         }
