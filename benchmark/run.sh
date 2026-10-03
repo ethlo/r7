@@ -545,6 +545,36 @@ log "results -> $OUT"
   echo "date=$(date -Is)"
 } > "$OUT/environment.txt"
 
+# Every run the selected profile will make, written before any of them, so the verdict can
+# tell a run that produced no result from one that was never asked for. Mirrors the loops below.
+plan_rows() {   # plan_rows <scenario> <journal> <rate> <tool...>
+  local s="$1" j="$2" r="$3" w t rep; shift 3
+  for w in "${PLAN_WL[@]}"; do for t in "$@"; do
+    for ((rep = 1; rep <= REPEAT; rep++)); do
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$w" "$t" "$j" "$([[ "$t" == wrk2 ]] && echo "$r" || echo -)" "$rep"
+    done
+  done; done
+}
+IFS=',' read -ra PLAN_WL <<< "$WORKLOADS"
+IFS=',' read -ra PLAN_TL <<< "$TOOLS"
+{
+  has "$SCENARIOS" baseline    && plan_rows baseline - "$RATE" "${PLAN_TL[@]}"
+  has "$SCENARIOS" passthrough && plan_rows passthrough NONE "$RATE" "${PLAN_TL[@]}"
+  has "$SCENARIOS" filtered    && plan_rows filtered NONE "$RATE" "${PLAN_TL[@]}"
+  if has "$SCENARIOS" journal; then
+    IFS=',' read -ra LEVELS <<< "$JOURNAL_LEVELS"
+    for level in "${LEVELS[@]}"; do plan_rows journal "$level" "$RATE" "${PLAN_TL[@]}"; done
+  fi
+  if has "$SCENARIOS" sweep; then
+    IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
+    IFS=',' read -ra SRATES  <<< "$SWEEP_RATES"
+    for level in "${SLEVELS[@]}"; do for r in "${SRATES[@]}"; do
+      plan_rows sweep "$level" "$r" wrk2
+    done; done
+  fi
+  true
+} > "$OUT/plan.tsv"
+
 start_backend
 
 # 1. Baseline: straight at the backend. The floor.

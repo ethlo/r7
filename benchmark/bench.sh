@@ -240,12 +240,26 @@ isolate() {
   for unit in $(awk '{print $1}' <<< "$slices"); do
     [[ "$unit" == "-.slice" || "$unit" == "r7bench.slice" || "$unit" == *-* ]] || units+=("$unit")
   done
+  local confined=" "
   for unit in "${units[@]}"; do
     [[ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" == "active" ]] || continue
     old="$(systemctl show -p AllowedCPUs --value "$unit")"
     save cpuset "$unit" "$old"
     systemctl set-property --runtime "$unit" "AllowedCPUs=$os_cpus" \
       || { UNTUNED+=("core isolation: $unit refused AllowedCPUs"); return 0; }
+    confined+="$unit "
+  done
+  # A top-level cgroup that is not one of the units above (made directly in cgroupfs, or a
+  # slice that became active since the listing) is out of reach of AllowedCPUs, and anything
+  # running in it can still use the benchmark cores. r7bench.slice is checked too: run.sh has
+  # not started yet, so anything in it was left there by something else.
+  local dir name
+  for dir in /sys/fs/cgroup/*/; do
+    name="$(basename "$dir")"
+    [[ "$confined" == *" $name "* ]] && continue
+    if grep -qsx 'populated 1' "$dir/cgroup.events"; then
+      UNTUNED+=("core isolation: processes in the top-level cgroup $name, which is not confined")
+    fi
   done
   TUNING+=("isolation=systemd(os=$os_cpus)")
 }

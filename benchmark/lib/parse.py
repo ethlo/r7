@@ -334,7 +334,8 @@ def report(d, fmt_kind="md"):
 def verdict_problems(d, min_repeat=3, max_spread=5.0):
     """Why the results in d should not be quoted, as a list of sentences; empty if none.
 
-    The bar for a published number: every run valid, every configuration repeated, and
+    The bar for a published number: every planned run present (plan.tsv, written by run.sh)
+    and valid, every configuration repeated, and
     throughput repeats agreeing within max_spread percent. A sweep point that did not reach
     95% of its target rate is past the knee and exempt from the spread check, since
     saturation is exactly where repeats disagree; every other point is held to it.
@@ -350,6 +351,27 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
             except (OSError, json.JSONDecodeError):
                 problems.append("unreadable result file %s" % name)
     rows = load_results(d)
+    # Repeat counts and headroom can only be judged on results that exist; the plan run.sh
+    # wrote before its first run is what says which ones should.
+    try:
+        with open(os.path.join(d, "plan.tsv")) as fh:
+            planned = set()
+            for line in fh:
+                if line.strip():
+                    s, w, t, j, rate, rep = line.rstrip("\n").split("\t")
+                    planned.add(((s, w, t, j, None if rate == "-" else int(rate)), int(rep)))
+    except (OSError, ValueError):
+        planned = None
+        problems.append("no readable run plan (plan.tsv), so missing runs cannot be detected")
+    if planned is not None:
+        if not planned:
+            problems.append("the run plan is empty")
+        done = {(key_of(r["meta"]), r["meta"].get("repeat")) for r in rows}
+        missing = sorted(planned - done, key=lambda p: (str(p[0]), p[1]))
+        if missing:
+            (s, w, t, j, rate), rep = missing[0]
+            problems.append("%d planned run(s) have no result, e.g. %s/%s/%s/%s%s repeat %d"
+                            % (len(missing), s, j, w, t, "" if rate is None else "@%d" % rate, rep))
     # A run that completed nothing reports no errors and no spread, so it needs its own check.
     empty = [r for r in rows
              if not (r["stats"].get("rps") or 0) > 0 or not (r["stats"].get("requests") or 0) > 0]
