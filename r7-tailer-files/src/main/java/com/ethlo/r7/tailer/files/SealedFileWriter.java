@@ -289,9 +289,11 @@ public final class SealedFileWriter implements AutoCloseable
         channel.force(true);
         if (size <= headerSize)
         {
-            closeQuietly();
+            // Deleted before it is closed, as a seal renames before closing: a failed delete
+            // leaves it the current file, and the next seal retries it.
             Files.deleteIfExists(openPath);
             openPath = null;
+            closeQuietly();
             return;
         }
         final Path sealed = directory.resolve(fileName);
