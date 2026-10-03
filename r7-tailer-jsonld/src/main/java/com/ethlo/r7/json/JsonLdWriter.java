@@ -36,6 +36,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
 
     private final OutputStream out;
     private final boolean hideEmptyFields;
+    private final boolean bodies;
 
     /**
      * Scratch buffer the generator writes into, never {@link #out} directly.
@@ -71,8 +72,19 @@ public class JsonLdWriter implements ExchangeCompletionListener
      */
     public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields)
     {
+        this(out, prettyPrint, hideEmptyFields, true);
+    }
+
+    /**
+     * @param bodies write captured bodies into the line when no WARC file holds them; when
+     *               false a line never carries a body, and {@code body_bytes} and the checksums
+     *               still show that there was one
+     */
+    public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields, boolean bodies)
+    {
         this.out = out;
         this.hideEmptyFields = hideEmptyFields;
+        this.bodies = bodies;
         final JsonMapper mapper = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, false) // Ensure numbers stay as numbers
@@ -311,7 +323,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
      *
      * @param reason null for a complete record, otherwise why it is not one
      * @param warc   where a WARC file holds the exchange, written as {@code "warc"} in place of
-     *               the bodies; null to write the bodies
+     *               the bodies; null to write the bodies, unless {@link #bodies} is off
      */
     private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason, final WarcPointer warc) throws IOException
     {
@@ -353,7 +365,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeRequestLine(exchange.getClientRequestStartLine());
         writeMap("headers", GatewayUtils.toMap(exchange.getClientRequestHeaders()));
         writeSizes(hasEndEvent, exchange.getRequestHeaderBytes(), exchange.getRequestBodyBytes());
-        if (warc == null)
+        if (warc == null && bodies)
         {
             writeBody(exchange.getRequestBodyFragments());
         }
@@ -395,7 +407,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeResponseLine(exchange.getClientResponseStartLine(), hasEndEvent ? exchange.getStatus() : null);
         writeMap("headers", GatewayUtils.toMap(exchange.getClientResponseHeaders()));
         writeSizes(hasEndEvent, exchange.getResponseHeaderBytes(), exchange.getResponseBodyBytes());
-        if (warc == null)
+        if (warc == null && bodies)
         {
             writeBody(exchange.getResponseBodyFragments());
         }

@@ -64,7 +64,9 @@ everything the reader does was done twice.
 
 - **A body is stored once.** With WARC on, a JSON line carries a `warc` pointer (sealed file
   name, offset of the exchange's first Zstandard frame, compressed length of its records)
-  instead of the bodies. An exchange the WARC output does not hold keeps its bodies in the line.
+  instead of the bodies. An exchange the WARC output does not hold keeps its bodies in the line, unless
+  `json.bodies: false` keeps payloads out of the log altogether. There is no `warc.bodies`: a
+  WARC record without its body says no more than the line already does.
 - **Which exchanges get WARC records** is one setting, `exchanges`: `all`, or `with_body` (a
   captured request or response body). Under `with_body`, a line without a pointer is explained
   by the line itself: no captured body, which its `level` and `body_bytes` show.

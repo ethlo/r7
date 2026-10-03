@@ -109,7 +109,7 @@ The tailer reads the journals once and writes each exchange to one or both of tw
 With both on, a body is stored once, in the WARC file: the JSON line carries a `warc` pointer to
 the exchange's records instead of the bodies. An exchange the WARC output does not hold (an
 incomplete one, or one without a body under `exchanges: with_body`) keeps its bodies in the
-JSON line.
+JSON line, unless `json.bodies` is `false`.
 
 If writing the JSON line fails, the exchange's WARC records are taken back before the tailer
 retries it, so a retry never archives an exchange twice.
@@ -163,6 +163,7 @@ shapes and why.
 | `max_file_size`     | `256mb`  | With `output: file`: roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`      | `15m`    | With `output: file`: roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
 | `pretty_print`      | `false`  | Pretty-print each object. Not with `output: file`: a record over several lines cannot be cut back cleanly after a crash |
+| `bodies`            | `true`   | Write captured bodies into a line when no WARC file holds them. `false` keeps payloads out of the log entirely, for instance on a rerun over journals that captured them; `body_bytes` and the checksums still show there was a body |
 | `hide_empty_fields` | `true`   | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out. Set to `false` to emit every field on every line, e.g. for consumers that require a fixed columnar schema |
 
 **Record format.** One JSON object per line, one object per leg of the exchange. A proxied
@@ -201,7 +202,7 @@ empty fields omitted):
 The `upstream_*` objects are present only when the request was proxied. Headers are written in
 full on every line. At `FULL`, a leg has `checksum` (the CRC32C the gateway recorded), and
 `observed_checksum` beside it only when the body read back does not match. When no WARC file
-holds the exchange, a leg with a body also has `body` (base64). `warc` gives the sealed file's
+holds the exchange, a leg with a body also has `body` (base64), unless `bodies` is `false`. `warc` gives the sealed file's
 name, the byte offset of the exchange's first record and the compressed length of all of them:
 read `length` bytes at `offset` and decompress them with `zstd -d` to get that exchange's
 records. A record that is not a complete exchange carries `incomplete` with the reason; without

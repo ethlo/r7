@@ -46,7 +46,8 @@ public final class TailerMain
 
         final WarcExchangeWriter warc = warcFiles != null ? new WarcExchangeWriter(warcFiles, new PayloadDedupIndex(warcConfig.dedupCacheEntries())) : null;
         final JsonLdWriter json = jsonConfig.enabled()
-                ? new JsonLdWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.prettyPrint(), jsonConfig.hideEmptyFields())
+                ? new JsonLdWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.prettyPrint(), jsonConfig.hideEmptyFields(),
+                jsonConfig.bodies())
                 : null;
 
         logger.info("Tailing journals from '{}' (checkpoints in '{}', poll every {}) -> WARC: {}; JSON: {}",
