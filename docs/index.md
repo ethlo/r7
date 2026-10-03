@@ -76,7 +76,7 @@ journal:
 
 Journaling never sits in the way of a request: entries are written to memory-mapped files, not
 sent over the network while the client waits. A separate tailer ships them on to where you want them,
-such as a JSON pipeline for ClickHouse or Elasticsearch and a standard WARC archive. Secrets stay
+such as a JSON pipeline for ClickHouse or Elasticsearch, a standard WARC archive, or both. Secrets stay
 out by default: header values that are not on an allow-list are stored as fingerprints, not as
 plain text.
 

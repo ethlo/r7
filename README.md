@@ -38,7 +38,7 @@ That's a running gateway, with every request to `/api` journaled and a live dash
 
 - **It remembers every request.** Record metadata, headers or full bodies per route, and turn up
   the detail only when a response fails. Journals are written to local disk without slowing the
-  request, and a tailer ships them to a JSON pipeline and a WARC archive.
+  request, and a tailer ships them to a JSON pipeline, a WARC archive, or both.
 - **Your configuration is checked before it runs.** Unknown keys, misspelled filters, bad regular
   expressions and missing variables stop r7 at startup with a precise message, not a silent
   misroute in production. A bad edit to a running gateway is rejected and the old routes keep
