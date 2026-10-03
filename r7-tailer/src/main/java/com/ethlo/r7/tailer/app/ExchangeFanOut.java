@@ -74,7 +74,7 @@ final class ExchangeFanOut implements ExchangeCompletionListener
             {
                 if (written != null)
                 {
-                    discard(written, e);
+                    discard(exchange, written, e);
                 }
                 throw e;
             }
@@ -85,7 +85,7 @@ final class ExchangeFanOut implements ExchangeCompletionListener
         }
     }
 
-    private void discard(final WarcExchangeWriter.Written written, final RuntimeException cause)
+    private void discard(final JournalExchange exchange, final WarcExchangeWriter.Written written, final RuntimeException cause)
     {
         try
         {
@@ -93,8 +93,10 @@ final class ExchangeFanOut implements ExchangeCompletionListener
         }
         catch (final RuntimeException e)
         {
+            // The cut-back is retried before the WARC file takes another record or is sealed, so
+            // the retry of this exchange stalls until it succeeds rather than archive it twice.
             cause.addSuppressed(e);
-            logger.error("Could not take back the WARC records of an exchange whose JSON line failed; they may be written twice", e);
+            logger.error("Could not take back the WARC records of exchange {} after its JSON line failed", exchange.getRequestId(), e);
         }
     }
 

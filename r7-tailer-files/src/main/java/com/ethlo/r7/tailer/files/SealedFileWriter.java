@@ -105,6 +105,7 @@ public final class SealedFileWriter implements AutoCloseable
     private long size;
     private long headerSize;
     private long openedAtMillis;
+    private long pendingCut = -1;
 
     public SealedFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis,
                             final Format format) throws IOException
@@ -158,6 +159,10 @@ public final class SealedFileWriter implements AutoCloseable
      */
     public synchronized long append(final ByteBuffer records) throws IOException
     {
+        if (channel != null)
+        {
+            completePendingCut();
+        }
         ensureOpen();
         final long start = size;
         try
@@ -186,16 +191,34 @@ public final class SealedFileWriter implements AutoCloseable
      * after this append succeeded. Without it the retry would write the same records a second
      * time. {@code start} is an offset {@link #append} returned for the file still current.
      * <p>
-     * If the cut-back itself fails, the file is closed and left under its {@code .open} name,
-     * as after a failed append; recovery on the next start keeps its complete records.
+     * Unlike a failed append, what is taken back here is complete, and recovery would keep it.
+     * So if the cut-back fails, the file stays current and every later call (append, roll,
+     * seal) first retries the cut-back, failing until it succeeds: nothing is written after
+     * records that were taken back, and the file is never sealed with them.
      */
-    public synchronized void discardFrom(final long start)
+    public synchronized void discardFrom(final long start) throws IOException
     {
         if (channel == null || start < headerSize || start > size)
         {
             throw new IllegalStateException("Nothing appended at " + start + " in the current file (" + fileName + ", " + size + " bytes)");
         }
-        cutBack(start);
+        pendingCut = start;
+        completePendingCut();
+    }
+
+    /**
+     * Retries a cut-back {@link #discardFrom} could not complete.
+     */
+    private void completePendingCut() throws IOException
+    {
+        if (pendingCut < 0)
+        {
+            return;
+        }
+        channel.truncate(pendingCut);
+        channel.position(pendingCut);
+        size = pendingCut;
+        pendingCut = -1;
     }
 
     /**
@@ -320,6 +343,7 @@ public final class SealedFileWriter implements AutoCloseable
         {
             return;
         }
+        completePendingCut();
         channel.force(true);
         if (size <= headerSize)
         {

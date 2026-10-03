@@ -58,6 +58,17 @@ class TailerAppConfigTest
     }
 
     @Test
+    void zstdLevelIsBoundedByWhatTheWriterAccepts()
+    {
+        assertThatThrownBy(() -> load("""
+                warc:
+                  enabled: true
+                  zstd_level: 23
+                """))
+                .hasMessageContaining("[warc.zstd_level] must be between 1 and 22");
+    }
+
+    @Test
     void anOutputMustBeEnabled()
     {
         assertThatThrownBy(() -> load("""

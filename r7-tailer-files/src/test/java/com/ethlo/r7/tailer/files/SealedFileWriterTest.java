@@ -81,6 +81,36 @@ class SealedFileWriterTest
     }
 
     /**
+     * What a discard takes back is complete, so recovery would keep it. A discard that cannot cut
+     * the file back fails, and so does every later write until the cut-back succeeds: nothing is
+     * written after records that were taken back.
+     */
+    @Test
+    void aDiscardThatCannotCutBackStallsWritesUntilItCan() throws IOException
+    {
+        final FailingChannel[] failing = new FailingChannel[1];
+        try (SealedFileWriter files = new SealedFileWriter(dir, "r7", MIN, HOUR, new Lines(), channel ->
+        {
+            failing[0] = new FailingChannel(channel);
+            return failing[0];
+        }))
+        {
+            files.append(bytes("one\n"));
+            final long two = files.append(bytes("two\n"));
+
+            failing[0].failTruncate = true;
+            assertThatThrownBy(() -> files.discardFrom(two)).isInstanceOf(IOException.class);
+            assertThatThrownBy(() -> files.append(bytes("three\n"))).isInstanceOf(IOException.class);
+            assertThat(Files.readString(only(".lines.open"))).as("still the current file, nothing added").isEqualTo("one\ntwo\n");
+
+            failing[0].failTruncate = false;
+            assertThat(files.append(bytes("three\n"))).isEqualTo(two);
+        }
+
+        assertThat(Files.readString(only(".lines"))).isEqualTo("one\nthree\n");
+    }
+
+    /**
      * A header write that fails, and cannot even be cut back, reports the write's own failure
      * and leaves no file behind; the next append opens a fresh one.
      */

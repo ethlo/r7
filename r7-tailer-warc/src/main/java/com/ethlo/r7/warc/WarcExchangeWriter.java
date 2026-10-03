@@ -155,7 +155,15 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
      */
     public void discard(final Written written)
     {
-        fileWriter.discard(written.location());
+        try
+        {
+            fileWriter.discard(written.location());
+        }
+        catch (final IOException e)
+        {
+            throw new UncheckedIOException("Could not take back the WARC records at " + written.location()
+                    + "; retried before anything else is written", e);
+        }
     }
 
     @Override

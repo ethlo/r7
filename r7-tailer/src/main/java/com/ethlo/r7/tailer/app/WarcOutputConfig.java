@@ -8,6 +8,7 @@ import com.ethlo.r7.tailer.files.RollingFilesConfig;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.warc.WarcFileWriter;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
@@ -103,7 +104,11 @@ public record WarcOutputConfig(
     public void validate(final ValidationResult result)
     {
         final ValidatorUtils v = new ValidatorUtils(result);
-        v.requirePositive("zstd_level", this.zstdLevel());
+        if (this.zstdLevel() < WarcFileWriter.MIN_ZSTD_LEVEL || this.zstdLevel() > WarcFileWriter.MAX_ZSTD_LEVEL)
+        {
+            result.addError("zstd_level", "must be between " + WarcFileWriter.MIN_ZSTD_LEVEL + " and " + WarcFileWriter.MAX_ZSTD_LEVEL
+                    + ", but was " + this.zstdLevel());
+        }
         v.requirePositive("dedup_cache_entries", this.dedupCacheEntries());
         this.validateRollover(result);
     }

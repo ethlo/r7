@@ -84,6 +84,13 @@ public final class WarcFileWriter implements AutoCloseable
     {
     }
 
+    /**
+     * The Zstandard compression levels this writer accepts: from 1 (fastest) to the library's
+     * maximum. Negative "fast" levels are left out, as the config has always documented.
+     */
+    public static final int MIN_ZSTD_LEVEL = 1;
+    public static final int MAX_ZSTD_LEVEL = Zstd.maxCompressionLevel();
+
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel) throws IOException
     {
         this(directory, filePrefix, maxFileSizeBytes, maxFileAgeMillis, zstdLevel, false);
@@ -95,6 +102,10 @@ public final class WarcFileWriter implements AutoCloseable
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel,
                           final boolean cdxjIndex) throws IOException
     {
+        if (zstdLevel < MIN_ZSTD_LEVEL || zstdLevel > MAX_ZSTD_LEVEL)
+        {
+            throw new IllegalArgumentException("zstdLevel must be between " + MIN_ZSTD_LEVEL + " and " + MAX_ZSTD_LEVEL + ", but was " + zstdLevel);
+        }
         this.cdxjIndex = cdxjIndex;
         this.compressor = new ZstdCompressCtx();
         compressor.setLevel(zstdLevel);
@@ -181,17 +192,28 @@ public final class WarcFileWriter implements AutoCloseable
      * without this its records would be written twice. The file is cut back to where the write
      * began and its sequence numbers are given back, as for a failed write.
      *
+     * <p>
+     * If the file cannot be cut back, this throws, and the cut-back is retried before anything
+     * else is written to the file or it is sealed ({@link SealedFileWriter#discardFrom}); the
+     * sequence numbers are given back either way, since no record can follow until it succeeds.
+     *
      * @param location what that call returned; anything else is a programming error
      */
-    synchronized void discard(final Location location)
+    synchronized void discard(final Location location) throws IOException
     {
         if (!location.equals(lastWrite) || !location.file().equals(files.fileName()) || files.size() != location.offset() + location.length())
         {
             throw new IllegalStateException("Only the last write can be discarded, and only while its file is current: " + location);
         }
-        files.discardFrom(location.offset());
-        sequence = lastWriteSequence;
-        lastWrite = null;
+        try
+        {
+            files.discardFrom(location.offset());
+        }
+        finally
+        {
+            sequence = lastWriteSequence;
+            lastWrite = null;
+        }
     }
 
     private byte[] frames(final List<PendingRecord> records)

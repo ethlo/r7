@@ -79,10 +79,17 @@ everything the reader does was done twice.
 - **A crash between the two** leaves the WARC records without their line. The exchange was not
   checkpointed, so it is written again in full on the next start: the archive can hold it
   twice, which is the at-least-once delivery every output already has across a crash.
+- **A take-back that fails stalls the tailer.** What it takes back is complete, so recovery
+  would keep it: the WARC file stays current, and every later write or seal retries the
+  cut-back first and fails until it succeeds.
 - **Fixed outputs, no plugins.** No per-route selection, field projection or access-log
   pattern: the gateway's per-route journal level already decides what is captured, and shaping
   a line is a downstream job (`jq`). Header obfuscation stays in the gateway. A sink that
   talks to the network belongs downstream of a file this process wrote, not inside it.
+
+r7 takes an opinionated view of tailing: one tailer, these two outputs. A deployment that
+wants something else writes its own tailer on `r7-tailer-api`, and on `r7-tailer-files` if it
+writes local files; that is what the two modules are for.
 
 The earlier proposal is in [`history/tailer-plugins.md`](history/tailer-plugins.md); its
 pattern and projection languages were ruled out by the 2026-10-02 product focus (no scripting).
