@@ -193,7 +193,8 @@ public final class SealedFileWriter implements AutoCloseable
 
     /**
      * Seals the current file if it is older than the age limit and holds a record. Called from
-     * the tailer's loop, so a quiet stream still produces finished files on time.
+     * the tailer's loop, so a quiet stream still produces finished files on time, and before
+     * each append, because one read of a backlog can run far longer than the age limit.
      */
     public synchronized void rollIfStale() throws IOException
     {
@@ -259,6 +260,11 @@ public final class SealedFileWriter implements AutoCloseable
 
     private void closeQuietly()
     {
+        if (channel == null)
+        {
+            // Already closed by a failed cut-back inside a header write.
+            return;
+        }
         try
         {
             channel.close();

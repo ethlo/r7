@@ -60,6 +60,44 @@ class SealedFileWriterTest
         assertThat(Files.readString(only(".lines"))).isEqualTo("one\ntwo\nthree\n");
     }
 
+    /**
+     * A header write that fails, and cannot even be cut back, reports the write's own failure
+     * and leaves no file behind; the next append opens a fresh one.
+     */
+    @Test
+    void aFailedHeaderWriteThatCannotBeCutBackReportsTheWriteFailure() throws IOException
+    {
+        final Lines withHeader = new Lines()
+        {
+            @Override
+            public void opened(final SealedFileWriter writer, final String fileName) throws IOException
+            {
+                writer.append(bytes("# header\n"));
+            }
+        };
+        final boolean[] broken = {true};
+        try (SealedFileWriter files = new SealedFileWriter(dir, "r7", MIN, HOUR, withHeader, channel ->
+        {
+            final FailingChannel failing = new FailingChannel(channel);
+            if (broken[0])
+            {
+                failing.failAfter = 2;
+                failing.failTruncate = true;
+            }
+            return failing;
+        }))
+        {
+            assertThatThrownBy(() -> files.append(bytes("one\n")))
+                    .isInstanceOf(IOException.class)
+                    .hasMessage("No space left on device");
+            assertThat(files("")).isEmpty();
+
+            broken[0] = false;
+            files.append(bytes("one\n"));
+        }
+        assertThat(Files.readString(only(".lines"))).isEqualTo("# header\none\n");
+    }
+
     @Test
     void aFileHoldingOnlyItsHeaderIsNotSealed() throws IOException
     {
@@ -153,6 +191,7 @@ class SealedFileWriterTest
     {
         private final FileChannel delegate;
         int failAfter = -1;
+        boolean failTruncate;
 
         FailingChannel(final FileChannel delegate)
         {
@@ -217,6 +256,10 @@ class SealedFileWriterTest
         @Override
         public FileChannel truncate(final long size) throws IOException
         {
+            if (failTruncate)
+            {
+                throw new IOException("Input/output error");
+            }
             delegate.truncate(size);
             return this;
         }

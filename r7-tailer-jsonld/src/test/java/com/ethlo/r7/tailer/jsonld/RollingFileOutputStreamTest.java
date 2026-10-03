@@ -75,6 +75,25 @@ class RollingFileOutputStreamTest
     }
 
     /**
+     * One read of a backlog can run longer than the age limit, so age is checked before each
+     * record too, not only between reads.
+     */
+    @Test
+    void aBusyStreamRollsOnAgeBetweenRecords() throws IOException
+    {
+        try (RollingFileOutputStream out = new RollingFileOutputStream(dir, "r7", MIN, 1))
+        {
+            out.write("{\"a\":1}\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            sleepPastAgeLimit();
+            out.write("{\"b\":2}\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            assertThat(files(".jsonl")).as("the first file sealed before the second record").hasSize(1);
+        }
+        assertThat(files(".jsonl")).hasSize(2);
+    }
+
+    /**
      * A crash leaves the current file under its .open name. Its complete lines were checkpointed
      * past, so they must reach a consumer: the file is sealed on start, minus a torn last line,
      * whose record the tailer had not checkpointed and writes again.

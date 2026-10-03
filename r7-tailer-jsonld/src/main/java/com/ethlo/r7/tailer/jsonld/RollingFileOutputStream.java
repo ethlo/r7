@@ -58,7 +58,10 @@ final class RollingFileOutputStream extends OutputStream
         {
             // Roll before the append, never after it: a failure after the record is written
             // would have the tailer offer the record again, and write it twice.
+            // Age is checked here too, not only between reads: one read of a backlog can
+            // outlast max_file_age.
             files.rollIfFull();
+            files.rollIfStale();
             files.append(record.asByteBuffer());
         }
         finally

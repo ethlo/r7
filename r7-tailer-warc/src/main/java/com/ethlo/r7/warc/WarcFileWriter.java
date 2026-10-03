@@ -127,9 +127,12 @@ public final class WarcFileWriter implements AutoCloseable
 
         // Roll before the batch, never inside it: a group stays in one file, and an oversized
         // group simply pushes this file over the limit rather than being split - see
-        // design/warc.md ("Roll between records, never inside one"). Opening the file first
-        // writes its warcinfo record and resets the sequence the batch is numbered from.
+        // design/warc.md ("Roll between records, never inside one"). Age is checked here too,
+        // not only between reads: one read of a backlog can outlast max_file_age. Opening the
+        // file first writes its warcinfo record and resets the sequence the batch is numbered
+        // from.
         files.rollIfFull();
+        files.rollIfStale();
         files.ensureOpen();
 
         final long sequenceBefore = sequence;

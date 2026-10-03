@@ -44,8 +44,10 @@ YAML keys stay flat: the interfaces group settings in code, not in the file.
   nothing is split across files, and the size limit is a ceiling a file crosses.
 - **A file opens on its first record.** A file holding only its header (a WARC `warcinfo`) is
   not sealed, so a quiet tailer leaves no empty files.
-- **Age rolls from the loop.** `TailerOutput.afterTick` runs after every read, including an
-  empty one, and the loop wakes at least every `poll_interval`. No timer thread.
+- **Age rolls between appends and from the loop.** Each append first seals a file past its
+  age, since one read of a backlog can run longer than `max_file_age`; `TailerOutput.afterTick`
+  runs after every read, including an empty one, so a quiet journal still seals on time. The
+  loop wakes at least every `poll_interval`. No timer thread.
 - **Output files get journal permissions** (`JournalFiles`): they hold the same request and
   response data.
 
