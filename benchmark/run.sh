@@ -315,7 +315,7 @@ start_backend() {
   local -a pin_args=()
   if [[ -n "$BACKEND_CPUS" ]]; then
     # worker_processes auto counts the host's CPUs, not the container's cpuset.
-    conf="$RUNDIR/nginx.conf"
+    conf="$(cd "$RUNDIR" && pwd)/nginx.conf"
     sed -e "s|^worker_processes .*|worker_processes  $(cpu_count "$BACKEND_CPUS");|" \
       "$HERE/backend/nginx.conf" > "$conf"
     pin_args=(--cpuset-cpus "$BACKEND_CPUS")
