@@ -137,7 +137,7 @@ At least one output must be enabled.
 | Field                 | Default  | Meaning |
 |-----------------------|----------|---------|
 | `enabled`             | `true`   | Write WARC files |
-| `exchanges`           | `with_body` | `with_body` archives only exchanges with a captured request or response body: the WARC files store the bodies, and the JSON lines are the full log. `all` archives every exchange, so the WARC files are the complete record and every JSON line points into them |
+| `exchanges`           | `with_body` | Which exchanges get records. `with_body` archives only exchanges with a captured request or response body; `all` archives every exchange, so every JSON line points into the WARC files. Whether the records hold the bodies is `bodies` |
 | `output_dir`          | `/warc`  | Directory the files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete exchange and sealed on the next start |
 | `file_prefix`         | `r7`     | Filename prefix |
 | `max_file_size`       | `1gb`    | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
