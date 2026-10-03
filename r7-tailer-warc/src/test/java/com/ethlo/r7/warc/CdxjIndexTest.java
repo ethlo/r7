@@ -1,6 +1,7 @@
 package com.ethlo.r7.warc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -9,8 +10,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -20,6 +23,7 @@ import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.r7f.JournalFiles;
 import com.ethlo.r7.tailer.files.SealedFileWriter;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -98,6 +102,20 @@ class CdxjIndexTest
         assertThat(lines).hasSize(2);
         assertThat(lines.stream().map(line -> json(line).get("mime").asString()))
                 .containsExactlyInAnyOrder("text/plain", "warc/revisit");
+    }
+
+    @Test
+    void theIndexIsNoMoreReadableThanAJournalSegment() throws IOException
+    {
+        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        try (WarcFileWriter files = writer(true))
+        {
+            new WarcExchangeWriter(files, new PayloadDedupIndex(100))
+                    .onComplete(exchange("req-1", "GET", "/v1/items", "{}"));
+        }
+
+        final Set<PosixFilePermission> actual = Files.getPosixFilePermissions(only(".cdxj"));
+        assertThat(JournalFiles.FILE_PERMISSIONS).as("actual: %s", actual).containsAll(actual);
     }
 
     @Test
