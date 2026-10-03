@@ -75,8 +75,8 @@ journal:
 ```
 
 Journaling never sits in the way of a request: entries are written to memory-mapped files, not
-sent over the network while the client waits. Separate tailers ship them on to where you want them,
-such as a JSON pipeline for ClickHouse or Elasticsearch, or a standard WARC archive. Secrets stay
+sent over the network while the client waits. A separate tailer ships them on to where you want them,
+such as a JSON pipeline for ClickHouse or Elasticsearch and a standard WARC archive. Secrets stay
 out by default: header values that are not on an allow-list are stored as fingerprints, not as
 plain text.
 
@@ -140,7 +140,7 @@ graph LR
     Client[Clients] --> R7[r7 gateway]
     R7 -->|routes + filters| Up[Your services]
     R7 -->|memory-mapped write| Journal[(Journal on disk)]
-    Journal --> Tailers[Tailers<br/>JSON / WARC]
+    Journal --> Tailers[Tailer<br/>JSON + WARC]
     Tailers --> Store[ClickHouse / S3 / Elasticsearch]
     R7 --> Dash[Live dashboard]
 ```

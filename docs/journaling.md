@@ -78,50 +78,96 @@ working until you opt in. The key applies to journaled header and query paramete
 `gateway.auth.basic.user` attribute and the management endpoint's summaries still use the
 unkeyed form.
 
-## 2. Pick a sidecar and mount the shared volume
+## 2. Mount the shared volume
 
 Gateway and tailer share the `journal_dir` volume: the gateway writes, the tailer only reads.
 
-!!! warning "Mount `journal_dir` read-only on every tailer"
-    `R7Tailer` never deletes a segment — it only reads. Deciding when a fully-read segment is
-    safe to remove is the reaper's job (`ghcr.io/ethlo/r7-reaper`, see
-    [§4 below](#4-retention-the-reaper)); it's the only container that needs write access to
-    `journal_dir`. Give each tailer its own `checkpoint_dir` (see the tables below) so running
-    JSON and WARC tailers side by side doesn't clash — neither can delete a segment out from
-    under the other, and the reaper does not read either checkpoint (it is a plain `ttl`, not
-    a "wait for every tailer" policy — see §4 for what that means for you).
+!!! warning "Mount `journal_dir` read-only on the tailer"
+    The tailer never deletes a segment; it only reads. Deciding when a fully read segment can
+    be removed is the reaper's job (`ghcr.io/ethlo/r7-reaper`, see
+    [§4 below](#4-retention-the-reaper)), and the reaper is the only container that needs write
+    access to `journal_dir`. The tailer keeps its progress in its own `checkpoint_dir`, which
+    the reaper reads to learn which segments the tailer is done with.
 
 ---
 
-## 3. Tailer images
+## 3. The tailer
 
-### JSON Tailer (Universal)
+**Image:** `ghcr.io/ethlo/r7-tailer:latest`
 
-**Image:** `ghcr.io/ethlo/r7-tailer-json:latest`
+The tailer reads the journals once and writes each exchange to one or both of two outputs:
 
-This tailer converts the binary journal entries into verbose JSON and streams them to standard output (`stdout`) by default. This is the recommended approach if you use generic log forwarders like **Promtail (for Grafana Loki)**, **Fluent Bit**, or **Vector**.
+- **WARC files**: [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
+  records, the standard web-archiving format used by the Internet Archive and national
+  libraries, in rotating `.warc.zst` files (one independent Zstandard frame per record, so
+  `zstd -d` alone decompresses a file back to plain WARC). This is the archive: durable,
+  replayable and readable by any WARC tool, such as [pywb](https://github.com/webrecorder/pywb),
+  for compliance archiving, incident forensics or replaying traffic against a new backend.
+- **JSON lines**: one JSON object per exchange, to standard output for Promtail (Grafana Loki),
+  Fluent Bit, Vector or a Docker logging driver, or to rotating files. This is the log.
 
-**Configuration:** like the gateway, this tailer reads a YAML file — `jsonld-tailer.yaml` in
-the working directory by default (`/app/config` in the image), overridable via the `JSONLD_TAILER_CONFIG` env var — with the same `${VAR:default}`
-interpolation support as `routes.yaml`/`server.yaml`. If the file is missing, all fields fall back
-to their defaults below (so a bare container with no config volume still starts and tails
-`/journals` to stdout).
+With both on, a body is stored once, in the WARC file: the JSON line carries a `warc` pointer to
+the exchange's records instead of the bodies. An exchange the WARC output does not hold (an
+incomplete one, or one without a body under `exchanges: with_body`) keeps its bodies in the
+JSON line.
 
-| Field           | Default     | Meaning                                                                 |
-|------------------|-------------|--------------------------------------------------------------------------|
-| `journal_dir`     | `/journals` | Directory the tailer reads binary journals from                          |
-| `checkpoint_dir`  | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside `journal_dir`, so `journal_dir` can be mounted `:ro` on a secondary tailer. Give each tailer its own to run more than one against the same `journal_dir` |
-| `output_path`     | `-`         | Where JSON lines are written; `-` (or `stdout`) means standard output, any other value is a file path (appended to, parent directories created if missing) |
-| `output_dir`      | unset       | Write to rotating files in this directory instead of `output_path` (set one or the other). Each file is written as `<file_prefix>-<millis>-<uuid>.jsonl.open` and renamed to `.jsonl` once finished, so a shipper that picks up `*.jsonl` never reads one still being written. A file left `.open` by a crash is sealed on the next start, minus a torn last line, whose record is written again |
-| `file_prefix`     | `r7`        | Filename prefix for rotating files                                       |
-| `max_file_size`   | `256mb`     | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
-| `max_file_age`    | `15m`       | Roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
-| `poll_interval`   | `1s`        | The longest the tailer waits between reads. It wakes as soon as the gateway commits an entry (the gateway bumps a counter in `shard-<id>.ctl` beside the segments), so on the same host an exchange is read within microseconds to about a millisecond; this interval only matters where that file is not shared, such as across hosts. Supports `ms`, `s`, `m`, `h`, `d` |
-| `pretty_print`    | `false`     | Pretty-print the JSON output. Not with `output_dir`: a record over several lines cannot be cut back cleanly after a crash |
-| `hide_empty_fields` | `true`    | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out explicitly. Set to `false` to always emit every field with the same schema on every line, e.g. for consumers that require a fixed columnar schema |
+If writing the JSON line fails, the exchange's WARC records are taken back before the tailer
+retries it, so a retry never archives an exchange twice.
+
+**Configuration:** like the gateway, the tailer reads a YAML file: `tailer.yaml` in the working
+directory by default (`/app/config` in the image), or the path in the `TAILER_CONFIG`
+environment variable. It supports the same `${VAR:default}` interpolation as
+`routes.yaml`/`server.yaml`. Without a file, every field takes its default, so a bare container
+tails `/journals` to standard output as JSON.
+
+| Field            | Default        | Meaning |
+|------------------|----------------|---------|
+| `journal_dir`    | `/journals`    | Directory the tailer reads binary journals from |
+| `checkpoint_dir` | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a volume of its own, outside `journal_dir` (mounted `:ro`) and the outputs, since the reaper reads it and has no business in the archive |
+| `poll_interval`  | `1s`           | The longest the tailer waits between reads. It wakes as soon as the gateway commits an entry (the gateway bumps a counter in `shard-<id>.ctl` beside the segments), so on the same host an exchange is read within microseconds to about a millisecond; this interval only matters where that file is not shared, such as across hosts. Supports `ms`, `s`, `m`, `h`, `d` |
+| `warc`           |                | The WARC output; see below |
+| `json`           |                | The JSON output; see below |
+
+At least one output must be enabled.
+
+**`warc`**
+
+| Field                 | Default  | Meaning |
+|-----------------------|----------|---------|
+| `enabled`             | `false`  | Write WARC files |
+| `exchanges`           | `all`    | `all` archives every exchange, so the WARC files are the complete record and every JSON line points into them. `with_body` archives only exchanges with a captured request or response body: the WARC files store the bodies, and the JSON lines are the full log |
+| `output_dir`          | `/warc`  | Directory the files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete exchange and sealed on the next start |
+| `file_prefix`         | `r7`     | Filename prefix |
+| `max_file_size`       | `1gb`    | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
+| `max_file_age`        | `15m`    | Roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
+| `zstd_level`          | `9`      | Zstandard compression level (1-22), applied per record |
+| `dedup_cache_entries` | `100000` | How many payload digests are remembered for deduplicating identical payloads across exchanges |
+| `cdxj_index`          | `false`  | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each file; see below |
+
+Each exchange becomes up to four linked records (client request, upstream request, upstream
+response, client response); a payload already archived by an earlier exchange is written as a
+WARC `revisit` record; and a checksum mismatch on read is marked rather than silently archived.
+See [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the record
+shapes and why.
+
+**CDXJ index.** With `cdxj_index: true`, every sealed `r7-….warc.zst` gets an `r7-….cdxj` beside it: one line per exchange, sorted by SURT key and timestamp, holding the URL, status, mime type, payload digest and the file name, offset and length of the client response record. This is the index format pywb and OutbackCDX read, so a lookup by URL and time goes straight to the record without scanning the archive. The index is built from the finished WARC file and renamed into place before the WARC file is, so a sealed `.warc.zst` always has its index; one sealed after a crash is indexed on the next start. Requests other than `GET` carry `__wb_method=<method>` in their key, as pywb does; request bodies are never copied into the index.
+
+**`json`**
+
+| Field               | Default  | Meaning |
+|---------------------|----------|---------|
+| `enabled`           | `true`   | Write JSON lines |
+| `output`            | `stdout` | `stdout`, or `file` for rotating files. Each file is written as `<file_prefix>-<millis>-<uuid>.jsonl.open` and renamed to `.jsonl` once finished, so a shipper that picks up `*.jsonl` never reads one still being written. A file left `.open` by a crash is sealed on the next start, minus a torn last line, whose record is written again |
+| `output_dir`        | `/json`  | With `output: file`: directory the files are written to |
+| `file_prefix`       | `r7`     | With `output: file`: filename prefix |
+| `max_file_size`     | `256mb`  | With `output: file`: roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
+| `max_file_age`      | `15m`    | With `output: file`: roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
+| `pretty_print`      | `false`  | Pretty-print each object. Not with `output: file`: a record over several lines cannot be cut back cleanly after a crash |
+| `hide_empty_fields` | `true`   | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out. Set to `false` to emit every field on every line, e.g. for consumers that require a fixed columnar schema |
 
 **Record format.** One JSON object per line, one object per leg of the exchange. A proxied
-`GET` with headers journaled looks like this (pretty-printed here; empty fields omitted):
+`GET` with headers journaled, archived in a WARC file, looks like this (pretty-printed here;
+empty fields omitted):
 
 ```json
 {
@@ -147,24 +193,45 @@ to their defaults below (so a bare container with no config volume still starts 
   "client_response": {
     "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
     "headers": {"content-type": "application/json"}, "header_bytes": 98, "body_bytes": 1274
-  }
+  },
+  "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 48211, "length": 1873}
 }
 ```
 
-The `upstream_*` objects are present only when the request was proxied. At `FULL`, a leg with a
-body adds `body` (base64) and `checksum` (the CRC32C the gateway recorded); `observed_checksum`
-appears beside it only when the body read back does not match. A record that is not a complete
-exchange carries `incomplete` with the reason; without an end event (`TIMED_OUT`, `SHUTDOWN`,
-`CAPACITY_EVICTED`) timing, status and sizes are unknown and left out. Attributes the gateway
-recorded are under `attributes`. A header with one value is a string, one sent more than once
-an array of its values.
+The `upstream_*` objects are present only when the request was proxied. Headers are written in
+full on every line. At `FULL`, a leg has `checksum` (the CRC32C the gateway recorded), and
+`observed_checksum` beside it only when the body read back does not match. When no WARC file
+holds the exchange, a leg with a body also has `body` (base64). `warc` gives the sealed file's
+name, the byte offset of the exchange's first record and the compressed length of all of them:
+read `length` bytes at `offset` and decompress them with `zstd -d` to get that exchange's
+records. A record that is not a complete exchange carries `incomplete` with the reason; without
+an end event (`TIMED_OUT`, `SHUTDOWN`, `CAPACITY_EVICTED`) timing, status and sizes are unknown
+and left out. Attributes the gateway recorded are under `attributes`. A header with one value is
+a string, one sent more than once an array of its values.
 
-**Example `config/jsonld-tailer.yaml`:**
+**Example `config/tailer.yaml`:** a WARC archive with its index, and JSON lines on standard output.
 
-```yaml title="jsonld-tailer.yaml"
+```yaml title="tailer.yaml"
 journal_dir: /journals
 checkpoint_dir: /checkpoints
-output_path: "-"
+warc:
+  enabled: true
+  output_dir: /warc
+  cdxj_index: true
+json:
+  output: stdout
+```
+
+Bodies archived, everything logged, JSON to files for a loader:
+
+```yaml title="tailer.yaml"
+warc:
+  enabled: true
+  exchanges: with_body
+json:
+  output: file
+  output_dir: /json
+  max_file_age: 5m
 ```
 
 **Example Docker Compose Integration:**
@@ -177,76 +244,19 @@ services:
       - ./config:/app/config:ro
       - r7-journals:/journals:rw # Mount the shared volume
 
-  r7-tailer-json:
-    image: ghcr.io/ethlo/r7-tailer-json:latest
+  r7-tailer:
+    image: ghcr.io/ethlo/r7-tailer:latest
     volumes:
-      - ./config/jsonld-tailer.yaml:/app/config/jsonld-tailer.yaml:ro
-      - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
-      - r7-json-checkpoints:/checkpoints:rw # .r7_checkpoints lives here by default
-    # The output of this container goes to Docker's stdout, 
-    # ready to be scraped by your infrastructure's logging driver.
-
-volumes:
-  r7-journals:
-  r7-json-checkpoints:
-
-```
-
-### WARC/zstd Tailer (Archival)
-
-**Image:** `ghcr.io/ethlo/r7-tailer-warc:latest`
-
-This tailer writes completed exchanges as [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/) records — the standard web-archiving format used by the Internet Archive and national libraries — to rotating `.warc.zst` files (one independent Zstandard frame per record, so `zstd -d` alone decompresses a file back to plain WARC). Use this when you need a durable, replayable, tool-interoperable record of actual traffic (compliance archiving, incident forensics, replaying traffic against a new backend), rather than a queryable log stream — feed the output to [pywb](https://github.com/webrecorder/pywb) or any WARC-aware tool.
-
-Each exchange becomes up to four linked records (client request, upstream request, upstream response, client response); duplicate payloads across exchanges are deduplicated as WARC `revisit` records; and a checksum mismatch on read is marked rather than silently archived. See [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the full record-shape and dedup rationale.
-
-**Configuration:** same YAML config mechanism as the JSON tailer above — `warc-tailer.yaml`
-by default, overridable via the `WARC_TAILER_CONFIG` env var.
-
-| Field                      | Default     | Meaning                                                                    |
-|----------------------------|-------------|-----------------------------------------------------------------------------|
-| `journal_dir`               | `/journals` | Directory the tailer reads binary journals from                             |
-| `checkpoint_dir`            | `/checkpoints` | Directory `.r7_checkpoints` is read from and written to; a dedicated volume, outside both `journal_dir` (mounted `:ro`) and `output_dir` (a reaper reads this directory and has no business in the archive). Give each tailer its own to run more than one against the same `journal_dir` |
-| `output_dir`                | `/warc`     | Directory rotated `.warc.zst` files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete exchange and sealed on the next start |
-| `file_prefix`               | `r7`        | Filename prefix for rotated WARC files                                      |
-| `max_file_size`             | `1gb`       | Rotate to a new file once the current one reaches this size (at least `64kb`; a size that couldn't hold a single record is refused at startup). Supports `b`, `kb`, `mb`, `gb` |
-| `max_file_age`              | `15m`       | Rotate to a new file once the current one is this old, even under light/no traffic (size-or-age rollover). Supports `ms`, `s`, `m`, `h`, `d` |
-| `zstd_level`                | `9`         | Zstandard compression level (1-22), applied per WARC record                 |
-| `dedup_cache_entries`       | `100000`    | Max number of payload digests remembered for cross-exchange revisit dedup   |
-| `poll_interval`             | `1s`        | The longest the tailer waits between reads; it wakes as soon as the gateway commits, as for the JSON tailer. Supports `ms`, `s`, `m`, `h`, `d` |
-| `cdxj_index`                | `false`     | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each WARC file; see below |
-
-**CDXJ index.** With `cdxj_index: true`, every sealed `r7-….warc.zst` gets an `r7-….cdxj` beside it: one line per exchange, sorted by SURT key and timestamp, holding the URL, status, mime type, payload digest and the file name, offset and length of the client response record. This is the index format pywb and OutbackCDX read, so a lookup by URL and time goes straight to the record without scanning the archive. The index is built from the finished WARC file and renamed into place before the WARC file is, so a sealed `.warc.zst` always has its index; one sealed after a crash is indexed on the next start. Requests other than `GET` carry `__wb_method=<method>` in their key, as pywb does; request bodies are never copied into the index.
-
-**Example `config/warc-tailer.yaml`:**
-
-```yaml title="warc-tailer.yaml"
-journal_dir: /journals
-output_dir: /warc
-cdxj_index: true
-```
-
-**Example Docker Compose Integration:**
-
-```yaml title="docker-compose.yaml"
-services:
-  r7-api:
-    image: ghcr.io/ethlo/r7-gateway:latest
-    volumes:
-      - r7-journals:/journals:rw
-
-  r7-tailer-warc:
-    image: ghcr.io/ethlo/r7-tailer-warc:latest
-    volumes:
-      - ./config/warc-tailer.yaml:/app/config/warc-tailer.yaml:ro
-      - r7-journals:/journals:ro # this tailer only ever reads; retention is a separate reaper's job
+      - ./config/tailer.yaml:/app/config/tailer.yaml:ro
+      - r7-journals:/journals:ro # the tailer only ever reads; retention is the reaper's job
       - r7-warc:/warc:rw
-      - r7-warc-checkpoints:/checkpoints:rw
+      - r7-tailer-checkpoints:/checkpoints:rw
+    # JSON lines go to the container's stdout, ready for your logging driver.
 
 volumes:
   r7-journals:
   r7-warc:
-  r7-warc-checkpoints:
+  r7-tailer-checkpoints:
 
 ```
 
@@ -254,7 +264,7 @@ volumes:
 
 **Image:** `ghcr.io/ethlo/r7-reaper:latest`
 
-Every tailer above is read-only by design (see §2's warning) — something else has to delete a
+The tailer is read-only by design (see §2's warning) — something else has to delete a
 sealed segment once it is no longer needed, or `journal_dir` grows without bound. That something
 is the reaper: a small standalone process whose only job is deleting old segments from a shared
 journal volume.
@@ -294,10 +304,9 @@ overridable via the `REAPER_CONFIG` env var.
 ```yaml title="reaper.yaml"
 journal_dir: /journals
 ttl: 7d
-# Delete as soon as both tailers are done with a segment (and it is an hour old), not after 7 days
+# Delete as soon as the tailer is done with a segment (and it is an hour old), not after 7 days
 tailers:
-  - /checkpoints/json
-  - /checkpoints/warc
+  - /checkpoints/tailer
 ```
 
 **Who may write what.** Each component writes only what it owns and reads the rest, and the
@@ -322,39 +331,32 @@ services:
     volumes:
       - r7-journals:/journals:rw
 
-  r7-tailer-json:
-    image: ghcr.io/ethlo/r7-tailer-json:latest
+  r7-tailer:
+    image: ghcr.io/ethlo/r7-tailer:latest
     volumes:
-      - r7-journals:/journals:ro             # reads only; retention is the reaper's job
-      - r7-json-checkpoints:/checkpoints:rw  # its own progress
-
-  r7-tailer-warc:
-    image: ghcr.io/ethlo/r7-tailer-warc:latest
-    volumes:
-      - r7-journals:/journals:ro
+      - ./config/tailer.yaml:/app/config/tailer.yaml:ro
+      - r7-journals:/journals:ro                # reads only; retention is the reaper's job
       - r7-warc:/warc:rw
-      - r7-warc-checkpoints:/checkpoints:rw
+      - r7-tailer-checkpoints:/checkpoints:rw   # its own progress
 
   r7-reaper:
     image: ghcr.io/ethlo/r7-reaper:latest
     volumes:
       - ./config/reaper.yaml:/app/config/reaper.yaml:ro
-      - r7-journals:/journals:rw                     # the only container that deletes from it
-      - r7-json-checkpoints:/checkpoints/json:ro    # read to learn what each tailer is done with;
-      - r7-warc-checkpoints:/checkpoints/warc:ro    # never the tailers' output
+      - r7-journals:/journals:rw                         # the only container that deletes from it
+      - r7-tailer-checkpoints:/checkpoints/tailer:ro    # read to learn what the tailer is done with; never its output
 
 volumes:
   r7-journals:
-  r7-json-checkpoints:
   r7-warc:
-  r7-warc-checkpoints:
+  r7-tailer-checkpoints:
 
 ```
 
 ## 5. Visualizing your data
 
-Once your data is routed through a tailer:
+Once your data is routed through the tailer:
 
-* **If using the JSON Tailer with Promtail/Loki:** You can use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics dynamically from the JSON fields (like `duration`, `client_response.status` — `client_response_status` after LogQL's `json` parser — or specific headers).
-* **If using the WARC Tailer:** WARC files are for archival/replay, not dashboards — feed them to a WARC-aware tool (e.g. [pywb](https://github.com/webrecorder/pywb)) to replay captured traffic, or to an indexer for forensic search.
-* **Into ClickHouse:** r7 ships no ClickHouse tailer. Point the JSON Tailer's `output_path` at a file and batch-insert its lines with a loader of your own (they are one JSON object per line, which ClickHouse reads as `JSONEachRow`), then query them from Grafana with the ClickHouse plugin.
+* **JSON lines with Promtail/Loki:** use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics from the JSON fields (like `duration`, `client_response.status` — `client_response_status` after LogQL's `json` parser — or specific headers).
+* **WARC files:** these are for archival and replay, not dashboards. Feed them to a WARC-aware tool (e.g. [pywb](https://github.com/webrecorder/pywb)) to replay captured traffic, or look an exchange up by URL and time in the CDXJ index.
+* **Into ClickHouse:** r7 ships no ClickHouse output. Set `json.output: file` and batch-insert the sealed `.jsonl` files with a loader of your own (one JSON object per line, which ClickHouse reads as `JSONEachRow`), then query them from Grafana with the ClickHouse plugin. The `warc` pointer in each row leads from a query result to the archived exchange.

@@ -1,6 +1,7 @@
 package com.ethlo.r7.warc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -55,6 +56,54 @@ class WarcFileWriterTest
         final String warc = decompress(sealed);
         assertThat(warc).contains("WARC-Type: warcinfo").contains("first").contains("second");
         assertThat(warc.split("WARC/1.1\r\n", -1)).as("warcinfo and the two records").hasSize(4);
+    }
+
+    /**
+     * A combined tailer takes an exchange's records back when its JSON line fails, and the
+     * exchange is offered again: the retry continues the file and its sequence as if the
+     * discarded write had never happened.
+     */
+    @Test
+    void aDiscardedWriteIsTakenBackAndItsSequenceReused() throws IOException
+    {
+        try (WarcFileWriter writer = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3))
+        {
+            writer.writeRecords(group("first"));
+            final WarcFileWriter.Location second = writer.writeRecords(group("second"));
+            writer.discard(second);
+            assertThatThrownBy(() -> writer.discard(second)).as("only once").isInstanceOf(IllegalStateException.class);
+
+            final WarcFileWriter.Location retry = writer.writeRecords(group("retry"));
+            assertThat(retry.offset()).isEqualTo(second.offset());
+            assertThat(retry.file()).isEqualTo(second.file());
+        }
+
+        final String warc = decompress(only(".warc.zst"));
+        assertThat(warc).contains("first").contains("retry").doesNotContain("second");
+        assertThat(warc).as("warcinfo 0, first 1-3, retry 4-6").contains("WARC-X-R7-Sequence: 6").doesNotContain("WARC-X-R7-Sequence: 7");
+    }
+
+    /**
+     * The location a write returns is where its records are: a reader seeks to the offset and
+     * decompresses that many bytes.
+     */
+    @Test
+    void aWritesLocationHoldsExactlyItsRecords() throws IOException
+    {
+        final WarcFileWriter.Location location;
+        try (WarcFileWriter writer = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3))
+        {
+            writer.writeRecords(group("first"));
+            location = writer.writeRecords(group("second"));
+        }
+
+        final Path sealed = only(".warc.zst");
+        assertThat(location.file()).isEqualTo(sealed.getFileName().toString());
+        final byte[] file = Files.readAllBytes(sealed);
+        assertThat(location.offset() + location.length()).isEqualTo(file.length);
+        final byte[] slice = Arrays.copyOfRange(file, Math.toIntExact(location.offset()), file.length);
+        final String records = new String(new ZstdInputStream(new ByteArrayInputStream(slice)).readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(records).contains("second").doesNotContain("first").startsWith("WARC/1.1");
     }
 
     @Test

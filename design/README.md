@@ -24,7 +24,7 @@ normative file format is [`r7-journal-mmap/FORMAT.md`](../r7-journal-mmap/FORMAT
 | [`upstream.md`](upstream.md) | The upstream client every server uses, and the rules it keeps |
 | [`journal-invariants.md`](journal-invariants.md) | The journal's four invariants and the tests that enforce each |
 | [`warc.md`](warc.md) | The WARC sidecar: why WARC, the record shape, and what it must carry over |
-| [`tailers.md`](tailers.md) | What every tailer shares, and what only file-writing tailers share |
+| [`tailers.md`](tailers.md) | The tailer's two outputs, and what every tailer and every file-writing tailer shares |
 | [`asvs-l2.md`](asvs-l2.md) | OWASP ASVS 5.0 Level 2 self-assessment |
 | [`native-image.md`](native-image.md) | Decision: no native image |
 
@@ -41,6 +41,7 @@ See [`plans/README.md`](plans/README.md).
 | [`history/journal-format-v2.md`](history/journal-format-v2.md) | Why r7f moved to block framing, and what it gave up |
 | [`history/journal-write-contention.md`](history/journal-write-contention.md) | The journal lock investigation: fault-ahead, `shard_count`, `pre_fault` |
 | [`history/live-tailing.md`](history/live-tailing.md) | Microsecond tailing: the control file and the tailer's wait |
+| [`history/tailer-plugins.md`](history/tailer-plugins.md) | The one-reader, several-outputs proposal behind `r7-tailer` |
 
 ## Writing a design document
 

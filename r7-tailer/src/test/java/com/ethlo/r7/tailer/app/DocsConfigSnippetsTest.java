@@ -1,4 +1,4 @@
-package com.ethlo.r7.tailer.jsonld;
+package com.ethlo.r7.tailer.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,7 +14,7 @@ import com.ethlo.r7.docs.DocSnippets;
 import com.ethlo.r7.tailer.TailerRunner;
 
 /**
- * Every jsonld-tailer.yaml snippet in the docs loads and validates the way the JSON tailer loads it at startup.
+ * Every tailer.yaml snippet in the docs loads and validates the way the tailer loads it at startup.
  */
 class DocsConfigSnippetsTest
 {
@@ -23,7 +23,7 @@ class DocsConfigSnippetsTest
 
     static List<DocSnippet> snippets()
     {
-        return DocSnippets.of(DocSnippets.JSONLD_TAILER);
+        return DocSnippets.of(DocSnippets.TAILER);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -32,7 +32,7 @@ class DocsConfigSnippetsTest
     {
         try
         {
-            assertThat(TailerRunner.loadConfig(snippet.writeTo(this.dir, DocSnippets.JSONLD_TAILER), JsonldTailerConfig.class, JsonldTailerConfig::standard)).isNotNull();
+            assertThat(TailerRunner.loadConfig(snippet.writeTo(this.dir, DocSnippets.TAILER), TailerAppConfig.class, TailerAppConfig::standard)).isNotNull();
         }
         catch (final RuntimeException e)
         {

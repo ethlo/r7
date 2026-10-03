@@ -1,6 +1,12 @@
 # Sidecar plugins: one reader, N handlers
 
-> **Plan, not built and not scheduled.** On 2026-10-02 the product focus was set to the audit journal, clean configuration and fixed, predictable routing, with no scripting. That rules out the field-path and pattern language below (the Pebble-style `|first`, `|nth` and `|count` filters, and the projection language). Whatever is built from this should use fixed output formats. See [`README.md`](README.md).
+> **History.** Built on 2026-10-03 in a fixed form: one tailer (`r7-tailer`) with two outputs,
+> WARC files and JSON lines; see [`../tailers.md`](../tailers.md), "One tailer, two outputs".
+> The access log, the field-path and pattern language (the Pebble-style `|first`, `|nth` and
+> `|count` filters) and field projection were not built: the 2026-10-02 product focus (audit
+> journal, clean configuration, fixed routing, no scripting) rules them out. `warc.mode` became
+> `warc.enabled` plus `exchanges: all | with_body`, without a `has_body` field. Read this for the
+> why, not as a description of the code.
 
 Design under discussion, not yet built. Follows on from `warc.md`; this is the piece that
 generalizes what that document decided for WARC+ClickHouse specifically.

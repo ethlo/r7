@@ -87,6 +87,42 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     @Override
     public void onComplete(final JournalExchange exchange)
     {
+        final Written written = write(exchange);
+        if (written != null)
+        {
+            written.commit();
+        }
+    }
+
+    /**
+     * An exchange's records, on disk but not yet final: {@link #commit()} makes them so, and
+     * {@link #discard(Written)} takes them back. A caller that writes the exchange somewhere
+     * else as well commits only once that has succeeded too.
+     *
+     * @param location where the records are
+     */
+    public record Written(WarcFileWriter.Location location, List<Runnable> dedupRemembers)
+    {
+        /**
+         * Lets later exchanges refer to this one's payloads. Not before: a revisit record must
+         * never point at a record that was taken back.
+         */
+        public void commit()
+        {
+            for (final Runnable remember : dedupRemembers)
+            {
+                remember.run();
+            }
+        }
+    }
+
+    /**
+     * Writes the exchange's records without committing them; see {@link Written}.
+     *
+     * @return what was written, or {@code null} when nothing was journaled for the exchange
+     */
+    public Written write(final JournalExchange exchange)
+    {
         try
         {
             final Set<BodyKind> mismatched = checksumMismatches.remove(exchange.getRequestId());
@@ -96,12 +132,30 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             final String requestDigest = requestMismatch ? null : PayloadDigest.of(exchange.getRequestBodyFragments());
             final String responseDigest = responseMismatch ? null : PayloadDigest.of(exchange.getResponseBodyFragments());
 
-            writeExchangeGroup(exchange, requestDigest, responseDigest, requestMismatch, responseMismatch);
+            return writeExchangeGroup(exchange, requestDigest, responseDigest, requestMismatch, responseMismatch);
         }
         catch (final IOException e)
         {
             throw new UncheckedIOException("Failed to write WARC records for exchange " + exchange.getRequestId(), e);
         }
+    }
+
+    /**
+     * Forgets an exchange that will not be written, so what was noted about it while it was read
+     * (a checksum mismatch) does not stay behind.
+     */
+    public void skip(final JournalExchange exchange)
+    {
+        checksumMismatches.remove(exchange.getRequestId());
+    }
+
+    /**
+     * Takes back what {@link #write} wrote, when the exchange could not be completed elsewhere:
+     * it is offered again, and would otherwise be archived twice.
+     */
+    public void discard(final Written written)
+    {
+        fileWriter.discard(written.location());
     }
 
     @Override
@@ -126,8 +180,8 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     {
     }
 
-    private void writeExchangeGroup(final JournalExchange exchange, final String requestDigest, final String responseDigest,
-                                     final boolean requestMismatch, final boolean responseMismatch) throws IOException
+    private Written writeExchangeGroup(final JournalExchange exchange, final String requestDigest, final String responseDigest,
+                                        final boolean requestMismatch, final boolean responseMismatch) throws IOException
     {
         final String requestId = exchange.getRequestId();
 
@@ -171,7 +225,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         if (legs.isEmpty())
         {
             // Nothing was journaled for this exchange at all (JournalLevel.NONE) - no record to write.
-            return;
+            return null;
         }
 
         final String[] recordIds = new String[legs.size()];
@@ -185,7 +239,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         // thrown exception from ever leaving a partial group on disk (R7Tailer retries the
         // whole exchange on failure - see WarcFileWriter#writeRecords), and it is also what
         // keeps a dedup lookup for a later leg in this same group from ever matching a payload
-        // this same group already wrote: remembers only happen after every leg has been decided.
+        // this same group already wrote: remembers only happen on commit, after the write.
         final List<WarcFileWriter.PendingRecord> pending = new ArrayList<>(legs.size());
         final List<Runnable> dedupRemembers = new ArrayList<>(2);
         for (int i = 0; i < legs.size(); i++)
@@ -201,12 +255,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             pending.add(prepareRecord(legs.get(i), recordIds[i], concurrentToIds, targetUris.get(i), requestId, dedupRemembers));
         }
 
-        fileWriter.writeRecords(pending);
-
-        for (final Runnable remember : dedupRemembers)
-        {
-            remember.run();
-        }
+        return new Written(fileWriter.writeRecords(pending), dedupRemembers);
     }
 
     private static boolean addIfJournaled(final List<Leg> legs, final String msgType, final String startLine, final GatewayHeaders headers,

@@ -61,6 +61,26 @@ class SealedFileWriterTest
     }
 
     /**
+     * A caller whose unit of work spans more than this file takes an append back when a later
+     * step fails; the retry lands where it began.
+     */
+    @Test
+    void aDiscardedAppendIsTakenBack() throws IOException
+    {
+        try (SealedFileWriter files = new SealedFileWriter(dir, "r7", MIN, HOUR, new Lines()))
+        {
+            files.append(bytes("one\n"));
+            final long two = files.append(bytes("two\n"));
+            files.discardFrom(two);
+            assertThat(files.size()).isEqualTo(two);
+            assertThat(files.append(bytes("three\n"))).isEqualTo(two);
+            assertThatThrownBy(() -> files.discardFrom(files.size() + 1)).isInstanceOf(IllegalStateException.class);
+        }
+
+        assertThat(Files.readString(only(".lines"))).isEqualTo("one\nthree\n");
+    }
+
+    /**
      * A header write that fails, and cannot even be cut back, reports the write's own failure
      * and leaves no file behind; the next append opens a fresh one.
      */

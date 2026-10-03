@@ -5,7 +5,7 @@ import java.time.Duration;
 /**
  * The settings every tailer has, whatever it writes to: where the journals are, where its
  * progress is kept, and how long it waits between reads. A tailer's config record implements
- * this next to its own output settings; the YAML keys stay flat ({@code journal_dir},
+ * this next to its output settings; these keys sit at the top level ({@code journal_dir},
  * {@code checkpoint_dir}, {@code poll_interval}).
  * <p>
  * Output settings are deliberately not here. A tailer that ships straight to a network endpoint

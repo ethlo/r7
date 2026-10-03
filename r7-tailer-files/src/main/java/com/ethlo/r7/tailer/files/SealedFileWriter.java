@@ -181,6 +181,40 @@ public final class SealedFileWriter implements AutoCloseable
     }
 
     /**
+     * Takes back everything appended to the current file from {@code start} on: the place for a
+     * caller whose unit of work spans more than this file, when a later step of that unit fails
+     * after this append succeeded. Without it the retry would write the same records a second
+     * time. {@code start} is an offset {@link #append} returned for the file still current.
+     * <p>
+     * If the cut-back itself fails, the file is closed and left under its {@code .open} name,
+     * as after a failed append; recovery on the next start keeps its complete records.
+     */
+    public synchronized void discardFrom(final long start)
+    {
+        if (channel == null || start < headerSize || start > size)
+        {
+            throw new IllegalStateException("Nothing appended at " + start + " in the current file (" + fileName + ", " + size + " bytes)");
+        }
+        cutBack(start);
+    }
+
+    /**
+     * The name the current file will have once sealed, or {@code null} when no file is open.
+     */
+    public synchronized String fileName()
+    {
+        return channel != null ? fileName : null;
+    }
+
+    /**
+     * The current file's length, or {@code 0} when no file is open.
+     */
+    public synchronized long size()
+    {
+        return channel != null ? size : 0;
+    }
+
+    /**
      * Seals the current file if it has reached the size limit.
      */
     public synchronized void rollIfFull() throws IOException
