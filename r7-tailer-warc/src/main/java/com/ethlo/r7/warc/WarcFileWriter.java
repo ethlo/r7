@@ -243,6 +243,20 @@ public final class WarcFileWriter implements AutoCloseable
         return end;
     }
 
+    /**
+     * The size of the file's first complete frame, or 0 if it has none.
+     */
+    private static long firstFrameSize(final FileChannel file) throws IOException
+    {
+        if (file.size() == 0)
+        {
+            return 0;
+        }
+        final MappedByteBuffer window = file.map(FileChannel.MapMode.READ_ONLY, 0, Math.min(file.size(), Integer.MAX_VALUE));
+        final long frame = Zstd.findFrameCompressedSize(window);
+        return Zstd.isError(frame) || frame <= 0 ? 0 : frame;
+    }
+
     private static byte[] warcinfoBlock()
     {
         final String body = "software: ethlo-r7-tailer-warc\r\n"
@@ -316,12 +330,14 @@ public final class WarcFileWriter implements AutoCloseable
         /**
          * A complete record is a complete Zstandard frame. An exchange group is a single write,
          * so a killed process leaves whole groups; only a torn trailing frame is dropped, and
-         * its exchange, never checkpointed, is written again.
+         * its exchange, never checkpointed, is written again. A file whose only complete frame
+         * is its {@code warcinfo} record holds no exchange, and counts as empty.
          */
         @Override
         public long endOfLastCompleteRecord(final FileChannel file) throws IOException
         {
-            return endOfLastCompleteFrame(file);
+            final long end = endOfLastCompleteFrame(file);
+            return end == firstFrameSize(file) ? 0 : end;
         }
 
         @Override

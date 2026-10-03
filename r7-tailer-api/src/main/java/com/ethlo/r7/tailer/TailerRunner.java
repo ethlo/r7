@@ -101,7 +101,6 @@ public final class TailerRunner
             try
             {
                 tailer.runTick();
-                output.afterTick();
             }
             catch (final IOException | RuntimeException e)
             {
@@ -110,6 +109,16 @@ public final class TailerRunner
                 // Catching only IOException would let that failure end the process instead of
                 // reaching the retry it was designed for.
                 logger.error("Error while tailing journals in {}", journalDir, e);
+            }
+            try
+            {
+                // Runs even when the read failed: an exchange that keeps failing must not keep
+                // the records written before it from being sealed on time.
+                output.afterTick();
+            }
+            catch (final IOException | RuntimeException e)
+            {
+                logger.error("Error in the tailer output after reading {}", journalDir, e);
             }
             // Returns as soon as the gateway commits something, or after poll_interval.
             tailer.awaitNewData(config.pollInterval());

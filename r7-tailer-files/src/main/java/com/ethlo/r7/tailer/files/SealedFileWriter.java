@@ -265,7 +265,7 @@ public final class SealedFileWriter implements AutoCloseable
         }
         catch (final IOException e)
         {
-            logger.warn("Failed to close {}", openPath, e);
+            logger.warn("Failed to close {}", fileName, e);
         }
         channel = null;
     }
@@ -290,11 +290,12 @@ public final class SealedFileWriter implements AutoCloseable
         }
         final Path sealed = directory.resolve(fileName);
         format.sealing(openPath, sealed);
-        channel.close();
-        channel = null;
+        // Renamed while still open, and closed only after: if the rename fails, the file is
+        // still the current one, and the next seal retries it rather than losing track of it.
         Files.move(openPath, sealed, StandardCopyOption.ATOMIC_MOVE);
-        logger.info("Sealed {}", sealed.getFileName());
         openPath = null;
+        closeQuietly();
+        logger.info("Sealed {}", sealed.getFileName());
     }
 
     private void sealLeftovers() throws IOException

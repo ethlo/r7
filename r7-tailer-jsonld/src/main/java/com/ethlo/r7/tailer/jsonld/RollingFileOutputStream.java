@@ -15,8 +15,8 @@ import com.ethlo.r7.tailer.files.SealedFileWriter;
  * The JSON writer flushes once per record, so what is written between two flushes is one
  * record: it is held here and appended as one unit on {@link #flush()}. A failed write is then
  * cut back to the end of the previous line instead of leaving half a line for the next record
- * to follow. Rolling, if due, happens after that append, so a record is never split across two
- * files.
+ * to follow. Rolling, if due, happens before that append, so a record is never split across two
+ * files and a failed roll never fails a record that was already written.
  * <p>
  * After a crash, a file left {@code .open} is cut back to its last complete line (a torn last
  * line belongs to a record the tailer had not checkpointed, and will write again) and sealed.
@@ -56,6 +56,9 @@ final class RollingFileOutputStream extends OutputStream
         }
         try
         {
+            // Roll before the append, never after it: a failure after the record is written
+            // would have the tailer offer the record again, and write it twice.
+            files.rollIfFull();
             files.append(record.asByteBuffer());
         }
         finally
@@ -63,14 +66,16 @@ final class RollingFileOutputStream extends OutputStream
             // Written or not, the record is done here: on failure the tailer offers it again.
             record.reset();
         }
-        files.rollIfFull();
     }
 
     /**
-     * Seals the current file if it is older than the age limit and holds anything.
+     * Seals the current file if it has reached the size limit, or is older than the age limit
+     * and holds anything. Called after every read, so a full file does not wait for the next
+     * record to be sealed.
      */
     synchronized void rollIfStale() throws IOException
     {
+        files.rollIfFull();
         files.rollIfStale();
     }
 

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.tailer.files.SealedFileWriter;
+import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdInputStream;
 
 class WarcFileWriterTest
@@ -63,6 +65,33 @@ class WarcFileWriterTest
         {
             assertThat(files.map(p -> p.getFileName().toString()))
                     .noneMatch(name -> name.startsWith("r7-1-abc"));
+        }
+    }
+
+    /**
+     * A crash between opening a file and writing its first exchange leaves only the warcinfo
+     * record: nothing worth sealing, so the next start removes it.
+     */
+    @Test
+    void aFileLeftOpenWithOnlyItsWarcinfoIsRemoved() throws IOException
+    {
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        crashed.writeRecord(WarcFields.newRecordId(), "resource",
+                List.of(Map.entry("Content-Type", "text/plain")), "first".getBytes(StandardCharsets.UTF_8));
+        // No close(): cut the file back to its warcinfo frame, as if the process died before the
+        // exchange was written.
+        final Path open = only(".warc.zst.open");
+        final long warcinfoEnd = Zstd.findFrameCompressedSize(Files.readAllBytes(open), 0);
+        try (FileChannel file = FileChannel.open(open, StandardOpenOption.WRITE))
+        {
+            file.truncate(warcinfoEnd);
+        }
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        try (Stream<Path> files = Files.list(dir))
+        {
+            assertThat(files).isEmpty();
         }
     }
 
