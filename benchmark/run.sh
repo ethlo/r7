@@ -374,13 +374,20 @@ stop_gateway() {
   fi
   if (( GW_COMPOSE )); then
     docker logs r7-bench-gateway >> "$OUT/gateway-$GW_LEVEL.log" 2>&1 || true
-    compose down --remove-orphans >/dev/null 2>&1 || true
+    # A gateway that survives here would be reused by the next `up`: the next run would
+    # measure the old JVM and configuration. So a failed stop ends the run.
+    if ! compose down --remove-orphans >/dev/null 2>&1; then
+      warn "could not stop the gateway container"
+      return 1
+    fi
     GW_COMPOSE=0
   fi
   for _ in {1..20}; do
-    ss -ltn 2>/dev/null | grep -q ":$GW_PORT " || break
+    ss -ltn 2>/dev/null | grep -q ":$GW_PORT " || return 0
     sleep 0.25
   done
+  warn "something still listens on :$GW_PORT after stopping the gateway"
+  return 1
 }
 
 journal_size() {

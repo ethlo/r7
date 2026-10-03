@@ -101,9 +101,27 @@ fi
 # reverse, so SMT comes back last, after the governors of the CPUs that stayed online.
 save() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "$STATE"; }
 
+# Whatever a killed run left behind: its pinned scopes and its containers. Stopped before the
+# host is restored, so nothing keeps measuring on an untuned host.
+stop_leftovers() {
+  local pid
+  pid="$(cat "$STATE_DIR/run.pid" 2>/dev/null || true)"
+  if [[ -n "$pid" ]] && grep -qs 'run.sh' "/proc/$pid/cmdline"; then
+    log "stopping the run.sh left by an interrupted run"
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in {1..60}; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  fi
+  rm -f "$STATE_DIR/run.pid"
+  if systemctl is-active --quiet "r7bench.slice" 2>/dev/null; then
+    systemctl stop r7bench.slice || warn "could not stop r7bench.slice"
+  fi
+  docker rm -f r7-bench-gateway r7-bench-backend >/dev/null 2>&1 || true
+}
+
 # A setting that fails to restore stays in the state file, so --restore can retry it.
 restore_host() {
   [[ -f "$STATE" ]] || return 0
+  stop_leftovers
   log "restoring host settings"
   local kind target value line restored=0
   local -a failed=()
@@ -127,6 +145,8 @@ restore_host() {
 }
 
 # One run or restore at a time: a second run would overwrite the first one's saved originals.
+# Only this script holds the lock (children get fd 9 closed), so a killed run frees it at once
+# and --restore stops what the run left behind.
 lock_host() {
   mkdir -p "$STATE_DIR"
   exec 9> "$STATE_DIR/lock"
@@ -309,7 +329,8 @@ fi
 # Nothing inherited may change what is measured: r7 prefers these over the generated config,
 # the JVM reads the option variables, and run.sh and the compose file read the R7_BENCH_
 # ones. A backend image override is allowed, and gated in the verdict.
-unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_ARGS JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS \
+unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_LOGBACK_CONFIG R7_ARGS \
+  JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS BENCH_BODY_BYTES \
   R7_BENCH_IMAGE R7_BENCH_MEM R7_BENCH_MEM_RESERVE R7_BENCH_JVM_OPTS
 lock_host
 [[ -f "$STATE" ]] && die "settings from an interrupted run are still saved; run --restore first"
@@ -400,13 +421,14 @@ QUICK_FLAG=""
 PINS=(--backend-cpus "$BACKEND_CPUS" --gateway-cpus "$GATEWAY_CPUS" --load-cpus "$LOAD_CPUS")
 if (( LOCAL )); then
   PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_FLAGS" \
-    "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" &
+    "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" 9>&- &
 else
   # The image's own entrypoint flags and AOT cache; JVM_OPTS only adds the collector choice.
   R7_BENCH_IMAGE="$IMAGE_REF" JVM_OPTS="$JVM_GC" \
-    "$HERE/run.sh" --mode docker --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" &
+    "$HERE/run.sh" --mode docker --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" 9>&- &
 fi
 RUN_PID=$!
+echo "$RUN_PID" > "$STATE_DIR/run.pid"
 trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' INT TERM
 wait "$RUN_PID"
 trap 'exit 130' INT TERM
