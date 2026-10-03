@@ -240,14 +240,14 @@ isolate() {
   for unit in $(awk '{print $1}' <<< "$slices"); do
     [[ "$unit" == "-.slice" || "$unit" == "r7bench.slice" || "$unit" == *-* ]] || units+=("$unit")
   done
-  local confined=" "
+  CONFINED=" "
   for unit in "${units[@]}"; do
     [[ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" == "active" ]] || continue
     old="$(systemctl show -p AllowedCPUs --value "$unit")"
     save cpuset "$unit" "$old"
     systemctl set-property --runtime "$unit" "AllowedCPUs=$os_cpus" \
       || { UNTUNED+=("core isolation: $unit refused AllowedCPUs"); return 0; }
-    confined+="$unit "
+    CONFINED+="$unit "
   done
   # A top-level cgroup that is not one of the units above (made directly in cgroupfs, or a
   # slice that became active since the listing) is out of reach of AllowedCPUs, and anything
@@ -256,12 +256,29 @@ isolate() {
   local dir name
   for dir in /sys/fs/cgroup/*/; do
     name="$(basename "$dir")"
-    [[ "$confined" == *" $name "* ]] && continue
+    [[ "$CONFINED" == *" $name "* ]] && continue
     if grep -qsx 'populated 1' "$dir/cgroup.events"; then
       UNTUNED+=("core isolation: processes in the top-level cgroup $name, which is not confined")
     fi
   done
   TUNING+=("isolation=systemd(os=$os_cpus)")
+  ISOLATED=1
+}
+
+# The scan above sees the host as it was before the run. A top-level slice first activated
+# during measurement is not confined, and could use the benchmark cores unseen; this samples
+# every second until the given process ends and appends each one found populated to a file.
+# r7bench.slice is skipped: run.sh's own processes are in it, pinned by run.sh.
+watch_unconfined() {
+  local watched="$1" out="$2" dir name
+  while kill -0 "$watched" 2>/dev/null; do
+    for dir in /sys/fs/cgroup/*/; do
+      name="$(basename "$dir")"
+      [[ "$CONFINED" == *" $name "* || "$name" == "r7bench.slice" ]] && continue
+      grep -qsx 'populated 1' "$dir/cgroup.events" && echo "$name" >> "$out"
+    done
+    sleep 1
+  done
 }
 
 host_report() {
@@ -467,9 +484,21 @@ else
 fi
 RUN_PID=$!
 echo "$RUN_PID" > "$STATE_DIR/run.pid"
+if (( ${ISOLATED:-0} )); then
+  LATE="$(mktemp)"
+  watch_unconfined "$RUN_PID" "$LATE" 9>&- &
+  WATCH_PID=$!
+fi
 trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' INT TERM
 wait "$RUN_PID"
 trap 'exit 130' INT TERM
+if (( ${ISOLATED:-0} )); then
+  wait "$WATCH_PID"
+  while IFS= read -r u; do
+    UNTUNED+=("core isolation: processes in the top-level cgroup $u during the run, which is not confined")
+  done < <(sort -u "$LATE")
+  rm -f "$LATE"
+fi
 
 {
   if (( LOCAL )); then

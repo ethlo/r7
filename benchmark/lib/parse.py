@@ -377,6 +377,20 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
              if not (r["stats"].get("rps") or 0) > 0 or not (r["stats"].get("requests") or 0) > 0]
     if empty:
         problems.append("%d run(s) completed no requests" % len(empty))
+    # wrk2's percentiles are the latency numbers to quote (README); a repeat without them
+    # would otherwise vanish into the median and leave a "-" in a publishable report.
+    no_tail = [r for r in rows if r["meta"].get("tool") == "wrk2"
+               and (r["stats"].get("p99_ms") is None or r["stats"].get("p999_ms") is None)]
+    if no_tail:
+        problems.append("%d wrk2 run(s) report no p99 or p99.9 latency" % len(no_tail))
+    # A fixed-rate latency comparison only means something at the rate it asked for; only
+    # the sweep is meant to fall short, since finding where it does is its purpose.
+    short = [r for r in rows if r["meta"].get("tool") == "wrk2"
+             and r["meta"].get("scenario") != "sweep" and r["meta"].get("rate")
+             and (r["stats"].get("rps") or 0) < 0.95 * r["meta"]["rate"]]
+    if short:
+        problems.append("%d non-sweep wrk2 run(s) delivered under 95%% of their target rate"
+                        % len(short))
     agg = group(rows)
     if not agg:
         return problems + ["no results"]

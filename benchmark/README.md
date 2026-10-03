@@ -32,7 +32,8 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
 3. **A tuned host.** SMT and turbo off, `performance` governor, the sysctls below, and
    every other process on the host confined to housekeeping cores through systemd
    (`AllowedCPUs` on every top-level slice and `init.scope`; a process in any other
-   top-level cgroup makes the run unpublishable). Every change is a
+   top-level cgroup, before or at any point sampled during the run, makes the run
+   unpublishable). Every change is a
    runtime one: the script restores the original values when it exits, `--restore` does
    it after a run that was killed, and a reboot does it too.
 4. **Separate cores.** nginx, the gateway and the load generator each run on cores of
@@ -49,7 +50,9 @@ on the host with the image's JVM flags. `--jdk 27` runs it on JDK 27 instead.
 
 The report starts with a verdict. It says **PUBLISHABLE** only when the gateway was a
 pulled image (or a `--local` build), the working tree was clean, every tuning step applied,
-every planned run produced a valid result and throughput repeats agreed within 5%; otherwise it lists why not.
+every planned run produced a valid result, every wrk2 run reported its p99 and p99.9 and,
+outside the sweep, reached 95% of its target rate, and throughput repeats agreed within 5%;
+otherwise it lists why not.
 Alongside the usual results it writes `host.txt` (CPU, kernel, tuning, layout, image
 digest or JDK builds, tool commits, git SHA), `host-before.txt` (the settings it changed and
 their original values) and `results/bench-<id>-<timestamp>.tar.gz` with everything in one

@@ -348,7 +348,12 @@ render_config() {
       "$HERE/config/server.yaml.tmpl" > "$RUNDIR/config/server.yaml"
 
   rm -rf "${RUNDIR:?}/journals"; mkdir -p "$RUNDIR/journals"
-  if [[ "$MODE" == "docker" ]]; then chown "$GW_UID:$GW_GID" "$RUNDIR/journals"; fi
+  # The configuration too: under a restrictive umask (077) a root run leaves it root-only,
+  # and the gateway's own user could not read it.
+  if [[ "$MODE" == "docker" ]]; then
+    chown "$GW_UID:$GW_GID" "$RUNDIR/journals" "$RUNDIR/config" \
+      "$RUNDIR/config/routes.yaml" "$RUNDIR/config/server.yaml"
+  fi
 }
 
 start_gateway() {
