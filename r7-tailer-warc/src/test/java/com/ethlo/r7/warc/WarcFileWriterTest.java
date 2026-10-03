@@ -12,6 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -185,6 +186,26 @@ class WarcFileWriterTest
         try (Stream<Path> files = Files.list(dir))
         {
             assertThat(files).isEmpty();
+        }
+    }
+
+    /**
+     * A file that crossed the size limit is sealed from the tailer's loop, not only when the
+     * next exchange arrives: traffic may stop right after it.
+     */
+    @Test
+    void aFullFileIsSealedWithoutWaitingForTheNextExchange() throws IOException
+    {
+        try (WarcFileWriter writer = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 1))
+        {
+            final byte[] incompressible = new byte[(int) SealedFileWriter.MIN_ROLLOVER_SIZE];
+            new Random(7).nextBytes(incompressible);
+            writer.writeRecord(WarcFields.newRecordId(), "resource", List.of(Map.entry("Content-Type", "application/octet-stream")), incompressible);
+            assertThat(only(".warc.zst.open")).exists();
+
+            writer.rollIfStale();
+
+            assertThat(only(".warc.zst")).exists();
         }
     }
 
