@@ -4,7 +4,8 @@ import java.time.Duration;
 import java.util.Optional;
 
 import com.ethlo.r7.config.model.DataSize;
-
+import com.ethlo.r7.tailer.TailerConfig;
+import com.ethlo.r7.tailer.files.RollingFilesConfig;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -33,7 +34,7 @@ public record JsonldTailerConfig(
         Boolean prettyPrint,
         Boolean hideEmptyFields,
         Duration pollInterval
-) implements ValidatableConfig
+) implements TailerConfig, RollingFilesConfig, ValidatableConfig
 {
     public static JsonldTailerConfig standard()
     {
@@ -43,18 +44,13 @@ public record JsonldTailerConfig(
     @Override
     public String journalDir()
     {
-        return Optional.ofNullable(this.journalDir).orElse("/journals");
+        return Optional.ofNullable(this.journalDir).orElse(DEFAULT_JOURNAL_DIR);
     }
 
     @Override
     public String checkpointDir()
     {
-        // Not under journalDir(): a secondary tailer (one not responsible for retention -
-        // R7Tailer itself never deletes anything, see the class javadoc) must be free to
-        // mount journalDir read-only, which a checkpoint file living inside it would rule
-        // out. outputPath() is not a reliable fallback directory either - it defaults to
-        // stdout - so this gets its own dedicated, always-writable location instead.
-        return Optional.ofNullable(this.checkpointDir).orElse("/checkpoints");
+        return Optional.ofNullable(this.checkpointDir).orElse(DEFAULT_CHECKPOINT_DIR);
     }
 
     /**
@@ -81,7 +77,7 @@ public record JsonldTailerConfig(
     @Override
     public String filePrefix()
     {
-        return Optional.ofNullable(this.filePrefix).orElse("r7");
+        return Optional.ofNullable(this.filePrefix).orElse(DEFAULT_FILE_PREFIX);
     }
 
     @Override
@@ -93,7 +89,7 @@ public record JsonldTailerConfig(
     @Override
     public Duration maxFileAge()
     {
-        return Optional.ofNullable(this.maxFileAge).orElse(Duration.ofMinutes(15));
+        return Optional.ofNullable(this.maxFileAge).orElse(DEFAULT_MAX_FILE_AGE);
     }
 
     @Override
@@ -116,7 +112,7 @@ public record JsonldTailerConfig(
     @Override
     public Duration pollInterval()
     {
-        return Optional.ofNullable(this.pollInterval).orElse(Duration.ofSeconds(1));
+        return Optional.ofNullable(this.pollInterval).orElse(DEFAULT_POLL_INTERVAL);
     }
 
     @Override
@@ -132,15 +128,6 @@ public record JsonldTailerConfig(
             // back to its last complete line: that could keep half a record.
             result.addError("pretty_print", "cannot be combined with output_dir");
         }
-        final long maxFileSizeBytes = this.maxFileSize().bytes();
-        if (maxFileSizeBytes < RollingFileOutputStream.MIN_ROLLOVER_SIZE)
-        {
-            result.addError("max_file_size", "must be at least " + RollingFileOutputStream.MIN_ROLLOVER_SIZE
-                    + " bytes, but was " + maxFileSizeBytes);
-        }
-        if (this.maxFileAge().isNegative() || this.maxFileAge().isZero())
-        {
-            result.addError("max_file_age", "must be positive, but was " + this.maxFileAge());
-        }
+        this.validateRollover(result);
     }
 }

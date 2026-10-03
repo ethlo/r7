@@ -4,17 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.ethlo.r7.tailer.files.SealedFileWriter;
+import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdInputStream;
 
 class WarcFileWriterTest
@@ -32,7 +36,7 @@ class WarcFileWriterTest
     @Test
     void aFileLeftOpenByACrashIsSealedOnTheNextStart() throws IOException
     {
-        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
         crashed.writeRecord(WarcFields.newRecordId(), "resource",
                 List.of(Map.entry("Content-Type", "text/plain")), "first".getBytes(StandardCharsets.UTF_8));
         crashed.writeRecord(WarcFields.newRecordId(), "resource",
@@ -41,7 +45,7 @@ class WarcFileWriterTest
         final Path open = only(".warc.zst.open");
         Files.write(open, new byte[]{0x28, (byte) 0xB5, 0x2F, (byte) 0xFD, 0x00, 0x01}, StandardOpenOption.APPEND);
 
-        new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
 
         assertThat(Files.exists(open)).isFalse();
         final Path sealed = dir.resolve(open.getFileName().toString().replace(".open", ""));
@@ -56,12 +60,74 @@ class WarcFileWriterTest
         final Path torn = dir.resolve("r7-1-abc.warc.zst.open");
         Files.write(torn, new byte[]{0x28, (byte) 0xB5, 0x2F});
 
-        new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
 
         try (Stream<Path> files = Files.list(dir))
         {
             assertThat(files.map(p -> p.getFileName().toString()))
                     .noneMatch(name -> name.startsWith("r7-1-abc"));
+        }
+    }
+
+    /**
+     * A crash between opening a file and writing its first exchange leaves only the warcinfo
+     * record: nothing worth sealing, so the next start removes it.
+     */
+    @Test
+    void aFileLeftOpenWithOnlyItsWarcinfoIsRemoved() throws IOException
+    {
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        crashed.writeRecord(WarcFields.newRecordId(), "resource",
+                List.of(Map.entry("Content-Type", "text/plain")), "first".getBytes(StandardCharsets.UTF_8));
+        // No close(): cut the file back to its warcinfo frame, as if the process died before the
+        // exchange was written.
+        final Path open = only(".warc.zst.open");
+        final long warcinfoEnd = Zstd.findFrameCompressedSize(Files.readAllBytes(open), 0);
+        try (FileChannel file = FileChannel.open(open, StandardOpenOption.WRITE))
+        {
+            file.truncate(warcinfoEnd);
+        }
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        try (Stream<Path> files = Files.list(dir))
+        {
+            assertThat(files).isEmpty();
+        }
+    }
+
+    /**
+     * A file that crossed the size limit is sealed from the tailer's loop, not only when the
+     * next exchange arrives: traffic may stop right after it.
+     */
+    @Test
+    void aFullFileIsSealedWithoutWaitingForTheNextExchange() throws IOException
+    {
+        try (WarcFileWriter writer = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 1))
+        {
+            final byte[] incompressible = new byte[(int) SealedFileWriter.MIN_ROLLOVER_SIZE];
+            new Random(7).nextBytes(incompressible);
+            writer.writeRecord(WarcFields.newRecordId(), "resource", List.of(Map.entry("Content-Type", "application/octet-stream")), incompressible);
+            assertThat(only(".warc.zst.open")).exists();
+
+            writer.rollIfStale();
+
+            assertThat(only(".warc.zst")).exists();
+        }
+    }
+
+    /**
+     * A file is opened by the first record, so a tailer that saw no traffic leaves nothing
+     * behind, not a file holding only its warcinfo record.
+     */
+    @Test
+    void aWriterThatWroteNothingLeavesNoFile() throws IOException
+    {
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        try (Stream<Path> files = Files.list(dir))
+        {
+            assertThat(files).isEmpty();
         }
     }
 

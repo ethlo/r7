@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.netpreserve.jwarc.MediaType;
 import org.netpreserve.jwarc.URIs;
@@ -26,6 +27,7 @@ import org.netpreserve.jwarc.WarcResponse;
 import org.netpreserve.jwarc.WarcRevisit;
 import org.netpreserve.jwarc.cdx.CdxFormat;
 
+import com.ethlo.r7.r7f.JournalFiles;
 import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdInputStream;
 
@@ -53,8 +55,8 @@ public final class CdxjIndex
     }
 
     /**
-     * Indexes {@code warcFile} into {@code indexFile}, which is created or replaced, and
-     * fsync'd before this returns.
+     * Indexes {@code warcFile} into {@code indexFile}, which is created (with a journal
+     * segment's permissions) or replaced, and fsync'd before this returns.
      *
      * @param filename the name the index records for the WARC file, its final sealed name
      */
@@ -62,7 +64,12 @@ public final class CdxjIndex
     {
         final List<String> lines = lines(warcFile, filename);
         lines.sort(null);
-        try (FileChannel channel = FileChannel.open(indexFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE))
+        // The index names every URL in the archive, so it gets a journal segment's permissions,
+        // as the WARC file does.
+        final Path directory = indexFile.toAbsolutePath().getParent();
+        try (FileChannel channel = FileChannel.open(indexFile,
+                Set.of(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE),
+                JournalFiles.fileAttributes(directory)))
         {
             final Writer out = new BufferedWriter(new OutputStreamWriter(Channels.newOutputStream(channel), StandardCharsets.UTF_8));
             for (final String line : lines)

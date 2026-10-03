@@ -11,9 +11,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import com.ethlo.r7.docs.DocSnippet;
 import com.ethlo.r7.docs.DocSnippets;
+import com.ethlo.r7.tailer.TailerRunner;
 
 /**
- * Every jsonld-tailer.yaml snippet in the docs loads and validates the way JsonLdTailerMain loads it at startup.
+ * Every jsonld-tailer.yaml snippet in the docs loads and validates the way the JSON tailer loads it at startup.
  */
 class DocsConfigSnippetsTest
 {
@@ -31,7 +32,7 @@ class DocsConfigSnippetsTest
     {
         try
         {
-            assertThat(JsonLdTailerMain.loadConfig(snippet.writeTo(this.dir, DocSnippets.JSONLD_TAILER))).isNotNull();
+            assertThat(TailerRunner.loadConfig(snippet.writeTo(this.dir, DocSnippets.JSONLD_TAILER), JsonldTailerConfig.class, JsonldTailerConfig::standard)).isNotNull();
         }
         catch (final RuntimeException e)
         {

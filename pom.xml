@@ -19,6 +19,7 @@
         <module>r7-journal-api</module>
         <module>r7-journal-mmap</module>
         <module>r7-tailer-api</module>
+        <module>r7-tailer-files</module>
         <module>r7-utils</module>
         <module>r7-tailer-jsonld</module>
         <module>r7-tailer-warc</module>
