@@ -335,8 +335,9 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
     """Why the results in d should not be quoted, as a list of sentences; empty if none.
 
     The bar for a published number: every run valid, every configuration repeated, and
-    throughput repeats agreeing within max_spread percent. A sweep point past the knee is
-    exempt from the spread check, since saturation is exactly where repeats disagree.
+    throughput repeats agreeing within max_spread percent. A sweep point that did not reach
+    95% of its target rate is past the knee and exempt from the spread check, since
+    saturation is exactly where repeats disagree; every other point is held to it.
     """
     agg = group(load_results(d))
     if not agg:
@@ -348,8 +349,12 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
     n_min = min(a["n"] for a in agg.values())
     if n_min < min_repeat:
         problems.append("only %d repeat(s) for some configuration; need %d" % (n_min, min_repeat))
+    def saturated(a):
+        rate = a["meta"].get("rate")
+        return a["meta"].get("scenario") == "sweep" and rate and (a["rps"] or 0) < 0.95 * rate
+
     noisy = [k for k, a in agg.items()
-             if a["meta"].get("scenario") != "sweep"
+             if not saturated(a)
              and a["rps_spread"] is not None and a["rps_spread"] > max_spread]
     if noisy:
         problems.append("%d configuration(s) spread more than %.0f%% between repeats"

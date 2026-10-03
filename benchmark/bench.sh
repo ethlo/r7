@@ -86,20 +86,36 @@ done
 # reverse, so SMT comes back last, after the governors of the CPUs that stayed online.
 save() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "$STATE"; }
 
+# A setting that fails to restore stays in the state file, so --restore can retry it.
 restore_host() {
   [[ -f "$STATE" ]] || return 0
   log "restoring host settings"
-  local kind target value
-  while IFS='|' read -r kind target value; do
+  local kind target value line restored=0
+  local -a failed=()
+  while IFS= read -r line; do
+    IFS='|' read -r kind target value <<< "$line"
     case "$kind" in
-      sysfs)   echo "$value" > "$target" 2>/dev/null || warn "could not restore $target" ;;
-      sysctl)  sysctl -qw "$target=$value" || warn "could not restore $target" ;;
-      cpuset)  systemctl set-property --runtime "$target" "AllowedCPUs=$value" \
-                 || warn "could not restore AllowedCPUs on $target" ;;
+      sysfs)   { echo "$value" > "$target"; } 2>/dev/null && restored=1 || restored=0 ;;
+      sysctl)  sysctl -qw "$target=$value" && restored=1 || restored=0 ;;
+      cpuset)  systemctl set-property --runtime "$target" "AllowedCPUs=$value" && restored=1 || restored=0 ;;
+      *)       restored=0 ;;
     esac
+    (( restored )) || { warn "could not restore $kind $target to '$value'"; failed=("$line" "${failed[@]}"); }
   done < <(tac "$STATE")
+  if (( ${#failed[@]} )); then
+    printf '%s\n' "${failed[@]}" > "$STATE"
+    warn "${#failed[@]} setting(s) not restored; they are kept in $STATE for 'bench.sh --restore'"
+    return 1
+  fi
   rm -f "$STATE"
   ok "host settings restored"
+}
+
+# One run or restore at a time: a second run would overwrite the first one's saved originals.
+lock_host() {
+  mkdir -p "$STATE_DIR"
+  exec 9> "$STATE_DIR/lock"
+  flock -n 9 || die "another bench.sh run or restore holds $STATE_DIR/lock"
 }
 
 TUNING=()      # what was applied, for the record
@@ -167,6 +183,11 @@ isolate() {
   local os_cpus="$1" unit old
   if [[ ! -d /run/systemd/system || ! -f /sys/fs/cgroup/cgroup.controllers ]]; then
     UNTUNED+=("core isolation: needs systemd with cgroup v2"); return 0
+  fi
+  # With the cgroupfs driver, containers live outside the slices confined below and would
+  # keep running on the benchmark cores.
+  if [[ "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" != "systemd" ]]; then
+    UNTUNED+=("core isolation: Docker must use the systemd cgroup driver"); return 0
   fi
   for unit in system.slice user.slice init.scope machine.slice; do
     [[ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" == "active" ]] || continue
@@ -247,6 +268,7 @@ toolchain() {
 
 if [[ "$ACTION" == "restore" ]]; then
   [[ $EUID -eq 0 ]] || die "--restore needs root"
+  lock_host
   [[ -f "$STATE" ]] || { ok "nothing to restore"; exit 0; }
   restore_host
   exit 0
@@ -262,6 +284,7 @@ if [[ "$ACTION" == "check" ]]; then
 fi
 
 [[ $EUID -eq 0 ]] || die "run with sudo: tuning the host needs root (try --check first)"
+lock_host
 [[ -f "$STATE" ]] && die "settings from an interrupted run are still saved; run --restore first"
 
 toolchain
@@ -274,7 +297,9 @@ log "building r7 with JDK 27"
 JAR="$(ls "$REPO"/r7-helidon/target/r7-helidon-*[0-9T].jar | head -n1)"
 [[ -f "$JAR" ]] || die "no gateway jar after the build"
 
-DIRTY="$(git -C "$REPO" status --porcelain --untracked-files=no)"
+# Untracked files count: Maven would build an untracked source too. Ignored ones (target/,
+# .cache/, results/) do not.
+DIRTY="$(git -C "$REPO" status --porcelain --untracked-files=normal)"
 SHA="$(git -C "$REPO" rev-parse --short HEAD)"
 
 # The image's JVM flags, and its AOT cache trained the same way Dockerfile.jvm does. The
@@ -290,7 +315,7 @@ log "training the AOT cache on JDK $JDK"
 [[ -f "$TRAIN/r7.aot" ]] || die "AOT training wrote no cache; see $TRAIN/training.log"
 
 # From here on the host is changed; the trap puts it back however the run ends.
-mkdir -p "$STATE_DIR"; : > "$STATE"
+: > "$STATE"
 trap restore_host EXIT
 trap 'exit 130' INT TERM
 ulimit -n 65535 2>/dev/null || UNTUNED+=("ulimit -n 65535 refused (hard limit $(ulimit -Hn))")
