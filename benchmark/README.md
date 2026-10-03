@@ -10,13 +10,55 @@ load generator as much as the gateway.
 
 ## Quick start
 
+Numbers you intend to publish come from one command, on an x86_64 Linux host with systemd,
+Docker and `build-essential libssl-dev`:
+
 ```bash
-# build the gateway first
-mvn -q -DskipTests install
+benchmark/bench.sh --check        # show the core layout and host state, change nothing
+sudo benchmark/bench.sh --quick   # the whole pipeline with short runs
+sudo benchmark/bench.sh           # the full, publishable profile (a few hours)
+```
+
+`bench.sh` makes the run repeatable on any host:
+
+1. **Pinned toolchain.** Temurin JDK 25 (what the image runs) and JDK 27 (what CI builds
+   with) are downloaded and checked against SHA-256 sums in the script; wrk and wrk2 are
+   built from pinned commits; the nginx backend image is pinned by digest. All of it lives
+   in `benchmark/.cache/`; the host's own `java` and `wrk` are never used.
+2. **The shipped gateway.** r7 is built from the checkout, and its AOT cache is trained the
+   way `Dockerfile.jvm` does it. The gateway runs with the image's JVM flags and the JVM's
+   default collector. `--jdk 27` runs it on JDK 27 instead, `--gc zgc` on ZGC.
+3. **A tuned host.** SMT and turbo off, `performance` governor, the sysctls below, and
+   every other process on the host confined to housekeeping cores through systemd
+   (`AllowedCPUs` on `system.slice`, `user.slice` and `init.scope`). Every change is a
+   runtime one: the script restores the original values when it exits, `--restore` does
+   it after a run that was killed, and a reboot does it too.
+4. **Separate cores.** nginx, the gateway and the load generator each run on cores of
+   their own, one logical CPU per physical core. On a hybrid Intel CPU the efficiency
+   cores do the housekeeping and the performance cores run the benchmark. The layout is in
+   `host.txt`.
+5. **A fixed profile.** All scenarios including the sweep, all workloads, `--repeat 3
+   --restart-per-repeat`.
+
+The report starts with a verdict. It says **PUBLISHABLE** only when the working tree was
+clean, every tuning step applied, every run was valid and throughput repeats agreed within
+5%; otherwise it lists why not. Alongside the usual results it writes `host.txt` (CPU,
+kernel, tuning, layout, JDK builds, tool commits, git SHA), `host-before.txt` (the
+settings it changed and their original values) and `results/bench-<sha>-<timestamp>.tar.gz`
+with everything in one file.
+
+`isolcpus` on the kernel command line isolates the benchmark cores from kernel threads as
+well, at the cost of a reboot; `bench.sh` records it when present but does not require it.
+
+`run.sh` underneath is the engine, for experiments where you choose the options:
+
+```bash
+./mvnw -q -DskipTests install
 
 cd benchmark
 ./run.sh --quick          # ~3 minutes, sanity check
 ./run.sh                  # full suite, ~25 minutes
+./run.sh --backend-cpus 1 --gateway-cpus 2-3 --load-cpus 4-5   # pinned, as bench.sh does
 ```
 
 Results land in `benchmark/results/<timestamp>/`:
@@ -117,14 +159,16 @@ filter turns the run into a 429 benchmark and the throughput looks great.
 *feature* costs — measure them by adding a scenario, not by baking them into the
 number you call "gateway overhead".
 
-**Co-located load generator.** `run.sh` warns about this, and it matters: wrk and
-the gateway compete for the same cores. Results are valid for comparing runs
+**Co-located load generator.** `run.sh` warns about this unless the processes are
+pinned, and it matters: unpinned, wrk and the gateway compete for the same cores. Pinned
+to separate cores (as `bench.sh` does) they still share cache and memory bandwidth.
+Results are valid for comparing runs
 against each other on the same host. For absolute capacity figures, run the load
 generator on a separate machine over a link that is not itself the bottleneck.
 
 ## Host tuning
 
-`run.sh` checks these and warns; it does not change them for you.
+`bench.sh` applies these for the duration of a run. `run.sh` only checks them and warns.
 
 ```bash
 ulimit -n 65535
@@ -166,7 +210,8 @@ R7_BENCH_MEM=200M ./run.sh --mode docker --scenario passthrough --tool wrk2
 
 ## Installing wrk and wrk2
 
-Neither is packaged on most distros. Both build in under a minute:
+`bench.sh` builds both from pinned commits. For `run.sh` on its own: neither is packaged on
+most distros, and both build in under a minute:
 
 ```bash
 git clone https://github.com/wg/wrk       && make -C wrk       -j && sudo install wrk/wrk   /usr/local/bin/wrk

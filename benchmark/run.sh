@@ -38,6 +38,13 @@ GW_STATUS_PORT=18888
 BACKEND_PORT=11111
 KEEP_RUNNING=0
 SKIP_PREFLIGHT=0
+BACKEND_CPUS=""           # CPU lists (taskset syntax, e.g. 2-3) to pin each process to;
+GATEWAY_CPUS=""           # empty means unpinned. bench.sh derives them from the host's
+LOAD_CPUS=""              # core layout.
+PIN_SLICE="r7bench.slice"
+
+# Pinned by digest (nginx 1.31.6) so the backend cannot change under a comparison.
+BACKEND_IMAGE="${R7_BENCH_BACKEND_IMAGE:-nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2}"
 
 JVM_OPTS_DEFAULT="-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow"
 JVM_OPTS="${JVM_OPTS:-$JVM_OPTS_DEFAULT}"
@@ -77,6 +84,10 @@ Options:
   --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
   --quick                    5s warmup, 10s runs, browser workload only
+  --backend-cpus LIST        pin nginx to these CPUs (e.g. 1)
+  --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3; jvm-local only)
+  --load-cpus LIST           pin wrk/wrk2 to these CPUs (e.g. 4-5); --threads
+                             then defaults to the number of CPUs listed
   --keep-running             leave backend/gateway up after the run
   --skip-preflight           skip the host tuning checks
   -h, --help                 this
@@ -107,6 +118,9 @@ while [[ $# -gt 0 ]]; do
     --jar)           JAR="$2"; shift 2 ;;
     --out)           OUT="$2"; shift 2 ;;
     --quick)         WARMUP="5s"; DURATION="10s"; WORKLOADS="browser"; shift ;;
+    --backend-cpus)  BACKEND_CPUS="$2"; shift 2 ;;
+    --gateway-cpus)  GATEWAY_CPUS="$2"; shift 2 ;;
+    --load-cpus)     LOAD_CPUS="$2"; shift 2 ;;
     --keep-running)  KEEP_RUNNING=1; shift ;;
     --skip-preflight) SKIP_PREFLIGHT=1; shift ;;
     -h|--help)       usage; exit 0 ;;
@@ -125,6 +139,22 @@ if has "$SCENARIOS" journal && ! has "$SCENARIOS" passthrough; then
   SCENARIOS="passthrough,$SCENARIOS"
 fi
 
+[[ -n "$GATEWAY_CPUS" && "$MODE" == "docker" ]] && die "--gateway-cpus is only supported with --mode jvm-local"
+
+# Number of CPUs in a list like "2-3,6".
+cpu_count() {
+  local n=0 part lo hi
+  IFS=',' read -ra parts <<< "$1"
+  for part in "${parts[@]}"; do
+    lo="${part%-*}"; hi="${part#*-}"
+    n=$(( n + hi - lo + 1 ))
+  done
+  echo "$n"
+}
+
+if [[ -z "$THREADS" && -n "$LOAD_CPUS" ]]; then
+  THREADS="$(cpu_count "$LOAD_CPUS")"
+fi
 if [[ -z "$THREADS" ]]; then
   n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 8)"
   THREADS=$(( n / 2 )); (( THREADS > 16 )) && THREADS=16; (( THREADS < 2 )) && THREADS=2
@@ -178,8 +208,37 @@ preflight() {
   fi
   (( REPEAT < 3 )) && warn "--repeat is $REPEAT; the report cannot show a noise floor below 3"
 
-  warn "load generator and gateway share this host: they compete for CPU."
-  warn "'vs base' is therefore an upper bound on cost. 'vs r7' is the clean number."
+  if [[ -n "$GATEWAY_CPUS" && -n "$LOAD_CPUS" ]]; then
+    log "gateway on CPUs $GATEWAY_CPUS, load generator on $LOAD_CPUS: separate cores, shared cache and memory."
+  else
+    warn "load generator and gateway share this host: they compete for CPU."
+  fi
+  warn "'vs base' is an upper bound on cost. 'vs r7' is the clean number."
+}
+
+# ----------------------------------------------------------------- pinning
+
+# As root on a systemd host with cgroup v2, each pinned process gets a transient scope in
+# its own slice. That matters when bench.sh has confined system.slice and user.slice to the
+# housekeeping cores: a process started from this shell inherits user.slice's cpuset, so a
+# plain taskset to a benchmark core would be refused. Anywhere else, taskset.
+PIN_METHOD="taskset"
+if [[ $EUID -eq 0 && -d /run/systemd/system && -f /sys/fs/cgroup/cgroup.controllers ]] \
+   && command -v systemd-run >/dev/null 2>&1; then
+  PIN_METHOD="systemd"
+fi
+
+# Sets PIN to the command prefix that runs a program on the given CPUs (empty: unpinned).
+# It is a prefix rather than a function so `exec` keeps the gateway's PID: both
+# systemd-run --scope and taskset exec the command in place.
+pin_prefix() {
+  PIN=()
+  [[ -z "$1" ]] && return 0
+  if [[ "$PIN_METHOD" == "systemd" ]]; then
+    PIN=(systemd-run --scope --quiet --collect --slice="$PIN_SLICE" -p AllowedCPUs="$1")
+  else
+    PIN=(taskset -c "$1")
+  fi
 }
 
 # ----------------------------------------------------------------- lifecycle
@@ -217,12 +276,27 @@ start_backend() {
     die "port $BACKEND_PORT already in use; stop whatever is on it first"
   fi
   log "starting nginx reference backend on :$BACKEND_PORT"
+  local conf="$HERE/backend/nginx.conf"
+  local -a pin_args=()
+  if [[ -n "$BACKEND_CPUS" ]]; then
+    # worker_processes auto counts the host's CPUs, not the container's cpuset.
+    conf="$RUNDIR/nginx.conf"
+    sed -e "s|^worker_processes .*|worker_processes  $(cpu_count "$BACKEND_CPUS");|" \
+      "$HERE/backend/nginx.conf" > "$conf"
+    pin_args=(--cpuset-cpus "$BACKEND_CPUS")
+    # With the systemd cgroup driver containers live under system.slice, which bench.sh
+    # confines to the housekeeping cores; the cpuset above would then be ignored.
+    if [[ "$PIN_METHOD" == "systemd" && "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" == "systemd" ]]; then
+      pin_args+=(--cgroup-parent "$PIN_SLICE")
+    fi
+  fi
   BACKEND_CID="$(docker run -d --rm \
     --name r7-bench-backend \
     --network host \
     --ulimit nofile=200000:200000 \
-    -v "$HERE/backend/nginx.conf:/etc/nginx/nginx.conf:ro" \
-    nginx:alpine)"
+    "${pin_args[@]}" \
+    -v "$conf:/etc/nginx/nginx.conf:ro" \
+    "$BACKEND_IMAGE")"
   wait_for "http://127.0.0.1:$BACKEND_PORT/__bench_health" "backend"
   ok "backend ready"
 }
@@ -246,7 +320,9 @@ start_gateway() {
   render_config "$level"
   if [[ "$MODE" == "jvm-local" ]]; then
     log "starting gateway (jvm-local, journal=$level)"
-    ( cd "$RUNDIR" && exec java $JVM_OPTS ${R7_ARGS:-} -jar "$JAR" ) \
+    pin_prefix "$GATEWAY_CPUS"
+    # r7 reads routes.yaml and server.yaml from its working directory.
+    ( cd "$RUNDIR/config" && exec "${PIN[@]}" java $JVM_OPTS ${R7_ARGS:-} -jar "$JAR" ) \
       >> "$OUT/gateway-$level.log" 2>&1 &
     GW_PID=$!
   else
@@ -303,6 +379,7 @@ fire() {
   local rep="$7" do_warmup="$8"
   local script; script="$(workload_script "$workload")"
 
+  local -a PIN; pin_prefix "$LOAD_CPUS"
   local tag="${scenario}-${workload}-${tool}"
   [[ "$scenario" == "journal" ]] && tag="${scenario}-${journal}-${workload}-${tool}"
   [[ "$scenario" == "sweep"   ]] && tag="$(printf 'sweep-%s-%s-r%08d' "$journal" "$workload" "$rate")"
@@ -313,10 +390,10 @@ fire() {
     # a fixed rate. Prefer wrk; fall back to wrk2 if only that is installed.
     log "warmup  ${tag} (${WARMUP}, discarded)"
     if command -v wrk >/dev/null 2>&1; then
-      wrk -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -s "$script" --timeout 5s "$url" \
+      "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -s "$script" --timeout 5s "$url" \
         > "$RAW/$file_tag.warmup.txt" 2>&1 || true
     else
-      wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -R"$((rate * 4))" -s "$script" \
+      "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -R"$((rate * 4))" -s "$script" \
         --timeout 5s "$url" > "$RAW/$file_tag.warmup.txt" 2>&1 || true
     fi
     sleep 2
@@ -324,10 +401,10 @@ fire() {
 
   log "measure ${tag} (${DURATION}, repeat ${rep}/${REPEAT})"
   if [[ "$tool" == "wrk" ]]; then
-    wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency --timeout 5s \
+    "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency --timeout 5s \
         -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || true
   else
-    wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" -R"$rate" --latency --timeout 5s \
+    "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" -R"$rate" --latency --timeout 5s \
          -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || true
   fi
 
@@ -398,6 +475,9 @@ log "results -> $OUT"
   echo "wrk=$(wrk --version 2>&1 | head -n1 || echo n/a)"
   echo "wrk2=$(wrk2 --version 2>&1 | head -n1 || echo n/a)"
   echo "jar=$JAR"
+  echo "jvm_opts=$JVM_OPTS"
+  echo "backend_image=$BACKEND_IMAGE"
+  echo "pinning=$PIN_METHOD backend_cpus=${BACKEND_CPUS:-none} gateway_cpus=${GATEWAY_CPUS:-none} load_cpus=${LOAD_CPUS:-none}"
   echo "git=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo n/a)"
   echo "date=$(date -Is)"
 } > "$OUT/environment.txt"

@@ -3,6 +3,7 @@
 
     parse.py parse  <raw.txt> <meta.json> > result.json
     parse.py report <results-dir> [--format md|tsv]
+    parse.py verdict <results-dir>     # reasons the results are not publishable, one per line
 
 Repeats of the same configuration are grouped and reported as a median plus a
 spread, because a single run cannot tell you whether a 0.3ms difference is a
@@ -330,6 +331,32 @@ def report(d, fmt_kind="md"):
     return "\n".join(out) + "\n"
 
 
+def verdict_problems(d, min_repeat=3, max_spread=5.0):
+    """Why the results in d should not be quoted, as a list of sentences; empty if none.
+
+    The bar for a published number: every run valid, every configuration repeated, and
+    throughput repeats agreeing within max_spread percent. A sweep point past the knee is
+    exempt from the spread check, since saturation is exactly where repeats disagree.
+    """
+    agg = group(load_results(d))
+    if not agg:
+        return ["no results"]
+    problems = []
+    invalid = [k for k, a in agg.items() if a["errors"]]
+    if invalid:
+        problems.append("%d configuration(s) have invalid runs" % len(invalid))
+    n_min = min(a["n"] for a in agg.values())
+    if n_min < min_repeat:
+        problems.append("only %d repeat(s) for some configuration; need %d" % (n_min, min_repeat))
+    noisy = [k for k, a in agg.items()
+             if a["meta"].get("scenario") != "sweep"
+             and a["rps_spread"] is not None and a["rps_spread"] > max_spread]
+    if noisy:
+        problems.append("%d configuration(s) spread more than %.0f%% between repeats"
+                        % (len(noisy), max_spread))
+    return problems
+
+
 # ---------------------------------------------------------------- main
 
 if __name__ == "__main__":
@@ -347,5 +374,8 @@ if __name__ == "__main__":
         if "--format" in sys.argv:
             kind = sys.argv[sys.argv.index("--format") + 1]
         sys.stdout.write(report(sys.argv[2], kind))
+    elif cmd == "verdict":
+        for p in verdict_problems(sys.argv[2]):
+            print(p)
     else:
         sys.exit(__doc__)
