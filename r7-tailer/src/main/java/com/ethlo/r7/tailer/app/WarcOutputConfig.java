@@ -54,12 +54,12 @@ public record WarcOutputConfig(
 
     public Boolean enabled()
     {
-        return Optional.ofNullable(this.enabled).orElse(false);
+        return Optional.ofNullable(this.enabled).orElse(true);
     }
 
     public Exchanges exchanges()
     {
-        return Optional.ofNullable(this.exchanges).orElse(Exchanges.ALL);
+        return Optional.ofNullable(this.exchanges).orElse(Exchanges.WITH_BODY);
     }
 
     @Override

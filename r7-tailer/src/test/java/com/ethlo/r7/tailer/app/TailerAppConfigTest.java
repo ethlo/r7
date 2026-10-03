@@ -18,12 +18,15 @@ class TailerAppConfigTest
     Path dir;
 
     @Test
-    void noFileMeansJsonOnStandardOutputAndNoWarc()
+    void noFileMeansBodiesInWarcAndEveryExchangeAsJsonOnStandardOutput()
     {
         final TailerAppConfig config = TailerRunner.loadConfig(dir.resolve("tailer.yaml"), TailerAppConfig.class, TailerAppConfig::standard);
         assertThat(config.json().enabled()).isTrue();
         assertThat(config.json().output()).isEqualTo(JsonOutputConfig.Output.STDOUT);
-        assertThat(config.warc().enabled()).isFalse();
+        assertThat(config.json().bodies()).isFalse();
+        assertThat(config.warc().enabled()).isTrue();
+        assertThat(config.warc().exchanges()).isEqualTo(WarcOutputConfig.Exchanges.WITH_BODY);
+        assertThat(config.warc().bodies()).isTrue();
     }
 
     @Test
@@ -31,18 +34,15 @@ class TailerAppConfigTest
     {
         final TailerAppConfig config = load("""
                 warc:
-                  enabled: true
-                  exchanges: with_body
+                  exchanges: all
                   max_file_size: 2gb
                 json:
                   output: file
                   output_dir: /var/r7/json
                 """);
-        assertThat(config.warc().exchanges()).isEqualTo(WarcOutputConfig.Exchanges.WITH_BODY);
+        assertThat(config.warc().exchanges()).isEqualTo(WarcOutputConfig.Exchanges.ALL);
         assertThat(config.warc().maxFileSize().bytes()).isEqualTo(2L * 1024 * 1024 * 1024);
         assertThat(config.json().outputDir()).isEqualTo("/var/r7/json");
-        assertThat(config.json().bodies()).as("on unless turned off").isTrue();
-        assertThat(config.warc().bodies()).as("on unless turned off").isTrue();
     }
 
     @Test
@@ -74,6 +74,8 @@ class TailerAppConfigTest
     void anOutputMustBeEnabled()
     {
         assertThatThrownBy(() -> load("""
+                warc:
+                  enabled: false
                 json:
                   enabled: false
                 """))

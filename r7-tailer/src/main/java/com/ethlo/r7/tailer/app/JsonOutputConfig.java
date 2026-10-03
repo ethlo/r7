@@ -103,7 +103,7 @@ public record JsonOutputConfig(
      */
     public Boolean bodies()
     {
-        return Optional.ofNullable(this.bodies).orElse(true);
+        return Optional.ofNullable(this.bodies).orElse(false);
     }
 
     @Override
