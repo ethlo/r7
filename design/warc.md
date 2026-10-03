@@ -88,6 +88,16 @@ lost page) collapses to two.
    CRC — a body can contain that sequence — so it must be paired with the sequence field, and
    written into the spec rather than discovered later.
 
+r7 adds one more field for the same reason. The records of an exchange are appended as one
+unit, and the last record of each unit (and every file's `warcinfo` record) carries
+`WARC-X-R7-Group-End: true`. A file left open by a crash is cut back to the last record carrying
+it, so a group torn partway is dropped whole and its exchange, never checkpointed, is written
+again; cutting back to the last complete record would keep half the group in front of the
+rewritten one. Which records a group holds depends on journal levels, so the boundary has to be
+written into the file rather than inferred. Recovery decompresses every record to check its content checksum, and
+stops before the first one that fails. A file whose `warcinfo` lacks the field predates it,
+and is cut back to its last complete record.
+
 The `.open`/`.warc` pair is **deliberately outside the WARC spec**. The bytes stay spec-valid
 at every moment; only the name changes. Extend around the format, never inside it.
 

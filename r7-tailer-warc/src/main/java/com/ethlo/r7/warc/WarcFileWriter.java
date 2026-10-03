@@ -1,6 +1,10 @@
 package com.ethlo.r7.warc;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -14,6 +18,7 @@ import java.util.stream.Stream;
 
 import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdCompressCtx;
+import com.github.luben.zstd.ZstdInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +50,12 @@ public final class WarcFileWriter implements AutoCloseable
 
     private static final String WARC_SUFFIX = ".warc.zst";
     private static final String INDEX_SUFFIX = ".cdxj";
+
+    /**
+     * Set on the last record of every group written as one unit: an exchange's records, or a
+     * file's warcinfo record. Crash recovery cuts a file back to the last record carrying it.
+     */
+    static final String GROUP_END = "WARC-X-R7-Group-End";
 
     private final boolean cdxjIndex;
     private final ZstdCompressCtx compressor;
@@ -152,9 +163,10 @@ public final class WarcFileWriter implements AutoCloseable
     {
         final List<byte[]> frames = new ArrayList<>(records.size());
         long totalBytes = 0;
-        for (final PendingRecord record : records)
+        for (int i = 0; i < records.size(); i++)
         {
-            final byte[] frame = buildFrame(record.recordId(), record.warcType(), record.fields(), record.block());
+            final PendingRecord record = records.get(i);
+            final byte[] frame = buildFrame(record.recordId(), record.warcType(), record.fields(), record.block(), i == records.size() - 1);
             frames.add(frame);
             totalBytes += frame.length;
         }
@@ -169,9 +181,10 @@ public final class WarcFileWriter implements AutoCloseable
         return combined;
     }
 
-    private byte[] buildFrame(final String recordId, final String warcType, final List<Map.Entry<String, String>> fields, final byte[] block)
+    private byte[] buildFrame(final String recordId, final String warcType, final List<Map.Entry<String, String>> fields, final byte[] block,
+                              final boolean groupEnd)
     {
-        final List<Map.Entry<String, String>> headers = new ArrayList<>(fields.size() + 5);
+        final List<Map.Entry<String, String>> headers = new ArrayList<>(fields.size() + 6);
         headers.add(Map.entry("WARC-Type", warcType));
         headers.add(Map.entry("WARC-Record-ID", "<" + recordId + ">"));
         headers.addAll(fields);
@@ -184,6 +197,10 @@ public final class WarcFileWriter implements AutoCloseable
         // things must come along" for why this is the one thing nothing else in the format
         // detects.
         headers.add(Map.entry("WARC-X-R7-Sequence", Long.toString(sequence++)));
+        if (groupEnd)
+        {
+            headers.add(Map.entry(GROUP_END, "true"));
+        }
         headers.add(Map.entry("Content-Length", Long.toString(block.length)));
 
         return frameBytes(headers, block);
@@ -216,35 +233,100 @@ public final class WarcFileWriter implements AutoCloseable
     }
 
     /**
-     * Walks the file frame by frame through a mapped window (a file may exceed what one
-     * mapping can hold), remapping from a frame's start when it runs past the window.
+     * The end of the last complete group: the last complete frame whose record carries
+     * {@link #GROUP_END}. An exchange's records are appended together, but more than one
+     * {@code write} can carry them, so a process killed partway can leave some of a group's
+     * frames complete; cutting back to the last complete frame would keep them, and the
+     * exchange, never checkpointed, would then be written again in full after them.
+     * <p>
+     * A file written before group ends were marked has no marker on its first record, its
+     * warcinfo; such a file is cut back to its last complete frame, as before.
+     * <p>
+     * Walks the file frame by frame through a mapped window (a file may exceed what one mapping
+     * can hold), remapping from a frame's start when it runs past the window.
      */
-    private static long endOfLastCompleteFrame(final FileChannel file) throws IOException
+    private static long endOfLastCompleteGroup(final FileChannel file) throws IOException
     {
         final long size = file.size();
         long end = 0;
+        long groupEnd = 0;
+        boolean first = true;
+        boolean marked = false;
         while (end < size)
         {
-            final long windowSize = Math.min(size - end, Integer.MAX_VALUE);
+            final int windowSize = (int) Math.min(size - end, Integer.MAX_VALUE);
             final MappedByteBuffer window = file.map(FileChannel.MapMode.READ_ONLY, end, windowSize);
-            long within = 0;
+            int within = 0;
             while (within < windowSize)
             {
-                final long frame = Zstd.findFrameCompressedSize(window.slice((int) within, (int) (windowSize - within)));
+                final long frame = Zstd.findFrameCompressedSize(window.slice(within, windowSize - within));
                 if (Zstd.isError(frame) || frame <= 0)
                 {
                     break;
                 }
-                within += frame;
+                final boolean closesGroup;
+                try
+                {
+                    closesGroup = closesGroup(window.slice(within, (int) frame));
+                }
+                catch (final IOException | RuntimeException e)
+                {
+                    // Framed correctly but undecodable (a damaged page): nothing from here on can
+                    // be trusted, and a throw would fail every start on this same file.
+                    logger.warn("Undecodable record at offset {}; recovering up to the record before it", end + within, e);
+                    return marked ? groupEnd : end + within;
+                }
+                if (first)
+                {
+                    marked = closesGroup;
+                    first = false;
+                }
+                within += (int) frame;
+                if (closesGroup)
+                {
+                    groupEnd = end + within;
+                }
             }
-            if (within == 0 || end + windowSize == size)
+            final boolean lastWindow = within == 0 || end + windowSize == size;
+            end += within;
+            if (lastWindow)
             {
                 // No complete frame from here, or the window reached the end of the file.
-                return end + within;
+                break;
             }
-            end += within;
         }
-        return end;
+        return marked ? groupEnd : end;
+    }
+
+    /**
+     * Whether the record in {@code frame} carries {@link #GROUP_END}. The whole frame is
+     * decompressed, not only its header: a frame can be framed correctly and have a readable
+     * header yet be damaged further on, which only its content checksum reveals. A damaged frame
+     * throws, and recovery stops before it.
+     */
+    private static boolean closesGroup(final ByteBuffer frame) throws IOException
+    {
+        try (InputStream in = new ZstdInputStream(new ByteBufferInputStream(frame)))
+        {
+            final BufferedReader header = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            boolean closes = false;
+            String line;
+            while ((line = header.readLine()) != null && !line.isEmpty())
+            {
+                final int colon = line.indexOf(':');
+                if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase(GROUP_END))
+                {
+                    closes = line.substring(colon + 1).trim().equalsIgnoreCase("true");
+                }
+            }
+            // Drain the rest, through the reader that buffered ahead, so the checksum is checked.
+            final char[] rest = new char[8192];
+            while (header.read(rest) != -1)
+            {
+                // discard
+            }
+            return closes;
+        }
     }
 
     /**
@@ -332,15 +414,15 @@ public final class WarcFileWriter implements AutoCloseable
         }
 
         /**
-         * A complete record is a complete Zstandard frame. An exchange group is a single write,
-         * so a killed process leaves whole groups; only a torn trailing frame is dropped, and
-         * its exchange, never checkpointed, is written again. A file whose only complete frame
-         * is its {@code warcinfo} record holds no exchange, and counts as empty.
+         * A complete record here is a complete exchange group (see
+         * {@link #endOfLastCompleteGroup}): a torn group is dropped whole, and its exchange,
+         * never checkpointed, is written again. A file whose only complete group is its
+         * {@code warcinfo} record holds no exchange, and counts as empty.
          */
         @Override
         public long endOfLastCompleteRecord(final FileChannel file) throws IOException
         {
-            final long end = endOfLastCompleteFrame(file);
+            final long end = endOfLastCompleteGroup(file);
             return end == firstFrameSize(file) ? 0 : end;
         }
 
@@ -354,7 +436,7 @@ public final class WarcFileWriter implements AutoCloseable
             warcinfoFields.add(Map.entry("WARC-Filename", fileName));
             warcinfoFields.add(Map.entry("Content-Type", "application/warc-fields"));
             final String warcinfoId = WarcFields.newRecordId();
-            writer.append(buildFrame(warcinfoId, "warcinfo", warcinfoFields, warcinfoBlock()));
+            writer.append(buildFrame(warcinfoId, "warcinfo", warcinfoFields, warcinfoBlock(), true));
             currentWarcinfoId = warcinfoId;
         }
 

@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.tailer.files.SealedFileWriter;
 import com.github.luben.zstd.Zstd;
+import com.github.luben.zstd.ZstdCompressCtx;
 import com.github.luben.zstd.ZstdInputStream;
 
 class WarcFileWriterTest
@@ -67,6 +70,109 @@ class WarcFileWriterTest
             assertThat(files.map(p -> p.getFileName().toString()))
                     .noneMatch(name -> name.startsWith("r7-1-abc"));
         }
+    }
+
+    /**
+     * An exchange's records are appended together, but a process killed partway through can
+     * leave some of them complete. Recovery drops the whole group: its exchange was never
+     * checkpointed, and is written again in full.
+     */
+    @Test
+    void aTornExchangeGroupIsDroppedWhole() throws IOException
+    {
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        crashed.writeRecords(group("first"));
+        crashed.writeRecords(group("second"));
+        // No close(): cut the file back to the middle of the second group, at a frame boundary.
+        final Path open = only(".warc.zst.open");
+        final List<Long> frameEnds = frameEnds(Files.readAllBytes(open));
+        assertThat(frameEnds).as("warcinfo and two groups of three").hasSize(7);
+        try (FileChannel file = FileChannel.open(open, StandardOpenOption.WRITE))
+        {
+            file.truncate(frameEnds.get(5));
+        }
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        final String warc = decompress(dir.resolve(open.getFileName().toString().replace(".open", "")));
+        assertThat(warc).contains("first-0").contains("first-2").doesNotContain("second");
+        assertThat(warc.split("WARC/1.1\r\n", -1)).as("warcinfo and the first group").hasSize(5);
+    }
+
+    /**
+     * A frame whose length is intact but whose content cannot be decoded (here, a damaged
+     * checksum) ends recovery at the group before it, rather than failing every start.
+     */
+    @Test
+    void anUndecodableFrameEndsRecoveryAtTheGroupBeforeIt() throws IOException
+    {
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        crashed.writeRecords(group("first"));
+        // A body of several Zstandard blocks: its header decodes, and only the content checksum
+        // at the very end shows the damage.
+        final byte[] large = new byte[256 * 1024];
+        new Random(7).nextBytes(large);
+        crashed.writeRecords(List.of(new WarcFileWriter.PendingRecord(WarcFields.newRecordId(), "resource",
+                List.of(Map.entry("Content-Type", "application/octet-stream")), concat("second".getBytes(StandardCharsets.UTF_8), large))));
+        final Path open = only(".warc.zst.open");
+        final byte[] bytes = Files.readAllBytes(open);
+        bytes[bytes.length - 1] ^= (byte) 0xFF;
+        Files.write(open, bytes);
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        final String warc = decompress(dir.resolve(open.getFileName().toString().replace(".open", "")));
+        assertThat(warc).contains("first-2").doesNotContain("second");
+    }
+
+    /**
+     * A file written before group ends were marked is cut back to its last complete frame.
+     */
+    @Test
+    void aFileWithoutGroupMarkersIsCutBackToItsLastCompleteFrame() throws IOException
+    {
+        final Path leftover = dir.resolve("r7-1-abc.warc.zst.open");
+        try (ZstdCompressCtx zstd = new ZstdCompressCtx())
+        {
+            final byte[] warcinfo = zstd.compress("WARC/1.1\r\nWARC-Type: warcinfo\r\nContent-Length: 0\r\n\r\n\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            final byte[] resource = zstd.compress("WARC/1.1\r\nWARC-Type: resource\r\nContent-Length: 3\r\n\r\nold\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            Files.write(leftover, warcinfo);
+            Files.write(leftover, resource, StandardOpenOption.APPEND);
+        }
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        assertThat(decompress(dir.resolve("r7-1-abc.warc.zst"))).contains("old");
+    }
+
+    private static List<WarcFileWriter.PendingRecord> group(final String name)
+    {
+        final List<WarcFileWriter.PendingRecord> records = new ArrayList<>();
+        for (int i = 0; i < 3; i++)
+        {
+            records.add(new WarcFileWriter.PendingRecord(WarcFields.newRecordId(), "resource",
+                    List.of(Map.entry("Content-Type", "text/plain")), (name + "-" + i).getBytes(StandardCharsets.UTF_8)));
+        }
+        return records;
+    }
+
+    private static byte[] concat(final byte[] a, final byte[] b)
+    {
+        final byte[] both = Arrays.copyOf(a, a.length + b.length);
+        System.arraycopy(b, 0, both, a.length, b.length);
+        return both;
+    }
+
+    private static List<Long> frameEnds(final byte[] file)
+    {
+        final List<Long> ends = new ArrayList<>();
+        long end = 0;
+        while (end < file.length)
+        {
+            end += Zstd.findFrameCompressedSize(file, (int) end);
+            ends.add(end);
+        }
+        return ends;
     }
 
     /**
