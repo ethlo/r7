@@ -59,6 +59,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
 
     private final WarcFileWriter fileWriter;
     private final PayloadDedupIndex dedupIndex;
+    private final boolean bodies;
 
     /**
      * Body kinds {@link #onChecksumMismatch} reported for the exchange currently being
@@ -72,8 +73,27 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
 
     public WarcExchangeWriter(final WarcFileWriter fileWriter, final PayloadDedupIndex dedupIndex)
     {
+        this(fileWriter, dedupIndex, true);
+    }
+
+    /**
+     * @param bodies store captured bodies in the records; when false, a record whose leg had a
+     *               body carries its headers, {@code WARC-Truncated} and the payload digest, and
+     *               the body is left to another output (the JSON line)
+     */
+    public WarcExchangeWriter(final WarcFileWriter fileWriter, final PayloadDedupIndex dedupIndex, final boolean bodies)
+    {
         this.fileWriter = fileWriter;
         this.dedupIndex = dedupIndex;
+        this.bodies = bodies;
+    }
+
+    /**
+     * Whether the records this writer writes hold the bodies.
+     */
+    public boolean storesBodies()
+    {
+        return bodies;
     }
 
     @Override
@@ -313,6 +333,16 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // this would look like a message that genuinely had no body at all.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
             final List<Map.Entry<String, String>> fields = WarcFields.notCaptured(leg.msgType(), targetUri, concurrentToIds, requestId);
+            addClientAddress(fields, leg.clientAddress());
+            return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
+        }
+
+        if (!bodies && payloadDigest != null)
+        {
+            // Bodies are left out by configuration: the record says there was one, and which,
+            // without storing it. No dedup either way, since nothing is stored to point at.
+            final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
+            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), targetUri, concurrentToIds, requestId, payloadDigest);
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }

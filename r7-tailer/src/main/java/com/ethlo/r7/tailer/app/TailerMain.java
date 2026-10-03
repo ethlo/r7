@@ -44,7 +44,7 @@ public final class TailerMain
                 jsonConfig.maxFileAge().toMillis())
                 : null;
 
-        final WarcExchangeWriter warc = warcFiles != null ? new WarcExchangeWriter(warcFiles, new PayloadDedupIndex(warcConfig.dedupCacheEntries())) : null;
+        final WarcExchangeWriter warc = warcFiles != null ? new WarcExchangeWriter(warcFiles, new PayloadDedupIndex(warcConfig.dedupCacheEntries()), warcConfig.bodies()) : null;
         final JsonLdWriter json = jsonConfig.enabled()
                 ? new JsonLdWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.prettyPrint(), jsonConfig.hideEmptyFields(),
                 jsonConfig.bodies())

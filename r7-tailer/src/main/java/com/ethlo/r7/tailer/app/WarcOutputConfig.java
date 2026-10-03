@@ -23,7 +23,8 @@ public record WarcOutputConfig(
         Duration maxFileAge,
         Integer zstdLevel,
         Integer dedupCacheEntries,
-        Boolean cdxjIndex
+        Boolean cdxjIndex,
+        Boolean bodies
 ) implements RollingFilesConfig, ValidatableConfig
 {
     /**
@@ -48,7 +49,7 @@ public record WarcOutputConfig(
 
     public static WarcOutputConfig standard()
     {
-        return new WarcOutputConfig(null, null, null, null, null, null, null, null, null);
+        return new WarcOutputConfig(null, null, null, null, null, null, null, null, null, null);
     }
 
     public Boolean enabled()
@@ -98,6 +99,11 @@ public record WarcOutputConfig(
     public Boolean cdxjIndex()
     {
         return Optional.ofNullable(this.cdxjIndex).orElse(false);
+    }
+
+    public Boolean bodies()
+    {
+        return Optional.ofNullable(this.bodies).orElse(true);
     }
 
     @Override

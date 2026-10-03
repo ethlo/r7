@@ -114,6 +114,52 @@ class ExchangeFanOutTest
         assertThat(warcText()).contains("req-body").doesNotContain("req-empty");
     }
 
+    /**
+     * With {@code warc.bodies: false} the records keep headers and say which body there was
+     * (truncated, with its digest), and the JSON line carries the body beside its pointer. A
+     * repeated body is not a revisit: nothing was stored to refer to.
+     */
+    @Test
+    void warcWithoutBodiesLeavesThemToTheJsonLine() throws IOException
+    {
+        final ByteArrayOutputStream json = new ByteArrayOutputStream();
+        try (WarcFileWriter files = warcFiles())
+        {
+            final ExchangeFanOut fanOut = fanOut(files, false, new JsonLdWriter(json, false, true, true));
+            fanOut.onComplete(exchange("req-1", "same body"));
+            fanOut.onComplete(exchange("req-2", "same body"));
+        }
+
+        for (final String text : lines(json))
+        {
+            final JsonNode line = MAPPER.readTree(text);
+            assertThat(line.has("warc")).isTrue();
+            assertThat(line.path("client_response").has("body")).as("the body is in the line").isTrue();
+        }
+        final String warc = warcText();
+        assertThat(warc).doesNotContain("same body").doesNotContain("WARC-Type: revisit");
+        assertThat(count(warc, "WARC-Truncated: unspecified")).isEqualTo(2);
+        assertThat(count(warc, "WARC-Payload-Digest:")).isEqualTo(2);
+    }
+
+    /**
+     * Bodies off on both outputs: no body is stored anywhere, and both still say there was one.
+     */
+    @Test
+    void bodiesOffEverywhereStoresNone() throws IOException
+    {
+        final ByteArrayOutputStream json = new ByteArrayOutputStream();
+        try (WarcFileWriter files = warcFiles())
+        {
+            fanOut(files, false, new JsonLdWriter(json, false, true, false)).onComplete(exchange("req-1", "a body"));
+        }
+
+        final JsonNode line = MAPPER.readTree(lines(json).getFirst());
+        assertThat(line.path("client_response").has("body")).isFalse();
+        assertThat(line.path("client_response").path("body_bytes").asLong()).isEqualTo(6);
+        assertThat(warcText()).doesNotContain("a body").contains("WARC-Payload-Digest:");
+    }
+
     @Test
     void warcAloneWritesNoJson() throws IOException
     {
@@ -133,6 +179,11 @@ class ExchangeFanOutTest
     private static ExchangeFanOut fanOut(final WarcFileWriter files, final WarcOutputConfig.Exchanges exchanges, final OutputStream json)
     {
         return new ExchangeFanOut(new WarcExchangeWriter(files, new PayloadDedupIndex(16)), exchanges, new JsonLdWriter(json, false, true));
+    }
+
+    private static ExchangeFanOut fanOut(final WarcFileWriter files, final boolean warcBodies, final JsonLdWriter json)
+    {
+        return new ExchangeFanOut(new WarcExchangeWriter(files, new PayloadDedupIndex(16), warcBodies), WarcOutputConfig.Exchanges.ALL, json);
     }
 
     private static JournalExchange exchange(final String requestId, final String responseBody)

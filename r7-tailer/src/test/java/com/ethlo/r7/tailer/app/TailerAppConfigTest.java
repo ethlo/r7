@@ -42,6 +42,7 @@ class TailerAppConfigTest
         assertThat(config.warc().maxFileSize().bytes()).isEqualTo(2L * 1024 * 1024 * 1024);
         assertThat(config.json().outputDir()).isEqualTo("/var/r7/json");
         assertThat(config.json().bodies()).as("on unless turned off").isTrue();
+        assertThat(config.warc().bodies()).as("on unless turned off").isTrue();
     }
 
     @Test
