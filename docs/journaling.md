@@ -67,8 +67,9 @@ volumes:
 
 **3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which
 Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line holds the timing,
-status, sizes and full headers of every leg, and, for an exchange with a body, a `warc` pointer
-to its records in `/warc`. The line is one physical line; this one is abbreviated and
+status, sizes and the headers of every leg (values not on the
+[whitelist](#redacted-header-and-query-parameter-values) appear as fingerprints), and, for a
+complete exchange with a body, a `warc` pointer to its records in `/warc`. The line is one physical line; this one is abbreviated and
 pretty-printed for reading. The full format is under [the tailer](#3-the-tailer):
 
 ```json
@@ -84,7 +85,8 @@ pretty-printed for reading. The full format is under [the tailer](#3-the-tailer)
 
 The `/warc` files are [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
 archives with each record in its own Zstandard frame: `zstd -d` turns a `.warc.zst` file into plain WARC
-for any WARC tool. Everything else on this page is reference for tuning this
+for any WARC tool. Journals grow until something deletes them: before sustained use, add the reaper from
+[Retention](#4-retention-the-reaper). Everything else on this page is reference for tuning this
 setup: the journal levels, redaction, every tailer property, other output layouts and retention.
 
 ## 1. Journal levels and redaction
