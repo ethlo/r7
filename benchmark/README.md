@@ -10,19 +10,73 @@ load generator as much as the gateway.
 
 ## Quick start
 
+Numbers you intend to publish come from one command, on an x86_64 Linux host with systemd,
+Docker and `build-essential libssl-dev`:
+
 ```bash
-# build the gateway first
-mvn -q -DskipTests install
+benchmark/bench.sh --check        # show the core layout and host state, change nothing
+sudo benchmark/bench.sh --quick   # the whole pipeline with short runs
+sudo benchmark/bench.sh           # the full, publishable profile (a few hours)
+sudo benchmark/bench.sh --local   # build and measure this checkout instead of the image
+```
+
+`bench.sh` makes the run repeatable on any host:
+
+1. **The published gateway.** By default it measures `ghcr.io/ethlo/r7-gateway:latest`
+   (`--image` picks another), resolved to its digest and recorded, so a later run can pull
+   the same image even after the tag has moved. The image runs as shipped: its own JVM,
+   flags and AOT cache, the JVM's default collector (`--gc zgc` for ZGC), with host
+   networking and the memory limit in `docker-compose.bench.yaml`.
+2. **A pinned toolchain.** wrk and wrk2 are built from pinned commits and the nginx backend
+   image is pinned by digest, all in `benchmark/.cache/`; the host's own `wrk` is never used.
+3. **A tuned host.** SMT and turbo off, `performance` governor, the sysctls below, and
+   every other process on the host confined to housekeeping cores through systemd
+   (`AllowedCPUs` on every top-level slice and `init.scope`; a process in any other
+   top-level cgroup, before or at any point sampled during the run, makes the run
+   unpublishable). Every change is a
+   runtime one: the script restores the original values when it exits, `--restore` does
+   it after a run that was killed, and a reboot does it too.
+4. **Separate cores.** nginx, the gateway and the load generator each run on cores of
+   their own, one logical CPU per physical core. On a hybrid Intel CPU the efficiency
+   cores do the housekeeping and the performance cores run the benchmark. The layout is in
+   `host.txt`.
+5. **A fixed profile.** All scenarios including the sweep, all workloads, `--repeat 3
+   --restart-per-repeat`.
+
+`--local` measures a change before it is released. It downloads Temurin JDK 25 (what the
+image runs) and JDK 27 (what CI builds with), checked against SHA-256 sums in the script,
+builds the checkout, trains its AOT cache the way `Dockerfile.jvm` does, and runs the jar
+on the host with the image's JVM flags. `--jdk 27` runs it on JDK 27 instead.
+
+The report starts with a verdict. It says **PUBLISHABLE** only when the gateway was a
+pulled image (or a `--local` build), the working tree was clean, every tuning step applied,
+every planned run produced a valid result, every wrk2 run reported its p99 and p99.9 and,
+outside the sweep, reached 95% of its target rate, and throughput repeats agreed within 5%;
+otherwise it lists why not.
+Alongside the usual results it writes `host.txt` (CPU, kernel, tuning, layout, image
+digest or JDK builds, tool commits, git SHA), `host-before.txt` (the settings it changed and
+their original values) and `results/bench-<id>-<timestamp>.tar.gz` with everything in one
+file.
+
+`isolcpus` on the kernel command line isolates the benchmark cores from kernel threads as
+well, at the cost of a reboot; `bench.sh` records it when present but does not require it.
+
+`run.sh` underneath is the engine, for experiments where you choose the options:
+
+```bash
+./mvnw -q -DskipTests install
 
 cd benchmark
 ./run.sh --quick          # ~3 minutes, sanity check
 ./run.sh                  # full suite, ~25 minutes
+./run.sh --backend-cpus 1 --gateway-cpus 2-3 --load-cpus 4-5   # pinned, as bench.sh does
 ```
 
 Results land in `benchmark/results/<timestamp>/`:
 
 ```
 environment.txt   host, JVM, wrk versions, git SHA — quote this with any number
+plan.tsv          every run the profile asked for, checked by the verdict
 REPORT.md         the comparison table
 summary.tsv       same, machine-readable
 raw/              unmodified wrk/wrk2 output, including warmups
@@ -117,14 +171,16 @@ filter turns the run into a 429 benchmark and the throughput looks great.
 *feature* costs — measure them by adding a scenario, not by baking them into the
 number you call "gateway overhead".
 
-**Co-located load generator.** `run.sh` warns about this, and it matters: wrk and
-the gateway compete for the same cores. Results are valid for comparing runs
+**Co-located load generator.** `run.sh` warns about this unless the processes are
+pinned, and it matters: unpinned, wrk and the gateway compete for the same cores. Pinned
+to separate cores (as `bench.sh` does) they still share cache and memory bandwidth.
+Results are valid for comparing runs
 against each other on the same host. For absolute capacity figures, run the load
 generator on a separate machine over a link that is not itself the bottleneck.
 
 ## Host tuning
 
-`run.sh` checks these and warns; it does not change them for you.
+`bench.sh` applies these for the duration of a run. `run.sh` only checks them and warns.
 
 ```bash
 ulimit -n 65535
@@ -166,7 +222,8 @@ R7_BENCH_MEM=200M ./run.sh --mode docker --scenario passthrough --tool wrk2
 
 ## Installing wrk and wrk2
 
-Neither is packaged on most distros. Both build in under a minute:
+`bench.sh` builds both from pinned commits. For `run.sh` on its own: neither is packaged on
+most distros, and both build in under a minute:
 
 ```bash
 git clone https://github.com/wg/wrk       && make -C wrk       -j && sudo install wrk/wrk   /usr/local/bin/wrk

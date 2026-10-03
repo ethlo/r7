@@ -56,7 +56,8 @@ Integration tests in `r7-helidon` pick their target via `-Dr7.test.mode=in-proce
 or `jvm-docker`; the Docker mode needs a locally built `r7-gateway` image. There is no native
 image, by decision: see `design/native-image.md`.
 
-Benchmarks live in `benchmark/` (`./run.sh --quick`); read `benchmark/README.md` before quoting
+Benchmarks live in `benchmark/` (`./run.sh --quick`; `sudo benchmark/bench.sh` is the one-command,
+tuned and pinned run whose numbers may be published); read `benchmark/README.md` before quoting
 any number — only the `vs r7` (passthrough-relative) deltas are meaningful, and `--repeat 3`
 is the minimum for believing a small difference.
 

@@ -3,6 +3,7 @@
 
     parse.py parse  <raw.txt> <meta.json> > result.json
     parse.py report <results-dir> [--format md|tsv]
+    parse.py verdict <results-dir>     # reasons the results are not publishable, one per line
 
 Repeats of the same configuration are grouped and reported as a median plus a
 spread, because a single run cannot tell you whether a 0.3ms difference is a
@@ -330,6 +331,102 @@ def report(d, fmt_kind="md"):
     return "\n".join(out) + "\n"
 
 
+def verdict_problems(d, min_repeat=3, max_spread=5.0):
+    """Why the results in d should not be quoted, as a list of sentences; empty if none.
+
+    The bar for a published number: every planned run present (plan.tsv, written by run.sh)
+    and valid, every configuration repeated, and
+    throughput repeats agreeing within max_spread percent. A sweep point that did not reach
+    95% of its target rate is past the knee and exempt from the spread check, since
+    saturation is exactly where repeats disagree; every other point is held to it.
+    """
+    # Unlike the report, a broken result file is a failed run, not one to skip: dropping it
+    # would hide exactly the run that went wrong.
+    problems = []
+    for name in sorted(os.listdir(d)):
+        if name.endswith(".json") and name != "summary.json":
+            try:
+                with open(os.path.join(d, name)) as fh:
+                    json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                problems.append("unreadable result file %s" % name)
+    rows = load_results(d)
+    # Repeat counts and headroom can only be judged on results that exist; the plan run.sh
+    # wrote before its first run is what says which ones should.
+    try:
+        with open(os.path.join(d, "plan.tsv")) as fh:
+            planned = set()
+            for line in fh:
+                if line.strip():
+                    s, w, t, j, rate, rep = line.rstrip("\n").split("\t")
+                    planned.add(((s, w, t, j, None if rate == "-" else int(rate)), int(rep)))
+    except (OSError, ValueError):
+        planned = None
+        problems.append("no readable run plan (plan.tsv), so missing runs cannot be detected")
+    if planned is not None:
+        if not planned:
+            problems.append("the run plan is empty")
+        done = {(key_of(r["meta"]), r["meta"].get("repeat")) for r in rows}
+        missing = sorted(planned - done, key=lambda p: (str(p[0]), p[1]))
+        if missing:
+            (s, w, t, j, rate), rep = missing[0]
+            problems.append("%d planned run(s) have no result, e.g. %s/%s/%s/%s%s repeat %d"
+                            % (len(missing), s, j, w, t, "" if rate is None else "@%d" % rate, rep))
+    # A run that completed nothing reports no errors and no spread, so it needs its own check.
+    empty = [r for r in rows
+             if not (r["stats"].get("rps") or 0) > 0 or not (r["stats"].get("requests") or 0) > 0]
+    if empty:
+        problems.append("%d run(s) completed no requests" % len(empty))
+    # wrk2's percentiles are the latency numbers to quote (README); a repeat without them
+    # would otherwise vanish into the median and leave a "-" in a publishable report.
+    no_tail = [r for r in rows if r["meta"].get("tool") == "wrk2"
+               and (r["stats"].get("p99_ms") is None or r["stats"].get("p999_ms") is None)]
+    if no_tail:
+        problems.append("%d wrk2 run(s) report no p99 or p99.9 latency" % len(no_tail))
+    # A fixed-rate latency comparison only means something at the rate it asked for; only
+    # the sweep is meant to fall short, since finding where it does is its purpose.
+    short = [r for r in rows if r["meta"].get("tool") == "wrk2"
+             and r["meta"].get("scenario") != "sweep" and r["meta"].get("rate")
+             and (r["stats"].get("rps") or 0) < 0.95 * r["meta"]["rate"]]
+    if short:
+        problems.append("%d non-sweep wrk2 run(s) delivered under 95%% of their target rate"
+                        % len(short))
+    agg = group(rows)
+    if not agg:
+        return problems + ["no results"]
+    invalid = [k for k, a in agg.items() if a["errors"]]
+    if invalid:
+        problems.append("%d configuration(s) have invalid runs" % len(invalid))
+    n_min = min(a["n"] for a in agg.values())
+    if n_min < min_repeat:
+        problems.append("only %d repeat(s) for some configuration; need %d" % (n_min, min_repeat))
+    # The backend must not be the bottleneck (README, "The backend"): per workload, the
+    # unthrottled baseline has to clear every gateway row by a margin.
+    for workload in sorted({a["meta"].get("workload") for a in agg.values()}):
+        wrk = [a for a in agg.values()
+               if a["meta"].get("workload") == workload and a["meta"].get("tool") == "wrk"]
+        base = [a["rps"] for a in wrk if a["meta"].get("scenario") == "baseline" and a["rps"]]
+        gw = [a["rps"] for a in wrk
+              if a["meta"].get("scenario") not in ("baseline", "sweep") and a["rps"]]
+        if not base:
+            problems.append("no wrk baseline for %s, so backend headroom is unknown" % workload)
+        elif gw and base[0] < 1.1 * max(gw):
+            problems.append("backend headroom under 10%% for %s: baseline %.0f req/s, gateway up to %.0f"
+                            % (workload, base[0], max(gw)))
+
+    def saturated(a):
+        rate = a["meta"].get("rate")
+        return a["meta"].get("scenario") == "sweep" and rate and (a["rps"] or 0) < 0.95 * rate
+
+    noisy = [k for k, a in agg.items()
+             if not saturated(a)
+             and a["rps_spread"] is not None and a["rps_spread"] > max_spread]
+    if noisy:
+        problems.append("%d configuration(s) spread more than %.0f%% between repeats"
+                        % (len(noisy), max_spread))
+    return problems
+
+
 # ---------------------------------------------------------------- main
 
 if __name__ == "__main__":
@@ -347,5 +444,8 @@ if __name__ == "__main__":
         if "--format" in sys.argv:
             kind = sys.argv[sys.argv.index("--format") + 1]
         sys.stdout.write(report(sys.argv[2], kind))
+    elif cmd == "verdict":
+        for p in verdict_problems(sys.argv[2]):
+            print(p)
     else:
         sys.exit(__doc__)

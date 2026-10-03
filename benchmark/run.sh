@@ -38,9 +38,17 @@ GW_STATUS_PORT=18888
 BACKEND_PORT=11111
 KEEP_RUNNING=0
 SKIP_PREFLIGHT=0
+BACKEND_CPUS=""           # CPU lists (taskset syntax, e.g. 2-3) to pin each process to;
+GATEWAY_CPUS=""           # empty means unpinned. bench.sh derives them from the host's
+LOAD_CPUS=""              # core layout.
+PIN_SLICE="r7bench.slice"
+
+# Pinned by digest (nginx 1.31.6) so the backend cannot change under a comparison.
+BACKEND_IMAGE="${R7_BENCH_BACKEND_IMAGE:-nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2}"
 
 JVM_OPTS_DEFAULT="-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow"
-JVM_OPTS="${JVM_OPTS:-$JVM_OPTS_DEFAULT}"
+# Set but empty means no extra options: in docker mode, the image's own entrypoint flags.
+JVM_OPTS="${JVM_OPTS-$JVM_OPTS_DEFAULT}"
 
 # ----------------------------------------------------------------- plumbing
 
@@ -77,6 +85,10 @@ Options:
   --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
   --quick                    5s warmup, 10s runs, browser workload only
+  --backend-cpus LIST        pin nginx to these CPUs (e.g. 1)
+  --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3)
+  --load-cpus LIST           pin wrk/wrk2 to these CPUs (e.g. 4-5); --threads
+                             then defaults to the number of CPUs listed
   --keep-running             leave backend/gateway up after the run
   --skip-preflight           skip the host tuning checks
   -h, --help                 this
@@ -107,6 +119,9 @@ while [[ $# -gt 0 ]]; do
     --jar)           JAR="$2"; shift 2 ;;
     --out)           OUT="$2"; shift 2 ;;
     --quick)         WARMUP="5s"; DURATION="10s"; WORKLOADS="browser"; shift ;;
+    --backend-cpus)  BACKEND_CPUS="$2"; shift 2 ;;
+    --gateway-cpus)  GATEWAY_CPUS="$2"; shift 2 ;;
+    --load-cpus)     LOAD_CPUS="$2"; shift 2 ;;
     --keep-running)  KEEP_RUNNING=1; shift ;;
     --skip-preflight) SKIP_PREFLIGHT=1; shift ;;
     -h|--help)       usage; exit 0 ;;
@@ -125,6 +140,21 @@ if has "$SCENARIOS" journal && ! has "$SCENARIOS" passthrough; then
   SCENARIOS="passthrough,$SCENARIOS"
 fi
 
+
+# Number of CPUs in a list like "2-3,6".
+cpu_count() {
+  local n=0 part lo hi
+  IFS=',' read -ra parts <<< "$1"
+  for part in "${parts[@]}"; do
+    lo="${part%-*}"; hi="${part#*-}"
+    n=$(( n + hi - lo + 1 ))
+  done
+  echo "$n"
+}
+
+if [[ -z "$THREADS" && -n "$LOAD_CPUS" ]]; then
+  THREADS="$(cpu_count "$LOAD_CPUS")"
+fi
 if [[ -z "$THREADS" ]]; then
   n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 8)"
   THREADS=$(( n / 2 )); (( THREADS > 16 )) && THREADS=16; (( THREADS < 2 )) && THREADS=2
@@ -132,6 +162,8 @@ fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="${OUT:-$HERE/results/$TS}"
+# Absolute, because docker -v reads a relative source as a volume name.
+mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 RUNDIR="$OUT/run"
 RAW="$OUT/raw"
 mkdir -p "$RUNDIR/config" "$RUNDIR/journals" "$RAW"
@@ -144,6 +176,7 @@ preflight() {
   need docker
   need python3
   need curl
+  need ss
   [[ ",$TOOLS," == *",wrk,"*  ]] && need wrk
   [[ ",$TOOLS," == *",wrk2,"* ]] && need wrk2
   has "$SCENARIOS" sweep && need wrk2
@@ -178,15 +211,73 @@ preflight() {
   fi
   (( REPEAT < 3 )) && warn "--repeat is $REPEAT; the report cannot show a noise floor below 3"
 
-  warn "load generator and gateway share this host: they compete for CPU."
-  warn "'vs base' is therefore an upper bound on cost. 'vs r7' is the clean number."
+  if [[ -n "$GATEWAY_CPUS" && -n "$LOAD_CPUS" ]]; then
+    log "gateway on CPUs $GATEWAY_CPUS, load generator on $LOAD_CPUS: separate cores, shared cache and memory."
+  else
+    warn "load generator and gateway share this host: they compete for CPU."
+  fi
+  warn "'vs base' is an upper bound on cost. 'vs r7' is the clean number."
 }
+
+# ----------------------------------------------------------------- pinning
+
+# As root on a systemd host with cgroup v2, each pinned process gets a transient scope in
+# its own slice. That matters when bench.sh has confined system.slice and user.slice to the
+# housekeeping cores: a process started from this shell inherits user.slice's cpuset, so a
+# plain taskset to a benchmark core would be refused. Anywhere else, taskset.
+PIN_METHOD="taskset"
+if [[ $EUID -eq 0 && -d /run/systemd/system && -f /sys/fs/cgroup/cgroup.controllers ]] \
+   && command -v systemd-run >/dev/null 2>&1; then
+  PIN_METHOD="systemd"
+fi
+
+# Sets PIN to the command prefix that runs a program on the given CPUs (empty: unpinned).
+# It is a prefix rather than a function so `exec` keeps the gateway's PID: both
+# systemd-run --scope and taskset exec the command in place.
+pin_prefix() {
+  PIN=()
+  [[ -z "$1" ]] && return 0
+  if [[ "$PIN_METHOD" == "systemd" ]]; then
+    PIN=(systemd-run --scope --quiet --collect --slice="$PIN_SLICE" -p AllowedCPUs="$1")
+  else
+    PIN=(taskset -c "$1")
+  fi
+}
+
+# ----------------------------------------------------------------- gateway image
+
+GW_IMAGE="${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:latest}"
+# The container runs as the invoking user so it can write the bind-mounted journals. As
+# root (bench.sh) that would measure the gateway with root privileges, so it runs as the
+# image's own user instead and the journals directory is handed to that user.
+GW_UID="$(id -u)"; GW_GID="$(id -g)"
+if [[ "$MODE" == "docker" && $EUID -eq 0 ]]; then
+  docker image inspect "$GW_IMAGE" >/dev/null 2>&1 || docker pull -q "$GW_IMAGE" >/dev/null \
+    || die "cannot pull $GW_IMAGE"
+  img_user="$(docker inspect -f '{{.Config.User}}' "$GW_IMAGE")"
+  [[ "$img_user" =~ ^([0-9]+)(:([0-9]+))?$ ]] \
+    || die "image user '$img_user' is not numeric uid[:gid]; cannot hand it the journals"
+  GW_UID="${BASH_REMATCH[1]}"; GW_GID="${BASH_REMATCH[3]:-${BASH_REMATCH[1]}}"
+fi
 
 # ----------------------------------------------------------------- lifecycle
 
 BACKEND_CID=""
 GW_PID=""
 GW_COMPOSE=0
+COMPOSE_FILES=()
+GW_LEVEL=""
+
+# The compose file requires these for every command, down included: without them `down`
+# fails to interpolate, the gateway keeps running, and the next `up` reuses the same JVM.
+compose() {
+  R7_BENCH_CONFIG="$RUNDIR/config" \
+  R7_BENCH_JOURNALS="$RUNDIR/journals" \
+  R7_BENCH_JVM_OPTS="$JVM_OPTS" \
+  R7_BENCH_UID="$GW_UID" \
+  R7_BENCH_GID="$GW_GID" \
+    docker compose "${COMPOSE_FILES[@]}" "$@"
+}
 
 cleanup() {
   local rc=$?
@@ -201,7 +292,10 @@ cleanup() {
   fi
   return $rc
 }
-trap cleanup EXIT INT TERM
+# INT/TERM exit, which runs cleanup once; trapping them to cleanup directly would resume the
+# scenario loops afterwards.
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 wait_for() {
   local url="$1" what="$2" tries="${3:-60}"
@@ -217,12 +311,27 @@ start_backend() {
     die "port $BACKEND_PORT already in use; stop whatever is on it first"
   fi
   log "starting nginx reference backend on :$BACKEND_PORT"
+  local conf="$HERE/backend/nginx.conf"
+  local -a pin_args=()
+  if [[ -n "$BACKEND_CPUS" ]]; then
+    # worker_processes auto counts the host's CPUs, not the container's cpuset.
+    conf="$(cd "$RUNDIR" && pwd)/nginx.conf"
+    sed -e "s|^worker_processes .*|worker_processes  $(cpu_count "$BACKEND_CPUS");|" \
+      "$HERE/backend/nginx.conf" > "$conf"
+    pin_args=(--cpuset-cpus "$BACKEND_CPUS")
+    # With the systemd cgroup driver containers live under system.slice, which bench.sh
+    # confines to the housekeeping cores; the cpuset above would then be ignored.
+    if [[ "$PIN_METHOD" == "systemd" && "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" == "systemd" ]]; then
+      pin_args+=(--cgroup-parent "$PIN_SLICE")
+    fi
+  fi
   BACKEND_CID="$(docker run -d --rm \
     --name r7-bench-backend \
     --network host \
     --ulimit nofile=200000:200000 \
-    -v "$HERE/backend/nginx.conf:/etc/nginx/nginx.conf:ro" \
-    nginx:alpine)"
+    "${pin_args[@]}" \
+    -v "$conf:/etc/nginx/nginx.conf:ro" \
+    "$BACKEND_IMAGE")"
   wait_for "http://127.0.0.1:$BACKEND_PORT/__bench_health" "backend"
   ok "backend ready"
 }
@@ -239,6 +348,12 @@ render_config() {
       "$HERE/config/server.yaml.tmpl" > "$RUNDIR/config/server.yaml"
 
   rm -rf "${RUNDIR:?}/journals"; mkdir -p "$RUNDIR/journals"
+  # The configuration too: under a restrictive umask (077) a root run leaves it root-only,
+  # and the gateway's own user could not read it.
+  if [[ "$MODE" == "docker" ]]; then
+    chown "$GW_UID:$GW_GID" "$RUNDIR/journals" "$RUNDIR/config" \
+      "$RUNDIR/config/routes.yaml" "$RUNDIR/config/server.yaml"
+  fi
 }
 
 start_gateway() {
@@ -246,18 +361,31 @@ start_gateway() {
   render_config "$level"
   if [[ "$MODE" == "jvm-local" ]]; then
     log "starting gateway (jvm-local, journal=$level)"
-    ( cd "$RUNDIR" && exec java $JVM_OPTS ${R7_ARGS:-} -jar "$JAR" ) \
+    pin_prefix "$GATEWAY_CPUS"
+    # r7 reads routes.yaml and server.yaml from its working directory.
+    ( cd "$RUNDIR/config" && exec "${PIN[@]}" java $JVM_OPTS ${R7_ARGS:-} -jar "$JAR" ) \
       >> "$OUT/gateway-$level.log" 2>&1 &
     GW_PID=$!
   else
     log "starting gateway (docker, journal=$level)"
     GW_COMPOSE=1
-    R7_BENCH_CONFIG="$RUNDIR/config" \
-    R7_BENCH_JOURNALS="$RUNDIR/journals" \
-    R7_BENCH_JVM_OPTS="$JVM_OPTS" \
-    R7_BENCH_UID="$(id -u)" \
-    R7_BENCH_GID="$(id -g)" \
-      docker compose -f "$HERE/docker-compose.bench.yaml" up -d gateway
+    GW_LEVEL="$level"
+    COMPOSE_FILES=(-f "$HERE/docker-compose.bench.yaml")
+    if [[ -n "$GATEWAY_CPUS" ]]; then
+      # Pinning is an override rather than part of the compose file, which has no way to
+      # say "unpinned" with an empty value. The cgroup parent matters for the same reason
+      # as the backend's.
+      {
+        echo "services:"
+        echo "  gateway:"
+        echo "    cpuset: \"$GATEWAY_CPUS\""
+        if [[ "$PIN_METHOD" == "systemd" && "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" == "systemd" ]]; then
+          echo "    cgroup_parent: $PIN_SLICE"
+        fi
+      } > "$RUNDIR/compose.pin.yaml"
+      COMPOSE_FILES+=(-f "$RUNDIR/compose.pin.yaml")
+    fi
+    compose up -d gateway
   fi
   wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "gateway" 120
   ok "gateway ready (journal=$level)"
@@ -270,13 +398,25 @@ stop_gateway() {
     GW_PID=""
   fi
   if (( GW_COMPOSE )); then
-    docker compose -f "$HERE/docker-compose.bench.yaml" down --remove-orphans >/dev/null 2>&1 || true
+    docker logs r7-bench-gateway >> "$OUT/gateway-$GW_LEVEL.log" 2>&1 || true
+    # A gateway that survives here would be reused by the next `up`: the next run would
+    # measure the old JVM and configuration. So a failed stop ends the run.
+    if ! compose down --remove-orphans >/dev/null 2>&1; then
+      warn "could not stop the gateway container"
+      return 1
+    fi
     GW_COMPOSE=0
   fi
+  local listening
   for _ in {1..20}; do
-    ss -ltn 2>/dev/null | grep -q ":$GW_PORT " || break
+    # A failed probe is not a free port.
+    listening="$(ss -ltnH "sport = :$GW_PORT" 2>/dev/null)" \
+      || { warn "ss failed; cannot confirm the gateway port is free"; return 1; }
+    [[ -z "$listening" ]] && return 0
     sleep 0.25
   done
+  warn "something still listens on :$GW_PORT after stopping the gateway"
+  return 1
 }
 
 journal_size() {
@@ -303,6 +443,7 @@ fire() {
   local rep="$7" do_warmup="$8"
   local script; script="$(workload_script "$workload")"
 
+  local -a PIN; pin_prefix "$LOAD_CPUS"
   local tag="${scenario}-${workload}-${tool}"
   [[ "$scenario" == "journal" ]] && tag="${scenario}-${journal}-${workload}-${tool}"
   [[ "$scenario" == "sweep"   ]] && tag="$(printf 'sweep-%s-%s-r%08d' "$journal" "$workload" "$rate")"
@@ -313,10 +454,10 @@ fire() {
     # a fixed rate. Prefer wrk; fall back to wrk2 if only that is installed.
     log "warmup  ${tag} (${WARMUP}, discarded)"
     if command -v wrk >/dev/null 2>&1; then
-      wrk -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -s "$script" --timeout 5s "$url" \
+      "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -s "$script" --timeout 5s "$url" \
         > "$RAW/$file_tag.warmup.txt" 2>&1 || true
     else
-      wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -R"$((rate * 4))" -s "$script" \
+      "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -R"$((rate * 4))" -s "$script" \
         --timeout 5s "$url" > "$RAW/$file_tag.warmup.txt" 2>&1 || true
     fi
     sleep 2
@@ -324,10 +465,10 @@ fire() {
 
   log "measure ${tag} (${DURATION}, repeat ${rep}/${REPEAT})"
   if [[ "$tool" == "wrk" ]]; then
-    wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency --timeout 5s \
+    "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency --timeout 5s \
         -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || true
   else
-    wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" -R"$rate" --latency --timeout 5s \
+    "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" -R"$rate" --latency --timeout 5s \
          -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || true
   fi
 
@@ -394,13 +535,50 @@ log "results -> $OUT"
   echo "scenarios=$SCENARIOS workloads=$WORKLOADS tools=$TOOLS"
   echo "sweep_rates=$SWEEP_RATES sweep_levels=$SWEEP_LEVELS journal_levels=$JOURNAL_LEVELS"
   echo "host=$(uname -srm) cpus=$(getconf _NPROCESSORS_ONLN)"
-  echo "java=$(java -version 2>&1 | head -n1 || echo n/a)"
+  if [[ "$MODE" == "docker" ]]; then
+    echo "image=$GW_IMAGE user=$GW_UID:$GW_GID"
+  else
+    echo "java=$(java -version 2>&1 | head -n1 || echo n/a)"
+  fi
   echo "wrk=$(wrk --version 2>&1 | head -n1 || echo n/a)"
   echo "wrk2=$(wrk2 --version 2>&1 | head -n1 || echo n/a)"
   echo "jar=$JAR"
+  echo "jvm_opts=$JVM_OPTS"
+  echo "backend_image=$BACKEND_IMAGE"
+  echo "pinning=$PIN_METHOD backend_cpus=${BACKEND_CPUS:-none} gateway_cpus=${GATEWAY_CPUS:-none} load_cpus=${LOAD_CPUS:-none}"
   echo "git=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo n/a)"
   echo "date=$(date -Is)"
 } > "$OUT/environment.txt"
+
+# Every run the selected profile will make, written before any of them, so the verdict can
+# tell a run that produced no result from one that was never asked for. Mirrors the loops below.
+plan_rows() {   # plan_rows <scenario> <journal> <rate> <tool...>
+  local s="$1" j="$2" r="$3" w t rep; shift 3
+  for w in "${PLAN_WL[@]}"; do for t in "$@"; do
+    for ((rep = 1; rep <= REPEAT; rep++)); do
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$w" "$t" "$j" "$([[ "$t" == wrk2 ]] && echo "$r" || echo -)" "$rep"
+    done
+  done; done
+}
+IFS=',' read -ra PLAN_WL <<< "$WORKLOADS"
+IFS=',' read -ra PLAN_TL <<< "$TOOLS"
+{
+  has "$SCENARIOS" baseline    && plan_rows baseline - "$RATE" "${PLAN_TL[@]}"
+  has "$SCENARIOS" passthrough && plan_rows passthrough NONE "$RATE" "${PLAN_TL[@]}"
+  has "$SCENARIOS" filtered    && plan_rows filtered NONE "$RATE" "${PLAN_TL[@]}"
+  if has "$SCENARIOS" journal; then
+    IFS=',' read -ra LEVELS <<< "$JOURNAL_LEVELS"
+    for level in "${LEVELS[@]}"; do plan_rows journal "$level" "$RATE" "${PLAN_TL[@]}"; done
+  fi
+  if has "$SCENARIOS" sweep; then
+    IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
+    IFS=',' read -ra SRATES  <<< "$SWEEP_RATES"
+    for level in "${SLEVELS[@]}"; do for r in "${SRATES[@]}"; do
+      plan_rows sweep "$level" "$r" wrk2
+    done; done
+  fi
+  true
+} > "$OUT/plan.tsv"
 
 start_backend
 
