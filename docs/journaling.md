@@ -39,12 +39,15 @@ routes:
 ```
 
 **2. Run the gateway and the tailer on one volume.** The gateway writes the journals, the tailer
-reads them:
+reads them. Add the two services to the compose file that runs your upstream (`backend` in the
+route above):
 
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
     image: ghcr.io/ethlo/r7-gateway:latest
+    ports:
+      - "8888:8888"
     volumes:
       - ./config:/app/config:ro
       - r7-journals:/journals:rw
@@ -65,8 +68,8 @@ volumes:
 **3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which
 Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line holds the timing,
 status, sizes and full headers of every leg, and, for an exchange with a body, a `warc` pointer
-to its records in `/warc`. This is an abbreviated line; the full format is under
-[the tailer](#3-the-tailer):
+to its records in `/warc`. The line is one physical line; this one is abbreviated and
+pretty-printed for reading. The full format is under [the tailer](#3-the-tailer):
 
 ```json
 {
