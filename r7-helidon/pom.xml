@@ -20,7 +20,7 @@
              Java 27 only, and 29 will be the LTS for Java 29. The default is the LTS pairing, so
              r7-helidon runs on the same Java as the rest of r7; -Phelidon-27 builds the Java 27
              line, which is the only one with per-carrier I/O pollers (design/history/upstream-client.md). -->
-        <helidon.version>4.5.5</helidon.version>
+        <helidon.version>27.0.0</helidon.version>
     </properties>
     <build>
         <plugins>
