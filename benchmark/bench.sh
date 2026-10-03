@@ -305,6 +305,12 @@ if [[ "$ACTION" == "check" ]]; then
 fi
 
 [[ $EUID -eq 0 ]] || die "run with sudo: tuning the host needs root (try --check first)"
+
+# Nothing inherited may change what is measured: r7 prefers these over the generated config,
+# the JVM reads the option variables, and run.sh and the compose file read the R7_BENCH_
+# ones. A backend image override is allowed, and gated in the verdict.
+unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_ARGS JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS \
+  R7_BENCH_IMAGE R7_BENCH_MEM R7_BENCH_MEM_RESERVE R7_BENCH_JVM_OPTS
 lock_host
 [[ -f "$STATE" ]] && die "settings from an interrupted run are still saved; run --restore first"
 
@@ -348,7 +354,10 @@ else
   (( PULLED )) || docker image inspect "$IMAGE" >/dev/null 2>&1 || die "cannot pull $IMAGE"
   # Measure exactly one image: the digest it resolved to, recorded, so a later run can pull
   # the same bytes even after the tag has moved.
-  REPO_NAME="${IMAGE%@*}"; REPO_NAME="${REPO_NAME%:*}"
+  # The repository is the reference without digest or tag; a tag can only follow the last
+  # slash, so a registry port (host:5000/...) stays.
+  REPO_NAME="${IMAGE%@*}"
+  [[ "${REPO_NAME##*/}" == *:* ]] && REPO_NAME="${REPO_NAME%:*}"
   IMAGE_REF="$(docker inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" \
     | grep -m1 "^$REPO_NAME@" || true)"
   IMAGE_JAVA="$(docker run --rm --entrypoint java "${IMAGE_REF:-$IMAGE}" -version 2>&1 | sed -n 2p)"

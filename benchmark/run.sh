@@ -249,6 +249,17 @@ GW_COMPOSE=0
 COMPOSE_FILES=()
 GW_LEVEL=""
 
+# The compose file requires these for every command, down included: without them `down`
+# fails to interpolate, the gateway keeps running, and the next `up` reuses the same JVM.
+compose() {
+  R7_BENCH_CONFIG="$RUNDIR/config" \
+  R7_BENCH_JOURNALS="$RUNDIR/journals" \
+  R7_BENCH_JVM_OPTS="$JVM_OPTS" \
+  R7_BENCH_UID="$(id -u)" \
+  R7_BENCH_GID="$(id -g)" \
+    docker compose "${COMPOSE_FILES[@]}" "$@"
+}
+
 cleanup() {
   local rc=$?
   if (( KEEP_RUNNING )); then
@@ -349,12 +360,7 @@ start_gateway() {
       } > "$RUNDIR/compose.pin.yaml"
       COMPOSE_FILES+=(-f "$RUNDIR/compose.pin.yaml")
     fi
-    R7_BENCH_CONFIG="$RUNDIR/config" \
-    R7_BENCH_JOURNALS="$RUNDIR/journals" \
-    R7_BENCH_JVM_OPTS="$JVM_OPTS" \
-    R7_BENCH_UID="$(id -u)" \
-    R7_BENCH_GID="$(id -g)" \
-      docker compose "${COMPOSE_FILES[@]}" up -d gateway
+    compose up -d gateway
   fi
   wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "gateway" 120
   ok "gateway ready (journal=$level)"
@@ -368,7 +374,7 @@ stop_gateway() {
   fi
   if (( GW_COMPOSE )); then
     docker logs r7-bench-gateway >> "$OUT/gateway-$GW_LEVEL.log" 2>&1 || true
-    docker compose "${COMPOSE_FILES[@]}" down --remove-orphans >/dev/null 2>&1 || true
+    compose down --remove-orphans >/dev/null 2>&1 || true
     GW_COMPOSE=0
   fi
   for _ in {1..20}; do
