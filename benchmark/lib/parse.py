@@ -339,10 +339,19 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
     95% of its target rate is past the knee and exempt from the spread check, since
     saturation is exactly where repeats disagree; every other point is held to it.
     """
+    # Unlike the report, a broken result file is a failed run, not one to skip: dropping it
+    # would hide exactly the run that went wrong.
+    problems = []
+    for name in sorted(os.listdir(d)):
+        if name.endswith(".json") and name != "summary.json":
+            try:
+                with open(os.path.join(d, name)) as fh:
+                    json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                problems.append("unreadable result file %s" % name)
     agg = group(load_results(d))
     if not agg:
-        return ["no results"]
-    problems = []
+        return problems + ["no results"]
     invalid = [k for k, a in agg.items() if a["errors"]]
     if invalid:
         problems.append("%d configuration(s) have invalid runs" % len(invalid))

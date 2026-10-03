@@ -260,7 +260,10 @@ cleanup() {
   fi
   return $rc
 }
-trap cleanup EXIT INT TERM
+# INT/TERM exit, which runs cleanup once; trapping them to cleanup directly would resume the
+# scenario loops afterwards.
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 wait_for() {
   local url="$1" what="$2" tries="${3:-60}"

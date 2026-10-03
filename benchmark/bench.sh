@@ -223,15 +223,19 @@ as_user() {
   fi
 }
 
+# The marker is written only after a complete extraction, and names the archive's checksum,
+# so an interrupted extraction or a changed pin replaces the directory instead of reusing it.
 fetch_jdk() {
   local url="$1" sha="$2" dir="$3"
-  [[ -x "$dir/bin/java" ]] && return 0
+  [[ "$(cat "$dir/.sha256" 2>/dev/null)" == "$sha" ]] && return 0
   local tgz="$CACHE/dl/$(basename "$url")"
   log "downloading $(basename "$url")"
+  as_user rm -rf "$dir"
   as_user mkdir -p "$CACHE/dl" "$dir"
   as_user curl -fsSL -o "$tgz" "$url"
   echo "$sha  $tgz" | sha256sum -c --quiet - || { rm -f "$tgz"; die "checksum mismatch for $tgz"; }
   as_user tar -xzf "$tgz" -C "$dir" --strip-components=1
+  as_user sh -c "echo $sha > '$dir/.sha256'"
 }
 
 build_wrk() {
@@ -293,7 +297,7 @@ RUN_JDK="$CACHE/jdk-$JDK"
 
 log "building r7 with JDK 27"
 ( cd "$REPO" && as_user env JAVA_HOME="$CACHE/jdk-27" \
-    ./mvnw -q -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true package -pl r7-helidon -am )
+    ./mvnw -q -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true clean package -pl r7-helidon -am )
 JAR="$(ls "$REPO"/r7-helidon/target/r7-helidon-*[0-9T].jar | head -n1)"
 [[ -f "$JAR" ]] || die "no gateway jar after the build"
 
@@ -338,10 +342,16 @@ PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtere
 QUICK_FLAG=""
 (( QUICK )) && PROFILE=(--quick) && QUICK_FLAG=" --quick"
 
+# In the background so a TERM to this script reaches run.sh at once; in the foreground bash
+# would hold the signal until run.sh finished, hours later, with the host still tuned.
 PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_FLAGS" \
   "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" \
     --backend-cpus "$BACKEND_CPUS" --gateway-cpus "$GATEWAY_CPUS" --load-cpus "$LOAD_CPUS" \
-    "${PROFILE[@]}"
+    "${PROFILE[@]}" &
+RUN_PID=$!
+trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' INT TERM
+wait "$RUN_PID"
+trap 'exit 130' INT TERM
 
 {
   echo "bench=bench.sh${QUICK_FLAG} --jdk $JDK --gc $GC"
@@ -361,6 +371,8 @@ cp "$TRAIN/training.log" "$OUT/aot-training.log"
 
 REASONS=()
 (( QUICK )) && REASONS+=("--quick profile")
+[[ -n "${R7_BENCH_BACKEND_IMAGE:-}" && "$R7_BENCH_BACKEND_IMAGE" != *@sha256:* ]] \
+  && REASONS+=("R7_BENCH_BACKEND_IMAGE is not pinned by digest")
 [[ -n "$DIRTY" ]] && REASONS+=("uncommitted changes in the working tree")
 for u in "${UNTUNED[@]}"; do REASONS+=("not tuned: $u"); done
 # A validator that fails must block the verdict, not silently report no problems.
