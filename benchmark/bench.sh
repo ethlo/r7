@@ -376,7 +376,7 @@ fi
 # Nothing inherited may change what is measured: r7 prefers these over the generated config,
 # the JVM reads the option variables, and run.sh and the compose file read the R7_BENCH_
 # ones. A backend image override is allowed, and gated in the verdict.
-unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_LOGBACK_CONFIG R7_ARGS \
+unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_LOGBACK_CONFIG R7_ARGS R7_MANAGEMENT_HOST \
   JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS BENCH_BODY_BYTES \
   R7_BENCH_IMAGE R7_BENCH_MEM R7_BENCH_MEM_RESERVE R7_BENCH_JVM_OPTS
 lock_host
