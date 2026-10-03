@@ -11,9 +11,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import com.ethlo.r7.docs.DocSnippet;
 import com.ethlo.r7.docs.DocSnippets;
+import com.ethlo.r7.tailer.TailerRunner;
 
 /**
- * Every warc-tailer.yaml snippet in the docs loads and validates the way WarcTailerMain loads it at startup.
+ * Every warc-tailer.yaml snippet in the docs loads and validates the way the WARC tailer loads it at startup.
  */
 class DocsConfigSnippetsTest
 {
@@ -31,7 +32,7 @@ class DocsConfigSnippetsTest
     {
         try
         {
-            assertThat(WarcTailerMain.loadConfig(snippet.writeTo(this.dir, DocSnippets.WARC_TAILER))).isNotNull();
+            assertThat(TailerRunner.loadConfig(snippet.writeTo(this.dir, DocSnippets.WARC_TAILER), WarcTailerConfig.class, WarcTailerConfig::standard)).isNotNull();
         }
         catch (final RuntimeException e)
         {

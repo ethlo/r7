@@ -24,6 +24,7 @@ normative file format is [`r7-journal-mmap/FORMAT.md`](../r7-journal-mmap/FORMAT
 | [`upstream.md`](upstream.md) | The upstream client every server uses, and the rules it keeps |
 | [`journal-invariants.md`](journal-invariants.md) | The journal's four invariants and the tests that enforce each |
 | [`warc.md`](warc.md) | The WARC sidecar: why WARC, the record shape, and what it must carry over |
+| [`tailers.md`](tailers.md) | What every tailer shares, and what only file-writing tailers share |
 | [`asvs-l2.md`](asvs-l2.md) | OWASP ASVS 5.0 Level 2 self-assessment |
 | [`native-image.md`](native-image.md) | Decision: no native image |
 

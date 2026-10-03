@@ -20,6 +20,7 @@ import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.tailer.files.SealedFileWriter;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.github.luben.zstd.ZstdInputStream;
@@ -136,7 +137,7 @@ class CdxjIndexTest
 
     private WarcFileWriter writer(final boolean cdxjIndex) throws IOException
     {
-        return new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3, cdxjIndex);
+        return new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3, cdxjIndex);
     }
 
     /**

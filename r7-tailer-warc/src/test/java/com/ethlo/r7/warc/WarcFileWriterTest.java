@@ -15,6 +15,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.ethlo.r7.tailer.files.SealedFileWriter;
 import com.github.luben.zstd.ZstdInputStream;
 
 class WarcFileWriterTest
@@ -32,7 +33,7 @@ class WarcFileWriterTest
     @Test
     void aFileLeftOpenByACrashIsSealedOnTheNextStart() throws IOException
     {
-        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
         crashed.writeRecord(WarcFields.newRecordId(), "resource",
                 List.of(Map.entry("Content-Type", "text/plain")), "first".getBytes(StandardCharsets.UTF_8));
         crashed.writeRecord(WarcFields.newRecordId(), "resource",
@@ -41,7 +42,7 @@ class WarcFileWriterTest
         final Path open = only(".warc.zst.open");
         Files.write(open, new byte[]{0x28, (byte) 0xB5, 0x2F, (byte) 0xFD, 0x00, 0x01}, StandardOpenOption.APPEND);
 
-        new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
 
         assertThat(Files.exists(open)).isFalse();
         final Path sealed = dir.resolve(open.getFileName().toString().replace(".open", ""));
@@ -56,12 +57,27 @@ class WarcFileWriterTest
         final Path torn = dir.resolve("r7-1-abc.warc.zst.open");
         Files.write(torn, new byte[]{0x28, (byte) 0xB5, 0x2F});
 
-        new WarcFileWriter(dir, "r7", WarcFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
 
         try (Stream<Path> files = Files.list(dir))
         {
             assertThat(files.map(p -> p.getFileName().toString()))
                     .noneMatch(name -> name.startsWith("r7-1-abc"));
+        }
+    }
+
+    /**
+     * A file is opened by the first record, so a tailer that saw no traffic leaves nothing
+     * behind, not a file holding only its warcinfo record.
+     */
+    @Test
+    void aWriterThatWroteNothingLeavesNoFile() throws IOException
+    {
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        try (Stream<Path> files = Files.list(dir))
+        {
+            assertThat(files).isEmpty();
         }
     }
 

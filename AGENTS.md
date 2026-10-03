@@ -92,7 +92,8 @@ r7-upstream     the blocking HTTP/1.1 upstream client every server shares: HttpU
 r7-server-blocking thread-per-request base: BlockingServerExchange, BlockingGateway
 r7-helidon      the gateway: R7Helidon on Helidon Níma, an adapter over r7-server-blocking
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
-r7-tailer-api   no code: the dependencies the tailer apps share
+r7-tailer-api   what every tailer shares: TailerRunner (config, read loop, shutdown), TailerConfig
+r7-tailer-files local file output for tailers: SealedFileWriter, RollingFilesConfig (design/tailers.md)
 r7-tailer-jsonld sidecar app that turns journals into JSON lines
 r7-tailer-warc  sidecar app that turns journals into WARC files (design/warc.md)
 r7-reaper       sidecar app that deletes sealed segments once tailers are done with them

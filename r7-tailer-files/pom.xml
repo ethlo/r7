@@ -7,10 +7,10 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>r7-tailer-api</artifactId>
+    <artifactId>r7-tailer-files</artifactId>
     <packaging>jar</packaging>
 
-    <name>r7-tailer-api</name>
+    <name>r7-tailer-files</name>
     <url>http://maven.apache.org</url>
 
     <properties>
@@ -20,13 +20,22 @@
     <dependencies>
         <dependency>
             <groupId>com.ethlo.r7</groupId>
-            <artifactId>r7-config</artifactId>
+            <artifactId>r7-tailer-api</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
+
+        <!-- TEST -->
         <dependency>
-            <groupId>com.ethlo.r7</groupId>
-            <artifactId>r7-journal-mmap</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.1.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

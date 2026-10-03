@@ -4,10 +4,11 @@ import java.time.Duration;
 import java.util.Optional;
 
 import com.ethlo.r7.config.model.DataSize;
+import com.ethlo.r7.tailer.TailerConfig;
+import com.ethlo.r7.tailer.files.RollingFilesConfig;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
-import com.ethlo.r7.warc.WarcFileWriter;
 
 /**
  * {@code warc-tailer.yaml} - same {@code r7-config} conventions (snake_case, {@code
@@ -34,7 +35,7 @@ public record WarcTailerConfig(
         Integer dedupCacheEntries,
         Duration pollInterval,
         Boolean cdxjIndex
-) implements ValidatableConfig
+) implements TailerConfig, RollingFilesConfig, ValidatableConfig
 {
     public static WarcTailerConfig standard()
     {
@@ -44,7 +45,7 @@ public record WarcTailerConfig(
     @Override
     public String journalDir()
     {
-        return Optional.ofNullable(this.journalDir).orElse("/journals");
+        return Optional.ofNullable(this.journalDir).orElse(DEFAULT_JOURNAL_DIR);
     }
 
     @Override
@@ -56,17 +57,13 @@ public record WarcTailerConfig(
     @Override
     public String checkpointDir()
     {
-        // Its own volume, as for the JSON tailer: not under journalDir(), which a tailer mounts
-        // read-only, and not under outputDir(), because a reaper reads this directory to learn
-        // which segments the tailer is done with, and must not need access to the archive to
-        // do it.
-        return Optional.ofNullable(this.checkpointDir).orElse("/checkpoints");
+        return Optional.ofNullable(this.checkpointDir).orElse(DEFAULT_CHECKPOINT_DIR);
     }
 
     @Override
     public String filePrefix()
     {
-        return Optional.ofNullable(this.filePrefix).orElse("r7");
+        return Optional.ofNullable(this.filePrefix).orElse(DEFAULT_FILE_PREFIX);
     }
 
     @Override
@@ -78,7 +75,7 @@ public record WarcTailerConfig(
     @Override
     public Duration maxFileAge()
     {
-        return Optional.ofNullable(this.maxFileAge).orElse(Duration.ofMinutes(15));
+        return Optional.ofNullable(this.maxFileAge).orElse(DEFAULT_MAX_FILE_AGE);
     }
 
     @Override
@@ -96,7 +93,7 @@ public record WarcTailerConfig(
     @Override
     public Duration pollInterval()
     {
-        return Optional.ofNullable(this.pollInterval).orElse(Duration.ofSeconds(1));
+        return Optional.ofNullable(this.pollInterval).orElse(DEFAULT_POLL_INTERVAL);
     }
 
     @Override
@@ -112,11 +109,6 @@ public record WarcTailerConfig(
         v.requirePositive("zstd_level", this.zstdLevel());
         v.requirePositive("dedup_cache_entries", this.dedupCacheEntries());
 
-        final long maxFileSizeBytes = this.maxFileSize().bytes();
-        if (maxFileSizeBytes < WarcFileWriter.MIN_ROLLOVER_SIZE)
-        {
-            result.addError("max_file_size", "must be at least " + WarcFileWriter.MIN_ROLLOVER_SIZE
-                    + " bytes, but was " + maxFileSizeBytes);
-        }
+        this.validateRollover(result);
     }
 }
