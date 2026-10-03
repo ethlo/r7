@@ -14,7 +14,75 @@ graph LR
 
 ```
 
-## 1. Turn on journaling
+## Quick start
+
+The common setup: the gateway journals headers and bodies, the tailer writes the metadata and
+headers as JSON lines to its standard output, and the bodies go to WARC files. The tailer needs
+no configuration for this; its defaults are exactly that.
+
+**1. Journal the route in full.** In `routes.yaml`:
+
+```yaml
+routes:
+  - id: my-route
+    match:
+      - PathPrefix:
+          prefix: /api
+    upstream:
+      targets:
+        - url: http://backend:8080
+    journal:
+      request:
+        level: FULL
+      response:
+        level: FULL
+```
+
+**2. Run the gateway and the tailer on one volume.** The gateway writes the journals, the tailer
+reads them:
+
+```yaml title="docker-compose.yaml"
+services:
+  r7-api:
+    image: ghcr.io/ethlo/r7-gateway:latest
+    volumes:
+      - ./config:/app/config:ro
+      - r7-journals:/journals:rw
+
+  r7-tailer:
+    image: ghcr.io/ethlo/r7-tailer:latest
+    volumes:
+      - r7-journals:/journals:ro
+      - r7-warc:/warc:rw
+      - r7-tailer-checkpoints:/checkpoints:rw
+
+volumes:
+  r7-journals:
+  r7-warc:
+  r7-tailer-checkpoints:
+```
+
+**3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which
+Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line holds the timing,
+status, sizes and full headers of every leg, and a `warc` pointer to the exchange's bodies in
+`/warc`:
+
+```json
+{
+  "request_id": "01JA0Q6R8X4V2N7M3K5T9B1C0D",
+  "start": "2026-10-01T12:00:00.000120Z",
+  "duration": 0.004290,
+  "client_request": {"method": "POST", "path": "/items", "headers": {"host": "api.example.com"}, "body_bytes": 212},
+  "client_response": {"status": 201, "headers": {"content-type": "application/json"}, "body_bytes": 1274},
+  "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 48211, "length": 1873}
+}
+```
+
+The `/warc` files are standard [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
+archives, readable by any WARC tool. Everything else on this page is reference for tuning this
+setup: the journal levels, redaction, every tailer property, other output layouts and retention.
+
+## 1. Journal levels and redaction
 
 Tailers only see what the gateway actually writes. Set the level per route (and optionally
 override it by response status) in `routes.yaml`:
@@ -213,20 +281,19 @@ an end event (`TIMED_OUT`, `SHUTDOWN`, `CAPACITY_EVICTED`) timing, status and si
 and left out. Attributes the gateway recorded are under `attributes`. A header with one value is
 a string, one sent more than once an array of its values.
 
-**Example `config/tailer.yaml`:** every exchange in a WARC archive with its index, and JSON lines on standard output.
+### Other layouts
+
+Each of these is a `tailer.yaml` and replaces the defaults only where it says.
+
+Every exchange in the WARC archive, with a CDXJ index, so every JSON line has a `warc` pointer:
 
 ```yaml title="tailer.yaml"
-journal_dir: /journals
-checkpoint_dir: /checkpoints
 warc:
-  output_dir: /warc
   exchanges: all
   cdxj_index: true
-json:
-  output: stdout
 ```
 
-The defaults (bodies archived, everything logged), with JSON to files for a loader:
+JSON to rotating files for a loader instead of standard output:
 
 ```yaml title="tailer.yaml"
 json:
@@ -242,32 +309,6 @@ warc:
   enabled: false
 json:
   bodies: true
-```
-
-**Example Docker Compose Integration:**
-
-```yaml title="docker-compose.yaml"
-services:
-  r7-api:
-    image: ghcr.io/ethlo/r7-gateway:latest
-    volumes:
-      - ./config:/app/config:ro
-      - r7-journals:/journals:rw # Mount the shared volume
-
-  r7-tailer:
-    image: ghcr.io/ethlo/r7-tailer:latest
-    volumes:
-      - ./config/tailer.yaml:/app/config/tailer.yaml:ro
-      - r7-journals:/journals:ro # the tailer only ever reads; retention is the reaper's job
-      - r7-warc:/warc:rw
-      - r7-tailer-checkpoints:/checkpoints:rw
-    # JSON lines go to the container's stdout, ready for your logging driver.
-
-volumes:
-  r7-journals:
-  r7-warc:
-  r7-tailer-checkpoints:
-
 ```
 
 ## 4. Retention: The Reaper
