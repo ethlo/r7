@@ -47,7 +47,8 @@ PIN_SLICE="r7bench.slice"
 BACKEND_IMAGE="${R7_BENCH_BACKEND_IMAGE:-nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2}"
 
 JVM_OPTS_DEFAULT="-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow"
-JVM_OPTS="${JVM_OPTS:-$JVM_OPTS_DEFAULT}"
+# Set but empty means no extra options: in docker mode, the image's own entrypoint flags.
+JVM_OPTS="${JVM_OPTS-$JVM_OPTS_DEFAULT}"
 
 # ----------------------------------------------------------------- plumbing
 
@@ -85,7 +86,7 @@ Options:
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
   --quick                    5s warmup, 10s runs, browser workload only
   --backend-cpus LIST        pin nginx to these CPUs (e.g. 1)
-  --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3; jvm-local only)
+  --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3)
   --load-cpus LIST           pin wrk/wrk2 to these CPUs (e.g. 4-5); --threads
                              then defaults to the number of CPUs listed
   --keep-running             leave backend/gateway up after the run
@@ -139,7 +140,6 @@ if has "$SCENARIOS" journal && ! has "$SCENARIOS" passthrough; then
   SCENARIOS="passthrough,$SCENARIOS"
 fi
 
-[[ -n "$GATEWAY_CPUS" && "$MODE" == "docker" ]] && die "--gateway-cpus is only supported with --mode jvm-local"
 
 # Number of CPUs in a list like "2-3,6".
 cpu_count() {
@@ -246,6 +246,8 @@ pin_prefix() {
 BACKEND_CID=""
 GW_PID=""
 GW_COMPOSE=0
+COMPOSE_FILES=()
+GW_LEVEL=""
 
 cleanup() {
   local rc=$?
@@ -331,12 +333,28 @@ start_gateway() {
   else
     log "starting gateway (docker, journal=$level)"
     GW_COMPOSE=1
+    GW_LEVEL="$level"
+    COMPOSE_FILES=(-f "$HERE/docker-compose.bench.yaml")
+    if [[ -n "$GATEWAY_CPUS" ]]; then
+      # Pinning is an override rather than part of the compose file, which has no way to
+      # say "unpinned" with an empty value. The cgroup parent matters for the same reason
+      # as the backend's.
+      {
+        echo "services:"
+        echo "  gateway:"
+        echo "    cpuset: \"$GATEWAY_CPUS\""
+        if [[ "$PIN_METHOD" == "systemd" && "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" == "systemd" ]]; then
+          echo "    cgroup_parent: $PIN_SLICE"
+        fi
+      } > "$RUNDIR/compose.pin.yaml"
+      COMPOSE_FILES+=(-f "$RUNDIR/compose.pin.yaml")
+    fi
     R7_BENCH_CONFIG="$RUNDIR/config" \
     R7_BENCH_JOURNALS="$RUNDIR/journals" \
     R7_BENCH_JVM_OPTS="$JVM_OPTS" \
     R7_BENCH_UID="$(id -u)" \
     R7_BENCH_GID="$(id -g)" \
-      docker compose -f "$HERE/docker-compose.bench.yaml" up -d gateway
+      docker compose "${COMPOSE_FILES[@]}" up -d gateway
   fi
   wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "gateway" 120
   ok "gateway ready (journal=$level)"
@@ -349,7 +367,8 @@ stop_gateway() {
     GW_PID=""
   fi
   if (( GW_COMPOSE )); then
-    docker compose -f "$HERE/docker-compose.bench.yaml" down --remove-orphans >/dev/null 2>&1 || true
+    docker logs r7-bench-gateway >> "$OUT/gateway-$GW_LEVEL.log" 2>&1 || true
+    docker compose "${COMPOSE_FILES[@]}" down --remove-orphans >/dev/null 2>&1 || true
     GW_COMPOSE=0
   fi
   for _ in {1..20}; do
@@ -474,7 +493,11 @@ log "results -> $OUT"
   echo "scenarios=$SCENARIOS workloads=$WORKLOADS tools=$TOOLS"
   echo "sweep_rates=$SWEEP_RATES sweep_levels=$SWEEP_LEVELS journal_levels=$JOURNAL_LEVELS"
   echo "host=$(uname -srm) cpus=$(getconf _NPROCESSORS_ONLN)"
-  echo "java=$(java -version 2>&1 | head -n1 || echo n/a)"
+  if [[ "$MODE" == "docker" ]]; then
+    echo "image=${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:latest}"
+  else
+    echo "java=$(java -version 2>&1 | head -n1 || echo n/a)"
+  fi
   echo "wrk=$(wrk --version 2>&1 | head -n1 || echo n/a)"
   echo "wrk2=$(wrk2 --version 2>&1 | head -n1 || echo n/a)"
   echo "jar=$JAR"

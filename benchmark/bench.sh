@@ -2,16 +2,20 @@
 #
 # One command for a benchmark run that can be repeated and quoted.
 #
-#   sudo benchmark/bench.sh             # full run: pinned toolchain, tuned host, fixed profile
+#   sudo benchmark/bench.sh             # full run of the published image on a tuned host
 #   sudo benchmark/bench.sh --quick     # same pipeline with short runs, as a sanity check
+#   sudo benchmark/bench.sh --local     # build and measure this checkout instead
 #   benchmark/bench.sh --check          # no changes: show the core layout and host state
 #   sudo benchmark/bench.sh --restore   # undo host tuning left behind by a killed run
 #
-# It downloads and verifies a pinned JDK, wrk and wrk2, builds r7 and trains its AOT cache
-# the way the image does, tunes the host for the run (performance governor, turbo and SMT
-# off, every other process confined to housekeeping cores), pins nginx, the gateway and the
-# load generator to separate cores, runs run.sh with a fixed profile and puts the host back.
-# Every host change is a runtime one, so a reboot also undoes it.
+# By default it measures the published gateway image, resolved to its digest. It builds wrk
+# and wrk2 from pinned commits, tunes the host for the run (performance governor, turbo and
+# SMT off, every other process confined to housekeeping cores), pins nginx, the gateway and
+# the load generator to separate cores, runs run.sh with a fixed profile and puts the host
+# back. Every host change is a runtime one, so a reboot also undoes it.
+#
+# --local instead downloads and verifies a pinned JDK, builds the checkout and trains its AOT
+# cache the way the image does, and runs the jar on the host.
 #
 # See README.md for what the numbers mean.
 
@@ -40,7 +44,9 @@ MAX_SPREAD=5
 
 # ----------------------------------------------------------------- options
 
-JDK=25
+IMAGE="ghcr.io/ethlo/r7-gateway:latest"
+LOCAL=0
+JDK=""
 GC="default"
 QUICK=0
 ACTION="run"
@@ -52,12 +58,14 @@ warn() { printf '%s[bench]%s %s\n' "$c_yel" "$c_off" "$*" >&2; }
 die()  { printf '%s[bench]%s %s\n' "$c_red" "$c_off" "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
 
 Options:
+  --image REF      gateway image to measure (default: ghcr.io/ethlo/r7-gateway:latest)
+  --local          build this checkout and run the jar on the host instead of an image
   --quick          short runs, browser workload only; never publishable
-  --jdk 25|27      JDK the gateway runs on (default: 25, what the image ships)
+  --jdk 25|27      with --local: JDK the jar runs on (default: 25, what the image ships)
   --gc default|zgc collector (default: the JVM's choice, as in the image)
   --check          print the core layout and current host state, change nothing
   --restore        restore host settings saved by an interrupted run
@@ -67,6 +75,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --image)   IMAGE="$2"; shift 2 ;;
+    --local)   LOCAL=1; shift ;;
     --quick)   QUICK=1; shift ;;
     --jdk)     JDK="$2"; shift 2 ;;
     --gc)      GC="$2"; shift 2 ;;
@@ -77,7 +87,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ "$JDK" == "25" || "$JDK" == "27" ]] || die "--jdk must be 25 or 27"
+if (( LOCAL )); then
+  JDK="${JDK:-25}"
+  [[ "$JDK" == "25" || "$JDK" == "27" ]] || die "--jdk must be 25 or 27"
+else
+  [[ -z "$JDK" ]] || die "--jdk applies to --local; an image brings its own JDK"
+fi
 [[ "$GC" == "default" || "$GC" == "zgc" ]] || die "--gc must be default or zgc"
 
 # ----------------------------------------------------------------- host state
@@ -260,8 +275,10 @@ toolchain() {
   done
   [[ -f /usr/include/openssl/ssl.h ]] || die "wrk2 needs the OpenSSL headers: apt install libssl-dev"
   as_user mkdir -p "$CACHE"
-  fetch_jdk "$JDK27_URL" "$JDK27_SHA256" "$CACHE/jdk-27"
-  [[ "$JDK" == "25" ]] && fetch_jdk "$JDK25_URL" "$JDK25_SHA256" "$CACHE/jdk-25"
+  if (( LOCAL )); then
+    fetch_jdk "$JDK27_URL" "$JDK27_SHA256" "$CACHE/jdk-27"
+    [[ "$JDK" == "25" ]] && fetch_jdk "$JDK25_URL" "$JDK25_SHA256" "$CACHE/jdk-25"
+  fi
   build_wrk wrk  "$WRK_REPO"  "$WRK_COMMIT"
   build_wrk wrk2 "$WRK2_REPO" "$WRK2_COMMIT"
 }
@@ -293,30 +310,57 @@ lock_host
 
 toolchain
 export PATH="$CACHE/bin:$PATH"
-RUN_JDK="$CACHE/jdk-$JDK"
 
-log "building r7 with JDK 27"
-( cd "$REPO" && as_user env JAVA_HOME="$CACHE/jdk-27" \
-    ./mvnw -q -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true clean package -pl r7-helidon -am )
-JAR="$(ls "$REPO"/r7-helidon/target/r7-helidon-*[0-9T].jar | head -n1)"
-[[ -f "$JAR" ]] || die "no gateway jar after the build"
-
-# Untracked files count: Maven would build an untracked source too. Ignored ones (target/,
-# .cache/, results/) do not.
+# Untracked files count: Maven would build an untracked source too, and the benchmark's own
+# scripts and config come from this checkout either way. Ignored ones (target/, .cache/,
+# results/) do not.
 DIRTY="$(git -C "$REPO" status --porcelain --untracked-files=normal)"
 SHA="$(git -C "$REPO" rev-parse --short HEAD)"
 
-# The image's JVM flags, and its AOT cache trained the same way Dockerfile.jvm does. The
-# cache only fits the JDK, jars and flags it was made with, so it is made here, per run.
-JVM_FLAGS="--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
-[[ "$GC" == "zgc" ]] && JVM_FLAGS="-XX:+UseZGC $JVM_FLAGS"
-TRAIN="$(as_user mktemp -d)"
-log "training the AOT cache on JDK $JDK"
-( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$REPO/docker/aot-training/routes.yaml" \
-    R7_JOURNAL_DIR="$TRAIN/journals" \
-    "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
-  > "$TRAIN/training.log" 2>&1 || die "AOT training failed; see $TRAIN/training.log"
-[[ -f "$TRAIN/r7.aot" ]] || die "AOT training wrote no cache; see $TRAIN/training.log"
+JVM_GC=""
+[[ "$GC" == "zgc" ]] && JVM_GC="-XX:+UseZGC"
+
+if (( LOCAL )); then
+  RUN_JDK="$CACHE/jdk-$JDK"
+  log "building r7 with JDK 27"
+  ( cd "$REPO" && as_user env JAVA_HOME="$CACHE/jdk-27" \
+      ./mvnw -q -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true clean package -pl r7-helidon -am )
+  JAR="$(ls "$REPO"/r7-helidon/target/r7-helidon-*[0-9T].jar | head -n1)"
+  [[ -f "$JAR" ]] || die "no gateway jar after the build"
+
+  # The image's JVM flags, and its AOT cache trained the same way Dockerfile.jvm does. The
+  # cache only fits the JDK, jars and flags it was made with, so it is made here, per run.
+  JVM_FLAGS="$JVM_GC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
+  TRAIN="$(as_user mktemp -d)"
+  log "training the AOT cache on JDK $JDK"
+  ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$REPO/docker/aot-training/routes.yaml" \
+      R7_JOURNAL_DIR="$TRAIN/journals" \
+      "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
+    > "$TRAIN/training.log" 2>&1 || die "AOT training failed; see $TRAIN/training.log"
+  [[ -f "$TRAIN/r7.aot" ]] || die "AOT training wrote no cache; see $TRAIN/training.log"
+  GATEWAY="r7 $SHA (local build, JDK $JDK)"
+  ID="$SHA"
+else
+  log "pulling $IMAGE"
+  # A local image (./build.sh tags r7-gateway) is fine to measure, but has no registry digest.
+  PULLED=1
+  docker pull -q "$IMAGE" >/dev/null 2>&1 || PULLED=0
+  (( PULLED )) || docker image inspect "$IMAGE" >/dev/null 2>&1 || die "cannot pull $IMAGE"
+  # Measure exactly one image: the digest it resolved to, recorded, so a later run can pull
+  # the same bytes even after the tag has moved.
+  REPO_NAME="${IMAGE%@*}"; REPO_NAME="${REPO_NAME%:*}"
+  IMAGE_REF="$(docker inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" \
+    | grep -m1 "^$REPO_NAME@" || true)"
+  IMAGE_JAVA="$(docker run --rm --entrypoint java "${IMAGE_REF:-$IMAGE}" -version 2>&1 | sed -n 2p)"
+  if [[ -z "$IMAGE_REF" ]]; then
+    IMAGE_REF="$(docker inspect -f '{{.Id}}' "$IMAGE")"
+  fi
+  # Only a pulled image's digest lets someone else fetch the same bytes.
+  (( PULLED )) || NO_DIGEST=1
+  log "image: $IMAGE_REF"
+  GATEWAY="$IMAGE_REF"
+  ID="$(sed 's/.*sha256://' <<< "$IMAGE_REF" | cut -c1-12)"
+fi
 
 # From here on the host is changed; the trap puts it back however the run ends.
 : > "$STATE"
@@ -344,19 +388,31 @@ QUICK_FLAG=""
 
 # In the background so a TERM to this script reaches run.sh at once; in the foreground bash
 # would hold the signal until run.sh finished, hours later, with the host still tuned.
-PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_FLAGS" \
-  "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" \
-    --backend-cpus "$BACKEND_CPUS" --gateway-cpus "$GATEWAY_CPUS" --load-cpus "$LOAD_CPUS" \
-    "${PROFILE[@]}" &
+PINS=(--backend-cpus "$BACKEND_CPUS" --gateway-cpus "$GATEWAY_CPUS" --load-cpus "$LOAD_CPUS")
+if (( LOCAL )); then
+  PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_FLAGS" \
+    "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" &
+else
+  # The image's own entrypoint flags and AOT cache; JVM_OPTS only adds the collector choice.
+  R7_BENCH_IMAGE="$IMAGE_REF" JVM_OPTS="$JVM_GC" \
+    "$HERE/run.sh" --mode docker --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" &
+fi
 RUN_PID=$!
 trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' INT TERM
 wait "$RUN_PID"
 trap 'exit 130' INT TERM
 
 {
-  echo "bench=bench.sh${QUICK_FLAG} --jdk $JDK --gc $GC"
-  echo "run_jdk=$("$RUN_JDK/bin/java" -version 2>&1 | sed -n 2p)"
-  echo "build_jdk=$("$CACHE/jdk-27/bin/java" -version 2>&1 | sed -n 2p)"
+  if (( LOCAL )); then
+    echo "bench=bench.sh${QUICK_FLAG} --local --jdk $JDK --gc $GC"
+    echo "gateway=local build of $SHA"
+    echo "run_jdk=$("$RUN_JDK/bin/java" -version 2>&1 | sed -n 2p)"
+    echo "build_jdk=$("$CACHE/jdk-27/bin/java" -version 2>&1 | sed -n 2p)"
+  else
+    echo "bench=bench.sh${QUICK_FLAG} --image $IMAGE --gc $GC"
+    echo "gateway=$IMAGE_REF"
+    echo "image_jdk=$IMAGE_JAVA"
+  fi
   echo "wrk_commit=$WRK_COMMIT wrk2_commit=$WRK2_COMMIT"
   echo "git=$SHA dirty=$([[ -n "$DIRTY" ]] && echo yes || echo no)"
   echo "layout: os=$OS_CPUS backend=$BACKEND_CPUS gateway=$GATEWAY_CPUS load=$LOAD_CPUS"
@@ -365,12 +421,13 @@ trap 'exit 130' INT TERM
   host_report
 } > "$OUT/host.txt"
 cp "$STATE" "$OUT/host-before.txt"
-cp "$TRAIN/training.log" "$OUT/aot-training.log"
+(( LOCAL )) && cp "$TRAIN/training.log" "$OUT/aot-training.log"
 
 # ----------------------------------------------------------------- verdict
 
 REASONS=()
 (( QUICK )) && REASONS+=("--quick profile")
+(( ${NO_DIGEST:-0} )) && REASONS+=("$IMAGE is a local image, so nobody else can pull the same one")
 [[ -n "${R7_BENCH_BACKEND_IMAGE:-}" && "$R7_BENCH_BACKEND_IMAGE" != *@sha256:* ]] \
   && REASONS+=("R7_BENCH_BACKEND_IMAGE is not pinned by digest")
 [[ -n "$DIRTY" ]] && REASONS+=("uncommitted changes in the working tree")
@@ -385,7 +442,7 @@ fi
 
 {
   if (( ${#REASONS[@]} == 0 )); then
-    echo "**PUBLISHABLE** — r7 $SHA, JDK $JDK, $(lscpu | sed -n 's/^Model name:[[:space:]]*//p' | head -n1)"
+    echo "**PUBLISHABLE** — $GATEWAY, $(lscpu | sed -n 's/^Model name:[[:space:]]*//p' | head -n1)"
   else
     echo "**NOT PUBLISHABLE**"
     for r in "${REASONS[@]}"; do echo "- $r"; done
@@ -394,10 +451,10 @@ fi
   cat "$OUT/REPORT.md"
 } > "$OUT/REPORT.md.tmp" && mv "$OUT/REPORT.md.tmp" "$OUT/REPORT.md"
 
-TARBALL="$HERE/results/bench-$SHA-$TS.tar.gz"
+TARBALL="$HERE/results/bench-$ID-$TS.tar.gz"
 tar -czf "$TARBALL" -C "$HERE/results" "$TS"
 [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER:" "$OUT" "$TARBALL"
-as_user rm -rf "$TRAIN"
+(( LOCAL )) && as_user rm -rf "$TRAIN"
 
 echo
 head -n "$(( ${#REASONS[@]} + 1 ))" "$OUT/REPORT.md"
