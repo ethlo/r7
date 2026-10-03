@@ -98,6 +98,27 @@ class WarcFileWriterTest
     }
 
     /**
+     * A frame whose length is intact but whose content cannot be decoded (here, a damaged
+     * checksum) ends recovery at the group before it, rather than failing every start.
+     */
+    @Test
+    void anUndecodableFrameEndsRecoveryAtTheGroupBeforeIt() throws IOException
+    {
+        final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
+        crashed.writeRecords(group("first"));
+        crashed.writeRecords(group("second"));
+        final Path open = only(".warc.zst.open");
+        final byte[] bytes = Files.readAllBytes(open);
+        bytes[bytes.length - 1] ^= (byte) 0xFF;
+        Files.write(open, bytes);
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        final String warc = decompress(dir.resolve(open.getFileName().toString().replace(".open", "")));
+        assertThat(warc).contains("first-2").doesNotContain("second");
+    }
+
+    /**
      * A file written before group ends were marked is cut back to its last complete frame.
      */
     @Test

@@ -262,7 +262,18 @@ public final class WarcFileWriter implements AutoCloseable
                 {
                     break;
                 }
-                final boolean closesGroup = closesGroup(window.slice(within, (int) frame));
+                final boolean closesGroup;
+                try
+                {
+                    closesGroup = closesGroup(window.slice(within, (int) frame));
+                }
+                catch (final IOException | RuntimeException e)
+                {
+                    // Framed correctly but undecodable (a damaged page): nothing from here on can
+                    // be trusted, and a throw would fail every start on this same file.
+                    logger.warn("Undecodable record at offset {}; recovering up to the record before it", end + within, e);
+                    return marked ? groupEnd : end + within;
+                }
                 if (first)
                 {
                     marked = closesGroup;
