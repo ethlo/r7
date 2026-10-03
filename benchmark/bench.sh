@@ -409,13 +409,19 @@ else
   # slash, so a registry port (host:5000/...) stays.
   REPO_NAME="${IMAGE%@*}"
   [[ "${REPO_NAME##*/}" == *:* ]] && REPO_NAME="${REPO_NAME%:*}"
+  # Docker records Docker Hub repositories in their short form (nginx, not
+  # docker.io/library/nginx), so the reference is compared in that form too.
+  REPO_NAME="${REPO_NAME#docker.io/}"; REPO_NAME="${REPO_NAME#index.docker.io/}"
+  REPO_NAME="${REPO_NAME#library/}"
   IMAGE_REF="$(docker inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" \
     | awk -v p="$REPO_NAME@" 'index($0, p) == 1 { print; exit }')"
   IMAGE_JAVA="$(docker run --rm --entrypoint java "${IMAGE_REF:-$IMAGE}" -version 2>&1 | sed -n 2p)"
+  # Only a repository digest lets someone else fetch the same bytes: a local image, or a pull
+  # whose digest could not be matched to the reference, is recorded by its image ID instead.
   if [[ -z "$IMAGE_REF" ]]; then
     IMAGE_REF="$(docker inspect -f '{{.Id}}' "$IMAGE")"
+    NO_DIGEST=1
   fi
-  # Only a pulled image's digest lets someone else fetch the same bytes.
   (( PULLED )) || NO_DIGEST=1
   log "image: $IMAGE_REF"
   GATEWAY="$IMAGE_REF"
@@ -490,7 +496,7 @@ cp "$STATE" "$OUT/host-before.txt"
 
 REASONS=()
 (( QUICK )) && REASONS+=("--quick profile")
-(( ${NO_DIGEST:-0} )) && REASONS+=("$IMAGE is a local image, so nobody else can pull the same one")
+(( ${NO_DIGEST:-0} )) && REASONS+=("$IMAGE has no registry digest (a local image, or none matched the reference), so nobody else can pull the same one")
 [[ -n "${R7_BENCH_BACKEND_IMAGE:-}" && "$R7_BENCH_BACKEND_IMAGE" != *@sha256:* ]] \
   && REASONS+=("R7_BENCH_BACKEND_IMAGE is not pinned by digest")
 [[ -n "$DIRTY" ]] && REASONS+=("uncommitted changes in the working tree")
