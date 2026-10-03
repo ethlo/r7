@@ -79,7 +79,8 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     /**
      * @param bodies store captured bodies in the records; when false, a record whose leg had a
      *               body carries its headers, {@code WARC-Truncated} and the payload digest, and
-     *               the body is left to another output (the JSON line)
+     *               the body is left to another output (the JSON line, when that output is on
+     *               and writes bodies; otherwise it is not stored at all)
      */
     public WarcExchangeWriter(final WarcFileWriter fileWriter, final PayloadDedupIndex dedupIndex, final boolean bodies)
     {

@@ -145,7 +145,7 @@ At least one output must be enabled.
 | `zstd_level`          | `9`      | Zstandard compression level (1-22), applied per record |
 | `dedup_cache_entries` | `100000` | How many payload digests are remembered for deduplicating identical payloads across exchanges |
 | `cdxj_index`          | `false`  | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each file; see below |
-| `bodies`              | `true`   | Store captured bodies in the records. `false` writes the headers with `WARC-Truncated: unspecified` and the body's `WARC-Payload-Digest`, and leaves the body to the JSON line |
+| `bodies`              | `true`   | Store captured bodies in the records. `false` writes the headers with `WARC-Truncated: unspecified` and the body's `WARC-Payload-Digest`, and leaves the body to the JSON line when that output is on with `bodies: true`; otherwise the body is not stored |
 
 Each exchange becomes up to four linked records (client request, upstream request, upstream
 response, client response); a payload already archived by an earlier exchange is written as a
