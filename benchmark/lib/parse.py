@@ -349,7 +349,13 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
                     json.load(fh)
             except (OSError, json.JSONDecodeError):
                 problems.append("unreadable result file %s" % name)
-    agg = group(load_results(d))
+    rows = load_results(d)
+    # A run that completed nothing reports no errors and no spread, so it needs its own check.
+    empty = [r for r in rows
+             if not (r["stats"].get("rps") or 0) > 0 or not (r["stats"].get("requests") or 0) > 0]
+    if empty:
+        problems.append("%d run(s) completed no requests" % len(empty))
+    agg = group(rows)
     if not agg:
         return problems + ["no results"]
     invalid = [k for k, a in agg.items() if a["errors"]]

@@ -110,18 +110,24 @@ stop_leftovers() {
     log "stopping the run.sh left by an interrupted run"
     kill -TERM "$pid" 2>/dev/null || true
     for _ in {1..60}; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -0 "$pid" 2>/dev/null && { warn "run.sh ($pid) did not stop"; return 1; }
   fi
   rm -f "$STATE_DIR/run.pid"
   if systemctl is-active --quiet "r7bench.slice" 2>/dev/null; then
-    systemctl stop r7bench.slice || warn "could not stop r7bench.slice"
+    systemctl stop r7bench.slice || { warn "could not stop r7bench.slice"; return 1; }
   fi
   docker rm -f r7-bench-gateway r7-bench-backend >/dev/null 2>&1 || true
+  if docker ps -q --filter name='^r7-bench-' 2>/dev/null | grep -q .; then
+    warn "benchmark containers are still running"; return 1
+  fi
 }
 
 # A setting that fails to restore stays in the state file, so --restore can retry it.
 restore_host() {
   [[ -f "$STATE" ]] || return 0
-  stop_leftovers
+  # Restoring under a still-running benchmark would leave it measuring an untuned host and
+  # throw away the snapshot needed to try again.
+  stop_leftovers || { warn "keeping $STATE; stop the processes above and run --restore"; return 1; }
   log "restoring host settings"
   local kind target value line restored=0
   local -a failed=()
