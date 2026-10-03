@@ -64,8 +64,9 @@ volumes:
 
 **3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which
 Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line holds the timing,
-status, sizes and full headers of every leg, and a `warc` pointer to the exchange's bodies in
-`/warc`:
+status, sizes and full headers of every leg, and, for an exchange with a body, a `warc` pointer
+to its records in `/warc`. This is an abbreviated line; the full format is under
+[the tailer](#3-the-tailer):
 
 ```json
 {
@@ -78,8 +79,9 @@ status, sizes and full headers of every leg, and a `warc` pointer to the exchang
 }
 ```
 
-The `/warc` files are standard [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
-archives, readable by any WARC tool. Everything else on this page is reference for tuning this
+The `/warc` files are [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
+archives with each record in its own Zstandard frame: `zstd -d` turns a `.warc.zst` file into plain WARC
+for any WARC tool. Everything else on this page is reference for tuning this
 setup: the journal levels, redaction, every tailer property, other output layouts and retention.
 
 ## 1. Journal levels and redaction
@@ -285,7 +287,7 @@ a string, one sent more than once an array of its values.
 
 Each of these is a `tailer.yaml` and replaces the defaults only where it says.
 
-Every exchange in the WARC archive, with a CDXJ index, so every JSON line has a `warc` pointer:
+Every exchange in the WARC archive, with a CDXJ index, so every complete exchange's JSON line has a `warc` pointer:
 
 ```yaml title="tailer.yaml"
 warc:
