@@ -231,7 +231,16 @@ isolate() {
   if [[ "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" != "systemd" ]]; then
     UNTUNED+=("core isolation: Docker must use the systemd cgroup driver"); return 0
   fi
-  for unit in system.slice user.slice init.scope machine.slice; do
+  # Every active top-level slice (children of -.slice have no dash in their name) except the
+  # benchmark's own, so a custom slice such as a --cgroup-parent=workload.slice is confined too.
+  local -a units=(init.scope)
+  local slices
+  slices="$(systemctl list-units --type=slice --state=active --no-legend --plain 2>/dev/null)" \
+    || { UNTUNED+=("core isolation: cannot list slices"); return 0; }
+  for unit in $(awk '{print $1}' <<< "$slices"); do
+    [[ "$unit" == "-.slice" || "$unit" == "r7bench.slice" || "$unit" == *-* ]] || units+=("$unit")
+  done
+  for unit in "${units[@]}"; do
     [[ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" == "active" ]] || continue
     old="$(systemctl show -p AllowedCPUs --value "$unit")"
     save cpuset "$unit" "$old"
@@ -421,7 +430,9 @@ TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
 PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtered,journal,sweep)
 QUICK_FLAG=""
-(( QUICK )) && PROFILE=(--quick) && QUICK_FLAG=" --quick"
+# --quick keeps the whole pipeline (every scenario, fresh JVMs) with short runs, the browser
+# workload and one repeat; later options win in run.sh.
+(( QUICK )) && PROFILE+=(--quick --repeat 1) && QUICK_FLAG=" --quick"
 
 # In the background so a TERM to this script reaches run.sh at once; in the foreground bash
 # would hold the signal until run.sh finished, hours later, with the host still tuned.

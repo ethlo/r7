@@ -162,6 +162,8 @@ fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="${OUT:-$HERE/results/$TS}"
+# Absolute, because docker -v reads a relative source as a volume name.
+mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 RUNDIR="$OUT/run"
 RAW="$OUT/raw"
 mkdir -p "$RUNDIR/config" "$RUNDIR/journals" "$RAW"
@@ -174,6 +176,7 @@ preflight() {
   need docker
   need python3
   need curl
+  need ss
   [[ ",$TOOLS," == *",wrk,"*  ]] && need wrk
   [[ ",$TOOLS," == *",wrk2,"* ]] && need wrk2
   has "$SCENARIOS" sweep && need wrk2
@@ -241,6 +244,22 @@ pin_prefix() {
   fi
 }
 
+# ----------------------------------------------------------------- gateway image
+
+GW_IMAGE="${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:latest}"
+# The container runs as the invoking user so it can write the bind-mounted journals. As
+# root (bench.sh) that would measure the gateway with root privileges, so it runs as the
+# image's own user instead and the journals directory is handed to that user.
+GW_UID="$(id -u)"; GW_GID="$(id -g)"
+if [[ "$MODE" == "docker" && $EUID -eq 0 ]]; then
+  docker image inspect "$GW_IMAGE" >/dev/null 2>&1 || docker pull -q "$GW_IMAGE" >/dev/null \
+    || die "cannot pull $GW_IMAGE"
+  img_user="$(docker inspect -f '{{.Config.User}}' "$GW_IMAGE")"
+  [[ "$img_user" =~ ^([0-9]+)(:([0-9]+))?$ ]] \
+    || die "image user '$img_user' is not numeric uid[:gid]; cannot hand it the journals"
+  GW_UID="${BASH_REMATCH[1]}"; GW_GID="${BASH_REMATCH[3]:-${BASH_REMATCH[1]}}"
+fi
+
 # ----------------------------------------------------------------- lifecycle
 
 BACKEND_CID=""
@@ -255,8 +274,8 @@ compose() {
   R7_BENCH_CONFIG="$RUNDIR/config" \
   R7_BENCH_JOURNALS="$RUNDIR/journals" \
   R7_BENCH_JVM_OPTS="$JVM_OPTS" \
-  R7_BENCH_UID="$(id -u)" \
-  R7_BENCH_GID="$(id -g)" \
+  R7_BENCH_UID="$GW_UID" \
+  R7_BENCH_GID="$GW_GID" \
     docker compose "${COMPOSE_FILES[@]}" "$@"
 }
 
@@ -329,6 +348,7 @@ render_config() {
       "$HERE/config/server.yaml.tmpl" > "$RUNDIR/config/server.yaml"
 
   rm -rf "${RUNDIR:?}/journals"; mkdir -p "$RUNDIR/journals"
+  if [[ "$MODE" == "docker" ]]; then chown "$GW_UID:$GW_GID" "$RUNDIR/journals"; fi
 }
 
 start_gateway() {
@@ -382,8 +402,12 @@ stop_gateway() {
     fi
     GW_COMPOSE=0
   fi
+  local listening
   for _ in {1..20}; do
-    ss -ltn 2>/dev/null | grep -q ":$GW_PORT " || return 0
+    # A failed probe is not a free port.
+    listening="$(ss -ltnH "sport = :$GW_PORT" 2>/dev/null)" \
+      || { warn "ss failed; cannot confirm the gateway port is free"; return 1; }
+    [[ -z "$listening" ]] && return 0
     sleep 0.25
   done
   warn "something still listens on :$GW_PORT after stopping the gateway"
@@ -507,7 +531,7 @@ log "results -> $OUT"
   echo "sweep_rates=$SWEEP_RATES sweep_levels=$SWEEP_LEVELS journal_levels=$JOURNAL_LEVELS"
   echo "host=$(uname -srm) cpus=$(getconf _NPROCESSORS_ONLN)"
   if [[ "$MODE" == "docker" ]]; then
-    echo "image=${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:latest}"
+    echo "image=$GW_IMAGE user=$GW_UID:$GW_GID"
   else
     echo "java=$(java -version 2>&1 | head -n1 || echo n/a)"
   fi
