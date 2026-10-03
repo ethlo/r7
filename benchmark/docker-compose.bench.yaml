@@ -17,6 +17,7 @@ services:
       - ${R7_BENCH_JOURNALS:?run.sh sets this}:/journals:rw
     environment:
       - JAVA_TOOL_OPTIONS=${R7_BENCH_JVM_OPTS--XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow}
+      - R7_MANAGEMENT_HOST=127.0.0.1
     # Bind-mounted journals are owned by the host user, but the image runs as
     # 65532. Run as the invoking user so the journal writes actually land.
     user: "${R7_BENCH_UID:-1000}:${R7_BENCH_GID:-1000}"
