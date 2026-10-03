@@ -35,8 +35,7 @@ public final class DocSnippets
 {
     public static final String ROUTES = "routes.yaml";
     public static final String SERVER = "server.yaml";
-    public static final String JSONLD_TAILER = "jsonld-tailer.yaml";
-    public static final String WARC_TAILER = "warc-tailer.yaml";
+    public static final String TAILER = "tailer.yaml";
     public static final String REAPER = "reaper.yaml";
 
     /**
@@ -45,7 +44,7 @@ public final class DocSnippets
      */
     public static final String DOCKER_COMPOSE = "docker-compose.yaml";
 
-    public static final Set<String> FILES = Set.of(ROUTES, SERVER, JSONLD_TAILER, WARC_TAILER, REAPER, DOCKER_COMPOSE);
+    public static final Set<String> FILES = Set.of(ROUTES, SERVER, TAILER, REAPER, DOCKER_COMPOSE);
 
     /**
      * Values for the {@code ${VAR}} references the snippets make without a default, which would

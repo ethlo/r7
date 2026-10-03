@@ -17,7 +17,7 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 ./mvnw test -pl r7-journal-mmap            # one module
 ./mvnw test -pl r7-core -Dtest=RedactingHeadersTest             # one test class
 ./mvnw test -pl r7-journal-mmap -Dtest=JournalIntegrityTest#recoveryReportsOnlyTheContentItCouldNotRead
-./mvnw package -DskipTests -pl r7-helidon,r7-tailer-jsonld -am   # what CI builds for images
+./mvnw package -DskipTests -pl r7-helidon,r7-tailer,r7-reaper -am   # what CI builds for images
 ```
 
 - `r7-journal-mmap` runs `bin/flatc` (checked into the repo) over
@@ -61,7 +61,7 @@ any number — only the `vs r7` (passthrough-relative) deltas are meaningful, an
 is the minimum for believing a small difference.
 
 Every YAML snippet in `docs/` and `README.md` is loaded by the real config loader in the normal
-test run (`DocsConfigSnippetsTest` in `r7-server-blocking`, the tailers and the reaper; the
+test run (`DocsConfigSnippetsTest` in `r7-server-blocking`, `r7-tailer` and the reaper; the
 extractor is `r7-config`'s `DocSnippets`). A fence with `title="server.yaml"` (or another config
 file) is checked as that whole file; an untitled one as part of a `routes.yaml`; a
 `<!-- docs-check: skip -->` line right above a fence skips it. A config change that breaks a doc
@@ -94,8 +94,9 @@ r7-helidon      the gateway: R7Helidon on Helidon Níma, an adapter over r7-serv
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
 r7-tailer-api   what every tailer shares: TailerRunner (config, read loop, shutdown), TailerConfig
 r7-tailer-files local file output for tailers: SealedFileWriter, RollingFilesConfig (design/tailers.md)
-r7-tailer-jsonld sidecar app that turns journals into JSON lines
-r7-tailer-warc  sidecar app that turns journals into WARC files (design/warc.md)
+r7-tailer-jsonld the JSON lines output: JsonLdWriter, RollingFileOutputStream
+r7-tailer-warc  the WARC output: WarcExchangeWriter, WarcFileWriter, CdxjIndex (design/warc.md)
+r7-tailer       sidecar app: one reader, WARC and JSON outputs (design/tailers.md)
 r7-reaper       sidecar app that deletes sealed segments once tailers are done with them
 ```
 

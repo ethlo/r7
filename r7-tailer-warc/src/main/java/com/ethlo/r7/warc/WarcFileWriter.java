@@ -63,6 +63,17 @@ public final class WarcFileWriter implements AutoCloseable
 
     private long sequence;
     private String currentWarcinfoId;
+    private Location lastWrite;
+    private long lastWriteSequence;
+
+    /**
+     * Where one {@link #writeRecords} call put its records: the sealed name of the file, the
+     * offset of the first record's Zstandard frame, and the compressed length of all of them.
+     * Each record is its own frame, so a reader can seek to the offset and decompress.
+     */
+    public record Location(String file, long offset, long length)
+    {
+    }
 
     /**
      * A record staged in memory, ready to be handed to {@link #writeRecords(List)} as part of a
@@ -72,6 +83,13 @@ public final class WarcFileWriter implements AutoCloseable
     record PendingRecord(String recordId, String warcType, List<Map.Entry<String, String>> fields, byte[] block)
     {
     }
+
+    /**
+     * The Zstandard compression levels this writer accepts: from 1 (fastest) to the library's
+     * maximum. Negative "fast" levels are left out, as the config has always documented.
+     */
+    public static final int MIN_ZSTD_LEVEL = 1;
+    public static final int MAX_ZSTD_LEVEL = Zstd.maxCompressionLevel();
 
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel) throws IOException
     {
@@ -84,6 +102,10 @@ public final class WarcFileWriter implements AutoCloseable
     public WarcFileWriter(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis, final int zstdLevel,
                           final boolean cdxjIndex) throws IOException
     {
+        if (zstdLevel < MIN_ZSTD_LEVEL || zstdLevel > MAX_ZSTD_LEVEL)
+        {
+            throw new IllegalArgumentException("zstdLevel must be between " + MIN_ZSTD_LEVEL + " and " + MAX_ZSTD_LEVEL + ", but was " + zstdLevel);
+        }
         this.cdxjIndex = cdxjIndex;
         this.compressor = new ZstdCompressCtx();
         compressor.setLevel(zstdLevel);
@@ -130,11 +152,11 @@ public final class WarcFileWriter implements AutoCloseable
      * ordered list rather than a map because {@code WARC-Concurrent-To} may legitimately repeat
      * within one record.
      */
-    synchronized void writeRecords(final List<PendingRecord> records) throws IOException
+    synchronized Location writeRecords(final List<PendingRecord> records) throws IOException
     {
         if (records.isEmpty())
         {
-            return;
+            throw new IllegalArgumentException("No records to write");
         }
 
         // Roll before the batch, never inside it: a group stays in one file, and an oversized
@@ -148,14 +170,49 @@ public final class WarcFileWriter implements AutoCloseable
         files.ensureOpen();
 
         final long sequenceBefore = sequence;
+        final byte[] frames = frames(records);
+        final long offset;
         try
         {
-            files.append(frames(records));
+            offset = files.append(frames);
         }
         catch (final IOException | RuntimeException e)
         {
             sequence = sequenceBefore;
             throw e;
+        }
+        lastWrite = new Location(files.fileName(), offset, frames.length);
+        lastWriteSequence = sequenceBefore;
+        return lastWrite;
+    }
+
+    /**
+     * Takes back the last {@link #writeRecords} call, when a later step of the same exchange
+     * failed after it (the JSON line of a combined tailer): the exchange is offered again, and
+     * without this its records would be written twice. The file is cut back to where the write
+     * began and its sequence numbers are given back, as for a failed write.
+     *
+     * <p>
+     * If the file cannot be cut back, this throws, and the cut-back is retried before anything
+     * else is written to the file or it is sealed ({@link SealedFileWriter#discardFrom}); the
+     * sequence numbers are given back either way, since no record can follow until it succeeds.
+     *
+     * @param location what that call returned; anything else is a programming error
+     */
+    synchronized void discard(final Location location) throws IOException
+    {
+        if (!location.equals(lastWrite) || !location.file().equals(files.fileName()) || files.size() != location.offset() + location.length())
+        {
+            throw new IllegalStateException("Only the last write can be discarded, and only while its file is current: " + location);
+        }
+        try
+        {
+            files.discardFrom(location.offset());
+        }
+        finally
+        {
+            sequence = lastWriteSequence;
+            lastWrite = null;
         }
     }
 

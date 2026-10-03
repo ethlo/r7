@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -143,6 +144,33 @@ class JsonLdWriterTest
                 .as("status was never set by an End event that never arrived - it must not read as 0")
                 .isTrue();
         assertThat(node.path("start").isNull()).isTrue();
+    }
+
+    /**
+     * When a WARC file holds the exchange, the line points at its records instead of carrying
+     * the bodies a second time.
+     */
+    @Test
+    void aLineForAnArchivedExchangePointsAtItsRecordsInsteadOfCarryingBodies() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JsonLdWriter writer = new JsonLdWriter(out, false, false);
+        final JournalExchange exchange = completeExchange("req-archived");
+        exchange.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+
+        writer.writeComplete(exchange, new JsonLdWriter.WarcPointer("r7-1-abc.warc.zst", 512, 300));
+        writer.onComplete(exchange);
+
+        final List<String> lines = linesOf(out);
+        final JsonNode archived = MAPPER.readTree(lines.get(0));
+        assertThat(archived.path("warc").path("file").asString()).isEqualTo("r7-1-abc.warc.zst");
+        assertThat(archived.path("warc").path("offset").asLong()).isEqualTo(512);
+        assertThat(archived.path("warc").path("length").asLong()).isEqualTo(300);
+        assertThat(archived.path("client_request").has("body")).as("not even as null").isFalse();
+
+        final JsonNode inline = MAPPER.readTree(lines.get(1));
+        assertThat(inline.has("warc")).isFalse();
+        assertThat(inline.path("client_request").path("body").isString()).isTrue();
     }
 
     /**

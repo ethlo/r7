@@ -2,42 +2,32 @@
 
 # distroless has no shell, so a directory can't be chown'd in the final stage - prepare it here
 # instead. Docker copies an image's pre-existing directory (including ownership) into a *named*
-# volume the first time that volume is created empty, so this is what makes a freshly created
-# r7-journals volume writable by the nonroot user below instead of root:root. Bind-mounted host
+# volume the first time that volume is created empty, so this is what makes freshly created
+# volumes writable by the nonroot user below instead of root:root. Bind-mounted host
 # directories are not affected by this - their ownership is the operator's responsibility.
 FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
-RUN mkdir -p /journals /checkpoints && chown 65532:65532 /journals /checkpoints
+RUN mkdir -p /journals /checkpoints /warc /json && chown 65532:65532 /journals /checkpoints /warc /json
 
 FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
 WORKDIR /app
 
 # Copy the tailer fat JAR
-COPY r7-tailer-jsonld/target/r7-tailer-jsonld-*.jar /app/tailer.jar
+COPY r7-tailer/target/r7-tailer-*.jar /app/tailer.jar
 COPY --from=dirs --chown=65532:65532 /journals /journals
 COPY --from=dirs --chown=65532:65532 /checkpoints /checkpoints
+COPY --from=dirs --chown=65532:65532 /warc /warc
+COPY --from=dirs --chown=65532:65532 /json /json
 
-# Ensure the tailer has read-write access to the shared journal mount
-# Both the gateway container and tailer container must mount the same volume to this path
-VOLUME ["/journals", "/checkpoints"]
-
-# JOURNAL_DIR:    where the gateway's binary journals are read from (the shared volume above).
-#                 Mount this read-only if a different tailer instance already owns retention
-#                 for this directory (see docs/journaling.md).
-# CHECKPOINT_DIR: where this tailer's own progress is persisted. Deliberately separate from
-#                 JOURNAL_DIR, so mounting that read-only never prevents this from being
-#                 written.
-# OUTPUT_PATH:    where completed exchanges are written as JSON Lines. "-" (the default) means
-#                 standard output, ready to be scraped by whatever log forwarder or Docker
-#                 logging driver the deployment already runs; any other value is treated as a
-#                 file path and appended to, with parent directories created if missing.
-ENV JOURNAL_DIR=/journals
-ENV CHECKPOINT_DIR=/checkpoints
-ENV OUTPUT_PATH=-
+# /journals:    the gateway's journals, the volume it shares with the gateway; mount it read-only.
+# /checkpoints: the tailer's own progress, read (read-only) by the reaper.
+# /warc, /json: the default output directories, for WARC files and for JSON lines written to
+#               files. Settings are in tailer.yaml (docs/journaling.md).
+VOLUME ["/journals", "/checkpoints", "/warc", "/json"]
 
 USER 65532:65532
 
 # Config files are read from the working directory; containers keep them in /app/config, the
-# directory the docs mount. A named JSONLD_TAILER_CONFIG still wins.
+# directory the docs mount. A named TAILER_CONFIG still wins.
 WORKDIR /app/config
 
 # Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.

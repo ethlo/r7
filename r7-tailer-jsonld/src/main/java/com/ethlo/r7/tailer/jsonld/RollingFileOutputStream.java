@@ -21,7 +21,7 @@ import com.ethlo.r7.tailer.files.SealedFileWriter;
  * After a crash, a file left {@code .open} is cut back to its last complete line (a torn last
  * line belongs to a record the tailer had not checkpointed, and will write again) and sealed.
  */
-final class RollingFileOutputStream extends OutputStream
+public final class RollingFileOutputStream extends OutputStream
 {
     static final long MIN_ROLLOVER_SIZE = SealedFileWriter.MIN_ROLLOVER_SIZE;
 
@@ -30,7 +30,7 @@ final class RollingFileOutputStream extends OutputStream
     private final SealedFileWriter files;
     private final RecordBuffer record = new RecordBuffer();
 
-    RollingFileOutputStream(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis) throws IOException
+    public RollingFileOutputStream(final Path directory, final String filePrefix, final long maxFileSizeBytes, final long maxFileAgeMillis) throws IOException
     {
         this.files = new SealedFileWriter(directory, filePrefix, maxFileSizeBytes, maxFileAgeMillis, new JsonLines());
     }
@@ -76,7 +76,7 @@ final class RollingFileOutputStream extends OutputStream
      * and holds anything. Called after every read, so a full file does not wait for the next
      * record to be sealed.
      */
-    synchronized void rollIfStale() throws IOException
+    public synchronized void rollIfStale() throws IOException
     {
         files.rollIfFull();
         files.rollIfStale();

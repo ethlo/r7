@@ -95,9 +95,29 @@ public class JsonLdWriter implements ExchangeCompletionListener
     @Override
     public void onComplete(JournalExchange exchange)
     {
+        writeComplete(exchange, null);
+    }
+
+    /**
+     * Where an exchange's WARC records are: the sealed file's name, the offset of the first
+     * record's Zstandard frame, and the compressed length of the exchange's records.
+     */
+    public record WarcPointer(String file, long offset, long length)
+    {
+    }
+
+    /**
+     * Writes a complete exchange whose records a WARC file holds. The line points at them
+     * instead of carrying the bodies: they are stored once, where a WARC reader expects them.
+     *
+     * @param warc where the records are, or {@code null} when no WARC file holds them; the
+     *             bodies are then written into the line
+     */
+    public void writeComplete(final JournalExchange exchange, final WarcPointer warc)
+    {
         try
         {
-            writeExchangeObject(exchange, null);
+            writeExchangeObject(exchange, null, warc);
             flushRecord();
         }
         catch (IOException e)
@@ -118,7 +138,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, reason);
+            writeExchangeObject(exchange, reason, null);
             flushRecord();
         }
         catch (IOException e)
@@ -157,7 +177,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, reason);
+            writeExchangeObject(exchange, reason, null);
             flushRecord();
         }
         catch (final IOException | RuntimeException e)
@@ -275,7 +295,8 @@ public class JsonLdWriter implements ExchangeCompletionListener
      *   "upstream_request":  {level, method, path, query, protocol, headers, start},
      *   "upstream_response": {level, protocol, status, reason, headers, first_byte, end, duration},
      *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body, checksum},
-     *   "attributes": {...}
+     *   "attributes": {...},
+     *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies then
      * }
      * </pre>
      * Nothing is written that another field already says: whether the request was proxied is
@@ -289,8 +310,10 @@ public class JsonLdWriter implements ExchangeCompletionListener
      * {@link #hideEmptyFields}, left out.
      *
      * @param reason null for a complete record, otherwise why it is not one
+     * @param warc   where a WARC file holds the exchange, written as {@code "warc"} in place of
+     *               the bodies; null to write the bodies
      */
-    private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason) throws IOException
+    private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason, final WarcPointer warc) throws IOException
     {
         final boolean hasEndEvent = reason == null || reason.hasEndEvent();
 
@@ -330,7 +353,10 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeRequestLine(exchange.getClientRequestStartLine());
         writeMap("headers", GatewayUtils.toMap(exchange.getClientRequestHeaders()));
         writeSizes(hasEndEvent, exchange.getRequestHeaderBytes(), exchange.getRequestBodyBytes());
-        writeBody(exchange.getRequestBodyFragments());
+        if (warc == null)
+        {
+            writeBody(exchange.getRequestBodyFragments());
+        }
         writeChecksums(exchange.getJournaledRequestChecksum(), exchange.getObservedRequestChecksum());
         generator.writeEndObject();
 
@@ -369,11 +395,24 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeResponseLine(exchange.getClientResponseStartLine(), hasEndEvent ? exchange.getStatus() : null);
         writeMap("headers", GatewayUtils.toMap(exchange.getClientResponseHeaders()));
         writeSizes(hasEndEvent, exchange.getResponseHeaderBytes(), exchange.getResponseBodyBytes());
-        writeBody(exchange.getResponseBodyFragments());
+        if (warc == null)
+        {
+            writeBody(exchange.getResponseBodyFragments());
+        }
         writeChecksums(exchange.getJournaledResponseChecksum(), exchange.getObservedResponseChecksum());
         generator.writeEndObject();
 
         writeMap("attributes", GatewayUtils.toMap(exchange.getAttributes()));
+
+        if (warc != null)
+        {
+            generator.writeName("warc");
+            generator.writeStartObject();
+            generator.writeStringProperty("file", warc.file());
+            generator.writeNumberProperty("offset", warc.offset());
+            generator.writeNumberProperty("length", warc.length());
+            generator.writeEndObject();
+        }
 
         generator.writeEndObject();
     }

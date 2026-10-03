@@ -1,7 +1,7 @@
 # The WARC sidecar: why, and what it has to carry over
 
-**Status:** built as `r7-tailer-warc` (`Dockerfile.tailer-warc.jvm`); the operator docs are in
-`docs/journaling.md`. Two parts are not built. The WARC profile (`WARC.md`, under "Scope") does
+**Status:** built as `r7-tailer-warc`, the WARC output of `r7-tailer` (`Dockerfile.tailer.jvm`,
+see [`tailers.md`](tailers.md)); the operator docs are in `docs/journaling.md`. Two parts are not built. The WARC profile (`WARC.md`, under "Scope") does
 not exist yet. "The index layer" and "MCP" are ideas, and by this document's own "Scope"
 section they are not r7's to build: see `plans/README.md`. The one exception is the opt-in
 per-file CDXJ index (`cdxj_index`), described at the end of "The index layer".
@@ -194,7 +194,7 @@ r7f offers, and it is free here.
 ## Implementation
 
 **jwarc**, on the JVM. Two constraints that normally rule out a library do not apply: it will
-buffer and allocate per record — but the sidecar is a separate JVM process (`Dockerfile.tailer.jvm` already exists) and
+buffer and allocate per record — but the sidecar is a separate JVM process (`Dockerfile.tailer.jvm`) and
 buffering is exactly its job. That separation is what earns the right to use a normal library.
 
 Use **WARC 1.1**: 1.0 rounds away the sub-second precision the gateway keeps.
