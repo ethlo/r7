@@ -117,9 +117,10 @@ stop_leftovers() {
     systemctl stop r7bench.slice || { warn "could not stop r7bench.slice"; return 1; }
   fi
   docker rm -f r7-bench-gateway r7-bench-backend >/dev/null 2>&1 || true
-  if docker ps -q --filter name='^r7-bench-' 2>/dev/null | grep -q .; then
-    warn "benchmark containers are still running"; return 1
-  fi
+  local running
+  running="$(docker ps -q --filter name='^r7-bench-' 2>/dev/null)" \
+    || { warn "cannot list containers to confirm the benchmark ones are gone"; return 1; }
+  [[ -z "$running" ]] || { warn "benchmark containers are still running"; return 1; }
 }
 
 # A setting that fails to restore stays in the state file, so --restore can retry it.
@@ -386,7 +387,7 @@ else
   REPO_NAME="${IMAGE%@*}"
   [[ "${REPO_NAME##*/}" == *:* ]] && REPO_NAME="${REPO_NAME%:*}"
   IMAGE_REF="$(docker inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" \
-    | grep -m1 "^$REPO_NAME@" || true)"
+    | awk -v p="$REPO_NAME@" 'index($0, p) == 1 { print; exit }')"
   IMAGE_JAVA="$(docker run --rm --entrypoint java "${IMAGE_REF:-$IMAGE}" -version 2>&1 | sed -n 2p)"
   if [[ -z "$IMAGE_REF" ]]; then
     IMAGE_REF="$(docker inspect -f '{{.Id}}' "$IMAGE")"

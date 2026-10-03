@@ -364,6 +364,20 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
     n_min = min(a["n"] for a in agg.values())
     if n_min < min_repeat:
         problems.append("only %d repeat(s) for some configuration; need %d" % (n_min, min_repeat))
+    # The backend must not be the bottleneck (README, "The backend"): per workload, the
+    # unthrottled baseline has to clear every gateway row by a margin.
+    for workload in sorted({a["meta"].get("workload") for a in agg.values()}):
+        wrk = [a for a in agg.values()
+               if a["meta"].get("workload") == workload and a["meta"].get("tool") == "wrk"]
+        base = [a["rps"] for a in wrk if a["meta"].get("scenario") == "baseline" and a["rps"]]
+        gw = [a["rps"] for a in wrk
+              if a["meta"].get("scenario") not in ("baseline", "sweep") and a["rps"]]
+        if not base:
+            problems.append("no wrk baseline for %s, so backend headroom is unknown" % workload)
+        elif gw and base[0] < 1.1 * max(gw):
+            problems.append("backend headroom under 10%% for %s: baseline %.0f req/s, gateway up to %.0f"
+                            % (workload, base[0], max(gw)))
+
     def saturated(a):
         rate = a["meta"].get("rate")
         return a["meta"].get("scenario") == "sweep" and rate and (a["rps"] or 0) < 0.95 * rate
