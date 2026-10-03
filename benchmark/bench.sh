@@ -363,9 +363,13 @@ REASONS=()
 (( QUICK )) && REASONS+=("--quick profile")
 [[ -n "$DIRTY" ]] && REASONS+=("uncommitted changes in the working tree")
 for u in "${UNTUNED[@]}"; do REASONS+=("not tuned: $u"); done
-while IFS= read -r line; do [[ -n "$line" ]] && REASONS+=("$line"); done \
-  < <(python3 -B -c "import sys; sys.path.insert(0, sys.argv[1]); import parse
-for p in parse.verdict_problems(sys.argv[2], 3, float(sys.argv[3])): print(p)" "$HERE/lib" "$OUT" "$MAX_SPREAD")
+# A validator that fails must block the verdict, not silently report no problems.
+if PROBLEMS="$(python3 -B -c "import sys; sys.path.insert(0, sys.argv[1]); import parse
+for p in parse.verdict_problems(sys.argv[2], 3, float(sys.argv[3])): print(p)" "$HERE/lib" "$OUT" "$MAX_SPREAD")"; then
+  while IFS= read -r line; do [[ -n "$line" ]] && REASONS+=("$line"); done <<< "$PROBLEMS"
+else
+  REASONS+=("result validation failed")
+fi
 
 {
   if (( ${#REASONS[@]} == 0 )); then
