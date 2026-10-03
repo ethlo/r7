@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -107,7 +108,12 @@ class WarcFileWriterTest
     {
         final WarcFileWriter crashed = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3);
         crashed.writeRecords(group("first"));
-        crashed.writeRecords(group("second"));
+        // A body of several Zstandard blocks: its header decodes, and only the content checksum
+        // at the very end shows the damage.
+        final byte[] large = new byte[256 * 1024];
+        new Random(7).nextBytes(large);
+        crashed.writeRecords(List.of(new WarcFileWriter.PendingRecord(WarcFields.newRecordId(), "resource",
+                List.of(Map.entry("Content-Type", "application/octet-stream")), concat("second".getBytes(StandardCharsets.UTF_8), large))));
         final Path open = only(".warc.zst.open");
         final byte[] bytes = Files.readAllBytes(open);
         bytes[bytes.length - 1] ^= (byte) 0xFF;
@@ -148,6 +154,13 @@ class WarcFileWriterTest
                     List.of(Map.entry("Content-Type", "text/plain")), (name + "-" + i).getBytes(StandardCharsets.UTF_8)));
         }
         return records;
+    }
+
+    private static byte[] concat(final byte[] a, final byte[] b)
+    {
+        final byte[] both = Arrays.copyOf(a, a.length + b.length);
+        System.arraycopy(b, 0, both, a.length, b.length);
+        return both;
     }
 
     private static List<Long> frameEnds(final byte[] file)

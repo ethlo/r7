@@ -2,6 +2,7 @@ package com.ethlo.r7.warc;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -298,24 +299,33 @@ public final class WarcFileWriter implements AutoCloseable
     }
 
     /**
-     * Whether the record in {@code frame} carries {@link #GROUP_END}. Only its header block is
-     * decompressed.
+     * Whether the record in {@code frame} carries {@link #GROUP_END}. The whole frame is
+     * decompressed, not only its header: a frame can be framed correctly and have a readable
+     * header yet be damaged further on, which only its content checksum reveals. A damaged frame
+     * throws, and recovery stops before it.
      */
     private static boolean closesGroup(final ByteBuffer frame) throws IOException
     {
-        try (BufferedReader header = new BufferedReader(new InputStreamReader(
-                new ZstdInputStream(new ByteBufferInputStream(frame)), StandardCharsets.UTF_8)))
+        try (InputStream in = new ZstdInputStream(new ByteBufferInputStream(frame)))
         {
+            final BufferedReader header = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            boolean closes = false;
             String line;
             while ((line = header.readLine()) != null && !line.isEmpty())
             {
                 final int colon = line.indexOf(':');
                 if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase(GROUP_END))
                 {
-                    return line.substring(colon + 1).trim().equalsIgnoreCase("true");
+                    closes = line.substring(colon + 1).trim().equalsIgnoreCase("true");
                 }
             }
-            return false;
+            // Drain the rest, through the reader that buffered ahead, so the checksum is checked.
+            final char[] rest = new char[8192];
+            while (header.read(rest) != -1)
+            {
+                // discard
+            }
+            return closes;
         }
     }
 
