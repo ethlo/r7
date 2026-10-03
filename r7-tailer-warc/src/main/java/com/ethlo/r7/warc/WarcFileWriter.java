@@ -85,13 +85,14 @@ public final class WarcFileWriter implements AutoCloseable
     }
 
     /**
-     * Seals the current file if it is older than the age limit and holds an exchange. Called
-     * from the tailer's loop: a quiet deployment may go arbitrarily long without a write, and
-     * size alone would leave one unsealed file for weeks (design/warc.md, "size or age,
-     * whichever first").
+     * Seals the current file if it has reached the size limit, or is older than the age limit
+     * and holds an exchange. Called from the tailer's loop: a quiet deployment may go
+     * arbitrarily long without a write, so neither a full file nor size alone may wait for the
+     * next one (design/warc.md, "size or age, whichever first").
      */
     public synchronized void rollIfStale() throws IOException
     {
+        files.rollIfFull();
         files.rollIfStale();
     }
 

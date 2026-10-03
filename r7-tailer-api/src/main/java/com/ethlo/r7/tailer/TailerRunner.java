@@ -98,30 +98,45 @@ public final class TailerRunner
 
         while (!Thread.currentThread().isInterrupted())
         {
-            try
-            {
-                tailer.runTick();
-            }
-            catch (final IOException | RuntimeException e)
-            {
-                // A listener reports a failed write as an unchecked exception (onComplete cannot
-                // declare a checked one), and R7Tailer re-offers that exchange on the next tick.
-                // Catching only IOException would let that failure end the process instead of
-                // reaching the retry it was designed for.
-                logger.error("Error while tailing journals in {}", journalDir, e);
-            }
-            try
-            {
-                // Runs even when the read failed: an exchange that keeps failing must not keep
-                // the records written before it from being sealed on time.
-                output.afterTick();
-            }
-            catch (final IOException | RuntimeException e)
-            {
-                logger.error("Error in the tailer output after reading {}", journalDir, e);
-            }
+            tick(tailer::runTick, output, journalDir);
             // Returns as soon as the gateway commits something, or after poll_interval.
             tailer.awaitNewData(config.pollInterval());
         }
+    }
+
+    /**
+     * One read and the output's after-read hook. Neither failure escapes: the loop must outlive
+     * them both.
+     */
+    static void tick(final Read read, final TailerOutput output, final Path journalDir)
+    {
+        try
+        {
+            read.run();
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            // A listener reports a failed write as an unchecked exception (onComplete cannot
+            // declare a checked one), and R7Tailer re-offers that exchange on the next tick.
+            // Catching only IOException would let that failure end the process instead of
+            // reaching the retry it was designed for.
+            logger.error("Error while tailing journals in {}", journalDir, e);
+        }
+        try
+        {
+            // Runs even when the read failed: an exchange that keeps failing must not keep
+            // the records written before it from being sealed on time.
+            output.afterTick();
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            logger.error("Error in the tailer output after reading {}", journalDir, e);
+        }
+    }
+
+    @FunctionalInterface
+    interface Read
+    {
+        void run() throws IOException;
     }
 }
