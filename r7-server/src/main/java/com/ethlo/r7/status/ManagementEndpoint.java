@@ -189,8 +189,10 @@ public final class ManagementEndpoint
     {
         try
         {
+            // Taken before anything is read, so every field in the snapshot is at least this recent
+            final Instant renderedAt = Instant.now();
             final List<RouteReading> routes = readRoutes();
-            final Map<String, Object> json = json(routes);
+            final Map<String, Object> json = json(renderedAt, routes);
             final byte[] metrics = metrics(json, routes);
             this.snapshot = new Snapshot(JsonUtil.writeValueAsString(json).getBytes(StandardCharsets.UTF_8), metrics, System.nanoTime());
         }
@@ -289,11 +291,10 @@ public final class ManagementEndpoint
         return readings;
     }
 
-    private Map<String, Object> json(final List<RouteReading> routeReadings)
+    private Map<String, Object> json(final Instant renderedAt, final List<RouteReading> routeReadings)
     {
         final Map<String, Object> root = new LinkedHashMap<>();
-        // Taken before anything is read, so everything below is at least this recent
-        root.put("rendered_at", Instant.now());
+        root.put("rendered_at", renderedAt);
 
         final Map<String, Object> system = new LinkedHashMap<>();
         system.put("version", VersionProvider.getVersion());
