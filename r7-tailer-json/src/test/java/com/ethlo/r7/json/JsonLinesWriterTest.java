@@ -229,13 +229,12 @@ class JsonLinesWriterTest
         assertThat(clientRequest.has("observed_checksum")).as("matches nothing it differs from").isFalse();
 
         assertThat(node.path("upstream_request").path("path").asString()).isEqualTo("/v1/items");
-        assertThat(node.path("upstream_request").has("start")).as("upstream timing is all in upstream_response").isFalse();
-        assertThat(node.path("upstream_response").has("start")).isTrue();
-        assertThat(node.path("upstream_response").has("first_byte")).isTrue();
-        assertThat(node.path("upstream_response").has("end")).isTrue();
+        assertThat(node.path("upstream_request").path("start").asString()).isEqualTo("1970-01-01T00:00:00.000002Z");
+        assertThat(node.path("upstream_response").has("first_byte"))
+                .as("the gateway never records it: -1 would come out as a 1969 timestamp").isFalse();
+        assertThat(node.path("upstream_response").has("end")).as("the journal's upstream end is the exchange's end").isFalse();
         assertThat(node.path("upstream_response").path("status").asInt()).isEqualTo(503);
         assertThat(node.path("upstream_response").path("reason").asString()).isEqualTo("Service Unavailable");
-        assertThat(node.path("upstream_response").has("duration")).isTrue();
         assertThat(node.path("client_response").path("status").asInt()).isEqualTo(503);
     }
 
