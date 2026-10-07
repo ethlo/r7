@@ -42,8 +42,9 @@ so a shipper that reads `*.jsonl` never sees a file still being written.
 
 Two settings matter in every shipper. It must keep its read position on persistent storage, or a
 restart reads the retained files again and loads every exchange twice. And its line-size limit
-must hold a whole exchange: with `json.bodies: true`, a body is in the line base64-encoded, so
-set the limit from your largest body plus a third, plus the headers. Shippers split or drop a
+must hold a whole exchange: with `json.bodies: true`, the request and the response body can both
+be in one line, base64-encoded, so set the limit from the largest pair of bodies together plus a
+third, plus the headers. Shippers split or drop a
 longer line, and a split line is no longer JSON.
 
 ### OpenTelemetry Collector
@@ -116,15 +117,18 @@ sinks:
 ```
 
 A table for it, written against ClickHouse 25.8. Each of the four legs lands in a `JSON` column,
-so a field such as `client_response.status` is queried by its path:
+so a field such as `client_response.status` is queried by its path. An exchange the tailer gave up
+on carries `incomplete` and has no `start`, `duration` or `route_id`, so those columns stay empty
+for it rather than reading as a real zero:
 
 ```sql
 CREATE TABLE r7_exchanges
 (
     request_id        String,
+    incomplete        LowCardinality(Nullable(String)),
     route_id          LowCardinality(String),
-    start             DateTime64(6, 'UTC'),
-    duration          Float64,
+    start             Nullable(DateTime64(6, 'UTC')),
+    duration          Nullable(Float64),
     remote_address    String,
     client_request    JSON,
     upstream_request  JSON,
@@ -133,7 +137,7 @@ CREATE TABLE r7_exchanges
     warc              JSON
 )
 ENGINE = MergeTree
-ORDER BY (route_id, start);
+ORDER BY (route_id, ifNull(start, toDateTime64(0, 6, 'UTC')));
 ```
 
 ClickHouse is a queryable copy here, not the archive: the WARC files are. Keep the sealed `.jsonl`
