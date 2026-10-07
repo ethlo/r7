@@ -79,14 +79,10 @@ jobs:
         run: ./mvnw -B org.codehaus.mojo:versions-maven-plugin:2.18.0:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true
 
       # No flatc install: the build runs the repository's own checksum-verified bin/flatc.
-      # A release runs every test before anything is pushed; main was already tested by its PR
-      # and by the build-and-test workflow, so it only compiles the three applications.
-      - name: Build and test the release
-        if: steps.tag.outputs.release == 'true'
+      # Every test runs here, before anything is pushed: build-and-test runs alongside this
+      # workflow on the same push and cannot hold back an image if it fails.
+      - name: Build and test
         run: ./mvnw -B clean install
-      - name: Build JVM Jars
-        if: steps.tag.outputs.release != 'true'
-        run: ./mvnw clean package -DskipTests -pl r7-helidon,r7-tailer,r7-reaper -am
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0

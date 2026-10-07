@@ -54,7 +54,7 @@ Data plane defaults to `:8888`, management/status/dashboard to `:18888`.
 
 Images: every merge to main publishes `ghcr.io/ethlo/r7-{gateway,tailer,reaper}:main`. A release
 is a `v1.0.0-beta.1`-style tag on a main commit: `build-push.yml` sets the version from the tag for
-that build (the pom stays `1.0-SNAPSHOT`), runs every test, pushes the images under that exact
+that build (the pom stays `1.0-SNAPSHOT`), runs every test (as every main build does), pushes the images under that exact
 version and creates the GitHub release. Pre-releases never get `latest` or other floating tags.
 
 Integration tests in `r7-helidon` pick their target via `-Dr7.test.mode=in-process` (default)
