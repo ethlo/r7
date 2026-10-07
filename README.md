@@ -28,7 +28,7 @@ docker run --rm -p 8888:8888 -p 127.0.0.1:18888:18888 \
   --add-host=host.docker.internal:host-gateway \
   -v "$PWD/routes.yaml:/app/config/routes.yaml:ro" \
   -v r7-journals:/journals \
-  ghcr.io/ethlo/r7-gateway:latest
+  ghcr.io/ethlo/r7-gateway:main
 ```
 
 That's a running gateway, with every request to `/api` journaled and a live dashboard on

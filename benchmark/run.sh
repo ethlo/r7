@@ -252,7 +252,7 @@ pin_prefix() {
 
 # ----------------------------------------------------------------- gateway image
 
-GW_IMAGE="${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:latest}"
+GW_IMAGE="${R7_BENCH_IMAGE:-ghcr.io/ethlo/r7-gateway:main}"
 # The container runs as the invoking user so it can write the bind-mounted journals. As
 # root (bench.sh) that would measure the gateway with root privileges, so it runs as the
 # image's own user instead and the journals directory is handed to that user.

@@ -44,7 +44,7 @@ MAX_SPREAD=5
 
 # ----------------------------------------------------------------- options
 
-IMAGE="ghcr.io/ethlo/r7-gateway:latest"
+IMAGE="ghcr.io/ethlo/r7-gateway:main"
 LOCAL=0
 JDK=""
 GC="default"
@@ -62,7 +62,7 @@ usage() {
   cat <<'EOF'
 
 Options:
-  --image REF      gateway image to measure (default: ghcr.io/ethlo/r7-gateway:latest)
+  --image REF      gateway image to measure (default: ghcr.io/ethlo/r7-gateway:main)
   --local          build this checkout and run the jar on the host instead of an image
   --quick          short runs, browser workload only; never publishable
   --jdk 25|27      with --local: JDK the jar runs on (default: 25, what the image ships)

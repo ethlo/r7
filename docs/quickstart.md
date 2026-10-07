@@ -22,7 +22,7 @@ Create `docker-compose.yaml`:
 ```yaml title="docker-compose.yaml"
 services:
   r7:
-    image: ghcr.io/ethlo/r7-gateway:latest
+    image: ghcr.io/ethlo/r7-gateway:main
     ports:
       - "9999:8888"              # the gateway
       - "127.0.0.1:19999:18888"  # the dashboard, on this machine only (see below)

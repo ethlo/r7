@@ -1,9 +1,15 @@
-name: Build and Push r7 to GHCR
+name: Build and push images
 
+# A merge to main publishes the development images as :main. A version tag (v1.0.0-beta.1)
+# publishes a release: the same three images tagged with that exact version and nothing else,
+# plus a GitHub release. No floating tag (latest, 1.0) is ever written for a pre-release: a
+# deployment that pins one must never be moved onto a beta behind its back.
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 env:
@@ -19,10 +25,44 @@ jobs:
     permissions:
       packages: write
       contents: read
+    outputs:
+      release: ${{ steps.tag.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Work out the image tag
+        id: tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" != "tag" ]; then
+            # A manual run from another branch must not overwrite :main
+            if [ "$REF_NAME" != "main" ]; then
+              echo "::error::Images are built from main or from a version tag, not from $REF_NAME"
+              exit 1
+            fi
+            echo "image_tag=main" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The tag becomes the image tag and the jar version, so it must be a plain version
+          if ! printf '%s' "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'; then
+            echo "::error::Tag $REF_NAME is not a version tag such as v1.0.0-beta.1"
+            exit 1
+          fi
+          # Only a commit that is on main can be released
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $REF_NAME points at a commit that is not on main"
+            exit 1
+          fi
+          echo "image_tag=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
       - name: Set up Java 27
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -30,9 +70,22 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      # The pom stays a SNAPSHOT on main; a release sets its version for this build only, so
+      # the jars, the dashboard and r7_info report the released version without a version commit
+      - name: Set the release version
+        if: steps.tag.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.tag.outputs.image_tag }}
+        run: ./mvnw -B org.codehaus.mojo:versions-maven-plugin:2.18.0:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true
+
       # No flatc install: the build runs the repository's own checksum-verified bin/flatc.
-      # Compile the gateway, the tailer and the reaper in a single pass
+      # A release runs every test before anything is pushed; main was already tested by its PR
+      # and by the build-and-test workflow, so it only compiles the three applications.
+      - name: Build and test the release
+        if: steps.tag.outputs.release == 'true'
+        run: ./mvnw -B clean install
       - name: Build JVM Jars
+        if: steps.tag.outputs.release != 'true'
         run: ./mvnw clean package -DskipTests -pl r7-helidon,r7-tailer,r7-reaper -am
 
       - name: Set up QEMU
@@ -54,7 +107,7 @@ jobs:
           file: Dockerfile.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-gateway:latest
+          tags: ghcr.io/${{ github.repository }}-gateway:${{ steps.tag.outputs.image_tag }}
 
       # 2. Build and push the tailer sidecar image
       - name: Build and push Tailer image
@@ -64,7 +117,7 @@ jobs:
           file: Dockerfile.tailer.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-tailer:latest
+          tags: ghcr.io/${{ github.repository }}-tailer:${{ steps.tag.outputs.image_tag }}
 
       # 3. Build and push the reaper image
       - name: Build and push Reaper image
@@ -74,4 +127,24 @@ jobs:
           file: Dockerfile.reaper.jvm
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}-reaper:latest
+          tags: ghcr.io/${{ github.repository }}-reaper:${{ steps.tag.outputs.image_tag }}
+
+  # Runs only once all three images are pushed, so a release page never names an image that
+  # does not exist
+  github-release:
+    needs: build-jvm
+    if: needs.build-jvm.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" --verify-tag --generate-notes --title "r7 ${TAG#v}" $prerelease \
+            --notes "Images: \`ghcr.io/$GH_REPO-gateway:${TAG#v}\`, \`ghcr.io/$GH_REPO-tailer:${TAG#v}\`, \`ghcr.io/$GH_REPO-reaper:${TAG#v}\`"
