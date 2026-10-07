@@ -299,7 +299,7 @@ Fields of the exchange:
 |---|---|---|
 | `request_id` | string | Always |
 | `incomplete` | string | Only when the record is not a complete exchange: `NO_START_EVENT`, `NO_STATUS`, `TIMED_OUT`, `CAPACITY_EVICTED` or `SHUTDOWN` |
-| `route_id` | string | When the exchange matched a route; unrouted requests that are journaled have `<unrouted>` |
+| `route_id` | string | With an end event, when the exchange matched a route; unrouted requests that are journaled have `<unrouted>` |
 | `start` | timestamp | With an end event: when the gateway received the request |
 | `end` | timestamp | With an end event: when the response to the client finished |
 | `duration` | number | With an end event: `end` minus `start`, in seconds |
@@ -309,7 +309,7 @@ Fields of the exchange:
 | `upstream_request` | object | When the request was proxied: the request to the upstream |
 | `upstream_response` | object | When the request was proxied: the upstream's response |
 | `client_response` | object | Always: the response to the client |
-| `attributes` | object of string arrays | When the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name` and `gateway.auth.basic.user` |
+| `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name` and `gateway.auth.basic.user` |
 | `warc` | object | When a WARC file holds the exchange |
 | `warc.file` | string | The sealed WARC file's name |
 | `warc.offset` | number | Byte offset of the exchange's first record in that file |
@@ -326,7 +326,7 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `protocol` | string | all | When the start line was journaled |
 | `status` | number | responses | `client_response`: with an end event, at every level. `upstream_response`: when the status line was journaled |
 | `reason` | string | responses | When the status line has a reason phrase |
-| `targets` | array of strings | `upstream_request` | The upstream URLs tried, in order; the last one gave the recorded response |
+| `targets` | array of strings | `upstream_request` | With an end event: the upstream URLs tried, in order; the last one gave the recorded response |
 | `headers` | object of string arrays | all | At `HEADERS` and `FULL`, when there are any |
 | `header_bytes` | number | client legs | With an end event: bytes of the head on the wire |
 | `body_bytes` | number | client legs | With an end event: bytes of the body |

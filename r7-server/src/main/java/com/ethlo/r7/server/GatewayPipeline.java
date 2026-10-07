@@ -720,6 +720,10 @@ public final class GatewayPipeline
             // The upstream connection became a tunnel; its response has no end of its own.
             final long proxyEndTs = -1;
 
+            // completeJournal returned before tagging an upgraded exchange; its end event is
+            // written here, and needs the route and target like any other.
+            tagExchangeAttributes(ex);
+
             final TrafficMetrics trafficMetrics = ex.trafficMetrics();
 
             journal.endExchange(
