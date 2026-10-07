@@ -25,9 +25,11 @@ flowchart LR
 | Every exchange, as a log line | JSON Lines | [The JSON line](journaling.md#the-json-line) | Search, dashboards, alerting |
 | The gateway's own health | Prometheus text, `/health` | [Metrics](config.md#metrics) | Monitoring, liveness probes |
 
-The JSON line and the WARC records share the request id, and with both outputs on each JSON line
-points at its exchange's WARC records by file, offset and length. A query result in any of the
-tools below leads straight to the archived exchange.
+The JSON line and the WARC records share the request id. When a WARC file holds an exchange, its
+JSON line points at the records by file, offset and length, so a query result in any of the tools
+below leads straight to the archived exchange. Which exchanges a WARC file holds is `warc.exchanges`:
+by default only those with a captured body, with `all` every complete exchange. An incomplete
+exchange is only ever a JSON line.
 
 The snippets on this page are the smallest configuration that connects r7 to each tool. Each one
 names the version it was written against; the tool's own documentation covers the rest.
@@ -119,8 +121,9 @@ ENGINE = MergeTree
 ORDER BY (route_id, start);
 ```
 
-ClickHouse is an index over the exchanges here, not the archive: the WARC files are. A row can
-be rebuilt from the files; the files cannot be rebuilt from the rows.
+ClickHouse is a queryable copy here, not the archive: the WARC files are. Keep the sealed `.jsonl`
+files for as long as you may want to load a table again, since some fields of a row, such as
+`route_id` and `duration`, are only in the JSON line.
 
 ### Loki and other shippers
 
@@ -130,10 +133,13 @@ labels, so `client_response.status` becomes `client_response_status`.
 
 ## The archive: the WARC files
 
-The WARC files are for keeping and replaying exchanges, not for dashboards. Any WARC reader opens
-them once decompressed with `zstd -d`. With `cdxj_index: true`, each file gets the CDXJ index that
-[pywb](https://pywb.readthedocs.io/) and [OutbackCDX](https://github.com/nla/outbackcdx) read,
-so an exchange is found by URL and time without scanning the archive.
+The WARC files are for keeping and replaying exchanges, not for dashboards. `zstd -d` turns a file
+into plain WARC that any WARC reader opens. With `cdxj_index: true`, each file gets a CDXJ index,
+the format [pywb](https://pywb.readthedocs.io/) and [OutbackCDX](https://github.com/nla/outbackcdx)
+read, so an exchange is found by URL and time without scanning the archive. Its offsets and lengths
+point into the `.warc.zst` file as written, one Zstandard frame per record: a reader loading
+records through the index needs to read Zstandard-compressed WARC, and a file decompressed with
+`zstd -d` needs an index of its own.
 
 ## Monitoring: Prometheus
 
