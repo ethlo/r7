@@ -40,7 +40,7 @@ routes:
 Start it:
 
 ```bash
-(umask 077; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)   # once: keep it, and keep it private
+(umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)   # once: keep it, and keep it private
 docker run --rm -p 8888:8888 -p 127.0.0.1:18888:18888 \
   --add-host=host.docker.internal:host-gateway \
   --env-file .env \
