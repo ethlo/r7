@@ -1,4 +1,4 @@
-package com.ethlo.r7.tailer.jsonld;
+package com.ethlo.r7.tailer.json;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

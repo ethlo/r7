@@ -1,4 +1,4 @@
-package com.ethlo.r7.tailer.jsonld;
+package com.ethlo.r7.tailer.json;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

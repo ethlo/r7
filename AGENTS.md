@@ -95,7 +95,7 @@ r7-helidon      the gateway: R7Helidon on Helidon Níma, an adapter over r7-serv
 r7-servlet      EXPERIMENTAL r7 as a servlet in a Servlet 6.1 container: R7GatewayServlet
 r7-tailer-api   what every tailer shares: TailerRunner (config, read loop, shutdown), TailerConfig
 r7-tailer-files local file output for tailers: SealedFileWriter, RollingFilesConfig (design/tailers.md)
-r7-tailer-jsonld the JSON lines output: JsonLdWriter, RollingFileOutputStream
+r7-tailer-json  the JSON Lines output: JsonLinesWriter, RollingFileOutputStream
 r7-tailer-warc  the WARC output: WarcExchangeWriter, WarcFileWriter, CdxjIndex (design/warc.md)
 r7-tailer       sidecar app: one reader, WARC and JSON outputs (design/tailers.md)
 r7-reaper       sidecar app that deletes sealed segments once tailers are done with them

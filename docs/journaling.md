@@ -70,15 +70,16 @@ Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line ho
 status, sizes and the headers of every leg (values not on the
 [whitelist](#redacted-header-and-query-parameter-values) appear as fingerprints), and, for a
 complete exchange with a body, a `warc` pointer to its records in `/warc`. The line is one physical line; this one is abbreviated and
-pretty-printed for reading. The full format is under [the tailer](#3-the-tailer):
+pretty-printed for reading. Every field is listed under [The JSON line](#the-json-line):
 
 ```json
 {
   "request_id": "01JA0Q6R8X4V2N7M3K5T9B1C0D",
+  "route_id": "items",
   "start": "2026-10-01T12:00:00.000120Z",
   "duration": 0.004290,
-  "client_request": {"method": "POST", "path": "/items", "headers": {"host": "api.example.com"}, "body_bytes": 212},
-  "client_response": {"status": 201, "headers": {"content-type": "application/json"}, "body_bytes": 1274},
+  "client_request": {"method": "POST", "path": "/items", "headers": {"host": ["api.example.com"]}, "body_bytes": 212},
+  "client_response": {"status": 201, "headers": {"content-type": ["application/json"]}, "body_bytes": 1274},
   "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 48211, "length": 1873}
 }
 ```
@@ -119,7 +120,8 @@ for the full table and the `storage` block (`work_dir`, `shard_size`, `shard_cou
 controls where and how those journals are written on disk.
 
 Route ids and upstream target URLs are recorded in every exchange's journal attributes
-(`gateway.route.id`, `gateway.target`), and the journal stores ISO-8859-1 text only. A route
+(`gateway.route.id`, `gateway.target`; the JSON line has them as `route_id` and
+`upstream_request.targets`), and the journal stores ISO-8859-1 text only. A route
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.
 
 ### Redacted header and query parameter values
@@ -240,17 +242,18 @@ shapes and why.
 | `file_prefix`       | `r7`     | With `output: file`: filename prefix |
 | `max_file_size`     | `256mb`  | With `output: file`: roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`      | `15m`    | With `output: file`: roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
-| `pretty_print`      | `false`  | Pretty-print each object. Not with `output: file`: a record over several lines cannot be cut back cleanly after a crash |
 | `bodies`            | `false`  | Write captured bodies into a line when no WARC record stores them, base64 encoded. Off, payloads stay out of the log; `body_bytes` and the checksums still show there was a body |
-| `hide_empty_fields` | `true`   | Omit fields that are `null` or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out. Set to `false` to emit every field on every line, e.g. for consumers that require a fixed columnar schema |
 
-**Record format.** One JSON object per line, one object per leg of the exchange. A proxied
-`GET` with headers journaled, archived in a WARC file under `exchanges: all`, looks like this (pretty-printed here;
-empty fields omitted):
+### The JSON line
+
+The output is [JSON Lines](https://jsonlines.org/): one compact JSON object per exchange, one
+object per line, UTF-8. A proxied `GET` with headers journaled, archived in a WARC file under
+`exchanges: all`, looks like this (pretty-printed here):
 
 ```json
 {
   "request_id": "01JA0Q6R8X4V2N7M3K5T9B1C0D",
+  "route_id": "items",
   "start": "2026-10-01T12:00:00.000120Z",
   "end": "2026-10-01T12:00:00.004410Z",
   "duration": 0.004290,
@@ -258,35 +261,85 @@ empty fields omitted):
   "remote_address_source": "SOCKET",
   "client_request": {
     "level": "HEADERS", "method": "GET", "path": "/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
-    "headers": {"host": "api.example.com"}, "header_bytes": 142, "body_bytes": 0
+    "headers": {"host": ["api.example.com"]}, "header_bytes": 142, "body_bytes": 0
   },
   "upstream_request": {
     "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
-    "headers": {"host": "backend:8080"}, "start": "2026-10-01T12:00:00.000300Z"
+    "targets": ["http://backend:8080"], "headers": {"host": ["backend:8080"]}
   },
   "upstream_response": {
     "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
-    "headers": {"content-type": "application/json"},
-    "first_byte": "2026-10-01T12:00:00.004100Z", "end": "2026-10-01T12:00:00.004380Z", "duration": 0.004080
+    "headers": {"content-type": ["application/json"]},
+    "start": "2026-10-01T12:00:00.000300Z", "first_byte": "2026-10-01T12:00:00.004100Z",
+    "end": "2026-10-01T12:00:00.004380Z", "duration": 0.004080
   },
   "client_response": {
     "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
-    "headers": {"content-type": "application/json"}, "header_bytes": 98, "body_bytes": 1274
+    "headers": {"content-type": ["application/json"]}, "header_bytes": 98, "body_bytes": 1274
   },
   "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 48211, "length": 1873}
 }
 ```
 
-The `upstream_*` objects are present only when the request was proxied. Headers are written in
-full on every line. At `FULL`, a leg has `checksum` (the CRC32C the gateway recorded), and
-`observed_checksum` beside it only when the body read back does not match. When no WARC record
-stores it, a leg with a body also has `body` (base64) when `bodies` is `true`. `warc` gives the sealed file's
-name, the byte offset of the exchange's first record and the compressed length of all of them:
-read `length` bytes at `offset` and decompress them with `zstd -d` to get that exchange's
-records. A record that is not a complete exchange carries `incomplete` with the reason; without
-an end event (`TIMED_OUT`, `SHUTDOWN`, `CAPACITY_EVICTED`) timing, status and sizes are unknown
-and left out. Attributes the gateway recorded are under `attributes`. A header with one value is
-a string, one sent more than once an array of its values.
+The rules every field follows:
+
+- A field with no value is left out, never written as `null`. Without an end event
+  (`incomplete` is `TIMED_OUT`, `CAPACITY_EVICTED` or `SHUTDOWN`), timing, status and sizes are
+  unknown, and are left out rather than written as zero.
+- Timestamps are RFC 3339 in UTC with microseconds. Durations are seconds, as a number with six
+  decimals.
+- Header and attribute values are always arrays of strings, in the order they were sent or set,
+  so a header sent once and one sent twice have the same type. Values outside the
+  [safe lists](#redacted-header-and-query-parameter-values) are fingerprints.
+- Enumerated values are upper case.
+
+Fields of the exchange:
+
+| Field | Type | Present |
+|---|---|---|
+| `request_id` | string | Always |
+| `incomplete` | string | Only when the record is not a complete exchange: `NO_START_EVENT`, `NO_STATUS`, `TIMED_OUT`, `CAPACITY_EVICTED` or `SHUTDOWN` |
+| `route_id` | string | When the exchange matched a route; unrouted requests that are journaled have `<unrouted>` |
+| `start` | timestamp | With an end event: when the gateway received the request |
+| `end` | timestamp | With an end event: when the response to the client finished |
+| `duration` | number | With an end event: `end` minus `start`, in seconds |
+| `remote_address` | string | When known: the client address |
+| `remote_address_source` | string | With `remote_address`: `SOCKET`, `X_FORWARDED_FOR`, `X_REAL_IP` or `UNKNOWN` |
+| `client_request` | object | Always: the request from the client |
+| `upstream_request` | object | When the request was proxied: the request to the upstream |
+| `upstream_response` | object | When the request was proxied: the upstream's response |
+| `client_response` | object | Always: the response to the client |
+| `attributes` | object of string arrays | When the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name` and `gateway.auth.basic.user` |
+| `warc` | object | When a WARC file holds the exchange |
+| `warc.file` | string | The sealed WARC file's name |
+| `warc.offset` | number | Byte offset of the exchange's first record in that file |
+| `warc.length` | number | Compressed length of all the exchange's records: read `length` bytes at `offset` and decompress them with `zstd -d` |
+
+Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_response`, `client_response`):
+
+| Field | Type | Legs | Present |
+|---|---|---|---|
+| `level` | string | all | Always: the journal level of that leg, `NONE`, `METADATA`, `HEADERS` or `FULL` |
+| `method` | string | requests | When the request line was journaled |
+| `path` | string | requests | When the request line was journaled; a malformed request line is kept whole here |
+| `query` | string | requests | When the request line has a query string |
+| `protocol` | string | all | When the start line was journaled |
+| `status` | number | responses | `client_response`: with an end event, at every level. `upstream_response`: when the status line was journaled |
+| `reason` | string | responses | When the status line has a reason phrase |
+| `targets` | array of strings | `upstream_request` | The upstream URLs tried, in order; the last one gave the recorded response |
+| `headers` | object of string arrays | all | At `HEADERS` and `FULL`, when there are any |
+| `header_bytes` | number | client legs | With an end event: bytes of the head on the wire |
+| `body_bytes` | number | client legs | With an end event: bytes of the body |
+| `body` | string | client legs | With `bodies: true`, at `FULL`, when there is a body and no WARC record stores it: base64 |
+| `checksum` | string | client legs | At `FULL`, when there is a body: the CRC32C the gateway recorded, as `crc32c:` and eight hex digits |
+| `observed_checksum` | string | client legs | Only when the body read back does not match `checksum` |
+| `start` | timestamp | `upstream_response` | With an end event: when the request to the upstream started |
+| `first_byte` | timestamp | `upstream_response` | With an end event: when the upstream's first response byte arrived |
+| `end` | timestamp | `upstream_response` | With an end event: when the upstream's response finished |
+| `duration` | number | `upstream_response` | With an end event: `end` minus `start`, in seconds |
+
+A new field may be added in a later version; a consumer should ignore fields it does not know.
+Removing or changing a field is a breaking change.
 
 ### Other layouts
 

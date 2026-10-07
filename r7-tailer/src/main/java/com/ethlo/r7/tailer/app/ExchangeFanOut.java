@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
-import com.ethlo.r7.json.JsonLdWriter;
+import com.ethlo.r7.json.JsonLinesWriter;
 import com.ethlo.r7.warc.WarcExchangeWriter;
 
 /**
@@ -30,13 +30,13 @@ final class ExchangeFanOut implements ExchangeCompletionListener
 
     private final WarcExchangeWriter warc;
     private final WarcOutputConfig.Exchanges warcExchanges;
-    private final JsonLdWriter json;
+    private final JsonLinesWriter json;
 
     /**
      * @param warc null when WARC output is off
      * @param json null when JSON output is off
      */
-    ExchangeFanOut(final WarcExchangeWriter warc, final WarcOutputConfig.Exchanges warcExchanges, final JsonLdWriter json)
+    ExchangeFanOut(final WarcExchangeWriter warc, final WarcOutputConfig.Exchanges warcExchanges, final JsonLinesWriter json)
     {
         if (warc == null && json == null)
         {
@@ -67,7 +67,7 @@ final class ExchangeFanOut implements ExchangeCompletionListener
             try
             {
                 json.writeComplete(exchange, written != null
-                        ? new JsonLdWriter.WarcPointer(written.location().file(), written.location().offset(), written.location().length())
+                        ? new JsonLinesWriter.WarcPointer(written.location().file(), written.location().offset(), written.location().length())
                         : null, warc != null && warc.storesBodies());
             }
             catch (final RuntimeException e)

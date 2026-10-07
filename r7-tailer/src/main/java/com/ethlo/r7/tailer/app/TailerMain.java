@@ -6,10 +6,10 @@ import java.nio.file.Paths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ethlo.r7.json.JsonLdWriter;
+import com.ethlo.r7.json.JsonLinesWriter;
 import com.ethlo.r7.tailer.TailerOutput;
 import com.ethlo.r7.tailer.TailerRunner;
-import com.ethlo.r7.tailer.jsonld.RollingFileOutputStream;
+import com.ethlo.r7.tailer.json.RollingFileOutputStream;
 import com.ethlo.r7.warc.PayloadDedupIndex;
 import com.ethlo.r7.warc.WarcExchangeWriter;
 import com.ethlo.r7.warc.WarcFileWriter;
@@ -45,9 +45,8 @@ public final class TailerMain
                 : null;
 
         final WarcExchangeWriter warc = warcFiles != null ? new WarcExchangeWriter(warcFiles, new PayloadDedupIndex(warcConfig.dedupCacheEntries()), warcConfig.bodies()) : null;
-        final JsonLdWriter json = jsonConfig.enabled()
-                ? new JsonLdWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.prettyPrint(), jsonConfig.hideEmptyFields(),
-                jsonConfig.bodies())
+        final JsonLinesWriter json = jsonConfig.enabled()
+                ? new JsonLinesWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.bodies())
                 : null;
 
         logger.info("Tailing journals from '{}' (checkpoints in '{}', poll every {}) -> WARC: {}; JSON: {}",

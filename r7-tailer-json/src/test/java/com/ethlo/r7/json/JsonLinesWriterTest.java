@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
@@ -28,12 +29,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * {@link JsonLdWriter} runs in the sidecar, on records a consumer already refused or gave
+ * {@link JsonLinesWriter} runs in the sidecar, on records a consumer already refused or gave
  * up on delivering, and its own failures have to be survivable in the same spirit as the
  * journal reader's: a transient failure must cost one record, not the writer, and a failure
  * must never look like success.
  */
-class JsonLdWriterTest
+class JsonLinesWriterTest
 {
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
@@ -42,7 +43,7 @@ class JsonLdWriterTest
      * {@code JsonGenerator} with that object still open, so every record after the failure
      * came out malformed forever - one bad tick on a full disk would silently corrupt the
      * entire rest of the stream. Building each record into a private, infallible scratch
-     * buffer before it ever touches the real output (see {@code JsonLdWriter#flushRecord})
+     * buffer before it ever touches the real output (see {@code JsonLinesWriter#flushRecord})
      * means a failure there can only ever cost the one record that failed.
      * <p>
      * The exchange written here is deliberately large: a generator bound straight to the
@@ -56,7 +57,7 @@ class JsonLdWriterTest
     {
         final ByteArrayOutputStream real = new ByteArrayOutputStream();
         final FlakyOutputStream flaky = new FlakyOutputStream(real, 1);
-        final JsonLdWriter writer = new JsonLdWriter(flaky, false, true);
+        final JsonLinesWriter writer = new JsonLinesWriter(flaky);
 
         final JournalExchange exchange = bigExchange("req-1");
 
@@ -91,7 +92,7 @@ class JsonLdWriterTest
     void aBrokenPrintStreamDestinationIsReportedRatherThanSwallowed()
     {
         final PrintStream broken = new PrintStream(new AlwaysFailingOutputStream(), true, StandardCharsets.UTF_8);
-        final JsonLdWriter writer = new JsonLdWriter(broken, false, true);
+        final JsonLinesWriter writer = new JsonLinesWriter(broken);
 
         assertThatThrownBy(() -> writer.onComplete(completeExchange("req-1")))
                 .as("a PrintStream that swallowed the write must still surface as a failure here")
@@ -107,7 +108,7 @@ class JsonLdWriterTest
     void onIncompleteEndIsCountedAndEmittedFlagged() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final JsonLdWriter writer = new JsonLdWriter(out, false, true);
+        final JsonLinesWriter writer = new JsonLinesWriter(out);
 
         writer.onIncompleteEnd(completeExchange("req-partial"), IncompleteReason.NO_STATUS);
 
@@ -127,9 +128,7 @@ class JsonLdWriterTest
     void onAbandonedIsCountedAndOmitsFieldsThatWereNeverSet() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // hideEmptyFields=false, so an omitted field shows up as an explicit null rather
-        // than disappearing - the distinction this test needs to see.
-        final JsonLdWriter writer = new JsonLdWriter(out, false, false);
+        final JsonLinesWriter writer = new JsonLinesWriter(out);
 
         final JournalExchange abandoned = new JournalExchange("req-abandoned");
         abandoned.setClientRequest("GET /never-finishes HTTP/1.1", JournalLevel.FULL,
@@ -140,10 +139,11 @@ class JsonLdWriterTest
         assertThat(writer.getAbandonedCount()).isEqualTo(1);
         final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
         assertThat(node.path("incomplete").asString()).isEqualTo("TIMED_OUT");
-        assertThat(node.path("client_response").path("status").isNull())
+        assertThat(node.path("client_response").has("status"))
                 .as("status was never set by an End event that never arrived - it must not read as 0")
-                .isTrue();
-        assertThat(node.path("start").isNull()).isTrue();
+                .isFalse();
+        assertThat(node.has("start")).isFalse();
+        assertThat(node.has("duration")).isFalse();
     }
 
     /**
@@ -154,11 +154,11 @@ class JsonLdWriterTest
     void aLineForAnArchivedExchangePointsAtItsRecordsInsteadOfCarryingBodies() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final JsonLdWriter writer = new JsonLdWriter(out, false, false);
+        final JsonLinesWriter writer = new JsonLinesWriter(out);
         final JournalExchange exchange = completeExchange("req-archived");
         exchange.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
 
-        writer.writeComplete(exchange, new JsonLdWriter.WarcPointer("r7-1-abc.warc.zst", 512, 300));
+        writer.writeComplete(exchange, new JsonLinesWriter.WarcPointer("r7-1-abc.warc.zst", 512, 300));
         writer.onComplete(exchange);
 
         final List<String> lines = linesOf(out);
@@ -180,7 +180,7 @@ class JsonLdWriterTest
     void withBodiesOffALineCarriesNoPayload() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final JsonLdWriter writer = new JsonLdWriter(out, false, false, false);
+        final JsonLinesWriter writer = new JsonLinesWriter(out, false);
         final JournalExchange exchange = completeExchange("req-no-bodies");
         exchange.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
         exchange.setTraffic(10L, 7L, 0L, 0L);
@@ -200,7 +200,7 @@ class JsonLdWriterTest
     void aRecordHasOneObjectPerLegAndNoDerivedFields() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final JsonLdWriter writer = new JsonLdWriter(out, false, true);
+        final JsonLinesWriter writer = new JsonLinesWriter(out);
 
         final JournalExchange exchange = completeExchange("req-legs");
         exchange.setClientRequest("GET /items?page=2 HTTP/1.1", JournalLevel.FULL,
@@ -225,11 +225,14 @@ class JsonLdWriterTest
         assertThat(clientRequest.path("query").asString()).isEqualTo("page=2");
         assertThat(clientRequest.path("protocol").asString()).isEqualTo("HTTP/1.1");
         assertThat(clientRequest.path("level").asString()).isEqualTo("FULL");
-        assertThat(clientRequest.path("checksum").asLong()).isEqualTo(7);
+        assertThat(clientRequest.path("checksum").asString()).isEqualTo("crc32c:00000007");
         assertThat(clientRequest.has("observed_checksum")).as("matches nothing it differs from").isFalse();
 
         assertThat(node.path("upstream_request").path("path").asString()).isEqualTo("/v1/items");
-        assertThat(node.path("upstream_request").has("start")).isTrue();
+        assertThat(node.path("upstream_request").has("start")).as("upstream timing is all in upstream_response").isFalse();
+        assertThat(node.path("upstream_response").has("start")).isTrue();
+        assertThat(node.path("upstream_response").has("first_byte")).isTrue();
+        assertThat(node.path("upstream_response").has("end")).isTrue();
         assertThat(node.path("upstream_response").path("status").asInt()).isEqualTo(503);
         assertThat(node.path("upstream_response").path("reason").asString()).isEqualTo("Service Unavailable");
         assertThat(node.path("upstream_response").has("duration")).isTrue();
@@ -244,7 +247,7 @@ class JsonLdWriterTest
     void theStatusIsWrittenWhenTheStartLineWasNotJournaled() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final JsonLdWriter writer = new JsonLdWriter(out, false, true);
+        final JsonLinesWriter writer = new JsonLinesWriter(out);
 
         final JournalExchange exchange = completeExchange("req-metadata");
         exchange.setStatus(404);
@@ -255,10 +258,93 @@ class JsonLdWriterTest
         assertThat(response.path("level").asString()).isEqualTo("NONE");
     }
 
+    /**
+     * {@code String.format} follows the JVM's locale, and under one with a decimal comma it
+     * wrote {@code "duration": 0,004290}, which is not JSON. A duration is always a number with
+     * a decimal point.
+     */
+    @Test
+    void durationsAreJsonNumbersWhateverTheLocale() throws IOException
+    {
+        final Locale saved = Locale.getDefault();
+        try
+        {
+            Locale.setDefault(Locale.forLanguageTag("nb-NO"));
+            final ByteArrayOutputStream out = new ByteArrayOutputStream();
+            final JournalExchange exchange = completeExchange("req-locale");
+            exchange.setTiming(1_000L, 4_291_000L, -1L, -1L, -1L);
+            new JsonLinesWriter(out).onComplete(exchange);
+
+            final String line = linesOf(out).get(0);
+            assertThat(line).contains("\"duration\":0.004290");
+            assertThat(MAPPER.readTree(line).path("duration").isNumber()).isTrue();
+        }
+        finally
+        {
+            Locale.setDefault(saved);
+        }
+    }
+
+    /**
+     * A header sent once and a header sent twice have the same type, an array of strings, so a
+     * typed consumer can give {@code headers} one column type.
+     */
+    @Test
+    void headerAndAttributeValuesAreAlwaysArrays() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-arrays");
+        final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
+        headers.add("host", "api.example.com");
+        headers.add("accept", "text/html");
+        headers.add("accept", "application/json");
+        exchange.setClientRequest("GET /items HTTP/1.1", JournalLevel.HEADERS, headers, InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        final FastGatewayAttributes attributes = new FastGatewayAttributes();
+        attributes.add("gateway.auth.basic.user", "id:sha256:d4735e");
+        exchange.setAttributes(attributes);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
+        final JsonNode requestHeaders = node.path("client_request").path("headers");
+        assertThat(requestHeaders.path("host").isArray()).isTrue();
+        assertThat(requestHeaders.path("host").get(0).asString()).isEqualTo("api.example.com");
+        assertThat(requestHeaders.path("accept")).hasSize(2);
+        assertThat(node.path("attributes").path("gateway.auth.basic.user").isArray()).isTrue();
+    }
+
+    /**
+     * The route and the upstream targets are fields of their own, not entries in
+     * {@code attributes}, and the targets keep the order they were tried in.
+     */
+    @Test
+    void theRouteAndTargetsAreFieldsOfTheirOwn() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-route");
+        exchange.setUpstreamRequest("GET /v1/items HTTP/1.1", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setUpstreamResponse("HTTP/1.1 200 OK", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setTiming(1_000L, 9_000L, 2_000L, 5_000L, 8_000L);
+        final FastGatewayAttributes attributes = new FastGatewayAttributes();
+        attributes.add(JsonLinesWriter.ROUTE_ID_ATTRIBUTE, "items");
+        attributes.add(JsonLinesWriter.UPSTREAM_TARGET_ATTRIBUTE, "http://a:8080");
+        attributes.add(JsonLinesWriter.UPSTREAM_TARGET_ATTRIBUTE, "http://b:8080");
+        attributes.add("gateway.fallback.id", "items-fallback");
+        exchange.setAttributes(attributes);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
+        assertThat(node.path("route_id").asString()).isEqualTo("items");
+        assertThat(node.path("upstream_request").path("targets").get(0).asString()).isEqualTo("http://a:8080");
+        assertThat(node.path("upstream_request").path("targets").get(1).asString()).isEqualTo("http://b:8080");
+        assertThat(node.path("attributes").propertyNames()).containsExactly("gateway.fallback.id");
+    }
+
     @Test
     void orphanedEndAndBodyAreCounted()
     {
-        final JsonLdWriter writer = new JsonLdWriter(new ByteArrayOutputStream(), false, true);
+        final JsonLinesWriter writer = new JsonLinesWriter(new ByteArrayOutputStream());
 
         writer.onOrphanedEnd("req-x");
         writer.onOrphanedEnd("req-y");

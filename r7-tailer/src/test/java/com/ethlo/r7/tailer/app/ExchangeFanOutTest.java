@@ -25,7 +25,7 @@ import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
-import com.ethlo.r7.json.JsonLdWriter;
+import com.ethlo.r7.json.JsonLinesWriter;
 import com.ethlo.r7.tailer.files.SealedFileWriter;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -125,7 +125,7 @@ class ExchangeFanOutTest
         final ByteArrayOutputStream json = new ByteArrayOutputStream();
         try (WarcFileWriter files = warcFiles())
         {
-            final ExchangeFanOut fanOut = fanOut(files, false, new JsonLdWriter(json, false, true, true));
+            final ExchangeFanOut fanOut = fanOut(files, false, new JsonLinesWriter(json, true));
             fanOut.onComplete(exchange("req-1", "same body"));
             fanOut.onComplete(exchange("req-2", "same body"));
         }
@@ -151,7 +151,7 @@ class ExchangeFanOutTest
         final ByteArrayOutputStream json = new ByteArrayOutputStream();
         try (WarcFileWriter files = warcFiles())
         {
-            fanOut(files, false, new JsonLdWriter(json, false, true, false)).onComplete(exchange("req-1", "a body"));
+            fanOut(files, false, new JsonLinesWriter(json, false)).onComplete(exchange("req-1", "a body"));
         }
 
         final JsonNode line = MAPPER.readTree(lines(json).getFirst());
@@ -178,10 +178,10 @@ class ExchangeFanOutTest
 
     private static ExchangeFanOut fanOut(final WarcFileWriter files, final WarcOutputConfig.Exchanges exchanges, final OutputStream json)
     {
-        return new ExchangeFanOut(new WarcExchangeWriter(files, new PayloadDedupIndex(16)), exchanges, new JsonLdWriter(json, false, true));
+        return new ExchangeFanOut(new WarcExchangeWriter(files, new PayloadDedupIndex(16)), exchanges, new JsonLinesWriter(json));
     }
 
-    private static ExchangeFanOut fanOut(final WarcFileWriter files, final boolean warcBodies, final JsonLdWriter json)
+    private static ExchangeFanOut fanOut(final WarcFileWriter files, final boolean warcBodies, final JsonLinesWriter json)
     {
         return new ExchangeFanOut(new WarcExchangeWriter(files, new PayloadDedupIndex(16), warcBodies), WarcOutputConfig.Exchanges.ALL, json);
     }

@@ -218,8 +218,8 @@ Verify against jwarc's own docs that arbitrary header names can be set for the c
 WARC is a linear log; nothing is indexed. "All 404s this week" means reading every byte.
 
 The archiving world's answer is CDX/CDXJ — a sorted line-oriented sidecar index with a byte
-locator per record. **ClickHouse replaces that**, and `ClickHouseJsonEachRowWriter` in
-`r7-tailer-jsonld` is already most of the ingest path.
+locator per record. **ClickHouse replaces that**: the tailer's JSON line, loaded as
+`JSONEachRow`, is already the ingest path (`docs/journaling.md`, "The JSON line").
 
 One row per exchange: timestamp, status, method, path, route, upstream, the three durations,
 byte counts, request id — **plus the WARC locator: filename, offset, length**. Those locator

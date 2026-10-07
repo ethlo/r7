@@ -82,15 +82,24 @@ class TailerAppConfigTest
                 .hasMessageContaining("at least one of warc and json");
     }
 
+    /**
+     * The JSON output always writes one compact object per line and leaves out fields with no
+     * value; the options that changed that are gone, and a config still naming them is refused
+     * rather than silently ignored.
+     */
     @Test
-    void prettyPrintedFilesAreRefused()
+    void theRemovedJsonLayoutOptionsAreRefused()
     {
         assertThatThrownBy(() -> load("""
                 json:
-                  output: file
                   pretty_print: true
                 """))
-                .hasMessageContaining("[json.pretty_print]");
+                .hasMessageContaining("Unknown configuration option: 'pretty_print' at [json.pretty_print]");
+        assertThatThrownBy(() -> load("""
+                json:
+                  hide_empty_fields: false
+                """))
+                .hasMessageContaining("Unknown configuration option: 'hide_empty_fields' at [json.hide_empty_fields]");
     }
 
     private TailerAppConfig load(final String yaml) throws IOException

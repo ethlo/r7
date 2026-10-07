@@ -13,7 +13,7 @@ needs.
 |---|---|---|
 | `r7-tailer-api` | every tailer | `TailerRunner` and `TailerConfig` |
 | `r7-tailer-files` | tailers that write local files | `SealedFileWriter` and `RollingFilesConfig` |
-| `r7-tailer-warc`, `r7-tailer-jsonld` | `r7-tailer` | the two output formats, as libraries |
+| `r7-tailer-warc`, `r7-tailer-json` | `r7-tailer` | the two output formats, as libraries |
 | `r7-tailer` | the image | `TailerMain`, its config, and the fan-out to the outputs |
 
 **`r7-tailer-api`** is the reading side. `TailerRunner` loads and validates the YAML config,
