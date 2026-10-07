@@ -325,17 +325,16 @@ public class JsonLinesWriter implements ExchangeCompletionListener
      *   "start": "...", "end": "...", "duration": 0.012345,
      *   "remote_address": "...", "remote_address_source": "SOCKET",
      *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body, checksum},
-     *   "upstream_request":  {level, method, path, query, protocol, targets, headers, start},
-     *   "upstream_response": {level, protocol, status, reason, headers},
+     *   "upstream_request":  {level, method, path, query, protocol, targets, headers},
+     *   "upstream_response": {level, protocol, status, reason, headers, start, first_byte, end, duration},
      *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body, checksum},
      *   "attributes": {...},
      *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies when it stores them
      * }
      * </pre>
-     * The exchange's timing is at the top level; of the upstream round trip the gateway records
-     * only when it started, written as {@code upstream_request.start}. The journal's upstream
-     * first-byte time is never set (-1), and its upstream end is the exchange's end, so neither
-     * is written: they would be a 1969 timestamp and a copy of {@code end}. Nothing is written that another field already says: whether the
+     * The exchange's timing is at the top level, the upstream round trip's in
+     * {@code upstream_response}; an upstream time the gateway did not record (-1: no response
+     * head, a failed relay, a tunnel's end) is left out. Nothing is written that another field already says: whether the
      * request was proxied is whether the upstream objects are there, an error is a status, and
      * the content type is a header; {@code duration} is kept beside {@code start} and {@code end}
      * because it is what queries use. The upstream objects are present only for a proxied exchange.
@@ -402,10 +401,6 @@ public class JsonLinesWriter implements ExchangeCompletionListener
             writeRequestLine(exchange.getUpstreamRequestStartLine());
             writeTargets(attributes);
             writeMap("headers", GatewayUtils.toMap(exchange.getUpstreamRequestHeaders()));
-            if (hasEndEvent)
-            {
-                generator.writeStringProperty("start", timestamp(exchange.getProxyStartTs()));
-            }
             generator.writeEndObject();
 
             generator.writeName("upstream_response");
@@ -413,6 +408,16 @@ public class JsonLinesWriter implements ExchangeCompletionListener
             writeLevel(exchange.getUpstreamResponseLevel());
             writeResponseLine(exchange.getUpstreamResponseStartLine(), null);
             writeMap("headers", GatewayUtils.toMap(exchange.getUpstreamResponseHeaders()));
+            if (hasEndEvent)
+            {
+                writeTimestamp("start", exchange.getProxyStartTs());
+                writeTimestamp("first_byte", exchange.getProxyFirstByteReceivedTs());
+                writeTimestamp("end", exchange.getProxyEndTs());
+                if (exchange.getProxyStartTs() >= 0 && exchange.getProxyEndTs() >= 0)
+                {
+                    writeDuration("duration", exchange.getProxyDurationNanos());
+                }
+            }
             generator.writeEndObject();
         }
 
@@ -447,6 +452,17 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         }
 
         generator.writeEndObject();
+    }
+
+    /**
+     * A journal timestamp, or nothing for -1, the journal's "not recorded".
+     */
+    private void writeTimestamp(final String name, final long clockTs)
+    {
+        if (clockTs >= 0)
+        {
+            generator.writeStringProperty(name, timestamp(clockTs));
+        }
     }
 
     private static String timestamp(final long clockTs)

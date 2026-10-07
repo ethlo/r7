@@ -620,11 +620,11 @@ public final class GatewayPipeline
         if (journalConfig.isAtLeastMetadata(ex.clientResponse().status()))
         {
             final long requestEndTs = ClockSource.now();
+            final long nanoNow = System.nanoTime();
             final long requestStartTs = ex.requestStartEpochNanos();
             final long proxyStartTs = ex.proxyStartTs;
-            // Nothing records when the upstream finished, so the proxy end is the exchange end.
-            final long proxyEndTs = ClockSource.now();
-            final long proxyFirstBytesTs = -1;
+            final long proxyFirstBytesTs = ServerExchange.toEpochNanos(ex.upstreamHeadNanos, requestEndTs, nanoNow);
+            final long proxyEndTs = ServerExchange.toEpochNanos(ex.upstreamEndNanos, requestEndTs, nanoNow);
 
             // Body checksums are supplied by StatefulJournal, which is the only layer
             // that knows which fragments actually reached the journal — it gates them on
@@ -712,11 +712,13 @@ public final class GatewayPipeline
         final String requestId = ex.requestId();
         ex.onConnectionClose(() -> {
             final long requestEndTs = ClockSource.now();
+            final long nanoNow = System.nanoTime();
             final long requestStartTs = ex.requestStartEpochNanos();
 
             final long proxyStartTs = ex.proxyStartTs;
-            // Nothing records when the upstream finished, so the proxy end is the exchange end.
-            final long proxyEndTs = requestEndTs;
+            final long proxyFirstBytesTs = ServerExchange.toEpochNanos(ex.upstreamHeadNanos, requestEndTs, nanoNow);
+            // The upstream connection became a tunnel; its response has no end of its own.
+            final long proxyEndTs = -1;
 
             final TrafficMetrics trafficMetrics = ex.trafficMetrics();
 
@@ -731,7 +733,7 @@ public final class GatewayPipeline
                     trafficMetrics.responseHeaderBytes(),
                     trafficMetrics.responseBodyBytes(),
                     proxyStartTs,
-                    -1,
+                    proxyFirstBytesTs,
                     proxyEndTs,
                     // Websocket exchanges return before the body taps are installed,
                     // so no body is ever journaled for them.

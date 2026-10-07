@@ -229,10 +229,12 @@ class JsonLinesWriterTest
         assertThat(clientRequest.has("observed_checksum")).as("matches nothing it differs from").isFalse();
 
         assertThat(node.path("upstream_request").path("path").asString()).isEqualTo("/v1/items");
-        assertThat(node.path("upstream_request").path("start").asString()).isEqualTo("1970-01-01T00:00:00.000002Z");
-        assertThat(node.path("upstream_response").has("first_byte"))
-                .as("the gateway never records it: -1 would come out as a 1969 timestamp").isFalse();
-        assertThat(node.path("upstream_response").has("end")).as("the journal's upstream end is the exchange's end").isFalse();
+        assertThat(node.path("upstream_request").has("start")).as("upstream timing is all in upstream_response").isFalse();
+        final JsonNode upstreamResponse = node.path("upstream_response");
+        assertThat(upstreamResponse.path("start").asString()).isEqualTo("1970-01-01T00:00:00.000002Z");
+        assertThat(upstreamResponse.path("first_byte").asString()).isEqualTo("1970-01-01T00:00:00.000005Z");
+        assertThat(upstreamResponse.path("end").asString()).isEqualTo("1970-01-01T00:00:00.000008Z");
+        assertThat(upstreamResponse.path("duration").asDouble()).isEqualTo(0.000006);
         assertThat(node.path("upstream_response").path("status").asInt()).isEqualTo(503);
         assertThat(node.path("upstream_response").path("reason").asString()).isEqualTo("Service Unavailable");
         assertThat(node.path("client_response").path("status").asInt()).isEqualTo(503);
@@ -255,6 +257,29 @@ class JsonLinesWriterTest
         final JsonNode response = MAPPER.readTree(linesOf(out).get(0)).path("client_response");
         assertThat(response.path("status").asInt()).isEqualTo(404);
         assertThat(response.path("level").asString()).isEqualTo("NONE");
+    }
+
+    /**
+     * An upstream time the gateway did not record is -1 in the journal: no response head from an
+     * upstream that failed, no end for a failed relay or a tunnel. Written, it would be a 1969
+     * timestamp and a negative duration.
+     */
+    @Test
+    void anUnrecordedUpstreamTimeIsLeftOut() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-failed-upstream");
+        exchange.setUpstreamRequest("GET /v1/items HTTP/1.1", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setTiming(1_000L, 9_000L, 2_000L, -1L, -1L);
+        exchange.setStatus(502);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        final JsonNode upstreamResponse = MAPPER.readTree(linesOf(out).get(0)).path("upstream_response");
+        assertThat(upstreamResponse.has("start")).isTrue();
+        assertThat(upstreamResponse.has("first_byte")).isFalse();
+        assertThat(upstreamResponse.has("end")).isFalse();
+        assertThat(upstreamResponse.has("duration")).isFalse();
     }
 
     /**

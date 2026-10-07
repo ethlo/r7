@@ -11,6 +11,7 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -83,7 +84,9 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private Consumer<ByteBuffer> requestTee;
     private Consumer<ByteBuffer> responseTee;
     private long requestBodyLimit = Long.MAX_VALUE;
-    private String attempted;
+    // The targets tried, in order. Almost every exchange tries one, so the array is only grown
+    // when a connection fails and the relay moves on to the next target.
+    private String[] attempted;
     private Tunnel tunnel;
     private Runnable[] closeListeners;
     private final AtomicBoolean connectionClosed = new AtomicBoolean();
@@ -431,7 +434,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     protected String[] attemptedUpstreams()
     {
-        return this.attempted == null ? new String[0] : new String[]{this.attempted};
+        return this.attempted == null ? new String[0] : this.attempted;
     }
 
     @Override
@@ -686,6 +689,18 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     }
 
     @Override
+    public void onUpstreamResponseHead()
+    {
+        upstreamResponseHeadRead();
+    }
+
+    @Override
+    public void onUpstreamResponseEnd()
+    {
+        upstreamResponseEndRead();
+    }
+
+    @Override
     public void onResponseBody(final byte[] buffer, final int offset, final int length)
     {
         this.responseBodyBytes += length;
@@ -727,7 +742,16 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     public void attemptedTarget(final URI target)
     {
-        this.attempted = target.toString();
+        final String uri = target.toString();
+        if (this.attempted == null)
+        {
+            this.attempted = new String[]{uri};
+        }
+        else
+        {
+            this.attempted = Arrays.copyOf(this.attempted, this.attempted.length + 1);
+            this.attempted[this.attempted.length - 1] = uri;
+        }
     }
 
     @Override

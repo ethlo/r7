@@ -1,5 +1,8 @@
 package com.ethlo.r7.helidon;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
 
 import java.io.IOException;
@@ -76,6 +79,28 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         final String startLine = awaitEntry(marker).getClientRequestStartLine();
         Assertions.assertEquals("GET " + marker + "?api_key=" + RedactUtil.fingerprint("s3cret") + "&api_key=" + RedactUtil.fingerprint("other")
                 + "&" + RedactUtil.fingerprint("flag") + " HTTP/1.1", startLine);
+    }
+
+    /**
+     * The upstream's own timings are recorded where the relay sees them: when its response head
+     * was read and when its response was read to the end, between the start of the upstream
+     * request and the end of the exchange. They used to be -1 and the exchange's end.
+     */
+    @Test
+    public void aProxiedExchangeRecordsTheUpstreamTimings() throws Exception
+    {
+        final String marker = "/timed/" + UUID.randomUUID();
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo(marker)).willReturn(aResponse().withStatus(200).withBody("timed").withFixedDelay(50)));
+        given().when().get(marker).then().statusCode(200);
+
+        final JournalExchange entry = awaitEntry(marker);
+        final long start = entry.getProxyStartTs();
+        final long firstByte = entry.getProxyFirstByteReceivedTs();
+        final long end = entry.getProxyEndTs();
+        Assertions.assertTrue(start > 0, "no upstream start");
+        Assertions.assertTrue(firstByte - start >= Duration.ofMillis(50).toNanos(), "the head arrived after the upstream's 50 ms delay: " + (firstByte - start));
+        Assertions.assertTrue(end >= firstByte, "the response ends after its head");
+        Assertions.assertTrue(end <= entry.getClientEndTs(), "the upstream's response ends before the exchange does");
     }
 
     @Test

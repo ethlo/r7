@@ -265,12 +265,13 @@ object per line, UTF-8. A proxied `GET` with headers journaled, archived in a WA
   },
   "upstream_request": {
     "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
-    "targets": ["http://backend:8080"], "headers": {"host": ["backend:8080"]},
-    "start": "2026-10-01T12:00:00.000300Z"
+    "targets": ["http://backend:8080"], "headers": {"host": ["backend:8080"]}
   },
   "upstream_response": {
     "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
-    "headers": {"content-type": ["application/json"]}
+    "headers": {"content-type": ["application/json"]},
+    "start": "2026-10-01T12:00:00.000300Z", "first_byte": "2026-10-01T12:00:00.004100Z",
+    "end": "2026-10-01T12:00:00.004380Z", "duration": 0.004080
   },
   "client_response": {
     "level": "HEADERS", "protocol": "HTTP/1.1", "status": 200, "reason": "OK",
@@ -332,7 +333,10 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `body` | string | client legs | With `bodies: true`, at `FULL`, when there is a body and no WARC record stores it: base64 |
 | `checksum` | string | client legs | At `FULL`, when there is a body: the CRC32C the gateway recorded, as `crc32c:` and eight hex digits |
 | `observed_checksum` | string | client legs | Only when the body read back does not match `checksum` |
-| `start` | timestamp | `upstream_request` | With an end event: when the request to the upstream started |
+| `start` | timestamp | `upstream_response` | With an end event: when the request to the upstream started |
+| `first_byte` | timestamp | `upstream_response` | With an end event, when the upstream answered: when its response head had been read |
+| `end` | timestamp | `upstream_response` | With an end event, when the upstream's response was read to its end; not for a failed relay or a WebSocket tunnel |
+| `duration` | number | `upstream_response` | With `end`: `end` minus `start`, in seconds |
 
 A new field may be added in a later version; a consumer should ignore fields it does not know.
 Removing or changing a field is a breaking change.

@@ -40,6 +40,12 @@ import com.ethlo.r7.time.ClockSource;
  */
 public abstract class ServerExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange, Runnable
 {
+    /**
+     * An upstream timing not taken. {@link System#nanoTime()} can return any value, but this one
+     * would need a clock origin about 292 years back.
+     */
+    static final long NOT_RECORDED = Long.MIN_VALUE;
+
     private final GatewayPipeline pipeline;
 
     // Set by GatewayPipeline.open(), once a route is chosen (or the unrouted section is used).
@@ -64,6 +70,10 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     boolean webSocketRequested;
     boolean webSocketUpgraded;
     long proxyStartTs = -1;
+    // System.nanoTime() when the upstream's response head was read, and when its response was
+    // read to the end; NOT_RECORDED until then. Converted to epoch time when journaled.
+    long upstreamHeadNanos = NOT_RECORDED;
+    long upstreamEndNanos = NOT_RECORDED;
     long journalBytes;
 
     // Where executeRequestFilters resumes after a dispatch; see run().
@@ -332,5 +342,30 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     long requestStartEpochNanos()
     {
         return ClockSource.now() - (System.nanoTime() - requestStartNanos());
+    }
+
+    /**
+     * Marks that the upstream's response head has been read.
+     */
+    protected final void upstreamResponseHeadRead()
+    {
+        this.upstreamHeadNanos = System.nanoTime();
+    }
+
+    /**
+     * Marks that the upstream's response has been read to its end.
+     */
+    protected final void upstreamResponseEndRead()
+    {
+        this.upstreamEndNanos = System.nanoTime();
+    }
+
+    /**
+     * A {@link System#nanoTime()} reading as epoch nanoseconds, given one moment read on both
+     * clocks; -1, the journal's "not recorded", for {@link #NOT_RECORDED}.
+     */
+    static long toEpochNanos(final long nanos, final long epochNow, final long nanoNow)
+    {
+        return nanos == NOT_RECORDED ? -1 : epochNow - (nanoNow - nanos);
     }
 }

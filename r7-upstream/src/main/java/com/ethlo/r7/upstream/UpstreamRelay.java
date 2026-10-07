@@ -134,6 +134,7 @@ public final class UpstreamRelay
                 attempt.requestFlushed = false;
                 response = exchangeHead(connection, exchange, head, framing, options, attempt);
             }
+            exchange.onUpstreamResponseHead();
             if (response.status == 101)
             {
                 // The connection is the tunnel's from here: no longer bounded by max_request_time,
@@ -375,6 +376,7 @@ public final class UpstreamRelay
         final boolean noBody = "HEAD".equalsIgnoreCase(exchange.forwardMethod()) || head.status == 204 || head.status == 304;
         if (noBody)
         {
+            exchange.onUpstreamResponseEnd();
             exchange.commit(false);
             return !head.close;
         }
@@ -411,6 +413,7 @@ public final class UpstreamRelay
             exchange.abortResponse();
             throw e;
         }
+        exchange.onUpstreamResponseEnd();
         out.close();
         return reusable;
     }
