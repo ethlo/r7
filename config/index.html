@@ -3538,7 +3538,7 @@
 <tr>
 <td><code>FULL</code></td>
 <td>Headers + Bodies</td>
-<td>Supports arbitrary binary payload capture. Payloads exceeding 1MB are automatically truncated to prevent runaway storage.</td>
+<td>Captures bodies in full, streamed into the journal as they pass. The journal sets no size cap; request bodies are bounded by <code>limits.max_entity_size</code>.</td>
 </tr>
 </tbody>
 </table>
