@@ -103,7 +103,7 @@ Standard fields with r7-specific values:
 
 | Field | Value |
 | --- | --- |
-| `WARC-Date` | When r7 began capturing that message, to the precision the journal recorded: the client request when it arrived, the forwarded request when r7 started sending it, both responses when the upstream's response headers had arrived (or, for a response r7 produced itself, when the request arrived). Not when the tailer wrote the record, so it matches the exchange's JSON line |
+| `WARC-Date` | When r7 began capturing that message, to the precision the journal recorded: the client request when it arrived, the forwarded request when r7 started sending it, both responses when the upstream's response headers had arrived (or, for a response r7 produced itself, when the request arrived). Not when the tailer wrote the record, so it matches the exchange's JSON line. When the journal lacks that timestamp, a forwarded message falls back to the next one recorded (the upstream's end, then the client request's arrival), and with none at all the record is dated when the tailer wrote it |
 | `WARC-Target-URI` | `http://` + the request's `Host` header + the request target. r7 does not journal whether the client connection used TLS, so the scheme is always `http`. Without a `Host` header, `urn:r7:request:<request id>` |
 | `WARC-Payload-Digest` | `sha256:` and the base32 SHA-256 of the body |
 | `WARC-Record-ID` | `urn:uuid:` and a random UUID |
