@@ -729,7 +729,7 @@ Verbosity can be set generically or overridden conditionally based on HTTP statu
 | `NONE` | None | Disables logging completely for the route/status. |
 | `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
 | `HEADERS` | Metadata + Headers | Captures both request and response headers. |
-| `FULL` | Headers + Bodies | Supports arbitrary binary payload capture. Payloads exceeding 1MB are automatically truncated to prevent runaway storage. |
+| `FULL` | Headers + Bodies | Captures bodies in full, streamed into the journal as they pass. The journal sets no size cap; request bodies are bounded by `limits.max_entity_size`. |
 
 #### Status Overrides (`status_overrides`)
 
