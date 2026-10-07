@@ -50,7 +50,7 @@ happened:
 
 - A record is written for each message whose start line was journaled. A route with journal
   level `NONE` for the response has no response records; an exchange with nothing journaled has
-  none at all. A request at `NONE` still gets records 1 and 2 when the response is journaled: the
+  none at all. A request at `NONE` still gets its request records when the response is journaled: the
   journal then records the request at `METADATA`, its start line without headers, to anchor the
   response.
 - Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
