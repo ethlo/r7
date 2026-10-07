@@ -831,7 +831,7 @@ YAML file to start. No plugins to assemble, no scripting language to learn.</p>
 </span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--add-host<span class="o">=</span>host.docker.internal:host-gateway<span class="w"> </span><span class="se">\</span>
 </span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/routes.yaml:/app/config/routes.yaml:ro"</span><span class="w"> </span><span class="se">\</span>
 </span><span id="True-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>-v<span class="w"> </span>r7-journals:/journals<span class="w"> </span><span class="se">\</span>
-</span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:latest
+</span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:main
 </span></code></pre></div>
 <p>Requests to <code>http://localhost:8888/api/...</code> now reach your service on port 3000, and every one of
 them is written with its headers to the journal, kept in the <code>r7-journals</code> volume. Open <code>http://localhost:18888</code> to see your routes,
