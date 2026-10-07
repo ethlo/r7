@@ -372,6 +372,11 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
             (s, w, t, j, rate), rep = missing[0]
             problems.append("%d planned run(s) have no result, e.g. %s/%s/%s/%s%s repeat %d"
                             % (len(missing), s, j, w, t, "" if rate is None else "@%d" % rate, rep))
+    # A load generator that failed is a failed run, whatever its output looks like. A result
+    # without the field predates it and is judged by its output alone.
+    failed = [r for r in rows if (r["meta"].get("exit_status") or 0) != 0]
+    if failed:
+        problems.append("%d run(s) where the load generator exited with an error" % len(failed))
     # A run that completed nothing reports no errors and no spread, so it needs its own check.
     empty = [r for r in rows
              if not (r["stats"].get("rps") or 0) > 0 or not (r["stats"].get("requests") or 0) > 0]

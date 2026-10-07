@@ -245,8 +245,10 @@ isolate() {
     [[ "$(systemctl show -p ActiveState --value "$unit" 2>/dev/null)" == "active" ]] || continue
     old="$(systemctl show -p AllowedCPUs --value "$unit")"
     save cpuset "$unit" "$old"
+    # Half a confined host is neither the tuned host nor the original one, so a refusal ends
+    # the run; the EXIT trap puts back the units already changed.
     systemctl set-property --runtime "$unit" "AllowedCPUs=$os_cpus" \
-      || { UNTUNED+=("core isolation: $unit refused AllowedCPUs"); return 0; }
+      || die "core isolation: $unit refused AllowedCPUs; host restored"
     CONFINED+="$unit "
   done
   # A top-level cgroup that is not one of the units above (made directly in cgroupfs, or a
@@ -266,16 +268,22 @@ isolate() {
 }
 
 # The scan above sees the host as it was before the run. A top-level slice first activated
-# during measurement is not confined, and could use the benchmark cores unseen; this samples
-# every second until the given process ends and appends each one found populated to a file.
+# during measurement is not confined and could use the benchmark cores. This does not confine
+# it: it samples every second until the given process ends and records each one found
+# populated, which makes the run not publishable. Something that comes and goes between two
+# samples is not seen, so this is detection, not a guarantee.
 # r7bench.slice is skipped: run.sh's own processes are in it, pinned by run.sh.
 watch_unconfined() {
   local watched="$1" out="$2" dir name
+  local -A seen=()
   while kill -0 "$watched" 2>/dev/null; do
     for dir in /sys/fs/cgroup/*/; do
       name="$(basename "$dir")"
-      [[ "$CONFINED" == *" $name "* || "$name" == "r7bench.slice" ]] && continue
-      grep -qsx 'populated 1' "$dir/cgroup.events" && echo "$name" >> "$out"
+      [[ "$CONFINED" == *" $name "* || "$name" == "r7bench.slice" || -n "${seen[$name]:-}" ]] && continue
+      if grep -qsx 'populated 1' "$dir/cgroup.events"; then
+        seen[$name]=1
+        echo "$name" >> "$out"
+      fi
     done
     sleep 1
   done
@@ -292,6 +300,10 @@ host_report() {
   echo "governors=$(cat /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor 2>/dev/null | sort | uniq -c | xargs)"
   echo "online=$(cat /sys/devices/system/cpu/online)"
   echo "memory=$(free -g | awk '/^Mem:/ {print $2 " GiB"}')"
+  # What core isolation needs; --check shows them before a run is started.
+  echo "systemd=$([[ -d /run/systemd/system ]] && echo yes || echo no)"
+  echo "cgroup_v2=$([[ -f /sys/fs/cgroup/cgroup.controllers ]] && echo yes || echo no)"
+  echo "docker_cgroup_driver=$(docker info -f '{{.CgroupDriver}}' 2>/dev/null || echo unknown)"
 }
 
 # ----------------------------------------------------------------- toolchain
@@ -391,6 +403,8 @@ export PATH="$CACHE/bin:$PATH"
 DIRTY="$(git -C "$REPO" status --porcelain --untracked-files=normal)"
 SHA="$(git -C "$REPO" rev-parse --short HEAD)"
 
+# "default" adds no collector flag, so the JVM picks one, in both modes: the image's entrypoint
+# sets none either (Dockerfile.jvm), and the local run uses the same flags as that entrypoint.
 JVM_GC=""
 [[ "$GC" == "zgc" ]] && JVM_GC="-XX:+UseZGC"
 
@@ -407,9 +421,11 @@ if (( LOCAL )); then
   JVM_FLAGS="$JVM_GC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
   TRAIN="$(as_user mktemp -d)"
   log "training the AOT cache on JDK $JDK"
+  # Training exits on its own once the training requests are done; the timeout only stops a
+  # hung one from holding the host tuned.
   ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$REPO/docker/aot-training/routes.yaml" \
       R7_JOURNAL_DIR="$TRAIN/journals" \
-      "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
+      timeout 600 "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
     > "$TRAIN/training.log" 2>&1 || die "AOT training failed; see $TRAIN/training.log"
   [[ -f "$TRAIN/r7.aot" ]] || die "AOT training wrote no cache; see $TRAIN/training.log"
   GATEWAY="r7 $SHA (local build, JDK $JDK)"
@@ -467,8 +483,8 @@ TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
 PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtered,journal,sweep)
 QUICK_FLAG=""
-# --quick keeps the whole pipeline (every scenario, fresh JVMs) with short runs, the browser
-# workload and one repeat; later options win in run.sh.
+# --quick runs every scenario with fresh JVMs, but shortened: short runs, the browser workload
+# and one repeat, so it says nothing about run-to-run spread. Later options win in run.sh.
 (( QUICK )) && PROFILE+=(--quick --repeat 1) && QUICK_FLAG=" --quick"
 
 # In the background so a TERM to this script reaches run.sh at once; in the foreground bash
@@ -490,8 +506,10 @@ if (( ${ISOLATED:-0} )); then
   WATCH_PID=$!
 fi
 trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' INT TERM
-wait "$RUN_PID"
+RUN_STATUS=0
+wait "$RUN_PID" || RUN_STATUS=$?
 trap 'exit 130' INT TERM
+(( RUN_STATUS == 0 )) || die "run.sh failed (exit $RUN_STATUS); partial results in $OUT"
 if (( ${ISOLATED:-0} )); then
   wait "$WATCH_PID"
   while IFS= read -r u; do
@@ -529,6 +547,10 @@ REASONS=()
 [[ -n "${R7_BENCH_BACKEND_IMAGE:-}" && "$R7_BENCH_BACKEND_IMAGE" != *@sha256:* ]] \
   && REASONS+=("R7_BENCH_BACKEND_IMAGE is not pinned by digest")
 [[ -n "$DIRTY" ]] && REASONS+=("uncommitted changes in the working tree")
+# Checked again: an edit or a commit during the run would change what later runs measured.
+[[ -z "$DIRTY" && -n "$(git -C "$REPO" status --porcelain --untracked-files=normal)" ]] \
+  && REASONS+=("the working tree changed during the run")
+[[ "$(git -C "$REPO" rev-parse --short HEAD)" == "$SHA" ]] || REASONS+=("HEAD moved during the run")
 for u in "${UNTUNED[@]}"; do REASONS+=("not tuned: $u"); done
 # A validator that fails must block the verdict, not silently report no problems.
 if PROBLEMS="$(python3 -B -c "import sys; sys.path.insert(0, sys.argv[1]); import parse
