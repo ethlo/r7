@@ -74,9 +74,3 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
 
 - The servlet host is not a supported deployment. Its listener counters read 0, because a
   servlet container's connections are its own.
-
-## Documentation gaps
-
-- **There is no WARC profile.** [`warc.md`](warc.md) says consumers need a `WARC.md` that names
-  the `WARC-X-R7-*` fields and their guarantees. Until it exists, the code in `r7-tailer-warc`
-  is the only specification.

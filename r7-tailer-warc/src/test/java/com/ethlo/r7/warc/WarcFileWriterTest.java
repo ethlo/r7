@@ -80,7 +80,7 @@ class WarcFileWriterTest
 
         final String warc = decompress(only(".warc.zst"));
         assertThat(warc).contains("first").contains("retry").doesNotContain("second");
-        assertThat(warc).as("warcinfo 0, first 1-3, retry 4-6").contains("WARC-X-R7-Sequence: 6").doesNotContain("WARC-X-R7-Sequence: 7");
+        assertThat(warc).as("warcinfo 0, first 1-3, retry 4-6").contains("WARC-R7-Sequence: 6").doesNotContain("WARC-R7-Sequence: 7");
     }
 
     /**
@@ -192,6 +192,44 @@ class WarcFileWriterTest
         new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
 
         assertThat(decompress(dir.resolve("r7-1-abc.warc.zst"))).contains("old");
+    }
+
+    /**
+     * A file left open by a tailer from before the r7 fields shared one prefix marks its groups
+     * with the old name, and is still cut back by group.
+     */
+    @Test
+    void aFileMarkedWithTheOldGroupEndNameIsCutBackByGroup() throws IOException
+    {
+        final Path leftover = dir.resolve("r7-1-old.warc.zst.open");
+        try (ZstdCompressCtx zstd = new ZstdCompressCtx())
+        {
+            Files.write(leftover, zstd.compress(oldRecord("warcinfo", "", true)));
+            Files.write(leftover, zstd.compress(oldRecord("resource", "kept-0", false)), StandardOpenOption.APPEND);
+            Files.write(leftover, zstd.compress(oldRecord("resource", "kept-1", true)), StandardOpenOption.APPEND);
+            Files.write(leftover, zstd.compress(oldRecord("resource", "torn-0", false)), StandardOpenOption.APPEND);
+        }
+
+        new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3).close();
+
+        assertThat(decompress(dir.resolve("r7-1-old.warc.zst"))).contains("kept-1").doesNotContain("torn-0");
+    }
+
+    @Test
+    void everyFileStatesItsProfileVersion() throws IOException
+    {
+        try (WarcFileWriter writer = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3))
+        {
+            writer.writeRecords(group("first"));
+        }
+
+        assertThat(decompress(only(".warc.zst"))).contains("r7-profile: " + WarcFileWriter.PROFILE_VERSION + "\r\n");
+    }
+
+    private static byte[] oldRecord(final String type, final String content, final boolean groupEnd)
+    {
+        return ("WARC/1.1\r\nWARC-Type: " + type + "\r\n" + (groupEnd ? "WARC-X-R7-Group-End: true\r\n" : "")
+                + "Content-Length: " + content.length() + "\r\n\r\n" + content + "\r\n\r\n").getBytes(StandardCharsets.UTF_8);
     }
 
     private static List<WarcFileWriter.PendingRecord> group(final String name)
