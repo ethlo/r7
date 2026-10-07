@@ -77,14 +77,15 @@ record says plainly when it does not hold them:
 | Case | Record | Fields |
 | --- | --- | --- |
 | The body is in this record | `request` / `response` | `WARC-Payload-Digest` |
-| Records 2 and 3: the body is in record 1 or 4 of the same exchange | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-Payload-Digest` |
+| Records 2 and 3, always: any body is in record 1 or 4 of the same exchange | `request` / `response` | `WARC-Truncated: unspecified`, and `WARC-Payload-Digest` when there is a body |
 | `warc.bodies: false`: the body was captured, but this output leaves it out | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-Payload-Digest`. The JSON line holds the body when `json.bodies` is `true` |
 | A body crossed the wire, but the journal level was below `FULL` | `request` / `response` | `WARC-Truncated: unspecified`, no digest |
 | The journaled body failed its checksum when read back | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-R7-Checksum-Mismatch: true`, no digest. The damaged bytes are never archived |
 | The same body is already stored by an earlier exchange | `revisit` | The WARC 1.1 `identical-payload-digest` profile: `WARC-Refers-To`, `WARC-Refers-To-Target-URI`, `WARC-Refers-To-Date`, `WARC-Truncated: length` |
-| No body | `request` / `response` | No digest, no `WARC-Truncated` |
+| Records 1 and 4: no body | `request` / `response` | No digest, no `WARC-Truncated` |
 
-A record without `WARC-Truncated` holds its message whole. To find a body held elsewhere in the
+A record without `WARC-Truncated` holds its message whole. Records 2 and 3 never store a body,
+so they carry `WARC-Truncated` even when the message had none. To find a body held elsewhere in the
 same exchange, take the `WARC-Concurrent-To` record with the same `WARC-Payload-Digest`.
 
 Deduplication across exchanges remembers the last `dedup_cache_entries` digests per tailer
@@ -119,9 +120,12 @@ The r7 fields. A reader that does not know them can ignore them, as WARC require
   completeness checks the sequence.
 - **Groups are whole.** A sealed file never ends partway through an exchange, and an exchange
   is never split across files.
-- **Each exchange is archived once.** If the tailer fails partway through an exchange, it takes
-  the records back before trying again. After a crash, the exchange is written again only if
-  its records did not survive.
+- **A failed write is taken back.** If the tailer fails partway through an exchange, it takes
+  the records back before trying again, so a retry never leaves a second copy.
+- **A crash can archive an exchange twice.** An exchange is checkpointed only once both outputs
+  have it. A crash after its WARC records are written but before the checkpoint replays it on
+  the next start, and it is written again: delivery across a crash is at least once. A reader
+  that counts exchanges deduplicates on `WARC-R7-Request-Id`.
 - **The JSON line points here.** With both outputs on, an exchange's JSON line carries
   `warc: {file, offset, length}`, the sealed file name and the byte range of the exchange's
   records. Decompress from `offset` to read them. See [The JSON line](journaling.md#the-json-line).
@@ -132,4 +136,11 @@ Within a profile version, new optional fields may be added; a reader must ignore
 not know. Removing or renaming a field, or changing what one means, takes a new version.
 
 Files written before profile 1 have no `r7-profile` line and name two fields
-`WARC-X-R7-Sequence` and `WARC-X-R7-Group-End`. Their records otherwise follow this page.
+`WARC-X-R7-Sequence` and `WARC-X-R7-Group-End`. Two guarantees on this page do not hold for them:
+
+- Their `WARC-Date`, and so their CDXJ timestamps, are when the tailer wrote the record, not
+  when r7 captured the message.
+- The oldest have no group-end markers at all. A file like that left open by a crash is
+  recovered to its last complete record, which can end partway through an exchange.
+
+Their records otherwise follow this page.
