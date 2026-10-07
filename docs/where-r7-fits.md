@@ -40,6 +40,12 @@ The tailer writes one JSON object per exchange, to standard output or to rotatin
 (`json.output: file`). Files are written as `.jsonl.open` and renamed to `.jsonl` when finished,
 so a shipper that reads `*.jsonl` never sees a file still being written.
 
+Two settings matter in every shipper. It must keep its read position on persistent storage, or a
+restart reads the retained files again and loads every exchange twice. And its line-size limit
+must hold a whole exchange: with `json.bodies: true`, a body is in the line base64-encoded, so
+set the limit from your largest body plus a third, plus the headers. Shippers split or drop a
+longer line, and a split line is no longer JSON.
+
 ### OpenTelemetry Collector
 
 The Collector's [`filelog`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver)
@@ -48,10 +54,16 @@ them. Written against `otelcol-contrib` 0.162:
 
 <!-- docs-check: skip -->
 ```yaml
+extensions:
+  file_storage:
+    directory: /var/lib/otelcol/storage
+
 receivers:
   filelog:
     include: [/json/*.jsonl]
     start_at: beginning
+    storage: file_storage
+    max_log_size: 16MiB
     operators:
       - type: json_parser
         timestamp:
@@ -64,6 +76,7 @@ exporters:
     endpoint: http://your-backend:4318
 
 service:
+  extensions: [file_storage]
   pipelines:
     logs:
       receivers: [filelog]
@@ -73,7 +86,8 @@ service:
 ### Vector into ClickHouse
 
 [Vector](https://vector.dev/docs/) reads the files and inserts the exchanges into ClickHouse in
-batches. Written against Vector 0.59:
+batches. Vector keeps its read positions in its `data_dir`, which must be persistent. Written
+against Vector 0.59:
 
 <!-- docs-check: skip -->
 ```yaml
@@ -82,6 +96,7 @@ sources:
     type: file
     include: [/json/*.jsonl]
     read_from: beginning
+    max_line_bytes: 16777216
 
 transforms:
   r7_exchanges:
