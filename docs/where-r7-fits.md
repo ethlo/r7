@@ -57,7 +57,8 @@ them. Written against `otelcol-contrib` 0.162:
 ```yaml
 extensions:
   file_storage:
-    directory: /var/lib/otelcol/storage
+    directory: /var/lib/otelcol/storage   # a persistent volume
+    create_directory: true
 
 receivers:
   filelog:
