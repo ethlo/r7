@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -109,7 +110,7 @@ class HelidonManagementPortTest
             final String statusLine = new String(client.getInputStream().readNBytes(12), StandardCharsets.ISO_8859_1);
             // The route's upstream refuses connections: a 5xx, counted like any other response.
             assertThat(statusLine).startsWith("HTTP/1.1 5");
-            final String open = get("application/json").body();
+            final String open = jsonRenderedAfter(Instant.now());
             assertThat(statistic(open, "active_connections")).isEqualTo(1);
             assertThat(statistic(open, "max_active_connections")).isGreaterThanOrEqualTo(1);
             assertThat(statistic(open, "request_count")).isGreaterThanOrEqualTo(1);
@@ -212,6 +213,26 @@ class HelidonManagementPortTest
         try (java.net.ServerSocket socket = new java.net.ServerSocket(0))
         {
             return socket.getLocalPort();
+        }
+    }
+
+    /**
+     * The status JSON from a snapshot rendered after {@code after}: the port serves what it
+     * rendered on its last tick.
+     */
+    private String jsonRenderedAfter(final Instant after) throws Exception
+    {
+        final long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (true)
+        {
+            final String json = get("application/json").body();
+            final java.util.regex.Matcher renderedAt = java.util.regex.Pattern.compile("\"rendered_at\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+            assertThat(renderedAt.find()).as("rendered_at in %s", json).isTrue();
+            if (Instant.parse(renderedAt.group(1)).isAfter(after) || System.nanoTime() > deadline)
+            {
+                return json;
+            }
+            Thread.sleep(100);
         }
     }
 

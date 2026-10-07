@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +15,7 @@ import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteMetricsDto;
 
 /**
- * Route metrics, published to the management endpoint and saved to the work directory every
+ * Route metrics, read by the management snapshot and saved to the work directory every
  * {@link #FLUSH_INTERVAL} on the gateway's scheduler, so it owns no thread of its own: a gateway
  * that is closed, as a servlet container does on every redeploy, leaves nothing running.
  * {@link #close} saves once more, so a restart resumes from the counts at shutdown.
@@ -31,7 +31,6 @@ public final class MetricsRegistry implements AutoCloseable
     // The Holding Pen: Stores historical disk data until the YAML parser claims it
     private final ConcurrentMap<String, RouteMetricsDto> pendingHydration = new ConcurrentHashMap<>();
 
-    private final AtomicReference<List<RouteMetricsDto>> latest = new AtomicReference<>(List.of());
     private final GatewayScheduler scheduler;
     private final TelemetryRepository telemetryRepository;
     private final ScheduledFuture<?> flushing;
@@ -72,23 +71,32 @@ public final class MetricsRegistry implements AutoCloseable
         );
     }
 
-    public List<RouteMetricsDto> getAll()
-    {
-        return this.latest.get();
-    }
-
     /**
-     * Publishes a snapshot to {@link #getAll} and saves it. Synchronized so that the final save
-     * in {@link #close} cannot interleave with a scheduled one still running.
+     * Every route's metrics as they are now.
      */
-    synchronized void flush()
+    public List<RouteMetricsDto> snapshot()
     {
-        final List<RouteMetricsDto> snapshot = this.persistentStore.entrySet()
+        return this.persistentStore.entrySet()
                 .stream()
                 .map(ModelMapper::routeMetrics)
                 .toList();
-        this.latest.set(snapshot);
-        this.telemetryRepository.save(snapshot);
+    }
+
+    /**
+     * Every route's live counters, by route id.
+     */
+    public void forEachBucket(final BiConsumer<String, RouteMetricsBucket> consumer)
+    {
+        this.persistentStore.forEach(consumer);
+    }
+
+    /**
+     * Saves a snapshot. Synchronized so that the final save in {@link #close} cannot interleave
+     * with a scheduled one still running.
+     */
+    synchronized void flush()
+    {
+        this.telemetryRepository.save(snapshot());
     }
 
     /**

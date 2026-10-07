@@ -105,7 +105,6 @@ public final class BlockingGateway implements AutoCloseable
 
             this.pipeline = new GatewayPipeline(this.serverConfig, routeRegistry, this.journalWriter, new StandardErrorHandler(), this.scheduler, this::connect);
             final String serverConfigFile = Files.exists(serverFile) ? serverFile.toAbsolutePath().toString() : null;
-            this.managementEndpoint = new ManagementEndpoint(this.metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, this.statistics::snapshot);
             hotReloadService.onReload(new RouteGenerationListener()
             {
                 @Override
@@ -120,6 +119,8 @@ public final class BlockingGateway implements AutoCloseable
                     pipeline.retire(routes);
                 }
             });
+            // After the routes are prepared, so its first snapshot already has their upstreams
+            this.managementEndpoint = new ManagementEndpoint(this.metricsRegistry, this.serverConfig, serverConfigFile, routeRegistry, hotReloadService, this.pipeline, this.statistics::snapshot, this.scheduler);
         }
         catch (final IOException | RuntimeException | Error e)
         {
@@ -367,6 +368,7 @@ public final class BlockingGateway implements AutoCloseable
         {
             return;
         }
+        this.managementEndpoint.close();
         this.journalWriter.shutdown();
         this.metricsRegistry.close();
         this.scheduler.shutdown();

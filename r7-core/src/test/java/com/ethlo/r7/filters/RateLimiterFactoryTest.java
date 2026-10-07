@@ -15,8 +15,10 @@ import org.mockito.ArgumentCaptor;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
+import com.ethlo.r7.api.StatusReporting;
 import com.ethlo.r7.validation.ValidationResult;
 
 class RateLimiterFactoryTest
@@ -182,5 +184,26 @@ class RateLimiterFactoryTest
         final RateLimiterFactory.Config config = new RateLimiterFactory.Config(105L, 10L, Duration.ofSeconds(10), null, null, null);
 
         assertThat(config.maxBucketTTL()).isEqualTo(Duration.ofSeconds(110));
+    }
+
+    /**
+     * Once max_buckets clients are tracked, buckets are evicted early and an evicted client comes
+     * back with a full one: the limit holds less tightly than configured, which is a warning.
+     */
+    @Test
+    void trackingMaxBucketsClientsIsAWarning() throws Exception
+    {
+        final ClientRequestGatewayFilter filter = new RateLimiterFactory().create(new RateLimiterFactory.Config(1L, 1L, Duration.ofHours(1), 2L, null, null), null);
+        final StatusReporting reporting = (StatusReporting) filter;
+
+        filter.onClientRequest(from("192.0.2.1"));
+        assertThat(reporting.status().health()).isEqualTo(ComponentStatus.Health.OK);
+        assertThat(reporting.status().values()).containsEntry("tracked_clients", 1L).containsEntry("rejected_requests", 0L);
+
+        filter.onClientRequest(from("192.0.2.1"));
+        filter.onClientRequest(from("192.0.2.2"));
+        final ComponentStatus full = reporting.status();
+        assertThat(full.health()).isEqualTo(ComponentStatus.Health.WARN);
+        assertThat(full.values()).containsEntry("rejected_requests", 1L);
     }
 }

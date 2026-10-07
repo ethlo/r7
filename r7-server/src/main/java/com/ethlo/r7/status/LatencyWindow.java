@@ -19,6 +19,7 @@ public final class LatencyWindow
     private static final int BUCKETS = LatencyHistogram.BUCKET_COUNT;
 
     private final LongAdder[] cumulative = new LongAdder[BUCKETS];
+    private final LongAdder cumulativeNanos = new LongAdder();
     private final long[] lastCumulative = new long[BUCKETS];
     private final int[] ring;
     private final int capacity;
@@ -37,6 +38,7 @@ public final class LatencyWindow
     public void record(final long durationNanos)
     {
         this.cumulative[LatencyHistogram.bucketOf(durationNanos)].increment();
+        this.cumulativeNanos.add(durationNanos);
     }
 
     public void merge(final LatencyWindow other)
@@ -45,6 +47,29 @@ public final class LatencyWindow
         {
             this.cumulative[i].add(other.cumulative[i].sumThenReset());
         }
+        this.cumulativeNanos.add(other.cumulativeNanos.sumThenReset());
+    }
+
+    /**
+     * Every response time recorded since start, per {@link LatencyHistogram} bucket: what a
+     * Prometheus histogram exposes, since a scraper computes its own windows.
+     */
+    public long[] cumulativeCounts()
+    {
+        final long[] counts = new long[BUCKETS];
+        for (int i = 0; i < BUCKETS; i++)
+        {
+            counts[i] = this.cumulative[i].sum();
+        }
+        return counts;
+    }
+
+    /**
+     * The sum of every response time recorded since start, in nanoseconds.
+     */
+    public long cumulativeNanos()
+    {
+        return this.cumulativeNanos.sum();
     }
 
     public void tick()

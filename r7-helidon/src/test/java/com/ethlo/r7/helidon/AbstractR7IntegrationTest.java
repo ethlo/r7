@@ -340,4 +340,39 @@ public abstract class AbstractR7IntegrationTest
                 .build();
         return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
     }
+
+    /**
+     * The management JSON from a snapshot rendered after {@code after}: the port serves what it
+     * rendered on its last tick, so a test that has just changed something waits for the next one.
+     */
+    protected static io.restassured.path.json.JsonPath managementJsonAfter(final java.time.Instant after)
+    {
+        final int port = R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888);
+        final long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (true)
+        {
+            final io.restassured.path.json.JsonPath json = RestAssured.given()
+                    .baseUri("http://localhost")
+                    .port(port)
+                    .accept("application/json")
+                    .get("/")
+                    .then()
+                    .statusCode(200)
+                    .extract()
+                    .jsonPath();
+            if (java.time.Instant.parse(json.getString("rendered_at")).isAfter(after) || System.nanoTime() > deadline)
+            {
+                return json;
+            }
+            try
+            {
+                Thread.sleep(100);
+            }
+            catch (final InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+    }
 }

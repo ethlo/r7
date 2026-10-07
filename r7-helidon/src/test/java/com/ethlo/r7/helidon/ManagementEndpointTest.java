@@ -5,8 +5,6 @@ import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -16,12 +14,14 @@ import java.io.InputStream;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import io.restassured.path.json.JsonPath;
 import io.restassured.specification.RequestSpecification;
 
 /**
@@ -191,20 +191,61 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
     @Test
     public void requestsNoRouteMatchesAreCounted() throws Exception
     {
-        final long before = management().accept("application/json").get("/").then().extract().jsonPath().getLong("unrouted_requests");
+        final long before = managementJsonAfter(Instant.now()).getLong("unrouted_requests");
 
         sendGet("/no-route-matches-this");
 
+        final JsonPath json = managementJsonAfter(Instant.now());
+        assertThat(json.getLong("unrouted_requests")).isEqualTo(before + 1);
+        assertThat(json.getString("route_source.loaded_at")).isNotNull();
+        assertThat(json.getString("route_source.rejected_at")).isNull();
+        assertThat(json.getInt("route_configs[0].order")).isEqualTo(1);
+    }
+
+    @Test
+    public void metricsAreServedInThePrometheusTextFormat() throws Exception
+    {
+        sendGet("/no-route-matches-this");
         management()
-                .accept("application/json")
                 .when()
-                .get("/")
+                .get("/metrics")
                 .then()
                 .statusCode(200)
-                .body("unrouted_requests", equalTo((int) before + 1))
-                .body("route_source.loaded_at", notNullValue())
-                .body("route_source.rejected_at", nullValue())
-                .body("route_configs[0].order", equalTo(1));
+                .header("Content-Type", equalTo("text/plain; version=0.0.4; charset=utf-8"))
+                .header("Cache-Control", equalTo("no-store"))
+                .body(containsString("# TYPE r7_unrouted_requests_total counter\n"))
+                .body(containsString("# TYPE r7_route_request_duration_seconds histogram\n"))
+                // with-secrets is health-checked: its upstream reports a status
+                .body(containsString("r7_component_health{route=\"with-secrets\",component=\"upstream\",position=\"0\"}"))
+                .body(not(containsString("url-s3cret-pass")))
+                .body(not(containsString("svc-user")));
+    }
+
+    @Test
+    public void healthIsUpWhileTheSnapshotIsFresh()
+    {
+        management()
+                .when()
+                .get("/health")
+                .then()
+                .statusCode(200)
+                .header("Content-Type", equalTo("application/json"))
+                .body(equalTo("{\"status\":\"UP\"}"));
+    }
+
+    /**
+     * The new paths sit behind the same DNS-rebinding check as the dashboard.
+     */
+    @Test
+    public void metricsRefuseAHostNameThatWasNotConfigured()
+    {
+        management()
+                .header("Host", "attacker.example:" + managementPort())
+                .when()
+                .get("/metrics")
+                .then()
+                .statusCode(421)
+                .body(not(containsString("r7_")));
     }
 
     @Test

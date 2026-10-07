@@ -540,6 +540,11 @@
         border-color: rgba(238, 68, 68, 0.6);
     }
 
+    .tag-warn {
+        color: #ff9800;
+        border-color: rgba(255, 152, 0, 0.6);
+    }
+
     .filter-item {
         padding-left: 12px;
         margin: 6px 0;
@@ -1359,11 +1364,35 @@
             let summary = n.summary || '';
             if (summary.startsWith(n.name + ': ')) summary = summary.substring(n.name.length + 2);
             else if (summary.startsWith(n.name)) summary = summary.substring(n.name.length).trim();
-            return {name: n.name, global: n.global, summary, args, node: n};
+            return {name: n.name, global: n.global, summary, args, status: n.status, node: n};
         });
     }
 
     const globalTag = (f) => f.global ? ' <span class="tag" title="From global_filters in routes.yaml">GLOBAL</span>' : '';
+
+    // What a filter or the upstream reports about itself (StatusReporting): OK, WARN or ERROR
+    const HEALTH_TAG_CLASS = {OK: 'tag-up', WARN: 'tag-warn', ERROR: 'tag-down'};
+    const healthStatusTag = (status) => status
+        ? ` <span class="tag ${HEALTH_TAG_CLASS[status.health] || ''}"${status.detail ? ` title="${esc(status.detail)}"` : ''}>${esc(status.health)}</span>`
+        : '';
+    // Only what needs attention, where the whole pipeline is shown at once
+    const problemTag = (status) => status && status.health !== 'OK' ? healthStatusTag(status) : '';
+
+    // The worst status any filter or the upstream of a route reports, or null when none reports
+    function worstStatus(config) {
+        const rank = {OK: 0, WARN: 1, ERROR: 2};
+        let worst = null;
+        let count = 0;
+        for (let n = config.filter_nodes; n; n = n.child) {
+            if (!n.status) continue;
+            if (!worst || rank[n.status.health] > rank[worst]) {
+                worst = n.status.health;
+                count = 0;
+            }
+            if (n.status.health === worst) count++;
+        }
+        return worst ? {health: worst, count} : null;
+    }
 
     function buildPipelinePhasesHtml(config, filters) {
         const phases = {clientReq: [], upstreamReq: [], clientRes: [], completed: []};
@@ -1379,7 +1408,7 @@
             let html = `<div style="margin-bottom: 16px;">`;
             html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 300; font-size: 0.8em; letter-spacing: 0.5px;">${icon} ${title}</div>`;
             items.forEach(f => {
-                html += `<div class="filter-item"><span class="filter-name" style="background: ${bgColor};">${esc(f.name)}</span>${globalTag(f)}</div>`;
+                html += `<div class="filter-item"><span class="filter-name" style="background: ${bgColor};">${esc(f.name)}</span>${globalTag(f)}${problemTag(f.status)}</div>`;
             });
             html += `</div>`;
             return html;
@@ -1409,11 +1438,18 @@
             const hasArgs = f.args && typeof f.args === 'object' && Object.keys(f.args).length > 0;
             return `
             <div style="margin-bottom: 10px;">
-                <div><span class="route-order">${i + 1}.</span><span class="filter-name" style="background: rgba(128,128,128,0.1);">${esc(f.name)}</span>${globalTag(f)}</div>
+                <div><span class="route-order">${i + 1}.</span><span class="filter-name" style="background: rgba(128,128,128,0.1);">${esc(f.name)}</span>${globalTag(f)}${healthStatusTag(f.status)}</div>
                 ${f.summary ? `<div class="filter-summary" style="margin: 2px 0 0 22px;">${esc(f.summary)}</div>` : ''}
+                ${f.status ? statusDetailHtml(f.status) : ''}
                 ${hasArgs ? `<details class="filter-args" style="margin-left: 22px;"><summary>CONFIG</summary><pre>${esc(JSON.stringify(f.args, null, 2))}</pre></details>` : ''}
             </div>`;
         }).join('') + `<div class="muted-note">Secrets and header values outside the journal's safe-header list are shown masked or as fingerprints.</div>`;
+    }
+
+    function statusDetailHtml(status) {
+        const values = Object.entries(status.values || {}).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(', ');
+        const line = [status.detail ? esc(status.detail) : '', values].filter(Boolean).join(' · ');
+        return line ? `<div class="filter-summary" style="margin: 2px 0 0 22px;">${line}</div>` : '';
     }
 
     function healthTag(routeId, target) {
@@ -1843,6 +1879,12 @@
                     : `${config.upstream.targets.length} TARGET${config.upstream.targets.length === 1 ? '' : 'S'}`, false)
                 : mRow('UPSTREAM', '<span class="text-dim">NONE</span>', false);
 
+            // A component reporting trouble (an open circuit breaker, all targets down) shows here
+            const worst = worstStatus(config);
+            const statusRow = !worst ? '' : mRow('STATUS', worst.health === 'OK'
+                ? 'OK'
+                : `<span class="${worst.health === 'ERROR' ? 'text-err' : 'text-warn'}">${worst.count} ${worst.health}</span>`, false);
+
             html += `
         <tr class="clickable-row" data-route-id="${esc(config.id)}">
             <td class="col-route">
@@ -1852,6 +1894,7 @@
                 ${mRow('P50 / P99', lat?.window_samples ? `${formatMicros(lat.p50_micros)} / <span class="${latencyClass(lat.p99_micros)}">${formatMicros(lat.p99_micros)}</span>` : '--', false)}
                 ${mRow(`5xx (${windowLabel(r.sparkline_data)})`, formatPct(win.pct5, win.total), false, errorPctClass(win.pct5))}
                 ${healthRow}
+                ${statusRow}
             </td>
             <td class="col-active">
                <canvas id="canvas_${index}" width="200" height="60" style="margin-top: 8px;"></canvas>
@@ -1947,7 +1990,8 @@
 
     currentView = viewFromHash();
     if (currentView) slider.classList.add('show-details-view');
-    setInterval(update, 1000);
+    // The management port renders its data every 2s; polling faster only fetches the same bytes
+    setInterval(update, 2000);
     update();
 </script>
 </body>

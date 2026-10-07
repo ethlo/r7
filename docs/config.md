@@ -939,6 +939,42 @@ What the dashboard shows beyond the configuration itself:
 * **Upstream target health** for routes with a `health_check`, from the moment routes are loaded (see [Health Check](#health-check-health_check)); a hot reload resets it.
 * **Requests no route matched**, which are answered `404` and are not part of any route's figures.
 * **`server.yaml` as in effect**, with every value that differs from the built-in default marked.
+* **Component status**: what a route's filters and its upstream report about themselves, as `OK`, `WARN` or `ERROR`. A route with a component in `WARN` or `ERROR` says so in the route list, and the route's page shows each filter's status with its detail and values. `CircuitBreaker` is `ERROR` while open and `WARN` while half-open; `RateLimiter` is `WARN` once it tracks `max_buckets` clients, since it then evicts buckets early and the limit holds less tightly; a health-checked upstream is `WARN` while some of its targets are down and `ERROR` while all are. A custom filter can report its own (see [Reporting a filter's status](extensibility.md#reporting-a-filters-status)).
+
+#### Paths
+
+| Path | Answers |
+| --- | --- |
+| `/metrics` | Prometheus metrics, in the text format (`text/plain; version=0.0.4`). |
+| `/health` | `200` with `{"status":"UP"}`, or `503` with `{"status":"DOWN"}` once the status snapshot is more than 10 seconds old. For liveness probes. |
+| any other | The dashboard, or with `Accept: application/json` the data behind it. |
+
+The JSON and the metrics are rendered together every 2 seconds and served as rendered, so any number of dashboards and scrapers cost the gateway the same, and the two always agree. `rendered_at` in the JSON says when its data was read. The snapshot is rendered on the scheduler that also runs health checks and reloads `routes.yaml`, which is why a stale one fails `/health`: the gateway's housekeeping has stopped. `/health` does not turn `DOWN` for an open circuit breaker or a down upstream; those are the gateway doing its job, and restarting it would not help.
+
+#### Metrics
+
+| Metric | Type | Labels | What it counts |
+| --- | --- | --- | --- |
+| `r7_info` | gauge | `version` | Always `1`; carries the running version. |
+| `r7_start_time_seconds` | gauge | | When the process started, in seconds since the epoch. |
+| `r7_routes_config_rejected` | gauge | | `1` while the latest edit of `routes.yaml` was rejected and the previous routes still run. |
+| `r7_unrouted_requests_total` | counter | | Requests no route matched. |
+| `r7_connections_active` | gauge | | Open client connections to the gateway port. |
+| `r7_journal_available_bytes` | gauge | | Free space for journals in `work_dir`. |
+| `r7_route_requests_total` | counter | `route`, `code` | Responses sent to clients. |
+| `r7_route_upstream_responses_total` | counter | `route`, `code` | Responses received from upstreams. |
+| `r7_route_active_requests` | gauge | `route` | Requests in progress. |
+| `r7_route_active_websockets` | gauge | `route` | Open WebSocket tunnels. |
+| `r7_route_journal_bytes_total` | counter | `route` | Bytes written to the journal. |
+| `r7_route_request_duration_seconds` | histogram | `route` | Time from request to response. Bucket bounds are powers of two from 256µs to about 16.8s. |
+| `r7_component_health` | gauge | `route`, `component`, `position` | A filter's or upstream's status: `0` OK, `1` WARN, `2` ERROR. |
+| `r7_component_value` | gauge | `route`, `component`, `position`, `name` | A number a filter or upstream reports, such as a circuit breaker's `rejected_requests`. |
+| `r7_jvm_heap_used_bytes`, `r7_jvm_heap_max_bytes` | gauge | | Heap in use, and its limit. |
+| `r7_jvm_direct_used_bytes` | gauge | | Direct buffer memory in use. |
+| `r7_jvm_gc_seconds_total` | counter | | Time spent in garbage collection. |
+| `r7_process_open_fds`, `r7_process_max_fds` | gauge | | Open file descriptors, and the limit. |
+
+The `route_*` metrics cover routes with the `SimpleMetrics` filter. Their counts, other than the duration histogram, are saved in `work_dir` and carry on across restarts, like the dashboard's. `component` is the filter's name, or `upstream`; `position` is the filter's place in the route's pipeline, global filters first, and `0` for the upstream, so two filters of one kind on a route stay apart. The names and labels above are a contract: a change to them is a breaking change.
 
 ### HTTP Options (`http`)
 

@@ -279,6 +279,14 @@ public final class RouteMetricsBucket
         return this.sparklineRingBuffer.getSnapshot();
     }
 
+    /**
+     * The response-time histogram since start, for Prometheus: not persisted, unlike the totals.
+     */
+    public LatencyWindow latencyWindow()
+    {
+        return this.latencyWindow;
+    }
+
     public LatencyDto getLatency()
     {
         return this.latencyWindow.snapshot();
