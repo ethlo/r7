@@ -974,7 +974,7 @@ The JSON and the metrics are rendered together every 2 seconds and served as ren
 | `r7_jvm_gc_seconds_total` | counter | | Time spent in garbage collection. |
 | `r7_process_open_fds`, `r7_process_max_fds` | gauge | | Open file descriptors, and the limit. |
 
-The `route_*` metrics cover routes with the `SimpleMetrics` filter. Their counts, other than the duration histogram, are saved in `work_dir` and carry on across restarts, like the dashboard's. `component` is the filter's name, or `upstream`; `position` is the filter's place in the route's pipeline, global filters first, and `0` for the upstream, so two filters of one kind on a route stay apart. The names and labels above are a contract: a change to them is a breaking change.
+The `route_*` metrics cover routes with the `SimpleMetrics` filter. Their counts, other than the duration histogram, are saved in `work_dir` and carry on across restarts, like the dashboard's. `component` is the filter's name, or `upstream`; `position` is the filter's place in the route's pipeline, global filters first, and `0` for the upstream, so two filters of one kind on a route stay apart. A global filter is one instance in front of every route, so it is reported once, without a `route` label. The names and labels above are a contract: a change to them is a breaking change.
 
 ### HTTP Options (`http`)
 

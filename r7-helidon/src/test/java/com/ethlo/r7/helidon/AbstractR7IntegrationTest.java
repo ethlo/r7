@@ -360,9 +360,13 @@ public abstract class AbstractR7IntegrationTest
                     .statusCode(200)
                     .extract()
                     .jsonPath();
-            if (java.time.Instant.parse(json.getString("rendered_at")).isAfter(after) || System.nanoTime() > deadline)
+            if (java.time.Instant.parse(json.getString("rendered_at")).isAfter(after))
             {
                 return json;
+            }
+            if (System.nanoTime() > deadline)
+            {
+                throw new AssertionError("No management snapshot rendered after " + after + "; the latest is from " + json.getString("rendered_at"));
             }
             try
             {

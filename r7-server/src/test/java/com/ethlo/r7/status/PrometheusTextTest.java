@@ -7,8 +7,13 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+
+import com.ethlo.r7.api.ComponentStatus;
+import com.ethlo.r7.status.dto.FilterNode;
+import com.ethlo.r7.status.dto.RouteConfigDto;
 
 class PrometheusTextTest
 {
@@ -62,7 +67,7 @@ class PrometheusTextTest
         window.record(60_000_000_000L);
 
         final PrometheusText text = new PrometheusText().metric("r7_route_request_duration_seconds", "histogram", "Help.");
-        ManagementEndpoint.latencyHistogram(text, "r", window);
+        ManagementEndpoint.latencyHistogram(text, "r", window.cumulativeCounts(), window.cumulativeNanos());
 
         assertThat(lines(text)).contains(
                 "r7_route_request_duration_seconds_bucket{route=\"r\",le=\"0.000256\"} 0",
@@ -74,5 +79,34 @@ class PrometheusTextTest
                 "r7_route_request_duration_seconds_bucket{route=\"r\",le=\"+Inf\"} 4",
                 "r7_route_request_duration_seconds_sum{route=\"r\"} 60.003600000",
                 "r7_route_request_duration_seconds_count{route=\"r\"} 4");
+    }
+
+    /**
+     * A global filter is one instance in front of every route: its counts are gateway-wide, so
+     * it is reported once without a route, or summing over routes would multiply them.
+     */
+    @Test
+    void aGlobalFilterIsReportedOnceWithoutARoute()
+    {
+        final ComponentStatus shared = new ComponentStatus(ComponentStatus.Health.WARN, null, Map.of("rejected_requests", 7L));
+        final ComponentStatus own = new ComponentStatus(ComponentStatus.Health.ERROR, null, null);
+        final List<RouteConfigDto> routes = List.of(route("a", shared, own), route("b", shared, null));
+
+        final PrometheusText text = new PrometheusText();
+        ManagementEndpoint.components(text, routes);
+
+        assertThat(lines(text)).containsSubsequence(
+                "r7_component_health{route=\"\",component=\"RateLimiter\",position=\"1\"} 1",
+                "r7_component_health{route=\"a\",component=\"CircuitBreaker\",position=\"2\"} 2",
+                "r7_component_value{route=\"\",component=\"RateLimiter\",position=\"1\",name=\"rejected_requests\"} 7");
+        assertThat(lines(text).stream().filter(l -> l.contains("RateLimiter")).count()).isEqualTo(2);
+    }
+
+    private static RouteConfigDto route(final String id, final ComponentStatus global, final ComponentStatus own)
+    {
+        final FilterNode upstream = new FilterNode("upstream", "None", false, false, false, false, false, null, null);
+        final FilterNode breaker = new FilterNode("CircuitBreaker", "", false, true, false, true, false, own, upstream);
+        final FilterNode limiter = new FilterNode("RateLimiter", "", true, true, false, true, false, global, breaker);
+        return new RouteConfigDto(id, 1, null, null, null, null, List.of(), limiter);
     }
 }

@@ -122,6 +122,7 @@ public final class R7Helidon
                         .routing(routing -> routing.any((req, res) -> serveManagement(endpoint, req, res))))
                 .build()
                 .start();
+        endpoint.start();
         logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms", VersionProvider.getVersion(), SystemUtil.getUptime().toMillis());
         logger.info("Gateway listening on {}:{}, management on {}:{}", core.host(), this.server.port(),
                 management.host(), this.server.port(MANAGEMENT_SOCKET));

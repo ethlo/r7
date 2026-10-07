@@ -228,9 +228,13 @@ class HelidonManagementPortTest
             final String json = get("application/json").body();
             final java.util.regex.Matcher renderedAt = java.util.regex.Pattern.compile("\"rendered_at\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
             assertThat(renderedAt.find()).as("rendered_at in %s", json).isTrue();
-            if (Instant.parse(renderedAt.group(1)).isAfter(after) || System.nanoTime() > deadline)
+            if (Instant.parse(renderedAt.group(1)).isAfter(after))
             {
                 return json;
+            }
+            if (System.nanoTime() > deadline)
+            {
+                throw new AssertionError("No management snapshot rendered after " + after + "; the latest is from " + renderedAt.group(1));
             }
             Thread.sleep(100);
         }

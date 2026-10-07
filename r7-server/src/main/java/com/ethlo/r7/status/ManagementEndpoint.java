@@ -15,7 +15,9 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.Supplier;
@@ -39,6 +41,7 @@ import com.ethlo.r7.status.dto.FilterNode;
 import com.ethlo.r7.status.dto.MemoryDto;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
+import com.ethlo.r7.status.dto.RouteMetricsDto;
 import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.MediaTypes;
@@ -83,6 +86,14 @@ public final class ManagementEndpoint
     {
     }
 
+    /**
+     * One route's counters, read once and rendered into both the JSON and the metrics, so the
+     * two cannot disagree about a request that completed while they were being written.
+     */
+    private record RouteReading(RouteMetricsDto metrics, long[] latencyCounts, long latencyNanos)
+    {
+    }
+
     private final MetricsRegistry metricsRegistry;
     private final ServerConfig serverConfig;
     private final HeaderNameSet safeRequestHeaders;
@@ -95,7 +106,8 @@ public final class ManagementEndpoint
     private final Map<String, String> securityHeaders;
     private final ManagementHostPolicy hostPolicy;
     private final Supplier<ConnectorStatisticsDto> connectorStatistics;
-    private final ScheduledFuture<?> rendering;
+    private final GatewayScheduler scheduler;
+    private ScheduledFuture<?> rendering;
     private volatile Snapshot snapshot;
 
     /**
@@ -141,17 +153,32 @@ public final class ManagementEndpoint
         headers.put("Content-Security-Policy", contentSecurityPolicy(this.combinedHtml));
         this.securityHeaders = Map.copyOf(headers);
 
-        // The first one now, so the port has data to serve from the moment the gateway is up
-        render();
-        this.rendering = scheduler.scheduleEvery(SNAPSHOT_INTERVAL, this::render);
+        this.scheduler = scheduler;
+    }
+
+    /**
+     * Starts rendering snapshots, the first one now so the port has data from the moment it
+     * listens. Only a server that serves the management port calls it: an embedded gateway
+     * without one (the servlet) renders nothing.
+     */
+    public synchronized void start()
+    {
+        if (this.rendering == null)
+        {
+            render();
+            this.rendering = this.scheduler.scheduleEvery(SNAPSHOT_INTERVAL, this::render);
+        }
     }
 
     /**
      * Stops rendering snapshots.
      */
-    public void close()
+    public synchronized void close()
     {
-        this.rendering.cancel(false);
+        if (this.rendering != null)
+        {
+            this.rendering.cancel(false);
+        }
     }
 
     /**
@@ -162,8 +189,9 @@ public final class ManagementEndpoint
     {
         try
         {
-            final Map<String, Object> json = json();
-            final byte[] metrics = metrics(json);
+            final List<RouteReading> routes = readRoutes();
+            final Map<String, Object> json = json(routes);
+            final byte[] metrics = metrics(json, routes);
             this.snapshot = new Snapshot(JsonUtil.writeValueAsString(json).getBytes(StandardCharsets.UTF_8), metrics, System.nanoTime());
         }
         catch (final RuntimeException e)
@@ -248,7 +276,20 @@ public final class ManagementEndpoint
         return new Response(200, headers, this.combinedHtml.getBytes(StandardCharsets.UTF_8));
     }
 
-    private Map<String, Object> json()
+    private List<RouteReading> readRoutes()
+    {
+        final Map<String, RouteMetricsBucket> buckets = new TreeMap<>();
+        this.metricsRegistry.forEachBucket(buckets::put);
+        final List<RouteReading> readings = new ArrayList<>(buckets.size());
+        for (final Map.Entry<String, RouteMetricsBucket> entry : buckets.entrySet())
+        {
+            final LatencyWindow window = entry.getValue().latencyWindow();
+            readings.add(new RouteReading(ModelMapper.routeMetrics(entry), window.cumulativeCounts(), window.cumulativeNanos()));
+        }
+        return readings;
+    }
+
+    private Map<String, Object> json(final List<RouteReading> routeReadings)
     {
         final Map<String, Object> root = new LinkedHashMap<>();
         // Taken before anything is read, so everything below is at least this recent
@@ -265,7 +306,7 @@ public final class ManagementEndpoint
         root.put("system", system);
         root.put("connector_statistics", connectorStatistics != null ? connectorStatistics.get() : null);
         root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
-        root.put("route_metrics", metricsRegistry.snapshot());
+        root.put("route_metrics", routeReadings.stream().map(RouteReading::metrics).toList());
 
         root.put("unrouted_requests", pipeline.unroutedRequests());
         root.put("upstream_health", pipeline.upstreamTargetStates());
@@ -288,7 +329,7 @@ public final class ManagementEndpoint
      * metric names are documented in docs/config.md: a rename breaks someone's dashboard.
      */
     @SuppressWarnings("unchecked")
-    private byte[] metrics(final Map<String, Object> json)
+    private byte[] metrics(final Map<String, Object> json, final List<RouteReading> routes)
     {
         final PrometheusText out = new PrometheusText();
 
@@ -316,7 +357,7 @@ public final class ManagementEndpoint
         out.metric("r7_journal_available_bytes", "gauge", "Free space for journals in the work directory.")
                 .sample("r7_journal_available_bytes", ((Number) journaling.get("available_space")).longValue());
 
-        routeMetrics(out);
+        routeMetrics(out, routes);
         components(out, (List<RouteConfigDto>) json.get("route_configs"));
 
         final MemoryDto memory = (MemoryDto) ((Map<String, Object>) json.get("system")).get("memory");
@@ -330,35 +371,49 @@ public final class ManagementEndpoint
         return out.toBytes();
     }
 
-    private void routeMetrics(final PrometheusText out)
+    private static void routeMetrics(final PrometheusText out, final List<RouteReading> routes)
     {
-        final Map<String, RouteMetricsBucket> buckets = new TreeMap<>();
-        this.metricsRegistry.forEachBucket(buckets::put);
-
         out.metric("r7_route_requests_total", "counter", "Responses sent to clients, by route and status code.");
-        buckets.forEach((route, bucket) -> bucket.getClientResponseStatuses()
-                .forEach((code, count) -> out.sample("r7_route_requests_total", count, "route", route, "code", Integer.toString(code))));
+        for (final RouteReading r : routes)
+        {
+            r.metrics().requestStatistics().clientResponseStatuses()
+                    .forEach((code, count) -> out.sample("r7_route_requests_total", count, "route", r.metrics().id(), "code", Integer.toString(code)));
+        }
 
         out.metric("r7_route_upstream_responses_total", "counter", "Responses received from upstreams, by route and status code.");
-        buckets.forEach((route, bucket) -> bucket.getUpstreamResponseStatuses()
-                .forEach((code, count) -> out.sample("r7_route_upstream_responses_total", count, "route", route, "code", Integer.toString(code))));
+        for (final RouteReading r : routes)
+        {
+            r.metrics().requestStatistics().upstreamResponseStatuses()
+                    .forEach((code, count) -> out.sample("r7_route_upstream_responses_total", count, "route", r.metrics().id(), "code", Integer.toString(code)));
+        }
 
         out.metric("r7_route_active_requests", "gauge", "Requests in progress, by route.");
-        buckets.forEach((route, bucket) -> out.sample("r7_route_active_requests", bucket.getActiveRequests(), "route", route));
+        for (final RouteReading r : routes)
+        {
+            out.sample("r7_route_active_requests", r.metrics().requestStatistics().active(), "route", r.metrics().id());
+        }
 
         out.metric("r7_route_active_websockets", "gauge", "Open WebSocket tunnels, by route.");
-        buckets.forEach((route, bucket) -> out.sample("r7_route_active_websockets", bucket.getActiveWsRequests(), "route", route));
+        for (final RouteReading r : routes)
+        {
+            out.sample("r7_route_active_websockets", r.metrics().requestStatistics().websocketActive(), "route", r.metrics().id());
+        }
 
         out.metric("r7_route_journal_bytes_total", "counter", "Bytes written to the journal, by route.");
-        buckets.forEach((route, bucket) -> out.sample("r7_route_journal_bytes_total", bucket.getTotalJournalBytes(), "route", route));
+        for (final RouteReading r : routes)
+        {
+            out.sample("r7_route_journal_bytes_total", r.metrics().trafficFlow().journalStorageBytes(), "route", r.metrics().id());
+        }
 
         out.metric("r7_route_request_duration_seconds", "histogram", "Time from request to response, by route, since the gateway started.");
-        buckets.forEach((route, bucket) -> latencyHistogram(out, route, bucket.latencyWindow()));
+        for (final RouteReading r : routes)
+        {
+            latencyHistogram(out, r.metrics().id(), r.latencyCounts(), r.latencyNanos());
+        }
     }
 
-    static void latencyHistogram(final PrometheusText out, final String route, final LatencyWindow window)
+    static void latencyHistogram(final PrometheusText out, final String route, final long[] counts, final long sumNanos)
     {
-        final long[] counts = window.cumulativeCounts();
         final int overflow = counts.length - 1;
         long total = 0;
         for (final long count : counts)
@@ -377,29 +432,32 @@ public final class ManagementEndpoint
             out.sample("r7_route_request_duration_seconds_bucket", below, "route", route, "le", BigDecimal.valueOf(bound, 6).toPlainString());
         }
         out.sample("r7_route_request_duration_seconds_bucket", total, "route", route, "le", "+Inf");
-        out.sample("r7_route_request_duration_seconds_sum", BigDecimal.valueOf(window.cumulativeNanos(), 9), "route", route);
+        out.sample("r7_route_request_duration_seconds_sum", BigDecimal.valueOf(sumNanos, 9), "route", route);
         out.sample("r7_route_request_duration_seconds_count", total, "route", route);
     }
 
     /**
      * Each route's components that report a status: its filters, numbered by their place in the
-     * route's pipeline (global filters first), and its upstream as position 0.
+     * route's pipeline (global filters first), and its upstream as position 0. A global filter is
+     * one instance shared by every route, so it is reported once and without a route: under each
+     * route its gateway-wide counts would be summed once per route.
      */
-    private static void components(final PrometheusText out, final List<RouteConfigDto> routes)
+    static void components(final PrometheusText out, final List<RouteConfigDto> routes)
     {
         record Reported(String route, String component, String position, ComponentStatus status)
         {
         }
         final List<Reported> reported = new ArrayList<>();
+        final Set<Integer> globalsReported = new HashSet<>();
         for (final RouteConfigDto route : routes)
         {
             int position = 1;
             for (FilterNode node = route.filterNodes(); node != null; node = node.child())
             {
                 final boolean upstream = node.child() == null;
-                if (node.status() != null)
+                if (node.status() != null && (!node.global() || globalsReported.add(position)))
                 {
-                    reported.add(new Reported(route.id(), upstream ? "upstream" : node.name(), upstream ? "0" : Integer.toString(position), node.status()));
+                    reported.add(new Reported(node.global() ? "" : route.id(), upstream ? "upstream" : node.name(), upstream ? "0" : Integer.toString(position), node.status()));
                 }
                 position++;
             }
