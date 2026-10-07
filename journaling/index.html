@@ -651,6 +651,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#the-json-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The JSON line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#other-layouts" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -877,15 +888,16 @@ Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line ho
 status, sizes and the headers of every leg (values not on the
 <a href="#redacted-header-and-query-parameter-values">whitelist</a> appear as fingerprints), and, for a
 complete exchange with a body, a <code>warc</code> pointer to its records in <code>/warc</code>. The line is one physical line; this one is abbreviated and
-pretty-printed for reading. The full format is under <a href="#3-the-tailer">the tailer</a>:</p>
+pretty-printed for reading. Every field is listed under <a href="#the-json-line">The JSON line</a>:</p>
 <div class="language-json highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
 </span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
-</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000120Z"</span><span class="p">,</span>
-</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004290</span><span class="p">,</span>
-</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"POST"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"api.example.com"</span><span class="p">},</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">212</span><span class="p">},</span>
-</span><span id="True-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">201</span><span class="p">,</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/json"</span><span class="p">},</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1274</span><span class="p">},</span>
-</span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
-</span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">}</span>
+</span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">"route_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"items"</span><span class="p">,</span>
+</span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000120Z"</span><span class="p">,</span>
+</span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004290</span><span class="p">,</span>
+</span><span id="True-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"POST"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"api.example.com"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">212</span><span class="p">},</span>
+</span><span id="True-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">201</span><span class="p">,</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1274</span><span class="p">},</span>
+</span><span id="True-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
+</span><span id="True-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>The <code>/warc</code> files are <a href="https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/">WARC 1.1</a>
 archives with each record in its own Zstandard frame: <code>zstd -d</code> turns a <code>.warc.zst</code> file into plain WARC
@@ -916,7 +928,8 @@ override it by response status) in <code>routes.yaml</code>:</p>
 for the full table and the <code>storage</code> block (<code>work_dir</code>, <code>shard_size</code>, <code>shard_count</code>) that
 controls where and how those journals are written on disk.</p>
 <p>Route ids and upstream target URLs are recorded in every exchange's journal attributes
-(<code>gateway.route.id</code>, <code>gateway.target</code>), and the journal stores ISO-8859-1 text only. A route
+(<code>gateway.route.id</code>, <code>gateway.target</code>; the JSON line has them as <code>route_id</code> and
+<code>upstream_request.targets</code>), and the journal stores ISO-8859-1 text only. A route
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.</p>
 <h3 id="redacted-header-and-query-parameter-values">Redacted header and query parameter values</h3>
 <p>At <code>HEADERS</code> and <code>FULL</code>, a header whose name is not on the <code>journal_security</code> whitelist is
@@ -1142,62 +1155,277 @@ shapes and why.</p>
 <td>With <code>output: file</code>: roll to a new file once the current one is this old, even with little traffic. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
 </tr>
 <tr>
-<td><code>pretty_print</code></td>
-<td><code>false</code></td>
-<td>Pretty-print each object. Not with <code>output: file</code>: a record over several lines cannot be cut back cleanly after a crash</td>
-</tr>
-<tr>
 <td><code>bodies</code></td>
 <td><code>false</code></td>
 <td>Write captured bodies into a line when no WARC record stores them, base64 encoded. Off, payloads stay out of the log; <code>body_bytes</code> and the checksums still show there was a body</td>
 </tr>
+</tbody>
+</table>
+<h3 id="the-json-line">The JSON line</h3>
+<p>The output is <a href="https://jsonlines.org/">JSON Lines</a>: one compact JSON object per exchange, one
+object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archived in a WARC file under
+<code>exchanges: all</code>, looks like this (pretty-printed here):</p>
+<div class="language-json highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
+</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">"route_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"items"</span><span class="p">,</span>
+</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000120Z"</span><span class="p">,</span>
+</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004410Z"</span><span class="p">,</span>
+</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004290</span><span class="p">,</span>
+</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">"remote_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"10.0.0.7"</span><span class="p">,</span>
+</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">"remote_address_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SOCKET"</span><span class="p">,</span>
+</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=id:sha256:d4735e"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
+</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"api.example.com"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">142</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">  </span><span class="nt">"upstream_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/v1/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=id:sha256:d4735e"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
+</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="nt">"targets"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://backend:8080"</span><span class="p">],</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"backend:8080"</span><span class="p">]}</span>
+</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">  </span><span class="nt">"upstream_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
+</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span>
+</span><span id="True-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">    </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000300Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"first_byte"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004100Z"</span><span class="p">,</span>
+</span><span id="True-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004380Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004080</span>
+</span><span id="True-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
+</span><span id="True-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">98</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1274</span>
+</span><span id="True-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
+</span><span id="True-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>The rules every field follows:</p>
+<ul>
+<li>A field with no value is left out, never written as <code>null</code>. Without an end event
+  (<code>incomplete</code> is <code>TIMED_OUT</code>, <code>CAPACITY_EVICTED</code> or <code>SHUTDOWN</code>), timing, status and sizes are
+  unknown, and are left out rather than written as zero.</li>
+<li>Timestamps are RFC 3339 in UTC with microseconds. Durations are seconds, as a number with six
+  decimals.</li>
+<li>Header and attribute values are always arrays of strings, in the order they were sent or set,
+  so a header sent once and one sent twice have the same type. Values outside the
+  <a href="#redacted-header-and-query-parameter-values">safe lists</a> are fingerprints.</li>
+<li>Enumerated values are upper case.</li>
+</ul>
+<p>Fields of the exchange:</p>
+<table>
+<thead>
 <tr>
-<td><code>hide_empty_fields</code></td>
-<td><code>true</code></td>
-<td>Omit fields that are <code>null</code> or an empty object (unrecorded checksums, absent bodies, headers not journaled, ...) instead of writing them out. Set to <code>false</code> to emit every field on every line, e.g. for consumers that require a fixed columnar schema</td>
+<th>Field</th>
+<th>Type</th>
+<th>Present</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>request_id</code></td>
+<td>string</td>
+<td>Always</td>
+</tr>
+<tr>
+<td><code>incomplete</code></td>
+<td>string</td>
+<td>Only when the record is not a complete exchange: <code>NO_START_EVENT</code>, <code>NO_STATUS</code>, <code>TIMED_OUT</code>, <code>CAPACITY_EVICTED</code> or <code>SHUTDOWN</code></td>
+</tr>
+<tr>
+<td><code>route_id</code></td>
+<td>string</td>
+<td>With an end event, when the exchange matched a route; unrouted requests that are journaled have <code>&lt;unrouted&gt;</code></td>
+</tr>
+<tr>
+<td><code>start</code></td>
+<td>timestamp</td>
+<td>With an end event: when the gateway received the request</td>
+</tr>
+<tr>
+<td><code>end</code></td>
+<td>timestamp</td>
+<td>With an end event: when the response to the client finished</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>number</td>
+<td>With an end event: <code>end</code> minus <code>start</code>, in seconds</td>
+</tr>
+<tr>
+<td><code>remote_address</code></td>
+<td>string</td>
+<td>When known: the client address</td>
+</tr>
+<tr>
+<td><code>remote_address_source</code></td>
+<td>string</td>
+<td>With <code>remote_address</code>: <code>SOCKET</code>, <code>X_FORWARDED_FOR</code>, <code>X_REAL_IP</code> or <code>UNKNOWN</code></td>
+</tr>
+<tr>
+<td><code>client_request</code></td>
+<td>object</td>
+<td>Always: the request from the client</td>
+</tr>
+<tr>
+<td><code>upstream_request</code></td>
+<td>object</td>
+<td>When the request was proxied: the request to the upstream</td>
+</tr>
+<tr>
+<td><code>upstream_response</code></td>
+<td>object</td>
+<td>When the request was proxied: the upstream's response</td>
+</tr>
+<tr>
+<td><code>client_response</code></td>
+<td>object</td>
+<td>Always: the response to the client</td>
+</tr>
+<tr>
+<td><code>attributes</code></td>
+<td>object of string arrays</td>
+<td>With an end event, when the gateway recorded attributes other than the route and targets, such as <code>gateway.fallback.id</code>, <code>gateway.unrouted.reason</code>, <code>gateway.shortcircuit.name</code> and <code>gateway.auth.basic.user</code></td>
+</tr>
+<tr>
+<td><code>warc</code></td>
+<td>object</td>
+<td>When a WARC file holds the exchange</td>
+</tr>
+<tr>
+<td><code>warc.file</code></td>
+<td>string</td>
+<td>The sealed WARC file's name</td>
+</tr>
+<tr>
+<td><code>warc.offset</code></td>
+<td>number</td>
+<td>Byte offset of the exchange's first record in that file</td>
+</tr>
+<tr>
+<td><code>warc.length</code></td>
+<td>number</td>
+<td>Compressed length of all the exchange's records: read <code>length</code> bytes at <code>offset</code> and decompress them with <code>zstd -d</code></td>
 </tr>
 </tbody>
 </table>
-<p><strong>Record format.</strong> One JSON object per line, one object per leg of the exchange. A proxied
-<code>GET</code> with headers journaled, archived in a WARC file under <code>exchanges: all</code>, looks like this (pretty-printed here;
-empty fields omitted):</p>
-<div class="language-json highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
-</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
-</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000120Z"</span><span class="p">,</span>
-</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004410Z"</span><span class="p">,</span>
-</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004290</span><span class="p">,</span>
-</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">"remote_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"10.0.0.7"</span><span class="p">,</span>
-</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">"remote_address_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SOCKET"</span><span class="p">,</span>
-</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=id:sha256:d4735e"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
-</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"api.example.com"</span><span class="p">},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">142</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
-</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="nt">"upstream_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/v1/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=id:sha256:d4735e"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
-</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"backend:8080"</span><span class="p">},</span><span class="w"> </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000300Z"</span>
-</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">"upstream_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
-</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/json"</span><span class="p">},</span>
-</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="nt">"first_byte"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004100Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004380Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004080</span>
-</span><span id="True-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
-</span><span id="True-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/json"</span><span class="p">},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">98</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1274</span>
-</span><span id="True-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
-</span><span id="True-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="p">}</span>
-</span></code></pre></div>
-<p>The <code>upstream_*</code> objects are present only when the request was proxied. Headers are written in
-full on every line. At <code>FULL</code>, a leg has <code>checksum</code> (the CRC32C the gateway recorded), and
-<code>observed_checksum</code> beside it only when the body read back does not match. When no WARC record
-stores it, a leg with a body also has <code>body</code> (base64) when <code>bodies</code> is <code>true</code>. <code>warc</code> gives the sealed file's
-name, the byte offset of the exchange's first record and the compressed length of all of them:
-read <code>length</code> bytes at <code>offset</code> and decompress them with <code>zstd -d</code> to get that exchange's
-records. A record that is not a complete exchange carries <code>incomplete</code> with the reason; without
-an end event (<code>TIMED_OUT</code>, <code>SHUTDOWN</code>, <code>CAPACITY_EVICTED</code>) timing, status and sizes are unknown
-and left out. Attributes the gateway recorded are under <code>attributes</code>. A header with one value is
-a string, one sent more than once an array of its values.</p>
+<p>Fields of the four leg objects (<code>client_request</code>, <code>upstream_request</code>, <code>upstream_response</code>, <code>client_response</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Legs</th>
+<th>Present</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>level</code></td>
+<td>string</td>
+<td>all</td>
+<td>Always: the journal level of that leg, <code>NONE</code>, <code>METADATA</code>, <code>HEADERS</code> or <code>FULL</code></td>
+</tr>
+<tr>
+<td><code>method</code></td>
+<td>string</td>
+<td>requests</td>
+<td>When the request line was journaled</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>requests</td>
+<td>When the request line was journaled; a malformed request line is kept whole here</td>
+</tr>
+<tr>
+<td><code>query</code></td>
+<td>string</td>
+<td>requests</td>
+<td>When the request line has a query string</td>
+</tr>
+<tr>
+<td><code>protocol</code></td>
+<td>string</td>
+<td>all</td>
+<td>When the start line was journaled</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>number</td>
+<td>responses</td>
+<td><code>client_response</code>: with an end event, at every level. <code>upstream_response</code>: when the status line was journaled</td>
+</tr>
+<tr>
+<td><code>reason</code></td>
+<td>string</td>
+<td>responses</td>
+<td>When the status line has a reason phrase</td>
+</tr>
+<tr>
+<td><code>targets</code></td>
+<td>array of strings</td>
+<td><code>upstream_request</code></td>
+<td>With an end event: the upstream URLs tried, in order. When the last one answered, its response is the one recorded; when none did, the recorded response is the gateway's own <code>502</code>, <code>503</code> or <code>504</code></td>
+</tr>
+<tr>
+<td><code>headers</code></td>
+<td>object of string arrays</td>
+<td>all</td>
+<td>At <code>HEADERS</code> and <code>FULL</code>, when there are any</td>
+</tr>
+<tr>
+<td><code>header_bytes</code></td>
+<td>number</td>
+<td>client legs</td>
+<td>With an end event: bytes of the head on the wire</td>
+</tr>
+<tr>
+<td><code>body_bytes</code></td>
+<td>number</td>
+<td>client legs</td>
+<td>With an end event: bytes of the body</td>
+</tr>
+<tr>
+<td><code>body</code></td>
+<td>string</td>
+<td>client legs</td>
+<td>With <code>bodies: true</code>, at <code>FULL</code>, when there is a body and no WARC record stores it: base64</td>
+</tr>
+<tr>
+<td><code>checksum</code></td>
+<td>string</td>
+<td>client legs</td>
+<td>At <code>FULL</code>, when there is a body: the CRC32C the gateway recorded, as <code>crc32c:</code> and eight hex digits</td>
+</tr>
+<tr>
+<td><code>observed_checksum</code></td>
+<td>string</td>
+<td>client legs</td>
+<td>Only when the body read back does not match <code>checksum</code></td>
+</tr>
+<tr>
+<td><code>start</code></td>
+<td>timestamp</td>
+<td><code>upstream_response</code></td>
+<td>With an end event: when the request to the upstream started</td>
+</tr>
+<tr>
+<td><code>first_byte</code></td>
+<td>timestamp</td>
+<td><code>upstream_response</code></td>
+<td>With an end event, when the upstream answered: when its response head had been read</td>
+</tr>
+<tr>
+<td><code>end</code></td>
+<td>timestamp</td>
+<td><code>upstream_response</code></td>
+<td>With an end event, when the upstream's response was read to its end; not for a failed relay or a WebSocket tunnel</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>number</td>
+<td><code>upstream_response</code></td>
+<td>With <code>end</code>: <code>end</code> minus <code>start</code>, in seconds</td>
+</tr>
+</tbody>
+</table>
+<p>A new field may be added in a later version; a consumer should ignore fields it does not know.
+Removing or changing a field is a breaking change.</p>
 <h3 id="other-layouts">Other layouts</h3>
 <p>Each of these is a <code>tailer.yaml</code> and replaces the defaults only where it says.</p>
 <p>Every exchange in the WARC archive, with a CDXJ index, so every complete exchange's JSON line has a <code>warc</code> pointer:</p>
