@@ -49,6 +49,7 @@ nav:
   - Configuration: config.md
   - Extensibility: extensibility.md
   - Journaling: journaling.md
+  - Where r7 fits: where-r7-fits.md
   - Performance tuning: performance_tuning.md
   - Benchmarks: benchmarks.md
   - Licensing: licensing.md
