@@ -88,8 +88,10 @@ record says plainly when it does not hold them:
 
 A record without `WARC-Truncated` holds its whole body. Its headers are what the journal level
 kept: none at `METADATA`, and fingerprints for redacted values. Records 2 and 3 never store a body,
-so they carry `WARC-Truncated` even when the message had none. To find a body held elsewhere in the
-same exchange, take the `WARC-Concurrent-To` record with the same `WARC-Payload-Digest`.
+so they carry `WARC-Truncated` even when the message had none. The body of record 2 is in record 1, and
+the body of record 3 is in record 4, found through `WARC-Concurrent-To`. When that record is a
+`revisit`, its `WARC-Refers-To` leads to the earlier record that holds the bytes; when it too
+carries `WARC-Truncated`, this output does not hold the body.
 
 Deduplication across exchanges remembers the last `dedup_cache_entries` digests per tailer
 process. A body seen again after that, or after a restart, is stored again in full; a `revisit`
@@ -129,9 +131,10 @@ The r7 fields. A reader that does not know them can ignore them, as WARC require
   have it. A crash after its WARC records are written but before the checkpoint replays it on
   the next start, and it is written again: delivery across a crash is at least once. A reader
   that counts exchanges deduplicates on `WARC-R7-Request-Id`.
-- **The JSON line points here.** With both outputs on, an exchange's JSON line carries
-  `warc: {file, offset, length}`, the sealed file name and the byte range of the exchange's
-  records. Decompress from `offset` to read them. See [The JSON line](journaling.md#the-json-line).
+- **The JSON line points here.** With both outputs on, the JSON line of every exchange this
+  output archived carries `warc: {file, offset, length}`, the sealed file name and the byte range of the exchange's
+  records. Decompress from `offset` to read them. A line without `warc` is an exchange this
+  output left out: incomplete, or without a body under `exchanges: with_body`. See [The JSON line](journaling.md#the-json-line).
 
 ## Compatibility
 
