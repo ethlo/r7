@@ -326,7 +326,7 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `protocol` | string | all | When the start line was journaled |
 | `status` | number | responses | `client_response`: with an end event, at every level. `upstream_response`: when the status line was journaled |
 | `reason` | string | responses | When the status line has a reason phrase |
-| `targets` | array of strings | `upstream_request` | With an end event: the upstream URLs tried, in order; the last one gave the recorded response |
+| `targets` | array of strings | `upstream_request` | With an end event: the upstream URLs tried, in order. When the last one answered, its response is the one recorded; when none did, the recorded response is the gateway's own `502`, `503` or `504` |
 | `headers` | object of string arrays | all | At `HEADERS` and `FULL`, when there are any |
 | `header_bytes` | number | client legs | With an end event: bytes of the head on the wire |
 | `body_bytes` | number | client legs | With an end event: bytes of the body |
