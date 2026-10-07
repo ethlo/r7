@@ -146,6 +146,7 @@ public abstract class AbstractR7IntegrationTest
                 // routes.yaml interpolates it, and a literal "${UPSTREAM_HOST}" fails URL validation.
                 .withEnv("UPSTREAM_HOST", "host.testcontainers.internal")
                 .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
+                .withEnv("R7_FINGERPRINT_KEY", "test-fingerprint-key-of-at-least-32-characters")
                 .withLogConsumer(new Slf4jLogConsumer(logger).withPrefix("R7-DOCKER"))
                 .waitingFor(Wait.forHttp("/")
                         .forPort(GATEWAY_PORT)

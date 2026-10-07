@@ -29,12 +29,14 @@ import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.config.JournalDirectionConfig;
 import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.journal.JournalSecurity;
+import com.ethlo.r7.journal.QueryParameterNameSet;
 import com.ethlo.r7.journal.StatefulJournal;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.r7f.R7fJournal;
 import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.Fingerprint;
 
 /**
  * Measures the journal header pipeline in isolation: {@link StatefulJournal} redaction into
@@ -63,6 +65,7 @@ final class JournalHeaderPipelineBenchmarkTest
      * twenty times the segments of one writing 800 bytes — segment rotation waits on the
      * warmer thread, and a benchmark that rotates is partly measuring the warmer.
      */
+    private static final Fingerprint FINGERPRINT = Fingerprint.of("benchmark-fingerprint-key-of-at-least-32-characters");
     private static final long MEASURED_BYTE_BUDGET = 192L * 1024 * 1024;
     private static final int MIN_MEASURED_EXCHANGES = 20_000;
     private static final int MAX_MEASURED_EXCHANGES = 200_000;
@@ -87,7 +90,7 @@ final class JournalHeaderPipelineBenchmarkTest
 
     /**
      * Realistic names that are absent from the safe set, and are therefore fingerprinted with
-     * SHA-256 on every journaled message. Filtered against the policy rather than assumed, so
+     * HMAC-SHA-256 on every journaled message. Filtered against the policy rather than assumed, so
      * that a name later added to the safe list fails loudly here instead of quietly turning
      * this into a different benchmark.
      */
@@ -480,7 +483,8 @@ final class JournalHeaderPipelineBenchmarkTest
         {
             // Per exchange in production, and its flush-state flags make that load-bearing.
             final String requestId = requestIds[iteration & (REQUEST_ID_POOL - 1)];
-            final StatefulJournal stateful = new StatefulJournal(writer.getJournal(requestId), config, exchange);
+            final StatefulJournal stateful = new StatefulJournal(writer.getJournal(requestId), config, exchange,
+                    JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS, QueryParameterNameSet.NONE, FINGERPRINT);
 
             stateful.clientRequest(scenario.level(), requestId, requestLine.rewind(),
                     clientRequestHeaders, clientAddress, IpSource.SOCKET);

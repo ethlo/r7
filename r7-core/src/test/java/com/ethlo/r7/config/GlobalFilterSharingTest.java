@@ -6,14 +6,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.spi.EngineContext;
+import com.ethlo.r7.util.TestFingerprints;
 
 /**
  * M5: a global filter is declared once, in {@code global_filters}, precisely so every route
@@ -33,7 +32,7 @@ class GlobalFilterSharingTest
         Files.writeString(file, "version: test\n" + globalFilters + "routes:\n" + String.join("", routes));
         final RoutesDefinition definition = ConfigurationManager.load(file, RoutesDefinition.class);
         final RouteRegistry registry = new RouteRegistry();
-        new ConfigurationManager(new EngineContext(Map.of())).load(definition, registry);
+        new ConfigurationManager(TestFingerprints.engine()).load(definition, registry);
         return registry.getRoutes();
     }
 

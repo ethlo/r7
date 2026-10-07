@@ -9,9 +9,12 @@ import java.util.Locale;
 
 import org.junit.jupiter.api.Test;
 
+import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.TestFingerprints;
+
 class RedactingQueryTest
 {
-    private static final HeaderFingerprint FP = HeaderFingerprint.UNKEYED;
+    private static final Fingerprint FP = TestFingerprints.FINGERPRINT;
     private static final QueryParameterNameSet SAFE = QueryParameterNameSet.of(List.of("page", "sort", "user id"), false);
 
     private static String fp(final String value)
@@ -128,10 +131,10 @@ class RedactingQueryTest
     }
 
     @Test
-    void theKeyedFingerprintIsUsedWhenConfigured()
+    void theConfiguredFingerprintIsUsed()
     {
-        final HeaderFingerprint keyed = HeaderFingerprint.of("k".repeat(48));
-        assertThat(RedactingQuery.redact("api_key=s3cret", SAFE, keyed)).isEqualTo("api_key=" + keyed.fingerprint("s3cret")).contains("id:hmac:");
+        final Fingerprint other = Fingerprint.of("k".repeat(48));
+        assertThat(RedactingQuery.redact("api_key=s3cret", SAFE, other)).isEqualTo("api_key=" + other.fingerprint("s3cret"));
     }
 
     @Test

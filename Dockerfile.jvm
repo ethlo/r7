@@ -23,6 +23,9 @@ COPY r7-helidon/target/lib /app/lib
 COPY docker/aot-training/routes.yaml /aot-training/routes.yaml
 ENV R7_ROUTES_CONFIG=/aot-training/routes.yaml
 ENV R7_JOURNAL_DIR=/tmp/aot-training-journals
+# The gateway does not start without a fingerprint key. This one only fingerprints the training
+# requests, in this stage; the image does not carry it, and every deployment sets its own.
+ENV R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key-not-in-the-image
 RUN ["java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-jar", "/app/r7.jar"]
 
 FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629

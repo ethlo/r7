@@ -11,10 +11,12 @@ import org.junit.jupiter.api.Test;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.util.IndexedGatewayHeaders;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.TestFingerprints;
 
 class RedactingHeadersTest
 {
+    private static final Fingerprint FP = TestFingerprints.FINGERPRINT;
     private static final HeaderNameSet SAFE = HeaderNameSet.of(List.of("user-agent", "accept", "if-match"));
 
     @Test
@@ -22,11 +24,11 @@ class RedactingHeadersTest
     {
         final GatewayHeaders redacted = new RedactingHeaders(headers(
                 "user-agent", "Mozilla/5.0",
-                "cookie", "session=secret"), SAFE);
+                "cookie", "session=secret"), SAFE, new FingerprintMemo(FP));
 
         assertThat(collect(redacted)).containsExactly(
                 "user-agent=Mozilla/5.0",
-                "cookie=" + RedactUtil.fingerprint("session=secret"));
+                "cookie=" + FP.fingerprint("session=secret"));
     }
 
     @Test
@@ -34,7 +36,7 @@ class RedactingHeadersTest
     {
         final GatewayHeaders redacted = new RedactingHeaders(headers(
                 "User-Agent", "Mozilla/5.0",
-                "ACCEPT", "text/html"), SAFE);
+                "ACCEPT", "text/html"), SAFE, new FingerprintMemo(FP));
 
         assertThat(collect(redacted)).containsExactly(
                 "User-Agent=Mozilla/5.0",
@@ -53,7 +55,7 @@ class RedactingHeadersTest
         try
         {
             Locale.setDefault(Locale.of("tr", "TR"));
-            final GatewayHeaders redacted = new RedactingHeaders(headers("IF-MATCH", "\"etag\""), SAFE);
+            final GatewayHeaders redacted = new RedactingHeaders(headers("IF-MATCH", "\"etag\""), SAFE, new FingerprintMemo(FP));
             assertThat(collect(redacted)).containsExactly("IF-MATCH=\"etag\"");
         }
         finally
@@ -67,11 +69,11 @@ class RedactingHeadersTest
     {
         final GatewayHeaders redacted = new RedactingHeaders(headers(
                 "user-agent", "Mozilla/5.0",
-                "authorization", "Bearer token"), SAFE);
+                "authorization", "Bearer token"), SAFE, new FingerprintMemo(FP));
 
         assertThat(redacted.getFirst("user-agent")).isEqualTo("Mozilla/5.0");
-        assertThat(redacted.getFirst("authorization")).isEqualTo(RedactUtil.fingerprint("Bearer token"));
-        assertThat(redacted.getAll("authorization")).containsExactly(RedactUtil.fingerprint("Bearer token"));
+        assertThat(redacted.getFirst("authorization")).isEqualTo(FP.fingerprint("Bearer token"));
+        assertThat(redacted.getAll("authorization")).containsExactly(FP.fingerprint("Bearer token"));
         assertThat(redacted.getFirst("absent")).isNull();
     }
 
@@ -82,9 +84,9 @@ class RedactingHeadersTest
         source.add("cookie", "a=1");
         source.add("cookie", "b=2");
 
-        assertThat(collect(new RedactingHeaders(source, SAFE))).containsExactly(
-                "cookie=" + RedactUtil.fingerprint("a=1"),
-                "cookie=" + RedactUtil.fingerprint("b=2"));
+        assertThat(collect(new RedactingHeaders(source, SAFE, new FingerprintMemo(FP)))).containsExactly(
+                "cookie=" + FP.fingerprint("a=1"),
+                "cookie=" + FP.fingerprint("b=2"));
     }
 
     /**
@@ -99,14 +101,14 @@ class RedactingHeadersTest
         source.add("cookie", "a=1");
         source.add("Accept", "*/*");
         source.add("cookie", "b=2");
-        final RedactingHeaders view = new RedactingHeaders(source, SAFE);
+        final RedactingHeaders view = new RedactingHeaders(source, SAFE, new FingerprintMemo(FP));
 
         final IndexedGatewayHeaders snapshot = view.snapshot();
 
         assertThat(collect(snapshot)).containsExactlyElementsOf(collect(view));
         assertThat(snapshot.size()).isEqualTo(4);
         assertThat(snapshot.name(3)).isEqualTo("cookie");
-        assertThat(snapshot.value(3)).isEqualTo(RedactUtil.fingerprint("b=2"));
+        assertThat(snapshot.value(3)).isEqualTo(FP.fingerprint("b=2"));
         assertThat(snapshot.getFirst("user-agent")).as("lookups stay case-insensitive").isEqualTo("Mozilla/5.0");
     }
 
@@ -132,12 +134,12 @@ class RedactingHeadersTest
     void aSharedMemoGivesTheSameAnswerAsHashingEveryTime()
     {
         final String sharedCookie = new String("session=shared");
-        final FingerprintMemo memo = new FingerprintMemo();
+        final FingerprintMemo memo = new FingerprintMemo(FP);
 
         final GatewayHeaders first = new RedactingHeaders(headers("cookie", sharedCookie), SAFE, memo);
         final GatewayHeaders second = new RedactingHeaders(headers("cookie", sharedCookie), SAFE, memo);
 
-        final String expected = RedactUtil.fingerprint("session=shared");
+        final String expected = FP.fingerprint("session=shared");
         assertThat(collect(first)).containsExactly("cookie=" + expected);
         assertThat(collect(second)).containsExactly("cookie=" + expected);
     }
@@ -149,14 +151,14 @@ class RedactingHeadersTest
     @Test
     void distinctValuesAreNeverGivenEachOthersFingerprint()
     {
-        final FingerprintMemo memo = new FingerprintMemo();
+        final FingerprintMemo memo = new FingerprintMemo(FP);
         final GatewayHeaders headers = new RedactingHeaders(headers(
                 "cookie", new String("a=1"),
                 "authorization", new String("b=2")), SAFE, memo);
 
         assertThat(collect(headers)).containsExactly(
-                "cookie=" + RedactUtil.fingerprint("a=1"),
-                "authorization=" + RedactUtil.fingerprint("b=2"));
+                "cookie=" + FP.fingerprint("a=1"),
+                "authorization=" + FP.fingerprint("b=2"));
     }
 
     /**
@@ -166,14 +168,14 @@ class RedactingHeadersTest
     @Test
     void valuesBeyondTheMemoCapAreStillFingerprintedCorrectly()
     {
-        final FingerprintMemo memo = new FingerprintMemo();
+        final FingerprintMemo memo = new FingerprintMemo(FP);
         final MutableFastGatewayHeaders source = new MutableFastGatewayHeaders();
         final List<String> expected = new ArrayList<>();
         for (int i = 0; i < 100; i++)
         {
             final String value = "value-" + i;
             source.add("cookie", value);
-            expected.add("cookie=" + RedactUtil.fingerprint(value));
+            expected.add("cookie=" + FP.fingerprint(value));
         }
 
         assertThat(collect(new RedactingHeaders(source, SAFE, memo))).containsExactlyElementsOf(expected);

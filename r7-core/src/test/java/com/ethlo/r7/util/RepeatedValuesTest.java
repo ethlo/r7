@@ -20,6 +20,8 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.filters.RequireMatchQueryParameterFactory;
 import com.ethlo.r7.predicates.MatchQueryParameterFactory;
+import com.ethlo.r7.spi.FilterCreationContext;
+import com.ethlo.r7.spi.PredicateCreationContext;
 
 /**
  * A value check passes only if every occurrence passes: {@code ?role=user&role=admin} must not
@@ -140,11 +142,11 @@ class RepeatedValuesTest
         final ClientRequestGatewayExchange exchange = mock(ClientRequestGatewayExchange.class);
         when(exchange.clientRequest()).thenReturn(request);
 
-        new RequireMatchQueryParameterFactory().create(new RequireMatchQueryParameterFactory.Config("role", "user", null), null)
+        new RequireMatchQueryParameterFactory().create(new RequireMatchQueryParameterFactory.Config("role", "user", null), new FilterCreationContext("test", TestFingerprints.engine()))
                 .onClientRequest(exchange);
         verify(exchange).shortCircuit(any());
 
-        assertThat(new MatchQueryParameterFactory().create(new MatchQueryParameterFactory.Config("role", "user")).test(request)).isFalse();
+        assertThat(new MatchQueryParameterFactory().create(new MatchQueryParameterFactory.Config("role", "user"), new PredicateCreationContext(TestFingerprints.engine())).test(request)).isFalse();
     }
 
     @Test
@@ -156,7 +158,7 @@ class RepeatedValuesTest
         final ClientRequestGatewayExchange exchange = mock(ClientRequestGatewayExchange.class);
         when(exchange.clientRequest()).thenReturn(request);
 
-        new RequireMatchQueryParameterFactory().create(new RequireMatchQueryParameterFactory.Config("role", "user", null), null)
+        new RequireMatchQueryParameterFactory().create(new RequireMatchQueryParameterFactory.Config("role", "user", null), new FilterCreationContext("test", TestFingerprints.engine()))
                 .onClientRequest(exchange);
         verify(exchange, never()).shortCircuit(any());
     }

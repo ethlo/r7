@@ -5,15 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import com.ethlo.r7.spi.EngineContext;
+import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.PredicateRegistry;
+import com.ethlo.r7.util.TestFingerprints;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -166,18 +166,18 @@ class RegexLookalikeCheckTest
                         - url: http://localhost:1
                 """);
 
-        final ConfigurationManager manager = new ConfigurationManager(new EngineContext(Map.of()));
+        final ConfigurationManager manager = new ConfigurationManager(TestFingerprints.engine());
         final RoutesDefinition definition = manager.loadRoutes(file);
 
         assertThat(manager.build(definition).routes()).hasSize(1);
         assertThat(YamlConfigSupport.load(MAPPER, file, RoutesDefinition.class, (root, positions) ->
-                assertThat(new RegexLookalikeCheck(new PredicateRegistry(MAPPER)).check(root, positions))
+                assertThat(new RegexLookalikeCheck(new PredicateRegistry(MAPPER, new PredicateCreationContext(TestFingerprints.engine()))).check(root, positions))
                         .singleElement().asString().contains("('.*')"))).isNotNull();
     }
 
     private List<String> check(final String yaml)
     {
-        final RegexLookalikeCheck check = new RegexLookalikeCheck(new PredicateRegistry(MAPPER));
+        final RegexLookalikeCheck check = new RegexLookalikeCheck(new PredicateRegistry(MAPPER, new PredicateCreationContext(TestFingerprints.engine())));
         return check.check(MAPPER.readTree(yaml), new YamlSourcePositions(MAPPER, yaml));
     }
 }

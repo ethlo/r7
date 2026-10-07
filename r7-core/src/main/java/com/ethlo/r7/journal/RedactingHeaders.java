@@ -48,11 +48,6 @@ public final class RedactingHeaders implements GatewayHeaders
         this.memo = memo;
     }
 
-    public RedactingHeaders(final GatewayHeaders delegate, final HeaderNameSet safeNames)
-    {
-        this(delegate, safeNames, new FingerprintMemo());
-    }
-
     private String redact(final String name, final String value)
     {
         return safeNames.contains(name) ? value : memo.fingerprintOf(value);

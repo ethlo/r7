@@ -30,7 +30,7 @@ import com.ethlo.r7.journal.api.JournalIntegrityListener;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.journal.api.ReassemblyOptions;
 import com.ethlo.r7.r7f.R7Tailer;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
 
 import io.restassured.RestAssured;
 
@@ -41,6 +41,12 @@ import io.restassured.RestAssured;
  */
 public class UnroutedJournalTest extends AbstractR7IntegrationTest
 {
+    /**
+     * The key the build gives the gateway, in process as a system property and in Docker as the
+     * environment variable of the same value.
+     */
+    private static final Fingerprint FINGERPRINT = Fingerprint.of(System.getProperty("R7_FINGERPRINT_KEY"));
+
     // The in-process gateway journals to the default work_dir, relative to the module.
     private static final Path JOURNALS = Paths.get("journals");
 
@@ -79,8 +85,8 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         sendRaw("GET " + marker + "?api_key=s3cret&api_key=other&flag HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
 
         final String startLine = awaitEntry(marker).getClientRequestStartLine();
-        Assertions.assertEquals("GET " + marker + "?api_key=" + RedactUtil.fingerprint("s3cret") + "&api_key=" + RedactUtil.fingerprint("other")
-                + "&" + RedactUtil.fingerprint("flag") + " HTTP/1.1", startLine);
+        Assertions.assertEquals("GET " + marker + "?api_key=" + FINGERPRINT.fingerprint("s3cret") + "&api_key=" + FINGERPRINT.fingerprint("other")
+                + "&" + FINGERPRINT.fingerprint("flag") + " HTTP/1.1", startLine);
     }
 
     /**

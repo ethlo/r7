@@ -88,7 +88,7 @@ public final class R7fJournal implements Journal
      * <p>
      * A {@link ThreadLocal} is appropriate because journal writes come from the IO threads and
      * the exchange completion listeners that run on them — a bounded set — which is the same
-     * assumption {@code StartLineBuilder} and {@code RedactUtil} already make on this path. A
+     * assumption {@code StartLineBuilder} and {@code Fingerprint} already make on this path. A
      * write arriving on a short-lived virtual thread costs that thread its own encoder rather
      * than correctness.
      */

@@ -2,12 +2,13 @@ package com.ethlo.r7.predicates;
 
 import java.util.regex.Pattern;
 
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.RepeatedValues;
 import com.google.auto.service.AutoService;
 
@@ -31,9 +32,9 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
     }
 
     @Override
-    public GatewayPredicate create(final Config config)
+    public GatewayPredicate create(final Config config, final PredicateCreationContext context)
     {
-        return new GP(config);
+        return new GP(config, context.engine().getRequired(Fingerprint.class));
     }
 
     public record Config(
@@ -50,9 +51,11 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
     {
         private final String cookieName;
         private final Pattern pattern;
+        private final Fingerprint fingerprint;
 
-        public GP(final Config config)
+        public GP(final Config config, final Fingerprint fingerprint)
         {
+            this.fingerprint = fingerprint;
             this.cookieName = config.name();
             this.pattern = Pattern.compile(config.regexp());
         }
@@ -75,7 +78,7 @@ public final class MatchCookieFactory implements GatewayPredicateFactory<MatchCo
         {
             // The configured value can be a shared secret (a token or session id), and the summary
             // is shown on the management page: fingerprinted, which still shows when two routes match alike.
-            return PREDICATE_NAME + ": " + this.cookieName + " ~ " + RedactUtil.fingerprint(this.pattern.pattern());
+            return PREDICATE_NAME + ": " + this.cookieName + " ~ " + this.fingerprint.fingerprint(this.pattern.pattern());
         }
     }
 }

@@ -2,12 +2,13 @@ package com.ethlo.r7.predicates;
 
 import java.util.regex.Pattern;
 
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidationResult;
 import com.ethlo.r7.util.RepeatedValues;
@@ -33,9 +34,9 @@ public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<
     }
 
     @Override
-    public GatewayPredicate create(final Config config)
+    public GatewayPredicate create(final Config config, final PredicateCreationContext context)
     {
-        return new GP(config);
+        return new GP(config, context.engine().getRequired(Fingerprint.class));
     }
 
     public record Config(
@@ -52,9 +53,11 @@ public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<
     {
         private final String headerName;
         private final Pattern pattern;
+        private final Fingerprint fingerprint;
 
-        public GP(final Config config)
+        public GP(final Config config, final Fingerprint fingerprint)
         {
+            this.fingerprint = fingerprint;
             this.headerName = config.name();
             // It is safe to compile here because validation guarantees the syntax is correct
             this.pattern = Pattern.compile(config.regexp());
@@ -78,7 +81,7 @@ public final class MatchRequestHeaderFactory implements GatewayPredicateFactory<
         {
             // The configured value can be a shared secret (a token or session id), and the summary
             // is shown on the management page: fingerprinted, which still shows when two routes match alike.
-            return PREDICATE_NAME + ": " + this.headerName + " ~ " + RedactUtil.fingerprint(this.pattern.pattern());
+            return PREDICATE_NAME + ": " + this.headerName + " ~ " + this.fingerprint.fingerprint(this.pattern.pattern());
         }
     }
 }

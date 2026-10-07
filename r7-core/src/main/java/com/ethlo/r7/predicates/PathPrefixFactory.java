@@ -7,6 +7,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.ExactMatch;
 import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -32,7 +33,7 @@ public final class PathPrefixFactory implements GatewayPredicateFactory<PathPref
     }
 
     @Override
-    public GatewayPredicate create(final Config config)
+    public GatewayPredicate create(final Config config, final PredicateCreationContext context)
     {
         return new GP(config);
     }

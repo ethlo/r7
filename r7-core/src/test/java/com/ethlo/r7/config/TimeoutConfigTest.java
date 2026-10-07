@@ -8,14 +8,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.TestFingerprints;
 
 /**
  * The read timeout becomes an int-millisecond socket timeout when the route's upstream client is
@@ -67,7 +66,7 @@ class TimeoutConfigTest
                         read: 30d
                 """);
         final RoutesDefinition definition = ConfigurationManager.load(file, RoutesDefinition.class);
-        final ConfigurationManager manager = new ConfigurationManager(new EngineContext(Map.of()));
+        final ConfigurationManager manager = new ConfigurationManager(TestFingerprints.engine());
 
         assertThatThrownBy(() -> manager.build(definition))
                 .isInstanceOf(ConfigurationException.class)

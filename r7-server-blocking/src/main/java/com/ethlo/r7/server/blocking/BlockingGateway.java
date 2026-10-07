@@ -35,6 +35,7 @@ import com.ethlo.r7.status.ManagementEndpoint;
 import com.ethlo.r7.status.MetricsRegistry;
 import com.ethlo.r7.upstream.HttpUpstream;
 import com.ethlo.r7.upstream.UpstreamOptions;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
@@ -99,7 +100,8 @@ public final class BlockingGateway implements AutoCloseable
             this.metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
             final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(
                     GatewayScheduler.class, this.scheduler,
-                    MetricsRegistry.class, this.metricsRegistry)));
+                    MetricsRegistry.class, this.metricsRegistry,
+                    Fingerprint.class, Fingerprint.of(storage.journalSecurity().fingerprintKey()))));
             final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
             this.journalWriter = opened(journalOpening);
 

@@ -1,5 +1,7 @@
 package com.ethlo.r7.journal;
 
+import com.ethlo.r7.util.Fingerprint;
+
 /**
  * Remembers the fingerprints computed for one exchange, so that a value appearing in more than
  * one journaled message is hashed once.
@@ -27,17 +29,12 @@ final class FingerprintMemo
      */
     private static final int MAX_ENTRIES = 32;
 
-    private final HeaderFingerprint fingerprint;
+    private final Fingerprint fingerprint;
     private String[] values = new String[8];
     private String[] fingerprints = new String[8];
     private int size;
 
-    FingerprintMemo()
-    {
-        this(HeaderFingerprint.UNKEYED);
-    }
-
-    FingerprintMemo(final HeaderFingerprint fingerprint)
+    FingerprintMemo(final Fingerprint fingerprint)
     {
         this.fingerprint = fingerprint;
     }

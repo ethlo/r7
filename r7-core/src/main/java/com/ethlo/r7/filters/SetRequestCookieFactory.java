@@ -8,7 +8,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -36,7 +36,7 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
     @Override
     public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config);
+        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
     }
 
     public record Config(
@@ -59,9 +59,11 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
     private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
         private final SimpleCookie cookie;
+        private final Fingerprint fingerprint;
 
-        public GF(final Config config)
+        public GF(final Config config, final Fingerprint fingerprint)
         {
+            this.fingerprint = fingerprint;
             this.cookie = new SimpleCookie(config.name(), config.value());
         }
 
@@ -81,7 +83,7 @@ public final class SetRequestCookieFactory implements GatewayFilterFactory<SetRe
         public String summary()
         {
             // Fingerprinted like the header filters: the summary is shown on the management page.
-            return FILTER_NAME + ": " + this.cookie.name() + "=" + RedactUtil.fingerprint(this.cookie.value());
+            return FILTER_NAME + ": " + this.cookie.name() + "=" + this.fingerprint.fingerprint(this.cookie.value());
         }
     }
 }

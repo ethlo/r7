@@ -29,7 +29,7 @@ import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
@@ -52,7 +52,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
      * journaling and access logs. Only ever set after the password has been verified.
      * <p>
      * The username itself is not journaled - like a redacted request header, only
-     * {@link RedactUtil#fingerprint(String)} of it is - so the same operator convention applies:
+     * {@link Fingerprint} of it is - so the same operator convention applies:
      * two log lines with the same fingerprint were the same user, but the value on its own does
      * not disclose who that was.
      */
@@ -75,7 +75,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
     @Override
     public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config);
+        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
     }
 
     public record Config(
@@ -238,9 +238,11 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         private final String challenge;
         private final String dummyHash;
         private final boolean forwardCredentials;
+        private final Fingerprint fingerprint;
 
-        GF(final Config config)
+        GF(final Config config, final Fingerprint fingerprint)
         {
+            this.fingerprint = fingerprint;
             this.realm = config.realm();
             this.challenge = "Basic realm=\"" + escapeQuotedString(this.realm) + "\"";
             this.credentials = config.credentials();
@@ -404,7 +406,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
          */
         private void accept(final ClientRequestGatewayExchange exchange, final String username)
         {
-            exchange.attributes().set(AUTHENTICATED_USER_KEY, RedactUtil.fingerprint(username));
+            exchange.attributes().set(AUTHENTICATED_USER_KEY, this.fingerprint.fingerprint(username));
             if (!this.forwardCredentials)
             {
                 exchange.setAttachment(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED, Boolean.TRUE);

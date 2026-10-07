@@ -1,6 +1,6 @@
 package com.ethlo.r7.filters;
 
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
@@ -35,7 +35,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
     @Override
     public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config);
+        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
     }
 
     public record Config(
@@ -61,9 +61,11 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
     {
         private final String name;
         private final String value;
+        private final Fingerprint fingerprint;
 
-        public GF(final Config config)
+        public GF(final Config config, final Fingerprint fingerprint)
         {
+            this.fingerprint = fingerprint;
             this.name = config.name();
             this.value = config.value();
         }
@@ -83,7 +85,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.name + ": " + RedactUtil.fingerprint(this.value);
+            return FILTER_NAME + ": " + this.name + ": " + this.fingerprint.fingerprint(this.value);
         }
     }
 }

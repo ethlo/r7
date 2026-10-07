@@ -83,6 +83,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.6.0</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- The gateway does not start without a fingerprint key, and neither do
+                             the tests that start one. Read as R7_FINGERPRINT_KEY falls back to a
+                             system property, like every ${VAR} reference. -->
+                        <R7_FINGERPRINT_KEY>test-fingerprint-key-of-at-least-32-characters</R7_FINGERPRINT_KEY>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
         </plugins>
     </build>

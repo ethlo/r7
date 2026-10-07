@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import tools.jackson.databind.ObjectMapper;
@@ -20,10 +21,12 @@ public class PredicateRegistry
 {
     private final Map<String, GatewayPredicateFactory<?>> factories;
     private final ObjectMapper mapper;
+    private final PredicateCreationContext context;
 
-    public PredicateRegistry(ObjectMapper mapper)
+    public PredicateRegistry(final ObjectMapper mapper, final PredicateCreationContext context)
     {
         this.mapper = mapper;
+        this.context = context;
         this.factories = ServiceLoader.load(GatewayPredicateFactory.class)
                 .stream()
                 .map(ServiceLoader.Provider::get)
@@ -86,6 +89,6 @@ public class PredicateRegistry
         // Instantiate predicate with config
         @SuppressWarnings("unchecked")
         GatewayPredicateFactory<ValidatableConfig> typedFactory = (GatewayPredicateFactory<ValidatableConfig>) factory;
-        return typedFactory.create(config);
+        return typedFactory.create(config, this.context);
     }
 }

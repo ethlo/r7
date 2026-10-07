@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import com.ethlo.r7.validation.ValidationResult;
@@ -159,6 +160,39 @@ class JournalSecurityConfigValidationTest
                 null, List.of("x-internal-token"), List.of("x-only-this"), null, null, null, null);
 
         assertThat(errorsFor(config)).isEmpty();
+    }
+
+    /**
+     * There is no unkeyed fallback: without a key the gateway does not start, and the error
+     * says how to make one. The build sets the key as a system property for every test, so it
+     * is cleared here; a CI runner with the environment variable set skips the case.
+     */
+    @Test
+    void aMissingFingerprintKeyIsRejectedByNameWithTheWayToMakeOne()
+    {
+        Assumptions.assumeTrue(System.getenv("R7_FINGERPRINT_KEY") == null);
+        final String previous = System.clearProperty("R7_FINGERPRINT_KEY");
+        try
+        {
+            final ServerConfig.JournalSecurityConfig config = new ServerConfig.JournalSecurityConfig(null, null, null, null, null, null, null);
+
+            assertThat(errorsFor(config)).anyMatch(e -> e.contains("fingerprint_key") && e.contains("is required")
+                    && e.contains("R7_FINGERPRINT_KEY") && e.contains("openssl rand"));
+        }
+        finally
+        {
+            if (previous != null)
+            {
+                System.setProperty("R7_FINGERPRINT_KEY", previous);
+            }
+        }
+    }
+
+    @Test
+    void anExplicitFingerprintKeyTakesPrecedenceOverTheDefault()
+    {
+        final String key = "e".repeat(40);
+        assertThat(new ServerConfig.JournalSecurityConfig(null, null, null, null, key, null, null).fingerprintKey()).isEqualTo(key);
     }
 
     @Test

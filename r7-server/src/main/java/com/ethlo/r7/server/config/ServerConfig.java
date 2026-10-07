@@ -9,9 +9,9 @@ import java.util.regex.Pattern;
 
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.doc.Description;
-import com.ethlo.r7.journal.HeaderFingerprint;
 import com.ethlo.r7.r7f.R7fJournalProvider;
 import com.ethlo.r7.util.CidrRange;
+import com.ethlo.r7.util.Fingerprint;
 import com.ethlo.r7.util.RegexBudget;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -615,10 +615,11 @@ public record ServerConfig(
      * spelling a client may send; {@code safe_query_parameters_case_sensitive} matches them
      * exactly, for upstreams that tell {@code id} from {@code ID}.
      * <p>
-     * {@code fingerprint_key}, when set, keys the fingerprint written in place of a redacted
-     * value, so that a reader of the journal cannot confirm a guessed value by hashing it
-     * (see {@link com.ethlo.r7.journal.HeaderFingerprint}). Normally supplied through
-     * {@code ${VAR}} interpolation rather than written into the file.
+     * {@code fingerprint_key} keys the fingerprint written in place of a redacted value, so
+     * that a reader of the journal cannot confirm a guessed value by hashing it (see
+     * {@link Fingerprint}). It is required: there is no unkeyed fallback. Normally supplied
+     * through {@code ${VAR}} interpolation, or the {@code R7_FINGERPRINT_KEY} environment
+     * variable when there is no server.yaml.
      */
     public record JournalSecurityConfig(
             List<String> additionalSafeRequestHeaders,
@@ -633,13 +634,21 @@ public record ServerConfig(
         @Override
         public void validate(final ValidationResult result)
         {
-            // Checked here, against the constant HeaderFingerprint enforces, so that a short key
-            // is a startup error naming this field rather than a constructor throwing later.
-            if (this.fingerprintKey != null && this.fingerprintKey.length() < HeaderFingerprint.MIN_KEY_LENGTH)
+            // Checked here, against the constant Fingerprint enforces, so that a missing or short
+            // key is a startup error naming this field rather than a constructor throwing later.
+            final String key = this.fingerprintKey();
+            if (key == null)
             {
-                result.addError("fingerprint_key", "must be at least " + HeaderFingerprint.MIN_KEY_LENGTH
-                        + " characters (it is the whole secret behind every redacted header value); was "
-                        + this.fingerprintKey.length() + ". Generate one with, for example, `openssl rand -base64 48`.");
+                result.addError("fingerprint_key", "is required: it keys the fingerprint r7 writes in place of every redacted "
+                        + "header and query parameter value. Set it, or the " + FINGERPRINT_KEY_ENVIRONMENT_VARIABLE
+                        + " environment variable, to at least " + Fingerprint.MIN_KEY_LENGTH
+                        + " random characters, for example the output of `openssl rand -base64 32`.");
+            }
+            else if (key.length() < Fingerprint.MIN_KEY_LENGTH)
+            {
+                result.addError("fingerprint_key", "must be at least " + Fingerprint.MIN_KEY_LENGTH
+                        + " characters (it is the whole secret behind every redacted value); was "
+                        + key.length() + ". Generate one with, for example, `openssl rand -base64 32`.");
             }
 
             requireValidHeaderTokens(result, "additional_safe_request_headers", this.additionalSafeRequestHeaders());
@@ -726,6 +735,29 @@ public record ServerConfig(
             }
         }
 
+        /**
+         * {@code R7_FINGERPRINT_KEY} supplies the key without a server.yaml, and an explicit
+         * {@code fingerprint_key} takes precedence over it, as {@code R7_JOURNAL_DIR} does for
+         * the journal directory. Like a {@code ${VAR}} reference, it falls back to a system
+         * property of the same name. {@code null} when none is set, which validation rejects.
+         */
+        @Override
+        public String fingerprintKey()
+        {
+            if (this.fingerprintKey != null && !this.fingerprintKey.isEmpty())
+            {
+                return this.fingerprintKey;
+            }
+            String fromEnvironment = System.getenv(FINGERPRINT_KEY_ENVIRONMENT_VARIABLE);
+            if (fromEnvironment == null || fromEnvironment.isBlank())
+            {
+                fromEnvironment = System.getProperty(FINGERPRINT_KEY_ENVIRONMENT_VARIABLE);
+            }
+            return fromEnvironment != null && !fromEnvironment.isBlank() ? fromEnvironment.strip() : null;
+        }
+
+        static final String FINGERPRINT_KEY_ENVIRONMENT_VARIABLE = "R7_FINGERPRINT_KEY";
+
         @Override
         public List<String> safeQueryParameters()
         {
@@ -777,7 +809,7 @@ public record ServerConfig(
                     + ", additionalSafeResponseHeaders=" + this.additionalSafeResponseHeaders()
                     + ", safeRequestHeaders=" + this.safeRequestHeaders()
                     + ", safeResponseHeaders=" + this.safeResponseHeaders()
-                    + ", fingerprintKey=" + (this.fingerprintKey == null ? "unset" : "******")
+                    + ", fingerprintKey=" + (this.fingerprintKey() == null ? "unset" : "******")
                     + ", safeQueryParameters=" + this.safeQueryParameters()
                     + ", safeQueryParametersCaseSensitive=" + this.safeQueryParametersCaseSensitive() + "]";
         }

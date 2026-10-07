@@ -252,6 +252,7 @@ with, then start with the cache:
 
 ```bash
 R7_ROUTES_CONFIG=docker/aot-training/routes.yaml R7_JOURNAL_DIR=/tmp/aot-training \
+  R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key \
   java -XX:AOTCacheOutput=r7.aot -Dr7.aot.training=true -jar r7-helidon-<version>.jar
 java -XX:AOTCache=r7.aot -jar r7-helidon-<version>.jar
 ```

@@ -324,7 +324,7 @@ class JsonLinesWriterTest
         headers.add("accept", "application/json");
         exchange.setClientRequest("GET /items HTTP/1.1", JournalLevel.HEADERS, headers, InetAddress.getLoopbackAddress(), IpSource.SOCKET);
         final FastGatewayAttributes attributes = new FastGatewayAttributes();
-        attributes.add("gateway.auth.basic.user", "id:sha256:d4735e");
+        attributes.add("gateway.auth.basic.user", "fp:b9ZtS0R2qzY");
         exchange.setAttributes(attributes);
 
         new JsonLinesWriter(out).onComplete(exchange);

@@ -13,6 +13,7 @@ import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.FastGatewayHeaders;
+import com.ethlo.r7.util.Fingerprint;
 
 public final class StatefulJournal implements Journal
 {
@@ -22,7 +23,7 @@ public final class StatefulJournal implements Journal
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
     private final QueryParameterNameSet safeQueryParameters;
-    private final HeaderFingerprint fingerprint;
+    private final Fingerprint fingerprint;
     /**
      * Checksums of the body bytes this journal actually passed to the delegate, created on
      * the first fragment of that direction.
@@ -84,42 +85,14 @@ public final class StatefulJournal implements Journal
     }
 
     /**
-     * Uses the built-in header-redaction policy, unmodified. For production use where an
-     * operator may have overridden {@code server.yaml -> storage.journal_security}, use
-     * {@link #StatefulJournal(Journal, RouteJournalConfig, CompletedGatewayExchange, HeaderNameSet, HeaderNameSet)}.
-     */
-    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange)
-    {
-        this(delegate, config, exchange, JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS);
-    }
-
-    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
-                            final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
-    {
-        this(delegate, config, exchange, safeRequestHeaders, safeResponseHeaders, HeaderFingerprint.UNKEYED);
-    }
-
-    /**
-     * @param fingerprint how values of headers not on the safe lists are written; see
-     *                    {@link HeaderFingerprint} for why a deployment should key it
-     */
-    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
-                            final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders,
-                            final HeaderFingerprint fingerprint)
-    {
-        this(delegate, config, exchange, safeRequestHeaders, safeResponseHeaders, QueryParameterNameSet.NONE, fingerprint);
-    }
-
-    /**
      * @param safeQueryParameters query parameters whose values the request lines keep; every
      *                            other value is fingerprinted like an unsafe header's
      * @param fingerprint         how values of headers and query parameters not on the safe
-     *                            lists are written; see {@link HeaderFingerprint} for why a
-     *                            deployment should key it
+     *                            lists are written
      */
     public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
                             final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders,
-                            final QueryParameterNameSet safeQueryParameters, final HeaderFingerprint fingerprint)
+                            final QueryParameterNameSet safeQueryParameters, final Fingerprint fingerprint)
     {
         this.fingerprint = fingerprint;
         this.safeQueryParameters = safeQueryParameters;

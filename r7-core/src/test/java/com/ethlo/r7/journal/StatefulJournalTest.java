@@ -26,6 +26,8 @@ import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.TestFingerprints;
 
 class StatefulJournalTest
 {
@@ -43,7 +45,8 @@ class StatefulJournalTest
         final List<String> events = new ArrayList<>();
         final StatefulJournal journal = new StatefulJournal(recording(events),
                 new RouteJournalConfig(new JournalDirectionConfig(requestLevel, null), new JournalDirectionConfig(JournalLevel.FULL, null)),
-                exchangeWithStatus(200));
+                exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
+                QueryParameterNameSet.NONE, TestFingerprints.FINGERPRINT);
 
         final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
         headers.add("Host", "example.com");
@@ -76,7 +79,7 @@ class StatefulJournalTest
     void queryValuesInBothRequestLinesAreRedactedAtEveryLevel(final JournalLevel level)
     {
         final List<String> lines = new ArrayList<>();
-        final HeaderFingerprint fingerprint = HeaderFingerprint.UNKEYED;
+        final Fingerprint fingerprint = TestFingerprints.FINGERPRINT;
         final StatefulJournal journal = new StatefulJournal(recording(new ArrayList<>(), lines),
                 new RouteJournalConfig(new JournalDirectionConfig(level, null), new JournalDirectionConfig(level, null)),
                 exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
@@ -98,7 +101,8 @@ class StatefulJournalTest
         final List<String> lines = new ArrayList<>();
         final StatefulJournal journal = new StatefulJournal(recording(new ArrayList<>(), lines),
                 new RouteJournalConfig(new JournalDirectionConfig(JournalLevel.METADATA, null), new JournalDirectionConfig(JournalLevel.METADATA, null)),
-                exchangeWithStatus(200));
+                exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
+                QueryParameterNameSet.NONE, TestFingerprints.FINGERPRINT);
 
         journal.clientRequest(JournalLevel.METADATA, "r1", latin1("GET /items HTTP/1.1"), new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
         journal.endExchange("r1", new FastGatewayAttributes(), 1, 2, 200, 0, 0, 0, 0, 0, 0, 0, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);

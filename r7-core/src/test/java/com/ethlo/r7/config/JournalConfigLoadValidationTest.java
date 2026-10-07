@@ -6,12 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.ethlo.r7.spi.EngineContext;
+import com.ethlo.r7.util.TestFingerprints;
 
 /**
  * Journal-level rules are enforced when routes load. They were once defined but never run, so a
@@ -39,7 +38,7 @@ class JournalConfigLoadValidationTest
                     journal:
                 %s
                 """.formatted(journal.indent(6)));
-        new ConfigurationManager(new EngineContext(Map.of())).load(ConfigurationManager.load(file, RoutesDefinition.class), new RouteRegistry());
+        new ConfigurationManager(TestFingerprints.engine()).load(ConfigurationManager.load(file, RoutesDefinition.class), new RouteRegistry());
     }
 
     @Test
