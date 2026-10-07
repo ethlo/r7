@@ -12,11 +12,13 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# One run per ref: a newer merge cancels an older main run still building, so a slow run can
-# never push :main after a faster, newer one. Each version tag is its own ref and group.
+# One run per ref at a time, in order: a slow run can never push :main after a newer one. A
+# running build is never cancelled, since that could stop it between its three pushes and
+# leave the images at different commits; GitHub instead drops an older run still waiting, so
+# the newest merge is the next to build. Each version tag is its own ref and group.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
