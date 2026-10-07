@@ -202,6 +202,37 @@ filters:
 
 ```
 
+### Reporting a filter's status
+
+A filter that keeps state an operator should see, such as a breaker that trips or a quota that runs out, can implement `StatusReporting`. Its status then shows on the dashboard, in the management JSON and as the `r7_component_health` and `r7_component_value` metrics (see [Management Configuration](config.md#management-configuration-management)).
+
+```java
+import java.util.Map;
+import java.util.concurrent.atomic.LongAdder;
+
+import com.ethlo.r7.api.ComponentStatus;
+import com.ethlo.r7.api.StatusReporting;
+
+private static final class QuotaFilter implements ClientRequestGatewayFilter, ShortInfo, StatusReporting
+{
+    private final LongAdder refused = new LongAdder();
+    private volatile boolean exhausted;
+
+    // onClientRequest, name() and summary() as above
+
+    @Override
+    public ComponentStatus status()
+    {
+        return new ComponentStatus(
+                exhausted ? ComponentStatus.Health.ERROR : ComponentStatus.Health.OK,
+                exhausted ? "Quota used up until midnight" : null,
+                Map.of("refused_requests", refused.sum()));
+    }
+}
+```
+
+`status()` is called every 2 seconds from the management snapshot, never on a request, and must not block: read the state the filter already keeps. Health is `OK`, `WARN` or `ERROR`; the detail is a short line for the dashboard, never a metric. Value names are lower-case `snake_case`, and each becomes a series, so a name must never carry data such as a client address. A `status()` that throws is reported as `ERROR` with the exception as its detail.
+
 ---
 
 ## 3. Registering the Extensions (ServiceLoader SPI)

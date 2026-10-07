@@ -8,10 +8,11 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 
+import java.time.Instant;
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import io.restassured.specification.RequestSpecification;
 
 /**
  * Reproduces three findings from the filter-runtime review, all rooted in how a request refused
@@ -32,32 +33,21 @@ public class FilterRuntimeE2ETest extends AbstractR7IntegrationTest
         startGateway("configs/filter-runtime/routes.yaml");
     }
 
-    private static int managementPort()
-    {
-        return R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888);
-    }
-
-    private static RequestSpecification management()
-    {
-        return given().baseUri("http://localhost").port(managementPort());
-    }
-
     /**
-     * Pulls the CircuitBreaker's own summary (its {@code state=...} text) off the management
-     * endpoint's pipeline visualization for the given route - the only external window onto the
-     * filter's internal state.
+     * The CircuitBreaker's own status (OK closed, WARN half-open, ERROR open) off the management
+     * endpoint's pipeline for the given route, from a snapshot taken after everything the test
+     * has done so far.
      */
-    private static String circuitBreakerSummary(final String routeId)
+    @SuppressWarnings("unchecked")
+    private static String circuitBreakerHealth(final String routeId)
     {
-        return management()
-                .accept("application/json")
-                .when()
-                .get("/")
-                .then()
-                .statusCode(200)
-                .extract()
-                .jsonPath()
-                .getString("route_configs.find { it.id == '" + routeId + "' }.filter_nodes.summary");
+        Map<String, Object> node = managementJsonAfter(Instant.now()).getMap("route_configs.find { it.id == '" + routeId + "' }.filter_nodes");
+        while (node != null && !"CircuitBreaker".equals(node.get("name")))
+        {
+            node = (Map<String, Object>) node.get("child");
+        }
+        org.assertj.core.api.Assertions.assertThat(node).as("route %s has a CircuitBreaker", routeId).isNotNull();
+        return (String) ((Map<String, Object>) node.get("status")).get("health");
     }
 
     @Test
@@ -67,7 +57,7 @@ public class FilterRuntimeE2ETest extends AbstractR7IntegrationTest
 
         // 1. One upstream failure trips the breaker open (failure_threshold: 1).
         given().header("X-Allow-Probe", "1").when().get("/circuit-probe").then().statusCode(500);
-        assertCircuitState("circuit-probe-status", "OPEN");
+        assertCircuitState("circuit-probe-status", "ERROR");
 
         // 2. Wait out the cooldown so the next request is the half-open probe.
         Thread.sleep(300);
@@ -81,15 +71,14 @@ public class FilterRuntimeE2ETest extends AbstractR7IntegrationTest
         // A refused probe is not evidence of recovery: the circuit must still be (or be again)
         // OPEN, never CLOSED. Buggy: onClientResponse saw the exchange's default 200 instead of
         // 503, called it a success, and closed the circuit while the probe was still in flight.
-        assertCircuitState("circuit-probe-status", "OPEN");
+        assertCircuitState("circuit-probe-status", "ERROR");
     }
 
     private static void assertCircuitState(final String routeId, final String expected)
     {
-        final String summary = circuitBreakerSummary(routeId);
-        org.assertj.core.api.Assertions.assertThat(summary)
-                .as("CircuitBreaker summary")
-                .contains("state=" + expected);
+        org.assertj.core.api.Assertions.assertThat(circuitBreakerHealth(routeId))
+                .as("CircuitBreaker status")
+                .isEqualTo(expected);
     }
 
     @Test

@@ -3,17 +3,23 @@ package com.ethlo.r7.filters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
+import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.StatusReporting;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -83,7 +89,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
         }
     }
 
-    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo, StatusReporting
     {
         private final Config config;
         private final long cooldownMillis;
@@ -92,6 +98,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
         private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
         private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
         private final AtomicLong openTimestamp = new AtomicLong(0);
+        private final LongAdder rejected = new LongAdder();
 
         public GF(final Config config)
         {
@@ -182,20 +189,50 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
 
         private void rejectRequest(final ClientRequestGatewayExchange exchange)
         {
+            this.rejected.increment();
             final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(1)
                     .set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
 
             exchange.shortCircuit(new ShortCircuitGatewayResponse(headers, HttpStatuses.SERVICE_UNAVAILABLE, ByteBuffer.wrap(REJECT_PAYLOAD)));
         }
 
+        /**
+         * The configuration only: the state changes from one request to the next, and is
+         * reported by {@link #status()}.
+         */
         @Override
         public String summary()
         {
             return new StringJoiner(", ", FILTER_NAME + "[", "]")
                     .add("failure_threshold=" + this.config.failureThreshold())
                     .add("cool_down=" + this.config.cooldownPeriod())
-                    .add("state=" + this.state.get().name())
                     .toString();
+        }
+
+        /**
+         * Open is an error and half-open a warning: either way the upstream behind it is not
+         * getting all the traffic sent to the route. An open circuit stays open past its cool-down
+         * until a request arrives to probe with.
+         */
+        @Override
+        public ComponentStatus status()
+        {
+            final State current = this.state.get();
+            final Map<String, Long> values = new LinkedHashMap<>();
+            values.put("consecutive_failures", (long) this.consecutiveFailures.get());
+            values.put("rejected_requests", this.rejected.sum());
+            return switch (current)
+            {
+                case CLOSED -> new ComponentStatus(ComponentStatus.Health.OK, "Closed", values);
+                case HALF_OPEN -> new ComponentStatus(ComponentStatus.Health.WARN, "Half-open: one request is probing the upstream", values);
+                case OPEN -> new ComponentStatus(ComponentStatus.Health.ERROR, openSince(this.openTimestamp.get()), values);
+            };
+        }
+
+        // The state is switched before its timestamp is set: zero is a circuit that has just opened
+        private static String openSince(final long openedAt)
+        {
+            return openedAt == 0 ? "Open" : "Open since " + Instant.ofEpochMilli(openedAt);
         }
     }
 }

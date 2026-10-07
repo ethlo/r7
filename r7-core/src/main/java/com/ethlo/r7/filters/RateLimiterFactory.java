@@ -6,17 +6,22 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
+import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.StateKey;
+import com.ethlo.r7.api.StatusReporting;
 import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
@@ -226,12 +231,13 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
         return HexFormat.of().formatHex(bytes) + "/" + ipv6PrefixLength;
     }
 
-    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo
+    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo, StatusReporting
     {
         private final Bandwidth limit; // Calculate this once
         private final Cache<String, Bucket> buckets;
         private final Config config;
         private final String capacityString;
+        private final LongAdder rejected = new LongAdder();
 
         public GF(final Config config)
         {
@@ -260,6 +266,7 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
 
             if (!probe.isConsumed())
             {
+                this.rejected.increment();
                 final long waitNanos = probe.getNanosToWaitForRefill();
                 final long waitSeconds = TimeUnit.NANOSECONDS.toSeconds(waitNanos) + 1L;
 
@@ -305,6 +312,25 @@ public final class RateLimiterFactory implements GatewayFilterFactory<RateLimite
                     .add("refill_tokens=" + this.config.refillTokens())
                     .add("refill_period=" + this.config.refillPeriod())
                     .toString();
+        }
+
+        /**
+         * A warning once the limiter tracks as many clients as {@code max_buckets} allows: from
+         * then on it evicts buckets early, and an evicted client returns with a full bucket, so
+         * the limit holds less tightly than configured.
+         */
+        @Override
+        public ComponentStatus status()
+        {
+            final long tracked = this.buckets.estimatedSize();
+            final Map<String, Long> values = new LinkedHashMap<>();
+            values.put("rejected_requests", this.rejected.sum());
+            values.put("tracked_clients", tracked);
+            if (tracked >= this.config.maxBuckets())
+            {
+                return new ComponentStatus(ComponentStatus.Health.WARN, "Tracking max_buckets (" + this.config.maxBuckets() + ") clients: idle ones are evicted early", values);
+            }
+            return new ComponentStatus(ComponentStatus.Health.OK, null, values);
         }
     }
 }

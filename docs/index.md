@@ -49,7 +49,7 @@ docker run --rm -p 8888:8888 -p 127.0.0.1:18888:18888 \
 
 Requests to `http://localhost:8888/api/...` now reach your service on port 3000, and every one of
 them is written with its headers to the journal, kept in the `r7-journals` volume. Open `http://localhost:18888` to see your routes,
-their upstream health and live response times.
+their upstream health, live response times and any filter that needs attention, such as an open circuit breaker.
 
 That is the whole setup. When you need to tune ports, limits or journal storage, add a
 `server.yaml`; until then the defaults are chosen to be safe.

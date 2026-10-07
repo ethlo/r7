@@ -122,6 +122,7 @@ public final class R7Helidon
                         .routing(routing -> routing.any((req, res) -> serveManagement(endpoint, req, res))))
                 .build()
                 .start();
+        endpoint.start();
         logger.info("🚀 ethlo r7 Gateway - version {}, started in {}ms", VersionProvider.getVersion(), SystemUtil.getUptime().toMillis());
         logger.info("Gateway listening on {}:{}, management on {}:{}", core.host(), this.server.port(),
                 management.host(), this.server.port(MANAGEMENT_SOCKET));
@@ -181,7 +182,7 @@ public final class R7Helidon
 
     private static void serveManagement(final ManagementEndpoint endpoint, final ServerRequest req, final ServerResponse res)
     {
-        final ManagementEndpoint.Response response = endpoint.handle(req.prologue().method().text(),
+        final ManagementEndpoint.Response response = endpoint.handle(req.prologue().method().text(), req.path().path(),
                 req.headers().first(HeaderNames.HOST).orElse(null), req.headers().first(HeaderNames.ACCEPT).orElse(null));
         res.status(Status.create(response.status()));
         for (final Map.Entry<String, String> header : response.headers().entrySet())

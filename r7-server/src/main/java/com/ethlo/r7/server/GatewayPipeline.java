@@ -21,6 +21,7 @@ import com.ethlo.r7.UnproxiedUpstreamResponse;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
+import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRoute;
@@ -862,6 +863,40 @@ public final class GatewayPipeline
             }
         }
         return result;
+    }
+
+    /**
+     * The health of a route's upstream targets: a warning while some are out of rotation, an
+     * error while all are. Null for a route without an upstream, or whose targets are not
+     * health-checked, since then nothing is known about them beyond being configured.
+     */
+    public ComponentStatus upstreamStatus(final GatewayRoute route)
+    {
+        final RouteUpstreamContext context = route instanceof DefaultGatewayRoute defaultRoute ? defaultRoute.attachment(UPSTREAM_CONTEXT) : null;
+        if (context == null)
+        {
+            return null;
+        }
+        final Map<URI, Boolean> states = context.targetStates();
+        if (states.isEmpty())
+        {
+            return null;
+        }
+        long up = 0;
+        for (final boolean inRotation : states.values())
+        {
+            up += inRotation ? 1 : 0;
+        }
+        final long down = states.size() - up;
+        final Map<String, Long> values = new LinkedHashMap<>();
+        values.put("targets_up", up);
+        values.put("targets_down", down);
+        if (down == 0)
+        {
+            return new ComponentStatus(ComponentStatus.Health.OK, null, values);
+        }
+        final String detail = down + " of " + states.size() + (states.size() == 1 ? " target" : " targets") + " down";
+        return new ComponentStatus(up == 0 ? ComponentStatus.Health.ERROR : ComponentStatus.Health.WARN, detail, values);
     }
 
     /**

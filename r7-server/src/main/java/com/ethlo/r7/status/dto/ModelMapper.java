@@ -1,5 +1,6 @@
 package com.ethlo.r7.status.dto;
 
+import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.util.FilterRegistry;
 import com.ethlo.r7.util.SensitiveConfig;
@@ -25,7 +26,7 @@ public class ModelMapper
 {
     private static final FilterRegistry FILTER_REGISTRY = new FilterRegistry();
 
-    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final int order, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final int order, final ComponentStatus upstreamStatus, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
     {
         final RouteDefinition def = route.routeDefinition();
 
@@ -48,7 +49,7 @@ public class ModelMapper
                 def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
                 toUpstream(def.upstream()),
                 filters,
-                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), route.filters().toArray(new GatewayFilter[0]), route.globalFilterCount())
+                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), upstreamStatus, route.filters().toArray(new GatewayFilter[0]), route.globalFilterCount())
         );
     }
 

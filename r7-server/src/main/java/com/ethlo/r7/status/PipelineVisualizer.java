@@ -2,6 +2,7 @@ package com.ethlo.r7.status;
 
 import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
@@ -11,10 +12,10 @@ import com.ethlo.r7.status.dto.FilterNode;
 
 public final class PipelineVisualizer
 {
-    public static FilterNode buildNestedVisualization(final UpstreamConfig upstreamConfig, final GatewayFilter[] routeFilters, final int globalFilterCount)
+    public static FilterNode buildNestedVisualization(final UpstreamConfig upstreamConfig, final ComponentStatus upstreamStatus, final GatewayFilter[] routeFilters, final int globalFilterCount)
     {
         // The innermost core of the onion
-        FilterNode currentNode = new FilterNode("upstream", upstreamConfig != null ? SensitiveConfig.redactUrlCredentials(upstreamConfig.toString()) : "None", false, false, false, false, false, null);
+        FilterNode currentNode = new FilterNode("upstream", upstreamConfig != null ? SensitiveConfig.redactUrlCredentials(upstreamConfig.toString()) : "None", false, false, false, false, false, upstreamStatus, null);
 
         // Iterate backward through the array, wrapping from the inside out
         for (int i = routeFilters.length - 1; i >= 0; i--)
@@ -34,6 +35,7 @@ public final class PipelineVisualizer
                     hasUpstreamReq,
                     hasClientRes,
                     hasCompleted,
+                    ComponentStatuses.of(filter),
                     currentNode
             );
         }
