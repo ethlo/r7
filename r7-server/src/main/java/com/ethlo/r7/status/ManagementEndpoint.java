@@ -189,12 +189,14 @@ public final class ManagementEndpoint
     {
         try
         {
-            // Taken before anything is read, so every field in the snapshot is at least this recent
+            // Both taken before anything is read, so every field is at least this recent and
+            // /health measures the age of the oldest reading, not of the end of a slow render
             final Instant renderedAt = Instant.now();
+            final long renderedAtNanos = System.nanoTime();
             final List<RouteReading> routes = readRoutes();
             final Map<String, Object> json = json(renderedAt, routes);
             final byte[] metrics = metrics(json, routes);
-            this.snapshot = new Snapshot(JsonUtil.writeValueAsString(json).getBytes(StandardCharsets.UTF_8), metrics, System.nanoTime());
+            this.snapshot = new Snapshot(JsonUtil.writeValueAsString(json).getBytes(StandardCharsets.UTF_8), metrics, renderedAtNanos);
         }
         catch (final RuntimeException e)
         {
