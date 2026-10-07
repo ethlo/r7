@@ -221,7 +221,7 @@ The archiving world's answer is CDX/CDXJ — a sorted line-oriented sidecar inde
 locator per record. **ClickHouse replaces that**: the tailer's JSON line, loaded as
 `JSONEachRow`, is already the ingest path (`docs/journaling.md`, "The JSON line").
 
-One row per exchange: timestamp, status, method, path, route, upstream, the three durations,
+One row per exchange: timestamp, status, method, path, route, upstream targets, duration,
 byte counts, request id — **plus the WARC locator: filename, offset, length**. Those locator
 columns are the whole trick. Without them you have metrics and no evidence, which is the
 failure mode of every access-log-to-OLAP pipeline: you can see that 4% of `/orders` 404'd at
