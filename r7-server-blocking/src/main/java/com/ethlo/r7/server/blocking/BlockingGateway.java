@@ -343,19 +343,24 @@ public final class BlockingGateway implements AutoCloseable
 
     private static ServerConfig loadServerSettings(final Path serverFile)
     {
+        ServerConfig serverConfig;
         if (!Files.exists(serverFile))
         {
-            final ServerConfig defaults = ServerConfig.standard();
-            logger.info("No {}, running on the built-in server defaults: gateway on {}:{}, management on {}:{}, journals in {}",
-                    serverFile, defaults.server().host(), defaults.server().port(), defaults.management().host(),
-                    defaults.management().port(), Paths.get(defaults.storage().workDir()).toAbsolutePath());
-            return defaults;
-        }
-        ServerConfig serverConfig = ConfigurationManager.load(serverFile, ServerConfig.class);
-        if (serverConfig == null)
-        {
             serverConfig = ServerConfig.standard();
+            logger.info("No {}, running on the built-in server defaults: gateway on {}:{}, management on {}:{}, journals in {}",
+                    serverFile, serverConfig.server().host(), serverConfig.server().port(), serverConfig.management().host(),
+                    serverConfig.management().port(), Paths.get(serverConfig.storage().workDir()).toAbsolutePath());
         }
+        else
+        {
+            serverConfig = ConfigurationManager.load(serverFile, ServerConfig.class);
+            if (serverConfig == null)
+            {
+                serverConfig = ServerConfig.standard();
+            }
+        }
+        // The defaults too: they take the fingerprint key from the environment, and a missing one
+        // must be the error naming it, before any journal directory is touched.
         final ValidationResult result = new ValidationResult();
         serverConfig.validate(result);
         result.throwIfInvalid();

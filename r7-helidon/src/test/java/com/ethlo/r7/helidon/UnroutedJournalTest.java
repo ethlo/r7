@@ -41,11 +41,7 @@ import io.restassured.RestAssured;
  */
 public class UnroutedJournalTest extends AbstractR7IntegrationTest
 {
-    /**
-     * The key the build gives the gateway, in process as a system property and in Docker as the
-     * environment variable of the same value.
-     */
-    private static final Fingerprint FINGERPRINT = Fingerprint.of(System.getProperty("R7_FINGERPRINT_KEY"));
+    private static final Fingerprint FINGERPRINT = Fingerprint.of(FINGERPRINT_KEY);
 
     // The in-process gateway journals to the default work_dir, relative to the module.
     private static final Path JOURNALS = Paths.get("journals");

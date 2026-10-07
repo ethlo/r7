@@ -16,6 +16,7 @@ import com.ethlo.r7.util.RegexBudget;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record ServerConfig(
         ServerCoreConfig server,
@@ -626,6 +627,9 @@ public record ServerConfig(
             List<String> additionalSafeResponseHeaders,
             List<String> safeRequestHeaders,
             List<String> safeResponseHeaders,
+            // Write-only: the management endpoint serializes the whole server config, and anyone
+            // holding the key can check guesses against every fingerprint in the journal.
+            @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
             String fingerprintKey,
             List<String> safeQueryParameters,
             Boolean safeQueryParametersCaseSensitive
@@ -753,7 +757,9 @@ public record ServerConfig(
             {
                 fromEnvironment = System.getProperty(FINGERPRINT_KEY_ENVIRONMENT_VARIABLE);
             }
-            return fromEnvironment != null && !fromEnvironment.isBlank() ? fromEnvironment.strip() : null;
+            // Verbatim, not stripped: the same secret must give the same fingerprints whether it
+            // arrives here or through fingerprint_key: ${R7_FINGERPRINT_KEY}, which keeps it as is.
+            return fromEnvironment != null && !fromEnvironment.isBlank() ? fromEnvironment : null;
         }
 
         static final String FINGERPRINT_KEY_ENVIRONMENT_VARIABLE = "R7_FINGERPRINT_KEY";

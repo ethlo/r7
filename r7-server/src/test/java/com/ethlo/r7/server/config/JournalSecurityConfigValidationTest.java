@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import com.ethlo.r7.util.JsonUtil;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
@@ -186,6 +187,26 @@ class JournalSecurityConfigValidationTest
                 System.setProperty("R7_FINGERPRINT_KEY", previous);
             }
         }
+    }
+
+    /**
+     * The management endpoint serializes the server config and its defaults whole. Whoever
+     * holds the key can check guesses against every fingerprint in the journal, so neither an
+     * explicit key nor one taken from the environment may appear there.
+     */
+    @Test
+    void theFingerprintKeyIsNeverSerialized()
+    {
+        final String explicit = "explicit-fingerprint-key-of-at-least-32-characters";
+        final ServerConfig configured = new ServerConfig(null, null, null, null, null,
+                new ServerConfig.StorageConfig(null, null, null, null,
+                        new ServerConfig.JournalSecurityConfig(null, null, null, null, explicit, null, null), null, null));
+
+        assertThat(JsonUtil.writeValueAsString(configured)).doesNotContain(explicit).doesNotContain("fingerprint_key");
+        assertThat(ServerConfig.standard().storage().journalSecurity().fingerprintKey()).isNotNull();
+        assertThat(JsonUtil.writeValueAsString(ServerConfig.standard()))
+                .doesNotContain(ServerConfig.standard().storage().journalSecurity().fingerprintKey())
+                .doesNotContain("fingerprint_key");
     }
 
     @Test
