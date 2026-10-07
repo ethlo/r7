@@ -465,10 +465,8 @@ volumes:
 
 ```
 
-## 5. Visualizing your data
+## 5. Where the data goes next
 
-Once your data is routed through the tailer:
-
-* **JSON lines with Promtail/Loki:** use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics from the JSON fields (like `duration`, `client_response.status` — `client_response_status` after LogQL's `json` parser — or specific headers).
-* **WARC files:** these are for archival and replay, not dashboards. Feed them to a WARC-aware tool (e.g. [pywb](https://github.com/webrecorder/pywb)) to replay captured traffic, or look an exchange up by URL and time in the CDXJ index.
-* **Into ClickHouse:** r7 ships no ClickHouse output. Set `json.output: file` and batch-insert the sealed `.jsonl` files with a loader of your own (one JSON object per line, which ClickHouse reads as `JSONEachRow`), then query them from Grafana with the ClickHouse plugin. The `warc` pointer in each row leads from a query result to the archived exchange.
+The JSON lines go to any log shipper and on to ClickHouse, Loki or an OpenTelemetry backend; the
+WARC files go to any WARC reader. [Where r7 fits](where-r7-fits.md) shows how, with a minimal
+configuration for each.

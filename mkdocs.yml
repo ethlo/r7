@@ -50,6 +50,7 @@ nav:
   - Extensibility: extensibility.md
   - Journaling: journaling.md
   - WARC profile: warc.md
+  - Where r7 fits: where-r7-fits.md
   - Performance tuning: performance_tuning.md
   - Benchmarks: benchmarks.md
   - Licensing: licensing.md
