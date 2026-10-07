@@ -16,7 +16,7 @@
         <link rel="prev" href="../extensibility/">
       
       
-        <link rel="next" href="../performance_tuning/">
+        <link rel="next" href="../warc/">
       
       
         
@@ -301,6 +301,22 @@
         
   
   Journaling
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../warc/" class="md-tabs__link">
+        
+  
+  WARC profile
 
       </a>
     </li>
@@ -714,6 +730,32 @@
   
   
     <li class="md-nav__item">
+      <a href="../warc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  WARC profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../performance_tuning/" class="md-nav__link">
         
   
@@ -1111,8 +1153,9 @@ that have a captured body in WARC files under <code>/warc</code>.</p>
 <p>Each exchange becomes up to four linked records (client request, upstream request, upstream
 response, client response); a payload already archived by an earlier exchange is written as a
 WARC <code>revisit</code> record; and a checksum mismatch on read is marked rather than silently archived.
-See <a href="https://github.com/ethlo/r7/blob/main/design/warc.md"><code>design/warc.md</code></a> for the record
-shapes and why.</p>
+<a href="../warc/">The WARC profile</a> specifies the records and the <code>WARC-R7-*</code> fields;
+<a href="https://github.com/ethlo/r7/blob/main/design/warc.md"><code>design/warc.md</code></a> explains why they are
+shaped this way.</p>
 <p><strong>CDXJ index.</strong> With <code>cdxj_index: true</code>, every sealed <code>r7-….warc.zst</code> gets an <code>r7-….cdxj</code> beside it: one line per exchange, sorted by SURT key and timestamp, holding the URL, status, mime type, payload digest and the file name, offset and length of the client response record. This is the index format pywb and OutbackCDX read, so a lookup by URL and time goes straight to the record without scanning the archive. The index is built from the finished WARC file and renamed into place before the WARC file is, so a sealed <code>.warc.zst</code> always has its index; one sealed after a crash is indexed on the next start. Requests other than <code>GET</code> carry <code>__wb_method=&lt;method&gt;</code> in their key, as pywb does; request bodies are never copied into the index.</p>
 <p><strong><code>json</code></strong></p>
 <table>

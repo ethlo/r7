@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://r7.ethlo.com/editor/">
+        <link rel="canonical" href="https://r7.ethlo.com/warc/">
       
       
-        <link rel="prev" href="../licensing/">
+        <link rel="prev" href="../journaling/">
       
+      
+        <link rel="next" href="../performance_tuning/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Editor - r7 Gateway</title>
+        <title>WARC profile - r7 Gateway</title>
       
     
     
@@ -83,7 +85,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#r7-gateway-configuration-editor" class="md-skip">
+        <a href="#the-warc-profile" class="md-skip">
           Skip to content
         </a>
       
@@ -135,7 +137,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Editor
+              WARC profile
             
           </span>
         </div>
@@ -307,9 +309,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../warc/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="././" class="md-tabs__link">
         
   
   WARC profile
@@ -371,11 +375,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="././" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../editor/" class="md-tabs__link">
         
   
   Editor
@@ -395,8 +397,6 @@
         <div class="md-main__inner md-grid">
           
             
-              
-                
               
               <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
                 <div class="md-sidebar__scrollwrap">
@@ -567,10 +567,38 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../warc/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+        <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  WARC profile
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
@@ -585,6 +613,110 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#files" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Files
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-warcinfo-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The <code>warcinfo</code> record
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-exchange-up-to-four-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        One exchange, up to four records
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="One exchange, up to four records">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-the-body-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Where the body is
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-reader-can-rely-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What a reader can rely on
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Compatibility
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -671,38 +803,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-        <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Editor
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../editor/" class="md-nav__link">
         
   
   
@@ -717,38 +821,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#how-to-use-this-editor" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        How to use this editor
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -771,23 +843,277 @@
   
 
 
-<h1 id="r7-gateway-configuration-editor">r7 Gateway Configuration Editor</h1>
-<p>Use the interactive editor below to draft and validate your routing rules against the latest schema.</p>
-<p><iframe
-src="/editor-app/index.html"
-style="width: 100%; height: 80vh; min-height: 600px; border: 1px solid #303030; border-radius: 8px; margin-top: 1rem; background: #1e1e1e;"
-title="r7 Config Editor"
-allowfullscreen>
-</iframe>
-</p>
-<h2 id="how-to-use-this-editor">How to use this editor</h2>
+<h1 id="the-warc-profile">The WARC profile</h1>
+<p>The tailer's WARC output is standard <a href="https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/">WARC 1.1</a>,
+so any WARC reader can open it. This page is the contract for what r7 puts in those files on top
+of the standard: which records an exchange becomes, the <code>WARC-R7-*</code> fields, and the rules a
+reader can rely on. It describes profile version <strong>1</strong>, which every file states in its
+<code>warcinfo</code> record. How to run the tailer and configure the output is in
+<a href="../journaling/#3-the-tailer">Journaling</a>.</p>
+<h2 id="files">Files</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Name</td>
+<td><code>&lt;file_prefix&gt;-&lt;millis&gt;-&lt;uuid&gt;.warc.zst</code>, where <code>&lt;millis&gt;</code> is when the file was opened</td>
+</tr>
+<tr>
+<td>While written</td>
+<td><code>&lt;name&gt;.open</code>. Never read a <code>.open</code> file: it is renamed once finished, and a file left <code>.open</code> by a crash is cut back to its last complete exchange and renamed on the tailer's next start</td>
+</tr>
+<tr>
+<td>Sealed</td>
+<td>Renamed to <code>&lt;name&gt;</code> only after its contents are flushed to disk. A sealed file never changes again</td>
+</tr>
+<tr>
+<td>Compression</td>
+<td>Each record is one independent <a href="https://facebook.github.io/zstd/">Zstandard</a> frame with its content size and checksum, and the frames are concatenated. <code>zstd -d</code> turns a file into a plain WARC file; a reader with an offset can decompress one record without touching the rest</td>
+</tr>
+<tr>
+<td>Index</td>
+<td>With <code>cdxj_index: true</code>, a sorted <code>&lt;file_prefix&gt;-&lt;millis&gt;-&lt;uuid&gt;.cdxj</code> beside it, sealed before the WARC file is. See <a href="../journaling/#3-the-tailer">CDXJ index</a></td>
+</tr>
+</tbody>
+</table>
+<p>A file rolls over between exchanges, never inside one: the records of one exchange are always
+in the same file, and an exchange larger than <code>max_file_size</code> makes that file larger than the
+limit.</p>
+<h2 id="the-warcinfo-record">The <code>warcinfo</code> record</h2>
+<p>Every file starts with a <code>warcinfo</code> record, <code>Content-Type: application/warc-fields</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>software: ethlo-r7-tailer-warc
+</span><span id="True-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>format: WARC File Format 1.1
+</span><span id="True-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>conformsTo: https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/
+</span><span id="True-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>r7-profile: 1
+</span></code></pre></div>
+<p><code>r7-profile</code> is the version of this page the file follows. A reader that finds a version it does
+not know should stop rather than guess. Every other record names the file's <code>warcinfo</code> in
+<code>WARC-Warcinfo-ID</code>.</p>
+<h2 id="one-exchange-up-to-four-records">One exchange, up to four records</h2>
+<p>An exchange becomes up to four records, written together and in the order the messages
+happened:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th><code>WARC-Type</code></th>
+<th>Message</th>
+<th><code>WARC-Target-URI</code></th>
+<th>Holds the body</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>request</code></td>
+<td>client to r7</td>
+<td>as the client asked</td>
+<td>the request body</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>request</code></td>
+<td>r7 to the upstream</td>
+<td>as r7 forwarded it</td>
+<td>no, see below</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>response</code></td>
+<td>upstream to r7</td>
+<td>as r7 forwarded it</td>
+<td>no, see below</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>response</code></td>
+<td>r7 to the client</td>
+<td>as the client asked</td>
+<td>the response body</td>
+</tr>
+</tbody>
+</table>
 <ul>
-<li><strong>Autocomplete:</strong> Press <code>Ctrl + Space</code> to view available properties.</li>
-<li><strong>Validation:</strong> The editor will flag syntax errors and schema violations in real-time.</li>
-<li><strong>Persistence:</strong> Your work is automatically saved to your local browser storage.</li>
+<li>A record is written for each message whose start line was journaled. A route with journal
+  level <code>NONE</code> for the response has no response records; an exchange with nothing journaled has
+  none at all. A request at <code>NONE</code> still gets its request records when the response is journaled: the
+  journal then records the request at <code>METADATA</code>, its start line without headers, to anchor the
+  response.</li>
+<li>Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
+  itself (a rate limit, a redirect) has records 1 and 4.</li>
+<li>Every record of an exchange names all the others in <code>WARC-Concurrent-To</code>, and carries the
+  same <code>WARC-R7-Request-Id</code>.</li>
+<li>An incomplete exchange (the gateway stopped before it finished, or it was evicted while being
+  reassembled) gets no records. Its JSON line still says what is known about it.</li>
+<li>With <code>exchanges: with_body</code>, only exchanges with a captured request or response body get
+  records; with <code>exchanges: all</code>, every exchange does.</li>
 </ul>
+<p>Each record's block is an <code>application/http</code> message: the start line and headers as journaled,
+a blank line, and the body when this record stores it. Header values are ISO-8859-1, as in the
+journal; redacted values appear as their fingerprints (see
+<a href="../journaling/#redacted-header-and-query-parameter-values">Redacted header and query parameter values</a>).</p>
+<p>r7 streams bodies without changing them, so the body r7 forwarded is the body the client sent,
+and the body the client got is the body the upstream returned. Each is stored once: the request
+body in record 1, the response body in record 4.</p>
+<h3 id="where-the-body-is">Where the body is</h3>
+<p><code>WARC-Payload-Digest</code> is always the digest of the message's body, wherever the bytes are. A
+record says plainly when it does not hold them:</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Record</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The body is in this record</td>
+<td><code>request</code> / <code>response</code></td>
+<td><code>WARC-Payload-Digest</code></td>
+</tr>
+<tr>
+<td>Records 2 and 3, always: any body is in record 1 or 4 of the same exchange</td>
+<td><code>request</code> / <code>response</code></td>
+<td><code>WARC-Truncated: unspecified</code>, and <code>WARC-Payload-Digest</code> when there is a body</td>
+</tr>
+<tr>
+<td><code>warc.bodies: false</code>: the body was captured, but this output leaves it out</td>
+<td><code>request</code> / <code>response</code></td>
+<td><code>WARC-Truncated: unspecified</code>, <code>WARC-Payload-Digest</code>. The JSON line holds the body when <code>json.bodies</code> is <code>true</code></td>
+</tr>
+<tr>
+<td>A body crossed the wire, but the journal level was below <code>FULL</code></td>
+<td><code>request</code> / <code>response</code></td>
+<td><code>WARC-Truncated: unspecified</code>, no digest</td>
+</tr>
+<tr>
+<td>The journaled body failed its checksum when read back</td>
+<td><code>request</code> / <code>response</code></td>
+<td><code>WARC-Truncated: unspecified</code>, <code>WARC-R7-Checksum-Mismatch: true</code>, no digest. The damaged bytes are never archived</td>
+</tr>
+<tr>
+<td>The same body is already stored by an earlier exchange</td>
+<td><code>revisit</code></td>
+<td>The WARC 1.1 <code>identical-payload-digest</code> profile: <code>WARC-Refers-To</code>, <code>WARC-Refers-To-Target-URI</code>, <code>WARC-Refers-To-Date</code>, <code>WARC-Truncated: length</code></td>
+</tr>
+<tr>
+<td>Records 1 and 4: no body</td>
+<td><code>request</code> / <code>response</code></td>
+<td>No digest, no <code>WARC-Truncated</code></td>
+</tr>
+</tbody>
+</table>
+<p>A record without <code>WARC-Truncated</code> holds its whole body. Its headers are what the journal level
+kept: none at <code>METADATA</code>, and fingerprints for redacted values. Records 2 and 3 never store a body,
+so they carry <code>WARC-Truncated</code> even when the message had none. The body of record 2 is in record 1, and
+the body of record 3 is in record 4, found through <code>WARC-Concurrent-To</code>. When that record is a
+<code>revisit</code>, its <code>WARC-Refers-To</code> leads to the earlier record that holds the bytes; when it too
+carries <code>WARC-Truncated</code>, this output does not hold the body.</p>
+<p>Deduplication across exchanges remembers the last <code>dedup_cache_entries</code> digests per tailer
+process. A body seen again after that, or after a restart, is stored again in full; a <code>revisit</code>
+always points at an earlier record written by the same tailer.</p>
+<h2 id="fields">Fields</h2>
+<p>Standard fields with r7-specific values:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WARC-Date</code></td>
+<td>When r7 began capturing that message, to the precision the journal recorded: the client request when it arrived, the forwarded request when r7 started sending it, both responses when the upstream's response headers had arrived (or, for a response r7 produced itself, when the request arrived). Not when the tailer wrote the record, so it matches the exchange's JSON line. When the journal lacks that timestamp, a forwarded message falls back to the next one recorded: the upstream's end (responses only), then the client request's arrival, and with none at all the record is dated when the tailer wrote it</td>
+</tr>
+<tr>
+<td><code>WARC-Target-URI</code></td>
+<td><code>http://</code> + the request's <code>Host</code> header + the request target. r7 does not journal whether the client connection used TLS, so the scheme is always <code>http</code>. Without a <code>Host</code> header, <code>urn:r7:request:&lt;request id&gt;</code></td>
+</tr>
+<tr>
+<td><code>WARC-Payload-Digest</code></td>
+<td><code>sha256:</code> and the base32 SHA-256 of the body</td>
+</tr>
+<tr>
+<td><code>WARC-Record-ID</code></td>
+<td><code>urn:uuid:</code> and a random UUID</td>
+</tr>
+</tbody>
+</table>
+<p>The r7 fields. A reader that does not know them can ignore them, as WARC requires:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>On</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WARC-R7-Request-Id</code></td>
+<td>every exchange record</td>
+<td>The exchange's request id, the same as <code>request_id</code> in its JSON line</td>
+</tr>
+<tr>
+<td><code>WARC-R7-Client-IP</code></td>
+<td>records 1 and 4</td>
+<td>The client's address as r7 resolved it (see <code>trusted_proxies</code>). <code>WARC-IP-Address</code> is not used for this: it means the server a record was fetched from</td>
+</tr>
+<tr>
+<td><code>WARC-R7-Sequence</code></td>
+<td>every record</td>
+<td>The record's number within its file: 0 for the <code>warcinfo</code> record, then one more for each record, with no gaps</td>
+</tr>
+<tr>
+<td><code>WARC-R7-Group-End</code></td>
+<td>the last record of each exchange, and the <code>warcinfo</code> record</td>
+<td><code>true</code>. The records from just after one group end up to the next one belong together</td>
+</tr>
+<tr>
+<td><code>WARC-R7-Checksum-Mismatch</code></td>
+<td>a record whose body failed its checksum</td>
+<td><code>true</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-a-reader-can-rely-on">What a reader can rely on</h2>
+<ul>
+<li><strong>A gap in <code>WARC-R7-Sequence</code> means records are missing.</strong> A file that lost data in the
+  middle can otherwise read as a shorter file that looks whole. A reader that cares about
+  completeness checks the sequence.</li>
+<li><strong>Groups are whole.</strong> A sealed file never ends partway through an exchange, and an exchange
+  is never split across files.</li>
+<li><strong>A failed write is taken back.</strong> If the tailer fails partway through an exchange, it takes
+  the records back before trying again, so a retry never leaves a second copy.</li>
+<li><strong>A crash can archive an exchange twice.</strong> An exchange is checkpointed only once both outputs
+  have it. A crash after its WARC records are written but before the checkpoint replays it on
+  the next start, and it is written again: delivery across a crash is at least once. A reader
+  that counts exchanges deduplicates on <code>WARC-R7-Request-Id</code>.</li>
+<li><strong>The JSON line points here.</strong> With both outputs on, the JSON line of every exchange this
+  output archived carries <code>warc: {file, offset, length}</code>, the sealed file name and the byte range of the exchange's
+  records. Decompress from <code>offset</code> to read them. A line without <code>warc</code> is an exchange this
+  output left out: incomplete, or without a body under <code>exchanges: with_body</code>. See <a href="../journaling/#the-json-line">The JSON line</a>.</li>
+</ul>
+<h2 id="compatibility">Compatibility</h2>
+<p>Within a profile version, new optional fields may be added; a reader must ignore fields it does
+not know. Removing or renaming a field, or changing what one means, takes a new version.</p>
+<p>Files written before profile 1 have no <code>r7-profile</code> line and name two fields
+<code>WARC-X-R7-Sequence</code> and <code>WARC-X-R7-Group-End</code>. Two guarantees on this page do not hold for them:</p>
+<ul>
+<li>Their <code>WARC-Date</code>, and so their CDXJ timestamps, are when the tailer wrote the record, not
+  when r7 captured the message.</li>
+<li>The oldest have no group-end markers at all. A file like that left open by a crash is
+  recovered to its last complete record, which can end partway through an exchange.</li>
+</ul>
+<p>Their records otherwise follow this page.</p>
 
-  
 
 
 
@@ -797,13 +1123,7 @@ allowfullscreen>
 
 
 
-  
-  
 
-
-
-
-  
 
 
 
