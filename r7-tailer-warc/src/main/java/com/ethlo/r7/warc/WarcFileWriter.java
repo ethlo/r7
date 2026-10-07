@@ -37,7 +37,7 @@ import com.ethlo.r7.tailer.files.SealedFileWriter;
  * <p>
  * Files are written, rolled, sealed and recovered by {@link SealedFileWriter} (see
  * {@code design/warc.md} and {@code design/tailers.md}); this class adds the WARC parts: the
- * {@code warcinfo} record that opens each file, the per-file {@code WARC-X-R7-Sequence}, a
+ * {@code warcinfo} record that opens each file, the per-file {@code WARC-R7-Sequence}, a
  * complete record being a complete Zstandard frame, and the optional index.
  * <p>
  * <b>CDXJ index</b>, when enabled: each file gets a sorted {@code .cdxj} index next to it (see
@@ -55,7 +55,24 @@ public final class WarcFileWriter implements AutoCloseable
      * Set on the last record of every group written as one unit: an exchange's records, or a
      * file's warcinfo record. Crash recovery cuts a file back to the last record carrying it.
      */
-    static final String GROUP_END = "WARC-X-R7-Group-End";
+    static final String GROUP_END = "WARC-R7-Group-End";
+
+    /**
+     * The name {@link #GROUP_END} had before the r7 fields shared one prefix. Recovery still
+     * honours it, so a file left open by a tailer from before the rename is cut back by group.
+     */
+    private static final String LEGACY_GROUP_END = "WARC-X-R7-Group-End";
+
+    /**
+     * Per-file, monotonically increasing record number; see {@link #buildFrame}.
+     */
+    static final String SEQUENCE = "WARC-R7-Sequence";
+
+    /**
+     * The version of the r7 WARC profile (docs/warc.md) the files are written to, stated in each
+     * file's warcinfo record so a reader can tell which {@code WARC-R7-*} fields to expect.
+     */
+    static final int PROFILE_VERSION = 1;
 
     private final boolean cdxjIndex;
     private final ZstdCompressCtx compressor;
@@ -253,7 +270,7 @@ public final class WarcFileWriter implements AutoCloseable
         // reads back as a shorter, wholly self-consistent file - see design/warc.md's "Three
         // things must come along" for why this is the one thing nothing else in the format
         // detects.
-        headers.add(Map.entry("WARC-X-R7-Sequence", Long.toString(sequence++)));
+        headers.add(Map.entry(SEQUENCE, Long.toString(sequence++)));
         if (groupEnd)
         {
             headers.add(Map.entry(GROUP_END, "true"));
@@ -371,7 +388,8 @@ public final class WarcFileWriter implements AutoCloseable
             while ((line = header.readLine()) != null && !line.isEmpty())
             {
                 final int colon = line.indexOf(':');
-                if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase(GROUP_END))
+                final String name = colon > 0 ? line.substring(0, colon).trim() : "";
+                if (name.equalsIgnoreCase(GROUP_END) || name.equalsIgnoreCase(LEGACY_GROUP_END))
                 {
                     closes = line.substring(colon + 1).trim().equalsIgnoreCase("true");
                 }
@@ -404,7 +422,8 @@ public final class WarcFileWriter implements AutoCloseable
     {
         final String body = "software: ethlo-r7-tailer-warc\r\n"
                 + "format: WARC File Format 1.1\r\n"
-                + "conformsTo: https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/\r\n";
+                + "conformsTo: https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/\r\n"
+                + "r7-profile: " + PROFILE_VERSION + "\r\n";
         return body.getBytes(StandardCharsets.UTF_8);
     }
 

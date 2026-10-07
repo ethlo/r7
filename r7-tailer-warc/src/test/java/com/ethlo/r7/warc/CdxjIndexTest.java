@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -151,6 +152,30 @@ class CdxjIndexTest
         final List<String> lines = Files.readAllLines(dir.resolve(baseName + ".cdxj"));
         assertThat(lines).hasSize(1);
         assertThat(json(lines.getFirst()).get("filename").asString()).isEqualTo(baseName + ".warc.zst");
+    }
+
+    /**
+     * A record is dated when the gateway captured its message, not when the tailer wrote it:
+     * the index finds it at that time, and it agrees with the exchange's JSON line.
+     */
+    @Test
+    void recordsAreDatedWhenTheGatewayCapturedThem() throws IOException
+    {
+        final Instant clientStart = Instant.parse("2026-10-01T12:00:00.000120Z");
+        final long start = clientStart.getEpochSecond() * 1_000_000_000L + clientStart.getNano();
+        final JournalExchange exchange = exchange("req-1", "GET", "/v1/items", "{}");
+        exchange.setTiming(start, start + 4_000_000, start + 1_000_000, start + 3_000_000, start + 3_500_000);
+        try (WarcFileWriter files = writer(true))
+        {
+            new WarcExchangeWriter(files, new PayloadDedupIndex(100)).onComplete(exchange);
+        }
+
+        final String warc = decompress(Files.readAllBytes(only(".warc.zst")));
+        final List<String> dates = warc.lines().filter(l -> l.startsWith("WARC-Date: ")).map(l -> l.substring(11)).toList();
+        assertThat(dates.subList(1, dates.size())).as("client request, upstream request, upstream response, client response")
+                .containsExactly("2026-10-01T12:00:00.000120Z", "2026-10-01T12:00:00.001120Z",
+                        "2026-10-01T12:00:00.003120Z", "2026-10-01T12:00:00.003120Z");
+        assertThat(Files.readAllLines(only(".cdxj")).getFirst().split(" ")[1]).isEqualTo("20261001120000");
     }
 
     private WarcFileWriter writer(final boolean cdxjIndex) throws IOException

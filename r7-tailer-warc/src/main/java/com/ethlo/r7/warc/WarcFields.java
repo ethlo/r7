@@ -27,6 +27,20 @@ final class WarcFields
         return Instant.now().toString();
     }
 
+    /**
+     * {@code WARC-Date} for a record: when the gateway began capturing its message, from the
+     * journal's own timestamps. WARC 1.1 defines the field as the moment data capture began,
+     * and the tailer may write a record long after that (a backlog, a restart), so the time it
+     * writes is the wrong one: it would put the record at a different time than the JSON line
+     * and move it in a CDXJ lookup by time.
+     *
+     * @param epochNanos a journal timestamp, or 0 when the journal has none for this message
+     */
+    static String captureDate(final long epochNanos)
+    {
+        return epochNanos > 0 ? Instant.ofEpochSecond(0, epochNanos).toString() : now();
+    }
+
     static String newRecordId()
     {
         return "urn:uuid:" + java.util.UUID.randomUUID();
@@ -44,11 +58,11 @@ final class WarcFields
      * @param msgType         {@code "request"} or {@code "response"}, per {@code application/http;msgtype=}
      * @param concurrentToIds every other record id belonging to this exchange's four-record group
      */
-    static List<Map.Entry<String, String>> stored(final String msgType, final String targetUri,
+    static List<Map.Entry<String, String>> stored(final String msgType, final String warcDate, final String targetUri,
                                                    final List<String> concurrentToIds, final String requestId,
                                                    final String payloadDigest)
     {
-        final List<Map.Entry<String, String>> fields = header(msgType, targetUri, concurrentToIds, requestId);
+        final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
         if (payloadDigest != null)
         {
             fields.add(entry("WARC-Payload-Digest", payloadDigest));
@@ -75,11 +89,11 @@ final class WarcFields
      * output is on and writes bodies; otherwise nothing does), so the record states that there
      * was one, and which by its digest, without storing it.
      */
-    static List<Map.Entry<String, String>> notStoredElsewhere(final String msgType, final String targetUri,
+    static List<Map.Entry<String, String>> notStoredElsewhere(final String msgType, final String warcDate, final String targetUri,
                                                                final List<String> concurrentToIds, final String requestId,
                                                                final String payloadDigest)
     {
-        final List<Map.Entry<String, String>> fields = header(msgType, targetUri, concurrentToIds, requestId);
+        final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
         fields.add(entry("WARC-Truncated", "unspecified"));
         if (payloadDigest != null)
         {
@@ -98,10 +112,10 @@ final class WarcFields
      * ambiguity on a body-owning record (1/4), for a different reason (policy, not topology).
      * No digest is attached: nothing was captured to digest.
      */
-    static List<Map.Entry<String, String>> notCaptured(final String msgType, final String targetUri,
+    static List<Map.Entry<String, String>> notCaptured(final String msgType, final String warcDate, final String targetUri,
                                                         final List<String> concurrentToIds, final String requestId)
     {
-        final List<Map.Entry<String, String>> fields = header(msgType, targetUri, concurrentToIds, requestId);
+        final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
         fields.add(entry("WARC-Truncated", "unspecified"));
         return fields;
     }
@@ -114,10 +128,10 @@ final class WarcFields
      * {@code WARC-Truncated: unspecified} plus a custom flag make the corruption visible to a
      * reader instead of silently archiving damaged bytes as an authoritative record.
      */
-    static List<Map.Entry<String, String>> checksumMismatch(final String msgType, final String targetUri,
+    static List<Map.Entry<String, String>> checksumMismatch(final String msgType, final String warcDate, final String targetUri,
                                                              final List<String> concurrentToIds, final String requestId)
     {
-        final List<Map.Entry<String, String>> fields = header(msgType, targetUri, concurrentToIds, requestId);
+        final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
         fields.add(entry("WARC-Truncated", "unspecified"));
         fields.add(entry("WARC-R7-Checksum-Mismatch", "true"));
         return fields;
@@ -130,11 +144,11 @@ final class WarcFields
      * genuine cross-exchange duplicates (a repeated static asset, a cached response); the
      * within-exchange case uses {@link #notStoredElsewhere} instead - see its javadoc for why.
      */
-    static List<Map.Entry<String, String>> revisit(final String msgType, final String targetUri,
+    static List<Map.Entry<String, String>> revisit(final String msgType, final String warcDate, final String targetUri,
                                                      final List<String> concurrentToIds, final String requestId,
                                                      final String payloadDigest, final PayloadDedupIndex.RevisitTarget refersTo)
     {
-        final List<Map.Entry<String, String>> fields = stored(msgType, targetUri, concurrentToIds, requestId, payloadDigest);
+        final List<Map.Entry<String, String>> fields = stored(msgType, warcDate, targetUri, concurrentToIds, requestId, payloadDigest);
         fields.add(entry("WARC-Profile", "http://netpreserve.org/warc/1.1/revisit/identical-payload-digest"));
         fields.add(entry("WARC-Truncated", "length"));
         fields.add(entry("WARC-Refers-To", "<" + refersTo.recordId() + ">"));
@@ -143,11 +157,11 @@ final class WarcFields
         return fields;
     }
 
-    private static List<Map.Entry<String, String>> header(final String msgType, final String targetUri,
+    private static List<Map.Entry<String, String>> header(final String msgType, final String warcDate, final String targetUri,
                                                             final List<String> concurrentToIds, final String requestId)
     {
         final List<Map.Entry<String, String>> fields = new ArrayList<>();
-        fields.add(entry("WARC-Date", now()));
+        fields.add(entry("WARC-Date", warcDate));
         fields.add(entry("WARC-Target-URI", targetUri));
         fields.add(entry("Content-Type", "application/http; msgtype=" + msgType));
         for (final String id : concurrentToIds)
