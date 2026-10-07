@@ -112,6 +112,22 @@ public interface ProxiedExchange
     }
 
     /**
+     * Called once the upstream's final response head has been read, before any of it reaches the
+     * client. For the journal's upstream timing.
+     */
+    default void onUpstreamResponseHead()
+    {
+    }
+
+    /**
+     * Called once the upstream's response has been read to its end, before the client's response
+     * is closed. Not called when the relay fails, nor for a 101, whose connection becomes a tunnel.
+     */
+    default void onUpstreamResponseEnd()
+    {
+    }
+
+    /**
      * Called with each block of response body, before it is written to the client.
      */
     default void onResponseBody(final byte[] buffer, final int offset, final int length)

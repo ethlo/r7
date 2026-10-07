@@ -4,9 +4,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -15,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
@@ -26,16 +31,26 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.core.json.JsonWriteFeature;
-import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
-public class JsonLdWriter implements ExchangeCompletionListener
+/**
+ * Writes each exchange as one JSON object on one line (JSON Lines). The fields are specified in
+ * {@code docs/journaling.md}, "The JSON line"; {@code JsonLineSpecTest} holds this writer to it.
+ */
+public class JsonLinesWriter implements ExchangeCompletionListener
 {
-    private static final Logger logger = LoggerFactory.getLogger(JsonLdWriter.class);
+    private static final Logger logger = LoggerFactory.getLogger(JsonLinesWriter.class);
     private static final byte[] NEWLINE = "\n".getBytes(StandardCharsets.UTF_8);
 
+    /**
+     * The gateway's attribute names for the route and the upstream targets tried (set in
+     * {@code GatewayPipeline}). They are written as fields of their own, {@code route_id} and
+     * {@code upstream_request.targets}, and left out of {@code attributes}.
+     */
+    static final String ROUTE_ID_ATTRIBUTE = "gateway.route.id";
+    static final String UPSTREAM_TARGET_ATTRIBUTE = "gateway.target";
+
     private final OutputStream out;
-    private final boolean hideEmptyFields;
     private final boolean bodies;
 
     /**
@@ -58,21 +73,9 @@ public class JsonLdWriter implements ExchangeCompletionListener
     private final AtomicLong orphanedEndCount = new AtomicLong();
     private final AtomicLong orphanedBodyCount = new AtomicLong();
 
-    public JsonLdWriter(OutputStream out, boolean prettyPrint)
+    public JsonLinesWriter(final OutputStream out)
     {
-        this(out, prettyPrint, true);
-    }
-
-    /**
-     * @param hideEmptyFields omit fields whose value is {@code null} or an empty map/collection
-     *                        (unrecorded checksums, absent bodies, headers that were not
-     *                        journaled, ...) instead of writing them out explicitly. Cuts line
-     *                        size substantially on high-traffic routes where most of these
-     *                        fields are empty on every request.
-     */
-    public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields)
-    {
-        this(out, prettyPrint, hideEmptyFields, true);
+        this(out, true);
     }
 
     /**
@@ -81,17 +84,14 @@ public class JsonLdWriter implements ExchangeCompletionListener
      *               still show that there was one. With this and the WARC output's bodies both
      *               off, no body is stored anywhere.
      */
-    public JsonLdWriter(OutputStream out, boolean prettyPrint, boolean hideEmptyFields, boolean bodies)
+    public JsonLinesWriter(final OutputStream out, final boolean bodies)
     {
         this.out = out;
-        this.hideEmptyFields = hideEmptyFields;
         this.bodies = bodies;
         final JsonMapper mapper = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, false) // Ensure numbers stay as numbers
-                .configure(SerializationFeature.WRITE_SINGLE_ELEM_ARRAYS_UNWRAPPED, true)
                 .changeDefaultPropertyInclusion(inclusion -> inclusion.withValueInclusion(JsonInclude.Include.ALWAYS))
-                .configure(SerializationFeature.INDENT_OUTPUT, prettyPrint)
                 .build();
 
         // Bound to the scratch buffer for the writer's whole lifetime - see the field
@@ -99,10 +99,15 @@ public class JsonLdWriter implements ExchangeCompletionListener
         this.generator = mapper.createGenerator(scratch);
     }
 
-    public void writePlainDouble(final JsonGenerator gen, final String fieldName, final double value) throws IOException
+    /**
+     * Seconds, as a JSON number with six decimals (microseconds). Formatted without the JVM's
+     * locale: {@code String.format} writes a decimal comma under a locale such as {@code nb_NO},
+     * which is not JSON.
+     */
+    private void writeDuration(final String name, final long nanos)
     {
-        gen.writeName(fieldName);
-        gen.writeRawValue(String.format("%.6f", value));
+        generator.writeName(name);
+        generator.writeRawValue(BigDecimal.valueOf(nanos, 9).setScale(6, RoundingMode.HALF_UP).toPlainString());
     }
 
     @Override
@@ -149,7 +154,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
         catch (IOException e)
         {
-            throw new RuntimeException("Failed to write debug JSON", e);
+            throw new RuntimeException("Failed to write JSON line", e);
         }
     }
 
@@ -174,7 +179,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
             // that calls this: a refusal is retried whole (FORMAT.md §6), and counting on
             // every attempt would report more incomplete records than were ever actually
             // written.
-            throw new RuntimeException("Failed to write debug JSON", e);
+            throw new RuntimeException("Failed to write JSON line", e);
         }
 
         final long total = incompleteEndCount.incrementAndGet();
@@ -316,25 +321,29 @@ public class JsonLdWriter implements ExchangeCompletionListener
      * {
      *   "request_id": "...",
      *   "incomplete": "TIMED_OUT",            only when this is not a complete record
+     *   "route_id": "...",
      *   "start": "...", "end": "...", "duration": 0.012345,
      *   "remote_address": "...", "remote_address_source": "SOCKET",
      *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body, checksum},
-     *   "upstream_request":  {level, method, path, query, protocol, headers, start},
-     *   "upstream_response": {level, protocol, status, reason, headers, first_byte, end, duration},
+     *   "upstream_request":  {level, method, path, query, protocol, targets, headers},
+     *   "upstream_response": {level, protocol, status, reason, headers, start, first_byte, end, duration},
      *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body, checksum},
      *   "attributes": {...},
      *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies when it stores them
      * }
      * </pre>
-     * Nothing is written that another field already says: whether the request was proxied is
-     * whether the upstream objects are there, an error is a status, a total is a sum, and the
-     * content type is a header. The upstream objects are present only for a proxied exchange.
+     * The exchange's timing is at the top level, the upstream round trip's in
+     * {@code upstream_response}; an upstream time the gateway did not record (-1: no response
+     * head, a failed relay, a tunnel's end) is left out. Nothing is written that another field already says: whether the
+     * request was proxied is whether the upstream objects are there, an error is a status, and
+     * the content type is a header; {@code duration} is kept beside {@code start} and {@code end}
+     * because it is what queries use. The upstream objects are present only for a proxied exchange.
      * {@code observed_checksum} appears beside {@code checksum} only when the body read back
      * does not match what the gateway recorded.
      * <p>
      * Without an end event (an abandoned exchange) timing, status, sizes and checksums are
-     * unknown rather than zero (README.md §11.4), and are written as {@code null} or, with
-     * {@link #hideEmptyFields}, left out.
+     * unknown rather than zero (README.md §11.4), and are left out. A field with no value is
+     * always left out rather than written as {@code null}.
      *
      * @param reason null for a complete record, otherwise why it is not one
      * @param warc        where a WARC file holds the exchange, written as {@code "warc"}; null for none
@@ -352,18 +361,14 @@ public class JsonLdWriter implements ExchangeCompletionListener
         {
             generator.writeStringProperty("incomplete", reason.name());
         }
+        final GatewayAttributes attributes = exchange.getAttributes();
+        writeString("route_id", attributes != null ? attributes.getFirst(ROUTE_ID_ATTRIBUTE) : null);
 
         if (hasEndEvent)
         {
             generator.writeStringProperty("start", timestamp(exchange.getClientStartTs()));
             generator.writeStringProperty("end", timestamp(exchange.getClientEndTs()));
-            writePlainDouble(generator, "duration", exchange.getDurationNanos() / 1_000_000_000D);
-        }
-        else
-        {
-            writeNull("start");
-            writeNull("end");
-            writeNull("duration");
+            writeDuration("duration", exchange.getDurationNanos());
         }
         writeString("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
         writeString("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
@@ -394,11 +399,8 @@ public class JsonLdWriter implements ExchangeCompletionListener
             generator.writeStartObject();
             writeLevel(exchange.getUpstreamRequestLevel());
             writeRequestLine(exchange.getUpstreamRequestStartLine());
+            writeTargets(attributes);
             writeMap("headers", GatewayUtils.toMap(exchange.getUpstreamRequestHeaders()));
-            if (hasEndEvent)
-            {
-                generator.writeStringProperty("start", timestamp(exchange.getProxyStartTs()));
-            }
             generator.writeEndObject();
 
             generator.writeName("upstream_response");
@@ -408,9 +410,13 @@ public class JsonLdWriter implements ExchangeCompletionListener
             writeMap("headers", GatewayUtils.toMap(exchange.getUpstreamResponseHeaders()));
             if (hasEndEvent)
             {
-                generator.writeStringProperty("first_byte", timestamp(exchange.getProxyFirstByteReceivedTs()));
-                generator.writeStringProperty("end", timestamp(exchange.getProxyEndTs()));
-                writePlainDouble(generator, "duration", exchange.getProxyDurationNanos() / 1_000_000_000D);
+                writeTimestamp("start", exchange.getProxyStartTs());
+                writeTimestamp("first_byte", exchange.getProxyFirstByteReceivedTs());
+                writeTimestamp("end", exchange.getProxyEndTs());
+                if (exchange.getProxyStartTs() >= 0 && exchange.getProxyEndTs() >= 0)
+                {
+                    writeDuration("duration", exchange.getProxyDurationNanos());
+                }
             }
             generator.writeEndObject();
         }
@@ -430,7 +436,10 @@ public class JsonLdWriter implements ExchangeCompletionListener
         writeChecksums(exchange.getJournaledResponseChecksum(), exchange.getObservedResponseChecksum());
         generator.writeEndObject();
 
-        writeMap("attributes", GatewayUtils.toMap(exchange.getAttributes()));
+        final Map<String, List<String>> otherAttributes = new HashMap<>(GatewayUtils.toMap(attributes));
+        otherAttributes.remove(ROUTE_ID_ATTRIBUTE);
+        otherAttributes.remove(UPSTREAM_TARGET_ATTRIBUTE);
+        writeMap("attributes", otherAttributes);
 
         if (warc != null)
         {
@@ -443,6 +452,17 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
 
         generator.writeEndObject();
+    }
+
+    /**
+     * A journal timestamp, or nothing for -1, the journal's "not recorded".
+     */
+    private void writeTimestamp(final String name, final long clockTs)
+    {
+        if (clockTs >= 0)
+        {
+            generator.writeStringProperty(name, timestamp(clockTs));
+        }
     }
 
     private static String timestamp(final long clockTs)
@@ -462,31 +482,48 @@ public class JsonLdWriter implements ExchangeCompletionListener
             generator.writeNumberProperty("header_bytes", headerBytes);
             generator.writeNumberProperty("body_bytes", bodyBytes);
         }
-        else
+    }
+
+    /**
+     * The upstream targets tried, in order; the last one is the one whose response was
+     * recorded.
+     */
+    private void writeTargets(final GatewayAttributes attributes)
+    {
+        if (attributes == null || !attributes.contains(UPSTREAM_TARGET_ATTRIBUTE))
         {
-            writeNull("header_bytes");
-            writeNull("body_bytes");
+            return;
         }
+        generator.writeName("targets");
+        generator.writeStartArray();
+        for (final String target : attributes.getAll(UPSTREAM_TARGET_ATTRIBUTE))
+        {
+            generator.writeString(target);
+        }
+        generator.writeEndArray();
     }
 
     /**
      * The checksum the gateway recorded, and the one computed from the body read back only
-     * when they differ: a match is the normal case and says nothing new.
+     * when they differ: a match is the normal case and says nothing new. Written labelled with
+     * the algorithm, {@code crc32c:} and eight hex digits, the {@code algorithm:value} shape the
+     * line's fingerprints have.
      */
     private void writeChecksums(final BodyChecksum journaled, final BodyChecksum observed)
     {
         if (journaled.isRecorded())
         {
-            generator.writeNumberProperty("checksum", journaled.value());
+            generator.writeStringProperty("checksum", crc32c(journaled));
             if (observed.isRecorded() && observed.value() != journaled.value())
             {
-                generator.writeNumberProperty("observed_checksum", observed.value());
+                generator.writeStringProperty("observed_checksum", crc32c(observed));
             }
         }
-        else
-        {
-            writeNull("checksum");
-        }
+    }
+
+    private static String crc32c(final BodyChecksum checksum)
+    {
+        return "crc32c:" + HexFormat.of().toHexDigits((int) checksum.value());
     }
 
     /**
@@ -528,8 +565,8 @@ public class JsonLdWriter implements ExchangeCompletionListener
     }
 
     /**
-     * A start line whose code does not parse is malformed, not merely absent, so it is
-     * written as null rather than smuggled through as a string.
+     * A start line whose code does not parse is malformed, so the status is left out rather
+     * than smuggled through as a string.
      */
     private void writeStatusCode(final String code)
     {
@@ -543,9 +580,8 @@ public class JsonLdWriter implements ExchangeCompletionListener
         }
         catch (final NumberFormatException e)
         {
-            // fall through
+            // left out, as malformed
         }
-        writeNull("status");
     }
 
     private void writeRequestLine(final String line)
@@ -553,10 +589,6 @@ public class JsonLdWriter implements ExchangeCompletionListener
         // "{METHOD} {URI}{?QUERY} {PROTOCOL}", e.g. "GET /api/v1/foo?tenant=123 HTTP/1.1"
         if (line == null)
         {
-            writeNull("method");
-            writeNull("path");
-            writeNull("query");
-            writeNull("protocol");
             return;
         }
 
@@ -565,10 +597,7 @@ public class JsonLdWriter implements ExchangeCompletionListener
         if (firstSpace < 0 || firstSpace == lastSpace)
         {
             // Malformed: keep what there is rather than drop it.
-            writeNull("method");
             generator.writeStringProperty("path", line);
-            writeNull("query");
-            writeNull("protocol");
             return;
         }
 
@@ -587,48 +616,26 @@ public class JsonLdWriter implements ExchangeCompletionListener
             generator.writeName("body");
             generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
         }
-        else
-        {
-            writeNull("body");
-        }
     }
 
     /**
-     * Writes {@code name: null}, unless {@link #hideEmptyFields} is set, in which case the
-     * property is omitted entirely rather than written as an explicit {@code null}.
+     * Writes {@code name: value}, or nothing for a {@code null} value.
      */
-    private void writeNull(String name)
-    {
-        if (!hideEmptyFields)
-        {
-            generator.writeNullProperty(name);
-        }
-    }
-
-    /**
-     * Writes {@code name: value} for a non-null value, {@code name: null} for a null one, or
-     * (when {@link #hideEmptyFields} is set) omits the property entirely instead of writing
-     * the {@code null}.
-     */
-    private void writeString(String name, String value)
+    private void writeString(final String name, final String value)
     {
         if (value != null)
         {
             generator.writeStringProperty(name, value);
         }
-        else
-        {
-            writeNull(name);
-        }
     }
 
     /**
-     * Writes {@code name} as a JSON object, or (when {@link #hideEmptyFields} is set) omits the
-     * property entirely when the map is null/empty, rather than writing an empty {@code {}}.
+     * Writes {@code name} as a JSON object whose values are always arrays, or nothing for an
+     * empty map: a header sent once and one sent twice have the same type.
      */
-    private void writeMap(String name, Map<?, ?> value)
+    private void writeMap(final String name, final Map<String, List<String>> value)
     {
-        if (hideEmptyFields && (value == null || value.isEmpty()))
+        if (value == null || value.isEmpty())
         {
             return;
         }

@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 public class SequenceByteBufferInputStream extends InputStream
 {
@@ -43,6 +44,11 @@ public class SequenceByteBufferInputStream extends InputStream
     @Override
     public int read(byte[] b, int off, int len)
     {
+        Objects.checkFromIndexSize(off, len, b.length);
+        if (len == 0)
+        {
+            return 0;
+        }
         while (current != null && !current.hasRemaining())
         {
             advance();

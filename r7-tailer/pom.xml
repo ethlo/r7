@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>com.ethlo.r7</groupId>
-            <artifactId>r7-tailer-jsonld</artifactId>
+            <artifactId>r7-tailer-json</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
         <dependency>

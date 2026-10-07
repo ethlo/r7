@@ -1,10 +1,14 @@
 package com.ethlo.r7.helidon;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static io.restassured.RestAssured.given;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -41,11 +45,12 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
     private static final Path JOURNALS = Paths.get("journals");
 
     @BeforeAll
-    public static void setupTopology()
+    public static void setupTopology() throws IOException
     {
         // The journal is read from the host filesystem, which only the in-process gateway
         // writes to; the Docker modes journal inside their containers.
         Assumptions.assumeTrue(System.getProperty("r7.test.mode", "in-process").equals("in-process"), "reads the gateway's journal from the host filesystem");
+        System.setProperty("WS_UPSTREAM_PORT", String.valueOf(WebSocketUpstream.start()));
         startGateway("configs/unrouted/routes.yaml");
     }
 
@@ -76,6 +81,55 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         final String startLine = awaitEntry(marker).getClientRequestStartLine();
         Assertions.assertEquals("GET " + marker + "?api_key=" + RedactUtil.fingerprint("s3cret") + "&api_key=" + RedactUtil.fingerprint("other")
                 + "&" + RedactUtil.fingerprint("flag") + " HTTP/1.1", startLine);
+    }
+
+    /**
+     * The upstream's own timings are recorded where the relay sees them: when its response head
+     * was read and when its response was read to the end, between the start of the upstream
+     * request and the end of the exchange. They used to be -1 and the exchange's end.
+     */
+    @Test
+    public void aProxiedExchangeRecordsTheUpstreamTimings() throws Exception
+    {
+        final String marker = "/timed/" + UUID.randomUUID();
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo(marker)).willReturn(aResponse().withStatus(200).withBody("timed").withFixedDelay(50)));
+        given().when().get(marker).then().statusCode(200);
+
+        final JournalExchange entry = awaitEntry(marker);
+        final long start = entry.getProxyStartTs();
+        final long firstByte = entry.getProxyFirstByteReceivedTs();
+        final long end = entry.getProxyEndTs();
+        Assertions.assertTrue(start > 0, "no upstream start");
+        Assertions.assertTrue(firstByte - start >= Duration.ofMillis(50).toNanos(), "the head arrived after the upstream's 50 ms delay: " + (firstByte - start));
+        Assertions.assertTrue(end >= firstByte, "the response ends after its head");
+        Assertions.assertTrue(end <= entry.getClientEndTs(), "the upstream's response ends before the exchange does");
+    }
+
+    /**
+     * An upgraded exchange is journaled when its connection closes, not on completion, and that
+     * path used to write its end event without the route and target: its JSON line had no
+     * route_id and no upstream targets. Its upstream response has a head but no end of its own.
+     */
+    @Test
+    public void anUpgradedExchangeIsJournaledWithItsRouteAndTarget() throws Exception
+    {
+        final String marker = "/ws/" + UUID.randomUUID();
+        try (final Socket socket = new Socket("localhost", RestAssured.port))
+        {
+            socket.setSoTimeout(5_000);
+            socket.getOutputStream().write(("GET " + marker + " HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n") // gitleaks:allow (RFC 6455 sample nonce)
+                    .getBytes(StandardCharsets.ISO_8859_1));
+            socket.getOutputStream().flush();
+            Assertions.assertTrue(readLine(socket.getInputStream()).startsWith("HTTP/1.1 101"));
+        }
+
+        final JournalExchange entry = awaitEntry(marker);
+        Assertions.assertEquals(101, entry.getStatus());
+        Assertions.assertEquals("ws", entry.getAttributes().getFirst("gateway.route.id"));
+        Assertions.assertTrue(entry.getAttributes().getFirst("gateway.target").startsWith("http://localhost:"));
+        Assertions.assertTrue(entry.getProxyFirstByteReceivedTs() >= entry.getProxyStartTs(), "the 101 head was read");
+        Assertions.assertEquals(-1, entry.getProxyEndTs(), "a tunnel's upstream response has no end of its own");
     }
 
     @Test
@@ -165,6 +219,71 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
             socket.getOutputStream().write(request.getBytes(StandardCharsets.ISO_8859_1));
             socket.getOutputStream().flush();
             return new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
+        }
+    }
+
+    private static String readLine(final InputStream in) throws IOException
+    {
+        final StringBuilder line = new StringBuilder();
+        int b;
+        while ((b = in.read()) != -1 && b != '\r')
+        {
+            line.append((char) b);
+        }
+        return line.toString();
+    }
+
+    /**
+     * An upstream that answers every request with {@code 101 Switching Protocols} and then
+     * holds the connection until the gateway closes it.
+     */
+    private static final class WebSocketUpstream
+    {
+        static int start() throws IOException
+        {
+            final ServerSocket server = new ServerSocket(0);
+            Thread.ofVirtual().start(() ->
+            {
+                while (!server.isClosed())
+                {
+                    try
+                    {
+                        final Socket socket = server.accept();
+                        Thread.ofVirtual().start(() -> answer(socket));
+                    }
+                    catch (final IOException e)
+                    {
+                        return;
+                    }
+                }
+            });
+            return server.getLocalPort();
+        }
+
+        private static void answer(final Socket socket)
+        {
+            try (socket)
+            {
+                final InputStream in = socket.getInputStream();
+                int matched = 0;
+                final byte[] end = "\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1);
+                int b;
+                while (matched < end.length && (b = in.read()) != -1)
+                {
+                    matched = b == end[matched] ? matched + 1 : (b == end[0] ? 1 : 0);
+                }
+                socket.getOutputStream().write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                        + "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n").getBytes(StandardCharsets.ISO_8859_1)); // gitleaks:allow (RFC 6455 sample)
+                socket.getOutputStream().flush();
+                while (in.read() != -1)
+                {
+                    // hold the tunnel open until the gateway closes it
+                }
+            }
+            catch (final IOException e)
+            {
+                // the gateway closed the tunnel
+            }
         }
     }
 

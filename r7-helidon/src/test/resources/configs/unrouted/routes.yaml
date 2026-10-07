@@ -8,6 +8,35 @@ unrouted:
       level: METADATA
 
 routes:
+  # Journaled, for the upstream timings.
+  - id: timed
+    match:
+      - PathPrefix:
+          prefix: /timed
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+    journal:
+      request:
+        level: METADATA
+      response:
+        level: METADATA
+
+  # Journaled, behind an upstream that answers every request with 101 (WebSocketUpstream in
+  # UnroutedJournalTest).
+  - id: ws
+    match:
+      - PathPrefix:
+          prefix: /ws
+    upstream:
+      targets:
+        - url: http://localhost:${WS_UPSTREAM_PORT}
+    journal:
+      request:
+        level: METADATA
+      response:
+        level: METADATA
+
   - id: known
     match:
       - PathPrefix:

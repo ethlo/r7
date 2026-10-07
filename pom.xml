@@ -21,7 +21,7 @@
         <module>r7-tailer-api</module>
         <module>r7-tailer-files</module>
         <module>r7-utils</module>
-        <module>r7-tailer-jsonld</module>
+        <module>r7-tailer-json</module>
         <module>r7-tailer-warc</module>
         <module>r7-tailer</module>
         <module>r7-reaper</module>

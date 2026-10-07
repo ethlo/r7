@@ -21,8 +21,6 @@ public record JsonOutputConfig(
         String filePrefix,
         DataSize maxFileSize,
         Duration maxFileAge,
-        Boolean prettyPrint,
-        Boolean hideEmptyFields,
         Boolean bodies
 ) implements RollingFilesConfig, ValidatableConfig
 {
@@ -45,7 +43,7 @@ public record JsonOutputConfig(
 
     public static JsonOutputConfig standard()
     {
-        return new JsonOutputConfig(null, null, null, null, null, null, null, null, null);
+        return new JsonOutputConfig(null, null, null, null, null, null, null);
     }
 
     public Boolean enabled()
@@ -82,21 +80,6 @@ public record JsonOutputConfig(
         return Optional.ofNullable(this.maxFileAge).orElse(DEFAULT_MAX_FILE_AGE);
     }
 
-    public Boolean prettyPrint()
-    {
-        return Optional.ofNullable(this.prettyPrint).orElse(false);
-    }
-
-    /**
-     * Omitting {@code null}/empty fields (checksums that were never recorded, absent bodies,
-     * headers not journaled, ...) cuts the typical line size dramatically for high-traffic
-     * routes.
-     */
-    public Boolean hideEmptyFields()
-    {
-        return Optional.ofNullable(this.hideEmptyFields).orElse(true);
-    }
-
     /**
      * Whether a line carries the captured bodies when no WARC file holds them. Off for a log
      * that should never hold payloads, such as a rerun over journals that captured them.
@@ -109,12 +92,6 @@ public record JsonOutputConfig(
     @Override
     public void validate(final ValidationResult result)
     {
-        if (this.output() == Output.FILE && this.prettyPrint())
-        {
-            // A pretty-printed record spans lines, and after a crash a file is cut back to its
-            // last complete line: that could keep half a record.
-            result.addError("pretty_print", "cannot be combined with output: file");
-        }
         if (this.output() == Output.STDOUT
                 && (this.outputDir != null || this.filePrefix != null || this.maxFileSize != null || this.maxFileAge != null))
         {

@@ -412,7 +412,7 @@ public final class GatewayPipeline
 
         registerResponseListeners(ex, route);
 
-        ex.proxyStartTs = ClockSource.now();
+        ex.proxyStartNanos = System.nanoTime();
 
         // Lifecycle tracking for a genuine upgrade is attached from the response-commit
         // listener, once the upstream's status is known to actually be 101.
@@ -620,11 +620,13 @@ public final class GatewayPipeline
         if (journalConfig.isAtLeastMetadata(ex.clientResponse().status()))
         {
             final long requestEndTs = ClockSource.now();
-            final long requestStartTs = ex.requestStartEpochNanos();
-            final long proxyStartTs = ex.proxyStartTs;
-            // Nothing records when the upstream finished, so the proxy end is the exchange end.
-            final long proxyEndTs = ClockSource.now();
-            final long proxyFirstBytesTs = -1;
+            final long nanoNow = System.nanoTime();
+            // Every time but the end is a System.nanoTime() reading, converted against this one
+            // moment: a wall-clock step during the exchange cannot reorder them or bend a duration.
+            final long requestStartTs = ServerExchange.toEpochNanos(ex.requestStartNanos(), requestEndTs, nanoNow);
+            final long proxyStartTs = ServerExchange.toEpochNanos(ex.proxyStartNanos, requestEndTs, nanoNow);
+            final long proxyFirstBytesTs = ServerExchange.toEpochNanos(ex.upstreamHeadNanos, requestEndTs, nanoNow);
+            final long proxyEndTs = ServerExchange.toEpochNanos(ex.upstreamEndNanos, requestEndTs, nanoNow);
 
             // Body checksums are supplied by StatefulJournal, which is the only layer
             // that knows which fragments actually reached the journal — it gates them on
@@ -712,11 +714,16 @@ public final class GatewayPipeline
         final String requestId = ex.requestId();
         ex.onConnectionClose(() -> {
             final long requestEndTs = ClockSource.now();
-            final long requestStartTs = ex.requestStartEpochNanos();
+            final long nanoNow = System.nanoTime();
+            final long requestStartTs = ServerExchange.toEpochNanos(ex.requestStartNanos(), requestEndTs, nanoNow);
+            final long proxyStartTs = ServerExchange.toEpochNanos(ex.proxyStartNanos, requestEndTs, nanoNow);
+            final long proxyFirstBytesTs = ServerExchange.toEpochNanos(ex.upstreamHeadNanos, requestEndTs, nanoNow);
+            // The upstream connection became a tunnel; its response has no end of its own.
+            final long proxyEndTs = -1;
 
-            final long proxyStartTs = ex.proxyStartTs;
-            // Nothing records when the upstream finished, so the proxy end is the exchange end.
-            final long proxyEndTs = requestEndTs;
+            // completeJournal returned before tagging an upgraded exchange; its end event is
+            // written here, and needs the route and target like any other.
+            tagExchangeAttributes(ex);
 
             final TrafficMetrics trafficMetrics = ex.trafficMetrics();
 
@@ -731,7 +738,7 @@ public final class GatewayPipeline
                     trafficMetrics.responseHeaderBytes(),
                     trafficMetrics.responseBodyBytes(),
                     proxyStartTs,
-                    -1,
+                    proxyFirstBytesTs,
                     proxyEndTs,
                     // Websocket exchanges return before the body taps are installed,
                     // so no body is ever journaled for them.
