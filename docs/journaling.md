@@ -227,8 +227,9 @@ At least one output must be enabled.
 Each exchange becomes up to four linked records (client request, upstream request, upstream
 response, client response); a payload already archived by an earlier exchange is written as a
 WARC `revisit` record; and a checksum mismatch on read is marked rather than silently archived.
-See [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) for the record
-shapes and why.
+[The WARC profile](warc.md) specifies the records and the `WARC-R7-*` fields;
+[`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) explains why they are
+shaped this way.
 
 **CDXJ index.** With `cdxj_index: true`, every sealed `r7-….warc.zst` gets an `r7-….cdxj` beside it: one line per exchange, sorted by SURT key and timestamp, holding the URL, status, mime type, payload digest and the file name, offset and length of the client response record. This is the index format pywb and OutbackCDX read, so a lookup by URL and time goes straight to the record without scanning the archive. The index is built from the finished WARC file and renamed into place before the WARC file is, so a sealed `.warc.zst` always has its index; one sealed after a crash is indexed on the next start. Requests other than `GET` carry `__wb_method=<method>` in their key, as pywb does; request bodies are never copied into the index.
 

@@ -1,8 +1,9 @@
 # The WARC sidecar: why, and what it has to carry over
 
 **Status:** built as `r7-tailer-warc`, the WARC output of `r7-tailer` (`Dockerfile.tailer.jvm`,
-see [`tailers.md`](tailers.md)); the operator docs are in `docs/journaling.md`. Two parts are not built. The WARC profile (`WARC.md`, under "Scope") does
-not exist yet. "The index layer" and "MCP" are ideas, and by this document's own "Scope"
+see [`tailers.md`](tailers.md)); the operator docs are in `docs/journaling.md`. The WARC profile (`WARC.md`, under "Scope") is
+[`docs/warc.md`](../docs/warc.md); where this note and the profile differ, the profile is the contract.
+"The index layer" and "MCP" are ideas, and by this document's own "Scope"
 section they are not r7's to build: see `plans/README.md`. The one exception is the opt-in
 per-file CDXJ index (`cdxj_index`), described at the end of "The index layer".
 
@@ -78,7 +79,7 @@ lost page) collapses to two.
 
 ### Three things must come along or properties are lost
 
-1. **A sequence number in a custom field** (`WARC-X-R7-Sequence` or similar). Without it a
+1. **A sequence number in a custom field** (built as `WARC-R7-Sequence`). Without it a
    file that loses a page in the middle reads back as a shorter, wholly self-consistent file —
    the exact failure entry sequences exist to catch, and the one nothing else detects.
 2. **An open/sealed extension pair**: `.warc.open` → `.warc`, same protocol as `.flux` →
@@ -90,7 +91,7 @@ lost page) collapses to two.
 
 r7 adds one more field for the same reason. The records of an exchange are appended as one
 unit, and the last record of each unit (and every file's `warcinfo` record) carries
-`WARC-X-R7-Group-End: true`. A file left open by a crash is cut back to the last record carrying
+`WARC-R7-Group-End: true`. A file left open by a crash is cut back to the last record carrying
 it, so a group torn partway is dropped whole and its exchange, never checkpointed, is written
 again; cutting back to the last complete record would keep half the group in front of the
 rewritten one. Which records a group holds depends on journal levels, so the boundary has to be
@@ -207,7 +208,7 @@ Spec details that bite hand-rolled writers:
   every consumer's integrity check wrong.
 - `WARC-Record-ID` must be a URI, conventionally `urn:uuid:`.
 - A `warcinfo` record at the head of each file is the conventional home for the profile
-  version, so a consumer can tell which `WARC-X-R7-*` fields to expect.
+  version, so a consumer can tell which `WARC-R7-*` fields to expect (built as `r7-profile`).
 
 Verify against jwarc's own docs that arbitrary header names can be set for the custom fields.
 
@@ -272,7 +273,7 @@ ClickHouse ingest is a commodity; the specific combination is probably ~100 line
 rather than something to install, which is exactly why it is not r7's problem.
 
 What *does* belong in the umbrella is the **WARC profile**: a `WARC.md` beside `FORMAT.md`
-specifying which `WARC-X-R7-*` headers exist, what the sequence field means, how request and
+specifying which `WARC-R7-*` headers exist, what the sequence field means, how request and
 response records are paired, the open/sealed extensions, and which fields are guaranteed
 present at which `JournalLevel`. If consumers are external, the file is the contract. Without
 that document every consumer invents its own mapping and the benefit of choosing a standard

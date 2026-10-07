@@ -202,10 +202,12 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
      *                          genuinely empty body and for a leg this record doesn't own; used
      *                          only to tell "no body" apart from "body not captured" when
      *                          {@code payloadDigest} is {@code null}
+     * @param warcDate          when capture of this leg's message began; see
+     *                          {@link WarcFields#captureDate}
      */
     private record Leg(String msgType, String startLine, GatewayHeaders headers, boolean bodyOwner,
                        List<ByteBuffer> body, String payloadDigest, long bodyBytesReported,
-                       boolean checksumMismatch, InetAddress clientAddress)
+                       boolean checksumMismatch, InetAddress clientAddress, String warcDate)
     {
     }
 
@@ -224,29 +226,37 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         final GatewayHeaders upstreamUriHeaders = upstreamStartLine != null ? exchange.getUpstreamRequestHeaders() : exchange.getUpstreamResponseHeaders();
         final String upstreamTargetUri = TargetUri.build(upstreamStartLine, upstreamUriHeaders, requestId);
 
+        // When capture of each message began. The upstream response starts with its first byte;
+        // the client response is sent from that moment, or straight away when nothing was proxied.
+        final String clientRequestDate = WarcFields.captureDate(exchange.getClientStartTs());
+        final String upstreamRequestDate = WarcFields.captureDate(firstSet(exchange.getProxyStartTs(), exchange.getClientStartTs()));
+        final String responseDate = WarcFields.captureDate(firstSet(exchange.getProxyFirstByteReceivedTs(), exchange.getProxyEndTs(), exchange.getClientStartTs()));
+
         // In the order they occurred: client request, upstream request, upstream response, client response.
         final List<Leg> legs = new ArrayList<>(4);
         final List<String> targetUris = new ArrayList<>(4);
         if (addIfJournaled(legs, "request", clientStartLine, exchange.getClientRequestHeaders(),
-                true, exchange.getRequestBodyFragments(), requestDigest, exchange.getRequestBodyBytes(), requestMismatch, exchange.remoteAddress()))
+                true, exchange.getRequestBodyFragments(), requestDigest, exchange.getRequestBodyBytes(), requestMismatch, exchange.remoteAddress(),
+                clientRequestDate))
         {
             targetUris.add(clientTargetUri);
         }
         if (exchange.wasProxied())
         {
             if (addIfJournaled(legs, "request", upstreamStartLine, exchange.getUpstreamRequestHeaders(),
-                    false, null, requestDigest, 0, requestMismatch, null))
+                    false, null, requestDigest, 0, requestMismatch, null, upstreamRequestDate))
             {
                 targetUris.add(upstreamTargetUri);
             }
             if (addIfJournaled(legs, "response", exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(),
-                    false, null, responseDigest, 0, responseMismatch, null))
+                    false, null, responseDigest, 0, responseMismatch, null, responseDate))
             {
                 targetUris.add(upstreamTargetUri);
             }
         }
         if (addIfJournaled(legs, "response", exchange.getClientResponseStartLine(), exchange.getClientResponseHeaders(),
-                true, exchange.getResponseBodyFragments(), responseDigest, exchange.getResponseBodyBytes(), responseMismatch, exchange.remoteAddress()))
+                true, exchange.getResponseBodyFragments(), responseDigest, exchange.getResponseBodyBytes(), responseMismatch, exchange.remoteAddress(),
+                responseDate))
         {
             targetUris.add(clientTargetUri);
         }
@@ -289,11 +299,12 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
 
     private static boolean addIfJournaled(final List<Leg> legs, final String msgType, final String startLine, final GatewayHeaders headers,
                                            final boolean bodyOwner, final List<ByteBuffer> body, final String payloadDigest,
-                                           final long bodyBytesReported, final boolean checksumMismatch, final InetAddress clientAddress)
+                                           final long bodyBytesReported, final boolean checksumMismatch, final InetAddress clientAddress,
+                                           final String warcDate)
     {
         if (startLine != null)
         {
-            legs.add(new Leg(msgType, startLine, headers, bodyOwner, body, payloadDigest, bodyBytesReported, checksumMismatch, clientAddress));
+            legs.add(new Leg(msgType, startLine, headers, bodyOwner, body, payloadDigest, bodyBytesReported, checksumMismatch, clientAddress, warcDate));
             return true;
         }
         return false;
@@ -310,7 +321,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         if (leg.checksumMismatch())
         {
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.checksumMismatch(leg.msgType(), targetUri, concurrentToIds, requestId);
+            final List<Map.Entry<String, String>> fields = WarcFields.checksumMismatch(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId);
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
@@ -320,7 +331,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // The upstream leg: byte-identical to, and already stored by, the client leg of the
             // same direction - see the class javadoc for why this is not a revisit record.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), targetUri, concurrentToIds, requestId, leg.payloadDigest());
+            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, leg.payloadDigest());
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
@@ -333,7 +344,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // the journal level for this route/direction is below FULL. Without WARC-Truncated
             // this would look like a message that genuinely had no body at all.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.notCaptured(leg.msgType(), targetUri, concurrentToIds, requestId);
+            final List<Map.Entry<String, String>> fields = WarcFields.notCaptured(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId);
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
@@ -343,7 +354,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // Bodies are left out by configuration: the record says there was one, and which,
             // without storing it. No dedup either way, since nothing is stored to point at.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), targetUri, concurrentToIds, requestId, payloadDigest);
+            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest);
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
@@ -355,7 +366,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         if (existing != null)
         {
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.revisit(leg.msgType(), targetUri, concurrentToIds, requestId, payloadDigest, existing);
+            final List<Map.Entry<String, String>> fields = WarcFields.revisit(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest, existing);
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, "revisit", fields, block);
         }
@@ -363,7 +374,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         final byte[] block = payloadDigest != null
                 ? HttpMessageBlock.withBody(leg.startLine(), leg.headers(), leg.body())
                 : HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-        final List<Map.Entry<String, String>> fields = WarcFields.stored(leg.msgType(), targetUri, concurrentToIds, requestId, payloadDigest);
+        final List<Map.Entry<String, String>> fields = WarcFields.stored(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest);
         addClientAddress(fields, leg.clientAddress());
 
         if (payloadDigest != null)
@@ -373,6 +384,21 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         }
 
         return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
+    }
+
+    /**
+     * The first timestamp the journal set; 0 when it set none of them.
+     */
+    private static long firstSet(final long... epochNanos)
+    {
+        for (final long ts : epochNanos)
+        {
+            if (ts > 0)
+            {
+                return ts;
+            }
+        }
+        return 0;
     }
 
     private static String fieldValue(final List<Map.Entry<String, String>> fields, final String key)
