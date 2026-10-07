@@ -49,8 +49,10 @@ happened:
 | 4 | `response` | r7 to the client | as the client asked | the response body |
 
 - A record is written for each message whose start line was journaled. A route with journal
-  level `NONE` in a direction has no records in it; an exchange with nothing journaled has none
-  at all.
+  level `NONE` for the response has no response records; an exchange with nothing journaled has
+  none at all. A request at `NONE` still gets records 1 and 2 when the response is journaled: the
+  journal then records the request at `METADATA`, its start line without headers, to anchor the
+  response.
 - Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
   itself (a rate limit, a redirect) has records 1 and 4.
 - Every record of an exchange names all the others in `WARC-Concurrent-To`, and carries the
@@ -84,7 +86,8 @@ record says plainly when it does not hold them:
 | The same body is already stored by an earlier exchange | `revisit` | The WARC 1.1 `identical-payload-digest` profile: `WARC-Refers-To`, `WARC-Refers-To-Target-URI`, `WARC-Refers-To-Date`, `WARC-Truncated: length` |
 | Records 1 and 4: no body | `request` / `response` | No digest, no `WARC-Truncated` |
 
-A record without `WARC-Truncated` holds its message whole. Records 2 and 3 never store a body,
+A record without `WARC-Truncated` holds its whole body. Its headers are what the journal level
+kept: none at `METADATA`, and fingerprints for redacted values. Records 2 and 3 never store a body,
 so they carry `WARC-Truncated` even when the message had none. To find a body held elsewhere in the
 same exchange, take the `WARC-Concurrent-To` record with the same `WARC-Payload-Digest`.
 
@@ -98,7 +101,7 @@ Standard fields with r7-specific values:
 
 | Field | Value |
 | --- | --- |
-| `WARC-Date` | When r7 began capturing that message, to the precision the journal recorded: the client request when it arrived, the forwarded request when r7 started sending it, both responses when the upstream's first byte arrived (or, for a response r7 produced itself, when the request arrived). Not when the tailer wrote the record, so it matches the exchange's JSON line |
+| `WARC-Date` | When r7 began capturing that message, to the precision the journal recorded: the client request when it arrived, the forwarded request when r7 started sending it, both responses when the upstream's response headers had arrived (or, for a response r7 produced itself, when the request arrived). Not when the tailer wrote the record, so it matches the exchange's JSON line |
 | `WARC-Target-URI` | `http://` + the request's `Host` header + the request target. r7 does not journal whether the client connection used TLS, so the scheme is always `http`. Without a `Host` header, `urn:r7:request:<request id>` |
 | `WARC-Payload-Digest` | `sha256:` and the base32 SHA-256 of the body |
 | `WARC-Record-ID` | `urn:uuid:` and a random UUID |
