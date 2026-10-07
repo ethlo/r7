@@ -12,6 +12,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# One run per ref: a newer merge cancels an older main run still building, so a slow run can
+# never push :main after a faster, newer one. Each version tag is its own ref and group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
