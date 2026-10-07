@@ -835,7 +835,7 @@ YAML file to start. No plugins to assemble, no scripting language to learn.</p>
 </span></code></pre></div>
 <p>Requests to <code>http://localhost:8888/api/...</code> now reach your service on port 3000, and every one of
 them is written with its headers to the journal, kept in the <code>r7-journals</code> volume. Open <code>http://localhost:18888</code> to see your routes,
-their upstream health and live response times.</p>
+their upstream health, live response times and any filter that needs attention, such as an open circuit breaker.</p>
 <p>That is the whole setup. When you need to tune ports, limits or journal storage, add a
 <code>server.yaml</code>; until then the defaults are chosen to be safe.</p>
 <p><img alt="The r7 dashboard" src="assets/overview.png" /></p>

@@ -1611,6 +1611,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Management Configuration (management)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metrics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -3756,7 +3784,154 @@
 <li><strong>Upstream target health</strong> for routes with a <code>health_check</code>, from the moment routes are loaded (see <a href="#health-check-health_check">Health Check</a>); a hot reload resets it.</li>
 <li><strong>Requests no route matched</strong>, which are answered <code>404</code> and are not part of any route's figures.</li>
 <li><strong><code>server.yaml</code> as in effect</strong>, with every value that differs from the built-in default marked.</li>
+<li><strong>Component status</strong>: what a route's filters and its upstream report about themselves, as <code>OK</code>, <code>WARN</code> or <code>ERROR</code>. A route with a component in <code>WARN</code> or <code>ERROR</code> says so in the route list, and the route's page shows each filter's status with its detail and values. <code>CircuitBreaker</code> is <code>ERROR</code> while open and <code>WARN</code> while half-open; <code>RateLimiter</code> is <code>WARN</code> once it tracks <code>max_buckets</code> clients, since it then evicts buckets early and the limit holds less tightly; a health-checked upstream is <code>WARN</code> while some of its targets are down and <code>ERROR</code> while all are. A custom filter can report its own (see <a href="../extensibility/#reporting-a-filters-status">Reporting a filter's status</a>).</li>
 </ul>
+<h4 id="paths">Paths</h4>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/metrics</code></td>
+<td>Prometheus metrics, in the text format (<code>text/plain; version=0.0.4</code>).</td>
+</tr>
+<tr>
+<td><code>/health</code></td>
+<td><code>200</code> with <code>{"status":"UP"}</code>, or <code>503</code> with <code>{"status":"DOWN"}</code> once the status snapshot is more than 10 seconds old. For liveness probes.</td>
+</tr>
+<tr>
+<td>any other</td>
+<td>The dashboard, or with <code>Accept: application/json</code> the data behind it.</td>
+</tr>
+</tbody>
+</table>
+<p>The JSON and the metrics are rendered together every 2 seconds and served as rendered, so any number of dashboards and scrapers cost the gateway the same, and the two always agree. <code>rendered_at</code> in the JSON says when its data was read. The snapshot is rendered on the scheduler that also runs health checks and reloads <code>routes.yaml</code>, which is why a stale one fails <code>/health</code>: the gateway's housekeeping has stopped. <code>/health</code> does not turn <code>DOWN</code> for an open circuit breaker or a down upstream; those are the gateway doing its job, and restarting it would not help.</p>
+<h4 id="metrics">Metrics</h4>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Type</th>
+<th>Labels</th>
+<th>What it counts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>r7_info</code></td>
+<td>gauge</td>
+<td><code>version</code></td>
+<td>Always <code>1</code>; carries the running version.</td>
+</tr>
+<tr>
+<td><code>r7_start_time_seconds</code></td>
+<td>gauge</td>
+<td></td>
+<td>When the process started, in seconds since the epoch.</td>
+</tr>
+<tr>
+<td><code>r7_routes_config_rejected</code></td>
+<td>gauge</td>
+<td></td>
+<td><code>1</code> while the latest edit of <code>routes.yaml</code> was rejected and the previous routes still run.</td>
+</tr>
+<tr>
+<td><code>r7_unrouted_requests_total</code></td>
+<td>counter</td>
+<td></td>
+<td>Requests no route matched.</td>
+</tr>
+<tr>
+<td><code>r7_connections_active</code></td>
+<td>gauge</td>
+<td></td>
+<td>Open client connections to the gateway port.</td>
+</tr>
+<tr>
+<td><code>r7_journal_available_bytes</code></td>
+<td>gauge</td>
+<td></td>
+<td>Free space for journals in <code>work_dir</code>.</td>
+</tr>
+<tr>
+<td><code>r7_route_requests_total</code></td>
+<td>counter</td>
+<td><code>route</code>, <code>code</code></td>
+<td>Responses sent to clients.</td>
+</tr>
+<tr>
+<td><code>r7_route_upstream_responses_total</code></td>
+<td>counter</td>
+<td><code>route</code>, <code>code</code></td>
+<td>Responses received from upstreams.</td>
+</tr>
+<tr>
+<td><code>r7_route_active_requests</code></td>
+<td>gauge</td>
+<td><code>route</code></td>
+<td>Requests in progress.</td>
+</tr>
+<tr>
+<td><code>r7_route_active_websockets</code></td>
+<td>gauge</td>
+<td><code>route</code></td>
+<td>Open WebSocket tunnels.</td>
+</tr>
+<tr>
+<td><code>r7_route_journal_bytes_total</code></td>
+<td>counter</td>
+<td><code>route</code></td>
+<td>Bytes written to the journal.</td>
+</tr>
+<tr>
+<td><code>r7_route_request_duration_seconds</code></td>
+<td>histogram</td>
+<td><code>route</code></td>
+<td>Time from request to response. Bucket bounds are powers of two from 256µs to about 16.8s.</td>
+</tr>
+<tr>
+<td><code>r7_component_health</code></td>
+<td>gauge</td>
+<td><code>route</code>, <code>component</code>, <code>position</code></td>
+<td>A filter's or upstream's status: <code>0</code> OK, <code>1</code> WARN, <code>2</code> ERROR.</td>
+</tr>
+<tr>
+<td><code>r7_component_value</code></td>
+<td>gauge</td>
+<td><code>route</code>, <code>component</code>, <code>position</code>, <code>name</code></td>
+<td>A number a filter or upstream reports, such as a circuit breaker's <code>rejected_requests</code>.</td>
+</tr>
+<tr>
+<td><code>r7_jvm_heap_used_bytes</code>, <code>r7_jvm_heap_max_bytes</code></td>
+<td>gauge</td>
+<td></td>
+<td>Heap in use, and its limit.</td>
+</tr>
+<tr>
+<td><code>r7_jvm_direct_used_bytes</code></td>
+<td>gauge</td>
+<td></td>
+<td>Direct buffer memory in use.</td>
+</tr>
+<tr>
+<td><code>r7_jvm_gc_seconds_total</code></td>
+<td>counter</td>
+<td></td>
+<td>Time spent in garbage collection.</td>
+</tr>
+<tr>
+<td><code>r7_process_open_fds</code>, <code>r7_process_max_fds</code></td>
+<td>gauge</td>
+<td></td>
+<td>Open file descriptors, and the limit.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>route_*</code> metrics cover routes with the <code>SimpleMetrics</code> filter. Their counts, other than the duration histogram, are saved in <code>work_dir</code> and carry on across restarts, like the dashboard's. <code>component</code> is the filter's name, or <code>upstream</code>; <code>position</code> is the filter's place in the route's pipeline, global filters first, and <code>0</code> for the upstream, so two filters of one kind on a route stay apart. A global filter is one instance in front of every route, so it is reported once, without a <code>route</code> label. The names and labels above are a contract: a change to them is a breaking change.</p>
 <h3 id="http-options-http">HTTP Options (<code>http</code>)</h3>
 <p>Configures the HTTP server layer, including protocol support and request parsing behaviors.</p>
 <table>

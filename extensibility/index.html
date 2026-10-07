@@ -582,6 +582,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="2. Implementing a Custom Filter">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reporting-a-filters-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reporting a filter's status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -956,18 +973,44 @@
 </span><span id="True-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">      </span><span class="nt">token_header</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Security-Token</span>
 </span><span id="True-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">      </span><span class="nt">blocked_token</span><span class="p">:</span><span class="w"> </span><span class="s">"malicious-token-123"</span>
 </span></code></pre></div>
+<h3 id="reporting-a-filters-status">Reporting a filter's status</h3>
+<p>A filter that keeps state an operator should see, such as a breaker that trips or a quota that runs out, can implement <code>StatusReporting</code>. Its status then shows on the dashboard, in the management JSON and as the <code>r7_component_health</code> and <code>r7_component_value</code> metrics (see <a href="../config/#management-configuration-management">Management Configuration</a>).</p>
+<div class="language-java highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
+</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">java.util.concurrent.atomic.LongAdder</span><span class="p">;</span>
+</span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">com.ethlo.r7.api.ComponentStatus</span><span class="p">;</span>
+</span><span id="True-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="kn">import</span><span class="w"> </span><span class="nn">com.ethlo.r7.api.StatusReporting</span><span class="p">;</span>
+</span><span id="True-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+</span><span id="True-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="kd">private</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="kd">class</span> <span class="nc">QuotaFilter</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">ClientRequestGatewayFilter</span><span class="p">,</span><span class="w"> </span><span class="n">ShortInfo</span><span class="p">,</span><span class="w"> </span><span class="n">StatusReporting</span>
+</span><span id="True-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">{</span>
+</span><span id="True-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">LongAdder</span><span class="w"> </span><span class="n">refused</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LongAdder</span><span class="p">();</span>
+</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">volatile</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">exhausted</span><span class="p">;</span>
+</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="c1">// onClientRequest, name() and summary() as above</span>
+</span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
+</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">    </span><span class="nd">@Override</span>
+</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">ComponentStatus</span><span class="w"> </span><span class="nf">status</span><span class="p">()</span>
+</span><span id="True-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="True-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ComponentStatus</span><span class="p">(</span>
+</span><span id="True-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">                </span><span class="n">exhausted</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">ComponentStatus</span><span class="p">.</span><span class="na">Health</span><span class="p">.</span><span class="na">ERROR</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">ComponentStatus</span><span class="p">.</span><span class="na">Health</span><span class="p">.</span><span class="na">OK</span><span class="p">,</span>
+</span><span id="True-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">                </span><span class="n">exhausted</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"Quota used up until midnight"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+</span><span id="True-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">                </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">"refused_requests"</span><span class="p">,</span><span class="w"> </span><span class="n">refused</span><span class="p">.</span><span class="na">sum</span><span class="p">()));</span>
+</span><span id="True-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="True-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="p">}</span>
+</span></code></pre></div>
+<p><code>status()</code> is called every 2 seconds from the management snapshot, never on a request, and must not block: read the state the filter already keeps. Health is <code>OK</code>, <code>WARN</code> or <code>ERROR</code>; the detail is a short line for the dashboard, never a metric. Value names are lower-case <code>snake_case</code>, and each becomes a series, so a name must never carry data such as a client address. A <code>status()</code> that throws is reported as <code>ERROR</code> with the exception as its detail.</p>
 <hr />
 <h2 id="3-registering-the-extensions-serviceloader-spi">3. Registering the Extensions (ServiceLoader SPI)</h2>
 <p>For the r7 engine to discover your custom implementations, you must declare them in the <code>META-INF/services</code> directory of your compiled JAR file. The filename must exactly match the fully qualified name of the SPI interface, and the content must be the fully qualified name of your implementation class.</p>
 <p><strong>File 1: Predicate Registration</strong>
 Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.GatewayPredicateFactory</code></p>
 <p><strong>Content:</strong></p>
-<div class="language-text highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>com.example.r7.predicates.HasHeaderFactory
+<div class="language-text highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>com.example.r7.predicates.HasHeaderFactory
 </span></code></pre></div>
 <p><strong>File 2: Filter Registration</strong>
 Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.GatewayFilterFactory</code></p>
 <p><strong>Content:</strong></p>
-<div class="language-text highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>com.example.r7.filters.BlockTokenFilterFactory
+<div class="language-text highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>com.example.r7.filters.BlockTokenFilterFactory
 </span></code></pre></div>
 <hr />
 <h2 id="4-packaging-and-deployment">4. Packaging and Deployment</h2>
@@ -976,7 +1019,7 @@ Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.Gat
 classpath from the jar's manifest alone (<code>r7.jar</code> plus the jars in <code>lib/</code> beside it) and ignores
 <code>-cp</code> and <code>CLASSPATH</code>. To add your jar, start the main class instead, with your jar after
 <code>r7.jar</code>; <code>r7.jar</code>'s manifest still brings in <code>lib/</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>java<span class="w"> </span>-cp<span class="w"> </span><span class="s2">"r7.jar:plugins/*"</span><span class="w"> </span>com.ethlo.r7.helidon.R7Helidon
+<div class="language-bash highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>java<span class="w"> </span>-cp<span class="w"> </span><span class="s2">"r7.jar:plugins/*"</span><span class="w"> </span>com.ethlo.r7.helidon.R7Helidon
 </span></code></pre></div>
 <h3 id="docker-compose-example">Docker Compose Example</h3>
 <p>The image's entrypoint is <code>java -jar</code>, so mount your jars and override the entrypoint with the
@@ -984,24 +1027,24 @@ image's own flags plus the classpath. The image's AOT cache still applies, since
 after the classpath it was built with. Copy the flags from the entrypoint of the image you run
 (<code>docker inspect --format '{{json .Config.Entrypoint}}' ghcr.io/ethlo/r7-gateway:latest</code>) when
 you upgrade.</p>
-<div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
-</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ethlo-r7-gateway</span>
-</span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
-</span><span id="True-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"9999:8888"</span>
-</span><span id="True-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
-</span><span id="True-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./plugins:/app/plugins:ro</span><span class="w">   </span><span class="c1"># your extension jars</span>
-</span><span id="True-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">entrypoint</span><span class="p">:</span>
-</span><span id="True-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">java</span>
-</span><span id="True-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-XX:AOTCache=/app/r7.aot</span>
-</span><span id="True-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--enable-native-access=ALL-UNNAMED</span>
-</span><span id="True-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--sun-misc-unsafe-memory-access=allow</span>
-</span><span id="True-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-Djava.security.egd=file:/dev/./urandom</span>
-</span><span id="True-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-cp</span>
-</span><span id="True-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/app/r7.jar:/app/plugins/*</span>
-</span><span id="True-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">com.ethlo.r7.helidon.R7Helidon</span>
+<div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:latest</span>
+</span><span id="True-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ethlo-r7-gateway</span>
+</span><span id="True-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+</span><span id="True-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"9999:8888"</span>
+</span><span id="True-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
+</span><span id="True-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./plugins:/app/plugins:ro</span><span class="w">   </span><span class="c1"># your extension jars</span>
+</span><span id="True-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="nt">entrypoint</span><span class="p">:</span>
+</span><span id="True-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">java</span>
+</span><span id="True-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-XX:AOTCache=/app/r7.aot</span>
+</span><span id="True-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--enable-native-access=ALL-UNNAMED</span>
+</span><span id="True-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--sun-misc-unsafe-memory-access=allow</span>
+</span><span id="True-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-Djava.security.egd=file:/dev/./urandom</span>
+</span><span id="True-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-cp</span>
+</span><span id="True-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/app/r7.jar:/app/plugins/*</span>
+</span><span id="True-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">com.ethlo.r7.helidon.R7Helidon</span>
 </span></code></pre></div>
 <p>The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
 
