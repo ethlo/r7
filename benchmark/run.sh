@@ -132,6 +132,12 @@ done
 [[ "$MODE" == "jvm-local" || "$MODE" == "docker" ]] || die "--mode must be jvm-local or docker"
 [[ "$REPEAT" =~ ^[0-9]+$ ]] && (( REPEAT >= 1 )) || die "--repeat must be a positive integer"
 
+# "baseline, passthrough" would otherwise keep " passthrough" as an item that matches nothing,
+# and that scenario would be skipped without a word.
+for v in SCENARIOS WORKLOADS TOOLS SWEEP_RATES SWEEP_LEVELS JOURNAL_LEVELS; do
+  printf -v "$v" '%s' "${!v//[[:space:]]/}"
+done
+
 has() { [[ ",$1," == *",$2,"* ]]; }
 
 # The journal scenario reports against passthrough, so it needs it measured.
@@ -306,6 +312,18 @@ wait_for() {
   die "$what did not become ready at $url"
 }
 
+# The CPUs a process may actually run on. cpusets are hierarchical, so a parent cgroup can
+# narrow what was asked for; the archive records what each part of the benchmark really got.
+effective_cpus() {
+  awk '/^Cpus_allowed_list:/ {print $2}' "/proc/$1/status" 2>/dev/null || true
+}
+container_cpus() {
+  local pid; pid="$(docker inspect -f '{{.State.Pid}}' "$1" 2>/dev/null)" || true
+  [[ -n "$pid" && "$pid" != 0 ]] && effective_cpus "$pid"
+  return 0
+}
+GW_CPUS_RECORDED=0
+
 start_backend() {
   if ss -ltn 2>/dev/null | grep -q ":$BACKEND_PORT "; then
     die "port $BACKEND_PORT already in use; stop whatever is on it first"
@@ -389,6 +407,12 @@ start_gateway() {
   fi
   wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "gateway" 120
   ok "gateway ready (journal=$level)"
+  if (( ! GW_CPUS_RECORDED )); then
+    local cpus
+    if [[ -n "$GW_PID" ]]; then cpus="$(effective_cpus "$GW_PID")"; else cpus="$(container_cpus r7-bench-gateway)"; fi
+    echo "effective_cpus_gateway=${cpus:-unknown}" >> "$OUT/environment.txt"
+    GW_CPUS_RECORDED=1
+  fi
 }
 
 stop_gateway() {
@@ -455,29 +479,34 @@ fire() {
     log "warmup  ${tag} (${WARMUP}, discarded)"
     if command -v wrk >/dev/null 2>&1; then
       "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -s "$script" --timeout 5s "$url" \
-        > "$RAW/$file_tag.warmup.txt" 2>&1 || true
+        > "$RAW/$file_tag.warmup.txt" 2>&1 || warn "warmup ${tag} failed; see $RAW/$file_tag.warmup.txt"
     else
       "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -R"$((rate * 4))" -s "$script" \
-        --timeout 5s "$url" > "$RAW/$file_tag.warmup.txt" 2>&1 || true
+        --timeout 5s "$url" > "$RAW/$file_tag.warmup.txt" 2>&1 \
+        || warn "warmup ${tag} failed; see $RAW/$file_tag.warmup.txt"
     fi
     sleep 2
   fi
 
   log "measure ${tag} (${DURATION}, repeat ${rep}/${REPEAT})"
+  # A failed run still gets a result file, so it shows in the report; its exit status goes
+  # into the metadata, where the verdict rejects it rather than trusting the parser to notice.
+  local status=0
   if [[ "$tool" == "wrk" ]]; then
     "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency --timeout 5s \
-        -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || true
+        -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || status=$?
   else
     "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" -R"$rate" --latency --timeout 5s \
-         -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || true
+         -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || status=$?
   fi
+  (( status == 0 )) || warn "${tool} exited with status ${status}; see $RAW/$file_tag.txt"
 
   local meta
-  meta="$(python3 - "$scenario" "$workload" "$tool" "$journal" "$MODE" "$rate" "$rep" <<'PY'
+  meta="$(python3 - "$scenario" "$workload" "$tool" "$journal" "$MODE" "$rate" "$rep" "$status" <<'PY'
 import json, sys
-s, w, t, j, m, r, n = sys.argv[1:8]
+s, w, t, j, m, r, n, x = sys.argv[1:9]
 print(json.dumps({"scenario": s, "workload": w, "tool": t, "journal": j,
-                  "mode": m, "repeat": int(n),
+                  "mode": m, "repeat": int(n), "exit_status": int(x),
                   "rate": int(r) if t == "wrk2" else None}))
 PY
 )"
@@ -503,8 +532,10 @@ gw_scenario() {
       for w in "${wl[@]}"; do for t in "${tl[@]}"; do
         fire "$t" "$scenario" "$w" "$level" "$rate" "$url" "$rep" 1
       done; done
-      echo "journal_bytes_${scenario}_${level}_n${rep}=$(journal_size)" >> "$OUT/environment.txt"
+      # Measured after the stop: the journal is written asynchronously, so before it the
+      # size depends on how far the writer has caught up.
       stop_gateway
+      echo "journal_bytes_${scenario}_${level}_n${rep}=$(journal_size)" >> "$OUT/environment.txt"
     done
   else
     start_gateway "$level"
@@ -515,8 +546,8 @@ gw_scenario() {
         fire "$t" "$scenario" "$w" "$level" "$rate" "$url" "$rep" "$(( rep == 1 ? 1 : 0 ))"
       done
     done; done
-    echo "journal_bytes_${scenario}_${level}=$(journal_size)" >> "$OUT/environment.txt"
     stop_gateway
+    echo "journal_bytes_${scenario}_${level}=$(journal_size)" >> "$OUT/environment.txt"
   fi
 }
 
@@ -581,6 +612,12 @@ IFS=',' read -ra PLAN_TL <<< "$TOOLS"
 } > "$OUT/plan.tsv"
 
 start_backend
+{
+  echo "effective_cpus_backend=$(container_cpus r7-bench-backend)"
+  # The load generators are short-lived, so a probe started the same way stands in for them.
+  pin_prefix "$LOAD_CPUS"
+  echo "effective_cpus_load=$("${PIN[@]}" awk '/^Cpus_allowed_list:/ {print $2}' /proc/self/status)"
+} >> "$OUT/environment.txt"
 
 # 1. Baseline: straight at the backend. The floor.
 if has "$SCENARIOS" baseline; then
