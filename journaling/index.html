@@ -329,6 +329,22 @@
   
   
     <li class="md-tabs__item">
+      <a href="../where-r7-fits/" class="md-tabs__link">
+        
+  
+  Where r7 fits
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
       <a href="../performance_tuning/" class="md-tabs__link">
         
   
@@ -705,10 +721,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-visualizing-your-data" class="md-nav__link">
+  <a href="#5-where-the-data-goes-next" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        5. Visualizing your data
+        5. Where the data goes next
       </span>
     </span>
   </a>
@@ -738,6 +754,32 @@
     
   
   WARC profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../where-r7-fits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Where r7 fits
 
     
   </span>
@@ -1620,13 +1662,10 @@ checkpoint file, can only keep a segment longer: anything short of "done" leaves
 </span><span id="True-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
 </span><span id="True-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">  </span><span class="nt">r7-tailer-checkpoints</span><span class="p">:</span>
 </span></code></pre></div>
-<h2 id="5-visualizing-your-data">5. Visualizing your data</h2>
-<p>Once your data is routed through the tailer:</p>
-<ul>
-<li><strong>JSON lines with Promtail/Loki:</strong> use Grafana's LogQL to filter and aggregate your gateway traffic, extracting metrics from the JSON fields (like <code>duration</code>, <code>client_response.status</code> — <code>client_response_status</code> after LogQL's <code>json</code> parser — or specific headers).</li>
-<li><strong>WARC files:</strong> these are for archival and replay, not dashboards. Feed them to a WARC-aware tool (e.g. <a href="https://github.com/webrecorder/pywb">pywb</a>) to replay captured traffic, or look an exchange up by URL and time in the CDXJ index.</li>
-<li><strong>Into ClickHouse:</strong> r7 ships no ClickHouse output. Set <code>json.output: file</code> and batch-insert the sealed <code>.jsonl</code> files with a loader of your own (one JSON object per line, which ClickHouse reads as <code>JSONEachRow</code>), then query them from Grafana with the ClickHouse plugin. The <code>warc</code> pointer in each row leads from a query result to the archived exchange.</li>
-</ul>
+<h2 id="5-where-the-data-goes-next">5. Where the data goes next</h2>
+<p>The JSON lines go to any log shipper and on to ClickHouse, Loki or an OpenTelemetry backend; the
+WARC files go to any WARC reader. <a href="../where-r7-fits/">Where r7 fits</a> shows how, with a minimal
+configuration for each.</p>
 
 
 
