@@ -175,7 +175,9 @@ scrape_configs:
 ```
 
 The management port answers only a `Host` it knows, so a scrape by a DNS name such as `r7`
-needs that name in `allowed_hosts`:
+needs that name in `allowed_hosts`. The container images listen on every interface; a gateway
+run from the jar listens on `127.0.0.1` until `management.host` (or `R7_MANAGEMENT_HOST`) names
+an address Prometheus can reach:
 
 ```yaml title="server.yaml"
 management:
