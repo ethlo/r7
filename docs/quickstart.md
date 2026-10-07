@@ -47,12 +47,13 @@ volumes:
 Next to it, create the fingerprint key once, and keep the file:
 
 ```bash
-echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env
+(umask 077; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)
 ```
 
 r7 writes a keyed fingerprint in place of every header and query value that may be a secret, so
 the journal shows that two requests carried the same token without showing the token. It does
-not start without the key. Compose reads `.env` on its own; keep the file out of version control.
+not start without the key. Compose reads `.env` on its own. The `umask` makes the file readable
+by you alone; keep it out of version control.
 
 Journals go to a named volume rather than a host directory: Docker prepares a new named volume
 so the image's non-root user can write to it, which a directory you create yourself would not be.
