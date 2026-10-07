@@ -44,7 +44,7 @@ docker run --rm -p 8888:8888 -p 127.0.0.1:18888:18888 \
   --add-host=host.docker.internal:host-gateway \
   -v "$PWD/routes.yaml:/app/config/routes.yaml:ro" \
   -v r7-journals:/journals \
-  ghcr.io/ethlo/r7-gateway:latest
+  ghcr.io/ethlo/r7-gateway:main
 ```
 
 Requests to `http://localhost:8888/api/...` now reach your service on port 3000, and every one of

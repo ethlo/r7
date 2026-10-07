@@ -22,7 +22,7 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
 
 `bench.sh` makes the run repeatable on any host:
 
-1. **The published gateway.** By default it measures `ghcr.io/ethlo/r7-gateway:latest`
+1. **The published gateway.** By default it measures `ghcr.io/ethlo/r7-gateway:main`
    (`--image` picks another), resolved to its digest and recorded, so a later run can pull
    the same image even after the tag has moved. The image runs as shipped: its own JVM,
    flags and AOT cache, the JVM's default collector (`--gc zgc` for ZGC), with host

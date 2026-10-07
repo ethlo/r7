@@ -45,7 +45,7 @@ route above):
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-gateway:latest
+    image: ghcr.io/ethlo/r7-gateway:main
     ports:
       - "8888:8888"
     volumes:
@@ -53,7 +53,7 @@ services:
       - r7-journals:/journals:rw
 
   r7-tailer:
-    image: ghcr.io/ethlo/r7-tailer:latest
+    image: ghcr.io/ethlo/r7-tailer:main
     volumes:
       - r7-journals:/journals:ro
       - r7-warc:/warc:rw
@@ -170,7 +170,7 @@ Gateway and tailer share the `journal_dir` volume: the gateway writes, the taile
 
 ## 3. The tailer
 
-**Image:** `ghcr.io/ethlo/r7-tailer:latest`
+**Image:** `ghcr.io/ethlo/r7-tailer:main`
 
 The tailer reads the journals once and writes each exchange to one or both of two outputs:
 
@@ -373,7 +373,7 @@ json:
 
 ## 4. Retention: The Reaper
 
-**Image:** `ghcr.io/ethlo/r7-reaper:latest`
+**Image:** `ghcr.io/ethlo/r7-reaper:main`
 
 The tailer is read-only by design (see §2's warning) — something else has to delete a
 sealed segment once it is no longer needed, or `journal_dir` grows without bound. That something
@@ -438,12 +438,12 @@ checkpoint file, can only keep a segment longer: anything short of "done" leaves
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-gateway:latest
+    image: ghcr.io/ethlo/r7-gateway:main
     volumes:
       - r7-journals:/journals:rw
 
   r7-tailer:
-    image: ghcr.io/ethlo/r7-tailer:latest
+    image: ghcr.io/ethlo/r7-tailer:main
     volumes:
       - ./config/tailer.yaml:/app/config/tailer.yaml:ro
       - r7-journals:/journals:ro                # reads only; retention is the reaper's job
@@ -451,7 +451,7 @@ services:
       - r7-tailer-checkpoints:/checkpoints:rw   # its own progress
 
   r7-reaper:
-    image: ghcr.io/ethlo/r7-reaper:latest
+    image: ghcr.io/ethlo/r7-reaper:main
     volumes:
       - ./config/reaper.yaml:/app/config/reaper.yaml:ro
       - r7-journals:/journals:rw                         # the only container that deletes from it

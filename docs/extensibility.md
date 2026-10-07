@@ -279,13 +279,13 @@ java -cp "r7.jar:plugins/*" com.ethlo.r7.helidon.R7Helidon
 The image's entrypoint is `java -jar`, so mount your jars and override the entrypoint with the
 image's own flags plus the classpath. The image's AOT cache still applies, since your jars come
 after the classpath it was built with. Copy the flags from the entrypoint of the image you run
-(`docker inspect --format '{{json .Config.Entrypoint}}' ghcr.io/ethlo/r7-gateway:latest`) when
+(`docker inspect --format '{{json .Config.Entrypoint}}' ghcr.io/ethlo/r7-gateway:main`) when
 you upgrade.
 
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-gateway:latest
+    image: ghcr.io/ethlo/r7-gateway:main
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"
