@@ -1073,7 +1073,7 @@
         }
         list.innerHTML = shown.map(p => {
             const where = p.route != null
-                ? `<a data-route-id="${esc(p.route)}">${esc(p.route)}</a>`
+                ? `<a href="#/route/${esc(encodeURIComponent(p.route))}" data-route-id="${esc(p.route)}">${esc(p.route)}</a>`
                 : '<span class="text-dim">global</span>';
             const component = p.position ? `${esc(p.component)} (#${esc(p.position)})` : esc(p.component);
             return `<div><span class="tag ${HEALTH_TAG_CLASS[p.health] || ''}">${esc(p.health)}</span> ${where} / ${component}${p.detail ? ` <span class="text-dim">- ${esc(p.detail)}</span>` : ''}</div>`;
