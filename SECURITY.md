@@ -43,7 +43,7 @@ These are deployment assumptions, not vulnerabilities:
   reach it.
 - Redacted header and query parameter values in the journal are keyed fingerprints. Anyone who
   has the fingerprint key can confirm a guess at a low-entropy value, so keep it from journal
-  readers (`docs/journaling.md`, "Redacted header and query parameter values").
+  readers (see [Redacted header and query parameter values](docs/journaling.md#redacted-header-and-query-parameter-values)).
 - Upstream services are responsible for their own authentication, sessions and payload
   validation beyond what r7's filters are configured to check.
 
