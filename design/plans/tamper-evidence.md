@@ -69,10 +69,12 @@ already tells readers to ignore. Its spec goes in `FORMAT.md` as a new section.
 
 Off the request path. `rotateSegment` runs inside the shard's lock on a request thread, and it
 already only stamps the seal record and hands the rest to a virtual finalizer thread
-(`finalizeSegmentAsync`). That finalizer, before it unmaps the segment:
+(`finalizeSegmentAsync`). That finalizer:
 
 1. waits for the previous finalizer of the same shard, so statements are written in order;
-2. hashes the segment up to its Data End and signs the statement;
+2. hashes the segment up to its Data End, signs the statement, and then unmaps the segment as
+   it does today, so nothing holds a mapping when the file is renamed (a mapped file can't be
+   renamed on Windows);
 3. writes `<stem>.seal` (write to a temporary name, fsync, rename);
 4. updates `shard-<id>.chain`, the chain head (chain id, index, hash of the last statement),
    the same way;
