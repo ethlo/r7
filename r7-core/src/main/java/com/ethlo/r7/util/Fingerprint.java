@@ -1,11 +1,10 @@
 package com.ethlo.r7.util;
 
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Objects;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * What r7 writes in place of a value it must not disclose: a redacted header or query
@@ -41,18 +40,41 @@ public final class Fingerprint
 
     private static final int DIGEST_BYTES = 8;
     private static final int ENCODED_LENGTH = 11;
-    private static final String ALGORITHM = "HmacSHA256";
+    private static final String ALGORITHM = "SHA-256";
+    private static final int BLOCK_BYTES = 64;
     private static final char[] BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".toCharArray();
 
-    private final ThreadLocal<Mac> mac;
+    /*
+     * HMAC-SHA-256 (RFC 2104) is H((K ^ opad) || H((K ^ ipad) || m)). Both padded keys are
+     * exactly one block, so the digest state after absorbing each depends on the key alone.
+     * These hold those two states, and every value starts from a copy of them, which saves the
+     * two compression rounds javax.crypto.Mac spends rehashing the pads for every value: half
+     * the work for a typical header value. Neither is updated after construction, so concurrent
+     * copies only read them.
+     */
+    private final MessageDigest inner;
+    private final MessageDigest outer;
 
     private Fingerprint(final byte[] key)
     {
-        final SecretKeySpec spec = new SecretKeySpec(key, ALGORITHM);
-        // Tried once here so that a JVM without HmacSHA256 fails at startup, not on the first
-        // redacted value, where it would be a runtime failure on the request path.
-        newMac(spec);
-        this.mac = ThreadLocal.withInitial(() -> newMac(spec));
+        final byte[] block = Arrays.copyOf(key.length > BLOCK_BYTES ? newDigest().digest(key) : key, BLOCK_BYTES);
+        final byte[] innerPad = new byte[BLOCK_BYTES];
+        final byte[] outerPad = new byte[BLOCK_BYTES];
+        for (int i = 0; i < BLOCK_BYTES; i++)
+        {
+            innerPad[i] = (byte) (block[i] ^ 0x36);
+            outerPad[i] = (byte) (block[i] ^ 0x5c);
+        }
+        this.inner = newDigest();
+        this.inner.update(innerPad);
+        this.outer = newDigest();
+        this.outer.update(outerPad);
+        Arrays.fill(block, (byte) 0);
+        Arrays.fill(innerPad, (byte) 0);
+        Arrays.fill(outerPad, (byte) 0);
+        // Tried once here so that a provider whose SHA-256 cannot be cloned fails at startup,
+        // not on the first redacted value, where it would be a runtime failure on the request path.
+        copy(this.inner);
     }
 
     /**
@@ -71,7 +93,11 @@ public final class Fingerprint
     public String fingerprint(final String value)
     {
         Objects.requireNonNull(value, "value");
-        final byte[] digest = this.mac.get().doFinal(value.getBytes(StandardCharsets.UTF_8));
+        final MessageDigest innerDigest = copy(this.inner);
+        innerDigest.update(value.getBytes(StandardCharsets.UTF_8));
+        final MessageDigest outerDigest = copy(this.outer);
+        outerDigest.update(innerDigest.digest());
+        final byte[] digest = outerDigest.digest();
         final char[] out = new char[PREFIX.length() + ENCODED_LENGTH];
         PREFIX.getChars(0, PREFIX.length(), out, 0);
 
@@ -91,17 +117,27 @@ public final class Fingerprint
         return new String(out);
     }
 
-    private static Mac newMac(final SecretKeySpec spec)
+    private static MessageDigest newDigest()
     {
         try
         {
-            final Mac mac = Mac.getInstance(ALGORITHM);
-            mac.init(spec);
-            return mac;
+            return MessageDigest.getInstance(ALGORITHM);
         }
-        catch (final GeneralSecurityException e)
+        catch (final NoSuchAlgorithmException e)
         {
             throw new IllegalStateException(ALGORITHM + " is not available on this JVM", e);
+        }
+    }
+
+    private static MessageDigest copy(final MessageDigest prototype)
+    {
+        try
+        {
+            return (MessageDigest) prototype.clone();
+        }
+        catch (final CloneNotSupportedException e)
+        {
+            throw new IllegalStateException(ALGORITHM + " on this JVM cannot be cloned", e);
         }
     }
 

@@ -5,7 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Random;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -32,6 +38,42 @@ class FingerprintTest
     void matchesTheReferenceEncoding(final String value, final String expected)
     {
         assertThat(Fingerprint.of(KEY).fingerprint(value)).isEqualTo(expected);
+    }
+
+    /**
+     * The digest is computed from precomputed pad states rather than through {@link Mac}, so it
+     * is checked against {@link Mac} itself, including keys longer than a SHA-256 block, which
+     * HMAC hashes first, and values that span several blocks.
+     */
+    @Test
+    void agreesWithTheJdkHmac() throws Exception
+    {
+        final Random random = new Random(42);
+        for (final int keyLength : new int[]{Fingerprint.MIN_KEY_LENGTH, 63, 64, 65, 200})
+        {
+            final String key = randomText(random, keyLength);
+            final Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            final Fingerprint fingerprint = Fingerprint.of(key);
+            for (final int valueLength : new int[]{0, 1, 55, 56, 64, 119, 1000})
+            {
+                final String value = randomText(random, valueLength);
+                final byte[] expected = Arrays.copyOf(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)), 8);
+                assertThat(fingerprint.fingerprint(value))
+                        .as("key length %d, value length %d", keyLength, valueLength)
+                        .isEqualTo(Fingerprint.PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(expected));
+            }
+        }
+    }
+
+    private static String randomText(final Random random, final int length)
+    {
+        final StringBuilder text = new StringBuilder(length);
+        for (int i = 0; i < length; i++)
+        {
+            text.append((char) (' ' + random.nextInt(95)));
+        }
+        return text.toString();
     }
 
     @Test
