@@ -3,8 +3,8 @@ package com.ethlo.r7.api;
 /**
  * Processes the exchange after the upstream service has responded with headers.
  * <p>
- * <b>Note:</b> This stage executes on the server's primary I/O loop. Implementations
- * must not perform blocking operations here.
+ * <b>Threading:</b> runs on the request's own thread, as every stage does, so a filter may
+ * block here. Blocking holds back the response to the client while it waits.
  */
 public interface ClientResponseGatewayFilter extends GatewayFilter
 {

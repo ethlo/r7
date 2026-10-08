@@ -187,15 +187,6 @@ class BasicAuthFactoryTest
         assertThat(result.hasErrors()).isFalse();
     }
 
-    /**
-     * bcrypt costs tens of milliseconds by design, which is far too long to hold an event loop's thread.
-     */
-    @Test
-    void verificationIsDispatchedOffTheIoThread()
-    {
-        assertThat(filter(ALICE).requiresDispatch()).isTrue();
-    }
-
     @Test
     void repeatedRequestsWithTheSameCredentialsKeepAuthenticating()
     {

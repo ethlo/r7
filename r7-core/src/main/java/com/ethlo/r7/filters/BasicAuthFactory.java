@@ -295,16 +295,6 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             return "$2y$" + (cost < 10 ? "0" + cost : Integer.toString(cost)) + DUMMY_HASH_SUFFIX;
         }
 
-        /**
-         * bcrypt is deliberately expensive, so verification must never run on a thread that may
-         * not block, such as an event loop's.
-         */
-        @Override
-        public boolean requiresDispatch()
-        {
-            return true;
-        }
-
         @Override
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {

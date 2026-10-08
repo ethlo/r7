@@ -15,17 +15,4 @@ public interface ClientRequestGatewayFilter extends GatewayFilter
      * @param exchange the request context and mutable state
      */
     void onClientRequest(final ClientRequestGatewayExchange exchange);
-
-    /**
-     * Indicates if this filter performs blocking operations (e.g., network I/O, database queries).
-     * <p>
-     * If {@code true}, the engine dispatches execution to a worker thread (e.g., a Virtual Thread)
-     * to prevent stalling the server's non-blocking I/O loop.
-     *
-     * @return {@code true} if blocking, {@code false} for inline fast-path execution.
-     */
-    default boolean requiresDispatch()
-    {
-        return false;
-    }
 }

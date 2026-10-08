@@ -64,10 +64,10 @@ import com.ethlo.r7.util.constants.MediaTypes;
 
 /**
  * The request lifecycle of docs/config.md §3, independent of the HTTP server that carries it:
- * the checks made before any route is consulted, routing, the request filters (dispatching
- * where a filter blocks), fallback routing, the upstream filters and the hand-off to the
- * upstream, response and completed filters on the way out, short-circuits, and what is journaled
- * at each step.
+ * the checks made before any route is consulted, routing, the request filters (run inline on the
+ * request's own thread, which a filter may block), fallback routing, the upstream filters and the
+ * hand-off to the upstream, response and completed filters on the way out, short-circuits, and
+ * what is journaled at each step.
  * <p>
  * One instance per server. It keeps no per-request state: everything about a request lives on its
  * {@link ServerExchange}, and the server calls back into this class through the listeners the
@@ -279,19 +279,7 @@ public final class GatewayPipeline
         {
             final ClientRequestGatewayFilter filter = filters[i];
 
-            // Only dispatch if the filter needs it AND we are on a thread that must not block
-            if (filter.requiresDispatch() && !ex.mayBlock())
-            {
-                // The server runs the exchange itself as the task (ServerExchange.run), which
-                // lands in resumeDispatched: no capturing lambda per dispatch.
-                ex.resumeRoute = route;
-                ex.resumeIndex = i;
-                ex.resumeOnBlockingThread();
-                return; // Surrender the I/O thread immediately
-            }
-
-            // FAST PATH: Execute inline if we don't need to block, OR if we are
-            // already running on a virtual thread from a previous dispatch.
+            // The request has a thread of its own, so a filter that blocks just blocks it.
             try
             {
                 filter.onClientRequest(ex);
@@ -310,36 +298,6 @@ public final class GatewayPipeline
 
         // If we exit the loop natively, all request filters passed. Proceed to proxy.
         continueUpstream(ex, route);
-    }
-
-    /**
-     * Runs the filter that asked for a dispatch, on the dispatched thread, then the rest of the
-     * chain after it.
-     */
-    void resumeDispatched(final ServerExchange ex)
-    {
-        final DefaultGatewayRoute route = ex.resumeRoute;
-        final int index = ex.resumeIndex;
-        ex.resumeRoute = null;
-        final ClientRequestGatewayFilter filter = route.clientRequestFilters()[index];
-        try
-        {
-            filter.onClientRequest(ex);
-        }
-        catch (final RegexBudget.RegexBudgetExceededException e)
-        {
-            refuseRegexBudget(ex, e);
-        }
-
-        if (ex.isShortCircuited())
-        {
-            shortCircuit(filter, ex, route);
-        }
-        else
-        {
-            // Resume the loop on the dispatched thread
-            executeRequestFilters(ex, route, index + 1);
-        }
     }
 
     private void continueUpstream(final ServerExchange ex, final DefaultGatewayRoute route)
@@ -362,7 +320,7 @@ public final class GatewayPipeline
                 ex.attributes().set("gateway.fallback.id", fallbackRoute.id());
 
                 // The fallback route runs as if the request had matched it: its own request
-                // filters (dispatching where they need to), then its own upstream filters and
+                // filters, on this same thread, then its own upstream filters and
                 // upstream, or its own fallback. Global filters already ran once for this request.
                 executeRequestFilters(ex, fallbackRoute, fallbackRoute.globalClientRequestFilterCount());
                 return;
