@@ -74,6 +74,7 @@ public class R7NginxHttp2IsolationTest
             .withCopyToContainer(Transferable.of(SERVER_YAML), "/app/config/server.yaml")
             .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
             .withEnv("R7_SERVER_CONFIG", "/app/config/server.yaml")
+            .withEnv("R7_FINGERPRINT_KEY", "test-fingerprint-key-of-at-least-32-characters")
             // Not the default port check: Docker's port proxy accepts connections before the
             // gateway listens, and the first request then reads no bytes. The startup line is
             // logged once the listeners are up.

@@ -4,6 +4,8 @@ import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
+import com.ethlo.r7.util.Fingerprint;
+
 /**
  * Applies the query parameter safe list to a journaled request line: a parameter whose name is
  * on the list keeps its value, every other value is replaced by its fingerprint. The same rule,
@@ -34,7 +36,7 @@ public final class RedactingQuery
      * @param rawQuery the query as sent, without the {@code ?}
      * @return the query with every value outside {@code safeNames} fingerprinted
      */
-    public static String redact(final String rawQuery, final QueryParameterNameSet safeNames, final HeaderFingerprint fingerprint)
+    public static String redact(final String rawQuery, final QueryParameterNameSet safeNames, final Fingerprint fingerprint)
     {
         final StringBuilder out = new StringBuilder(rawQuery.length() + 16);
         int start = 0;
@@ -52,7 +54,7 @@ public final class RedactingQuery
     }
 
     private static void redactPair(final String query, final int start, final int end, final QueryParameterNameSet safeNames,
-                                   final HeaderFingerprint fingerprint, final StringBuilder out)
+                                   final Fingerprint fingerprint, final StringBuilder out)
     {
         if (start == end)
         {
@@ -91,7 +93,7 @@ public final class RedactingQuery
      *
      * @return {@code line} itself, unread, when the target has no query; otherwise a new buffer
      */
-    public static ByteBuffer redactRequestLine(final ByteBuffer line, final QueryParameterNameSet safeNames, final HeaderFingerprint fingerprint)
+    public static ByteBuffer redactRequestLine(final ByteBuffer line, final QueryParameterNameSet safeNames, final Fingerprint fingerprint)
     {
         final int from = line.position();
         final int to = line.limit();

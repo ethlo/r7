@@ -23,15 +23,18 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.core.GatewayContextKeys;
+import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
-import com.ethlo.r7.util.RedactUtil;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
+import com.ethlo.r7.util.TestFingerprints;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.validation.ValidationResult;
 
 class BasicAuthFactoryTest
 {
+    private static final FilterCreationContext CONTEXT = new FilterCreationContext("test", TestFingerprints.engine());
+
     /**
      * Produced by {@code htpasswd -nbBC 4 alice secret}, so the fixture is external ground truth
      * rather than whatever this codebase happens to compute. Cost 4 keeps the suite fast.
@@ -59,7 +62,7 @@ class BasicAuthFactoryTest
         filter(ALICE, BOB).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, RedactUtil.fingerprint("alice"));
+        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, TestFingerprints.FINGERPRINT.fingerprint("alice"));
     }
 
     /**
@@ -74,7 +77,7 @@ class BasicAuthFactoryTest
         filter(ALICE, CAROL).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, RedactUtil.fingerprint("carol"));
+        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, TestFingerprints.FINGERPRINT.fingerprint("carol"));
     }
 
     /**
@@ -151,7 +154,7 @@ class BasicAuthFactoryTest
     {
         final ClientRequestGatewayExchange exchange = exchange(null);
 
-        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip(), null), null)
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), realm.strip(), null), CONTEXT)
                 .onClientRequest(exchange);
 
         assertThat(captureRejection(exchange).headers().getFirst(HttpHeaders.WWW_AUTHENTICATE))
@@ -203,7 +206,7 @@ class BasicAuthFactoryTest
             final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
             filter.onClientRequest(exchange);
             verify(exchange, never()).shortCircuit(any());
-            verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, RedactUtil.fingerprint("alice"));
+            verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, TestFingerprints.FINGERPRINT.fingerprint("alice"));
         }
     }
 
@@ -269,7 +272,7 @@ class BasicAuthFactoryTest
 
     private ClientRequestGatewayFilter filter(final String... users)
     {
-        return factory.create(new BasicAuthFactory.Config(List.of(users), null, null), null);
+        return factory.create(new BasicAuthFactory.Config(List.of(users), null, null), CONTEXT);
     }
 
     private void assertRejected(final ClientRequestGatewayExchange exchange)
@@ -328,7 +331,7 @@ class BasicAuthFactoryTest
     {
         final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
 
-        factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), null).onClientRequest(exchange);
+        factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), CONTEXT).onClientRequest(exchange);
 
         verify(exchange, never()).setAttachment(any(), any());
     }

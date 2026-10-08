@@ -424,7 +424,7 @@ if (( LOCAL )); then
   # Training exits on its own once the training requests are done; the timeout only stops a
   # hung one from holding the host tuned.
   ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$REPO/docker/aot-training/routes.yaml" \
-      R7_JOURNAL_DIR="$TRAIN/journals" \
+      R7_JOURNAL_DIR="$TRAIN/journals" R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key \
       timeout 600 "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
     > "$TRAIN/training.log" 2>&1 || die "AOT training failed; see $TRAIN/training.log"
   [[ -f "$TRAIN/r7.aot" ]] || die "AOT training wrote no cache; see $TRAIN/training.log"

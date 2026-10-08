@@ -19,3 +19,6 @@ target/
 .DS_Store
 /docs/editor/node_modules/
 /benchmark/.cache
+
+# Holds R7_FINGERPRINT_KEY in the quickstart and docker/ examples
+.env

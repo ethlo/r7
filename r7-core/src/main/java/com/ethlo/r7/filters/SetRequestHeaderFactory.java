@@ -7,7 +7,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -83,7 +83,7 @@ public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRe
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.name + ": " + RedactUtil.fingerprint(this.value);
+            return FILTER_NAME + ": " + this.name + ": " + SensitiveConfig.MASK;
         }
     }
 }

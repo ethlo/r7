@@ -1,6 +1,6 @@
 package com.ethlo.r7.predicates;
 
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
@@ -83,8 +83,8 @@ public final class QueryParameterFactory implements GatewayPredicateFactory<Quer
         public String summary()
         {
             // The configured value can be a shared secret (a token or session id), and the summary
-            // is shown on the management page: fingerprinted, which still shows when two routes match alike.
-            return PREDICATE_NAME + ": " + this.paramName + " == " + RedactUtil.fingerprint(this.targetValue);
+            // is shown on the management page, so it is masked as the route configuration view masks it.
+            return PREDICATE_NAME + ": " + this.paramName + " == " + SensitiveConfig.MASK;
         }
     }
 }

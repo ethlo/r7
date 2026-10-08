@@ -26,6 +26,9 @@ services:
     ports:
       - "9999:8888"              # the gateway
       - "127.0.0.1:19999:18888"  # the dashboard, on this machine only (see below)
+    environment:
+      # The key behind the fingerprints r7 journals in place of secrets; see below.
+      R7_FINGERPRINT_KEY: ${R7_FINGERPRINT_KEY:?set it in .env}
     volumes:
       - ./routes.yaml:/app/config/routes.yaml:ro
       - r7-journals:/journals
@@ -40,6 +43,18 @@ services:
 volumes:
   r7-journals:
 ```
+
+Next to it, create the fingerprint key once, and keep the file:
+
+```bash
+(umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)
+```
+
+r7 writes a keyed fingerprint in place of every header and query value that may be a secret, so
+the journal shows that two requests carried the same token without showing the token. It does
+not start without the key. Compose reads `.env` on its own. The `umask` makes the file readable
+by you alone, and `set -C` refuses to overwrite a key you already have; keep it out of version
+control.
 
 Journals go to a named volume rather than a host directory: Docker prepares a new named volume
 so the image's non-root user can write to it, which a directory you create yourself would not be.

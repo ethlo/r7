@@ -9,6 +9,11 @@ services:
       # reach it: keep it on loopback (a bare "19999:18888" publishes it on every host interface,
       # past host firewalls such as ufw).
       - "127.0.0.1:19999:18888"
+    environment:
+      # The key behind every fingerprint in the journal, unless config/server.yaml sets
+      # fingerprint_key; the gateway refuses to start with neither. Generate it once with
+      # `(umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)` and keep it.
+      R7_FINGERPRINT_KEY: ${R7_FINGERPRINT_KEY:-}
     volumes:
       - ./config:/app/config:ro
       - ./journals:/journals:rw

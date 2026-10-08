@@ -252,8 +252,13 @@ with, then start with the cache:
 
 ```bash
 R7_ROUTES_CONFIG=docker/aot-training/routes.yaml R7_JOURNAL_DIR=/tmp/aot-training \
+  R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key \
   java -XX:AOTCacheOutput=r7.aot -Dr7.aot.training=true -jar r7-helidon-<version>.jar
 java -XX:AOTCache=r7.aot -jar r7-helidon-<version>.jar
 ```
 
-The training run exits by itself once it has served its requests.
+The training run exits by itself once it has served its requests. Its key only fingerprints the
+training requests; the second command runs with your deployment's own key, from `fingerprint_key`
+in `server.yaml` or the `R7_FINGERPRINT_KEY` environment variable (see
+[Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values)),
+and does not start without one.

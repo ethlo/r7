@@ -1,6 +1,6 @@
 package com.ethlo.r7.filters;
 
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
@@ -83,7 +83,7 @@ public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRe
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.name + ": " + RedactUtil.fingerprint(this.value);
+            return FILTER_NAME + ": " + this.name + ": " + SensitiveConfig.MASK;
         }
     }
 }

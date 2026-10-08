@@ -48,6 +48,9 @@ services:
     image: ghcr.io/ethlo/r7-gateway:main
     ports:
       - "8888:8888"
+    environment:
+      # Required: the key behind the fingerprints in place of redacted values.
+      R7_FINGERPRINT_KEY: ${R7_FINGERPRINT_KEY:?set it in .env}
     volumes:
       - ./config:/app/config:ro
       - r7-journals:/journals:rw
@@ -63,6 +66,14 @@ volumes:
   r7-journals:
   r7-warc:
   r7-tailer-checkpoints:
+```
+
+Next to it, create the gateway's fingerprint key once, and keep the file. Only the gateway
+needs it; see [Redacted header and query parameter values](#redacted-header-and-query-parameter-values).
+If `config/server.yaml` sets `fingerprint_key` instead, drop the `environment` block.
+
+```bash
+(umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)
 ```
 
 **3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which
@@ -129,31 +140,34 @@ id or target URL with a character outside ISO-8859-1 is refused at startup, nami
 At `HEADERS` and `FULL`, a header whose name is not on the `journal_security` whitelist is
 journaled with a fingerprint in place of its value. Query parameter values in the request lines
 get the same treatment at every level, unless the parameter is on `safe_query_parameters`
-(see [Configuration: query parameters](config.md#query-parameters)). There are two forms:
+(see [Configuration: query parameters](config.md#query-parameters)). The fingerprint is `fp:`
+followed by 11 base64url characters, for example `fp:R5XU2m_VAik`: the first 64 bits of
+HMAC-SHA-256 of the value, keyed with `storage.journal_security.fingerprint_key`.
 
-| Form | Example | When |
-| --- | --- | --- |
-| `id:sha256:` + 6 hex digits | `id:sha256:3f2a91` | default: an unkeyed, truncated SHA-256 of the value |
-| `id:hmac:` + 16 hex digits | `id:hmac:9c04e1d27b55a0f3` | `storage.journal_security.fingerprint_key` is set: HMAC-SHA-256 under that key |
+The same value always gives the same fingerprint under the same key, so you can see that two
+requests, two replicas, or records from before and after a restart carried the same value. Without
+the key, nobody who reads the journal can check a guess, which matters for low-entropy secrets
+such as `Authorization: Basic` with a known user name and a common password, a short API key or a
+`role=admin` cookie. The characters are URL-safe, so a fingerprint stands in a query string, a
+JSON string or a WARC header without escaping.
 
-Both let you see that two requests carried the same value. Only the keyed form hides the value
-from someone who can read the journal. With the unkeyed form, a reader can hash a guess and
-compare, so a low-entropy secret such as `Authorization: Basic` with a known user name and a
-common password, a short API key or a `role=admin` cookie can be found with a dictionary.
-Set a key in production:
+The key is required: r7 refuses to start without it. Set it in `server.yaml`, or set only the
+`R7_FINGERPRINT_KEY` environment variable, which is the default when the file does not:
 
 ```yaml title="server.yaml"
 storage:
   journal_security:
-    fingerprint_key: ${R7_FINGERPRINT_KEY}   # at least 32 characters, e.g. `openssl rand -base64 48`
+    fingerprint_key: ${R7_FINGERPRINT_KEY}   # at least 32 characters, e.g. `openssl rand -base64 32`
 ```
 
-Keep the key out of anything a journal reader can see. Changing it changes every fingerprint
-from then on, so values journaled before and after the change no longer correlate. The
-unkeyed form is still the default so that existing consumers that match on `id:sha256:` keep
-working until you opt in. The key applies to journaled header and query parameter values only: the
-`gateway.auth.basic.user` attribute and the management endpoint's summaries still use the
-unkeyed form.
+Keep the key out of anything a journal reader can see, and give every replica of a deployment
+the same one so their fingerprints correlate. To rotate it, change it: records already written
+keep the fingerprints they have, and values journaled before and after the change no longer
+correlate. Nothing reads a fingerprint back, so there is no old key to keep. The same key and
+form are used for the `gateway.auth.basic.user` attribute.
+
+Journals written by earlier versions keep the forms they were written with, `id:sha256:` (an
+unkeyed, truncated SHA-256) and `id:hmac:`; nothing rewrites them.
 
 ## 2. Mount the shared volume
 
@@ -261,11 +275,11 @@ object per line, UTF-8. A proxied `GET` with headers journaled, archived in a WA
   "remote_address": "10.0.0.7",
   "remote_address_source": "SOCKET",
   "client_request": {
-    "level": "HEADERS", "method": "GET", "path": "/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
+    "level": "HEADERS", "method": "GET", "path": "/items", "query": "page=fp:b9ZtS0R2qzY", "protocol": "HTTP/1.1",
     "headers": {"host": ["api.example.com"]}, "header_bytes": 142, "body_bytes": 0
   },
   "upstream_request": {
-    "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=id:sha256:d4735e", "protocol": "HTTP/1.1",
+    "level": "HEADERS", "method": "GET", "path": "/v1/items", "query": "page=fp:b9ZtS0R2qzY", "protocol": "HTTP/1.1",
     "targets": ["http://backend:8080"], "headers": {"host": ["backend:8080"]}
   },
   "upstream_response": {

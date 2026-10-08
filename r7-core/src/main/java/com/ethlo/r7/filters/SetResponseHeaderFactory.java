@@ -2,7 +2,7 @@ package com.ethlo.r7.filters;
 
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.ShortInfo;
@@ -83,7 +83,7 @@ public final class SetResponseHeaderFactory implements GatewayFilterFactory<SetR
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.name + ": " + RedactUtil.fingerprint(this.value);
+            return FILTER_NAME + ": " + this.name + ": " + SensitiveConfig.MASK;
         }
     }
 }

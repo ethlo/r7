@@ -893,7 +893,7 @@ routes:
 
 The `server.yaml` file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
 
-`server.yaml` is optional. Without one, r7 runs on the defaults in the tables below: the gateway listens on `0.0.0.0:8888`, the management endpoint on `127.0.0.1:18888`, journals go to `./journals` (or `R7_JOURNAL_DIR`), and `X-Forwarded-For` is never trusted. The startup log says when the defaults are in use. Add a `server.yaml` only for the settings you need to change; anything it leaves out keeps its default.
+`server.yaml` is optional, but a fingerprint key is not: without the file, set the `R7_FINGERPRINT_KEY` environment variable (see [`fingerprint_key`](#journal-redaction-storagejournal_security)). Without the file, r7 runs on the defaults in the tables below: the gateway listens on `0.0.0.0:8888`, the management endpoint on `127.0.0.1:18888`, journals go to `./journals` (or `R7_JOURNAL_DIR`), and `X-Forwarded-For` is never trusted. The startup log says when the defaults are in use. Add a `server.yaml` only for the settings you need to change; anything it leaves out keeps its default.
 
 r7 reads `routes.yaml` and `server.yaml` from the directory you start it in; `R7_ROUTES_CONFIG` and `R7_SERVER_CONFIG` name other paths. The container images start in `/app/config`, so mount your files there. `routes.yaml` is required, and r7 refuses to start without it. A `server.yaml` named by `R7_SERVER_CONFIG` must exist too: r7 will not fall back to the defaults when the file you pointed it at is missing, since that would quietly drop your limits and trusted proxies.
 
@@ -930,7 +930,7 @@ The management listener shares the process's file descriptors with the gateway i
 
 A request whose `Host` names anything other than `localhost`, the configured `host`, an entry in `allowed_hosts` or an IP address gets `421`. This stops DNS rebinding, where a web page re-resolves its own name to `127.0.0.1` and so reads a loopback-only dashboard from the browser of someone on the gateway host. IP addresses are always accepted because rebinding needs a name. If you reach the management port through a DNS name, add that name to `allowed_hosts`.
 
-The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates show such values as fingerprints, so two routes configured alike can still be told apart.
+The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates mask the same values, and the values predicates compare against, the same way.
 
 What the dashboard shows beyond the configuration itself:
 
@@ -1053,15 +1053,14 @@ fingerprint of its value instead of the value itself. This list is separate per 
 | `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response whitelist entirely. |
 | `safe_query_parameters` | List of Strings | Query parameter names whose values are journaled in plain text. Empty by default, so every query parameter value is fingerprinted. See [Query parameters](#query-parameters) below. |
 | `safe_query_parameters_case_sensitive` | Boolean | Match `safe_query_parameters` exactly, case included. Defaults to `false`: `page` on the list also covers `Page` and `PAGE`. |
-| `fingerprint_key` | String | Optional, at least 32 characters. When set, redacted values are written as a keyed HMAC-SHA-256 fingerprint (`id:hmac:` + 16 hex digits) rather than the default unkeyed SHA-256 (`id:sha256:` + 6 hex digits), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Supply it with `${VAR}` interpolation. See [Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values). |
+| `fingerprint_key` | String | **Required**, at least 32 characters. The secret key behind every fingerprint r7 writes in place of a redacted value (`fp:` + 11 characters, a keyed HMAC-SHA-256), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Defaults to the `R7_FINGERPRINT_KEY` environment variable; r7 does not start without one or the other. See [Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values). |
 
 Header names are matched case-insensitively. There is no way to remove a single header from the
 built-in whitelist while keeping the rest — use `safe_*_headers` to replace the whole list if
 you need exact control. Setting both `additional_safe_*_headers` and `safe_*_headers` for the
 same direction is a validation error: a full replacement and an addition to the defaults it
 replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
-is fingerprinted, no exceptions (unkeyed unless `fingerprint_key` is set, which it should be
-in production). This affects only journaling; it has no effect on what headers
+is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
 are sent to clients or upstreams.
 
 ```yaml title="server.yaml"
@@ -1096,7 +1095,7 @@ parameter name is safe everywhere, so with nothing configured every value is fin
 
 ```
 GET /search?page=2&api_key=s3cret&q=shoes HTTP/1.1                       # as sent
-GET /search?page=2&api_key=id:sha256:1ec1c2&q=id:sha256:01ea5d HTTP/1.1     # journaled, with page safe
+GET /search?page=2&api_key=fp:R5XU2m_VAik&q=fp:0uCr61zmqQQ HTTP/1.1      # journaled, with page safe
 ```
 
 - **Case.** Names on `safe_query_parameters` match regardless of case, as header names do:

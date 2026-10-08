@@ -13,7 +13,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.RedactUtil;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -116,7 +116,7 @@ public final class RequireMatchRequestHeaderFactory implements GatewayFilterFact
         public String summary()
         {
             // The pattern can be a shared secret (^Bearer abc$); the summary is shown on the management page.
-            return FILTER_NAME + ": " + this.config.name() + " ~= " + RedactUtil.fingerprint(this.config.regexp());
+            return FILTER_NAME + ": " + this.config.name() + " ~= " + SensitiveConfig.MASK;
         }
     }
 }

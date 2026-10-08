@@ -25,6 +25,7 @@ import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
+import com.ethlo.r7.server.config.ServerConfig;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.common.ConsoleNotifier;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
@@ -37,6 +38,13 @@ public abstract class AbstractR7IntegrationTest
     protected static final Logger logger = LoggerFactory.getLogger(AbstractR7IntegrationTest.class);
     // We bind in-process to 8888 to match the internal container port for consistency
     protected static final int GATEWAY_PORT = 8888;
+
+    /**
+     * The key the gateway under test fingerprints with, resolved as the gateway resolves it, so
+     * an R7_FINGERPRINT_KEY exported on the host wins here as it does in process. The Docker
+     * mode passes the same value to the container.
+     */
+    protected static final String FINGERPRINT_KEY = ServerConfig.standard().storage().journalSecurity().fingerprintKey();
     protected static WireMockServer UPSTREAM_SERVER;
     protected static HttpClient HTTP_CLIENT;
     // Docker State
@@ -146,6 +154,7 @@ public abstract class AbstractR7IntegrationTest
                 // routes.yaml interpolates it, and a literal "${UPSTREAM_HOST}" fails URL validation.
                 .withEnv("UPSTREAM_HOST", "host.testcontainers.internal")
                 .withEnv("R7_ROUTES_CONFIG", "/app/config/routes.yaml")
+                .withEnv("R7_FINGERPRINT_KEY", FINGERPRINT_KEY)
                 .withLogConsumer(new Slf4jLogConsumer(logger).withPrefix("R7-DOCKER"))
                 .waitingFor(Wait.forHttp("/")
                         .forPort(GATEWAY_PORT)

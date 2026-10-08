@@ -5,8 +5,10 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -102,13 +104,20 @@ public final class DocSnippets
 
     public static void setVariables()
     {
-        VARIABLES.forEach(System::setProperty);
+        VARIABLES.forEach((name, value) -> PREVIOUS.put(name, Optional.ofNullable(System.setProperty(name, value))));
     }
 
+    /**
+     * Puts back what was there before rather than clearing: the build sets
+     * {@code R7_FINGERPRINT_KEY} for every test, and a later test in the same JVM needs it.
+     */
     public static void clearVariables()
     {
-        VARIABLES.keySet().forEach(System::clearProperty);
+        PREVIOUS.forEach((name, previous) -> previous.ifPresentOrElse(value -> System.setProperty(name, value), () -> System.clearProperty(name)));
+        PREVIOUS.clear();
     }
+
+    private static final Map<String, Optional<String>> PREVIOUS = new HashMap<>();
 
     /**
      * Found by walking up from the working directory, which is a module directory (or below one)
