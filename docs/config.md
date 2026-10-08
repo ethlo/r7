@@ -698,6 +698,8 @@ Short-circuits the pipeline to serve static files directly from the disk. **Secu
 | `list_directory` | Boolean | No (default `false`) | Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. `index.html`) is found there. When disabled, such a request is rejected with `403 Forbidden`. |
 | `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`, and a directory listing, if enabled, leaves their names out; `.well-known/` is always served. |
 
+In a container, bind-mount the parent of `base_directory`, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 answers `503` and logs a warning until it restarts. With the parent mounted, a replaced directory, or a swapped `current` symlink, is picked up on the next request.
+
 #### SetStatus
 
 Overrides the HTTP response status code returned to the client, regardless of the upstream target's actual response.

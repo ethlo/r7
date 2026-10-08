@@ -18,6 +18,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.filters.StaticContentFactory;
@@ -31,6 +36,9 @@ import com.ethlo.r7.filters.StaticContentFactory;
  *   <li>the base directory may itself be a symbolic link (an atomically swapped release), but a
  *   link under it is followed only with {@code follow_symlinks};</li>
  *   <li>a base directory that is momentarily missing is a clean 404, not an error;</li>
+ *   <li>a base directory that was deleted while a mount still holds it (a bind mount of the
+ *   directory itself, which then was replaced) is a 503 and a warning in the log, not an empty
+ *   site answering 403 and 404;</li>
  *   <li>a directory is served by its welcome file, else listed when the route allows it, else
  *   403; one addressed without its trailing slash is redirected to it;</li>
  *   <li>every answer carries {@code X-Content-Type-Options: nosniff}: the type is guessed from
@@ -40,7 +48,10 @@ import com.ethlo.r7.filters.StaticContentFactory;
  */
 public final class StaticFiles
 {
+    private static final Logger logger = LoggerFactory.getLogger(StaticFiles.class);
     private static final String NOSNIFF = "nosniff";
+    private static final String UNAVAILABLE = "Static content directory unavailable";
+    private static final Set<Path> warnedUnlinked = ConcurrentHashMap.newKeySet();
     private static final List<String> WELCOME_FILES = List.of("index.html", "index.htm", "default.html", "default.htm");
     private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC);
 
@@ -119,7 +130,19 @@ public final class StaticFiles
         if (!Files.isDirectory(base))
         {
             // Momentarily missing, e.g. mid atomic swap: a clean 404, never a hang or a 500.
-            target.answer(404, "Static content directory unavailable".getBytes(StandardCharsets.UTF_8));
+            target.answer(404, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+        if (isUnlinked(base))
+        {
+            // The path still opens, but on a directory that no longer exists: a mount holds the
+            // one that was replaced. Nothing here will ever be served again, so say so.
+            if (warnedUnlinked.add(base))
+            {
+                logger.warn("Static content directory {} was deleted, but a mount still holds it (a bind mount of the directory itself, "
+                        + "replaced on the host). Mount its parent directory instead, or restart to see the new one.", base);
+            }
+            target.answer(503, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
             return;
         }
 
@@ -163,6 +186,22 @@ public final class StaticFiles
             return;
         }
         serveFile(target, resolved, method.equals("HEAD"));
+    }
+
+    /**
+     * Whether {@code directory} has no links left: deleted, and reached only through a mount (or
+     * an open descriptor) that still holds it. False where the file system does not say.
+     */
+    static boolean isUnlinked(final Path directory)
+    {
+        try
+        {
+            return Files.getAttribute(directory, "unix:nlink") instanceof Integer links && links == 0;
+        }
+        catch (final UnsupportedOperationException | IllegalArgumentException | IOException e)
+        {
+            return false;
+        }
     }
 
     /**
