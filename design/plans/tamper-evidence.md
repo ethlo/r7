@@ -59,8 +59,9 @@ sig: <the Ed25519 signature, base64>
   its own: it compares it with the key it was given.
 
 The chain links statements, not segments. A statement is a few hundred bytes, so it can outlive
-its segment: the tailer copies it into its output (below), and the chain stays checkable after
-the reaper has deleted every segment it covers.
+its segment. A signing tailer copies it into its output (below, decision 4), and then the chain
+stays checkable after the reaper has deleted every segment it covers. Without tailer signing the
+statements go with their segments, so the chain can be checked only over what is still on disk.
 
 The `.r7f` format doesn't change. The sidecar is a non-segment file, which `FORMAT.md` §3.1
 already tells readers to ignore. Its spec goes in `FORMAT.md` as a new section.
@@ -75,9 +76,10 @@ already only stamps the seal record and hands the rest to a virtual finalizer th
 2. hashes the segment up to its Data End, signs the statement, and then unmaps the segment as
    it does today, so nothing holds a mapping when the file is renamed (a mapped file can't be
    renamed on Windows);
-3. writes `<stem>.seal` (write to a temporary name, fsync, rename);
+3. writes `<stem>.seal`: to a temporary name, fsync, rename, then fsync the directory so the
+   rename itself survives a power loss (as the `.seq` marker already does);
 4. updates `shard-<id>.chain`, the chain head (chain id, index, hash of the last statement),
-   the same way;
+   the same way, directory fsync included;
 5. renames the segment, as it does today.
 
 The cost is one SHA-256 pass over each segment and one signature, which is about 50 µs. With the
@@ -99,8 +101,9 @@ startup, recovery handles each shard's leftover `.flux` segments in sequence ord
 | A `.seal` that doesn't verify against the segment | after tampering, never a crash, since step 3 is an atomic rename | Keep both files as they are, quarantine the segment as recovery does with damage today, log an error, and sign a statement with `quarantined: true` and the reason. The event is then part of the chain, signed |
 
 A sealed `.r7f` without a `.seal` can't exist, because step 5 comes after step 3. A segment the
-writer deletes because it holds no entries also gets a statement (`empty: true`), so a jump in
-segment sequence between two statements always means a segment went missing.
+writer deletes because it holds no entries gets no file of its own: the next statement lists its
+sequence under `empty:`, so a jump in segment sequence that no statement accounts for always
+means a segment went missing.
 
 **Clean close** (`finalizeActiveSegment`) does the same steps synchronously.
 
@@ -115,7 +118,7 @@ output back until each segment seals would end live tailing.
 
 Verification is a separate pass once a segment has its `.seal`. The tailer re-reads the sealed
 segment up to `data_end` (from the page cache, because it has just read it), and checks the
-hash, the signature against its configured key, and the link to the last statement it saw (kept
+hash, the signature against its pinned keys, and the link to the last statement it saw (kept
 in its checkpoint). That costs one extra read pass per segment, in the tailer, nowhere near the
 gateway. If the `.seal` isn't there yet, the check waits for it, and delivery carries on
 meanwhile.
@@ -148,7 +151,7 @@ by its name, and it is written before the file's rename (the hook runs there, an
 `SealedFileWriter` recovers a file a crash left open). The tailer's chain head in its checkpoint
 is advanced after that. On start, a `F.seal` that verifies and is ahead of the head is adopted.
 
-An auditor holding only the archive and the two public keys can then check three things: each
+An auditor holding only the archive and the pinned public keys can then check three things: each
 file is unchanged, no file is missing from the middle of either chain, and every source
 segment was verified. The newest end of the archive is checked against a head kept elsewhere,
 the same way as the journal's: the tailer logs each output statement's hash too.
@@ -176,8 +179,15 @@ check a whole chain in Java can call it.
   new config, so every gateway signs from day one. A separate key would add no real separation:
   it would live in the same environment as the fingerprint key, so whoever can read one can read
   the other. The gateway logs the public key at startup, for operators to pin. Rotating
-  `fingerprint_key` changes the signing key too, and the chain shows that as
-  `start_reason: key_changed`.
+  `fingerprint_key` changes the signing key too. The chain head records the key, so the gateway
+  sees the change and starts a new chain with `start_reason: key_changed`. Nothing can vouch for
+  the new key from inside the chain (the old key is gone by then), so trust passes outside it:
+  the tailer takes a list of pinned keys, and a statement signed by a key not on the list gets
+  the verdict `pending: unknown_key` and an error log. Once the operator pins the new key, the
+  tailer checks those segments and records their real verdicts. A segment still pending counts
+  as not done, so early reaping waits; `ttl` still applies. An auditor checking an archive holds
+  every key that was pinned in its time, and each output statement says which key signed each
+  source.
 - (b) A separate `signing_key`, opt-in. That's more to configure, and gateways without it have
   no proof.
 
