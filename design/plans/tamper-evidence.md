@@ -19,7 +19,8 @@ statement has to be written by the process that sealed the segment.
 | A sealed segment deleted from the middle, or replaced by another one | yes: a gap or a break in the chain |
 | The newest segments deleted, with their statements | only against a head kept elsewhere: the gateway logs every statement's hash and index, and the tailer's checkpoint and output statements carry the last one it saw. A chain alone can't show that its own end is missing |
 | A sealed segment's statement edited or forged | yes: the signature fails |
-| A tailer output file edited or deleted after it was sealed | yes, when the tailer signs (decision 4) |
+| A tailer output file edited, or deleted from the middle, after it was sealed | yes, when the tailer signs (decision 4) |
+| The newest tailer output files deleted, with their statements | only against a head kept elsewhere, as for segments: the tailer logs every output statement's hash and index |
 | The chain restarted to hide a deletion | the restart is visible, and it is signed: only the gateway's key can start a chain |
 | An active (`.flux`) segment edited before it is sealed | **no** |
 | Anything done by whoever holds the gateway's key or controls its process | **no** |
@@ -93,9 +94,11 @@ startup, recovery handles each shard's leftover `.flux` segments in sequence ord
 | No `<stem>.seal` | before step 3 | Seal as today, sign with `recovered: true`, then steps 3 to 5 |
 | A `.seal` that verifies, head behind it | between steps 3 and 4 | Adopt the statement, advance the head to it, rename |
 | A `.seal` that verifies, head already on it | between steps 4 and 5 | Rename only |
-| A `.seal` that doesn't verify against the segment | after tampering, never a crash, since step 3 is an atomic rename | Keep the file as it is, quarantine the segment as recovery does with damage today, log an error, and sign nothing for it. The gap stays visible in the chain |
+| A `.seal` that doesn't verify against the segment | after tampering, never a crash, since step 3 is an atomic rename | Keep both files as they are, quarantine the segment as recovery does with damage today, log an error, and sign a statement with `quarantined: true` and the reason. The event is then part of the chain, signed |
 
-A sealed `.r7f` without a `.seal` can't exist, because step 5 comes after step 3.
+A sealed `.r7f` without a `.seal` can't exist, because step 5 comes after step 3. A segment the
+writer deletes because it holds no entries also gets a statement (`empty: true`), so a jump in
+segment sequence between two statements always means a segment went missing.
 
 **Clean close** (`finalizeActiveSegment`) does the same steps synchronously.
 
