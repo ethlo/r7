@@ -1,8 +1,8 @@
 # Where r7 fits
 
-r7 does three things and hands everything else to tools you already run: it routes traffic, it
-records every exchange, and it reports its own health. Each of those comes out in a standard
-format, so r7 plugs into an existing stack instead of bringing one.
+r7 adds a record of every exchange to your stack and replaces nothing in it. It does three
+things, routing traffic, recording every exchange and reporting its own health, and each comes
+out in a standard format that tools you already run read: WARC, JSON lines and Prometheus.
 
 ```mermaid
 flowchart LR

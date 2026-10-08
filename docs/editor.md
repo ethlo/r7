@@ -5,7 +5,7 @@ hide:
 
 # r7 Gateway Configuration Editor
 
-Use the interactive editor below to draft and validate your routing rules against the latest schema.
+Write your `routes.yaml` here and the editor checks it against r7's config schema as you type. Misspell a filter name, such as `AddResponseHeadr`, and it is flagged on the spot, the way the gateway would refuse it at startup.
 
 <iframe
 src="/editor-app/index.html"

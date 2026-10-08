@@ -1,10 +1,35 @@
 # Custom Filters and Predicates
 
-The r7 gateway is designed to be highly extensible. Because it utilizes Java's native `ServiceLoader` mechanism, you can write custom Predicates and Filters, compile them into a standard JAR file, and drop them into the gateway's classpath. The engine will automatically discover and register them for use in your YAML configuration.
+A predicate or filter of your own is a Java class, a config record and one line in a
+`META-INF/services` file. Drop the jar on the gateway's classpath and its name works in
+`routes.yaml` like a built-in one, with the same validation at startup.
 
-This guide outlines how to implement, expose, and deploy your custom extensions.
+## How a request runs
 
----
+Each request runs start to finish on one virtual thread, the upstream call included. There is no
+reactive chain, no callback to register and no handoff to a worker pool. A filter is ordinary
+blocking code: it can call a database, a cache or another service directly and return when it is
+done, and a stack trace points at the line that failed.
+
+A filter implements the interface of the stage it works in, and each stage hands it only what
+may change at that point:
+
+| Stage | Interface | Can read | Can change |
+| --- | --- | --- | --- |
+| Client request | `ClientRequestGatewayFilter` | the request as the client sent it | nothing on the request; it can answer the client itself (`shortCircuit`) or cap the body size (`limitRequestBody`) |
+| Upstream request | `UpstreamRequestGatewayFilter` | the client's request | the request r7 sends upstream: path, query, headers, cookies, method; or answer the client itself |
+| Client response | `ClientResponseGatewayFilter` | the client's request, the upstream request and response | the status and headers the client gets |
+| Completed | `CompletedGatewayFilter` | the whole exchange, after the client connection is closed | nothing that was sent |
+
+The read-only views are separate types (`GatewayRequest`, `GatewayResponse`) from the writable
+ones (`MutableGatewayRequest`, `MutableGatewayResponse`), so the compiler enforces the table: no
+filter can change the request as the client sent it, and the journal's record of it is what
+arrived. Bodies are streamed through and are not changed by filters. Every stage can read and
+set the exchange's attributes, which is how filters pass values along the request.
+
+One class can implement several of these interfaces when it acts in more than one stage, as the
+built-in `RateLimiter` and `CircuitBreaker` do. When each stage runs, and in which order global
+and route filters run in it, is in [Execution Semantics](config.md#3-execution-semantics).
 
 ## 1. Implementing a Custom Predicate
 
@@ -97,9 +122,7 @@ match:
 
 ## 2. Implementing a Custom Filter
 
-Filters can mutate requests before they are sent upstream, mutate responses before they are returned to the client, or short-circuit the request entirely.
-
-To create a custom filter, implement `GatewayFilterFactory`. The inner filter class can implement `ClientRequestGatewayFilter`, `UpstreamRequestGatewayFilter`, or `ClientResponseGatewayFilter` depending on the lifecycle phase you need to intercept.
+To create a custom filter, implement `GatewayFilterFactory`. The filter it creates implements the interface of each stage it works in, from the table above.
 
 Here is an example of an advanced filter that blocks traffic based on a custom token and short-circuits the connection with a `403 Forbidden` if validation fails:
 

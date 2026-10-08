@@ -224,6 +224,24 @@ Comments in this codebase explain *why a rule exists*, often naming the failure 
 When you fix something subtle, that is the comment worth leaving; when a rule is stated once,
 grep for every site it governs before calling it applied.
 
+## Docs voice
+
+The site (`docs/`, `README.md`) leads with what r7 does that other gateways leave to the user:
+the record of every exchange. Clean config, readable routing and plain-Java extensions support
+that claim. Keep the copy confident and exact:
+
+- Say what r7 does, in the present tense: "r7 records", not "r7 can record", "is designed to"
+  or "may help". No "a good fit if".
+- Every claim carries its proof in the same section: a config snippet, a real error message, a
+  record, or a link to the page that specifies it.
+- Narrow a claim rather than soften it: "no network call while the client waits" over "never
+  in the way". If a qualifier is needed, the claim is too broad.
+- Limits are stated once, in "Use something else when" on the home page and in
+  `design/limitations.md`, not repeated in feature sections.
+- Numbers only from `benchmark/bench.sh` on the controlled machine, with `environment.txt`
+  linked; throughput and the tail are claimed together.
+- Open a section with the reader's problem, then what r7 does about it.
+
 ## Git commits
 
 Never add a `Co-authored-by` trailer (e.g. for Copilot) to commits in this repository, regardless

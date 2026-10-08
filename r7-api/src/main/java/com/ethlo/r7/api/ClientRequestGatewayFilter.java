@@ -19,10 +19,12 @@ public interface ClientRequestGatewayFilter extends GatewayFilter
     /**
      * Indicates if this filter performs blocking operations (e.g., network I/O, database queries).
      * <p>
-     * If {@code true}, the engine dispatches execution to a worker thread (e.g., a Virtual Thread)
-     * to prevent stalling the server's non-blocking I/O loop.
+     * The servers r7 ships give each request a thread of its own, on which blocking is fine, so
+     * there this has no effect and the filter runs inline either way. It is honoured only by a
+     * server that runs requests on a shared I/O thread, which then moves the request to a thread
+     * that may block before calling the filter.
      *
-     * @return {@code true} if blocking, {@code false} for inline fast-path execution.
+     * @return {@code true} if blocking, {@code false} otherwise.
      */
     default boolean requiresDispatch()
     {
