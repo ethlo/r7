@@ -3465,6 +3465,7 @@
 </tr>
 </tbody>
 </table>
+<p>In a container, bind-mount the parent of <code>base_directory</code>, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 answers <code>503</code> and logs a warning until it restarts. With the parent mounted, a replaced directory, or a swapped <code>current</code> symlink, is picked up on the next request.</p>
 <h4 id="setstatus">SetStatus</h4>
 <p>Overrides the HTTP response status code returned to the client, regardless of the upstream target's actual response.</p>
 <table>
