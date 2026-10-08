@@ -5,8 +5,6 @@ import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.oneOf;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -24,7 +22,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import io.restassured.path.json.JsonPath;
-import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
 /**
@@ -218,15 +215,18 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .header("Cache-Control", equalTo("no-store"))
                 .body(containsString("# TYPE r7_unrouted_requests_total counter\n"))
                 .body(containsString("# TYPE r7_route_request_duration_seconds histogram\n"))
-                .body(containsString("# TYPE r7_gateway_health gauge\n"))
                 // with-secrets is health-checked: its upstream reports a status
                 .body(containsString("r7_component_health{route=\"with-secrets\",component=\"upstream\",position=\"0\"}"))
                 .body(not(containsString("url-s3cret-pass")))
                 .body(not(containsString("svc-user")));
     }
 
+    /**
+     * The forced-down route's upstream is ERROR, which the body reports, but /health is liveness:
+     * a restart would not bring an upstream back, so it stays 200.
+     */
     @Test
-    public void healthIsUpWhileTheSnapshotIsFresh()
+    public void healthIsUpWhileTheSnapshotIsFreshAndReportsTheGatewayHealth()
     {
         management()
                 .when()
@@ -235,30 +235,38 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .statusCode(200)
                 .header("Content-Type", equalTo("application/json"))
                 .body("status", equalTo("UP"))
-                .body("health", oneOf("OK", "WARN", "ERROR"))
-                .body("problems", notNullValue());
+                .body("health", equalTo("ERROR"))
+                .body("problems.find { it.route == 'forced-down' }.component", equalTo("upstream"))
+                .body("problems.find { it.route == 'forced-down' }.health", equalTo("ERROR"));
     }
 
-    /**
-     * /ready is /health that also fails on ERROR. Status and body come from one snapshot, so
-     * they agree whatever the test upstream's health check has found by now.
-     */
     @Test
-    public void readyFailsOnlyWhenTheGatewayHealthIsError()
+    public void readyFailsWhileAComponentIsInError()
     {
-        final Response response = management().when().get("/ready");
-        final String health = response.jsonPath().getString("health");
-        assertThat(response.jsonPath().getString("status")).isEqualTo("UP");
-        assertThat(response.statusCode()).isEqualTo("ERROR".equals(health) ? 503 : 200);
-        assertThat(response.header("Cache-Control")).isEqualTo("no-store");
+        management()
+                .when()
+                .get("/ready")
+                .then()
+                .statusCode(503)
+                .header("Content-Type", equalTo("application/json"))
+                .header("Cache-Control", equalTo("no-store"))
+                .body("status", equalTo("UP"))
+                .body("health", equalTo("ERROR"))
+                .body("problems.find { it.route == 'forced-down' }.detail", equalTo("1 of 1 target down"));
     }
 
     @Test
-    public void theDashboardDataCarriesTheGatewayHealth() throws Exception
+    public void theDashboardDataAndTheMetricsCarryTheGatewayHealth() throws Exception
     {
         final JsonPath json = managementJsonAfter(Instant.now());
-        assertThat(json.getString("health.health")).isIn("OK", "WARN", "ERROR");
-        assertThat(json.getList("health.problems")).isNotNull();
+        assertThat(json.getString("health.health")).isEqualTo("ERROR");
+        assertThat(json.getList("health.problems.route")).contains("forced-down");
+        management()
+                .when()
+                .get("/metrics")
+                .then()
+                .statusCode(200)
+                .body(containsString("\nr7_gateway_health 2\n"));
     }
 
     /**

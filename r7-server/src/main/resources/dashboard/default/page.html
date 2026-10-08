@@ -1065,8 +1065,10 @@
         setHealthBadge(health.health, problems.length
             ? `${problems.length} component${problems.length === 1 ? '' : 's'} not OK`
             : 'Every filter and upstream reports OK');
-        // A rejected routes.yaml has its own banner below
-        const shown = problems.filter(p => p.component !== 'routes.yaml');
+        // A rejected routes.yaml has its own banner below. It is the one problem with neither a
+        // route nor a position: a global filter has a position, so a custom filter that happens
+        // to be named routes.yaml is still listed.
+        const shown = problems.filter(p => !(p.route == null && p.position == null && p.component === 'routes.yaml'));
         if (!shown.length) {
             list.classList.remove('visible');
             return;
@@ -2061,6 +2063,8 @@
             console.error(e)
             timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;
             setHealthBadge('UNKNOWN', 'The gateway did not answer');
+            // The last problems seen would read as the reason for this, which they need not be
+            document.getElementById('health-problems').classList.remove('visible');
         }
     }
 

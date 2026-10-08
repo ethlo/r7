@@ -39,3 +39,16 @@ routes:
         interval: 1h
       targets:
         - url: http://svc-user:url-s3cret-pass@${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # Its only target is held out of rotation, so the gateway's health is ERROR from the moment
+  # routes load: /ready must answer 503 while /health, the liveness probe, stays 200
+  - id: forced-down
+    match:
+      - PathPrefix:
+          prefix: /forced-down
+    upstream:
+      health_check:
+        interval: 1h
+        override: FORCE_DOWN
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
