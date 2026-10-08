@@ -6,10 +6,13 @@ A predicate or filter of your own is a Java class, a config record and one line 
 
 ## How a request runs
 
-Each request runs start to finish on one virtual thread, the upstream call included. There is no
-reactive chain, no callback to register and no handoff to a worker pool. A filter is ordinary
-blocking code: it can call a database, a cache or another service directly and return when it is
-done, and a stack trace points at the line that failed.
+In the gateway (the container images and the jar, on Helidon Níma), each request runs start to
+finish on one virtual thread, the upstream call included. There is no reactive chain, no
+callback to register and no handoff to a worker pool. A filter is ordinary blocking code: it can
+call a database, a cache or another service directly and return when it is done, and a stack
+trace points at the line that failed. Embedded in a servlet container (`r7-servlet`), a request
+runs the same way on the container's request thread instead, so give the container virtual
+threads or size its pool for your upstream and filter latency.
 
 A filter implements the interface of the stage it works in, and each stage hands it only what
 may change at that point:

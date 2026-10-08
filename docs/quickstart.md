@@ -187,7 +187,7 @@ Abbreviated and pretty-printed, it looks like this:
   "client_request": {"method": "GET", "path": "/api/orders",
                      "headers": {"host": ["localhost:9999"], "cookie": ["fp:R5XU2m_VAik"]}},
   "client_response": {"status": 200, "headers": {"content-type": ["application/json; charset=utf-8"]}, "body_bytes": 612},
-  "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 0, "length": 1873}
+  "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 48211, "length": 1873}
 }
 ```
 

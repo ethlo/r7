@@ -134,10 +134,10 @@ The compiler enforces this: no filter can change the request as the client sent 
 journal's record of it is what arrived. A filter's settings are a Java record that validates
 itself, so a mistake in a plugin's YAML is reported at startup like one in a built-in filter.
 
-Every request runs start to finish on one virtual thread, the upstream call included. There is
-no reactive chain, no callbacks and no handoff to a worker pool, so a filter is straight-line
-code: it can call a database or another service directly, and a stack trace points at the line
-that failed.
+In the gateway, every request runs start to finish on one virtual thread, the upstream call
+included. There is no reactive chain, no callbacks and no handoff to a worker pool, so a filter
+is straight-line code: it can call a database or another service directly, and a stack trace
+points at the line that failed.
 
 [Write a filter or predicate](extensibility.md)
 
