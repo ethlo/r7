@@ -788,7 +788,7 @@ Levels and `status_overrides` work as for a route, except that `FULL` is refused
 
 ## 8. Complete Example Configuration
 
-The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.
+The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, journaling of unrouted requests, resilient fallback routing, and active health checks.
 
 ```yaml title="routes.yaml"
 version: '{{git.rev.abbr}}'
@@ -797,6 +797,19 @@ version: '{{git.rev.abbr}}'
 global_filters:
   - SimpleMetrics
   - AddCorrelationId
+
+# Journal requests refused before routing, such as ambiguous paths and TRACE,
+# but not plain route misses (404)
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+      status_overrides:
+        404: NONE
+    response:
+      level: METADATA
+      status_overrides:
+        404: NONE
 
 routes:
   # Internal health loopback (Short-circuiting proxy)
