@@ -5,6 +5,8 @@ import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.oneOf;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import io.restassured.path.json.JsonPath;
+import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
 /**
@@ -215,6 +218,7 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .header("Cache-Control", equalTo("no-store"))
                 .body(containsString("# TYPE r7_unrouted_requests_total counter\n"))
                 .body(containsString("# TYPE r7_route_request_duration_seconds histogram\n"))
+                .body(containsString("# TYPE r7_gateway_health gauge\n"))
                 // with-secrets is health-checked: its upstream reports a status
                 .body(containsString("r7_component_health{route=\"with-secrets\",component=\"upstream\",position=\"0\"}"))
                 .body(not(containsString("url-s3cret-pass")))
@@ -230,7 +234,31 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .then()
                 .statusCode(200)
                 .header("Content-Type", equalTo("application/json"))
-                .body(equalTo("{\"status\":\"UP\"}"));
+                .body("status", equalTo("UP"))
+                .body("health", oneOf("OK", "WARN", "ERROR"))
+                .body("problems", notNullValue());
+    }
+
+    /**
+     * /ready is /health that also fails on ERROR. Status and body come from one snapshot, so
+     * they agree whatever the test upstream's health check has found by now.
+     */
+    @Test
+    public void readyFailsOnlyWhenTheGatewayHealthIsError()
+    {
+        final Response response = management().when().get("/ready");
+        final String health = response.jsonPath().getString("health");
+        assertThat(response.jsonPath().getString("status")).isEqualTo("UP");
+        assertThat(response.statusCode()).isEqualTo("ERROR".equals(health) ? 503 : 200);
+        assertThat(response.header("Cache-Control")).isEqualTo("no-store");
+    }
+
+    @Test
+    public void theDashboardDataCarriesTheGatewayHealth() throws Exception
+    {
+        final JsonPath json = managementJsonAfter(Instant.now());
+        assertThat(json.getString("health.health")).isIn("OK", "WARN", "ERROR");
+        assertThat(json.getList("health.problems")).isNotNull();
     }
 
     /**

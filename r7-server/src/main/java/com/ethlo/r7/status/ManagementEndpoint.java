@@ -15,9 +15,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.Supplier;
@@ -37,7 +35,6 @@ import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.status.dto.ConnectorStatisticsDto;
-import com.ethlo.r7.status.dto.FilterNode;
 import com.ethlo.r7.status.dto.MemoryDto;
 import com.ethlo.r7.status.dto.ModelMapper;
 import com.ethlo.r7.status.dto.RouteConfigDto;
@@ -47,10 +44,10 @@ import com.ethlo.r7.util.SystemUtil;
 import com.ethlo.r7.util.constants.MediaTypes;
 
 /**
- * The management port: {@code /metrics} in the Prometheus text format, {@code /health}, and on
- * every other path the dashboard page, or its data as JSON. Server-neutral - a server hands it
- * the method, path, Host and Accept of a request and writes back the {@link Response} - so every
- * r7 server answers the same, security headers included.
+ * The management port: {@code /metrics} in the Prometheus text format, {@code /health},
+ * {@code /ready}, and on every other path the dashboard page, or its data as JSON.
+ * Server-neutral - a server hands it the method, path, Host and Accept of a request and writes
+ * back the {@link Response} - so every r7 server answers the same, security headers included.
  * <p>
  * The JSON and the metrics are rendered together every {@link #SNAPSHOT_INTERVAL} on the
  * gateway's scheduler, and a request is answered with those bytes as they stand. Nothing is
@@ -70,9 +67,9 @@ public final class ManagementEndpoint
 
     static final String METRICS_PATH = "/metrics";
     static final String HEALTH_PATH = "/health";
+    static final String READY_PATH = "/ready";
 
     private static final Logger logger = LoggerFactory.getLogger(ManagementEndpoint.class);
-    private static final byte[] HEALTH_UP = "{\"status\":\"UP\"}".getBytes(StandardCharsets.UTF_8);
     private static final byte[] HEALTH_DOWN = "{\"status\":\"DOWN\"}".getBytes(StandardCharsets.UTF_8);
 
     /**
@@ -82,7 +79,11 @@ public final class ManagementEndpoint
      */
     private static final long[] LATENCY_BOUNDS_MICROS = latencyBounds();
 
-    private record Snapshot(byte[] json, byte[] metrics, long renderedAtNanos)
+    /**
+     * @param health      the body of {@code /health} and {@code /ready} while this snapshot is fresh
+     * @param healthLevel the gateway's rolled-up health, which {@code /ready} fails on at ERROR
+     */
+    private record Snapshot(byte[] json, byte[] metrics, byte[] health, ComponentStatus.Health healthLevel, long renderedAtNanos)
     {
     }
 
@@ -196,7 +197,13 @@ public final class ManagementEndpoint
             final List<RouteReading> routes = readRoutes();
             final Map<String, Object> json = json(renderedAt, routes);
             final byte[] metrics = metrics(json, routes);
-            this.snapshot = new Snapshot(JsonUtil.writeValueAsString(json).getBytes(StandardCharsets.UTF_8), metrics, renderedAtNanos);
+            final GatewayHealth health = (GatewayHealth) json.get("health");
+            final Map<String, Object> healthBody = new LinkedHashMap<>();
+            healthBody.put("status", "UP");
+            healthBody.put("health", health.health());
+            healthBody.put("problems", health.problems());
+            this.snapshot = new Snapshot(JsonUtil.writeValueAsString(json).getBytes(StandardCharsets.UTF_8), metrics,
+                    JsonUtil.writeValueAsString(healthBody).getBytes(StandardCharsets.UTF_8), health.health(), renderedAtNanos);
         }
         catch (final RuntimeException e)
         {
@@ -258,11 +265,19 @@ public final class ManagementEndpoint
         }
 
         final Snapshot current = this.snapshot;
-        if (HEALTH_PATH.equals(path))
+        final boolean health = HEALTH_PATH.equals(path);
+        if (health || READY_PATH.equals(path))
         {
             headers.put("Content-Type", MediaTypes.APPLICATION_JSON);
             final boolean fresh = current != null && System.nanoTime() - current.renderedAtNanos() <= STALE_AFTER.toNanos();
-            return new Response(fresh ? 200 : 503, headers, fresh ? HEALTH_UP : HEALTH_DOWN);
+            if (!fresh)
+            {
+                return new Response(503, headers, HEALTH_DOWN);
+            }
+            // /health is liveness: what components report is the gateway doing its job, and a
+            // restart would not fix it. /ready also fails on ERROR, for whoever routes on it.
+            final boolean ok = health || current.healthLevel() != ComponentStatus.Health.ERROR;
+            return new Response(ok ? 200 : 503, headers, current.health());
         }
 
         final boolean metrics = METRICS_PATH.equals(path);
@@ -322,8 +337,10 @@ public final class ManagementEndpoint
             routeConfigs.add(ModelMapper.mapRouteConfig((DefaultGatewayRoute) route, i + 1, pipeline.upstreamStatus(route), this.safeRequestHeaders, this.safeResponseHeaders));
         }
         root.put("route_version", routeRegistry.getConfigVersion());
-        root.put("route_source", hotReloadService.status());
+        final HotReloadService.Status routeSource = hotReloadService.status();
+        root.put("route_source", routeSource);
         root.put("route_configs", routeConfigs);
+        root.put("health", GatewayHealth.of(GatewayHealth.components(routeConfigs), routeSource));
         return root;
     }
 
@@ -341,8 +358,11 @@ public final class ManagementEndpoint
         out.metric("r7_start_time_seconds", "gauge", "When the process started, in seconds since the epoch.")
                 .sample("r7_start_time_seconds", Instant.from(SystemUtil.getStartTime()).getEpochSecond());
 
-        final HotReloadService.Status routeSource = (HotReloadService.Status) json.get("route_source");
-        final boolean rejected = routeSource.rejectedAt() != null && (routeSource.loadedAt() == null || routeSource.rejectedAt().isAfter(routeSource.loadedAt()));
+        final GatewayHealth health = (GatewayHealth) json.get("health");
+        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml counting as WARN. 0 OK, 1 WARN, 2 ERROR.")
+                .sample("r7_gateway_health", healthValue(health.health()));
+
+        final boolean rejected = GatewayHealth.routesRejected((HotReloadService.Status) json.get("route_source"));
         out.metric("r7_routes_config_rejected", "gauge", "1 while the latest edit of routes.yaml was rejected and the previous routes still run.")
                 .sample("r7_routes_config_rejected", rejected ? 1 : 0);
 
@@ -440,43 +460,28 @@ public final class ManagementEndpoint
     }
 
     /**
-     * Each route's components that report a status: its filters, numbered by their place in the
-     * route's pipeline (global filters first), and its upstream as position 0. A global filter is
-     * one instance shared by every route, so it is reported once and without a route: under each
-     * route its gateway-wide counts would be summed once per route.
+     * Each component's health and numbers, as {@link GatewayHealth#components} lists them.
      */
     static void components(final PrometheusText out, final List<RouteConfigDto> routes)
     {
-        record Reported(String route, String component, String position, ComponentStatus status)
-        {
-        }
-        final List<Reported> reported = new ArrayList<>();
-        final Set<Integer> globalsReported = new HashSet<>();
-        for (final RouteConfigDto route : routes)
-        {
-            int position = 1;
-            for (FilterNode node = route.filterNodes(); node != null; node = node.child())
-            {
-                final boolean upstream = node.child() == null;
-                if (node.status() != null && (!node.global() || globalsReported.add(position)))
-                {
-                    reported.add(new Reported(node.global() ? "" : route.id(), upstream ? "upstream" : node.name(), upstream ? "0" : Integer.toString(position), node.status()));
-                }
-                position++;
-            }
-        }
-
+        final List<GatewayHealth.ComponentReport> reported = GatewayHealth.components(routes);
         out.metric("r7_component_health", "gauge", "What a route's filter or upstream reports: 0 OK, 1 WARN, 2 ERROR.");
-        for (final Reported r : reported)
+        for (final GatewayHealth.ComponentReport r : reported)
         {
-            out.sample("r7_component_health", healthValue(r.status().health()), "route", r.route(), "component", r.component(), "position", r.position());
+            out.sample("r7_component_health", healthValue(r.status().health()), "route", label(r.route()), "component", r.component(), "position", Integer.toString(r.position()));
         }
         out.metric("r7_component_value", "gauge", "A number a route's filter or upstream reports, by name.");
-        for (final Reported r : reported)
+        for (final GatewayHealth.ComponentReport r : reported)
         {
             r.status().values().forEach((name, value) ->
-                    out.sample("r7_component_value", value, "route", r.route(), "component", r.component(), "position", r.position(), "name", name));
+                    out.sample("r7_component_value", value, "route", label(r.route()), "component", r.component(), "position", Integer.toString(r.position()), "name", name));
         }
+    }
+
+    // A global filter belongs to no route: its route label is empty, as Prometheus reads a missing one
+    private static String label(final String route)
+    {
+        return route != null ? route : "";
     }
 
     private static long healthValue(final ComponentStatus.Health health)

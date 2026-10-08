@@ -23,7 +23,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | Every exchange, as evidence | WARC 1.1, one Zstandard frame per record | [The WARC profile](warc.md) | Archiving, forensics, replay |
 | Every exchange, as a log line | JSON Lines | [The JSON line](journaling.md#the-json-line) | Search, dashboards, alerting |
-| The gateway's own health | Prometheus text, `/health` | [Metrics](config.md#metrics) | Monitoring, liveness probes |
+| The gateway's own health | Prometheus text, `/health`, `/ready` | [Metrics](config.md#metrics) | Monitoring, liveness probes |
 
 The JSON line and the WARC records share the request id. When a WARC file holds an exchange, its
 JSON line points at the records by file, offset and length, so a query result in any of the tools
@@ -185,4 +185,5 @@ management:
 ```
 
 Point a Kubernetes liveness probe at `/health` on the same port. It turns `503` only when the
-gateway's own housekeeping has stopped, never for an upstream that is down.
+gateway's own housekeeping has stopped, never for an upstream that is down. Its body, and the
+`r7_gateway_health` metric, carry the gateway's state in one word: `OK`, `WARN` or `ERROR`.
