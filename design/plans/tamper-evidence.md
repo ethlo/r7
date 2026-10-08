@@ -44,8 +44,8 @@ data_end: 209715200
 sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 recovered: false
 prev: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
-key: <the Ed25519 public key, base64>
-sig: <the Ed25519 signature, base64>
+key: <the Ed25519 public key, Base64>
+sig: <the Ed25519 signature, Base64>
 ```
 
 - `sha256` covers the segment from offset 0 to `data_end`, its Data End. That includes the preamble and seal
@@ -56,18 +56,24 @@ sig: <the Ed25519 signature, base64>
 - `sig` is Ed25519 over this statement's own text, the bytes the next statement's `prev` will
   hash. Both algorithms are in the JDK, so this adds
   no dependency.
-- `key` is the public key, so a reader can tell which key signed. A verifier never trusts it on
+- `key` is the raw 32-byte Ed25519 public key (RFC 8032), and `sig` the raw 64-byte signature,
+  both in standard Base64 with padding (RFC 4648 §4). Hashes are lowercase hex. The gateway also
+  logs the key as PEM, for `openssl`.
+- `key` is there so a reader can tell which key signed. A verifier never trusts it on
   its own: it compares it with the key it was given.
 - **The signed bytes are exact.** UTF-8, one `name: value` per line, a single space after the
-  colon, no trailing whitespace, every line ending in LF (no CR), fields in the order shown above.
-  Optional fields (`start_reason`, `first_signed`, `empty`, `quarantined`) go in that same fixed
-  order and are left out entirely when they don't apply. The statement text is every byte up to
+  colon, no trailing whitespace, every line ending in LF (no CR), fields in exactly this order, with
+  the optional ones (marked `?`) left out entirely when they don't apply:
+  `r7-seal`, `chain`, `shard`, `index`, `segment`, `data_end`, `sha256`, `recovered`,
+  `quarantined?`, `empty?`, `start_reason?`, `first_signed?`, `prev`, `key`, `sig`.
+  `empty` is a comma-separated list of segment sequences, in ascending order. The statement text is every byte up to
   and including the LF that ends the `key` line. A statement's `sig` covers its own statement
   text, and the next statement's `prev` is the SHA-256 of those same bytes. The `sig` line comes
   last. A writer that produces anything else is wrong, and a
   verifier checks the bytes as they are, without normalising them.
-- The first statement of a chain also carries `first_signed: <segment sequence>`. Segments on
-  that shard below it were sealed before signing began.
+- The first statement of a `new_volume` chain also carries `first_signed: <segment sequence>`:
+  segments on that shard below it were sealed before signing began. A chain started for
+  `head_lost` or `key_changed` carries none, because the boundary was set once and doesn't move.
 
 The chain links statements, not segments. A statement is a few hundred bytes, so it can outlive
 its segment. A signing tailer copies it into its output (below, decision 4), and then the chain
@@ -98,15 +104,18 @@ already only stamps the seal record and hands the rest to a virtual finalizer th
    the segment, and recovery couldn't tell that apart from tampering;
 3. writes `<stem>.seal`: to a temporary name, fsync, rename, then fsync the directory so the
    rename itself survives a power loss (as the `.seq` marker already does);
-4. updates `shard-<id>.chain`, the chain head (chain id, index, hash of the last statement),
-   the same way, directory fsync included;
+4. updates `shard-<id>.chain`, the chain head, the same way, directory fsync included. The head
+   holds the chain id, the index, the stem and hash of the last statement, the public key that
+   signed it, and the sequences of empty segments not yet listed in a statement. It is enough on
+   its own for recovery and for noticing a key change after the reaper has deleted every
+   segment;
 5. renames the segment, as it does today.
 
 The cost is one SHA-256 pass over each segment, one signature, and one forced write-back of
-pages the kernel would write back anyway, now on the finalizer's schedule. The signature is about 50 µs.
-The hash pass is the larger part: with the SHA-NI intrinsic, SHA-256 runs at roughly 1.5 to 2 GB/s, so a 200 MB segment is about 100 ms of
-CPU on a virtual thread. That thread shares carriers with request handling, so it is measured
-with `benchmark/bench.sh` on the controlled machine before merge. The bar is no visible change
+pages the kernel would write back anyway, now on the finalizer's schedule. The hash pass is the
+larger part, and it runs on a virtual thread that shares carriers with request handling. It is
+measured with `benchmark/bench.sh` on the controlled machine before merge, and this note quotes
+no numbers until then. The bar is no visible change
 in throughput or tail.
 
 **Recovery** has to be idempotent, because a crash can land between any two steps. Two rules
@@ -125,8 +134,9 @@ Once signing is on, a sealed `.r7f` without a `.seal` can't exist, because step 
 step 3. Segments sealed by a gateway from before the upgrade have none. The first chain on such
 a volume starts with `start_reason: new_volume`, and the tailer gives those older segments the
 verdict `unsigned` rather than a failure. A segment the
-writer deletes because it holds no entries gets no file of its own: the next statement lists its
-sequence under `empty:`, so a jump in segment sequence that no statement accounts for always
+writer deletes because it holds no entries gets no file of its own. Before the file is deleted,
+its sequence is added to the head (written and fsync'd as in step 4), and the next statement moves
+it from the head into its `empty:` line. A crash in between leaves the fact in the head, so a jump in segment sequence that no statement accounts for always
 means a segment went missing.
 
 **Clean close** (`finalizeActiveSegment`) does the same steps synchronously.
@@ -147,8 +157,11 @@ in its checkpoint). That costs one extra read pass per segment, in the tailer, n
 gateway. If the `.seal` isn't there yet, the check waits for it, and delivery carries on
 meanwhile. The wait ends with a verdict either way:
 
-- a segment below the chain's `first_signed` gets `unsigned`: it was sealed before signing
-  began;
+- a segment below the shard's `first_signed` gets `unsigned`: it was sealed before signing
+  began. The tailer keeps that boundary in its checkpoint from the first `new_volume` chain it
+  sees, and a later chain restart never moves it, so a missing statement from an earlier chain
+  can't pass as `unsigned`. A `new_volume` start on a shard the tailer already holds a chain for
+  is itself a failed verdict, `chain_reset`;
 - a sealed segment with no `.seal`, once a later statement for its shard exists, gets the failed
   verdict `missing_statement`. A statement is written for every segment in order, so a later one
   proves this one had its statement, and someone removed it. The later statement's `prev` also
@@ -216,7 +229,8 @@ check a whole chain in Java can call it.
   the tailer takes a list of pinned keys, and a statement signed by a key not on the list gets
   the verdict `pending: unknown_key` and an error log. Once the operator pins the new key, the
   tailer checks those segments and records their real verdicts. A segment still pending counts
-  as not done, so early reaping waits; `ttl` still applies. An auditor checking an archive holds
+  as not done, so early reaping waits. `ttl` still applies: a segment deleted while pending gets
+  the final verdict `expired_unverified`. An auditor checking an archive holds
   every key that was pinned in its time, and each output statement says which key signed each
   source.
 - (b) A separate `signing_key`, opt-in. That's more to configure, and gateways without it have
