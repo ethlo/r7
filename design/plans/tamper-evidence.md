@@ -93,9 +93,13 @@ already only stamps the seal record and hands the rest to a virtual finalizer th
    that one failed (an I/O error while hashing, forcing or publishing), this finalizer retries
    it first, with a backoff, and logs an error on each failure. It never skips it: a later
    segment is signed only once every earlier one is, so the head can't move past an unaccounted
-   segment. Requests aren't affected, because finalizers run off the request path. The writer
-   keeps rotating, and the backlog of segments waiting for statements shows in the gateway's
-   health as an ERROR. A restart hands the backlog to recovery;
+   segment. Only publishing waits, though: step 2 runs for each segment as soon as it rotates,
+   without waiting for the one before. So a segment waiting for its turn is already hashed,
+   signed, forced and unmapped, and what waits is a statement of a few hundred bytes in memory
+   and a `.flux` file on disk. No mappings, arenas or open files pile up behind a failure. Requests
+   aren't affected, because finalizers run off the request path. The writer keeps rotating, and
+   the backlog shows in the gateway's health as an ERROR. Disk is the only thing it grows, the
+   same as when a tailer stops reading. A restart hands the backlog to recovery;
 2. hashes the segment up to its Data End, signs the statement, forces the segment to disk (an
    msync, which the async path doesn't do today), and then unmaps it as it does today, so nothing
    holds a mapping when the file is renamed (a mapped file can't be renamed on Windows). The
@@ -170,7 +174,9 @@ meanwhile. The wait ends with a verdict either way:
 - a sealed segment with no `.seal`, once a later statement for its shard exists, gets the failed
   verdict `missing_statement`. A statement is written for every segment in order, so a later one
   proves this one had its statement, and someone removed it. The later statement's `prev` also
-  names the hash of the missing one.
+  names the hash of the missing one. For the newest segment there is no later statement, so the
+  tailer also reads `shard-<id>.chain`: a head whose last stem is this segment's, while its
+  `.seal` is gone, gives the same verdict.
 
 Because records are already written when the check runs, the result can't be put on them.
 It goes in the tailer's output statement instead (below), as a verdict per source segment. A
@@ -184,16 +190,34 @@ tailer waits for verification before deleting early. The reaper deletes `<stem>.
 
 Segments are transient. The WARC and JSON files are what is kept, so the proof has to reach
 them. `SealedFileWriter` already has a hook for a companion file written before the seal (the
-CDXJ index uses it). A signing tailer writes `F.seal` next to each output file `F`, in the same
-shape as the gateway's statement:
+CDXJ index uses it). A signing tailer does two things there.
 
-- `sha256` of `F`, and of its CDXJ index when there is one;
-- `prev` linking to the tailer's previous output statement (its own chain, kept in its
-  checkpoint directory);
-- `sources`: the gateway statements, verbatim, of the segments whose records `F` holds, each
-  with the tailer's verdict (`verified`, or the reason it failed). A segment still open when `F`
-  seals is listed as `pending`, and its verdict goes in the first later statement after it seals,
-  so every verdict lands in the tailer's chain. If verdicts are waiting and no output file seals
+First, it copies the gateway statement of every segment it read into its output directory,
+byte for byte, as `<stem>.seal`. That is the archive's copy of the gateway's chain, and it
+needs no new format.
+
+Second, it writes `F.seal` next to each output file `F`, an output statement. It uses the same
+line rules as the gateway's statement (UTF-8, LF, `name: value`, no trailing whitespace, signed
+bytes up to the end of the `key` line), with its own version marker and its own fixed field
+order, optional fields left out:
+
+`r7-output-seal`, `chain`, `index`, `file`, `file_sha256?`, `cdxj_sha256?`, `source*`,
+`verdict*`, `start_reason?`, `prev`, `key`, `sig`.
+
+- `file` is the output file's name, or `none` for a statement with no file (below), which then
+  has no `file_sha256`.
+- `source` repeats once per segment whose records `F` holds, in ascending shard and sequence
+  order. Each is `<stem> <sha256 of that gateway statement's text> <verdict>`. A verdict is one
+  token: `verified`, `pending`, `unsigned`, or the failure (`missing_statement`, `chain_reset`,
+  `expired_unverified`, `bad_signature`, `bad_digest`).
+- `verdict` repeats once per earlier `pending` source that has since been decided, as
+  `<stem> <verdict>`, in the same order.
+- `prev` links to the tailer's previous output statement (its own chain, kept in its checkpoint
+  directory).
+
+A segment still open when `F` seals is listed as `pending`, and its verdict goes in a `verdict`
+line of the first later statement after it is decided, so every verdict lands in the tailer's
+chain. If verdicts are waiting and no output file seals
   within `max_file_age` (traffic stopped), the tailer writes a statement on its own,
   `<prefix>-<time>.seal`, with no file and only the verdicts. Its chain carries on from there.
 
@@ -235,7 +259,7 @@ check a whole chain in Java can call it.
   sees the change and starts a new chain with `start_reason: key_changed`. Nothing can vouch for
   the new key from inside the chain (the old key is gone by then), so trust passes outside it:
   the tailer takes a list of pinned keys, and a statement signed by a key not on the list gets
-  the verdict `pending: unknown_key` and an error log. Once the operator pins the new key, the
+  the verdict `pending` and an error log naming the unknown key. Once the operator pins the new key, the
   tailer checks those segments and records their real verdicts. A segment still pending counts
   as not done, so early reaping waits. `ttl` still applies: a segment deleted while pending gets
   the final verdict `expired_unverified`. An auditor checking an archive holds
