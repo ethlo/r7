@@ -11,9 +11,7 @@ import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayResponse;
-import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
-import com.ethlo.r7.util.TestFingerprints;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
@@ -73,7 +71,7 @@ class SetResponseCookieFactoryTest
         final ClientResponseGatewayExchange exchange = mock(ClientResponseGatewayExchange.class);
         when(exchange.clientResponse()).thenReturn(response);
 
-        ((ClientResponseGatewayFilter) new SetResponseCookieFactory().create(config, new FilterCreationContext("test", TestFingerprints.engine()))).onClientResponse(exchange);
+        ((ClientResponseGatewayFilter) new SetResponseCookieFactory().create(config, null)).onClientResponse(exchange);
         return headers.getFirst("Set-Cookie");
     }
 

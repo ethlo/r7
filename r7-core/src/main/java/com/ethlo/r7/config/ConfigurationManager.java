@@ -13,7 +13,6 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.spi.EngineContext;
-import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FilterRegistry;
@@ -69,7 +68,7 @@ public final class ConfigurationManager
     {
         this.engineContext = engineContext;
         this.filterRegistry = new FilterRegistry();
-        this.predicateRegistry = new PredicateRegistry(mapper, new PredicateCreationContext(engineContext));
+        this.predicateRegistry = new PredicateRegistry(mapper);
     }
 
     public static <T> T load(Path yamlFile, Class<T> type)

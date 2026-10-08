@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -17,7 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.util.TestFingerprints;
+import com.ethlo.r7.spi.EngineContext;
 
 /**
  * A generation of routes is prepared before any request can match it, so that what listeners
@@ -222,7 +223,7 @@ class HotReloadServiceTest
     private HotReloadService start(final String routeId) throws IOException
     {
         this.write(routeId);
-        return new HotReloadService(this.scheduler, this.dir.resolve("routes.yaml"), new ConfigurationManager(TestFingerprints.engine()), this.registry);
+        return new HotReloadService(this.scheduler, this.dir.resolve("routes.yaml"), new ConfigurationManager(new EngineContext(Map.of())), this.registry);
     }
 
     private void write(final String routeId) throws IOException

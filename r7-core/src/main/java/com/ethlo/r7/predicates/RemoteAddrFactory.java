@@ -5,7 +5,6 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.CidrRange;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -32,7 +31,7 @@ public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAd
     }
 
     @Override
-    public GatewayPredicate create(final Config config, final PredicateCreationContext context)
+    public GatewayPredicate create(final Config config)
     {
         return new GP(config);
     }

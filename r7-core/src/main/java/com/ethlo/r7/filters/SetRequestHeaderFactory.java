@@ -7,7 +7,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -35,7 +35,7 @@ public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRe
     @Override
     public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
+        return new GF(config);
     }
 
     public record Config(
@@ -61,11 +61,9 @@ public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRe
     {
         private final String name;
         private final String value;
-        private final Fingerprint fingerprint;
 
-        public GF(final Config config, final Fingerprint fingerprint)
+        public GF(final Config config)
         {
-            this.fingerprint = fingerprint;
             this.name = config.name();
             this.value = config.value();
         }
@@ -85,7 +83,7 @@ public final class SetRequestHeaderFactory implements GatewayFilterFactory<SetRe
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.name + ": " + this.fingerprint.fingerprint(this.value);
+            return FILTER_NAME + ": " + this.name + ": " + SensitiveConfig.MASK;
         }
     }
 }

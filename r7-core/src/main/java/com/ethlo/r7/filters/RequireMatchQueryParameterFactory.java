@@ -13,7 +13,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -45,7 +45,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
     @Override
     public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
+        return new GF(config);
     }
 
     public record Config(
@@ -82,11 +82,9 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         private final Config config;
         private final Pattern compiledPattern;
         private final ByteBuffer errorBody;
-        private final Fingerprint fingerprint;
 
-        public GF(final Config config, final Fingerprint fingerprint)
+        public GF(final Config config)
         {
-            this.fingerprint = fingerprint;
             this.config = config;
             this.compiledPattern = Pattern.compile(config.regexp());
 
@@ -118,7 +116,7 @@ public final class RequireMatchQueryParameterFactory implements GatewayFilterFac
         public String summary()
         {
             // The pattern can be a shared secret (^Bearer abc$); the summary is shown on the management page.
-            return FILTER_NAME + ": " + this.config.name() + " ~= " + this.fingerprint.fingerprint(this.config.regexp());
+            return FILTER_NAME + ": " + this.config.name() + " ~= " + SensitiveConfig.MASK;
         }
     }
 }

@@ -7,7 +7,7 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -35,7 +35,7 @@ public final class SetQueryParameterFactory implements GatewayFilterFactory<SetQ
     @Override
     public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
+        return new GF(config);
     }
 
     public record Config(
@@ -62,11 +62,9 @@ public final class SetQueryParameterFactory implements GatewayFilterFactory<SetQ
     {
         private final String paramName;
         private final String paramValue;
-        private final Fingerprint fingerprint;
 
-        public GF(final Config config, final Fingerprint fingerprint)
+        public GF(final Config config)
         {
-            this.fingerprint = fingerprint;
             this.paramName = config.name();
             this.paramValue = config.value();
         }
@@ -87,8 +85,8 @@ public final class SetQueryParameterFactory implements GatewayFilterFactory<SetQ
         @Override
         public String summary()
         {
-            // Fingerprinted like the header filters: the summary is shown on the management page.
-            return FILTER_NAME + ": " + this.paramName + "=" + this.fingerprint.fingerprint(this.paramValue);
+            // Masked like the header filters: the summary is shown on the management page.
+            return FILTER_NAME + ": " + this.paramName + "=" + SensitiveConfig.MASK;
         }
     }
 }

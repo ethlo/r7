@@ -153,8 +153,7 @@ Keep the key out of anything a journal reader can see, and give every replica of
 the same one so their fingerprints correlate. To rotate it, change it: records already written
 keep the fingerprints they have, and values journaled before and after the change no longer
 correlate. Nothing reads a fingerprint back, so there is no old key to keep. The same key and
-form are used for the `gateway.auth.basic.user` attribute and for the sensitive values in the
-management endpoint's filter and predicate summaries.
+form are used for the `gateway.auth.basic.user` attribute.
 
 Journals written by earlier versions keep the forms they were written with, `id:sha256:` (an
 unkeyed, truncated SHA-256) and `id:hmac:`; nothing rewrites them.

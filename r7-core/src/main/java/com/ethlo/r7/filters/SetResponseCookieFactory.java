@@ -12,7 +12,7 @@ import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.doc.Sensitive;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
-import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -41,7 +41,7 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
     @Override
     public ClientResponseGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config, filterCreationContext.engine().getRequired(Fingerprint.class));
+        return new GF(config);
     }
 
     public record Config(
@@ -129,15 +129,13 @@ public final class SetResponseCookieFactory implements GatewayFilterFactory<SetR
     {
         private final String cookieString;
         private final String summary;
-        private final Fingerprint fingerprint;
 
-        public GF(final Config config, final Fingerprint fingerprint)
+        public GF(final Config config)
         {
-            this.fingerprint = fingerprint;
             this.cookieString = buildSetCookieString(config);
             // A cookie set on every response is typically a token; the summary is shown on the
-            // management page, so the value is fingerprinted like the other value-setting filters.
-            this.summary = FILTER_NAME + ": " + config.name() + "=" + this.fingerprint.fingerprint(config.value());
+            // management page, so the value is masked like the other value-setting filters.
+            this.summary = FILTER_NAME + ": " + config.name() + "=" + SensitiveConfig.MASK;
         }
 
         private static String buildSetCookieString(final Config config)

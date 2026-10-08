@@ -1,13 +1,12 @@
 package com.ethlo.r7.predicates;
 
-import com.ethlo.r7.util.Fingerprint;
+import com.ethlo.r7.util.SensitiveConfig;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.ExactMatch;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -34,9 +33,9 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
     }
 
     @Override
-    public GatewayPredicate create(final Config config, final PredicateCreationContext context)
+    public GatewayPredicate create(final Config config)
     {
-        return new GP(config, context.engine().getRequired(Fingerprint.class));
+        return new GP(config);
     }
 
     public record Config(
@@ -60,11 +59,9 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
     {
         private final String headerName;
         private final String targetValue;
-        private final Fingerprint fingerprint;
 
-        public GP(final Config config, final Fingerprint fingerprint)
+        public GP(final Config config)
         {
-            this.fingerprint = fingerprint;
             this.headerName = config.name();
             this.targetValue = config.value();
         }
@@ -86,8 +83,8 @@ public final class RequestHeaderFactory implements GatewayPredicateFactory<Reque
         public String summary()
         {
             // The configured value can be a shared secret (a token or session id), and the summary
-            // is shown on the management page: fingerprinted, which still shows when two routes match alike.
-            return PREDICATE_NAME + ": " + this.headerName + " == " + this.fingerprint.fingerprint(this.targetValue);
+            // is shown on the management page, so it is masked as the route configuration view masks it.
+            return PREDICATE_NAME + ": " + this.headerName + " == " + SensitiveConfig.MASK;
         }
     }
 }

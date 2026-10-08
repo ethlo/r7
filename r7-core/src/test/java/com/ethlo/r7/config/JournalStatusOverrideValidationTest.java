@@ -15,7 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.ethlo.r7.journal.api.JournalLevel;
-import com.ethlo.r7.util.TestFingerprints;
+import com.ethlo.r7.spi.EngineContext;
 
 class JournalStatusOverrideValidationTest
 {
@@ -43,7 +43,7 @@ class JournalStatusOverrideValidationTest
                 """.formatted(direction, key));
         final RoutesDefinition definition = ConfigurationManager.load(file, RoutesDefinition.class);
         final RouteRegistry registry = new RouteRegistry();
-        new ConfigurationManager(TestFingerprints.engine()).load(definition, registry);
+        new ConfigurationManager(new EngineContext(Map.of())).load(definition, registry);
         return registry;
     }
 

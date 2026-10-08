@@ -5,11 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.ethlo.r7.util.TestFingerprints;
+import com.ethlo.r7.spi.EngineContext;
 
 /**
  * Reproduces bugs found in an earlier review of the config validation path. Each test fails
@@ -20,7 +21,7 @@ class ConfigurationManagerBugsTest
     @TempDir
     Path dir;
 
-    private final ConfigurationManager manager = new ConfigurationManager(TestFingerprints.engine());
+    private final ConfigurationManager manager = new ConfigurationManager(new EngineContext(Map.of()));
 
     /**
      * M1: an unknown predicate under 'not:' used to be silently poison-pilled to

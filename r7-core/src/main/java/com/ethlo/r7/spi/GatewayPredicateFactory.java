@@ -12,5 +12,5 @@ public interface GatewayPredicateFactory<C extends ValidatableConfig>
     /**
      * Creates the hot-path evaluation logic (e.g., checking the path or method)
      */
-    GatewayPredicate create(C config, PredicateCreationContext context);
+    GatewayPredicate create(C config);
 }

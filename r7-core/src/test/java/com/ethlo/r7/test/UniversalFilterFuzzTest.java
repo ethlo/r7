@@ -39,11 +39,8 @@ import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
-import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.spi.PredicateCreationContext;
-import com.ethlo.r7.util.TestFingerprints;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -112,7 +109,7 @@ public class UniversalFilterFuzzTest
 
         // NO EXCEPTION CAPTURING - Let it crash!
         final GatewayFilterFactory<ValidatableConfig> typedFactory = (GatewayFilterFactory<ValidatableConfig>) factory;
-        final GatewayFilter filter = typedFactory.create(fuzzedConfig, new FilterCreationContext("fuzz", TestFingerprints.engine()));
+        final GatewayFilter filter = typedFactory.create(fuzzedConfig, null);
 
         if (filter instanceof ClientRequestGatewayFilter clientRequestGatewayFilter)
         {
@@ -175,7 +172,7 @@ public class UniversalFilterFuzzTest
         final GatewayPredicateFactory<ValidatableConfig> typedFactory = (GatewayPredicateFactory<ValidatableConfig>) factory;
 
         // Assuming the factory creates a standard Java Predicate or a custom GatewayPredicate
-        final GatewayPredicate predicate = typedFactory.create(fuzzedConfig, new PredicateCreationContext(TestFingerprints.engine()));
+        final GatewayPredicate predicate = typedFactory.create(fuzzedConfig);
         final GatewayRequest safeExchange = buildPredicateRequest(data);
 
         predicate.test(safeExchange);

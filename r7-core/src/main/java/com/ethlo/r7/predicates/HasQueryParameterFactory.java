@@ -5,7 +5,6 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
-import com.ethlo.r7.spi.PredicateCreationContext;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -31,7 +30,7 @@ public final class HasQueryParameterFactory implements GatewayPredicateFactory<H
     }
 
     @Override
-    public GatewayPredicate create(final Config config, final PredicateCreationContext context)
+    public GatewayPredicate create(final Config config)
     {
         return new GP(config);
     }

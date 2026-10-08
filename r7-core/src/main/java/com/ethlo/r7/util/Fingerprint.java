@@ -9,8 +9,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 /**
  * What r7 writes in place of a value it must not disclose: a redacted header or query
- * parameter in the journal, the user name {@code BasicAuth} accepted, and the sensitive
- * values in management summaries of filters and predicates.
+ * parameter in the journal, and the user name {@code BasicAuth} accepted.
  * <p>
  * The form is {@code fp:} and eleven base64url characters, the first 64 bits of
  * HMAC-SHA-256 under the deployment's {@code storage.journal_security.fingerprint_key}. Two
