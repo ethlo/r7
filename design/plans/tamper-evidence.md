@@ -53,7 +53,8 @@ sig: <the Ed25519 signature, base64>
 - `prev` is the SHA-256 of the previous statement's text (every line up to and including the
   `key` line). The first statement of a chain has `prev: start` and a `start_reason` line
   (`new_volume`, `head_lost`, `key_changed`).
-- `sig` is Ed25519 over the same text `prev` hashes. Both algorithms are in the JDK, so this adds
+- `sig` is Ed25519 over this statement's own text, the bytes the next statement's `prev` will
+  hash. Both algorithms are in the JDK, so this adds
   no dependency.
 - `key` is the public key, so a reader can tell which key signed. A verifier never trusts it on
   its own: it compares it with the key it was given.
@@ -61,8 +62,9 @@ sig: <the Ed25519 signature, base64>
   colon, no trailing whitespace, every line ending in LF (no CR), fields in the order shown above.
   Optional fields (`start_reason`, `first_signed`, `empty`, `quarantined`) go in that same fixed
   order and are left out entirely when they don't apply. The statement text is every byte up to
-  and including the LF that ends the `key` line, and both `prev` and `sig` cover exactly those
-  bytes. The `sig` line comes last. A writer that produces anything else is wrong, and a
+  and including the LF that ends the `key` line. A statement's `sig` covers its own statement
+  text, and the next statement's `prev` is the SHA-256 of those same bytes. The `sig` line comes
+  last. A writer that produces anything else is wrong, and a
   verifier checks the bytes as they are, without normalising them.
 - The first statement of a chain also carries `first_signed: <segment sequence>`. Segments on
   that shard below it were sealed before signing began.
