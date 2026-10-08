@@ -17,4 +17,5 @@ these stays parked.
 | Configurable upstream connect timeout | To do | A config field, so it is a user-facing change of its own. |
 | Fewer journal invariants ("How to get to two" in [`../journal-invariants.md`](../journal-invariants.md)) | Target | No owner. |
 | ASVS gaps and roadmap: bcrypt cost floor, Jazzer fuzzing, SBOM, base image scanning | To do | Tracked in [`../asvs-l2.md`](../asvs-l2.md), "Gaps". |
+| Tamper-evident journal: signed seal statements, chained per shard and carried into the tailer output | Proposed | [`tamper-evidence.md`](tamper-evidence.md). Four decisions open. |
 | ClickHouse index and MCP server over WARC files | Out of scope | [`../warc.md`](../warc.md) "Scope": glue for users to write, not part of r7. |
