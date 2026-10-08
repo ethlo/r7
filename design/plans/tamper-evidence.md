@@ -119,16 +119,21 @@ no numbers until then. The bar is no visible change
 in throughput or tail.
 
 **Recovery** has to be idempotent, because a crash can land between any two steps. Two rules
-make it so. There is at most one statement per segment, keyed by its stem, and the head records
-the stem of the last statement it covers. Steps 3 to 5 only ever happen in that order. At
-startup, recovery handles each shard's leftover `.flux` segments in sequence order:
+make it so. A stem has at most one live statement, `<stem>.seal`, and the head records the stem
+and chain index of the last statement it covers. The one case where a stem gets a second
+statement is quarantine (the last row below): the replaced one is kept as `<stem>.seal.invalid`,
+and the new one is told apart by its own chain index. Steps 3 to 5 only ever happen in that
+order. At startup, recovery handles each shard's leftover `.flux` segments in sequence order:
 
 | What it finds | Crash was | What recovery does |
 |---|---|---|
-| No `<stem>.seal` | before step 3 | Seal as today, sign with `recovered: true`, then steps 3 to 5 |
+| A sequence the head lists as pending-empty | after the head update, before the delete | Delete the file. No statement: the next one lists it under `empty:` |
+| No `<stem>.seal` | before step 3 | Seal as today, force the segment to disk (recovery writes its seal record through a channel and doesn't force it today), sign with `recovered: true`, then steps 3 to 5 |
 | A `.seal` that verifies, head behind it | between steps 3 and 4 | Adopt the statement, advance the head to it, rename |
 | A `.seal` that verifies, head already on it | between steps 4 and 5 | Rename only |
-| A `.seal` that doesn't verify against the segment | after tampering, never a crash: step 3 is an atomic rename, and it only happens once the segment is forced to disk | Rename the bad statement to `<stem>.seal.invalid`, unchanged. Quarantine the segment as recovery does with damage today. Sign a new `<stem>.seal` with `quarantined:` giving the reason and the SHA-256 of both files as found. Log an error. The event is then part of the chain, signed, and the evidence is kept |
+| A `.seal` that doesn't verify against the segment | after tampering, never a crash: step 3 is an atomic rename, and it only happens once the segment is forced to disk | In this order, each made durable before the next: rename the bad statement to `<stem>.seal.invalid`, unchanged; quarantine the segment as recovery does with damage today; sign a new `<stem>.seal` with `quarantined:` giving the reason and the SHA-256 of both files as found; advance the head. Log an error. The event is then part of the chain, signed, and the evidence is kept |
+| A `<stem>.seal.invalid` and no `<stem>.seal` | inside the quarantine steps | Carry on from where it stopped: quarantine the segment if it isn't yet, then sign and advance the head |
+| A `<stem>.seal` with `quarantined:`, head behind it or on it | inside the quarantine steps | As the two "verifies" rows above |
 
 Once signing is on, a sealed `.r7f` without a `.seal` can't exist, because step 5 comes after
 step 3. Segments sealed by a gateway from before the upgrade have none. The first chain on such
@@ -188,7 +193,9 @@ shape as the gateway's statement:
 - `sources`: the gateway statements, verbatim, of the segments whose records `F` holds, each
   with the tailer's verdict (`verified`, or the reason it failed). A segment still open when `F`
   seals is listed as `pending`, and its verdict goes in the first later statement after it seals,
-  so every verdict lands in the tailer's chain.
+  so every verdict lands in the tailer's chain. If verdicts are waiting and no output file seals
+  within `max_file_age` (traffic stopped), the tailer writes a statement on its own,
+  `<prefix>-<time>.seal`, with no file and only the verdicts. Its chain carries on from there.
 
 The same crash rules apply as for the gateway. There is one statement per output file, keyed
 by its name, and it is written before the file's rename (the hook runs there, and also when
@@ -209,7 +216,8 @@ recipe with standard tools:
 sed '/^sig: /,$d' STEM.seal > statement
 sed -n 's/^sig: //p' STEM.seal | base64 -d > sig.bin
 openssl pkeyutl -verify -pubin -inkey r7-journal.pub.pem -rawin -in statement -sigfile sig.bin
-head -c "$(sed -n 's/^data_end: //p' STEM.seal)" STEM-*.r7f | sha256sum   # compare with the sha256 line
+seg=$(ls STEM.r7f STEM-*.r7f 2>/dev/null | head -n 1)   # recovery seals as STEM.r7f, rotation as STEM-<first>-<last>.r7f
+head -c "$(sed -n 's/^data_end: //p' STEM.seal)" "$seg" | sha256sum   # compare with the sha256 line
 ```
 
 The verifier the tailer uses is a public class in `r7-journal-mmap`, so anyone who wants to
