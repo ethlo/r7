@@ -4,7 +4,7 @@ All r7 needs is a `routes.yaml` that says where to send traffic. Ports, limits, 
 where journals go all have safe defaults, so there is no server configuration to write before
 your first request. This guide runs r7 with Docker Compose in front of a small echo server. In
 five minutes you route a request, see the headers r7 added, and read back the record r7 kept of
-it, with the secret in it replaced by a fingerprint.
+it, with the secret header in it replaced by a fingerprint.
 
 ## Directory Structure
 
@@ -191,10 +191,16 @@ Abbreviated and pretty-printed, it looks like this:
 }
 ```
 
-The session never reached the journal: `cookie` is not on the safe list, so it is stored as
-a [fingerprint](journaling.md#redacted-header-and-query-parameter-values). The same value always
-gives the same fingerprint, so you can still tell which requests carried it. The response body
-is in the WARC file the `warc` field points to, in the `r7-warc` volume.
+The cookie header is recorded as a
+[fingerprint](journaling.md#redacted-header-and-query-parameter-values), because `cookie` is not
+on the safe list. The same value always gives the same fingerprint, so you can still tell which
+requests carried it. The response body is in the WARC file the `warc` field points to, in the
+`r7-warc` volume.
+
+Fingerprints cover header and query values, not bodies: a body is recorded as sent. This echo
+server copies your request headers into its response, so the session value is in that WARC
+record in plain text. Use a dummy value here, and on your own routes record bodies (`FULL`) only
+where you may keep the payloads.
 
 That is the record r7 keeps of every request on this route, with no extra system to run.
 

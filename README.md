@@ -4,7 +4,7 @@
 
 When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
 services and records every exchange, with its headers or its full bodies, to local disk, with
-secrets stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
+secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
 you already run. One `routes.yaml`, checked before it serves a single request.
 
 ```yaml title="routes.yaml"

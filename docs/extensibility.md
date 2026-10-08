@@ -19,13 +19,15 @@ may change at that point:
 | Client request | `ClientRequestGatewayFilter` | the request as the client sent it | nothing on the request; it can answer the client itself (`shortCircuit`) or cap the body size (`limitRequestBody`) |
 | Upstream request | `UpstreamRequestGatewayFilter` | the client's request | the request r7 sends upstream: path, query, headers, cookies, method; or answer the client itself |
 | Client response | `ClientResponseGatewayFilter` | the client's request, the upstream request and response | the status and headers the client gets |
-| Completed | `CompletedGatewayFilter` | the whole exchange, after the client connection is closed | nothing that was sent |
+| Completed | `CompletedGatewayFilter` | the whole exchange, once the response has been sent | nothing that was sent |
 
 The read-only views are separate types (`GatewayRequest`, `GatewayResponse`) from the writable
 ones (`MutableGatewayRequest`, `MutableGatewayResponse`), so the compiler enforces the table: no
 filter can change the request as the client sent it, and the journal's record of it is what
-arrived. Bodies are streamed through and are not changed by filters. Every stage can read and
-set the exchange's attributes, which is how filters pass values along the request.
+arrived. Bodies are streamed through and are not changed by filters. A value one filter hands
+to a later one, such as an authenticated user, goes in a typed attachment
+(`setAttachment` with a `StateKey`); the exchange's attributes are for telemetry and the journal,
+and can appear in its output.
 
 One class can implement several of these interfaces when it acts in more than one stage, as the
 built-in `RateLimiter` and `CircuitBreaker` do. When each stage runs, and in which order global

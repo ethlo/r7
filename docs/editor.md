@@ -5,7 +5,7 @@ hide:
 
 # r7 Gateway Configuration Editor
 
-Write your `routes.yaml` here and the editor checks it against r7's config schema as you type. Misspell a filter name, such as `AddResponseHeadr`, and it is flagged on the spot, the way the gateway would refuse it at startup.
+Write your `routes.yaml` here and the editor checks its structure against r7's config schema as you type, with autocomplete for every built-in filter and predicate. The gateway's own check at startup goes further: it also rejects unknown filter names, since the schema has to allow the names of your own plugins.
 
 <iframe
 src="/editor-app/index.html"

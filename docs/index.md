@@ -7,7 +7,7 @@ hide:
 
 When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
 services and records every exchange, with its headers or its full bodies, to local disk, with
-secrets stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
+secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
 you already run. There is no capture system to run beside the gateway, and no network call while
 the client waits.
 
@@ -82,9 +82,10 @@ journal:
 Entries are written to memory-mapped files on local disk; nothing goes over the network while
 the client waits. A separate tailer turns them into standard formats: JSON lines that the
 OpenTelemetry Collector, Vector, Fluent Bit or Promtail read as they are, and WARC, the archive
-format pywb and other replay tools read. Secrets stay out by default: a header value that is not
-on an allow-list is stored as a keyed fingerprint, so you can see that two requests carried the
-same token without anyone reading the token.
+format pywb and other replay tools read. Secret header and query values stay out by default: a
+value whose name is not on an allow-list is stored as a keyed fingerprint, so you can see that two
+requests carried the same token without anyone reading the token. Bodies are recorded as sent,
+so record them only on routes whose payloads you may keep.
 
 [How journaling works](journaling.md) · [Where r7 fits in your stack](where-r7-fits.md)
 
@@ -127,7 +128,7 @@ what it may change at that point:
 | Client request | the request as the client sent it | nothing on the request; it can answer the client itself or cap the body size |
 | Upstream request | the client's request | the request r7 sends upstream: path, query, headers, cookies, method |
 | Client response | the client's request, the upstream request and response | the status and headers the client gets |
-| Completed | the whole exchange | nothing that was sent |
+| Completed | the whole exchange, once the response has been sent | nothing that was sent |
 
 The compiler enforces this: no filter can change the request as the client sent it, so the
 journal's record of it is what arrived. A filter's settings are a Java record that validates
