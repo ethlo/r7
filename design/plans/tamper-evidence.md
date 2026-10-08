@@ -57,6 +57,15 @@ sig: <the Ed25519 signature, base64>
   no dependency.
 - `key` is the public key, so a reader can tell which key signed. A verifier never trusts it on
   its own: it compares it with the key it was given.
+- **The signed bytes are exact.** UTF-8, one `name: value` per line, a single space after the
+  colon, no trailing whitespace, every line ending in LF (no CR), fields in the order shown above.
+  Optional fields (`start_reason`, `first_signed`, `empty`, `quarantined`) go in that same fixed
+  order and are left out entirely when they don't apply. The statement text is every byte up to
+  and including the LF that ends the `key` line, and both `prev` and `sig` cover exactly those
+  bytes. The `sig` line comes last. A writer that produces anything else is wrong, and a
+  verifier checks the bytes as they are, without normalising them.
+- The first statement of a chain also carries `first_signed: <segment sequence>`. Segments on
+  that shard below it were sealed before signing began.
 
 The chain links statements, not segments. A statement is a few hundred bytes, so it can outlive
 its segment. A signing tailer copies it into its output (below, decision 4), and then the chain
@@ -72,7 +81,13 @@ Off the request path. `rotateSegment` runs inside the shard's lock on a request 
 already only stamps the seal record and hands the rest to a virtual finalizer thread
 (`finalizeSegmentAsync`). That finalizer:
 
-1. waits for the previous finalizer of the same shard, so statements are written in order;
+1. waits for the previous finalizer of the same shard, so statements are written in order. If
+   that one failed (an I/O error while hashing, forcing or publishing), this finalizer retries
+   it first, with a backoff, and logs an error on each failure. It never skips it: a later
+   segment is signed only once every earlier one is, so the head can't move past an unaccounted
+   segment. Requests aren't affected, because finalizers run off the request path. The writer
+   keeps rotating, and the backlog of segments waiting for statements shows in the gateway's
+   health as an ERROR. A restart hands the backlog to recovery;
 2. hashes the segment up to its Data End, signs the statement, forces the segment to disk (an
    msync, which the async path doesn't do today), and then unmaps it as it does today, so nothing
    holds a mapping when the file is renamed (a mapped file can't be renamed on Windows). The
@@ -102,7 +117,7 @@ startup, recovery handles each shard's leftover `.flux` segments in sequence ord
 | No `<stem>.seal` | before step 3 | Seal as today, sign with `recovered: true`, then steps 3 to 5 |
 | A `.seal` that verifies, head behind it | between steps 3 and 4 | Adopt the statement, advance the head to it, rename |
 | A `.seal` that verifies, head already on it | between steps 4 and 5 | Rename only |
-| A `.seal` that doesn't verify against the segment | after tampering, never a crash: step 3 is an atomic rename, and it only happens once the segment is forced to disk | Keep both files as they are, quarantine the segment as recovery does with damage today, log an error, and sign a statement with `quarantined: true` and the reason. The event is then part of the chain, signed |
+| A `.seal` that doesn't verify against the segment | after tampering, never a crash: step 3 is an atomic rename, and it only happens once the segment is forced to disk | Rename the bad statement to `<stem>.seal.invalid`, unchanged. Quarantine the segment as recovery does with damage today. Sign a new `<stem>.seal` with `quarantined:` giving the reason and the SHA-256 of both files as found. Log an error. The event is then part of the chain, signed, and the evidence is kept |
 
 Once signing is on, a sealed `.r7f` without a `.seal` can't exist, because step 5 comes after
 step 3. Segments sealed by a gateway from before the upgrade have none. The first chain on such
@@ -128,7 +143,14 @@ segment up to `data_end` (from the page cache, because it has just read it), and
 hash, the signature against its pinned keys, and the link to the last statement it saw (kept
 in its checkpoint). That costs one extra read pass per segment, in the tailer, nowhere near the
 gateway. If the `.seal` isn't there yet, the check waits for it, and delivery carries on
-meanwhile.
+meanwhile. The wait ends with a verdict either way:
+
+- a segment below the chain's `first_signed` gets `unsigned`: it was sealed before signing
+  began;
+- a sealed segment with no `.seal`, once a later statement for its shard exists, gets the failed
+  verdict `missing_statement`. A statement is written for every segment in order, so a later one
+  proves this one had its statement, and someone removed it. The later statement's `prev` also
+  names the hash of the missing one.
 
 Because records are already written when the check runs, the result can't be put on them.
 It goes in the tailer's output statement instead (below), as a verdict per source segment. A
