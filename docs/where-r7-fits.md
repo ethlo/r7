@@ -27,9 +27,8 @@ flowchart LR
 
 The JSON line and the WARC records share the request id. When a WARC file holds an exchange, its
 JSON line points at the records by file, offset and length, so a query result in any of the tools
-below leads straight to the archived exchange. Which exchanges a WARC file holds is `warc.exchanges`:
-by default only those with a captured body, with `all` every complete exchange. An incomplete
-exchange is only ever a JSON line.
+below leads straight to the archived exchange. Which exchanges a WARC file holds is set by
+[`warc.exchanges`](journaling.md#3-the-tailer).
 
 The snippets on this page are the smallest configuration that connects r7 to each tool. Each one
 names the version it was written against; the tool's own documentation covers the rest.
@@ -153,8 +152,8 @@ labels, so `client_response.status` becomes `client_response_status`.
 
 ## The archive: the WARC files
 
-The WARC files are for keeping and replaying exchanges, not for dashboards. `zstd -d` turns a file
-into plain WARC that any WARC reader opens. With `cdxj_index: true`, each file gets a CDXJ index,
+The WARC files are for keeping and replaying exchanges, not for dashboards; [the WARC
+profile](warc.md) describes what is in them. With `cdxj_index: true`, each file gets a CDXJ index,
 the format [pywb](https://pywb.readthedocs.io/) and [OutbackCDX](https://github.com/nla/outbackcdx)
 read, so an exchange is found by URL and time without scanning the archive. Its offsets and lengths
 point into the `.warc.zst` file as written, one Zstandard frame per record: a reader loading

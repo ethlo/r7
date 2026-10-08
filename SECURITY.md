@@ -41,11 +41,9 @@ These are deployment assumptions, not vulnerabilities:
   interfaces so that a published port works. It is read-only and masks configured secrets,
   but it shows the route configuration, upstream targets and live metrics to anyone who can
   reach it.
-- Redacted header and query parameter values in the journal are a keyed HMAC-SHA-256
-  under `storage.journal_security.fingerprint_key`, which r7 requires at startup. A journal
-  reader without the key cannot confirm a guess at a low-entropy value (a common password, a
-  short API key). Anyone who has the key can, so keep it from journal readers
-  (`docs/journaling.md`, "Redacted header and query parameter values").
+- Redacted header and query parameter values in the journal are keyed fingerprints. Anyone who
+  has the fingerprint key can confirm a guess at a low-entropy value, so keep it from journal
+  readers (`docs/journaling.md`, "Redacted header and query parameter values").
 - Upstream services are responsible for their own authentication, sessions and payload
   validation beyond what r7's filters are configured to check.
 
