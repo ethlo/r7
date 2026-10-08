@@ -50,21 +50,18 @@ Next to it, create the fingerprint key once, and keep the file:
 (umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)
 ```
 
-r7 writes a keyed fingerprint in place of every header and query value that may be a secret, so
-the journal shows that two requests carried the same token without showing the token. It does
-not start without the key. Compose reads `.env` on its own. The `umask` makes the file readable
+r7 does not start without the key: the journal stores
+[fingerprints](journaling.md#redacted-header-and-query-parameter-values) made with it in place of
+values that may be secrets. Compose reads `.env` on its own. The `umask` makes the file readable
 by you alone, and `set -C` refuses to overwrite a key you already have; keep it out of version
 control.
 
 Journals go to a named volume rather than a host directory: Docker prepares a new named volume
 so the image's non-root user can write to it, which a directory you create yourself would not be.
 
-The dashboard port has no authentication and shows the gateway's configuration.
-`127.0.0.1:19999:18888` keeps it on this machine: a bare `19999:18888` would publish it on every
-host interface, and Docker's own firewall rules bypass host firewalls such as ufw. Do not route a
-path on the gateway port to it either. To reach it from elsewhere, put it behind something that
-authenticates, and list the name you use for it under `management.allowed_hosts` (see the
-[config reference](config.md#management-configuration-management)).
+The dashboard has no authentication, so `127.0.0.1:19999:18888` keeps it on this machine: a bare
+`19999:18888` would publish it on every host interface, past host firewalls such as ufw. Before
+exposing it, read [Management Configuration](config.md#management-configuration-management).
 
 ## Routes Configuration
 

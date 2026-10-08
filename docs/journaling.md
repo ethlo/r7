@@ -68,9 +68,9 @@ volumes:
   r7-tailer-checkpoints:
 ```
 
-Next to it, create the gateway's fingerprint key once, and keep the file. Only the gateway
-needs it; see [Redacted header and query parameter values](#redacted-header-and-query-parameter-values).
-If `config/server.yaml` sets `fingerprint_key` instead, drop the `environment` block.
+Next to it, create the gateway's [fingerprint key](#redacted-header-and-query-parameter-values)
+once, and keep the file. Only the gateway needs it. If `config/server.yaml` sets
+`fingerprint_key` instead, drop the `environment` block.
 
 ```bash
 (umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)
@@ -78,9 +78,8 @@ If `config/server.yaml` sets `fingerprint_key` instead, drop the `environment` b
 
 **3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which
 Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line holds the timing,
-status, sizes and the headers of every leg (values not on the
-[whitelist](#redacted-header-and-query-parameter-values) appear as fingerprints), and, for a
-complete exchange with a body, a `warc` pointer to its records in `/warc`. The line is one physical line; this one is abbreviated and
+status, sizes and the headers of every leg ([redacted](#redacted-header-and-query-parameter-values)
+values appear as fingerprints), and, for a complete exchange with a body, a `warc` pointer to its records in `/warc`. The line is one physical line; this one is abbreviated and
 pretty-printed for reading. Every field is listed under [The JSON line](#the-json-line):
 
 ```json
@@ -95,10 +94,8 @@ pretty-printed for reading. Every field is listed under [The JSON line](#the-jso
 }
 ```
 
-The `/warc` files are [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/)
-archives with each record in its own Zstandard frame: `zstd -d` turns a `.warc.zst` file into plain WARC
-for any WARC tool. Journals grow until something deletes them: before sustained use, add the reaper from
-[Retention](#4-retention-the-reaper). Everything else on this page is reference for tuning this
+The `/warc` files are standard WARC; see [the tailer](#3-the-tailer). Journals grow until
+something deletes them: before sustained use, add the reaper from [Retention](#4-retention-the-reaper). Everything else on this page is reference for tuning this
 setup: the journal levels, redaction, every tailer property, other output layouts and retention.
 
 ## 1. Journal levels and redaction
@@ -124,11 +121,9 @@ routes:
           5xx: HEADERS   # more detail when things break
 ```
 
-An override can raise a direction to `HEADERS`, but not to `FULL` unless the base level is already `FULL`: bodies are captured as they stream, and a lower base level installs no capture for an override to switch on. Such a configuration is refused at startup.
-
-`NONE` / `METADATA` / `HEADERS` / `FULL` — see [Configuration §7](config.md#7-journaling-storage)
-for the full table and the `storage` block (`work_dir`, `shard_size`, `shard_count`) that
-controls where and how those journals are written on disk.
+What each level records, and which overrides are allowed, is in
+[Configuration §7](config.md#7-journaling-storage); where and how journals are written on disk is
+the [`storage` block](config.md#storage-journaling-storage).
 
 Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (`gateway.route.id`, `gateway.target`; the JSON line has them as `route_id` and
@@ -137,12 +132,44 @@ id or target URL with a character outside ISO-8859-1 is refused at startup, nami
 
 ### Redacted header and query parameter values
 
-At `HEADERS` and `FULL`, a header whose name is not on the `journal_security` whitelist is
-journaled with a fingerprint in place of its value. Query parameter values in the request lines
-get the same treatment at every level, unless the parameter is on `safe_query_parameters`
-(see [Configuration: query parameters](config.md#query-parameters)). The fingerprint is `fp:`
-followed by 11 base64url characters, for example `fp:R5XU2m_VAik`: the first 64 bits of
-HMAC-SHA-256 of the value, keyed with `storage.journal_security.fingerprint_key`.
+**Headers.** At `HEADERS` and `FULL`, every header name is journaled, but a value is written as
+sent only when its name is on the safe list for its direction (request or response). The
+built-in lists hold names such as `host`, `user-agent`, `content-type`, `etag`,
+`x-forwarded-for` and `sec-fetch-mode`; everything else, such as `authorization`, `cookie`,
+`set-cookie` or a custom API key header, is written as a fingerprint.
+
+**Query parameters.** The query is part of the request line, which every level records,
+`METADATA` included. Each parameter name is journaled as sent, and its value is written as sent
+only when the name is on `safe_query_parameters`. There is no built-in list, because no
+parameter name is safe everywhere, so with nothing configured every value is fingerprinted:
+
+```
+GET /search?page=2&api_key=s3cret&q=shoes HTTP/1.1                       # as sent
+GET /search?page=2&api_key=fp:R5XU2m_VAik&q=fp:0uCr61zmqQQ HTTP/1.1      # journaled, with page safe
+```
+
+- **Case.** Names on `safe_query_parameters` match regardless of case, as header names do.
+  Query parameter names are case sensitive on the wire, so when your upstreams tell `id` from
+  `ID`, set `safe_query_parameters_case_sensitive: true`.
+- **Encoding.** Names and values are compared after percent-decoding, as the upstream reads
+  them: `p%61ge` and `page` are the same parameter, and `q=a+b` and `q=a%20b` get the same
+  fingerprint.
+- **Repeats.** Each occurrence of a repeated parameter is redacted on its own; a safe name is
+  safe every time it appears.
+- **Bare parameters.** A parameter without `=` (`?s3cret-token`) is fingerprinted whole unless
+  its name is safe. Empty values (`?q=`) stay empty.
+
+Both request lines are redacted the same way: the one the client sent and the one forwarded
+upstream, after filters such as `SetQueryParameter` have changed it.
+
+The safe lists are set in `storage.journal_security`; see
+[Journal Redaction](config.md#journal-redaction-storagejournal_security) for the keys.
+Redaction applies to the journal only; it never changes what a client or upstream receives.
+
+**Fingerprints.** A fingerprint is `fp:` followed by 11 base64url characters, for example
+`fp:R5XU2m_VAik`: the first 64 bits of HMAC-SHA-256 of the value, keyed with
+`storage.journal_security.fingerprint_key`. The `gateway.auth.basic.user` attribute uses the same
+key and form.
 
 The same value always gives the same fingerprint under the same key, so you can see that two
 requests, two replicas, or records from before and after a restart carried the same value. Without
@@ -151,7 +178,7 @@ such as `Authorization: Basic` with a known user name and a common password, a s
 `role=admin` cookie. The characters are URL-safe, so a fingerprint stands in a query string, a
 JSON string or a WARC header without escaping.
 
-The key is required: r7 refuses to start without it. Set it in `server.yaml`, or set only the
+**The key.** r7 refuses to start without it. Set it in `server.yaml`, or set only the
 `R7_FINGERPRINT_KEY` environment variable, which is the default when the file does not:
 
 ```yaml title="server.yaml"
@@ -160,11 +187,11 @@ storage:
     fingerprint_key: ${R7_FINGERPRINT_KEY}   # at least 32 characters, e.g. `openssl rand -base64 32`
 ```
 
-Keep the key out of anything a journal reader can see, and give every replica of a deployment
-the same one so their fingerprints correlate. To rotate it, change it: records already written
-keep the fingerprints they have, and values journaled before and after the change no longer
-correlate. Nothing reads a fingerprint back, so there is no old key to keep. The same key and
-form are used for the `gateway.auth.basic.user` attribute.
+Keep the key out of anything a journal reader can see: anyone who has it can confirm a guess.
+Give every replica of a deployment the same key so their fingerprints correlate. To rotate it,
+change it: records already written keep the fingerprints they have, and values journaled before
+and after the change no longer correlate. Nothing reads a fingerprint back, so there is no old
+key to keep.
 
 Journals written by earlier versions keep the forms they were written with, `id:sha256:` (an
 unkeyed, truncated SHA-256) and `id:hmac:`; nothing rewrites them.
@@ -229,7 +256,7 @@ At least one output must be enabled.
 |-----------------------|----------|---------|
 | `enabled`             | `true`   | Write WARC files |
 | `exchanges`           | `with_body` | Which exchanges get records. `with_body` archives only exchanges with a captured request or response body; `all` archives every exchange, so every JSON line points into the WARC files. Whether the records hold the bodies is `bodies` |
-| `output_dir`          | `/warc`  | Directory the files are written to. A file is written as `.warc.zst.open` and renamed once finished; one left `.open` by a crash is cut back to its last complete exchange and sealed on the next start |
+| `output_dir`          | `/warc`  | Directory the files are written to. How files are named, sealed and recovered after a crash is in [the WARC profile](warc.md#files) |
 | `file_prefix`         | `r7`     | Filename prefix |
 | `max_file_size`       | `1gb`    | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`        | `15m`    | Roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
@@ -238,10 +265,8 @@ At least one output must be enabled.
 | `cdxj_index`          | `false`  | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each file; see below |
 | `bodies`              | `true`   | Store captured bodies in the records. `false` writes the headers with `WARC-Truncated: unspecified` and the body's `WARC-Payload-Digest`, and leaves the body to the JSON line when that output is on with `bodies: true`; otherwise the body is not stored |
 
-Each exchange becomes up to four linked records (client request, upstream request, upstream
-response, client response); a payload already archived by an earlier exchange is written as a
-WARC `revisit` record; and a checksum mismatch on read is marked rather than silently archived.
-[The WARC profile](warc.md) specifies the records and the `WARC-R7-*` fields;
+[The WARC profile](warc.md) specifies what an exchange becomes in the files: the records, the
+`WARC-R7-*` fields and the rules a reader can rely on.
 [`design/warc.md`](https://github.com/ethlo/r7/blob/main/design/warc.md) explains why they are
 shaped this way.
 
@@ -420,7 +445,7 @@ overridable via the `REAPER_CONFIG` env var.
 | Field           | Default     | Meaning                                                                 |
 |------------------|-------------|--------------------------------------------------------------------------|
 | `journal_dir`     | `/journals` | Directory the reaper scans (and deletes from) — mount this read-write, unlike every tailer |
-| `ttl`             | `7d`        | How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (not the file's filesystem mtime — see below), before it is deleted. Supports `ms`, `s`, `m`, `h`, `d` |
+| `ttl`             | `7d`        | How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (see the warning above), before it is deleted, read or not. Supports `ms`, `s`, `m`, `h`, `d` |
 | `tailers`         | none        | Checkpoint directories of the tailers that must all be done with a segment before it is deleted ahead of `ttl` (mount them read-only). A segment is done for a tailer when its checkpoint file says it was read to the end and everything in it delivered, and the tailer does not need it to rebuild an exchange still open. A listed tailer with no readable checkpoint file stops early deletion, so a tailer that is down keeps everything for up to `ttl` |
 | `min_age`         | `1h`        | How old a segment must be before it is deleted ahead of `ttl`. A tailer counts a segment as done once its output reached the OS, not the disk; keep this above the tailers' `max_file_age` (15 minutes by default), after which their output files are fsync'd, so a power loss cannot take both copies |
 | `poll_interval`   | `1m`        | Delay between sweeps. Supports `ms`, `s`, `m`, `h`, `d`                  |

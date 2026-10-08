@@ -50,9 +50,8 @@ happened:
 
 - A record is written for each message whose start line was journaled. A route with journal
   level `NONE` for the response has no response records; an exchange with nothing journaled has
-  none at all. A request at `NONE` still gets its request records when the response is journaled: the
-  journal then records the request at `METADATA`, its start line without headers, to anchor the
-  response.
+  none at all. A request at `NONE` still gets its request records when the response is journaled,
+  since the journal then [records it at `METADATA`](config.md#logging-levels-routesyaml-journal).
 - Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
   itself (a rate limit, a redirect) has records 1 and 4.
 - Every record of an exchange names all the others in `WARC-Concurrent-To`, and carries the
@@ -64,8 +63,8 @@ happened:
 
 Each record's block is an `application/http` message: the start line and headers as journaled,
 a blank line, and the body when this record stores it. Header values are ISO-8859-1, as in the
-journal; redacted values appear as their fingerprints (see
-[Redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values)).
+journal; [redacted values](journaling.md#redacted-header-and-query-parameter-values) appear as
+their fingerprints.
 
 r7 streams bodies without changing them, so the body r7 forwarded is the body the client sent,
 and the body the client got is the body the upstream returned. Each is stored once: the request
@@ -87,7 +86,7 @@ record says plainly when it does not hold them:
 | Records 1 and 4: no body | `request` / `response` | No digest, no `WARC-Truncated` |
 
 A record without `WARC-Truncated` holds its whole body. Its headers are what the journal level
-kept: none at `METADATA`, and fingerprints for redacted values. Records 2 and 3 never store a body,
+kept. Records 2 and 3 never store a body,
 so they carry `WARC-Truncated` even when the message had none. The body of record 2 is in record 1, and
 the body of record 3 is in record 4, found through `WARC-Concurrent-To`. When that record is a
 `revisit`, its `WARC-Refers-To` leads to the earlier record that holds the bytes; when it too

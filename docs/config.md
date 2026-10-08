@@ -64,7 +64,7 @@ r7 supports zero-downtime configuration reloads.
 
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
-0. **Request Validation:** Before anything else runs, a request `Transfer-Encoding` other than exactly `chunked` is rejected with `400 Bad Request` and the connection closed (see [Transfer-Encoding](#transfer-encoding)); then a path an upstream could resolve differently from how route predicates read it is rejected with `400 Bad Request` (see [Ambiguous Paths](#ambiguous-paths)).
+0. **Request Validation:** Before anything else runs, a request with a bad [Transfer-Encoding](#transfer-encoding) or an [ambiguous path](#ambiguous-paths) is rejected with `400 Bad Request`.
 1. **Global Request Filters:** Executed on every incoming request.
 2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
 3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
@@ -87,7 +87,7 @@ The check always runs and is not configurable: no route is consulted, no filter 
 
 ### Transfer-Encoding
 
-A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked, identity`, `gzip, chunked`, or the header repeated) is refused with `400 Bad Request` before routing. RFC 9112 §6.3 requires rejecting a request whose final coding is not `chunked`, and a list that r7 and an upstream read differently would make them disagree on where the body ends.
+A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked, identity`, `gzip, chunked`, or the header repeated) is refused with `400 Bad Request` before routing, and the connection is closed. RFC 9112 §6.3 requires rejecting a request whose final coding is not `chunked`, and a list that r7 and an upstream read differently would make them disagree on where the body ends.
 
 ### Phase-Aware Filters
 
@@ -313,7 +313,7 @@ Matches the HTTP method of the incoming request against a list of allowed method
 
 #### RemoteAddr
 
-Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the resolved remote address**, which is the physical TCP peer address unless that peer is listed in `limits.trusted_proxies` in `server.yaml`, in which case `X-Forwarded-For`/`X-Real-IP` is honored instead. By default `trusted_proxies` is empty, so `X-Forwarded-For` is never read and this predicate cannot be bypassed by a spoofed header.
+Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the resolved client address**: the TCP peer, or the client behind a peer listed in [`limits.trusted_proxies`](#limits-configuration-limits). By default no proxy is trusted, so a spoofed `X-Forwarded-For` cannot get past it.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -562,11 +562,11 @@ Validates that incoming requests contain an `Authorization` header starting with
 
 #### BasicAuth
 
-Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success a fingerprint of the authenticated username (not the username itself) is recorded in the `gateway.auth.basic.user` attribute for journaling, the same convention used for redacted request headers.
+Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the authenticated username is recorded in the `gateway.auth.basic.user` attribute for journaling, as a [fingerprint](journaling.md#redacted-header-and-query-parameter-values), not in plain text.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`. Generate with `htpasswd -nB -C 12 <user>`, which prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. |
+| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`; see the cost advice below. |
 | `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
 | `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
 
@@ -584,8 +584,6 @@ filters:
         - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
         - "bob:${BOB_HTPASSWD_ENTRY}"
 ```
-
-Because bcrypt is deliberately expensive, successful credentials are cached so that repeat requests do not re-run the hash.
 
 **Password guessing.** `BasicAuth` has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a `RateLimiter` before `BasicAuth`, so a client is refused before its guess costs a bcrypt:
 
@@ -606,9 +604,9 @@ journal:
 
 The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
 
-Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so pass `-C 12` (for example `htpasswd -nB -C 12 <user>`). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
+Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so generate entries with `htpasswd -nB -C 12 <user>`, which also prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
 
-**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time. `status_overrides` (above) records it even on a route that otherwise journals nothing.
+**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time; the `status_overrides` entry above records it even on a route that otherwise journals nothing.
 
 A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
 
@@ -629,8 +627,6 @@ Limits the size of request bodies.
 * **Undeclared length** (chunked, or HTTP/2 without `Content-Length`): the body is counted as it streams. Once it crosses `max_size`, r7 closes both the client connection and the upstream connection mid-body, so the upstream never receives the request as complete. The response headers may already have been impossible to send, so the client sees the connection close rather than a `413`.
 
 The server-wide `limits.max_entity_size` applies on top of this and cannot be raised by it.
-
-Independently of this filter, r7 never hands an upstream a chunked request body that was cut short (client disconnect, malformed chunk, or `max_entity_size`) as if it were complete: the upstream connection is closed mid-body instead.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -658,7 +654,7 @@ Handles Cross-Origin Resource Sharing (CORS). Answers CORS preflights (`OPTIONS`
 
 #### RateLimiter
 
-Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the client's resolved address** (the TCP peer, or the `X-Forwarded-For`/`X-Real-IP` client behind a trusted proxy): an IPv4 address as is, an IPv6 address by its leading `ipv6_prefix_length` bits (a `/64` by default). A filter that sets the `rate_limit_key` attachment overrides this.
+Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the client's resolved address** (see [`trusted_proxies`](#limits-configuration-limits)): an IPv4 address as is, an IPv6 address by its leading `ipv6_prefix_length` bits (a `/64` by default). A filter that sets the `rate_limit_key` attachment overrides this.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -718,7 +714,7 @@ Request/response journaling is executed asynchronously to avoid blocking the hot
 
 ### Storage Configuration (`server.yaml -> storage`)
 
-Storage utilizes memory-mapped files separated into shards of a defined `shard_size` to minimize lock contention and manage disk IO.
+Where and how journals are written on disk is set in `server.yaml`; see [Storage & Journaling](#storage-journaling-storage).
 
 ### Logging Levels (`routes.yaml -> journal`)
 
@@ -730,6 +726,10 @@ Verbosity can be set generically or overridden conditionally based on HTTP statu
 | `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
 | `HEADERS` | Metadata + Headers | Captures both request and response headers. |
 | `FULL` | Headers + Bodies | Captures bodies in full, streamed into the journal as they pass. The journal sets no size cap; request bodies are bounded by `limits.max_entity_size`. |
+
+Header and query parameter values that may be secrets are journaled as fingerprints, not in plain text; see [Journaling: redacted values](journaling.md#redacted-header-and-query-parameter-values).
+
+A request at `NONE` is still recorded at `METADATA` (start line, client address, timing) when its response is journaled, to anchor the response.
 
 #### Status Overrides (`status_overrides`)
 
@@ -782,7 +782,7 @@ unrouted:
         404: NONE      # ...which needs both directions, as overrides apply per direction
 ```
 
-Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` (start line, client address, timing) to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
 
 ---
 
@@ -930,6 +930,8 @@ The management listener shares the process's file descriptors with the gateway i
 
 A request whose `Host` names anything other than `localhost`, the configured `host`, an entry in `allowed_hosts` or an IP address gets `421`. This stops DNS rebinding, where a web page re-resolves its own name to `127.0.0.1` and so reads a loopback-only dashboard from the browser of someone on the gateway host. IP addresses are always accepted because rebinding needs a name. If you reach the management port through a DNS name, add that name to `allowed_hosts`.
 
+To reach the management port from another machine, put it behind something that authenticates. Do not route a path on the gateway port to it: that would publish it to every client of the gateway.
+
 The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates mask the same values, and the values predicates compare against, the same way.
 
 What the dashboard shows beyond the configuration itself:
@@ -989,7 +991,7 @@ Configures the HTTP server layer, including protocol support and request parsing
 
 Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.
 
-A request over `max_header_size` or `max_header_count` is refused before any filter runs, with `400` or `431` depending on which layer caught it. A body over `max_entity_size` is refused with `413` when its `Content-Length` declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.
+A request over `max_header_size` or `max_header_count` is refused before any filter runs, with `400` or `431` depending on which layer caught it. A body over `max_entity_size` is refused with `413` when its `Content-Length` declares it. A chunked body is stopped once it streams past the limit. A chunked body cut short for any reason (this limit, a client disconnect, a malformed chunk) never reaches the upstream as a complete request: the upstream connection is closed mid-body. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -1028,40 +1030,35 @@ Configures the disk-backed storage mechanism used for high-speed request and res
 | --- | --- | --- |
 | `work_dir` | String | The directory path where the memory-mapped journal files are stored. Defaults to `journals` (relative to the working directory), or to the `R7_JOURNAL_DIR` environment variable when set; the container images set it to `/journals`. Created with mode `0750`, and journal segments with `0640` (owner read-write, group read): a sidecar tailer running as another user needs to share the gateway's group. The umask can only narrow these; an existing directory or file keeps its mode. |
 | `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). Must be a whole number of 32KB journal blocks, from 64KB to just under 2GB; any whole number of megabytes qualifies. |
-| `shard_count` | Integer | The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. Defaults to `2`; must be a power of two. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
-| `pre_fault` | Boolean | When `true`, the warmer touches every page of each segment before the writer gets it. Defaults to `false`, and best left so: on Linux 5.14 and later r7 already faults pages in a few MB ahead of the writer (fault-ahead), which was faster in every measurement and costs a fraction of the memory. `pre_fault` charges every warmed segment to memory at once (about 6 × `shard_size` per shard) and disables fault-ahead. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
-| `compression` | String | `zstd` (the default) or `none`. With `zstd`, each 32KB block of a journal segment carries one zstd stream and every entry is flushed into it as it is written, so entries stay individually committed and readable. On benchmark traffic it made the journal 9-15x smaller with no measurable latency at 1,000 req/s; it costs CPU on the writing thread, which shows only near saturation. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See [Performance tuning](performance_tuning.md#journal-compression-compression-and-compression_level). |
-| `compression_level` | Integer | zstd level, `1` to `19`. Defaults to `1`, which measured best: higher levels cost noticeably more CPU for a few percent less disk. Ignored when `compression` is `none`. |
-| `journal_security` | Object | Shapes the whitelists of header and query parameter names journaled in plain text. See below. |
+| `shard_count` | Integer | The number of shards (files) to split the journal across, to reduce lock contention. Defaults to `2`; must be a power of two. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
+| `pre_fault` | Boolean | Touch every page of each segment before the writer gets it. Defaults to `false`, and best left so on Linux 5.14 and later. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
+| `compression` | String | `zstd` (the default) or `none`. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See [Performance tuning](performance_tuning.md#journal-compression-compression-and-compression_level). |
+| `compression_level` | Integer | zstd level, `1` to `19`. Defaults to `1`. Ignored when `compression` is `none`. |
+| `journal_security` | Object | Which header and query parameter values are journaled in plain text, and the fingerprint key. See below. |
 
 #### Journal Redaction (`storage.journal_security`)
 
-At `HEADERS`/`FULL` journal levels, r7 journals every header name but only writes a header's
-*value* verbatim when the name is on a built-in whitelist (things like `host`, `user-agent`,
-`content-type`, `etag`, `x-forwarded-for`, `sec-fetch-site`, `sec-fetch-mode`); everything else —
-`authorization`, `cookie`, `set-cookie`, custom API keys, and so on — is written as a
-fingerprint of its value instead of the value itself. This list is separate per direction
-(request headers vs. response headers).
-
-`journal_security` shapes that whitelist in one of two ways, per direction:
+Shapes which header and query parameter values the journal keeps in plain text; every other
+value is written as a fingerprint. What is redacted, what a fingerprint is and how the key is
+used are described once, in
+[Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values).
+Redaction affects only the journal, never what is sent to clients or upstreams.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `additional_safe_request_headers` | List of Strings | Request header names to add on top of the built-in whitelist, so their values are journaled in plain text. |
-| `additional_safe_response_headers` | List of Strings | Response header names to add on top of the built-in whitelist. |
-| `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list. |
-| `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response whitelist entirely. |
-| `safe_query_parameters` | List of Strings | Query parameter names whose values are journaled in plain text. Empty by default, so every query parameter value is fingerprinted. See [Query parameters](#query-parameters) below. |
+| `additional_safe_request_headers` | List of Strings | Request header names to add on top of the built-in safe list, so their values are journaled in plain text. |
+| `additional_safe_response_headers` | List of Strings | Response header names to add on top of the built-in safe list. |
+| `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request safe list entirely: the effective list is exactly this one. |
+| `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response safe list entirely. |
+| `safe_query_parameters` | List of Strings | Query parameter names whose values are journaled in plain text. Empty by default. Write names decoded; a name containing a percent-escape is refused at startup. |
 | `safe_query_parameters_case_sensitive` | Boolean | Match `safe_query_parameters` exactly, case included. Defaults to `false`: `page` on the list also covers `Page` and `PAGE`. |
-| `fingerprint_key` | String | **Required**, at least 32 characters. The secret key behind every fingerprint r7 writes in place of a redacted value (`fp:` + 11 characters, a keyed HMAC-SHA-256), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Defaults to the `R7_FINGERPRINT_KEY` environment variable; r7 does not start without one or the other. See [Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values). |
+| `fingerprint_key` | String | **Required**, at least 32 characters. The secret key behind every fingerprint. Defaults to the `R7_FINGERPRINT_KEY` environment variable; r7 does not start without one or the other. |
 
 Header names are matched case-insensitively. There is no way to remove a single header from the
-built-in whitelist while keeping the rest — use `safe_*_headers` to replace the whole list if
+built-in safe list while keeping the rest: use `safe_*_headers` to replace the whole list if
 you need exact control. Setting both `additional_safe_*_headers` and `safe_*_headers` for the
 same direction is a validation error: a full replacement and an addition to the defaults it
-replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
-is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
-are sent to clients or upstreams.
+replaces is a contradiction, not something to guess at.
 
 ```yaml title="server.yaml"
 storage:
@@ -1073,7 +1070,7 @@ storage:
     additional_safe_response_headers:
       - x-internal-build-id
 
-    # ...or replace the response whitelist entirely (mutually exclusive with
+    # ...or replace the response safe list entirely (mutually exclusive with
     # additional_safe_response_headers above):
     # safe_response_headers:
     #   - content-type
@@ -1084,34 +1081,3 @@ storage:
       - page
       - sort
 ```
-
-##### Query parameters
-
-The query is part of the request line, which every journal level records, `METADATA` included.
-The same rule as for headers applies to it: each parameter name is journaled as sent, and its
-value is written verbatim only when the name is on `safe_query_parameters`; every other value is
-replaced by the same fingerprint a header value gets. There is no built-in list, because no
-parameter name is safe everywhere, so with nothing configured every value is fingerprinted:
-
-```
-GET /search?page=2&api_key=s3cret&q=shoes HTTP/1.1                       # as sent
-GET /search?page=2&api_key=fp:R5XU2m_VAik&q=fp:0uCr61zmqQQ HTTP/1.1      # journaled, with page safe
-```
-
-- **Case.** Names on `safe_query_parameters` match regardless of case, as header names do:
-  `page` also covers `Page` and `PAGE`. Query parameter names are case sensitive on the wire,
-  so when your upstreams tell `id` from `ID`, set `safe_query_parameters_case_sensitive: true`
-  and only the exact spelling on the list is journaled in plain text.
-- **Encoding.** Names are matched after percent-decoding, as the upstream reads them: `p%61ge`
-  and `page` are the same parameter, and `user+id` and `user%20id` both match `user id`. Write
-  names in `safe_query_parameters` decoded; a name containing a percent-escape is refused at
-  startup with the decoded form to use instead. Values are fingerprinted decoded too, so
-  `q=a+b` and `q=a%20b` get the same fingerprint.
-- **Repeats.** Each occurrence of a repeated parameter is redacted on its own; a safe name is
-  safe every time it appears.
-- **Bare parameters.** A parameter without `=` (`?s3cret-token`) is fingerprinted whole unless
-  its name is safe: it is the only thing it carries. Empty values (`?q=`) stay empty.
-
-Both request lines are redacted the same way: the one the client sent and the one forwarded
-upstream, after filters such as `SetQueryParameter` have changed it. Redaction applies to the
-journal only; it never changes the query an upstream receives.
