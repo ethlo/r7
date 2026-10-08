@@ -73,16 +73,20 @@ already only stamps the seal record and hands the rest to a virtual finalizer th
 (`finalizeSegmentAsync`). That finalizer:
 
 1. waits for the previous finalizer of the same shard, so statements are written in order;
-2. hashes the segment up to its Data End, signs the statement, and then unmaps the segment as
-   it does today, so nothing holds a mapping when the file is renamed (a mapped file can't be
-   renamed on Windows);
+2. hashes the segment up to its Data End, signs the statement, forces the segment to disk (an
+   msync, which the async path doesn't do today), and then unmaps it as it does today, so nothing
+   holds a mapping when the file is renamed (a mapped file can't be renamed on Windows). The
+   force comes before the statement is published, so a durable statement always describes bytes
+   that are durable too. Without it, a power loss could leave a statement that no longer matches
+   the segment, and recovery couldn't tell that apart from tampering;
 3. writes `<stem>.seal`: to a temporary name, fsync, rename, then fsync the directory so the
    rename itself survives a power loss (as the `.seq` marker already does);
 4. updates `shard-<id>.chain`, the chain head (chain id, index, hash of the last statement),
    the same way, directory fsync included;
 5. renames the segment, as it does today.
 
-The cost is one SHA-256 pass over each segment and one signature. The signature is about 50 µs.
+The cost is one SHA-256 pass over each segment, one signature, and one forced write-back of
+pages the kernel would write back anyway, now on the finalizer's schedule. The signature is about 50 µs.
 The hash pass is the larger part: with the SHA-NI intrinsic, SHA-256 runs at roughly 1.5 to 2 GB/s, so a 200 MB segment is about 100 ms of
 CPU on a virtual thread. That thread shares carriers with request handling, so it is measured
 with `benchmark/bench.sh` on the controlled machine before merge. The bar is no visible change
@@ -98,7 +102,7 @@ startup, recovery handles each shard's leftover `.flux` segments in sequence ord
 | No `<stem>.seal` | before step 3 | Seal as today, sign with `recovered: true`, then steps 3 to 5 |
 | A `.seal` that verifies, head behind it | between steps 3 and 4 | Adopt the statement, advance the head to it, rename |
 | A `.seal` that verifies, head already on it | between steps 4 and 5 | Rename only |
-| A `.seal` that doesn't verify against the segment | after tampering, never a crash, since step 3 is an atomic rename | Keep both files as they are, quarantine the segment as recovery does with damage today, log an error, and sign a statement with `quarantined: true` and the reason. The event is then part of the chain, signed |
+| A `.seal` that doesn't verify against the segment | after tampering, never a crash: step 3 is an atomic rename, and it only happens once the segment is forced to disk | Keep both files as they are, quarantine the segment as recovery does with damage today, log an error, and sign a statement with `quarantined: true` and the reason. The event is then part of the chain, signed |
 
 Once signing is on, a sealed `.r7f` without a `.seal` can't exist, because step 5 comes after
 step 3. Segments sealed by a gateway from before the upgrade have none. The first chain on such
