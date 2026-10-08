@@ -4,8 +4,9 @@
 
 The journal records what a client sent. This plan makes it prove that the record is complete
 and unchanged: every sealed segment gets a signed statement, the statements form a chain per
-shard, and the chain carries through into the tailer's output files. A changed byte, a missing
-segment or a reordered pair is then visible to anyone holding the public key.
+shard, and the chain carries through into the tailer's output files. A changed byte, a segment
+missing from the middle or a reordered pair is then visible to anyone holding the public key.
+Missing segments at the newest end are visible against a chain head kept somewhere else (below).
 
 It serves the first pillar, the audit journal. It is core rather than an extension, because the
 statement has to be written by the process that sealed the segment.
@@ -15,27 +16,29 @@ statement has to be written by the process that sealed the segment.
 | Change | Detected |
 |---|---|
 | A byte of a sealed segment edited, up to its Data End | yes: the digest no longer matches |
-| A sealed segment deleted, or replaced by another one | yes: a gap or a break in the chain |
+| A sealed segment deleted from the middle, or replaced by another one | yes: a gap or a break in the chain |
+| The newest segments deleted, with their statements | only against a head kept elsewhere: the gateway logs every statement's hash and index, and the tailer's checkpoint and output statements carry the last one it saw. A chain alone can't show that its own end is missing |
 | A sealed segment's statement edited or forged | yes: the signature fails |
 | A tailer output file edited or deleted after it was sealed | yes, when the tailer signs (decision 4) |
 | The chain restarted to hide a deletion | the restart is visible, and it is signed: only the gateway's key can start a chain |
 | An active (`.flux`) segment edited before it is sealed | **no** |
 | Anything done by whoever holds the gateway's key or controls its process | **no** |
 
-The second "no" can't be fixed by any design. The first is bounded by `shard_size`: what is
+The last "no" can't be fixed by any design. The one before it is bounded by `shard_size`: what is
 still open when the attacker arrives is all they can change. The docs will state both outright.
 Overstating this would be a reputation risk of its own.
 
 ## The statement
 
-A sealed segment `X.r7f` gets a sidecar `X.r7f.seal`, a small text file:
+Each segment gets a sidecar named after its stem, the part of its name that sealing doesn't
+change (`shard-<id>-<created>-<sequence>`): `<stem>.seal`, a small text file:
 
 ```
 r7-seal: 1
 chain: 3f2a9c4e-61b0-4c8e-9f57-0d1e2b3c4a5d
 shard: 0
 index: 1834
-segment: shard-0-000000000731-1696760000000-1696760042113.r7f
+segment: shard-0-1696760000000-731
 data_end: 209715200
 sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 recovered: false
@@ -69,7 +72,7 @@ already only stamps the seal record and hands the rest to a virtual finalizer th
 
 1. waits for the previous finalizer of the same shard, so statements are written in order;
 2. hashes the segment up to its Data End and signs the statement;
-3. writes `X.r7f.seal` (write to a temporary name, fsync, rename);
+3. writes `<stem>.seal` (write to a temporary name, fsync, rename);
 4. updates `shard-<id>.chain`, the chain head (chain id, index, hash of the last statement),
    the same way;
 5. renames the segment, as it does today.
@@ -80,9 +83,19 @@ CPU on a virtual thread. That thread shares carriers with request handling, so i
 with `benchmark/bench.sh` on the controlled machine before merge. The bar is no visible change
 in throughput or tail.
 
-**Recovery** seals the segments a crash left open and signs them the same way, with
-`recovered: true`, continuing from the chain head. A segment that was sealed but never got its
-statement (a crash between steps 1 and 3) is still `.flux`, so recovery already handles it.
+**Recovery** has to be idempotent, because a crash can land between any two steps. Two rules
+make it so. There is at most one statement per segment, keyed by its stem, and the head records
+the stem of the last statement it covers. Steps 3 to 5 only ever happen in that order. At
+startup, recovery handles each shard's leftover `.flux` segments in sequence order:
+
+| What it finds | Crash was | What recovery does |
+|---|---|---|
+| No `<stem>.seal` | before step 3 | Seal as today, sign with `recovered: true`, then steps 3 to 5 |
+| A `.seal` that verifies, head behind it | between steps 3 and 4 | Adopt the statement, advance the head to it, rename |
+| A `.seal` that verifies, head already on it | between steps 4 and 5 | Rename only |
+| A `.seal` that doesn't verify against the segment | after tampering, never a crash, since step 3 is an atomic rename | Keep the file as it is, quarantine the segment as recovery does with damage today, log an error, and sign nothing for it. The gap stays visible in the chain |
+
+A sealed `.r7f` without a `.seal` can't exist, because step 5 comes after step 3.
 
 **Clean close** (`finalizeActiveSegment`) does the same steps synchronously.
 
@@ -91,16 +104,23 @@ logs a warning. A fresh volume starts one with `new_volume`.
 
 ## The tailer
 
-The tailer verifies each segment before it finishes it. It already reads every byte, so it
-hashes as it goes and then checks the hash, the signature against its configured key, and the
-link to the last statement it saw (kept in its checkpoint). If the `.seal` file isn't there yet,
-the tailer waits for it. The finalizer writes it within moments of the seal, and recovery writes
-it on the next start.
+The tailer delivers entries live from the active `.flux` segment, and resumes from a byte
+checkpoint after a restart. So it can't verify before it delivers, and it doesn't try: holding
+output back until each segment seals would end live tailing.
 
-A failed check is never silent, and it never drops data (the same rule as fingerprinting: the
-record isn't changed without a trace). See decision 3.
+Verification is a separate pass once a segment has its `.seal`. The tailer re-reads the sealed
+segment up to `data_end` (from the page cache, because it has just read it), and checks the
+hash, the signature against its configured key, and the link to the last statement it saw (kept
+in its checkpoint). That costs one extra read pass per segment, in the tailer, nowhere near the
+gateway. If the `.seal` isn't there yet, the check waits for it, and delivery carries on
+meanwhile.
 
-The reaper deletes `X.r7f.seal` together with `X.r7f`, and `shard-<id>.chain` is never deleted.
+Because records are already written when the check runs, the result can't be put on them.
+It goes in the tailer's output statement instead (below), as a verdict per source segment. A
+failed check is never silent and never drops data, the same rule as fingerprinting. See
+decision 3.
+
+The reaper deletes `<stem>.seal` together with the segment, and `shard-<id>.chain` is never deleted.
 
 ## The archive
 
@@ -112,10 +132,15 @@ shape as the gateway's statement:
 - `sha256` of `F`, and of its CDXJ index when there is one;
 - `prev` linking to the tailer's previous output statement (its own chain, kept in its
   checkpoint directory);
-- `sources`: the gateway statements, verbatim, of the segments whose records `F` holds.
+- `sources`: the gateway statements, verbatim, of the segments whose records `F` holds, each
+  with the tailer's verdict (`verified`, or the reason it failed). A segment still open when `F`
+  seals is listed as `pending`, and its verdict goes in the first later statement after it seals,
+  so every verdict lands in the tailer's chain.
 
 An auditor holding only the archive and the two public keys can then check three things: each
-file is unchanged, no file is missing, and the gateway's chain behind them is unbroken.
+file is unchanged, no file is missing from the middle of either chain, and every source
+segment was verified. The newest end of the archive is checked against a head kept elsewhere,
+the same way as the journal's: the tailer logs each output statement's hash too.
 
 ## Verifying without a tool to maintain
 
@@ -123,10 +148,10 @@ r7 ships no `verify` command. The statement format is the contract, and the docs
 recipe with standard tools:
 
 ```bash
-sed '/^sig: /,$d' X.r7f.seal > statement
-sed -n 's/^sig: //p' X.r7f.seal | base64 -d > sig.bin
+sed '/^sig: /,$d' STEM.seal > statement
+sed -n 's/^sig: //p' STEM.seal | base64 -d > sig.bin
 openssl pkeyutl -verify -pubin -inkey r7-journal.pub.pem -rawin -in statement -sigfile sig.bin
-head -c "$(sed -n 's/^data_end: //p' X.r7f.seal)" X.r7f | sha256sum   # compare with the sha256 line
+head -c "$(sed -n 's/^data_end: //p' STEM.seal)" STEM-*.r7f | sha256sum   # compare with the sha256 line
 ```
 
 The verifier the tailer uses is a public class in `r7-journal-mmap`, so anyone who wants to
@@ -148,11 +173,11 @@ check a whole chain in Java can call it.
 **2. On by default.** This follows from 1(a). With 1(b) it would be opt-in.
 
 **3. What the tailer does when a check fails.**
-- **(a) Archive and mark** (recommended): it writes the records anyway, adds
-  `WARC-R7-Unverified: <reason>` to every record from that segment (`unverified` in the JSON
-  line), logs an error and keeps going. That keeps the data and the evidence of tampering.
+- **(a) Record it and carry on** (recommended): the failed verdict goes in the next output
+  statement with its reason, the tailer logs an error, and it keeps
+  going. The records are already archived, so the data and the evidence of tampering both stay.
 - (b) Stop. That's safer in principle, but one damaged file then halts the archive for
-  everything after it.
+  everything after it, and the records from the failed segment are written either way.
 
 **4. The tailer signs its own output.**
 - **(a) Yes, with its own key** (recommended): `R7_TAILER_SIGNING_KEY`, an Ed25519 seed. The
@@ -173,7 +198,7 @@ check a whole chain in Java can call it.
 
 1. The statement and chain in `r7-journal-mmap` (finalizer, recovery, clean close), spec in
    `FORMAT.md`, and the reaper deleting sidecars.
-2. Tailer verification and decision 3's marking.
+2. Tailer verification and verdicts (decision 3).
 3. Tailer output statements.
 4. Measurement on the benchmark machine, and the docs: `docs/journaling.md`, a "What it proves"
    section, `design/limitations.md` (the CRC32C line changes) and `FORMAT.md` §9.
