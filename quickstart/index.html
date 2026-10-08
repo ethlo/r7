@@ -361,22 +361,6 @@
   
   
     <li class="md-tabs__item">
-      <a href="../benchmarks/" class="md-tabs__link">
-        
-  
-  Benchmarks
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
       <a href="../licensing/" class="md-tabs__link">
         
   
@@ -587,6 +571,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#see-what-r7-recorded" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        See what r7 recorded
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next-steps" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -768,32 +763,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../benchmarks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Benchmarks
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../licensing/" class="md-nav__link">
         
   
@@ -860,8 +829,9 @@
 <h1 id="quickstart-guide">Quickstart Guide</h1>
 <p>All r7 needs is a <code>routes.yaml</code> that says where to send traffic. Ports, limits, timeouts and
 where journals go all have safe defaults, so there is no server configuration to write before
-your first request. This guide runs r7 with Docker Compose in front of a small echo server, so
-you can see routing, header injection and the request journal working.</p>
+your first request. This guide runs r7 with Docker Compose in front of a small echo server. In
+five minutes you route a request, see the headers r7 added, and read back the record r7 kept of
+it, with the secret header in it replaced by a fingerprint.</p>
 <h2 id="directory-structure">Directory Structure</h2>
 <p>Create a new directory with two files:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>r7-quickstart/
@@ -885,13 +855,23 @@ you can see routing, header injection and the request journal working.</p>
 </span><span id="True-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">depends_on</span><span class="p">:</span>
 </span><span id="True-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">echo-server</span>
 </span><span id="True-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
-</span><span id="True-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="nt">echo-server</span><span class="p">:</span>
-</span><span id="True-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ealen/echo-server:latest</span>
-</span><span id="True-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
-</span><span id="True-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PORT=8080</span>
-</span><span id="True-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>
-</span><span id="True-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="c1"># Reads the journals and prints one JSON line per exchange; bodies go to WARC files.</span>
+</span><span id="True-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">  </span><span class="nt">r7-tailer</span><span class="p">:</span>
+</span><span id="True-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer:main</span>
+</span><span id="True-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span>
+</span><span id="True-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
+</span><span id="True-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-tailer-checkpoints:/checkpoints:rw</span>
+</span><span id="True-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>
+</span><span id="True-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">  </span><span class="nt">echo-server</span><span class="p">:</span>
+</span><span id="True-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ealen/echo-server:latest</span>
+</span><span id="True-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+</span><span id="True-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PORT=8080</span>
+</span><span id="True-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>
+</span><span id="True-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
+</span><span id="True-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">  </span><span class="nt">r7-tailer-checkpoints</span><span class="p">:</span>
 </span></code></pre></div>
 <p>Next to it, create the fingerprint key once, and keep the file:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span><span class="nb">set</span><span class="w"> </span>-C<span class="p">;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"R7_FINGERPRINT_KEY=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-base64<span class="w"> </span><span class="m">32</span><span class="k">)</span><span class="s2">"</span><span class="w"> </span>&gt;<span class="w"> </span>.env<span class="o">)</span>
@@ -907,7 +887,7 @@ so the image's non-root user can write to it, which a directory you create yours
 <code>19999:18888</code> would publish it on every host interface, past host firewalls such as ufw. Before
 exposing it, read <a href="../config/#management-configuration-management">Management Configuration</a>.</p>
 <h2 id="routes-configuration">Routes Configuration</h2>
-<p>Create <code>routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.</p>
+<p>Create <code>routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and records every request and response in full.</p>
 <div class="language-yaml highlight"><span class="filename">routes.yaml</span><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">global_filters</span><span class="p">:</span>
 </span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
 </span><span id="True-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
@@ -975,10 +955,38 @@ exposing it, read <a href="../config/#management-configuration-management">Manag
 </span></code></pre></div>
 <p>Open <a href="http://localhost:19999">http://localhost:19999</a> to see the route, its traffic and response
 times on the dashboard.</p>
+<h2 id="see-what-r7-recorded">See what r7 recorded</h2>
+<p>Send a request that carries a secret:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>http://localhost:9999/api/orders<span class="w"> </span>-H<span class="w"> </span><span class="s2">"Cookie: session=my-secret-session"</span>
+</span></code></pre></div>
+<p>The tailer prints each exchange as one JSON line. Show the latest:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>--no-log-prefix<span class="w"> </span>r7-tailer<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">'"request_id"'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-n<span class="w"> </span><span class="m">1</span>
+</span></code></pre></div>
+<p>Abbreviated and pretty-printed, it looks like this:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="True-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+</span><span id="True-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
+</span><span id="True-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">"route_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"quickstart-echo-route"</span><span class="p">,</span>
+</span><span id="True-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.003120</span><span class="p">,</span>
+</span><span id="True-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/api/orders"</span><span class="p">,</span>
+</span><span id="True-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">                     </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"localhost:9999"</span><span class="p">],</span><span class="w"> </span><span class="nt">"cookie"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"fp:R5XU2m_VAik"</span><span class="p">]}},</span>
+</span><span id="True-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json; charset=utf-8"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">612</span><span class="p">},</span>
+</span><span id="True-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
+</span><span id="True-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>The cookie header is recorded as a
+<a href="../journaling/#redacted-header-and-query-parameter-values">fingerprint</a>, because <code>cookie</code> is not
+on the safe list. The same value always gives the same fingerprint, so you can still tell which
+requests carried it. The response body is in the WARC file the <code>warc</code> field points to, in the
+<code>r7-warc</code> volume.</p>
+<p>Fingerprints cover header and query values, not bodies: a body is recorded as sent. This echo
+server copies your request headers into its response, so the session value is in that WARC
+record in plain text. Use a dummy value here, and on your own routes record bodies (<code>FULL</code>) only
+where you may keep the payloads.</p>
+<p>That is the record r7 keeps of every request on this route, with no extra system to run.</p>
 <h2 id="next-steps">Next steps</h2>
 <ul>
 <li>Add routes, predicates and filters: see the <a href="../config/">config reference</a>.</li>
-<li>Decide what each route records in its journal, and read it back: see <a href="../journaling/">Journaling</a>.</li>
+<li>Decide what each route records, and ship the JSON lines to ClickHouse, Loki or any OpenTelemetry backend: see <a href="../journaling/">Journaling</a> and <a href="../where-r7-fits/">Where r7 fits</a>.</li>
 <li>Change ports, connection limits, timeouts, trusted proxies or the journal location only when you
   need to, in an optional <code>server.yaml</code> mounted beside it at <code>/app/config/server.yaml</code>: see <a href="../config/#9-server-configuration">Server Configuration</a>.</li>
 <li>For production JVM flags and journal storage, see <a href="../performance_tuning/">Performance tuning</a>.</li>

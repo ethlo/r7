@@ -361,22 +361,6 @@
   
   
     <li class="md-tabs__item">
-      <a href="../benchmarks/" class="md-tabs__link">
-        
-  
-  Benchmarks
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
       <a href="../licensing/" class="md-tabs__link">
         
   
@@ -785,32 +769,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../benchmarks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Benchmarks
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../licensing/" class="md-nav__link">
         
   
@@ -875,9 +833,9 @@
 
 
 <h1 id="where-r7-fits">Where r7 fits</h1>
-<p>r7 does three things and hands everything else to tools you already run: it routes traffic, it
-records every exchange, and it reports its own health. Each of those comes out in a standard
-format, so r7 plugs into an existing stack instead of bringing one.</p>
+<p>r7 adds a record of every exchange to your stack and replaces nothing in it. It does three
+things, routing traffic, recording every exchange and reporting its own health, and each comes
+out in a standard format that tools you already run read: WARC, JSON lines and Prometheus.</p>
 <pre class="mermaid"><code>flowchart LR
     client([Clients]) --&gt; gw[r7 gateway]
     gw --&gt; up([Your services])

@@ -359,22 +359,6 @@
   
   
     <li class="md-tabs__item">
-      <a href="./benchmarks/" class="md-tabs__link">
-        
-  
-  Benchmarks
-
-      </a>
-    </li>
-  
-
-      
-        
-  
-  
-  
-  
-    <li class="md-tabs__item">
       <a href="./licensing/" class="md-tabs__link">
         
   
@@ -528,22 +512,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#three-things-r7-does-well" class="md-nav__link">
+  <a href="#what-r7-does-that-other-gateways-leave-to-you" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Three things r7 does well
+        What r7 does that other gateways leave to you
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Three things r7 does well">
+    <nav class="md-nav" aria-label="What r7 does that other gateways leave to you">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#it-remembers-every-request" class="md-nav__link">
+  <a href="#every-request-on-the-record" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        It remembers every request
+        Every request, on the record
       </span>
     </span>
   </a>
@@ -551,10 +535,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#your-configuration-is-checked-before-it-runs" class="md-nav__link">
+  <a href="#a-config-that-is-checked-before-it-serves" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Your configuration is checked before it runs
+        A config that is checked before it serves
       </span>
     </span>
   </a>
@@ -572,16 +556,38 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#extensions-in-plain-java" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extensions in plain Java
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#is-r7-for-you" class="md-nav__link">
+  <a href="#choose-r7-when" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Is r7 for you?
+        Choose r7 when
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#use-something-else-when" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use something else when
       </span>
     </span>
   </a>
@@ -796,32 +802,6 @@
   
   
     <li class="md-nav__item">
-      <a href="./benchmarks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Benchmarks
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="./licensing/" class="md-nav__link">
         
   
@@ -886,11 +866,12 @@
 
 
 <h1 class="r7-hero" id="r7-the-gateway-that-remembers-every-request">r7: the gateway that remembers every request</h1>
-<p>Put r7 in front of your services and write down where traffic should go. It routes the requests,
-checks your configuration before it ever runs, and keeps a record of what passed through, so when
-someone asks "what did that client actually send us?", you have the answer.</p>
-<p>It is fast out of the box, with high throughput and a short tail and nothing to tune first. One
-YAML file to start. No plugins to assemble, no scripting language to learn.</p>
+<p>When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
+services and records every exchange, with its headers or its full bodies, to local disk, with
+secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
+you already run. There is no capture system to run beside the gateway, and no network call while
+the client waits.</p>
+<p>One <code>routes.yaml</code>, checked before it serves a single request.</p>
 <p><a class="md-button md-button--primary" href="quickstart/">Get started in five minutes</a>
 <a class="md-button" href="editor/">Try the config editor</a></p>
 <hr />
@@ -926,59 +907,112 @@ their upstream health, live response times and any filter that needs attention, 
 <code>server.yaml</code>; until then the defaults are chosen to be safe.</p>
 <p><img alt="The r7 dashboard" src="assets/overview.png" /></p>
 <hr />
-<h2 id="three-things-r7-does-well">Three things r7 does well</h2>
-<h3 id="it-remembers-every-request">It remembers every request</h3>
-<p>Every request and response can be recorded to a journal on local disk: just the essentials
-(method, path, status, timing), the headers too, or the full bodies. You choose per route, and you
-can turn the detail up only when something goes wrong:</p>
+<h2 id="what-r7-does-that-other-gateways-leave-to-you">What r7 does that other gateways leave to you</h2>
+<h3 id="every-request-on-the-record">Every request, on the record</h3>
+<p>Most gateways log a line per request: method, path, status, timing. When a client disputes what
+it sent, or an incident review needs the actual payload, that line is not enough, and getting
+more means a mirror, a tap or a script you maintain. r7 records the exchange itself: just the
+essentials, the headers too, or the full bodies. You choose per route, and the detail goes up on
+its own when something fails:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">journal</span><span class="p">:</span>
 </span><span id="True-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">response</span><span class="p">:</span>
 </span><span id="True-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
 </span><span id="True-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">status_overrides</span><span class="p">:</span>
 </span><span id="True-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">   </span><span class="c1"># keep the headers whenever the upstream fails</span>
 </span></code></pre></div>
-<p>Journaling never sits in the way of a request: entries are written to memory-mapped files, not
-sent over the network while the client waits. A separate tailer ships them on to where you want them,
-such as a JSON pipeline for ClickHouse or Elasticsearch, a standard WARC archive, or both. Secrets stay
-out by default: header values that are not on an allow-list are stored as fingerprints, not as
-plain text.</p>
-<p><a href="journaling/">How journaling works</a></p>
-<h3 id="your-configuration-is-checked-before-it-runs">Your configuration is checked before it runs</h3>
+<p>Entries are written to memory-mapped files on local disk; nothing goes over the network while
+the client waits. A separate tailer turns them into standard formats: JSON lines that the
+OpenTelemetry Collector, Vector, Fluent Bit or Promtail read as they are, and WARC, the archive
+format pywb and other replay tools read. Secret header and query values stay out by default: a
+value whose name is not on an allow-list is stored as a keyed fingerprint, so you can see that two
+requests carried the same token without anyone reading the token. Bodies are recorded as sent,
+so record them only on routes whose payloads you may keep.</p>
+<p><a href="journaling/">How journaling works</a> · <a href="where-r7-fits/">Where r7 fits in your stack</a></p>
+<h3 id="a-config-that-is-checked-before-it-serves">A config that is checked before it serves</h3>
 <p>A typo in a gateway config usually shows up as a silent misroute in production. r7 refuses to
 start instead, and tells you exactly what is wrong:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Unknown filter: 'AddResponseHeadr'. Did you mean 'AddResponseHeader'? Available filters are: …
 </span></code></pre></div>
 <p>Unknown keys, invalid regular expressions, duplicate route ids, fallback loops and missing
 environment variables are all caught at startup. A misspelled option or broken YAML is reported
-with its line and column. Edit
-<code>routes.yaml</code> while r7 runs and it reloads on its own; an edit that does not validate is rejected,
-and the routes you had keep serving traffic.</p>
+with its line and column. Edit <code>routes.yaml</code> while r7 runs and it reloads on its own; an edit
+that does not validate is rejected, and the routes you had keep serving traffic.</p>
 <p>The <a href="editor/">online config editor</a> checks your routes against the full schema as you type,
 with autocomplete for every filter and predicate.</p>
 <h3 id="routing-you-can-read-top-to-bottom">Routing you can read top to bottom</h3>
-<p>Routes are tried in the order you wrote them, and the first one that matches wins. There are no
-priority rules to memorise and no hidden precedence between prefix and regex matches. Each filter
-does one job and runs in the order it is listed.</p>
-<p>r7 also refuses requests that could be read one way by the gateway and another by your service,
-such as <code>/public/../admin</code> or an encoded slash, so a route that protects a path really does
-protect it.</p>
+<p>Gateways with priority rules make you work out which route wins. In r7, routes are tried in the
+order you wrote them, and the first one that matches wins. There is no hidden precedence between
+prefix and regex matches. Each filter does one job and runs in the order it is listed.</p>
+<p>r7 also refuses requests that the gateway and your service would read differently, such as
+<code>/public/../admin</code> or an encoded slash, so a route that protects a path really does protect it.</p>
 <p><a href="config/">Configuration reference</a></p>
+<h3 id="extensions-in-plain-java">Extensions in plain Java</h3>
+<p>When the built-in filters are not enough, you write a filter as a Java class and drop the jar
+on the classpath. Each stage of a request has its own interface, and each hands the filter only
+what it may change at that point:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Can read</th>
+<th>Can change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Client request</td>
+<td>the request as the client sent it</td>
+<td>nothing on the request; it can answer the client itself or cap the body size</td>
+</tr>
+<tr>
+<td>Upstream request</td>
+<td>the client's request</td>
+<td>the request r7 sends upstream: path, query, headers, cookies, method</td>
+</tr>
+<tr>
+<td>Client response</td>
+<td>the client's request, the upstream request and response</td>
+<td>the status and headers the client gets</td>
+</tr>
+<tr>
+<td>Completed</td>
+<td>the whole exchange, once the response has been sent</td>
+<td>nothing that was sent</td>
+</tr>
+</tbody>
+</table>
+<p>The compiler enforces this: no filter can change the request as the client sent it, so the
+journal's record of it is what arrived. A filter's settings are a Java record that validates
+itself, so a mistake in a plugin's YAML is reported at startup like one in a built-in filter.</p>
+<p>In the gateway, every request runs start to finish on one virtual thread, the upstream call
+included. There is no reactive chain, no callbacks and no handoff to a worker pool, so a filter
+is straight-line code: it can call a database or another service directly, and a stack trace
+points at the line that failed.</p>
+<p><a href="extensibility/">Write a filter or predicate</a></p>
 <hr />
-<h2 id="is-r7-for-you">Is r7 for you?</h2>
-<p>r7 is a good fit if you want:</p>
+<h2 id="choose-r7-when">Choose r7 when</h2>
 <ul>
-<li>an audit trail of the HTTP traffic in front of your services, without bolting on a separate system</li>
-<li>a gateway whose behaviour you can understand from its config file alone</li>
-<li>strict, early feedback on configuration mistakes, before they reach traffic</li>
-<li>a small, focused tool you can run as a single container or a sidecar</li>
+<li>You have to show what was sent and returned: disputes with API clients, audits, incident
+  reviews, record-keeping rules.</li>
+<li>You want that record from the gateway itself, not from a mirror, a tap or a script you
+  maintain.</li>
+<li>Your team should be able to tell what the gateway does from one file, read top to bottom.</li>
+<li>You extend the gateway in Java and want plain, blocking code instead of a reactive API.</li>
 </ul>
-<p>r7 is deliberately not a programmable platform. There is no embedded scripting language; if you
-need custom behaviour, you write a filter in Java and register it as a <a href="extensibility/">plugin</a>.</p>
-<p>r7 is pre-release. Configuration and APIs may still change before 1.0.</p>
+<h2 id="use-something-else-when">Use something else when</h2>
+<ul>
+<li><strong>You want TLS and certificates handled by the gateway.</strong> r7 does not terminate TLS. Put
+  Caddy, nginx or your cloud load balancer in front; r7 runs behind it.</li>
+<li><strong>You want to script the gateway, or pick from a plugin marketplace.</strong> Envoy, Kong and nginx
+  with Lua do that. r7 has no embedded scripting language; custom behaviour is a Java filter.</li>
+<li><strong>You need HTTP/3, or mTLS towards your upstreams.</strong> r7 speaks HTTP/1.1 to upstreams and has
+  no client certificates. The full list is in
+  <a href="https://github.com/ethlo/r7/blob/main/design/limitations.md">Known limitations</a>.</li>
+</ul>
 <hr />
 <h2 id="under-the-hood">Under the hood</h2>
-<p>For those who want to know how it works. r7 is built for high throughput and a low, steady tail
-together; none of the choices below trades one for the other.</p>
+<p>r7 is built for high throughput and a low, steady tail together; none of the choices below
+trades one for the other.</p>
 <pre class="mermaid"><code>graph LR
     Client[Clients] --&gt; R7[r7 gateway]
     R7 --&gt;|routes + filters| Up[Your services]
@@ -987,18 +1021,20 @@ together; none of the choices below trades one for the other.</p>
     Tailers --&gt; Store[ClickHouse / S3 / Elasticsearch]
     R7 --&gt; Dash[Live dashboard]</code></pre>
 <ul>
-<li><strong>Runtime:</strong> Java 25+, on Helidon Níma with one virtual thread per connection. Each request is
-  handled in a single synchronous flow, with no reactive pipelines.</li>
+<li><strong>Runtime:</strong> Java 25+, on Helidon Níma with one virtual thread per connection. Each request,
+  the upstream call included, runs on that thread in a single synchronous flow: nothing crosses
+  threads, and there are no reactive pipelines or worker pools in the request path.</li>
 <li><strong>Streaming:</strong> request and response bodies are streamed through, not buffered or modified, which
   keeps memory use predictable under load.</li>
 <li><strong>Journal:</strong> an append-only binary format (r7f) in memory-mapped segments. It is crash-consistent
   at segment level: after an abrupt kill, a partially written entry at the tail is discarded on
-  recovery and every complete entry is kept.</li>
+  recovery and every complete entry is kept. Writing it costs CPU at full load, mostly for
+  compression; <a href="performance_tuning/">Performance tuning</a> has the measurements.</li>
 <li><strong>Hot path:</strong> routing and filtering are written to keep allocation per request low; a test in the
   build holds it to a budget.</li>
 <li><strong>Extensibility:</strong> filters and predicates are discovered through the JVM <code>ServiceLoader</code>.</li>
 </ul>
-<p><a href="benchmarks/">Benchmarks</a> · <a href="performance_tuning/">Performance tuning</a> · <a href="licensing/">Licensing</a></p>
+<p><a href="performance_tuning/">Performance tuning</a> · <a href="licensing/">Licensing</a></p>
 
   
 
