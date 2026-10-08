@@ -1,7 +1,8 @@
 package com.ethlo.r7.api;
 
 /**
- * Final immutable snapshot of the exchange after the client connection is closed.
+ * Final immutable snapshot of the exchange, once the response has been sent. On a keep-alive
+ * connection this is per request, not when the connection closes.
  */
 public interface CompletedGatewayExchange extends GatewayExchange
 {

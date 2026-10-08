@@ -39,10 +39,6 @@ theme:
 extra_css:
   - stylesheets/custom.css
 
-extra:
-  announcement: >
-    **Note:** r7 is currently in active pre-release development. Features, configuration, and APIs may change without notice.
-
 nav:
   - Overview: index.md
   - Quickstart: quickstart.md
@@ -52,7 +48,6 @@ nav:
   - WARC profile: warc.md
   - Where r7 fits: where-r7-fits.md
   - Performance tuning: performance_tuning.md
-  - Benchmarks: benchmarks.md
   - Licensing: licensing.md
   - Editor: editor.md
 

@@ -5,12 +5,13 @@ hide:
 
 # r7: the gateway that remembers every request { .r7-hero }
 
-Put r7 in front of your services and write down where traffic should go. It routes the requests,
-checks your configuration before it ever runs, and keeps a record of what passed through, so when
-someone asks "what did that client actually send us?", you have the answer.
+When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
+services and records every exchange, with its headers or its full bodies, to local disk, with
+secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
+you already run. There is no capture system to run beside the gateway, and no network call while
+the client waits.
 
-It is fast out of the box, with high throughput and a short tail and nothing to tune first. One
-YAML file to start. No plugins to assemble, no scripting language to learn.
+One `routes.yaml`, checked before it serves a single request.
 
 [Get started in five minutes](quickstart.md){ .md-button .md-button--primary }
 [Try the config editor](editor.md){ .md-button }
@@ -60,13 +61,15 @@ That is the whole setup. When you need to tune ports, limits or journal storage,
 
 ---
 
-## Three things r7 does well
+## What r7 does that other gateways leave to you
 
-### It remembers every request
+### Every request, on the record
 
-Every request and response can be recorded to a journal on local disk: just the essentials
-(method, path, status, timing), the headers too, or the full bodies. You choose per route, and you
-can turn the detail up only when something goes wrong:
+Most gateways log a line per request: method, path, status, timing. When a client disputes what
+it sent, or an incident review needs the actual payload, that line is not enough, and getting
+more means a mirror, a tap or a script you maintain. r7 records the exchange itself: just the
+essentials, the headers too, or the full bodies. You choose per route, and the detail goes up on
+its own when something fails:
 
 ```yaml
 journal:
@@ -76,15 +79,17 @@ journal:
       5xx: HEADERS   # keep the headers whenever the upstream fails
 ```
 
-Journaling never sits in the way of a request: entries are written to memory-mapped files, not
-sent over the network while the client waits. A separate tailer ships them on to where you want them,
-such as a JSON pipeline for ClickHouse or Elasticsearch, a standard WARC archive, or both. Secrets stay
-out by default: header values that are not on an allow-list are stored as fingerprints, not as
-plain text.
+Entries are written to memory-mapped files on local disk; nothing goes over the network while
+the client waits. A separate tailer turns them into standard formats: JSON lines that the
+OpenTelemetry Collector, Vector, Fluent Bit or Promtail read as they are, and WARC, the archive
+format pywb and other replay tools read. Secret header and query values stay out by default: a
+value whose name is not on an allow-list is stored as a keyed fingerprint, so you can see that two
+requests carried the same token without anyone reading the token. Bodies are recorded as sent,
+so record them only on routes whose payloads you may keep.
 
-[How journaling works](journaling.md)
+[How journaling works](journaling.md) · [Where r7 fits in your stack](where-r7-fits.md)
 
-### Your configuration is checked before it runs
+### A config that is checked before it serves
 
 A typo in a gateway config usually shows up as a silent misroute in production. r7 refuses to
 start instead, and tells you exactly what is wrong:
@@ -95,47 +100,74 @@ Unknown filter: 'AddResponseHeadr'. Did you mean 'AddResponseHeader'? Available 
 
 Unknown keys, invalid regular expressions, duplicate route ids, fallback loops and missing
 environment variables are all caught at startup. A misspelled option or broken YAML is reported
-with its line and column. Edit
-`routes.yaml` while r7 runs and it reloads on its own; an edit that does not validate is rejected,
-and the routes you had keep serving traffic.
+with its line and column. Edit `routes.yaml` while r7 runs and it reloads on its own; an edit
+that does not validate is rejected, and the routes you had keep serving traffic.
 
 The [online config editor](editor.md) checks your routes against the full schema as you type,
 with autocomplete for every filter and predicate.
 
 ### Routing you can read top to bottom
 
-Routes are tried in the order you wrote them, and the first one that matches wins. There are no
-priority rules to memorise and no hidden precedence between prefix and regex matches. Each filter
-does one job and runs in the order it is listed.
+Gateways with priority rules make you work out which route wins. In r7, routes are tried in the
+order you wrote them, and the first one that matches wins. There is no hidden precedence between
+prefix and regex matches. Each filter does one job and runs in the order it is listed.
 
-r7 also refuses requests that could be read one way by the gateway and another by your service,
-such as `/public/../admin` or an encoded slash, so a route that protects a path really does
-protect it.
+r7 also refuses requests that the gateway and your service would read differently, such as
+`/public/../admin` or an encoded slash, so a route that protects a path really does protect it.
 
 [Configuration reference](config.md)
 
+### Extensions in plain Java
+
+When the built-in filters are not enough, you write a filter as a Java class and drop the jar
+on the classpath. Each stage of a request has its own interface, and each hands the filter only
+what it may change at that point:
+
+| Stage | Can read | Can change |
+| --- | --- | --- |
+| Client request | the request as the client sent it | nothing on the request; it can answer the client itself or cap the body size |
+| Upstream request | the client's request | the request r7 sends upstream: path, query, headers, cookies, method |
+| Client response | the client's request, the upstream request and response | the status and headers the client gets |
+| Completed | the whole exchange, once the response has been sent | nothing that was sent |
+
+The compiler enforces this: no filter can change the request as the client sent it, so the
+journal's record of it is what arrived. A filter's settings are a Java record that validates
+itself, so a mistake in a plugin's YAML is reported at startup like one in a built-in filter.
+
+In the gateway, every request runs start to finish on one virtual thread, the upstream call
+included. There is no reactive chain, no callbacks and no handoff to a worker pool, so a filter
+is straight-line code: it can call a database or another service directly, and a stack trace
+points at the line that failed.
+
+[Write a filter or predicate](extensibility.md)
+
 ---
 
-## Is r7 for you?
+## Choose r7 when
 
-r7 is a good fit if you want:
+- You have to show what was sent and returned: disputes with API clients, audits, incident
+  reviews, record-keeping rules.
+- You want that record from the gateway itself, not from a mirror, a tap or a script you
+  maintain.
+- Your team should be able to tell what the gateway does from one file, read top to bottom.
+- You extend the gateway in Java and want plain, blocking code instead of a reactive API.
 
-- an audit trail of the HTTP traffic in front of your services, without bolting on a separate system
-- a gateway whose behaviour you can understand from its config file alone
-- strict, early feedback on configuration mistakes, before they reach traffic
-- a small, focused tool you can run as a single container or a sidecar
+## Use something else when
 
-r7 is deliberately not a programmable platform. There is no embedded scripting language; if you
-need custom behaviour, you write a filter in Java and register it as a [plugin](extensibility.md).
-
-r7 is pre-release. Configuration and APIs may still change before 1.0.
+- **You want TLS and certificates handled by the gateway.** r7 does not terminate TLS. Put
+  Caddy, nginx or your cloud load balancer in front; r7 runs behind it.
+- **You want to script the gateway, or pick from a plugin marketplace.** Envoy, Kong and nginx
+  with Lua do that. r7 has no embedded scripting language; custom behaviour is a Java filter.
+- **You need HTTP/3, or mTLS towards your upstreams.** r7 speaks HTTP/1.1 to upstreams and has
+  no client certificates. The full list is in
+  [Known limitations](https://github.com/ethlo/r7/blob/main/design/limitations.md).
 
 ---
 
 ## Under the hood
 
-For those who want to know how it works. r7 is built for high throughput and a low, steady tail
-together; none of the choices below trades one for the other.
+r7 is built for high throughput and a low, steady tail together; none of the choices below
+trades one for the other.
 
 ```mermaid
 graph LR
@@ -147,15 +179,17 @@ graph LR
     R7 --> Dash[Live dashboard]
 ```
 
-- **Runtime:** Java 25+, on Helidon Níma with one virtual thread per connection. Each request is
-  handled in a single synchronous flow, with no reactive pipelines.
+- **Runtime:** Java 25+, on Helidon Níma with one virtual thread per connection. Each request,
+  the upstream call included, runs on that thread in a single synchronous flow: nothing crosses
+  threads, and there are no reactive pipelines or worker pools in the request path.
 - **Streaming:** request and response bodies are streamed through, not buffered or modified, which
   keeps memory use predictable under load.
 - **Journal:** an append-only binary format (r7f) in memory-mapped segments. It is crash-consistent
   at segment level: after an abrupt kill, a partially written entry at the tail is discarded on
-  recovery and every complete entry is kept.
+  recovery and every complete entry is kept. Writing it costs CPU at full load, mostly for
+  compression; [Performance tuning](performance_tuning.md) has the measurements.
 - **Hot path:** routing and filtering are written to keep allocation per request low; a test in the
   build holds it to a budget.
 - **Extensibility:** filters and predicates are discovered through the JVM `ServiceLoader`.
 
-[Benchmarks](benchmarks.md) · [Performance tuning](performance_tuning.md) · [Licensing](licensing.md)
+[Performance tuning](performance_tuning.md) · [Licensing](licensing.md)

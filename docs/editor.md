@@ -5,7 +5,7 @@ hide:
 
 # r7 Gateway Configuration Editor
 
-Use the interactive editor below to draft and validate your routing rules against the latest schema.
+Write your `routes.yaml` here and the editor checks its structure against r7's config schema as you type, with autocomplete for every built-in filter and predicate. The gateway's own check at startup goes further: it also rejects unknown filter names, since the schema has to allow the names of your own plugins.
 
 <iframe
 src="/editor-app/index.html"

@@ -2,8 +2,9 @@
 
 All r7 needs is a `routes.yaml` that says where to send traffic. Ports, limits, timeouts and
 where journals go all have safe defaults, so there is no server configuration to write before
-your first request. This guide runs r7 with Docker Compose in front of a small echo server, so
-you can see routing, header injection and the request journal working.
+your first request. This guide runs r7 with Docker Compose in front of a small echo server. In
+five minutes you route a request, see the headers r7 added, and read back the record r7 kept of
+it, with the secret header in it replaced by a fingerprint.
 
 ## Directory Structure
 
@@ -35,6 +36,14 @@ services:
     depends_on:
       - echo-server
 
+  # Reads the journals and prints one JSON line per exchange; bodies go to WARC files.
+  r7-tailer:
+    image: ghcr.io/ethlo/r7-tailer:main
+    volumes:
+      - r7-journals:/journals:ro
+      - r7-warc:/warc:rw
+      - r7-tailer-checkpoints:/checkpoints:rw
+
   echo-server:
     image: ealen/echo-server:latest
     environment:
@@ -42,6 +51,8 @@ services:
 
 volumes:
   r7-journals:
+  r7-warc:
+  r7-tailer-checkpoints:
 ```
 
 Next to it, create the fingerprint key once, and keep the file:
@@ -65,7 +76,7 @@ exposing it, read [Management Configuration](config.md#management-configuration-
 
 ## Routes Configuration
 
-Create `routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.
+Create `routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and records every request and response in full.
 
 ```yaml title="routes.yaml"
 global_filters:
@@ -152,10 +163,51 @@ Content-Type: application/json; charset=utf-8
 Open [http://localhost:19999](http://localhost:19999) to see the route, its traffic and response
 times on the dashboard.
 
+## See what r7 recorded
+
+Send a request that carries a secret:
+
+```bash
+curl -s -o /dev/null http://localhost:9999/api/orders -H "Cookie: session=my-secret-session"
+```
+
+The tailer prints each exchange as one JSON line. Show the latest:
+
+```bash
+docker compose logs --no-log-prefix r7-tailer | grep '"request_id"' | tail -n 1
+```
+
+Abbreviated and pretty-printed, it looks like this:
+
+```json
+{
+  "request_id": "01JA0Q6R8X4V2N7M3K5T9B1C0D",
+  "route_id": "quickstart-echo-route",
+  "duration": 0.003120,
+  "client_request": {"method": "GET", "path": "/api/orders",
+                     "headers": {"host": ["localhost:9999"], "cookie": ["fp:R5XU2m_VAik"]}},
+  "client_response": {"status": 200, "headers": {"content-type": ["application/json; charset=utf-8"]}, "body_bytes": 612},
+  "warc": {"file": "r7-1759320000000-6f1c….warc.zst", "offset": 48211, "length": 1873}
+}
+```
+
+The cookie header is recorded as a
+[fingerprint](journaling.md#redacted-header-and-query-parameter-values), because `cookie` is not
+on the safe list. The same value always gives the same fingerprint, so you can still tell which
+requests carried it. The response body is in the WARC file the `warc` field points to, in the
+`r7-warc` volume.
+
+Fingerprints cover header and query values, not bodies: a body is recorded as sent. This echo
+server copies your request headers into its response, so the session value is in that WARC
+record in plain text. Use a dummy value here, and on your own routes record bodies (`FULL`) only
+where you may keep the payloads.
+
+That is the record r7 keeps of every request on this route, with no extra system to run.
+
 ## Next steps
 
 * Add routes, predicates and filters: see the [config reference](config.md).
-* Decide what each route records in its journal, and read it back: see [Journaling](journaling.md).
+* Decide what each route records, and ship the JSON lines to ClickHouse, Loki or any OpenTelemetry backend: see [Journaling](journaling.md) and [Where r7 fits](where-r7-fits.md).
 * Change ports, connection limits, timeouts, trusted proxies or the journal location only when you
   need to, in an optional `server.yaml` mounted beside it at `/app/config/server.yaml`: see [Server Configuration](config.md#9-server-configuration).
 * For production JVM flags and journal storage, see [Performance tuning](performance_tuning.md).
