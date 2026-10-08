@@ -50,7 +50,7 @@ That's a running gateway, with every request to `/api` journaled and a live dash
 - **Routing you can read top to bottom.** Routes match in the order you wrote them and the first
   match wins. Each filter does one job. No scripting language, no hidden precedence rules.
 - **Extensions in plain Java.** Each request stage has its own filter interface that hands over
-  only what may change there, and every request runs on one virtual thread, upstream call
+  only what may change there, and the gateway runs every request on one virtual thread, upstream call
   included: no reactive chain and no worker pools.
 
 r7 does not terminate TLS, and has no scripting language: see
