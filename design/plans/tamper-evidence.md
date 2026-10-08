@@ -89,24 +89,24 @@ Off the request path. `rotateSegment` runs inside the shard's lock on a request 
 already only stamps the seal record and hands the rest to a virtual finalizer thread
 (`finalizeSegmentAsync`). That finalizer:
 
-1. waits for the previous finalizer of the same shard, so statements are written in order. If
-   that one failed (an I/O error while hashing, forcing or publishing), this finalizer retries
-   it first, with a backoff, and logs an error on each failure. It never skips it: a later
-   segment is signed only once every earlier one is, so the head can't move past an unaccounted
-   segment. Only publishing waits, though: step 2 runs for each segment as soon as it rotates,
-   without waiting for the one before. So a segment waiting for its turn is already hashed,
-   signed, forced and unmapped, and what waits is a statement of a few hundred bytes in memory
-   and a `.flux` file on disk. No mappings, arenas or open files pile up behind a failure. Requests
-   aren't affected, because finalizers run off the request path. The writer keeps rotating, and
-   the backlog shows in the gateway's health as an ERROR. Disk is the only thing it grows, the
-   same as when a tailer stops reading. A restart hands the backlog to recovery;
-2. hashes the segment up to its Data End, signs the statement, forces the segment to disk (an
-   msync, which the async path doesn't do today), and then unmaps it as it does today, so nothing
-   holds a mapping when the file is renamed (a mapped file can't be renamed on Windows). The
-   force comes before the statement is published, so a durable statement always describes bytes
-   that are durable too. Without it, a power loss could leave a statement that no longer matches
-   the segment, and recovery couldn't tell that apart from tampering;
-3. writes `<stem>.seal`: to a temporary name, fsync, rename, then fsync the directory so the
+1. hashes the segment up to its Data End, forces it to disk (an msync, which the async path
+   doesn't do today), and then unmaps it as it does today, so nothing holds a mapping when the
+   file is renamed (a mapped file can't be renamed on Windows). This step runs for each segment
+   as soon as it rotates, without waiting for the one before. The force comes before the
+   statement is published, so a durable statement always describes bytes that are durable too.
+   Without it, a power loss could leave a statement that no longer matches the segment, and
+   recovery couldn't tell that apart from tampering;
+2. waits for the previous segment of the same shard to finish step 5. Everything from here on
+   runs strictly in order, because the next step signs `prev`, which only exists once the
+   previous statement does. If the previous one failed (an I/O error in any step), this
+   finalizer retries it first, with a backoff, and logs an error on each failure. It never skips
+   it, so the head can't move past an unaccounted segment. A segment waiting here is already
+   hashed, forced and unmapped: what waits is a 32-byte digest in memory and a `.flux` file on
+   disk, so no mappings, arenas or open files pile up behind a failure. Requests aren't
+   affected, because finalizers run off the request path. The writer keeps rotating, and the
+   backlog shows in the gateway's health as an ERROR. Disk is the only thing it grows, the same
+   as when a tailer stops reading. A restart hands the backlog to recovery;
+3. builds and signs the statement, and writes `<stem>.seal`: to a temporary name, fsync, rename, then fsync the directory so the
    rename itself survives a power loss (as the `.seq` marker already does);
 4. updates `shard-<id>.chain`, the chain head, the same way, directory fsync included. The head
    holds the chain id, the index, the stem and hash of the last statement, the public key that
@@ -207,19 +207,27 @@ order, optional fields left out:
 - `file` is the output file's name, or `none` for a statement with no file (below), which then
   has no `file_sha256`.
 - `source` repeats once per segment whose records `F` holds, in ascending shard and sequence
-  order. Each is `<stem> <sha256 of that gateway statement's text> <verdict>`. A verdict is one
+  order. Each is `<stem> <statement> <verdict>`, where `<statement>` is the SHA-256 of that
+  gateway statement's text, or `-` when there is none (yet). A verdict is one
   token: `verified`, `pending`, `unsigned`, or the failure (`missing_statement`, `chain_reset`,
   `expired_unverified`, `bad_signature`, `bad_digest`).
 - `verdict` repeats once per earlier `pending` source that has since been decided, as
-  `<stem> <verdict>`, in the same order.
-- `prev` links to the tailer's previous output statement (its own chain, kept in its checkpoint
-  directory).
+  `<stem> <statement> <verdict>`, in the same order. It carries the statement hash that was `-`
+  while the source was pending, or `-` if there still is none (`missing_statement`,
+  `expired_unverified`).
+- `prev` links to the previous output statement of the same output.
+
+**Each output has its own chain.** WARC and JSON lines go to separate directories and may be
+kept for different times, so each one is checkable on its own: the WARC output has a chain, the
+JSON output has another, each with its own head in the tailer's checkpoint directory. Every
+statement for an output, the gateway statement copies included, lives in that output's
+directory.
 
 A segment still open when `F` seals is listed as `pending`, and its verdict goes in a `verdict`
 line of the first later statement after it is decided, so every verdict lands in the tailer's
 chain. If verdicts are waiting and no output file seals
-  within `max_file_age` (traffic stopped), the tailer writes a statement on its own,
-  `<prefix>-<time>.seal`, with no file and only the verdicts. Its chain carries on from there.
+  within `max_file_age` (traffic stopped), the tailer writes a statement on its own in
+  that output's directory, `<prefix>-<time>.seal`, with no file and only the verdicts. Its chain carries on from there.
 
 The same crash rules apply as for the gateway. There is one statement per output file, keyed
 by its name, and it is written before the file's rename (the hook runs there, and also when
