@@ -896,19 +896,16 @@ you can see routing, header injection and the request journal working.</p>
 <p>Next to it, create the fingerprint key once, and keep the file:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span><span class="nb">set</span><span class="w"> </span>-C<span class="p">;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"R7_FINGERPRINT_KEY=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-base64<span class="w"> </span><span class="m">32</span><span class="k">)</span><span class="s2">"</span><span class="w"> </span>&gt;<span class="w"> </span>.env<span class="o">)</span>
 </span></code></pre></div>
-<p>r7 writes a keyed fingerprint in place of every header and query value that may be a secret, so
-the journal shows that two requests carried the same token without showing the token. It does
-not start without the key. Compose reads <code>.env</code> on its own. The <code>umask</code> makes the file readable
+<p>r7 does not start without the key: the journal stores
+<a href="../journaling/#redacted-header-and-query-parameter-values">fingerprints</a> made with it in place of
+values that may be secrets. Compose reads <code>.env</code> on its own. The <code>umask</code> makes the file readable
 by you alone, and <code>set -C</code> refuses to overwrite a key you already have; keep it out of version
 control.</p>
 <p>Journals go to a named volume rather than a host directory: Docker prepares a new named volume
 so the image's non-root user can write to it, which a directory you create yourself would not be.</p>
-<p>The dashboard port has no authentication and shows the gateway's configuration.
-<code>127.0.0.1:19999:18888</code> keeps it on this machine: a bare <code>19999:18888</code> would publish it on every
-host interface, and Docker's own firewall rules bypass host firewalls such as ufw. Do not route a
-path on the gateway port to it either. To reach it from elsewhere, put it behind something that
-authenticates, and list the name you use for it under <code>management.allowed_hosts</code> (see the
-<a href="../config/#management-configuration-management">config reference</a>).</p>
+<p>The dashboard has no authentication, so <code>127.0.0.1:19999:18888</code> keeps it on this machine: a bare
+<code>19999:18888</code> would publish it on every host interface, past host firewalls such as ufw. Before
+exposing it, read <a href="../config/#management-configuration-management">Management Configuration</a>.</p>
 <h2 id="routes-configuration">Routes Configuration</h2>
 <p>Create <code>routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and turns on full journaling to demonstrate the I/O logging layer.</p>
 <div class="language-yaml highlight"><span class="filename">routes.yaml</span><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">global_filters</span><span class="p">:</span>

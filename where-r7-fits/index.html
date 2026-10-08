@@ -922,9 +922,8 @@ format, so r7 plugs into an existing stack instead of bringing one.</p>
 </table>
 <p>The JSON line and the WARC records share the request id. When a WARC file holds an exchange, its
 JSON line points at the records by file, offset and length, so a query result in any of the tools
-below leads straight to the archived exchange. Which exchanges a WARC file holds is <code>warc.exchanges</code>:
-by default only those with a captured body, with <code>all</code> every complete exchange. An incomplete
-exchange is only ever a JSON line.</p>
+below leads straight to the archived exchange. Which exchanges a WARC file holds is set by
+<a href="../journaling/#3-the-tailer"><code>warc.exchanges</code></a>.</p>
 <p>The snippets on this page are the smallest configuration that connects r7 to each tool. Each one
 names the version it was written against; the tool's own documentation covers the rest.</p>
 <h2 id="logs-the-json-lines">Logs: the JSON lines</h2>
@@ -1028,8 +1027,8 @@ files for as long as you may want to load a table again, since some fields of a 
 <code>.jsonl</code> files like any other JSON log. In Grafana, LogQL's <code>json</code> parser turns the fields into
 labels, so <code>client_response.status</code> becomes <code>client_response_status</code>.</p>
 <h2 id="the-archive-the-warc-files">The archive: the WARC files</h2>
-<p>The WARC files are for keeping and replaying exchanges, not for dashboards. <code>zstd -d</code> turns a file
-into plain WARC that any WARC reader opens. With <code>cdxj_index: true</code>, each file gets a CDXJ index,
+<p>The WARC files are for keeping and replaying exchanges, not for dashboards; <a href="../warc/">the WARC
+profile</a> describes what is in them. With <code>cdxj_index: true</code>, each file gets a CDXJ index,
 the format <a href="https://pywb.readthedocs.io/">pywb</a> and <a href="https://github.com/nla/outbackcdx">OutbackCDX</a>
 read, so an exchange is found by URL and time without scanning the archive. Its offsets and lengths
 point into the <code>.warc.zst</code> file as written, one Zstandard frame per record: a reader loading

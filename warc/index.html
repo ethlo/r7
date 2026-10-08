@@ -983,9 +983,8 @@ happened:</p>
 <ul>
 <li>A record is written for each message whose start line was journaled. A route with journal
   level <code>NONE</code> for the response has no response records; an exchange with nothing journaled has
-  none at all. A request at <code>NONE</code> still gets its request records when the response is journaled: the
-  journal then records the request at <code>METADATA</code>, its start line without headers, to anchor the
-  response.</li>
+  none at all. A request at <code>NONE</code> still gets its request records when the response is journaled,
+  since the journal then <a href="../config/#logging-levels-routesyaml-journal">records it at <code>METADATA</code></a>.</li>
 <li>Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
   itself (a rate limit, a redirect) has records 1 and 4.</li>
 <li>Every record of an exchange names all the others in <code>WARC-Concurrent-To</code>, and carries the
@@ -997,8 +996,8 @@ happened:</p>
 </ul>
 <p>Each record's block is an <code>application/http</code> message: the start line and headers as journaled,
 a blank line, and the body when this record stores it. Header values are ISO-8859-1, as in the
-journal; redacted values appear as their fingerprints (see
-<a href="../journaling/#redacted-header-and-query-parameter-values">Redacted header and query parameter values</a>).</p>
+journal; <a href="../journaling/#redacted-header-and-query-parameter-values">redacted values</a> appear as
+their fingerprints.</p>
 <p>r7 streams bodies without changing them, so the body r7 forwarded is the body the client sent,
 and the body the client got is the body the upstream returned. Each is stored once: the request
 body in record 1, the response body in record 4.</p>
@@ -1052,7 +1051,7 @@ record says plainly when it does not hold them:</p>
 </tbody>
 </table>
 <p>A record without <code>WARC-Truncated</code> holds its whole body. Its headers are what the journal level
-kept: none at <code>METADATA</code>, and fingerprints for redacted values. Records 2 and 3 never store a body,
+kept. Records 2 and 3 never store a body,
 so they carry <code>WARC-Truncated</code> even when the message had none. The body of record 2 is in record 1, and
 the body of record 3 is in record 4, found through <code>WARC-Concurrent-To</code>. When that record is a
 <code>revisit</code>, its <code>WARC-Refers-To</code> leads to the earlier record that holds the bytes; when it too

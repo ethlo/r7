@@ -970,16 +970,15 @@ route above):</p>
 </span><span id="True-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
 </span><span id="True-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">  </span><span class="nt">r7-tailer-checkpoints</span><span class="p">:</span>
 </span></code></pre></div>
-<p>Next to it, create the gateway's fingerprint key once, and keep the file. Only the gateway
-needs it; see <a href="#redacted-header-and-query-parameter-values">Redacted header and query parameter values</a>.
-If <code>config/server.yaml</code> sets <code>fingerprint_key</code> instead, drop the <code>environment</code> block.</p>
+<p>Next to it, create the gateway's <a href="#redacted-header-and-query-parameter-values">fingerprint key</a>
+once, and keep the file. Only the gateway needs it. If <code>config/server.yaml</code> sets
+<code>fingerprint_key</code> instead, drop the <code>environment</code> block.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span><span class="nb">set</span><span class="w"> </span>-C<span class="p">;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"R7_FINGERPRINT_KEY=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-base64<span class="w"> </span><span class="m">32</span><span class="k">)</span><span class="s2">"</span><span class="w"> </span>&gt;<span class="w"> </span>.env<span class="o">)</span>
 </span></code></pre></div>
 <p><strong>3. Read the result.</strong> Each exchange is one JSON line on the tailer's standard output, which
 Promtail, Fluent Bit, Vector or your Docker logging driver picks up. The line holds the timing,
-status, sizes and the headers of every leg (values not on the
-<a href="#redacted-header-and-query-parameter-values">whitelist</a> appear as fingerprints), and, for a
-complete exchange with a body, a <code>warc</code> pointer to its records in <code>/warc</code>. The line is one physical line; this one is abbreviated and
+status, sizes and the headers of every leg (<a href="#redacted-header-and-query-parameter-values">redacted</a>
+values appear as fingerprints), and, for a complete exchange with a body, a <code>warc</code> pointer to its records in <code>/warc</code>. The line is one physical line; this one is abbreviated and
 pretty-printed for reading. Every field is listed under <a href="#the-json-line">The JSON line</a>:</p>
 <div class="language-json highlight"><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
 </span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
@@ -991,10 +990,8 @@ pretty-printed for reading. Every field is listed under <a href="#the-json-line"
 </span><span id="True-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
 </span><span id="True-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>The <code>/warc</code> files are <a href="https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/">WARC 1.1</a>
-archives with each record in its own Zstandard frame: <code>zstd -d</code> turns a <code>.warc.zst</code> file into plain WARC
-for any WARC tool. Journals grow until something deletes them: before sustained use, add the reaper from
-<a href="#4-retention-the-reaper">Retention</a>. Everything else on this page is reference for tuning this
+<p>The <code>/warc</code> files are standard WARC; see <a href="#3-the-tailer">the tailer</a>. Journals grow until
+something deletes them: before sustained use, add the reaper from <a href="#4-retention-the-reaper">Retention</a>. Everything else on this page is reference for tuning this
 setup: the journal levels, redaction, every tailer property, other output layouts and retention.</p>
 <h2 id="1-journal-levels-and-redaction">1. Journal levels and redaction</h2>
 <p>Tailers only see what the gateway actually writes. Set the level per route (and optionally
@@ -1015,38 +1012,64 @@ override it by response status) in <code>routes.yaml</code>:</p>
 </span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
 </span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">   </span><span class="c1"># more detail when things break</span>
 </span></code></pre></div>
-<p>An override can raise a direction to <code>HEADERS</code>, but not to <code>FULL</code> unless the base level is already <code>FULL</code>: bodies are captured as they stream, and a lower base level installs no capture for an override to switch on. Such a configuration is refused at startup.</p>
-<p><code>NONE</code> / <code>METADATA</code> / <code>HEADERS</code> / <code>FULL</code> — see <a href="../config/#7-journaling-storage">Configuration §7</a>
-for the full table and the <code>storage</code> block (<code>work_dir</code>, <code>shard_size</code>, <code>shard_count</code>) that
-controls where and how those journals are written on disk.</p>
+<p>What each level records, and which overrides are allowed, is in
+<a href="../config/#7-journaling-storage">Configuration §7</a>; where and how journals are written on disk is
+the <a href="../config/#storage-journaling-storage"><code>storage</code> block</a>.</p>
 <p>Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (<code>gateway.route.id</code>, <code>gateway.target</code>; the JSON line has them as <code>route_id</code> and
 <code>upstream_request.targets</code>), and the journal stores ISO-8859-1 text only. A route
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.</p>
 <h3 id="redacted-header-and-query-parameter-values">Redacted header and query parameter values</h3>
-<p>At <code>HEADERS</code> and <code>FULL</code>, a header whose name is not on the <code>journal_security</code> whitelist is
-journaled with a fingerprint in place of its value. Query parameter values in the request lines
-get the same treatment at every level, unless the parameter is on <code>safe_query_parameters</code>
-(see <a href="../config/#query-parameters">Configuration: query parameters</a>). The fingerprint is <code>fp:</code>
-followed by 11 base64url characters, for example <code>fp:R5XU2m_VAik</code>: the first 64 bits of
-HMAC-SHA-256 of the value, keyed with <code>storage.journal_security.fingerprint_key</code>.</p>
+<p><strong>Headers.</strong> At <code>HEADERS</code> and <code>FULL</code>, every header name is journaled, but a value is written as
+sent only when its name is on the safe list for its direction (request or response). The
+built-in lists hold names such as <code>host</code>, <code>user-agent</code>, <code>content-type</code>, <code>etag</code>,
+<code>x-forwarded-for</code> and <code>sec-fetch-mode</code>; everything else, such as <code>authorization</code>, <code>cookie</code>,
+<code>set-cookie</code> or a custom API key header, is written as a fingerprint.</p>
+<p><strong>Query parameters.</strong> The query is part of the request line, which every level records,
+<code>METADATA</code> included. Each parameter name is journaled as sent, and its value is written as sent
+only when the name is on <code>safe_query_parameters</code>. There is no built-in list, because no
+parameter name is safe everywhere, so with nothing configured every value is fingerprinted:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>GET /search?page=2&amp;api_key=s3cret&amp;q=shoes HTTP/1.1                       # as sent
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>GET /search?page=2&amp;api_key=fp:R5XU2m_VAik&amp;q=fp:0uCr61zmqQQ HTTP/1.1      # journaled, with page safe
+</span></code></pre></div>
+<ul>
+<li><strong>Case.</strong> Names on <code>safe_query_parameters</code> match regardless of case, as header names do.
+  Query parameter names are case sensitive on the wire, so when your upstreams tell <code>id</code> from
+  <code>ID</code>, set <code>safe_query_parameters_case_sensitive: true</code>.</li>
+<li><strong>Encoding.</strong> Names and values are compared after percent-decoding, as the upstream reads
+  them: <code>p%61ge</code> and <code>page</code> are the same parameter, and <code>q=a+b</code> and <code>q=a%20b</code> get the same
+  fingerprint.</li>
+<li><strong>Repeats.</strong> Each occurrence of a repeated parameter is redacted on its own; a safe name is
+  safe every time it appears.</li>
+<li><strong>Bare parameters.</strong> A parameter without <code>=</code> (<code>?s3cret-token</code>) is fingerprinted whole unless
+  its name is safe. Empty values (<code>?q=</code>) stay empty.</li>
+</ul>
+<p>Both request lines are redacted the same way: the one the client sent and the one forwarded
+upstream, after filters such as <code>SetQueryParameter</code> have changed it.</p>
+<p>The safe lists are set in <code>storage.journal_security</code>; see
+<a href="../config/#journal-redaction-storagejournal_security">Journal Redaction</a> for the keys.
+Redaction applies to the journal only; it never changes what a client or upstream receives.</p>
+<p><strong>Fingerprints.</strong> A fingerprint is <code>fp:</code> followed by 11 base64url characters, for example
+<code>fp:R5XU2m_VAik</code>: the first 64 bits of HMAC-SHA-256 of the value, keyed with
+<code>storage.journal_security.fingerprint_key</code>. The <code>gateway.auth.basic.user</code> attribute uses the same
+key and form.</p>
 <p>The same value always gives the same fingerprint under the same key, so you can see that two
 requests, two replicas, or records from before and after a restart carried the same value. Without
 the key, nobody who reads the journal can check a guess, which matters for low-entropy secrets
 such as <code>Authorization: Basic</code> with a known user name and a common password, a short API key or a
 <code>role=admin</code> cookie. The characters are URL-safe, so a fingerprint stands in a query string, a
 JSON string or a WARC header without escaping.</p>
-<p>The key is required: r7 refuses to start without it. Set it in <code>server.yaml</code>, or set only the
+<p><strong>The key.</strong> r7 refuses to start without it. Set it in <code>server.yaml</code>, or set only the
 <code>R7_FINGERPRINT_KEY</code> environment variable, which is the default when the file does not:</p>
-<div class="language-yaml highlight"><span class="filename">server.yaml</span><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">storage</span><span class="p">:</span>
-</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
-</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">fingerprint_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${R7_FINGERPRINT_KEY}</span><span class="w">   </span><span class="c1"># at least 32 characters, e.g. `openssl rand -base64 32`</span>
+<div class="language-yaml highlight"><span class="filename">server.yaml</span><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">storage</span><span class="p">:</span>
+</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
+</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">fingerprint_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${R7_FINGERPRINT_KEY}</span><span class="w">   </span><span class="c1"># at least 32 characters, e.g. `openssl rand -base64 32`</span>
 </span></code></pre></div>
-<p>Keep the key out of anything a journal reader can see, and give every replica of a deployment
-the same one so their fingerprints correlate. To rotate it, change it: records already written
-keep the fingerprints they have, and values journaled before and after the change no longer
-correlate. Nothing reads a fingerprint back, so there is no old key to keep. The same key and
-form are used for the <code>gateway.auth.basic.user</code> attribute.</p>
+<p>Keep the key out of anything a journal reader can see: anyone who has it can confirm a guess.
+Give every replica of a deployment the same key so their fingerprints correlate. To rotate it,
+change it: records already written keep the fingerprints they have, and values journaled before
+and after the change no longer correlate. Nothing reads a fingerprint back, so there is no old
+key to keep.</p>
 <p>Journals written by earlier versions keep the forms they were written with, <code>id:sha256:</code> (an
 unkeyed, truncated SHA-256) and <code>id:hmac:</code>; nothing rewrites them.</p>
 <h2 id="2-mount-the-shared-volume">2. Mount the shared volume</h2>
@@ -1146,7 +1169,7 @@ that have a captured body in WARC files under <code>/warc</code>.</p>
 <tr>
 <td><code>output_dir</code></td>
 <td><code>/warc</code></td>
-<td>Directory the files are written to. A file is written as <code>.warc.zst.open</code> and renamed once finished; one left <code>.open</code> by a crash is cut back to its last complete exchange and sealed on the next start</td>
+<td>Directory the files are written to. How files are named, sealed and recovered after a crash is in <a href="../warc/#files">the WARC profile</a></td>
 </tr>
 <tr>
 <td><code>file_prefix</code></td>
@@ -1185,10 +1208,8 @@ that have a captured body in WARC files under <code>/warc</code>.</p>
 </tr>
 </tbody>
 </table>
-<p>Each exchange becomes up to four linked records (client request, upstream request, upstream
-response, client response); a payload already archived by an earlier exchange is written as a
-WARC <code>revisit</code> record; and a checksum mismatch on read is marked rather than silently archived.
-<a href="../warc/">The WARC profile</a> specifies the records and the <code>WARC-R7-*</code> fields;
+<p><a href="../warc/">The WARC profile</a> specifies what an exchange becomes in the files: the records, the
+<code>WARC-R7-*</code> fields and the rules a reader can rely on.
 <a href="https://github.com/ethlo/r7/blob/main/design/warc.md"><code>design/warc.md</code></a> explains why they are
 shaped this way.</p>
 <p><strong>CDXJ index.</strong> With <code>cdxj_index: true</code>, every sealed <code>r7-….warc.zst</code> gets an <code>r7-….cdxj</code> beside it: one line per exchange, sorted by SURT key and timestamp, holding the URL, status, mime type, payload digest and the file name, offset and length of the client response record. This is the index format pywb and OutbackCDX read, so a lookup by URL and time goes straight to the record without scanning the archive. The index is built from the finished WARC file and renamed into place before the WARC file is, so a sealed <code>.warc.zst</code> always has its index; one sealed after a crash is indexed on the next start. Requests other than <code>GET</code> carry <code>__wb_method=&lt;method&gt;</code> in their key, as pywb does; request bodies are never copied into the index.</p>
@@ -1243,34 +1264,34 @@ shaped this way.</p>
 <p>The output is <a href="https://jsonlines.org/">JSON Lines</a>: one compact JSON object per exchange, one
 object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archived in a WARC file under
 <code>exchanges: all</code>, looks like this (pretty-printed here):</p>
-<div class="language-json highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
-</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
-</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">"route_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"items"</span><span class="p">,</span>
-</span><span id="True-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000120Z"</span><span class="p">,</span>
-</span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004410Z"</span><span class="p">,</span>
-</span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004290</span><span class="p">,</span>
-</span><span id="True-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">"remote_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"10.0.0.7"</span><span class="p">,</span>
-</span><span id="True-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">"remote_address_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SOCKET"</span><span class="p">,</span>
-</span><span id="True-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=fp:b9ZtS0R2qzY"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
-</span><span id="True-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"api.example.com"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">142</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
-</span><span id="True-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">  </span><span class="nt">"upstream_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/v1/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=fp:b9ZtS0R2qzY"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
-</span><span id="True-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">    </span><span class="nt">"targets"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://backend:8080"</span><span class="p">],</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"backend:8080"</span><span class="p">]}</span>
-</span><span id="True-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">  </span><span class="nt">"upstream_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
-</span><span id="True-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span>
-</span><span id="True-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">    </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000300Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"first_byte"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004100Z"</span><span class="p">,</span>
-</span><span id="True-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">    </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004380Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004080</span>
-</span><span id="True-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="True-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
-</span><span id="True-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">98</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1274</span>
-</span><span id="True-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="p">},</span>
-</span><span id="True-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
-</span><span id="True-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="p">}</span>
+<div class="language-json highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">"request_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01JA0Q6R8X4V2N7M3K5T9B1C0D"</span><span class="p">,</span>
+</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">"route_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"items"</span><span class="p">,</span>
+</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000120Z"</span><span class="p">,</span>
+</span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004410Z"</span><span class="p">,</span>
+</span><span id="True-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004290</span><span class="p">,</span>
+</span><span id="True-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">"remote_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"10.0.0.7"</span><span class="p">,</span>
+</span><span id="True-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">"remote_address_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SOCKET"</span><span class="p">,</span>
+</span><span id="True-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">"client_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=fp:b9ZtS0R2qzY"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
+</span><span id="True-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"api.example.com"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">142</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+</span><span id="True-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">  </span><span class="nt">"upstream_request"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"GET"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/v1/items"</span><span class="p">,</span><span class="w"> </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"page=fp:b9ZtS0R2qzY"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span>
+</span><span id="True-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="nt">"targets"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"http://backend:8080"</span><span class="p">],</span><span class="w"> </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"backend:8080"</span><span class="p">]}</span>
+</span><span id="True-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">  </span><span class="nt">"upstream_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
+</span><span id="True-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span>
+</span><span id="True-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">    </span><span class="nt">"start"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.000300Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"first_byte"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004100Z"</span><span class="p">,</span>
+</span><span id="True-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">    </span><span class="nt">"end"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-01T12:00:00.004380Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"duration"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.004080</span>
+</span><span id="True-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">  </span><span class="nt">"client_response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="True-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">    </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HEADERS"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"HTTP/1.1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OK"</span><span class="p">,</span>
+</span><span id="True-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">    </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"content-type"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"application/json"</span><span class="p">]},</span><span class="w"> </span><span class="nt">"header_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">98</span><span class="p">,</span><span class="w"> </span><span class="nt">"body_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">1274</span>
+</span><span id="True-7-26"><a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="True-7-27"><a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="w">  </span><span class="nt">"warc"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"r7-1759320000000-6f1c….warc.zst"</span><span class="p">,</span><span class="w"> </span><span class="nt">"offset"</span><span class="p">:</span><span class="w"> </span><span class="mi">48211</span><span class="p">,</span><span class="w"> </span><span class="nt">"length"</span><span class="p">:</span><span class="w"> </span><span class="mi">1873</span><span class="p">}</span>
+</span><span id="True-7-28"><a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>The rules every field follows:</p>
 <ul>
@@ -1507,21 +1528,21 @@ Removing or changing a field is a breaking change.</p>
 <h3 id="other-layouts">Other layouts</h3>
 <p>Each of these is a <code>tailer.yaml</code> and replaces the defaults only where it says.</p>
 <p>Every exchange in the WARC archive, with a CDXJ index, so every complete exchange's JSON line has a <code>warc</code> pointer:</p>
-<div class="language-yaml highlight"><span class="filename">tailer.yaml</span><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">warc</span><span class="p">:</span>
-</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">exchanges</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">all</span>
-</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">cdxj_index</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><span class="filename">tailer.yaml</span><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">warc</span><span class="p">:</span>
+</span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">exchanges</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">all</span>
+</span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">cdxj_index</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <p>JSON to rotating files for a loader instead of standard output:</p>
-<div class="language-yaml highlight"><span class="filename">tailer.yaml</span><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">json</span><span class="p">:</span>
-</span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">output</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">file</span>
-</span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">output_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/json</span>
-</span><span id="True-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">max_file_age</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span>
+<div class="language-yaml highlight"><span class="filename">tailer.yaml</span><pre><span></span><code><span id="True-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">json</span><span class="p">:</span>
+</span><span id="True-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">output</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">file</span>
+</span><span id="True-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">output_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/json</span>
+</span><span id="True-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">max_file_age</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span>
 </span></code></pre></div>
 <p>JSON lines alone, bodies included:</p>
-<div class="language-yaml highlight"><span class="filename">tailer.yaml</span><pre><span></span><code><span id="True-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">warc</span><span class="p">:</span>
-</span><span id="True-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="True-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">json</span><span class="p">:</span>
-</span><span id="True-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">bodies</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><span class="filename">tailer.yaml</span><pre><span></span><code><span id="True-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">warc</span><span class="p">:</span>
+</span><span id="True-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="True-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nt">json</span><span class="p">:</span>
+</span><span id="True-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">bodies</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <h2 id="4-retention-the-reaper">4. Retention: The Reaper</h2>
 <p><strong>Image:</strong> <code>ghcr.io/ethlo/r7-reaper:main</code></p>
@@ -1567,7 +1588,7 @@ overridable via the <code>REAPER_CONFIG</code> env var.</p>
 <tr>
 <td><code>ttl</code></td>
 <td><code>7d</code></td>
-<td>How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (not the file's filesystem mtime — see below), before it is deleted. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
+<td>How long a sealed segment is kept, counted from the last-event timestamp embedded in its filename (see the warning above), before it is deleted, read or not. Supports <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code></td>
 </tr>
 <tr>
 <td><code>tailers</code></td>
@@ -1587,11 +1608,11 @@ overridable via the <code>REAPER_CONFIG</code> env var.</p>
 </tbody>
 </table>
 <p><strong>Example <code>config/reaper.yaml</code>:</strong></p>
-<div class="language-yaml highlight"><span class="filename">reaper.yaml</span><pre><span></span><code><span id="True-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
-</span><span id="True-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7d</span>
-</span><span id="True-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Delete as soon as the tailer is done with a segment (and it is an hour old), not after 7 days</span>
-</span><span id="True-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="nt">tailers</span><span class="p">:</span>
-</span><span id="True-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints/tailer</span>
+<div class="language-yaml highlight"><span class="filename">reaper.yaml</span><pre><span></span><code><span id="True-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">journal_dir</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/journals</span>
+</span><span id="True-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">ttl</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7d</span>
+</span><span id="True-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="c1"># Delete as soon as the tailer is done with a segment (and it is an hour old), not after 7 days</span>
+</span><span id="True-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="nt">tailers</span><span class="p">:</span>
+</span><span id="True-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/checkpoints/tailer</span>
 </span></code></pre></div>
 <p><strong>Who may write what.</strong> Each component writes only what it owns and reads the rest, and the
 mounts enforce it:</p>
@@ -1629,31 +1650,31 @@ mounts enforce it:</p>
 anything a tailer wrote. The one thing that crosses a boundary, the reaper trusting a tailer's
 checkpoint file, can only keep a segment longer: anything short of "done" leaves it for <code>ttl</code>.</p>
 <p><strong>Example Docker Compose Integration:</strong></p>
-<div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">services</span><span class="p">:</span>
-</span><span id="True-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
-</span><span id="True-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:main</span>
-</span><span id="True-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
-</span><span id="True-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>
-</span><span id="True-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">r7-tailer</span><span class="p">:</span>
-</span><span id="True-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer:main</span>
-</span><span id="True-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/tailer.yaml:/app/config/tailer.yaml:ro</span>
-</span><span id="True-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w">                </span><span class="c1"># reads only; retention is the reaper's job</span>
-</span><span id="True-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
-</span><span id="True-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-tailer-checkpoints:/checkpoints:rw</span><span class="w">   </span><span class="c1"># its own progress</span>
-</span><span id="True-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>
-</span><span id="True-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">  </span><span class="nt">r7-reaper</span><span class="p">:</span>
-</span><span id="True-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-reaper:main</span>
-</span><span id="True-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/reaper.yaml:/app/config/reaper.yaml:ro</span>
-</span><span id="True-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w">                         </span><span class="c1"># the only container that deletes from it</span>
-</span><span id="True-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-tailer-checkpoints:/checkpoints/tailer:ro</span><span class="w">    </span><span class="c1"># read to learn what the tailer is done with; never its output</span>
-</span><span id="True-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>
-</span><span id="True-11-22"><a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="True-11-23"><a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
-</span><span id="True-11-24"><a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
-</span><span id="True-11-25"><a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a><span class="w">  </span><span class="nt">r7-tailer-checkpoints</span><span class="p">:</span>
+<div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">services</span><span class="p">:</span>
+</span><span id="True-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
+</span><span id="True-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:main</span>
+</span><span id="True-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span>
+</span><span id="True-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
+</span><span id="True-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">r7-tailer</span><span class="p">:</span>
+</span><span id="True-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-tailer:main</span>
+</span><span id="True-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/tailer.yaml:/app/config/tailer.yaml:ro</span>
+</span><span id="True-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:ro</span><span class="w">                </span><span class="c1"># reads only; retention is the reaper's job</span>
+</span><span id="True-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-warc:/warc:rw</span>
+</span><span id="True-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-tailer-checkpoints:/checkpoints:rw</span><span class="w">   </span><span class="c1"># its own progress</span>
+</span><span id="True-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>
+</span><span id="True-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span><span class="nt">r7-reaper</span><span class="p">:</span>
+</span><span id="True-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-reaper:main</span>
+</span><span id="True-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config/reaper.yaml:/app/config/reaper.yaml:ro</span>
+</span><span id="True-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-journals:/journals:rw</span><span class="w">                         </span><span class="c1"># the only container that deletes from it</span>
+</span><span id="True-12-20"><a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7-tailer-checkpoints:/checkpoints/tailer:ro</span><span class="w">    </span><span class="c1"># read to learn what the tailer is done with; never its output</span>
+</span><span id="True-12-21"><a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a>
+</span><span id="True-12-22"><a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-12-23"><a id="__codelineno-12-23" name="__codelineno-12-23" href="#__codelineno-12-23"></a><span class="w">  </span><span class="nt">r7-journals</span><span class="p">:</span>
+</span><span id="True-12-24"><a id="__codelineno-12-24" name="__codelineno-12-24" href="#__codelineno-12-24"></a><span class="w">  </span><span class="nt">r7-warc</span><span class="p">:</span>
+</span><span id="True-12-25"><a id="__codelineno-12-25" name="__codelineno-12-25" href="#__codelineno-12-25"></a><span class="w">  </span><span class="nt">r7-tailer-checkpoints</span><span class="p">:</span>
 </span></code></pre></div>
 <h2 id="5-where-the-data-goes-next">5. Where the data goes next</h2>
 <p>The JSON lines go to any log shipper and on to ClickHouse, Loki or an OpenTelemetry backend; the

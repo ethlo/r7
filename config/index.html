@@ -1744,23 +1744,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Journal Redaction (storage.journal_security)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#query-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Query parameters
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
         
       </ul>
@@ -2058,7 +2041,7 @@
 <h2 id="3-execution-semantics">3. Execution Semantics</h2>
 <p>Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:</p>
 <ol>
-<li><strong>Request Validation:</strong> Before anything else runs, a request <code>Transfer-Encoding</code> other than exactly <code>chunked</code> is rejected with <code>400 Bad Request</code> and the connection closed (see <a href="#transfer-encoding">Transfer-Encoding</a>); then a path an upstream could resolve differently from how route predicates read it is rejected with <code>400 Bad Request</code> (see <a href="#ambiguous-paths">Ambiguous Paths</a>).</li>
+<li><strong>Request Validation:</strong> Before anything else runs, a request with a bad <a href="#transfer-encoding">Transfer-Encoding</a> or an <a href="#ambiguous-paths">ambiguous path</a> is rejected with <code>400 Bad Request</code>.</li>
 <li><strong>Global Request Filters:</strong> Executed on every incoming request.</li>
 <li><strong>Route Predicate Evaluation:</strong> Routes are evaluated in declaration order.</li>
 <li><strong>Route Match &amp; Halt:</strong> The <em>first</em> route whose predicates evaluate to <code>true</code> is selected. <strong>Once a route is matched, no further routes are evaluated.</strong> If no route matches, a <code>404 Not Found</code> is returned.</li>
@@ -2078,7 +2061,7 @@
 </ul>
 <p>The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as <code>/a/../b</code> is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.</p>
 <h3 id="transfer-encoding">Transfer-Encoding</h3>
-<p>A request <code>Transfer-Encoding</code> other than exactly <code>chunked</code> (for example <code>chunked, identity</code>, <code>gzip, chunked</code>, or the header repeated) is refused with <code>400 Bad Request</code> before routing. RFC 9112 §6.3 requires rejecting a request whose final coding is not <code>chunked</code>, and a list that r7 and an upstream read differently would make them disagree on where the body ends.</p>
+<p>A request <code>Transfer-Encoding</code> other than exactly <code>chunked</code> (for example <code>chunked, identity</code>, <code>gzip, chunked</code>, or the header repeated) is refused with <code>400 Bad Request</code> before routing, and the connection is closed. RFC 9112 §6.3 requires rejecting a request whose final coding is not <code>chunked</code>, and a list that r7 and an upstream read differently would make them disagree on where the body ends.</p>
 <h3 id="phase-aware-filters">Phase-Aware Filters</h3>
 <p>Filters are inherently phase-aware. Although they are declared in a single, unified list (either in <code>global_filters</code> or a route's <code>filters</code> block), they automatically participate only in the lifecycle phases relevant to their behavior.</p>
 <ul>
@@ -2581,7 +2564,7 @@
 </tbody>
 </table>
 <h4 id="remoteaddr">RemoteAddr</h4>
-<p>Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. <strong>Evaluates the resolved remote address</strong>, which is the physical TCP peer address unless that peer is listed in <code>limits.trusted_proxies</code> in <code>server.yaml</code>, in which case <code>X-Forwarded-For</code>/<code>X-Real-IP</code> is honored instead. By default <code>trusted_proxies</code> is empty, so <code>X-Forwarded-For</code> is never read and this predicate cannot be bypassed by a spoofed header.</p>
+<p>Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. <strong>Evaluates the resolved client address</strong>: the TCP peer, or the client behind a peer listed in <a href="#limits-configuration-limits"><code>limits.trusted_proxies</code></a>. By default no proxy is trusted, so a spoofed <code>X-Forwarded-For</code> cannot get past it.</p>
 <table>
 <thead>
 <tr>
@@ -3221,7 +3204,7 @@
 <p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Short-circuits requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.
 <em>This filter requires no configuration parameters.</em></p>
 <h4 id="basicauth">BasicAuth</h4>
-<p>Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with <code>401 Unauthorized</code> and a <code>WWW-Authenticate</code> challenge when they are missing or wrong. On success a fingerprint of the authenticated username (not the username itself) is recorded in the <code>gateway.auth.basic.user</code> attribute for journaling, the same convention used for redacted request headers.</p>
+<p>Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with <code>401 Unauthorized</code> and a <code>WWW-Authenticate</code> challenge when they are missing or wrong. On success the authenticated username is recorded in the <code>gateway.auth.basic.user</code> attribute for journaling, as a <a href="../journaling/#redacted-header-and-query-parameter-values">fingerprint</a>, not in plain text.</p>
 <table>
 <thead>
 <tr>
@@ -3236,7 +3219,7 @@
 <td><code>users</code></td>
 <td>List</td>
 <td>Yes</td>
-<td>Entries in htpasswd format, <code>username:bcrypt-hash</code>. Generate with <code>htpasswd -nB -C 12 &lt;user&gt;</code>, which prompts for the password rather than taking it as an argument, where it would land in shell history and the process list.</td>
+<td>Entries in htpasswd format, <code>username:bcrypt-hash</code>; see the cost advice below.</td>
 </tr>
 <tr>
 <td><code>realm</code></td>
@@ -3262,7 +3245,6 @@
 </span><span id="True-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"</span>
 </span><span id="True-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"bob:${BOB_HTPASSWD_ENTRY}"</span>
 </span></code></pre></div>
-<p>Because bcrypt is deliberately expensive, successful credentials are cached so that repeat requests do not re-run the hash.</p>
 <p><strong>Password guessing.</strong> <code>BasicAuth</code> has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a <code>RateLimiter</code> before <code>BasicAuth</code>, so a client is refused before its guess costs a bcrypt:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
@@ -3278,8 +3260,8 @@
 </span><span id="True-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">401</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span><span class="w">   </span><span class="c1"># every failed login is journaled, even when the route journals nothing else</span>
 </span></code></pre></div>
 <p>The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.</p>
-<p>Use a bcrypt cost of at least 10; <code>htpasswd -B</code> defaults to 5, so pass <code>-C 12</code> (for example <code>htpasswd -nB -C 12 &lt;user&gt;</code>). The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.</p>
-<p><strong>Failed logins are journaled, not logged.</strong> A refused request is answered with <code>401</code> and recorded in the route's journal with its request ID, client address, and time. <code>status_overrides</code> (above) records it even on a route that otherwise journals nothing.</p>
+<p>Use a bcrypt cost of at least 10; <code>htpasswd -B</code> defaults to 5, so generate entries with <code>htpasswd -nB -C 12 &lt;user&gt;</code>, which also prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.</p>
+<p><strong>Failed logins are journaled, not logged.</strong> A refused request is answered with <code>401</code> and recorded in the route's journal with its request ID, client address, and time; the <code>status_overrides</code> entry above records it even on a route that otherwise journals nothing.</p>
 <p>A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.</p>
 <h4 id="injectbasicauth">InjectBasicAuth</h4>
 <p>Generates a Base64 encoded Basic Authentication string and injects it into the <code>Authorization</code> header of the upstream request.</p>
@@ -3314,7 +3296,6 @@
 <li><strong>Undeclared length</strong> (chunked, or HTTP/2 without <code>Content-Length</code>): the body is counted as it streams. Once it crosses <code>max_size</code>, r7 closes both the client connection and the upstream connection mid-body, so the upstream never receives the request as complete. The response headers may already have been impossible to send, so the client sees the connection close rather than a <code>413</code>.</li>
 </ul>
 <p>The server-wide <code>limits.max_entity_size</code> applies on top of this and cannot be raised by it.</p>
-<p>Independently of this filter, r7 never hands an upstream a chunked request body that was cut short (client disconnect, malformed chunk, or <code>max_entity_size</code>) as if it were complete: the upstream connection is closed mid-body instead.</p>
 <table>
 <thead>
 <tr>
@@ -3385,7 +3366,7 @@
 <hr />
 <h3 id="traffic-shaping-reliability">Traffic Shaping &amp; Reliability</h3>
 <h4 id="ratelimiter">RateLimiter</h4>
-<p>Provides token-bucket rate limiting. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Automatically injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers. <strong>Buckets are keyed by the client's resolved address</strong> (the TCP peer, or the <code>X-Forwarded-For</code>/<code>X-Real-IP</code> client behind a trusted proxy): an IPv4 address as is, an IPv6 address by its leading <code>ipv6_prefix_length</code> bits (a <code>/64</code> by default). A filter that sets the <code>rate_limit_key</code> attachment overrides this.</p>
+<p>Provides token-bucket rate limiting. Requests exceeding the limit are rejected with <code>429 Too Many Requests</code>. Automatically injects <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers. <strong>Buckets are keyed by the client's resolved address</strong> (see <a href="#limits-configuration-limits"><code>trusted_proxies</code></a>): an IPv4 address as is, an IPv6 address by its leading <code>ipv6_prefix_length</code> bits (a <code>/64</code> by default). A filter that sets the <code>rate_limit_key</code> attachment overrides this.</p>
 <table>
 <thead>
 <tr>
@@ -3550,7 +3531,7 @@
 <h2 id="7-journaling-storage">7. Journaling &amp; Storage</h2>
 <p>Request/response journaling is executed asynchronously to avoid blocking the hot path.</p>
 <h3 id="storage-configuration-serveryaml-storage">Storage Configuration (<code>server.yaml -&gt; storage</code>)</h3>
-<p>Storage utilizes memory-mapped files separated into shards of a defined <code>shard_size</code> to minimize lock contention and manage disk IO.</p>
+<p>Where and how journals are written on disk is set in <code>server.yaml</code>; see <a href="#storage-journaling-storage">Storage &amp; Journaling</a>.</p>
 <h3 id="logging-levels-routesyaml-journal">Logging Levels (<code>routes.yaml -&gt; journal</code>)</h3>
 <p>Verbosity can be set generically or overridden conditionally based on HTTP status codes.</p>
 <table>
@@ -3584,6 +3565,8 @@
 </tr>
 </tbody>
 </table>
+<p>Header and query parameter values that may be secrets are journaled as fingerprints, not in plain text; see <a href="../journaling/#redacted-header-and-query-parameter-values">Journaling: redacted values</a>.</p>
+<p>A request at <code>NONE</code> is still recorded at <code>METADATA</code> (start line, client address, timing) when its response is journaled, to anchor the response.</p>
 <h4 id="status-overrides-status_overrides">Status Overrides (<code>status_overrides</code>)</h4>
 <p>Each direction (<code>request</code>, <code>response</code>) takes an optional <code>status_overrides</code> map from a status key to a level, applied when the response status matches:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">journal</span><span class="p">:</span>
@@ -3672,7 +3655,7 @@
 </span><span id="True-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">status_overrides</span><span class="p">:</span>
 </span><span id="True-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">        </span><span class="nt">404</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span><span class="w">      </span><span class="c1"># ...which needs both directions, as overrides apply per direction</span>
 </span></code></pre></div>
-<p>Levels and <code>status_overrides</code> work as for a route, except that <code>FULL</code> is refused at startup: a refused request's body is never read, and after a bad <code>Transfer-Encoding</code> its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at <code>METADATA</code> (start line, client address, timing) to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.</p>
+<p>Levels and <code>status_overrides</code> work as for a route, except that <code>FULL</code> is refused at startup: a refused request's body is never read, and after a bad <code>Transfer-Encoding</code> its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at <code>METADATA</code> to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.</p>
 <hr />
 <h2 id="8-complete-example-configuration">8. Complete Example Configuration</h2>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.</p>
@@ -3860,6 +3843,7 @@
 </table>
 <p>The management listener shares the process's file descriptors with the gateway itself, so none of its timeouts can be turned off (each must be positive and at most <code>24d</code>) and its connections are capped: without these, a client that opens connections and sends part of a request on each could use up descriptors until the gateway stops accepting traffic.</p>
 <p>A request whose <code>Host</code> names anything other than <code>localhost</code>, the configured <code>host</code>, an entry in <code>allowed_hosts</code> or an IP address gets <code>421</code>. This stops DNS rebinding, where a web page re-resolves its own name to <code>127.0.0.1</code> and so reads a loopback-only dashboard from the browser of someone on the gateway host. IP addresses are always accepted because rebinding needs a name. If you reach the management port through a DNS name, add that name to <code>allowed_hosts</code>.</p>
+<p>To reach the management port from another machine, put it behind something that authenticates. Do not route a path on the gateway port to it: that would publish it to every client of the gateway.</p>
 <p>The management endpoint is read-only (<code>GET</code>/<code>HEAD</code>; anything else gets <code>405</code>) and sends <code>Cache-Control: no-store</code>, <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>, and a <code>Content-Security-Policy</code> that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with <code>******</code>: <code>InjectBasicAuth</code> passwords, <code>BasicAuth</code> user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (<code>http://user:pass@host</code>), request and response header values set by filters unless the header is one the journal records as safe in that direction (see <code>journal_security</code>), and the patterns of <code>RequireMatch*</code> filters. Summaries of filters and predicates mask the same values, and the values predicates compare against, the same way.</p>
 <p>What the dashboard shows beyond the configuration itself:</p>
 <ul>
@@ -4041,7 +4025,7 @@
 </table>
 <h3 id="limits-configuration-limits">Limits Configuration (<code>limits</code>)</h3>
 <p>Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.</p>
-<p>A request over <code>max_header_size</code> or <code>max_header_count</code> is refused before any filter runs, with <code>400</code> or <code>431</code> depending on which layer caught it. A body over <code>max_entity_size</code> is refused with <code>413</code> when its <code>Content-Length</code> declares it. A chunked body is stopped once it streams past the limit, and never reaches the upstream as a complete request. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.</p>
+<p>A request over <code>max_header_size</code> or <code>max_header_count</code> is refused before any filter runs, with <code>400</code> or <code>431</code> depending on which layer caught it. A body over <code>max_entity_size</code> is refused with <code>413</code> when its <code>Content-Length</code> declares it. A chunked body is stopped once it streams past the limit. A chunked body cut short for any reason (this limit, a client disconnect, a malformed chunk) never reaches the upstream as a complete request: the upstream connection is closed mid-body. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.</p>
 <table>
 <thead>
 <tr>
@@ -4138,38 +4122,36 @@
 <tr>
 <td><code>shard_count</code></td>
 <td>Integer</td>
-<td>The number of shards (files) to split the journal across to reduce lock contention and manage file sizes. Defaults to <code>2</code>; must be a power of two. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
+<td>The number of shards (files) to split the journal across, to reduce lock contention. Defaults to <code>2</code>; must be a power of two. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>pre_fault</code></td>
 <td>Boolean</td>
-<td>When <code>true</code>, the warmer touches every page of each segment before the writer gets it. Defaults to <code>false</code>, and best left so: on Linux 5.14 and later r7 already faults pages in a few MB ahead of the writer (fault-ahead), which was faster in every measurement and costs a fraction of the memory. <code>pre_fault</code> charges every warmed segment to memory at once (about 6 × <code>shard_size</code> per shard) and disables fault-ahead. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
+<td>Touch every page of each segment before the writer gets it. Defaults to <code>false</code>, and best left so on Linux 5.14 and later. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>compression</code></td>
 <td>String</td>
-<td><code>zstd</code> (the default) or <code>none</code>. With <code>zstd</code>, each 32KB block of a journal segment carries one zstd stream and every entry is flushed into it as it is written, so entries stay individually committed and readable. On benchmark traffic it made the journal 9-15x smaller with no measurable latency at 1,000 req/s; it costs CPU on the writing thread, which shows only near saturation. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See <a href="../performance_tuning/#journal-compression-compression-and-compression_level">Performance tuning</a>.</td>
+<td><code>zstd</code> (the default) or <code>none</code>. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See <a href="../performance_tuning/#journal-compression-compression-and-compression_level">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>compression_level</code></td>
 <td>Integer</td>
-<td>zstd level, <code>1</code> to <code>19</code>. Defaults to <code>1</code>, which measured best: higher levels cost noticeably more CPU for a few percent less disk. Ignored when <code>compression</code> is <code>none</code>.</td>
+<td>zstd level, <code>1</code> to <code>19</code>. Defaults to <code>1</code>. Ignored when <code>compression</code> is <code>none</code>.</td>
 </tr>
 <tr>
 <td><code>journal_security</code></td>
 <td>Object</td>
-<td>Shapes the whitelists of header and query parameter names journaled in plain text. See below.</td>
+<td>Which header and query parameter values are journaled in plain text, and the fingerprint key. See below.</td>
 </tr>
 </tbody>
 </table>
 <h4 id="journal-redaction-storagejournal_security">Journal Redaction (<code>storage.journal_security</code>)</h4>
-<p>At <code>HEADERS</code>/<code>FULL</code> journal levels, r7 journals every header name but only writes a header's
-<em>value</em> verbatim when the name is on a built-in whitelist (things like <code>host</code>, <code>user-agent</code>,
-<code>content-type</code>, <code>etag</code>, <code>x-forwarded-for</code>, <code>sec-fetch-site</code>, <code>sec-fetch-mode</code>); everything else —
-<code>authorization</code>, <code>cookie</code>, <code>set-cookie</code>, custom API keys, and so on — is written as a
-fingerprint of its value instead of the value itself. This list is separate per direction
-(request headers vs. response headers).</p>
-<p><code>journal_security</code> shapes that whitelist in one of two ways, per direction:</p>
+<p>Shapes which header and query parameter values the journal keeps in plain text; every other
+value is written as a fingerprint. What is redacted, what a fingerprint is and how the key is
+used are described once, in
+<a href="../journaling/#redacted-header-and-query-parameter-values">Journaling: redacted header and query parameter values</a>.
+Redaction affects only the journal, never what is sent to clients or upstreams.</p>
 <table>
 <thead>
 <tr>
@@ -4182,27 +4164,27 @@ fingerprint of its value instead of the value itself. This list is separate per 
 <tr>
 <td><code>additional_safe_request_headers</code></td>
 <td>List of Strings</td>
-<td>Request header names to add on top of the built-in whitelist, so their values are journaled in plain text.</td>
+<td>Request header names to add on top of the built-in safe list, so their values are journaled in plain text.</td>
 </tr>
 <tr>
 <td><code>additional_safe_response_headers</code></td>
 <td>List of Strings</td>
-<td>Response header names to add on top of the built-in whitelist.</td>
+<td>Response header names to add on top of the built-in safe list.</td>
 </tr>
 <tr>
 <td><code>safe_request_headers</code></td>
 <td>List of Strings</td>
-<td>If non-empty, replaces the built-in request whitelist entirely — the effective whitelist is exactly this list.</td>
+<td>If non-empty, replaces the built-in request safe list entirely: the effective list is exactly this one.</td>
 </tr>
 <tr>
 <td><code>safe_response_headers</code></td>
 <td>List of Strings</td>
-<td>If non-empty, replaces the built-in response whitelist entirely.</td>
+<td>If non-empty, replaces the built-in response safe list entirely.</td>
 </tr>
 <tr>
 <td><code>safe_query_parameters</code></td>
 <td>List of Strings</td>
-<td>Query parameter names whose values are journaled in plain text. Empty by default, so every query parameter value is fingerprinted. See <a href="#query-parameters">Query parameters</a> below.</td>
+<td>Query parameter names whose values are journaled in plain text. Empty by default. Write names decoded; a name containing a percent-escape is refused at startup.</td>
 </tr>
 <tr>
 <td><code>safe_query_parameters_case_sensitive</code></td>
@@ -4212,17 +4194,15 @@ fingerprint of its value instead of the value itself. This list is separate per 
 <tr>
 <td><code>fingerprint_key</code></td>
 <td>String</td>
-<td><strong>Required</strong>, at least 32 characters. The secret key behind every fingerprint r7 writes in place of a redacted value (<code>fp:</code> + 11 characters, a keyed HMAC-SHA-256), so that a reader of the journal cannot recover a low-entropy secret by hashing guesses. Defaults to the <code>R7_FINGERPRINT_KEY</code> environment variable; r7 does not start without one or the other. See <a href="../journaling/#redacted-header-and-query-parameter-values">Journaling: redacted header and query parameter values</a>.</td>
+<td><strong>Required</strong>, at least 32 characters. The secret key behind every fingerprint. Defaults to the <code>R7_FINGERPRINT_KEY</code> environment variable; r7 does not start without one or the other.</td>
 </tr>
 </tbody>
 </table>
 <p>Header names are matched case-insensitively. There is no way to remove a single header from the
-built-in whitelist while keeping the rest — use <code>safe_*_headers</code> to replace the whole list if
+built-in safe list while keeping the rest: use <code>safe_*_headers</code> to replace the whole list if
 you need exact control. Setting both <code>additional_safe_*_headers</code> and <code>safe_*_headers</code> for the
 same direction is a validation error: a full replacement and an addition to the defaults it
-replaces is a contradiction, not something to guess at. Anything not on the resulting whitelist
-is fingerprinted, no exceptions. This affects only journaling; it has no effect on what headers
-are sent to clients or upstreams.</p>
+replaces is a contradiction, not something to guess at.</p>
 <div class="language-yaml highlight"><span class="filename">server.yaml</span><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">storage</span><span class="p">:</span>
 </span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
 </span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="c1"># Add a couple of names to the built-in defaults. Only ever add headers whose values</span>
@@ -4232,7 +4212,7 @@ are sent to clients or upstreams.</p>
 </span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">additional_safe_response_headers</span><span class="p">:</span>
 </span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-internal-build-id</span>
 </span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
-</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="c1"># ...or replace the response whitelist entirely (mutually exclusive with</span>
+</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="c1"># ...or replace the response safe list entirely (mutually exclusive with</span>
 </span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="c1"># additional_safe_response_headers above):</span>
 </span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="c1"># safe_response_headers:</span>
 </span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="c1">#   - content-type</span>
@@ -4243,33 +4223,6 @@ are sent to clients or upstreams.</p>
 </span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">page</span>
 </span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sort</span>
 </span></code></pre></div>
-<h5 id="query-parameters">Query parameters</h5>
-<p>The query is part of the request line, which every journal level records, <code>METADATA</code> included.
-The same rule as for headers applies to it: each parameter name is journaled as sent, and its
-value is written verbatim only when the name is on <code>safe_query_parameters</code>; every other value is
-replaced by the same fingerprint a header value gets. There is no built-in list, because no
-parameter name is safe everywhere, so with nothing configured every value is fingerprinted:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>GET /search?page=2&amp;api_key=s3cret&amp;q=shoes HTTP/1.1                       # as sent
-</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>GET /search?page=2&amp;api_key=fp:R5XU2m_VAik&amp;q=fp:0uCr61zmqQQ HTTP/1.1      # journaled, with page safe
-</span></code></pre></div>
-<ul>
-<li><strong>Case.</strong> Names on <code>safe_query_parameters</code> match regardless of case, as header names do:
-  <code>page</code> also covers <code>Page</code> and <code>PAGE</code>. Query parameter names are case sensitive on the wire,
-  so when your upstreams tell <code>id</code> from <code>ID</code>, set <code>safe_query_parameters_case_sensitive: true</code>
-  and only the exact spelling on the list is journaled in plain text.</li>
-<li><strong>Encoding.</strong> Names are matched after percent-decoding, as the upstream reads them: <code>p%61ge</code>
-  and <code>page</code> are the same parameter, and <code>user+id</code> and <code>user%20id</code> both match <code>user id</code>. Write
-  names in <code>safe_query_parameters</code> decoded; a name containing a percent-escape is refused at
-  startup with the decoded form to use instead. Values are fingerprinted decoded too, so
-  <code>q=a+b</code> and <code>q=a%20b</code> get the same fingerprint.</li>
-<li><strong>Repeats.</strong> Each occurrence of a repeated parameter is redacted on its own; a safe name is
-  safe every time it appears.</li>
-<li><strong>Bare parameters.</strong> A parameter without <code>=</code> (<code>?s3cret-token</code>) is fingerprinted whole unless
-  its name is safe: it is the only thing it carries. Empty values (<code>?q=</code>) stay empty.</li>
-</ul>
-<p>Both request lines are redacted the same way: the one the client sent and the one forwarded
-upstream, after filters such as <code>SetQueryParameter</code> have changed it. Redaction applies to the
-journal only; it never changes the query an upstream receives.</p>
 
 
 
