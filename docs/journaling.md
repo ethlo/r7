@@ -48,6 +48,9 @@ services:
     image: ghcr.io/ethlo/r7-gateway:main
     ports:
       - "8888:8888"
+    environment:
+      # Required: the key behind the fingerprints in place of redacted values.
+      R7_FINGERPRINT_KEY: ${R7_FINGERPRINT_KEY:?set it in .env}
     volumes:
       - ./config:/app/config:ro
       - r7-journals:/journals:rw
@@ -63,6 +66,14 @@ volumes:
   r7-journals:
   r7-warc:
   r7-tailer-checkpoints:
+```
+
+Next to it, create the gateway's fingerprint key once, and keep the file. Only the gateway
+needs it; see [Redacted header and query parameter values](#redacted-header-and-query-parameter-values).
+If `config/server.yaml` sets `fingerprint_key` instead, drop the `environment` block.
+
+```bash
+(umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)
 ```
 
 **3. Read the result.** Each exchange is one JSON line on the tailer's standard output, which

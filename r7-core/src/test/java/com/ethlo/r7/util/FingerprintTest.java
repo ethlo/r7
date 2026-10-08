@@ -41,9 +41,9 @@ class FingerprintTest
     }
 
     /**
-     * The digest is computed from precomputed pad states rather than through {@link Mac}, so it
-     * is checked against {@link Mac} itself, including keys longer than a SHA-256 block, which
-     * HMAC hashes first, and values that span several blocks.
+     * The truncation and encoding hold for any key and value: checked against the full
+     * {@link Mac} output across keys longer than a SHA-256 block, which HMAC hashes first, and
+     * values that span several blocks.
      */
     @Test
     void agreesWithTheJdkHmac() throws Exception
