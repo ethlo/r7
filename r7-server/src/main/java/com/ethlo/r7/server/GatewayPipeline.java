@@ -64,10 +64,10 @@ import com.ethlo.r7.util.constants.MediaTypes;
 
 /**
  * The request lifecycle of docs/config.md §3, independent of the HTTP server that carries it:
- * the checks made before any route is consulted, routing, the request filters (dispatching
- * where a filter blocks), fallback routing, the upstream filters and the hand-off to the
- * upstream, response and completed filters on the way out, short-circuits, and what is journaled
- * at each step.
+ * the checks made before any route is consulted, routing, the request filters (run inline on the
+ * request's own thread, which a filter may block), fallback routing, the upstream filters and the
+ * hand-off to the upstream, response and completed filters on the way out, short-circuits, and
+ * what is journaled at each step.
  * <p>
  * One instance per server. It keeps no per-request state: everything about a request lives on its
  * {@link ServerExchange}, and the server calls back into this class through the listeners the
@@ -320,7 +320,7 @@ public final class GatewayPipeline
                 ex.attributes().set("gateway.fallback.id", fallbackRoute.id());
 
                 // The fallback route runs as if the request had matched it: its own request
-                // filters (dispatching where they need to), then its own upstream filters and
+                // filters, on this same thread, then its own upstream filters and
                 // upstream, or its own fallback. Global filters already ran once for this request.
                 executeRequestFilters(ex, fallbackRoute, fallbackRoute.globalClientRequestFilterCount());
                 return;
