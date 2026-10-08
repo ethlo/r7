@@ -61,6 +61,9 @@ sig: <the Ed25519 signature, Base64>
   logs the key as PEM, for `openssl`.
 - `key` is there so a reader can tell which key signed. A verifier never trusts it on
   its own: it compares it with the key it was given.
+- `quarantined` is `<reason> statement=<sha256> segment=<sha256>`, where `<reason>` is one of
+  `bad_digest` or `bad_signature`, and the two hashes are of the replaced statement and of the
+  segment, as found.
 - **The signed bytes are exact.** UTF-8, one `name: value` per line, a single space after the
   colon, no trailing whitespace, every line ending in LF (no CR), fields in exactly this order, with
   the optional ones (marked `?`) left out entirely when they don't apply:
@@ -183,8 +186,11 @@ It goes in the tailer's output statement instead (below), as a verdict per sourc
 failed check is never silent and never drops data, the same rule as fingerprinting. See
 decision 3.
 
-A tailer counts a segment as done only once it has been verified, so a reaper that lists the
-tailer waits for verification before deleting early. The reaper deletes `<stem>.seal` together with the segment, and `shard-<id>.chain` is never deleted.
+A tailer counts a segment as done (what its checkpoint tells the reaper) only once every signing
+output has durably copied the segment's `.seal` and either sealed an output statement carrying
+its final verdict or written that verdict to the output's checkpoint, to go into the next
+statement. A reaper that lists the tailer therefore never deletes evidence the archive doesn't
+hold yet. The reaper deletes `<stem>.seal` together with the segment, and `shard-<id>.chain` is never deleted.
 
 ## The archive
 
@@ -192,8 +198,10 @@ Segments are transient. The WARC and JSON files are what is kept, so the proof h
 them. `SealedFileWriter` already has a hook for a companion file written before the seal (the
 CDXJ index uses it). A signing tailer does two things there.
 
-First, it copies the gateway statement of every segment it read into its output directory,
-byte for byte, as `<stem>.seal`. That is the archive's copy of the gateway's chain, and it
+First, it copies every gateway statement it finds in the journal directory into its output
+directory, byte for byte, as `<stem>.seal`. That includes statements for segments it never reads
+records from, such as quarantined ones, which then appear in the next output statement as a
+`source` with the verdict `quarantined`. That is the archive's copy of the gateway's chain, and it
 needs no new format.
 
 Second, it writes `F.seal` next to each output file `F`, an output statement. It uses the same
@@ -209,7 +217,7 @@ order, optional fields left out:
 - `source` repeats once per segment whose records `F` holds, in ascending shard and sequence
   order. Each is `<stem> <statement> <verdict>`, where `<statement>` is the SHA-256 of that
   gateway statement's text, or `-` when there is none (yet). A verdict is one
-  token: `verified`, `pending`, `unsigned`, or the failure (`missing_statement`, `chain_reset`,
+  token: `verified`, `pending`, `unsigned`, `quarantined`, or the failure (`missing_statement`, `chain_reset`,
   `expired_unverified`, `bad_signature`, `bad_digest`).
 - `verdict` repeats once per earlier `pending` source that has since been decided, as
   `<stem> <statement> <verdict>`, in the same order. It carries the statement hash that was `-`
