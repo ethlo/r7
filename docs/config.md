@@ -941,6 +941,7 @@ What the dashboard shows beyond the configuration itself:
 * **Upstream target health** for routes with a `health_check`, from the moment routes are loaded (see [Health Check](#health-check-health_check)); a hot reload resets it.
 * **Requests no route matched**, which are answered `404` and are not part of any route's figures.
 * **`server.yaml` as in effect**, with every value that differs from the built-in default marked.
+* **Gateway health** in the header: the worst status any component reports, with each component that is not `OK` listed under it and linked to its route. This is the roll-up `/health` and `/ready` carry. The header shows `STALE` once the data has stopped changing for 10 seconds.
 * **Component status**: what a route's filters and its upstream report about themselves, as `OK`, `WARN` or `ERROR`. A route with a component in `WARN` or `ERROR` says so in the route list, and the route's page shows each filter's status with its detail and values. `CircuitBreaker` is `ERROR` while open and `WARN` while half-open; `RateLimiter` is `WARN` once it tracks `max_buckets` clients, since it then evicts buckets early and the limit holds less tightly; a health-checked upstream is `WARN` while some of its targets are down and `ERROR` while all are. A custom filter can report its own (see [Reporting a filter's status](extensibility.md#reporting-a-filters-status)).
 
 #### Paths
@@ -948,10 +949,21 @@ What the dashboard shows beyond the configuration itself:
 | Path | Answers |
 | --- | --- |
 | `/metrics` | Prometheus metrics, in the text format (`text/plain; version=0.0.4`). |
-| `/health` | `200` with `{"status":"UP"}`, or `503` with `{"status":"DOWN"}` once the status snapshot is more than 10 seconds old. For liveness probes. |
+| `/health` | `200` with the gateway's health (below), or `503` with `{"status":"DOWN"}` once the status snapshot is more than 10 seconds old. For liveness probes. |
+| `/ready` | The same, and also `503` while the gateway's health is `ERROR`. For load balancers that should stop sending traffic to a gateway with a broken component. |
 | any other | The dashboard, or with `Accept: application/json` the data behind it. |
 
 The JSON and the metrics are rendered together every 2 seconds and served as rendered, so any number of dashboards and scrapers cost the gateway the same, and the two always agree. `rendered_at` in the JSON says when its data was read. The snapshot is rendered on the scheduler that also runs health checks and reloads `routes.yaml`, which is why a stale one fails `/health`: the gateway's housekeeping has stopped. `/health` does not turn `DOWN` for an open circuit breaker or a down upstream; those are the gateway doing its job, and restarting it would not help.
+
+While the snapshot is fresh, both paths answer with the gateway's health, so one request shows its state:
+
+```json
+{"status":"UP","health":"ERROR","problems":[
+  {"route":"orders","component":"CircuitBreaker","position":2,"health":"ERROR","detail":"Open since 2026-10-08T10:40:12Z"},
+  {"route":null,"component":"routes.yaml","position":null,"health":"WARN","detail":"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"}]}
+```
+
+`health` is the worst any filter or upstream reports (see Component status above), with a rejected `routes.yaml` counting as `WARN`. `problems` lists each that is not `OK`; `route` is null for a global filter and for `routes.yaml`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
 
 #### Metrics
 
@@ -959,6 +971,7 @@ The JSON and the metrics are rendered together every 2 seconds and served as ren
 | --- | --- | --- | --- |
 | `r7_info` | gauge | `version` | Always `1`; carries the running version. |
 | `r7_start_time_seconds` | gauge | | When the process started, in seconds since the epoch. |
+| `r7_gateway_health` | gauge | | The gateway's health, as `/health` reports it: `0` OK, `1` WARN, `2` ERROR. The one series to alert on. |
 | `r7_routes_config_rejected` | gauge | | `1` while the latest edit of `routes.yaml` was rejected and the previous routes still run. |
 | `r7_unrouted_requests_total` | counter | | Requests no route matched. |
 | `r7_connections_active` | gauge | | Open client connections to the gateway port. |

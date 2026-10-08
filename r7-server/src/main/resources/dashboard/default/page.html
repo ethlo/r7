@@ -506,6 +506,28 @@
         display: block;
     }
 
+    /* The gateway in one word, and the components that make it less than OK */
+    #gateway-health {
+        font-size: 0.85rem;
+        padding: 3px 10px;
+    }
+
+    .health-problems {
+        display: none;
+        margin: -1rem 0 1.5rem;
+        font-size: 0.85rem;
+        line-height: 1.7;
+    }
+
+    .health-problems.visible {
+        display: block;
+    }
+
+    .health-problems a {
+        color: var(--fg);
+        cursor: pointer;
+    }
+
     .group-heading {
         column-span: all;
         font-size: 0.75rem;
@@ -609,11 +631,13 @@
             <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
         </div>
         <div style="display: flex; gap: 20px; align-items: center;">
+            <span class="tag" id="gateway-health" title="The worst any filter or upstream reports">--</span>
             <button class="sys-btn" data-action="config">CONFIG</button>
             <div class="sys-info" id="last-update">CONNECTING...</div>
         </div>
     </header>
 
+    <div class="health-problems" id="health-problems"></div>
     <div class="banner-warn" id="reload-banner"></div>
 
     <div id="view-slider">
@@ -1005,6 +1029,58 @@
             <strong>${esc(data.route_version || 'unversioned')}</strong>, loaded ${esc(new Date(src.loaded_at).toLocaleString())}.
             What is shown below is what is running, not what is on disk. The reason is in the gateway log.`;
         banner.classList.add('visible');
+    }
+
+    // ==========================================================================
+    // Gateway health: the same roll-up /health and /ready report
+    // ==========================================================================
+    // The server renders every 2s; a rendered_at that stops moving means its housekeeping has
+    // stalled, which /health reports as DOWN. Compared with the last change seen rather than the
+    // browser's clock, which need not agree with the gateway's.
+    const STALE_AFTER_MS = 10000;
+    let lastRenderedAt = null;
+    let lastRenderedChangeAt = 0;
+
+    function setHealthBadge(health, title) {
+        const badge = document.getElementById('gateway-health');
+        badge.className = `tag ${HEALTH_TAG_CLASS[health] || 'tag-down'}`;
+        badge.textContent = health;
+        badge.title = title;
+    }
+
+    function renderGatewayHealth(data) {
+        const list = document.getElementById('health-problems');
+        const now = performance.now();
+        if (data.rendered_at !== lastRenderedAt) {
+            lastRenderedAt = data.rendered_at;
+            lastRenderedChangeAt = now;
+        }
+        if (now - lastRenderedChangeAt > STALE_AFTER_MS) {
+            setHealthBadge('STALE', `No new data since ${new Date(lastRenderedAt).toLocaleString()}: the gateway's housekeeping has stalled`);
+            list.classList.remove('visible');
+            return;
+        }
+        const health = data.health || {health: 'OK', problems: []};
+        const problems = health.problems || [];
+        setHealthBadge(health.health, problems.length
+            ? `${problems.length} component${problems.length === 1 ? '' : 's'} not OK`
+            : 'Every filter and upstream reports OK');
+        // A rejected routes.yaml has its own banner below. It is the one problem with neither a
+        // route nor a position: a global filter has a position, so a custom filter that happens
+        // to be named routes.yaml is still listed.
+        const shown = problems.filter(p => !(p.route == null && p.position == null && p.component === 'routes.yaml'));
+        if (!shown.length) {
+            list.classList.remove('visible');
+            return;
+        }
+        list.innerHTML = shown.map(p => {
+            const where = p.route != null
+                ? `<a href="#/route/${esc(encodeURIComponent(p.route))}" data-route-id="${esc(p.route)}">${esc(p.route)}</a>`
+                : '<span class="text-dim">global</span>';
+            const component = p.position ? `${esc(p.component)} (#${esc(p.position)})` : esc(p.component);
+            return `<div><span class="tag ${HEALTH_TAG_CLASS[p.health] || ''}">${esc(p.health)}</span> ${where} / ${component}${p.detail ? ` <span class="text-dim">- ${esc(p.detail)}</span>` : ''}</div>`;
+        }).join('');
+        list.classList.add('visible');
     }
 
     // ==========================================================================
@@ -1976,6 +2052,7 @@
             // Bulletproof scroll retention for the entire redraw tick
             const currentGlobalScroll = window.scrollY;
 
+            renderGatewayHealth(data);
             renderReloadBanner(data);
             renderTable(data);
             if (currentView) renderDetails();
@@ -1985,6 +2062,9 @@
         } catch (e) {
             console.error(e)
             timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;
+            setHealthBadge('UNKNOWN', 'The gateway did not answer');
+            // The last problems seen would read as the reason for this, which they need not be
+            document.getElementById('health-problems').classList.remove('visible');
         }
     }
 

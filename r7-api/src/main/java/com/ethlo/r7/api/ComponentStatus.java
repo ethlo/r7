@@ -19,6 +19,9 @@ public record ComponentStatus(Health health, String detail, Map<String, Long> va
 {
     private static final Pattern VALUE_NAME = Pattern.compile("[a-z][a-z0-9_]{0,63}");
 
+    /**
+     * Declared from best to worst: the gateway's overall health is the greatest a component reports.
+     */
     public enum Health
     {
         OK, WARN, ERROR

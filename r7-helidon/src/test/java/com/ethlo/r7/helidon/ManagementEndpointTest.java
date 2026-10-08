@@ -221,8 +221,12 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .body(not(containsString("svc-user")));
     }
 
+    /**
+     * The forced-down route's upstream is ERROR, which the body reports, but /health is liveness:
+     * a restart would not bring an upstream back, so it stays 200.
+     */
     @Test
-    public void healthIsUpWhileTheSnapshotIsFresh()
+    public void healthIsUpWhileTheSnapshotIsFreshAndReportsTheGatewayHealth()
     {
         management()
                 .when()
@@ -230,7 +234,39 @@ public class ManagementEndpointTest extends AbstractR7IntegrationTest
                 .then()
                 .statusCode(200)
                 .header("Content-Type", equalTo("application/json"))
-                .body(equalTo("{\"status\":\"UP\"}"));
+                .body("status", equalTo("UP"))
+                .body("health", equalTo("ERROR"))
+                .body("problems.find { it.route == 'forced-down' }.component", equalTo("upstream"))
+                .body("problems.find { it.route == 'forced-down' }.health", equalTo("ERROR"));
+    }
+
+    @Test
+    public void readyFailsWhileAComponentIsInError()
+    {
+        management()
+                .when()
+                .get("/ready")
+                .then()
+                .statusCode(503)
+                .header("Content-Type", equalTo("application/json"))
+                .header("Cache-Control", equalTo("no-store"))
+                .body("status", equalTo("UP"))
+                .body("health", equalTo("ERROR"))
+                .body("problems.find { it.route == 'forced-down' }.detail", equalTo("1 of 1 target down"));
+    }
+
+    @Test
+    public void theDashboardDataAndTheMetricsCarryTheGatewayHealth() throws Exception
+    {
+        final JsonPath json = managementJsonAfter(Instant.now());
+        assertThat(json.getString("health.health")).isEqualTo("ERROR");
+        assertThat(json.getList("health.problems.route")).contains("forced-down");
+        management()
+                .when()
+                .get("/metrics")
+                .then()
+                .statusCode(200)
+                .body(containsString("\nr7_gateway_health 2\n"));
     }
 
     /**
