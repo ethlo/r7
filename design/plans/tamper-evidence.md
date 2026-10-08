@@ -123,7 +123,8 @@ It goes in the tailer's output statement instead (below), as a verdict per sourc
 failed check is never silent and never drops data, the same rule as fingerprinting. See
 decision 3.
 
-The reaper deletes `<stem>.seal` together with the segment, and `shard-<id>.chain` is never deleted.
+A tailer counts a segment as done only once it has been verified, so a reaper that lists the
+tailer waits for verification before deleting early. The reaper deletes `<stem>.seal` together with the segment, and `shard-<id>.chain` is never deleted.
 
 ## The archive
 
@@ -139,6 +140,11 @@ shape as the gateway's statement:
   with the tailer's verdict (`verified`, or the reason it failed). A segment still open when `F`
   seals is listed as `pending`, and its verdict goes in the first later statement after it seals,
   so every verdict lands in the tailer's chain.
+
+The same crash rules apply as for the gateway. There is one statement per output file, keyed
+by its name, and it is written before the file's rename (the hook runs there, and also when
+`SealedFileWriter` recovers a file a crash left open). The tailer's chain head in its checkpoint
+is advanced after that. On start, a `F.seal` that verifies and is ahead of the head is adopted.
 
 An auditor holding only the archive and the two public keys can then check three things: each
 file is unchanged, no file is missing from the middle of either chain, and every source
