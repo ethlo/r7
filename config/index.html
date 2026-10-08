@@ -3810,6 +3810,7 @@
 <li><strong>Upstream target health</strong> for routes with a <code>health_check</code>, from the moment routes are loaded (see <a href="#health-check-health_check">Health Check</a>); a hot reload resets it.</li>
 <li><strong>Requests no route matched</strong>, which are answered <code>404</code> and are not part of any route's figures.</li>
 <li><strong><code>server.yaml</code> as in effect</strong>, with every value that differs from the built-in default marked.</li>
+<li><strong>Gateway health</strong> in the header: the worst status any component reports, with each component that is not <code>OK</code> listed under it and linked to its route. This is the roll-up <code>/health</code> and <code>/ready</code> carry. The header shows <code>STALE</code> once the data has stopped changing for 10 seconds.</li>
 <li><strong>Component status</strong>: what a route's filters and its upstream report about themselves, as <code>OK</code>, <code>WARN</code> or <code>ERROR</code>. A route with a component in <code>WARN</code> or <code>ERROR</code> says so in the route list, and the route's page shows each filter's status with its detail and values. <code>CircuitBreaker</code> is <code>ERROR</code> while open and <code>WARN</code> while half-open; <code>RateLimiter</code> is <code>WARN</code> once it tracks <code>max_buckets</code> clients, since it then evicts buckets early and the limit holds less tightly; a health-checked upstream is <code>WARN</code> while some of its targets are down and <code>ERROR</code> while all are. A custom filter can report its own (see <a href="../extensibility/#reporting-a-filters-status">Reporting a filter's status</a>).</li>
 </ul>
 <h4 id="paths">Paths</h4>
@@ -3827,7 +3828,11 @@
 </tr>
 <tr>
 <td><code>/health</code></td>
-<td><code>200</code> with <code>{"status":"UP"}</code>, or <code>503</code> with <code>{"status":"DOWN"}</code> once the status snapshot is more than 10 seconds old. For liveness probes.</td>
+<td><code>200</code> with the gateway's health (below), or <code>503</code> with <code>{"status":"DOWN"}</code> once the status snapshot is more than 10 seconds old. For liveness probes.</td>
+</tr>
+<tr>
+<td><code>/ready</code></td>
+<td>The same, and also <code>503</code> while the gateway's health is <code>ERROR</code>. For load balancers that should stop sending traffic to a gateway with a broken component.</td>
 </tr>
 <tr>
 <td>any other</td>
@@ -3836,6 +3841,12 @@
 </tbody>
 </table>
 <p>The JSON and the metrics are rendered together every 2 seconds and served as rendered, so any number of dashboards and scrapers cost the gateway the same, and the two always agree. <code>rendered_at</code> in the JSON says when its data was read. The snapshot is rendered on the scheduler that also runs health checks and reloads <code>routes.yaml</code>, which is why a stale one fails <code>/health</code>: the gateway's housekeeping has stopped. <code>/health</code> does not turn <code>DOWN</code> for an open circuit breaker or a down upstream; those are the gateway doing its job, and restarting it would not help.</p>
+<p>While the snapshot is fresh, both paths answer with the gateway's health, so one request shows its state:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span><span class="nt">"status"</span><span class="p">:</span><span class="s2">"UP"</span><span class="p">,</span><span class="nt">"health"</span><span class="p">:</span><span class="s2">"ERROR"</span><span class="p">,</span><span class="nt">"problems"</span><span class="p">:[</span>
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="p">{</span><span class="nt">"route"</span><span class="p">:</span><span class="s2">"orders"</span><span class="p">,</span><span class="nt">"component"</span><span class="p">:</span><span class="s2">"CircuitBreaker"</span><span class="p">,</span><span class="nt">"position"</span><span class="p">:</span><span class="mi">2</span><span class="p">,</span><span class="nt">"health"</span><span class="p">:</span><span class="s2">"ERROR"</span><span class="p">,</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Open since 2026-10-08T10:40:12Z"</span><span class="p">},</span>
+</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="p">{</span><span class="nt">"route"</span><span class="p">:</span><span class="kc">null</span><span class="p">,</span><span class="nt">"component"</span><span class="p">:</span><span class="s2">"routes.yaml"</span><span class="p">,</span><span class="nt">"position"</span><span class="p">:</span><span class="kc">null</span><span class="p">,</span><span class="nt">"health"</span><span class="p">:</span><span class="s2">"WARN"</span><span class="p">,</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"</span><span class="p">}]}</span>
+</span></code></pre></div>
+<p><code>health</code> is the worst any filter or upstream reports (see Component status above), with a rejected <code>routes.yaml</code> counting as <code>WARN</code>. <code>problems</code> lists each that is not <code>OK</code>; <code>route</code> is null for a global filter and for <code>routes.yaml</code>. Use <code>/ready</code> as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns <code>503</code> together and the load balancer has nowhere left to send traffic.</p>
 <h4 id="metrics">Metrics</h4>
 <table>
 <thead>
@@ -3858,6 +3869,12 @@
 <td>gauge</td>
 <td></td>
 <td>When the process started, in seconds since the epoch.</td>
+</tr>
+<tr>
+<td><code>r7_gateway_health</code></td>
+<td>gauge</td>
+<td></td>
+<td>The gateway's health, as <code>/health</code> reports it: <code>0</code> OK, <code>1</code> WARN, <code>2</code> ERROR. The one series to alert on.</td>
 </tr>
 <tr>
 <td><code>r7_routes_config_rejected</code></td>
@@ -4161,25 +4178,25 @@ built-in safe list while keeping the rest: use <code>safe_*_headers</code> to re
 you need exact control. Setting both <code>additional_safe_*_headers</code> and <code>safe_*_headers</code> for the
 same direction is a validation error: a full replacement and an addition to the defaults it
 replaces is a contradiction, not something to guess at.</p>
-<div class="language-yaml highlight"><span class="filename">server.yaml</span><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">storage</span><span class="p">:</span>
-</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
-</span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="c1"># Add a couple of names to the built-in defaults. Only ever add headers whose values</span>
-</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="c1"># are not secrets or credentials - anything on this list is journaled in plain text.</span>
-</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nt">additional_safe_request_headers</span><span class="p">:</span>
-</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-tenant-id</span>
-</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">additional_safe_response_headers</span><span class="p">:</span>
-</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-internal-build-id</span>
-</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
-</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="c1"># ...or replace the response safe list entirely (mutually exclusive with</span>
-</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="c1"># additional_safe_response_headers above):</span>
-</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="c1"># safe_response_headers:</span>
-</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="c1">#   - content-type</span>
-</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="c1">#   - etag</span>
-</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
-</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">    </span><span class="c1"># Query parameters journaled in plain text; every other value is fingerprinted.</span>
-</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">safe_query_parameters</span><span class="p">:</span>
-</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">page</span>
-</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sort</span>
+<div class="language-yaml highlight"><span class="filename">server.yaml</span><pre><span></span><code><span id="True-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">storage</span><span class="p">:</span>
+</span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">journal_security</span><span class="p">:</span>
+</span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="c1"># Add a couple of names to the built-in defaults. Only ever add headers whose values</span>
+</span><span id="True-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="c1"># are not secrets or credentials - anything on this list is journaled in plain text.</span>
+</span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">additional_safe_request_headers</span><span class="p">:</span>
+</span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-tenant-id</span>
+</span><span id="True-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">additional_safe_response_headers</span><span class="p">:</span>
+</span><span id="True-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-internal-build-id</span>
+</span><span id="True-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
+</span><span id="True-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">    </span><span class="c1"># ...or replace the response safe list entirely (mutually exclusive with</span>
+</span><span id="True-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">    </span><span class="c1"># additional_safe_response_headers above):</span>
+</span><span id="True-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="w">    </span><span class="c1"># safe_response_headers:</span>
+</span><span id="True-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="w">    </span><span class="c1">#   - content-type</span>
+</span><span id="True-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="w">    </span><span class="c1">#   - etag</span>
+</span><span id="True-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
+</span><span id="True-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">    </span><span class="c1"># Query parameters journaled in plain text; every other value is fingerprinted.</span>
+</span><span id="True-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">    </span><span class="nt">safe_query_parameters</span><span class="p">:</span>
+</span><span id="True-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">page</span>
+</span><span id="True-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sort</span>
 </span></code></pre></div>
 
 

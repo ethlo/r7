@@ -872,7 +872,7 @@ out in a standard format that tools you already run read: WARC, JSON lines and P
 </tr>
 <tr>
 <td>The gateway's own health</td>
-<td>Prometheus text, <code>/health</code></td>
+<td>Prometheus text, <code>/health</code>, <code>/ready</code></td>
 <td><a href="../config/#metrics">Metrics</a></td>
 <td>Monitoring, liveness probes</td>
 </tr>
@@ -1010,7 +1010,8 @@ an address Prometheus can reach:</p>
 </span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">allowed_hosts</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">r7</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <p>Point a Kubernetes liveness probe at <code>/health</code> on the same port. It turns <code>503</code> only when the
-gateway's own housekeeping has stopped, never for an upstream that is down.</p>
+gateway's own housekeeping has stopped, never for an upstream that is down. Its body, and the
+<code>r7_gateway_health</code> metric, carry the gateway's state in one word: <code>OK</code>, <code>WARN</code> or <code>ERROR</code>.</p>
 
 
 
