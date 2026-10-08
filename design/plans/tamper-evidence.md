@@ -82,8 +82,8 @@ already only stamps the seal record and hands the rest to a virtual finalizer th
    the same way, directory fsync included;
 5. renames the segment, as it does today.
 
-The cost is one SHA-256 pass over each segment and one signature, which is about 50 µs. With the
-SHA-NI intrinsic, SHA-256 runs at roughly 1.5 to 2 GB/s, so a 200 MB segment is about 100 ms of
+The cost is one SHA-256 pass over each segment and one signature. The signature is about 50 µs.
+The hash pass is the larger part: with the SHA-NI intrinsic, SHA-256 runs at roughly 1.5 to 2 GB/s, so a 200 MB segment is about 100 ms of
 CPU on a virtual thread. That thread shares carriers with request handling, so it is measured
 with `benchmark/bench.sh` on the controlled machine before merge. The bar is no visible change
 in throughput or tail.
@@ -100,7 +100,10 @@ startup, recovery handles each shard's leftover `.flux` segments in sequence ord
 | A `.seal` that verifies, head already on it | between steps 4 and 5 | Rename only |
 | A `.seal` that doesn't verify against the segment | after tampering, never a crash, since step 3 is an atomic rename | Keep both files as they are, quarantine the segment as recovery does with damage today, log an error, and sign a statement with `quarantined: true` and the reason. The event is then part of the chain, signed |
 
-A sealed `.r7f` without a `.seal` can't exist, because step 5 comes after step 3. A segment the
+Once signing is on, a sealed `.r7f` without a `.seal` can't exist, because step 5 comes after
+step 3. Segments sealed by a gateway from before the upgrade have none. The first chain on such
+a volume starts with `start_reason: new_volume`, and the tailer gives those older segments the
+verdict `unsigned` rather than a failure. A segment the
 writer deletes because it holds no entries gets no file of its own: the next statement lists its
 sequence under `empty:`, so a jump in segment sequence that no statement accounts for always
 means a segment went missing.
