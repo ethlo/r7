@@ -37,7 +37,7 @@ import com.ethlo.r7.status.TrafficMetrics;
  * framing, hop-by-hop and forwarding headers, the client address - is the pipeline's, applied to
  * what the server exposes here, so every server gets the same checks.
  */
-public abstract class ServerExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange, Runnable
+public abstract class ServerExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange
 {
     /**
      * An upstream timing not taken. {@link System#nanoTime()} can return any value, but this one
@@ -76,23 +76,9 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     long upstreamEndNanos = NOT_RECORDED;
     long journalBytes;
 
-    // Where executeRequestFilters resumes after a dispatch; see run().
-    DefaultGatewayRoute resumeRoute;
-    int resumeIndex;
-
     protected ServerExchange(final GatewayPipeline pipeline)
     {
         this.pipeline = pipeline;
-    }
-
-    /**
-     * Runs the filter that asked for a dispatch, and the rest of the chain after it, on the thread
-     * the server dispatched to. The exchange is its own task so that a dispatch allocates nothing.
-     */
-    @Override
-    public final void run()
-    {
-        this.pipeline.resumeDispatched(this);
     }
 
     public final GatewayPipeline pipeline()
@@ -160,22 +146,6 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
      * upstream's response commits.
      */
     protected abstract GatewayResponse snapshotResponse();
-
-    // --- Threading ---------------------------------------------------------------------------
-
-    /**
-     * Whether a filter may block the calling thread: false on an event loop's I/O thread, true
-     * on a thread of the request's own (a Níma virtual thread, a servlet
-     * container's request thread, or a thread {@link #resumeOnBlockingThread} moved it to).
-     */
-    protected abstract boolean mayBlock();
-
-    /**
-     * Hands this exchange to a thread where {@link #mayBlock()} holds, which runs it
-     * ({@link #run()}); the calling thread returns at once. Called only when {@link #mayBlock()}
-     * is false.
-     */
-    protected abstract void resumeOnBlockingThread();
 
     // --- Answering, teeing, proxying ---------------------------------------------------------
 

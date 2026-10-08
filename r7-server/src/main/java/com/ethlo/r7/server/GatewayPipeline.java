@@ -279,19 +279,7 @@ public final class GatewayPipeline
         {
             final ClientRequestGatewayFilter filter = filters[i];
 
-            // Only dispatch if the filter needs it AND we are on a thread that must not block
-            if (filter.requiresDispatch() && !ex.mayBlock())
-            {
-                // The server runs the exchange itself as the task (ServerExchange.run), which
-                // lands in resumeDispatched: no capturing lambda per dispatch.
-                ex.resumeRoute = route;
-                ex.resumeIndex = i;
-                ex.resumeOnBlockingThread();
-                return; // Surrender the I/O thread immediately
-            }
-
-            // FAST PATH: Execute inline if we don't need to block, OR if we are
-            // already running on a virtual thread from a previous dispatch.
+            // The request has a thread of its own, so a filter that blocks just blocks it.
             try
             {
                 filter.onClientRequest(ex);
@@ -310,36 +298,6 @@ public final class GatewayPipeline
 
         // If we exit the loop natively, all request filters passed. Proceed to proxy.
         continueUpstream(ex, route);
-    }
-
-    /**
-     * Runs the filter that asked for a dispatch, on the dispatched thread, then the rest of the
-     * chain after it.
-     */
-    void resumeDispatched(final ServerExchange ex)
-    {
-        final DefaultGatewayRoute route = ex.resumeRoute;
-        final int index = ex.resumeIndex;
-        ex.resumeRoute = null;
-        final ClientRequestGatewayFilter filter = route.clientRequestFilters()[index];
-        try
-        {
-            filter.onClientRequest(ex);
-        }
-        catch (final RegexBudget.RegexBudgetExceededException e)
-        {
-            refuseRegexBudget(ex, e);
-        }
-
-        if (ex.isShortCircuited())
-        {
-            shortCircuit(filter, ex, route);
-        }
-        else
-        {
-            // Resume the loop on the dispatched thread
-            executeRequestFilters(ex, route, index + 1);
-        }
     }
 
     private void continueUpstream(final ServerExchange ex, final DefaultGatewayRoute route)

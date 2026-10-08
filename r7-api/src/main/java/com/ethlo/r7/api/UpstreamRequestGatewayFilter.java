@@ -11,11 +11,8 @@ package com.ethlo.r7.api;
  * <li>Final circuit-breaker checks to prevent calling an unhealthy backend</li>
  * </ul>
  * <p>
- * <b>Threading:</b> Unlike the initial client request phase, this stage is
- * strictly non-blocking. If a filter
- * requires blocking I/O to determine upstream parameters, that logic should
- * be handled in the {@link ClientRequestGatewayFilter} stage using
- * {@code requiresDispatch()}.
+ * <b>Threading:</b> runs on the request's own thread, as every stage does, so a filter may
+ * block here. Blocking adds to the request's latency before the upstream call starts.
  */
 public interface UpstreamRequestGatewayFilter extends GatewayFilter
 {

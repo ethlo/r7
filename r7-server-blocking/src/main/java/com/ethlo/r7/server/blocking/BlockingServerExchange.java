@@ -46,8 +46,8 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
  * it, proxied through r7-upstream's {@link UpstreamRelay}, which it serves as the client side.
  * <p>
  * Everything here runs on the request's thread, synchronously: the pipeline's {@code handle}
- * returns when the response has been sent, so there is no I/O thread to protect
- * ({@link #mayBlock()} is always true), and the commit and completion "listeners" are flags
+ * returns when the response has been sent, so there is no I/O thread to protect (a filter that
+ * blocks just blocks this thread), and the commit and completion "listeners" are flags
  * this class acts on at the right moment - commit just before the response head is written,
  * completion once {@link GatewayPipeline#handle} has returned ({@link BlockingGateway#handle}).
  * <p>
@@ -266,22 +266,6 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private static MutableGatewayHeaders copyOf(final GatewayHeaders headers)
     {
         return WireHeaders.copyOf(headers);
-    }
-
-    // --- Threading ---------------------------------------------------------------------------
-
-    @Override
-    protected final boolean mayBlock()
-    {
-        // Every request has its own thread: a blocking filter just blocks it (parks, if virtual).
-        return true;
-    }
-
-    @Override
-    protected final void resumeOnBlockingThread()
-    {
-        // Never called while mayBlock() holds; were it, running here is what it asks for.
-        run();
     }
 
     // --- Answering ---------------------------------------------------------------------------

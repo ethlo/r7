@@ -130,10 +130,9 @@ Things that are load-bearing here:
   registered during the request phase and executed on the way out, onion-style.
 - Rejecting a request means `exchange.shortCircuit(...)`, never an exception. A thrown exception
   is a runtime failure: the pipeline **fails closed**, skips remaining filters and returns 500.
-- `ClientRequestGatewayFilter.requiresDispatch()` returning true moves execution off a thread
-  that must not block. On Níma every request already runs on a virtual thread of its own, so it
-  costs nothing there; a blocking filter (I/O, DB) must still declare it, for a server with an
-  event loop.
+- Every server runs each request on a thread of its own (a virtual thread on Níma), upstream
+  call included, so a filter may block. There is no dispatch to a worker pool; a server with an
+  event loop would have to bring that back.
 - `exchange.attributes()` is for telemetry/journaling only; functional state between filters goes
   through typed `StateKey` attachments.
 - Config is hot-reloadable (`HotReloadService`); stateful filters (rate limiter buckets, circuit

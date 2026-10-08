@@ -20,10 +20,9 @@
  * skipping the proxy step and moving directly to the response phase.</li>
  * </ul>
  * * <h2>Threading Model</h2>
- * By default, filters execute on the server's primary non-blocking I/O loop
- * to maximize throughput. Filters that
- * perform blocking I/O must explicitly override {@code requiresDispatch()}
- * to be offloaded to a worker thread pool.
+ * Each request runs start to finish on a thread of its own (a virtual thread on Helidon Níma),
+ * the upstream call included, so every stage may block: a filter can call a database or another
+ * service directly. Nothing crosses threads, and there is no worker pool to hand work to.
  *
  *
  */
