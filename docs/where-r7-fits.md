@@ -162,9 +162,9 @@ records through the index needs to read Zstandard-compressed WARC, and a file de
 
 r7 does not sign its records, so an archive that has to hold up as evidence goes on storage that
 cannot be changed once written, such as [S3 Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
-in compliance mode, or any other WORM store. Copy only sealed files, `.warc.zst` and `.cdxj`,
-never a `.open` one: a sealed file is never written again, so it can be locked as soon as it
-lands.
+in compliance mode, or any other WORM store. Copy a file pair once its `.warc.zst` appears: that
+rename is the seal, its `.cdxj` is already in place, and neither is written again. Never copy a
+`.open` file, nor a `.cdxj` whose `.warc.zst` is not there yet, since a restart rebuilds it.
 
 ## Monitoring: Prometheus
 
