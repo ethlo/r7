@@ -160,6 +160,12 @@ point into the `.warc.zst` file as written, one Zstandard frame per record: a re
 records through the index needs to read Zstandard-compressed WARC, and a file decompressed with
 `zstd -d` needs an index of its own.
 
+r7 does not sign its records, so an archive that has to hold up as evidence goes on storage that
+cannot be changed once written, such as [S3 Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
+in compliance mode, or any other WORM store. Copy only sealed files, `.warc.zst` and `.cdxj`,
+never a `.open` one: a sealed file is never written again, so it can be locked as soon as it
+lands.
+
 ## Monitoring: Prometheus
 
 The management port serves the gateway's own health: responses per route and status code,
