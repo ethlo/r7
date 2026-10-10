@@ -82,7 +82,9 @@ Options:
                              JVM-to-JVM variance, at the cost of a warmup each
   --sweep-rates LIST|auto    rates for the sweep scenario (default: auto, which is
                              50,75,90,100,110% of the wrk throughput measured for
-                             each level: passthrough for NONE, journal for the rest)
+                             each level: passthrough for NONE, the journal scenario
+                             for the rest, or passthrough when that level was not
+                             in --journal-levels or journal was not selected)
   --sweep-levels LIST        journal levels to sweep (default: NONE,FULL)
   --journal-levels LIST      levels for the journal scenario
                              (default: METADATA,HEADERS,FULL)
@@ -559,12 +561,12 @@ PY
 # level, so every workload's knee falls inside the ladder: passthrough for NONE, the journal
 # scenario for the others, or passthrough when that level was not measured.
 sweep_rates() {
-  local ref
-  ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" journal "$1")"
-  if [[ -z "$ref" ]]; then
-    [[ "$1" == "NONE" ]] || warn "no wrk run of journal=$1 to size its sweep; using passthrough"
-    ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" passthrough NONE)"
+  local ref=""
+  if [[ "$1" != "NONE" ]]; then
+    ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" journal "$1")"
+    [[ -n "$ref" ]] || warn "no wrk run of journal=$1 to size its sweep; using passthrough"
   fi
+  [[ -n "$ref" ]] || ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" passthrough NONE)"
   [[ -n "$ref" ]] || die "no wrk passthrough result to size the sweep; pass --sweep-rates"
   python3 - "$ref" "$SWEEP_PERCENT" <<'PY'
 import sys
