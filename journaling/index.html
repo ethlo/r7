@@ -972,7 +972,9 @@ override it by response status) in <code>routes.yaml</code>:</p>
 </span></code></pre></div>
 <p>What each level records, and which overrides are allowed, is in
 <a href="../config/#7-journaling-storage">Configuration §7</a>; where and how journals are written on disk is
-the <a href="../config/#storage-journaling-storage"><code>storage</code> block</a>.</p>
+the <a href="../config/#storage-journaling-storage"><code>storage</code> block</a>. Requests refused before any route
+matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
+<a href="../config/#unrouted-requests-routesyaml-unrouted">Unrouted Requests</a>.</p>
 <p>Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (<code>gateway.route.id</code>, <code>gateway.target</code>; the JSON line has them as <code>route_id</code> and
 <code>upstream_request.targets</code>), and the journal stores ISO-8859-1 text only. A route
