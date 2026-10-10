@@ -1,36 +1,52 @@
-## Performance & Memory Behavior
+# Benchmarks
 
-API gateway benchmarks are often misleading due to synthetic comparisons and inconsistent configurations.  
-This benchmark focuses on a controlled variable: memory pressure under sustained request load.
+The question is what putting r7 in the request path costs. The suite reports two comparisons.
+Against the no-gateway baseline it shows the total cost of the proxy hop, an upper bound while
+the load generator shares the host. Against the passthrough run (r7 in the path, no filters, no
+journal) it shows what a filter or a journal level adds: same topology, same contention, so the
+noise cancels. Filter and journal costs are quoted against passthrough. Throughput and tail
+latency are reported together.
 
-### Test Goal
+## Method
 
-Sustain **20,000 RPS** with a **12-thread worker pool**, while progressively reducing container memory limits to observe latency behavior under constrained runtime conditions.
+- **One command.** `sudo benchmark/bench.sh` produces the numbers. It measures the published
+  image `ghcr.io/ethlo/r7-gateway`, resolved to its digest, with the image's own JVM flags and
+  AOT cache.
+- **Pinned toolchain.** wrk and wrk2 are built from pinned commits, and the nginx backend image
+  is pinned by digest.
+- **Tuned host.** SMT and turbo off, the `performance` governor, network sysctls, and every
+  other process confined to housekeeping cores through systemd.
+- **Separate cores.** nginx, the gateway and the load generator each run on cores of their own.
+- **Scenarios.** `baseline` (no gateway), `passthrough` (r7, no filters, no journal), `filtered`
+  (header filters), `journal` at `METADATA`, `HEADERS` and `FULL`, and a `sweep` of fixed offered
+  rates that shows p99 against load. Each runs over a browser-shaped GET, a 36-header GET and a
+  1 KB JSON POST.
+- **Repeats.** Three runs per configuration, each with a fresh JVM and a discarded warmup.
+- **Tools.** wrk finds saturation throughput. wrk2 holds a fixed rate and records latency in an
+  HdrHistogram, so its p99 and p99.9 are free of coordinated omission.
+- **Verdict.** A run is published only when its report says PUBLISHABLE: a pulled image (or a `--local`
+  build), clean tree, every tuning step applied, every run valid, repeats within 5%.
 
-### Test Configuration
+The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/blob/main/benchmark/README.md).
+
+## Hardware
+
+The host specification (CPU, kernel, core layout, tuning and image digest, from `host.txt`) will
+be added with the first published run.
+
+## Results
+
+The first published run will be added here.
+
+## Reproduce
+
+On an x86_64 Linux host with systemd, Docker and `build-essential libssl-dev`:
 
 ```bash
-wrk2 -t12 -c200 -d30s -R20000 \
--H "Authorization: Bearer <token>" \
-http://localhost:9999/hello --latency
+git clone https://github.com/ethlo/r7 && cd r7
+sudo benchmark/bench.sh
 ```
 
-### Results
-
-| Container Size | P50 Latency | P99 Latency | Max Latency | Result      |
-| -------------- | ----------- | ----------- | ----------- | ----------- |
-| 990 MB         | 1.10 ms     | 6.54 ms     | 21.25 ms    | Stable      |
-| 300 MB         | 1.05 ms     | 5.13 ms     | 32.00 ms    | Stable      |
-| 200 MB         | 1.02 ms     | 78.08 ms    | 176.38 ms   | GC pressure |
-
-### Observations
-
-* **Median latency stability:** P50 remains ~1.0–1.1ms across all tested memory configurations, indicating stable request-path performance under CPU-bound conditions.
-* **300MB operating range:** Reducing memory from 990MB to 300MB shows no measurable degradation in tail latency under this workload.
-* **200MB constraint threshold:** At 200MB, the runtime exhibits increased tail latency under sustained load, consistent with elevated garbage collection pressure and reduced JVM headroom.
-
-### Interpretation
-
-The data suggests r7 maintains consistent request-path performance under moderate to tight memory allocations, with degradation appearing only when container memory approaches JVM operational limits under sustained high RPS workloads.
-
-This indicates that practical deployments should provision memory above the observed degradation threshold to avoid GC-induced tail latency spikes.
+The report and a tarball of everything it measured, including `host.txt` with the image
+digest, CPU, kernel and tuning, land in `benchmark/results/`. The tuning is restored when the
+script exits.
