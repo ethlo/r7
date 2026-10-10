@@ -46,11 +46,13 @@ compresses a full staging buffer as a single zstd frame and places it in the seg
 request thread                     shard writer thread
 --------------                     -------------------
 encode FlatBuffer (no lock)
-lock; copy content into stage A;   swap stage A for B when A is full
-assign Sequence; unlock            or when the flush interval passes;
+lock; copy content into stage A   swap stage A for B when A is full
+(Sequence left 0); unlock          or when the flush interval passes;
+                                   rotate first if A's worst case
+                                   does not fit the segment;
+                                   stamp A's Sequences;
                                    compress A as one frame;
-                                   place it in the segment;
-                                   write the batch's magic last
+                                   place it; write its magic last
 ```
 
 - **Format.** Batches get a new codec value, 2. Writers write only codec 2. Readers keep decoding
@@ -72,8 +74,24 @@ assign Sequence; unlock            or when the flush interval passes;
 - **Flush interval.** At low traffic a stage fills slowly, so the writer thread also flushes a
   stage that is not full once it has waited a fixed interval. 10 ms is proposed, not
   configurable at first.
+- **Sequence.** Only the writer thread assigns Sequences, after it knows where the batch goes.
+  Rotation restarts Sequence at 1, so a Sequence stamped before placement could open a new
+  segment above 1. The writer reserves the batch's worst case (zstd's bound for the stage) in the
+  current segment, rotates first if that does not fit, then stamps the stage's entries with
+  contiguous Sequences at the offsets it recorded while staging, and only then compresses.
+  Request threads copy content with Sequence 0, as `fillPlain` already does today.
 - **Rotation and close.** Only the writer thread touches the segment, so rotation and sealing
   move to it. `close()` flushes both stages before sealing.
+- **Oversized entries.** A request thread with an entry larger than a stage does not copy it.
+  It queues the entry on the stage as a reference and waits, so the writer thread flushes what is
+  staged, writes the entry as STANDALONE, and only then releases the thread and its buffer.
+- **Failures.** A writer thread that fails (disk full, a rotation that cannot map a segment)
+  records the failure, and every later append on that shard throws it. The request pipeline then
+  fails closed, exactly as a throwing `writeEntry` makes it today. Nothing is staged that the
+  writer can no longer place.
+- **Byte counts.** The write calls return the bytes they staged, which is what the per-request
+  journal byte counts need. Bytes placed in the segment, compressed, are counted by the writer
+  thread for the metrics.
 
 ## What it buys
 
