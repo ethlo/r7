@@ -24,7 +24,8 @@ own that may be writing.
 
 ### Why it happens
 
-The journal is split into `shard_count` shards (default `2`). Each request goes to one shard,
+The journal is split into `shard_count` shards (by default one per CPU the JVM sees, so a
+container's CPU limit counts, rounded down to a power of two, from 2 to 16). Each request goes to one shard,
 chosen by its request id. Each shard writes into one memory-mapped segment at a time, and
 writers take turns: encoding happens in parallel, but placing each entry in the segment is done
 one writer at a time per shard. That step is a short copy, cheap unless something stalls it.
@@ -103,10 +104,12 @@ ones the kernel can least easily reclaim.
 - **Leave `pre_fault` off.** Fault-ahead does its job at a fraction of the memory. Turn it on
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.
-- **Keep the default of 2 shards, or raise it to 4 with many concurrent connections.** With
-  fault-ahead, throughput is already level at one shard; more shards shorten the tail by
-  spreading the writers: 4 shards halved p99 compared with one. Each shard is one more open segment and, without
-  `pre_fault`, costs no memory of note.
+- **Keep the default of one shard per CPU.** Every connection's writer queues on its shard,
+  and with zstd on, compression runs while the shard is held, so the count has to grow with the
+  cores doing the writing: 4 shards halved p99 compared with one. Each shard is one more open
+  segment, a fault-ahead thread and 8 MB kept faulted in, and without `pre_fault` costs no
+  other memory of note. Past 16 CPUs the default stops at 16; set `shard_count` explicitly to
+  go higher.
 - **Give a container headroom for page cache, not just heap.** The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.

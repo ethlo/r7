@@ -41,6 +41,27 @@ class StorageConfigValidationTest
     }
 
     /**
+     * The default follows the CPU count, so it is the one shard count no operator typed: it has
+     * to pass the same validation as a configured one on every host, from one CPU to many.
+     */
+    @Test
+    void theDefaultShardCountFollowsTheCpusAndIsAlwaysValid()
+    {
+        assertEquals(2, ServerConfig.StorageConfig.defaultShardCount(1));
+        assertEquals(2, ServerConfig.StorageConfig.defaultShardCount(3));
+        assertEquals(4, ServerConfig.StorageConfig.defaultShardCount(4));
+        assertEquals(8, ServerConfig.StorageConfig.defaultShardCount(12));
+        assertEquals(16, ServerConfig.StorageConfig.defaultShardCount(16));
+        assertEquals(16, ServerConfig.StorageConfig.defaultShardCount(96));
+        for (int cpus = 1; cpus <= 256; cpus++)
+        {
+            final int cores = cpus;
+            final int count = ServerConfig.StorageConfig.defaultShardCount(cores);
+            assertTrue(errorsFor(count).isEmpty(), () -> cores + " CPUs gave an invalid default of " + count);
+        }
+    }
+
+    /**
      * The check has to agree with the constructor it exists to front, or it would trade one
      * confusing failure for another.
      */
