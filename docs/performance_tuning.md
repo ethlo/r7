@@ -190,8 +190,10 @@ cache charged to a container's memory limit, of the writeback, and of what a tai
 ### Symptom
 
 Driven past the request rate it can sustain, a gateway on the JDK's default I/O pollers answers
-a few requests very late: hundreds of milliseconds where p99 is single-digit milliseconds. r7
-does not run on those defaults, so this section matters only if you override them.
+a few requests very late: hundreds of milliseconds where p99 is single-digit milliseconds. The
+gateway started through `R7Helidon.main` (the jar and the images) does not run on those
+defaults. This section matters if you override them, or embed `R7Helidon` without its `main`,
+which then has to set `-Djdk.pollerMode=3` itself.
 
 ### Why it happens
 
@@ -207,7 +209,8 @@ scheduling; with them the worst case is about 20 ms. The gateway turns them on b
 
 ### What to do
 
-- **Leave `jdk.pollerMode` unset.** An explicit value replaces the gateway's choice.
+- **Leave `jdk.pollerMode` unset** when starting through `R7Helidon.main`: an explicit value
+  replaces the gateway's choice. An embedder sets `-Djdk.pollerMode=3` itself.
 - **Do not switch to platform-thread pollers** (`-Djdk.pollerMode=1`). They compete with the
   carriers for the cores: on Java 25 they took p99 from 7 ms to 15-50 ms at every load.
 - **Do not run the gateway at saturation.** Size it so that peak load stays below the rate it
