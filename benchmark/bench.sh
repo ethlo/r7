@@ -462,10 +462,11 @@ if (( LOCAL )); then
   TRAIN_MGMT_PORT="$(free_port $(( TRAIN_PORT + 1 )))"
   printf 'server:\n  port: %s\nmanagement:\n  port: %s\n' "$TRAIN_PORT" "$TRAIN_MGMT_PORT" \
     | as_user tee "$TRAIN/server.yaml" > /dev/null
-  sed "s|http://127.0.0.1:18888|http://127.0.0.1:$TRAIN_MGMT_PORT|" "$REPO/docker/aot-training/routes.yaml" \
+  TRAIN_UPSTREAM='^( *- url: )http://127\.0\.0\.1:18888$'
+  grep -Eq "$TRAIN_UPSTREAM" "$REPO/docker/aot-training/routes.yaml" \
+    || die "the training routes no longer proxy to http://127.0.0.1:18888; update bench.sh"
+  sed -E "s|$TRAIN_UPSTREAM|\\1http://127.0.0.1:$TRAIN_MGMT_PORT|" "$REPO/docker/aot-training/routes.yaml" \
     | as_user tee "$TRAIN/routes.yaml" > /dev/null
-  grep -q "127.0.0.1:$TRAIN_MGMT_PORT" "$TRAIN/routes.yaml" \
-    || die "the training routes no longer proxy to 127.0.0.1:18888; update bench.sh"
   # Training exits on its own once the training requests are done; the timeout only stops a
   # hung one from holding the host tuned.
   ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$TRAIN/routes.yaml" R7_SERVER_CONFIG="$TRAIN/server.yaml" \
