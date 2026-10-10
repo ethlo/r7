@@ -571,8 +571,10 @@ sweep_rates() {
   python3 - "$ref" "$SWEEP_PERCENT" <<'PY'
 import sys
 ref, pcts = float(sys.argv[1]), sys.argv[2].split(",")
-# Rounded to 1000 req/s so the rates read as chosen numbers in the report.
-print(",".join(str(max(1000, round(ref * int(p) / 100 / 1000) * 1000)) for p in pcts))
+# Rounded to 100 req/s so the rates read as chosen numbers in the report. A tiny reference can
+# still round two points together; a rate runs once, since a repeat would overwrite its result.
+rates = [max(100, round(ref * int(p) / 100 / 100) * 100) for p in pcts]
+print(",".join(str(r) for r in dict.fromkeys(rates)))
 PY
 }
 
