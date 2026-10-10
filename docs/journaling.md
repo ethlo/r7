@@ -123,7 +123,9 @@ routes:
 
 What each level records, and which overrides are allowed, is in
 [Configuration §7](config.md#7-journaling-storage); where and how journals are written on disk is
-the [`storage` block](config.md#storage-journaling-storage).
+the [`storage` block](config.md#storage-journaling-storage). Requests refused before any route
+matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
+[Unrouted Requests](config.md#unrouted-requests-routesyaml-unrouted).
 
 Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (`gateway.route.id`, `gateway.target`; the JSON line has them as `route_id` and
