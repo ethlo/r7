@@ -456,9 +456,18 @@ else
   ID="$(sed 's/.*sha256://' <<< "$IMAGE_REF" | cut -c1-12)"
 fi
 
+# Results belong to the invoking user, however the run ends: left to root, results/ stops a
+# later plain run.sh from creating its directory.
+give_back_results() {
+  [[ -n "${SUDO_USER:-}" ]] || return 0
+  [[ -d "$HERE/results" ]] && chown "$SUDO_USER:" "$HERE/results" || true
+  [[ -n "${OUT:-}" && -d "$OUT" ]] && chown -R "$SUDO_USER:" "$OUT" || true
+  return 0
+}
+
 # From here on the host is changed; the trap puts it back however the run ends.
 : > "$STATE"
-trap restore_host EXIT
+trap 'give_back_results; restore_host' EXIT
 trap 'exit 130' INT TERM
 ulimit -n 65535 2>/dev/null || UNTUNED+=("ulimit -n 65535 refused (hard limit $(ulimit -Hn))")
 
@@ -476,8 +485,8 @@ for u in "${UNTUNED[@]}"; do warn "not tuned: $u"; done
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
-# Made by the invoking user: created by root, results/ would stop a later plain run.sh.
-as_user mkdir -p "$HERE/results"
+mkdir -p "$HERE/results"
+give_back_results
 PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtered,journal,sweep)
 QUICK_FLAG=""
 # --quick runs every scenario with fresh JVMs, but shortened: short runs, the browser workload
@@ -506,10 +515,7 @@ trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' 
 RUN_STATUS=0
 wait "$RUN_PID" || RUN_STATUS=$?
 trap 'exit 130' INT TERM
-if (( RUN_STATUS != 0 )); then
-  [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER:" "$OUT"
-  die "run.sh failed (exit $RUN_STATUS); partial results in $OUT"
-fi
+(( RUN_STATUS == 0 )) || die "run.sh failed (exit $RUN_STATUS); partial results in $OUT"
 if (( ${ISOLATED:-0} )); then
   wait "$WATCH_PID"
   while IFS= read -r u; do
