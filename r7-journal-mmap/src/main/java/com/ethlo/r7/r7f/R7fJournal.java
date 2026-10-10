@@ -977,7 +977,7 @@ public final class R7fJournal implements Journal
      * Compressing each entry on the request thread cost more than everything else the journal
      * does: a flush per entry is expensive whatever the level, and since a block's stream is
      * shared it ran under the monitor, so every request on the shard queued behind it
-     * (design/history/journal-batch-compression.md). Here a request thread only copies its
+     * (design/history/journal-write-contention.md). Here a request thread only copies its
      * entry into a stage under a short lock, and one writer thread compresses a whole stage as
      * one batch and places it.
      * <p>
@@ -1264,18 +1264,31 @@ public final class R7fJournal implements Journal
             {
                 lock.unlock();
             }
-            try
+            // An interrupt must not end the wait: the segment is sealed right after this, and a
+            // writer that has not placed its last batch yet would find the journal closed and
+            // drop it. The interrupt is kept for the caller.
+            final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+            boolean interrupted = false;
+            long remaining;
+            while (writer.isAlive() && (remaining = deadline - System.nanoTime()) > 0)
             {
-                writer.join(FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
-                if (writer.isAlive())
+                try
                 {
-                    logger.error("Journal shard {}'s writer thread was still placing entries after {} ms; "
-                            + "closing without them.", provider.getShardId(), FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+                    TimeUnit.NANOSECONDS.timedJoin(writer, remaining);
+                }
+                catch (final InterruptedException e)
+                {
+                    interrupted = true;
                 }
             }
-            catch (final InterruptedException e)
+            if (interrupted)
             {
                 Thread.currentThread().interrupt();
+            }
+            if (writer.isAlive())
+            {
+                logger.error("Journal shard {}'s writer thread was still placing entries after {} ms; "
+                        + "closing without them.", provider.getShardId(), FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
             }
         }
     }

@@ -233,7 +233,9 @@ final class FragmentReader
         }
         final int plainLength = content.getInt(base);
         final int count = content.getInt(base + Integer.BYTES);
-        if (count < 1 || plainLength < (long) count * R7fConstants.ENTRY_CONTENT_HEADER_SIZE)
+        // A writer only places a batch whose plain bytes fit a segment, so a larger PlainLength
+        // is damage; checked before allocating, or a corrupt header could ask for gigabytes.
+        if (count < 1 || plainLength < (long) count * R7fConstants.ENTRY_CONTENT_HEADER_SIZE || plainLength > file.capacity())
         {
             damaged("inconsistent batch header (plainLength=" + plainLength + ", entryCount=" + count + ")");
             return -1;

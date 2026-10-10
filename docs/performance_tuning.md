@@ -167,6 +167,8 @@ of the CPU of compressing them one at a time.
 - **Damage costs a batch,** about 32 KB of entries before compression, where uncompressed it
   costs the rest of a 32 KB block.
 - **One writer thread per shard,** busy in proportion to the bytes journaled.
+- **An entry larger than the stage is compressed by its request thread,** as a batch of its
+  own; in practice a body chunk over 32 KB, journaled at `FULL`.
 - **A full disk stops the shard** until the gateway restarts, rather than failing the requests
   whose entries were staged; gateway health shows it as `ERROR` (see the [management paths](config.md#paths)).
 

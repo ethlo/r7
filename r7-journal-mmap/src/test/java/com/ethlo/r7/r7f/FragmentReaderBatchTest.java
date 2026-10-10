@@ -56,6 +56,15 @@ class FragmentReaderBatchTest
         assertDamaged(batch(0, entry(1, 3)), "inconsistent batch header");
     }
 
+    /** Rejected from the header alone, before anything is allocated for it. */
+    @Test
+    void aPlainLengthLargerThanTheSegmentIsDamage()
+    {
+        final byte[] content = batch(1, entry(1, 3));
+        ByteBuffer.wrap(content).putInt(0, Integer.MAX_VALUE);
+        assertDamaged(content, "inconsistent batch header");
+    }
+
     @Test
     void anEntryWhoseLengthsRunPastTheBatchIsDamage()
     {
