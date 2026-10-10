@@ -15,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record UpstreamDto(
         List<String> targets,
         @JsonProperty("read_timeout") Duration readTimeout,
+        @JsonProperty("connect_timeout") Duration connectTimeout,
         @JsonProperty("health_check") HealthCheckConfig healthCheck,
         @JsonProperty("fallback_route_id") String fallbackRouteId
 )
