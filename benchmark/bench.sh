@@ -389,6 +389,22 @@ fi
 
 [[ $EUID -eq 0 ]] || die "run with sudo: tuning the host needs root (try --check first)"
 
+# Results belong to the invoking user, however the run ends: left to root, results/ stops a
+# later plain run.sh from creating its directory.
+give_back_results() {
+  [[ -n "${SUDO_USER:-}" ]] || return 0
+  [[ -d "$HERE/results" ]] && chown "$SUDO_USER:" "$HERE/results" || true
+  [[ -n "${OUT:-}" && -d "$OUT" ]] && chown -R "$SUDO_USER:" "$OUT" || true
+  return 0
+}
+
+# Set further down; until then nothing, so an inherited OUT never reaches the chown -R.
+OUT=""
+# Before anything that can fail, so a root-owned results/ from an earlier run is repaired
+# even when this one stops early.
+mkdir -p "$HERE/results"
+give_back_results
+
 # Nothing inherited may change what is measured: r7 prefers these over the generated config,
 # the JVM reads the option variables, and run.sh and the compose file read the R7_BENCH_
 # ones. A backend image override is allowed, and gated in the verdict.
@@ -469,7 +485,7 @@ fi
 
 # From here on the host is changed; the trap puts it back however the run ends.
 : > "$STATE"
-trap restore_host EXIT
+trap 'give_back_results; restore_host' EXIT
 trap 'exit 130' INT TERM
 ulimit -n 65535 2>/dev/null || UNTUNED+=("ulimit -n 65535 refused (hard limit $(ulimit -Hn))")
 
