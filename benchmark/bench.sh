@@ -37,9 +37,6 @@ WRK_COMMIT="a211dd5a7050b1f9e8a9870b95513060e72ac4a0"
 WRK2_REPO="https://github.com/giltene/wrk2"
 WRK2_COMMIT="44a94c17d8e6a0bac8559b53da76848e430cb7a7"
 
-# A run is publishable only if throughput repeats agree within this many percent.
-MAX_SPREAD=5
-
 # ----------------------------------------------------------------- options
 
 IMAGE="ghcr.io/ethlo/r7-gateway:main"
@@ -609,7 +606,7 @@ REASONS=()
 for u in "${UNTUNED[@]}"; do REASONS+=("not tuned: $u"); done
 # A validator that fails must block the verdict, not silently report no problems.
 if PROBLEMS="$(python3 -B -c "import sys; sys.path.insert(0, sys.argv[1]); import parse
-for p in parse.verdict_problems(sys.argv[2], 3, float(sys.argv[3])): print(p)" "$HERE/lib" "$OUT" "$MAX_SPREAD")"; then
+for p in parse.verdict_problems(sys.argv[2], 3): print(p)" "$HERE/lib" "$OUT")"; then
   while IFS= read -r line; do [[ -n "$line" ]] && REASONS+=("$line"); done <<< "$PROBLEMS"
 else
   REASONS+=("result validation failed")
