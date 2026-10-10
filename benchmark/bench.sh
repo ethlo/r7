@@ -387,6 +387,8 @@ give_back_results() {
   return 0
 }
 
+# Set further down; until then nothing, so an inherited OUT never reaches the chown -R.
+OUT=""
 # Before anything that can fail, so a root-owned results/ from an earlier run is repaired
 # even when this one stops early.
 mkdir -p "$HERE/results"
