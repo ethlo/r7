@@ -54,6 +54,17 @@ ok()   { printf '%s[bench]%s %s\n' "$c_grn" "$c_off" "$*" >&2; }
 warn() { printf '%s[bench]%s %s\n' "$c_yel" "$c_off" "$*" >&2; }
 die()  { printf '%s[bench]%s %s\n' "$c_red" "$c_off" "$*" >&2; exit 1; }
 
+# The first port at or above $1 that nothing listens on.
+free_port() {
+  local p="$1" listening
+  while :; do
+    # A failed probe is not a free port.
+    listening="$(ss -ltnH "sport = :$p" 2>/dev/null)" || die "ss failed; cannot check port $p"
+    [[ -z "$listening" ]] && { echo "$p"; return; }
+    (( ++p <= 65535 )) || die "no free port at or above $1"
+  done
+}
+
 usage() {
   sed -n '3,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   cat <<'EOF'
@@ -443,9 +454,21 @@ if (( LOCAL )); then
   JVM_FLAGS="--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
   TRAIN="$(as_user mktemp -d)"
   log "training the AOT cache"
+  # Training listens like the gateway does, on 8888 and 18888 by default, and a host that
+  # already runs r7 there failed it with "Address already in use". It gets free ports of its
+  # own, in a server.yaml and a copy of the training routes, whose upstream is the
+  # management port.
+  TRAIN_PORT="$(free_port 28888)"
+  TRAIN_MGMT_PORT="$(free_port $(( TRAIN_PORT + 1 )))"
+  printf 'server:\n  port: %s\nmanagement:\n  port: %s\n' "$TRAIN_PORT" "$TRAIN_MGMT_PORT" \
+    | as_user tee "$TRAIN/server.yaml" > /dev/null
+  sed "s|http://127.0.0.1:18888|http://127.0.0.1:$TRAIN_MGMT_PORT|" "$REPO/docker/aot-training/routes.yaml" \
+    | as_user tee "$TRAIN/routes.yaml" > /dev/null
+  grep -q "127.0.0.1:$TRAIN_MGMT_PORT" "$TRAIN/routes.yaml" \
+    || die "the training routes no longer proxy to 127.0.0.1:18888; update bench.sh"
   # Training exits on its own once the training requests are done; the timeout only stops a
   # hung one from holding the host tuned.
-  ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$REPO/docker/aot-training/routes.yaml" \
+  ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$TRAIN/routes.yaml" R7_SERVER_CONFIG="$TRAIN/server.yaml" \
       R7_JOURNAL_DIR="$TRAIN/journals" R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key \
       timeout 600 "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
     > "$TRAIN/training.log" 2>&1 || die "AOT training failed; see $TRAIN/training.log"
