@@ -121,7 +121,7 @@ Defines the physical endpoints requests will be routed to. The upstream must con
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). For `https`, the certificate chain is checked against the JVM trust store but the hostname is not verified, so any trusted certificate is accepted for any upstream. |
+| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). For `https`, the certificate chain is checked against the JVM trust store and the certificate must name the target's host. |
 
 ### Health Check (`health_check`)
 
