@@ -94,8 +94,8 @@ lock; copy content into stage A   swap stage A for B when A is full
   not an r7 error, and the in-flight entries are not r7's to save. So the writer thread records
   the failure, the shard refuses every later append (those requests fail closed, as today),
   gateway health goes to ERROR so `/ready` returns 503, and the staged entries it could not place
-  are reported as lost by count. They have no Sequence range to report: Sequences are stamped
-  only once a batch is placed, and these never were. Making each
+  are reported as lost by count. There is no complete Sequence range to report: the batch the
+  writer was placing may already be stamped, but the filling stage never is. Making each
   request wait for its batch's commit was rejected: it keeps today's contract but gives back the
   latency this plan exists to remove. `r7-journal-mmap/README.md` §5 changes to say so.
 - **Low disk (decided 2026-10-10).** So that a full disk is seen coming, the journal reports a
