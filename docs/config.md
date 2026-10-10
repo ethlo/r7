@@ -977,7 +977,7 @@ While the snapshot is fresh, both paths answer with the gateway's health, so one
   {"route":null,"component":"routes.yaml","position":null,"health":"WARN","detail":"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"}]}
 ```
 
-`health` is the worst any filter or upstream reports (see Component status above), with two conditions of the gateway's own counting as `WARN`: a rejected `routes.yaml`, and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`). `problems` lists each that is not `OK`; `route` is null for a global filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
+`health` is the worst any filter or upstream reports (see Component status above). A rejected `routes.yaml` and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`) each count as `WARN`. `problems` lists each that is not `OK`; `route` is null for a global filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
 
 #### Metrics
 
