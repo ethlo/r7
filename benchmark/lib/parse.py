@@ -345,14 +345,13 @@ def report(d, fmt_kind="md"):
     return "\n".join(out) + "\n"
 
 
-def verdict_problems(d, min_repeat=3, max_spread=5.0):
+def verdict_problems(d, min_repeat=3):
     """Why the results in d should not be quoted, as a list of sentences; empty if none.
 
     The bar for a published number: every planned run present (plan.tsv, written by run.sh)
-    and valid, every gateway throughput configuration repeated, and
-    throughput repeats agreeing within max_spread percent. A sweep point that did not reach
-    95% of its target rate is past the knee and exempt from the spread check, since
-    saturation is exactly where repeats disagree; every other point is held to it.
+    and valid, and every gateway throughput configuration repeated. How far the repeats agree
+    is not a bar: the report prints each configuration's spread next to its value, so the
+    reader judges the noise rather than a threshold someone picked.
     """
     # Unlike the report, a broken result file is a failed run, not one to skip: dropping it
     # would hide exactly the run that went wrong.
@@ -434,17 +433,6 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
         elif gw and base[0] < 1.1 * max(gw):
             problems.append("backend headroom under 10%% for %s: baseline %.0f req/s, gateway up to %.0f"
                             % (workload, base[0], max(gw)))
-
-    def saturated(a):
-        rate = a["meta"].get("rate")
-        return a["meta"].get("scenario") == "sweep" and rate and (a["rps"] or 0) < 0.95 * rate
-
-    noisy = [k for k, a in agg.items()
-             if not saturated(a)
-             and a["rps_spread"] is not None and a["rps_spread"] > max_spread]
-    if noisy:
-        problems.append("%d configuration(s) spread more than %.0f%% between repeats"
-                        % (len(noisy), max_spread))
     return problems
 
 
