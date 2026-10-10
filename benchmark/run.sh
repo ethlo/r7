@@ -28,7 +28,10 @@ WARMUP="20s"
 RATE=20000                # wrk2 fixed request rate for the main suite
 REPEAT=1
 RESTART_PER_REPEAT=0
-SWEEP_RATES="20000,40000,80000,120000,160000"
+SWEEP_RATES="auto"        # or a fixed list of req/s
+# auto: the sweep's rates as percentages of the throughput wrk measured for the same journal
+# level, so the ladder brackets the knee of the host it runs on rather than a guessed one.
+SWEEP_PERCENT="50,75,90,100,110"
 SWEEP_LEVELS="NONE,FULL"
 JOURNAL_LEVELS="METADATA,HEADERS,FULL"   # NONE is covered by `passthrough`
 JAR=""
@@ -77,8 +80,9 @@ Options:
                              peak-to-peak spread (default: 1, use >= 3)
   --restart-per-repeat       fresh JVM for every repeat: also captures JIT and
                              JVM-to-JVM variance, at the cost of a warmup each
-  --sweep-rates LIST         rates for the sweep scenario
-                             (default: 20000,40000,80000,120000,160000)
+  --sweep-rates LIST|auto    rates for the sweep scenario (default: auto, which is
+                             50,75,90,100,110% of the wrk throughput measured for
+                             each level: passthrough for NONE, journal for the rest)
   --sweep-levels LIST        journal levels to sweep (default: NONE,FULL)
   --journal-levels LIST      levels for the journal scenario
                              (default: METADATA,HEADERS,FULL)
@@ -139,6 +143,15 @@ for v in SCENARIOS WORKLOADS TOOLS SWEEP_RATES SWEEP_LEVELS JOURNAL_LEVELS; do
 done
 
 has() { [[ ",$1," == *",$2,"* ]]; }
+
+# Automatic sweep rates come from wrk's unthrottled throughput, at least passthrough's.
+if has "$SCENARIOS" sweep && [[ "$SWEEP_RATES" == "auto" ]]; then
+  has "$TOOLS" wrk || die "--sweep-rates auto needs wrk in --tool; or pass a list of rates"
+  if ! has "$SCENARIOS" passthrough; then
+    warn "automatic sweep rates need passthrough measured; adding it"
+    SCENARIOS="passthrough,$SCENARIOS"
+  fi
+fi
 
 # The journal scenario reports against passthrough, so it needs it measured.
 if has "$SCENARIOS" journal && ! has "$SCENARIOS" passthrough; then
@@ -541,6 +554,26 @@ PY
   sleep 3   # let sockets drain before the next run
 }
 
+# sweep_rates <level>: the automatic rates for one journal level, comma-separated. The
+# reference is the highest wrk throughput (median of repeats) across workloads for that
+# level, so every workload's knee falls inside the ladder: passthrough for NONE, the journal
+# scenario for the others, or passthrough when that level was not measured.
+sweep_rates() {
+  local ref
+  ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" journal "$1")"
+  if [[ -z "$ref" ]]; then
+    [[ "$1" == "NONE" ]] || warn "no wrk run of journal=$1 to size its sweep; using passthrough"
+    ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" passthrough NONE)"
+  fi
+  [[ -n "$ref" ]] || die "no wrk passthrough result to size the sweep; pass --sweep-rates"
+  python3 - "$ref" "$SWEEP_PERCENT" <<'PY'
+import sys
+ref, pcts = float(sys.argv[1]), sys.argv[2].split(",")
+# Rounded to 1000 req/s so the rates read as chosen numbers in the report.
+print(",".join(str(max(1000, round(ref * int(p) / 100 / 1000) * 1000)) for p in pcts))
+PY
+}
+
 # Run one gateway-backed scenario across workloads, tools and repeats.
 # gw_scenario <scenario> <journal-level> <url> [rate]
 gw_scenario() {
@@ -628,10 +661,16 @@ IFS=',' read -ra PLAN_TL <<< "$TOOLS"
   fi
   if has "$SCENARIOS" sweep; then
     IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
-    IFS=',' read -ra SRATES  <<< "$SWEEP_RATES"
-    for level in "${SLEVELS[@]}"; do for r in "${SRATES[@]}"; do
-      plan_rows sweep "$level" "$r" wrk2
-    done; done
+    if [[ "$SWEEP_RATES" == "auto" ]]; then
+      # Replaced by the real rates when the sweep derives them; one left behind is a sweep
+      # that never ran, and the verdict counts it as missing.
+      for level in "${SLEVELS[@]}"; do plan_rows sweep "$level" auto wrk2; done
+    else
+      IFS=',' read -ra SRATES <<< "$SWEEP_RATES"
+      for level in "${SLEVELS[@]}"; do for r in "${SRATES[@]}"; do
+        plan_rows sweep "$level" "$r" wrk2
+      done; done
+    fi
   fi
   true
 } > "$OUT/plan.tsv"
@@ -684,8 +723,18 @@ fi
 if has "$SCENARIOS" sweep; then
   log "=== scenario: sweep (wrk2, rates=$SWEEP_RATES, levels=$SWEEP_LEVELS) ==="
   IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
-  IFS=',' read -ra SRATES  <<< "$SWEEP_RATES"
   for level in "${SLEVELS[@]}"; do
+    if [[ "$SWEEP_RATES" == "auto" ]]; then
+      rates="$(sweep_rates "$level")"
+      log "sweep rates for $level: $rates"
+      echo "sweep_rates_${level}=$rates" >> "$OUT/environment.txt"
+      IFS=',' read -ra SRATES <<< "$rates"
+      awk -F'\t' -v l="$level" '!($1 == "sweep" && $4 == l && $5 == "auto")' "$OUT/plan.tsv" > "$OUT/plan.tsv.new"
+      for r in "${SRATES[@]}"; do plan_rows sweep "$level" "$r" wrk2; done >> "$OUT/plan.tsv.new"
+      mv "$OUT/plan.tsv.new" "$OUT/plan.tsv"
+    else
+      IFS=',' read -ra SRATES <<< "$SWEEP_RATES"
+    fi
     for r in "${SRATES[@]}"; do
       gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users" "$r"
     done

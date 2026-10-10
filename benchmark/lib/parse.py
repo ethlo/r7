@@ -4,6 +4,7 @@
     parse.py parse  <raw.txt> <meta.json> > result.json
     parse.py report <results-dir> [--format md|tsv]
     parse.py verdict <results-dir>     # reasons the results are not publishable, one per line
+    parse.py max-rps <results-dir> <scenario> <journal>   # highest wrk median req/s, or nothing
 
 Repeats of the same configuration are grouped and reported as a median plus a
 spread, because a single run cannot tell you whether a 0.3ms difference is a
@@ -359,7 +360,9 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
             for line in fh:
                 if line.strip():
                     s, w, t, j, rate, rep = line.rstrip("\n").split("\t")
-                    planned.add(((s, w, t, j, None if rate == "-" else int(rate)), int(rep)))
+                    # "auto": a sweep rate run.sh never derived, so that sweep never ran.
+                    r = None if rate == "-" else rate if rate == "auto" else int(rate)
+                    planned.add(((s, w, t, j, r), int(rep)))
     except (OSError, ValueError):
         planned = None
         problems.append("no readable run plan (plan.tsv), so missing runs cannot be detected")
@@ -371,7 +374,7 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
         if missing:
             (s, w, t, j, rate), rep = missing[0]
             problems.append("%d planned run(s) have no result, e.g. %s/%s/%s/%s%s repeat %d"
-                            % (len(missing), s, j, w, t, "" if rate is None else "@%d" % rate, rep))
+                            % (len(missing), s, j, w, t, "" if rate is None else "@%s" % rate, rep))
     # A load generator that failed is a failed run, whatever its output looks like. A result
     # without the field predates it and is judged by its output alone.
     failed = [r for r in rows if (r["meta"].get("exit_status") or 0) != 0]
@@ -449,6 +452,12 @@ if __name__ == "__main__":
         if "--format" in sys.argv:
             kind = sys.argv[sys.argv.index("--format") + 1]
         sys.stdout.write(report(sys.argv[2], kind))
+    elif cmd == "max-rps":
+        rps = [a["rps"] for a in group(load_results(sys.argv[2])).values()
+               if a["meta"].get("scenario") == sys.argv[3] and a["meta"].get("tool") == "wrk"
+               and (a["meta"].get("journal") or "-") == sys.argv[4] and a["rps"]]
+        if rps:
+            print(round(max(rps)))
     elif cmd == "verdict":
         for p in verdict_problems(sys.argv[2]):
             print(p)
