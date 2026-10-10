@@ -892,7 +892,7 @@ public final class R7Tailer
                         replaySegment(path,
                                 first ? from.offset() : 0L,
                                 first ? from.sequence() : R7fConstants.FIRST_ENTRY_SEQUENCE,
-                                read.offset());
+                                read);
                         if (read.offset() >= 0)
                         {
                             // The checkpoint is inside this segment: everything after it is
@@ -923,18 +923,24 @@ public final class R7Tailer
     }
 
     /**
-     * Decodes {@code path} from {@code fromOffset} up to {@code readOffset}, the tailer's
-     * checkpoint for it ({@link #FULLY_READ} and the like meaning the end of its data).
+     * Decodes {@code path} from {@code fromOffset} up to {@code read}, the tailer's checkpoint
+     * for it ({@link #FULLY_READ} and the like meaning the end of its data).
+     * <p>
+     * A checkpoint inside the data is bounded by its sequence as well as its offset: the offset
+     * of a checkpoint inside a batch is the batch's start, and the batch's entries before the
+     * checkpoint's sequence were read and belong in the replay.
      */
-    private void replaySegment(final Path path, final long fromOffset, final int fromSequence, final long readOffset)
+    private void replaySegment(final Path path, final long fromOffset, final int fromSequence, final Checkpoint read)
     {
+        final long readOffset = read.offset();
+        final boolean bySequence = readOffset >= 0 && read.nextSequence() != JournalDecoder.UNKNOWN_SEQUENCE;
         try (final RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r");
              final FileChannel channel = raf.getChannel())
         {
             final long fileSize = channel.size();
             final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
             buffer.order(ByteOrder.LITTLE_ENDIAN);
-            if (readOffset >= 0)
+            if (readOffset >= 0 && !bySequence)
             {
                 buffer.limit((int) Math.min(readOffset, fileSize));
             }
@@ -963,7 +969,7 @@ public final class R7Tailer
             open.enterSegment(meta.shardId(), meta.segmentSequence());
             // Treated as active so that reaching the bound is not reported as a truncation.
             JournalDecoder.decode(buffer, open, fromSequence, path.getFileName().toString(),
-                    JournalIntegrityListener.NOOP, true, open);
+                    JournalIntegrityListener.NOOP, true, open, bySequence ? read.nextSequence() : Integer.MAX_VALUE);
         }
         catch (final IOException | RuntimeException e)
         {

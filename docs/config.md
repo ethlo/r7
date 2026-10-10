@@ -977,7 +977,7 @@ While the snapshot is fresh, both paths answer with the gateway's health, so one
   {"route":null,"component":"routes.yaml","position":null,"health":"WARN","detail":"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"}]}
 ```
 
-`health` is the worst any filter or upstream reports (see Component status above). A rejected `routes.yaml` and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`) each count as `WARN`. `problems` lists each that is not `OK`; `route` is null for a global filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
+`health` is the worst any filter or upstream reports (see Component status above). A rejected `routes.yaml` and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`) each count as `WARN`. A journal shard that stopped, because its disk filled or its mapping failed, counts as `ERROR` (component `journal`) until the gateway restarts: the shard refuses every later entry, so the requests it would journal fail closed. `problems` lists each that is not `OK`; `route` is null for a global filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
 
 #### Metrics
 
@@ -990,11 +990,12 @@ While the snapshot is fresh, both paths answer with the gateway's health, so one
 | `r7_unrouted_requests_total` | counter | | Requests no route matched. |
 | `r7_connections_active` | gauge | | Open client connections to the gateway port. |
 | `r7_journal_available_bytes` | gauge | | Free space for journals in `work_dir`. |
+| `r7_journal_bytes_total` | counter | `shard` | Bytes the journal placed in its segments, after compression. |
 | `r7_route_requests_total` | counter | `route`, `code` | Responses sent to clients. |
 | `r7_route_upstream_responses_total` | counter | `route`, `code` | Responses received from upstreams. |
 | `r7_route_active_requests` | gauge | `route` | Requests in progress. |
 | `r7_route_active_websockets` | gauge | `route` | Open WebSocket tunnels. |
-| `r7_route_journal_bytes_total` | counter | `route` | Bytes written to the journal. |
+| `r7_route_journal_plain_bytes_total` | counter | `route` | Bytes journaled, before compression. A compressed batch mixes routes, so what each route takes on disk is not known; `r7_journal_bytes_total` counts that per shard. |
 | `r7_route_request_duration_seconds` | histogram | `route` | Time from request to response. Bucket bounds are powers of two from 256µs to about 16.8s. |
 | `r7_component_health` | gauge | `route`, `component`, `position` | A filter's or upstream's status: `0` OK, `1` WARN, `2` ERROR. |
 | `r7_component_value` | gauge | `route`, `component`, `position`, `name` | A number a filter or upstream reports, such as a circuit breaker's `rejected_requests`. |

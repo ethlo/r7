@@ -12,7 +12,6 @@ import java.util.zip.CRC32C;
 
 import com.ethlo.r7.r7f.R7fConstants;
 import com.github.luben.zstd.Zstd;
-import com.github.luben.zstd.ZstdDecompressCtx;
 
 /**
  * Format-version-2 framing for tests, written from FORMAT.md rather than shared with the
@@ -22,8 +21,9 @@ import com.github.luben.zstd.ZstdDecompressCtx;
  * is not one; it does no resynchronisation. Tests use it to find entries to damage, and to
  * repair or forge framing on purpose.
  * <p>
- * Compressed segments (codec 1, FORMAT.md 4.4) are decoded here with zstd directly, one
- * stream per block, so the entry fields it reports are the plain ones either way.
+ * Compressed segments (codec 2, FORMAT.md 4.4) are decoded here with zstd directly: each
+ * record is a batch, and every entry in it is reported with the record's offset and fragments
+ * and its index in the batch, so the entry fields are the plain ones either way.
  */
 final class R7fTestFraming
 {
@@ -39,11 +39,11 @@ final class R7fTestFraming
      *
      * @param fragments each fragment's header offset and data length
      */
-    record EntryRef(int offset, int end, int sequence, int fbLen, int rawLen, List<int[]> fragments, byte flags)
+    record EntryRef(int offset, int end, int sequence, int fbLen, int rawLen, List<int[]> fragments, int batchIndex, int batchSize)
     {
         EntryRef(final int offset, final int end, final int sequence, final int fbLen, final int rawLen, final List<int[]> fragments)
         {
-            this(offset, end, sequence, fbLen, rawLen, fragments, (byte) 0);
+            this(offset, end, sequence, fbLen, rawLen, fragments, 0, 1);
         }
 
         /** The first byte of the entry's content, inside its first fragment. */
@@ -74,27 +74,12 @@ final class R7fTestFraming
         return entriesOf(ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN));
     }
 
-    /** Every committed PAD fragment's offset, in a compressed segment. */
-    static List<Integer> padsOf(final Path segment) throws IOException
-    {
-        final ByteBuffer file = ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN);
-        final List<Integer> pads = new ArrayList<>();
-        walk(file, pads);
-        return pads;
-    }
-
     static List<EntryRef> entriesOf(final ByteBuffer file)
     {
-        return walk(file, new ArrayList<>());
-    }
-
-    private static List<EntryRef> walk(final ByteBuffer file, final List<Integer> pads)
-    {
         final int blockSize = blockSize(file);
-        final boolean compressed = file.getShort(R7fConstants.PREAMBLE_OFF_CODEC) == R7fConstants.CODEC_ZSTD;
+        final boolean compressed = file.getShort(R7fConstants.PREAMBLE_OFF_CODEC) == R7fConstants.CODEC_ZSTD_BATCH;
         final List<EntryRef> entries = new ArrayList<>();
         int pos = R7fConstants.PREAMBLE_SIZE;
-        final ZstdDecompressCtx stream = compressed ? new ZstdDecompressCtx() : null;
 
         while (true)
         {
@@ -104,13 +89,6 @@ final class R7fTestFraming
                 break;
             }
             final byte type = file.get(pos + 4);
-            final byte flags = file.get(pos + 5);
-            if (compressed && flags == R7fConstants.FLAG_PAD)
-            {
-                pads.add(pos);
-                pos += HEADER + file.getInt(pos + 8);
-                continue;
-            }
             final List<int[]> fragments = new ArrayList<>();
             fragments.add(new int[]{pos, file.getInt(pos + 8)});
             int end = pos + HEADER + file.getInt(pos + 8);
@@ -141,54 +119,71 @@ final class R7fTestFraming
                 break;
             }
 
-            final byte[] head = compressed
-                    ? Arrays.copyOf(plainContent(file, fragments, flags, stream), R7fConstants.ENTRY_CONTENT_HEADER_SIZE)
-                    : content(file, fragments, 0, R7fConstants.ENTRY_CONTENT_HEADER_SIZE);
-            final ByteBuffer h = ByteBuffer.wrap(head);
-            entries.add(new EntryRef(pos, end, h.getInt(0), h.getInt(4), h.getInt(8), List.copyOf(fragments), flags));
+            if (compressed)
+            {
+                final ByteBuffer plain = ByteBuffer.wrap(plainContent(file, fragments));
+                final int count = batchCount(file, fragments);
+                int at = 0;
+                for (int i = 0; i < count; i++)
+                {
+                    final int fbLen = plain.getInt(at + 4);
+                    final int rawLen = plain.getInt(at + 8);
+                    entries.add(new EntryRef(pos, end, plain.getInt(at), fbLen, rawLen, List.copyOf(fragments), i, count));
+                    at += R7fConstants.ENTRY_CONTENT_HEADER_SIZE + fbLen + rawLen;
+                }
+            }
+            else
+            {
+                final ByteBuffer h = ByteBuffer.wrap(content(file, fragments, 0, R7fConstants.ENTRY_CONTENT_HEADER_SIZE));
+                entries.add(new EntryRef(pos, end, h.getInt(0), h.getInt(4), h.getInt(8), List.copyOf(fragments)));
+            }
             pos = end;
         }
         return entries;
     }
 
-    /**
-     * The plain content of a compressed entry: its stream piece decoded after the earlier ones
-     * in the block, or its standalone frame.
-     */
-    private static byte[] plainContent(final ByteBuffer file, final List<int[]> fragments, final byte flags,
-                                       final ZstdDecompressCtx stream)
+    /** A batch's plain content: its entries back to back. */
+    static byte[] plainContent(final ByteBuffer file, final List<int[]> fragments)
+    {
+        final byte[] data = content(file, fragments, 0, recordLength(fragments));
+        final int plain = ByteBuffer.wrap(data).getInt(0);
+        return Zstd.decompress(Arrays.copyOfRange(data, R7fConstants.BATCH_HEADER_SIZE, data.length), plain);
+    }
+
+    private static int batchCount(final ByteBuffer file, final List<int[]> fragments)
+    {
+        return ByteBuffer.wrap(content(file, fragments, Integer.BYTES, Integer.BYTES)).getInt(0);
+    }
+
+    private static int recordLength(final List<int[]> fragments)
     {
         int length = 0;
         for (final int[] fragment : fragments)
         {
             length += fragment[1];
         }
-        final byte[] data = content(file, fragments, 0, length);
-        if (flags == R7fConstants.FLAG_STANDALONE)
+        return length;
+    }
+
+    /**
+     * The content of a batch holding {@code entries}, each a complete 4.2 entry: what the writer
+     * would have placed, for forging batches.
+     */
+    static byte[] batchContent(final byte[]... entries)
+    {
+        int plainLength = 0;
+        for (final byte[] entry : entries)
         {
-            final int plain = ByteBuffer.wrap(data).getInt(0);
-            return Zstd.decompress(Arrays.copyOfRange(data, Integer.BYTES, data.length), plain);
+            plainLength += entry.length;
         }
-        if (flags == R7fConstants.FLAG_STREAM_START)
+        final ByteBuffer plain = ByteBuffer.allocate(plainLength);
+        for (final byte[] entry : entries)
         {
-            stream.reset();
+            plain.put(entry);
         }
-        final ByteBuffer source = ByteBuffer.allocateDirect(data.length).put(data).flip();
-        final ByteBuffer target = ByteBuffer.allocateDirect(4 * blockSize(file));
-        // A flushed piece decodes completely; call until nothing more is consumed or produced
-        while (true)
-        {
-            final int consumed = source.position();
-            final int produced = target.position();
-            stream.decompressDirectByteBufferStream(target, source);
-            if (source.position() == consumed && target.position() == produced)
-            {
-                break;
-            }
-        }
-        final byte[] out = new byte[target.position()];
-        target.flip().get(out);
-        return out;
+        final byte[] frame = Zstd.compress(plain.array(), 1);
+        return ByteBuffer.allocate(R7fConstants.BATCH_HEADER_SIZE + frame.length)
+                .putInt(plainLength).putInt(entries.length).put(frame).array();
     }
 
     /** The entry's content, gathered from its fragments. */

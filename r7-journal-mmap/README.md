@@ -49,7 +49,11 @@ The implementation MUST NOT:
 
 * perform in-place mutation
 * perform random writes in hot path
-* maintain user-space write buffers for durability
+* rely on user-space buffers for durability
+
+A compressed journal stages entries in memory until they are placed as a batch (§4.0). That
+staging is for compression, not durability: what is staged is not yet journaled, and a crash
+loses it (§8.1).
 
 ---
 
@@ -102,7 +106,8 @@ But it MUST NOT be part of the durability contract.
 ## 3.4 Page Population Ahead of the Writer
 
 Entries are placed in the segment under the journal's monitor, so a page fault taken there
-stalls every writer to the shard. Where the platform supports it (Linux 5.14 and later), a
+stalls whoever is placing: every writer to the shard when uncompressed, the shard's writer
+thread when compressed. Where the platform supports it (Linux 5.14 and later), a
 background thread keeps the pages just ahead of the write position populated with
 `madvise(MADV_POPULATE_WRITE)` (`FaultAhead`).
 
@@ -122,12 +127,29 @@ Population:
 
 ## 4.0 Compression
 
-By default (`storage.compression: zstd`) each 32 KB block carries one zstd stream, and every
-entry is flushed into it as its own fragment (FORMAT.md §4.4). An entry is therefore still
-committed by its own magic and readable as soon as it is written. The cost is that compression
-happens under the shard's monitor, because the stream's order is the sequence order; the
-encoding before it does not. A reader that starts mid-block rebuilds the stream from the
-block's start.
+By default (`storage.compression: zstd`) entries are compressed in batches (FORMAT.md §4.4).
+A request thread encodes its entry and copies it into its shard's stage, holding a lock only
+for that copy. One writer thread per shard swaps a stage out when it is full (32 KB of plain
+entries) or 10 ms after its first entry, assigns the entries their Sequences, compresses them
+as one zstd frame and places the frame as one batch, committed by one magic. Two stages per
+shard let one fill while the other is placed.
+
+This is what compression costs and buys:
+
+* **The request path does not compress.** Compressing each entry on its own thread cost more
+  than everything else the journal does, because zstd's cost was per flush, and a shared
+  stream put it under the shard's monitor. A whole batch compresses in a fraction of that CPU
+  and to a fraction of the bytes.
+* **An entry is readable when its batch is placed**, not when its write returns. At low
+  traffic that is the 10 ms flush interval plus the time to compress and place the batch;
+  sooner as traffic fills stages.
+* **A crash loses what is staged** (§8.1), at most two stages per shard.
+* An entry larger than a stage is placed as a batch of its own, by the thread that wrote it,
+  once everything staged before it is placed.
+
+Without compression (`storage.compression: none`) there is nothing to batch for: each entry is
+placed under the shard's monitor by the thread that wrote it, and committed when the write
+returns.
 
 ## 4.1 Logical Commit
 
@@ -159,6 +181,10 @@ Commit MUST NOT imply durability.
 ## 5.1 Primary Rule
 
 The system MUST apply backpressure instead of silent failure.
+
+With compression, a request thread that finds both of its shard's stages full waits until the
+writer thread hands one back. That wait is the journal's backpressure: the request is slowed,
+never dropped, and nothing is written past what the writer can place.
 
 ---
 
@@ -241,6 +267,9 @@ If the process crashes:
 
 * all committed entries remain valid in memory or disk buffers
 * last partial entry MAY be lost
+* with compression, entries staged and not yet placed are lost: at most two stages per
+  shard, 64 KB of plain entries, which at low traffic is the last 10 ms of entries. A graceful
+  shutdown places them first
 * recovery is deterministic via CRC + sequential scan
 
 ---
@@ -264,6 +293,15 @@ If disk capacity is exhausted:
 * writes MUST fail
 * system MUST enter backpressure state
 * ingestion MUST stop or reject traffic
+
+Without compression the write that fails is the request's own, and that request fails. With
+compression the batch is placed after its requests have completed, so they cannot be failed.
+A full disk is then the system's failure, and the entries in flight are not the journal's to
+save. The shard stops instead: it logs how many staged entries it could not place, refuses
+every later entry so that those requests fail closed, and reports the failure through
+`Journal.failure()`, which the gateway shows as an `ERROR` health problem (`/ready` returns
+`503`) until it restarts. The gateway warns before this happens, when free space falls below
+two more segments per shard.
 
 ---
 

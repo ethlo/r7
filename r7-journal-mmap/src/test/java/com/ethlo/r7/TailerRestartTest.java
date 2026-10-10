@@ -218,9 +218,15 @@ class TailerRestartTest
         assertThat(afterRestart.orphanedEnds).as("sink: %s", afterRestart).containsExactly("open");
     }
 
+    /** 0, or a zstd level for {@link TailerRestartBatchTest}. */
+    int compressionLevel()
+    {
+        return 0;
+    }
+
     private R7fJournal journal() throws IOException
     {
-        return new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true));
+        return new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true, compressionLevel()));
     }
 
     private List<Path> sealedSegments() throws IOException

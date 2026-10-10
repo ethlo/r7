@@ -45,6 +45,25 @@ public interface Journal extends AutoCloseable
      */
     int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum);
 
+    /**
+     * The failure that stopped this journal accepting entries, or null while it accepts them.
+     * A journal that writes asynchronously cannot fail the request whose entry it could not
+     * store, because that request has completed; it reports the failure here instead.
+     */
+    default Throwable failure()
+    {
+        return null;
+    }
+
+    /**
+     * Bytes this journal has stored, after any compression, or -1 when it does not count them.
+     * The write methods return what each entry is before compression.
+     */
+    default long bytesPlaced()
+    {
+        return -1;
+    }
+
     @Override
     void close() throws IOException;
 }

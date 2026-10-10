@@ -44,9 +44,15 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   (`docs/performance_tuning.md`).
 - **Fault-ahead needs Linux 5.14 or later.** Elsewhere the writer takes its page faults while
   holding the shard's monitor, as before fault-ahead.
+- **A compressed journal holds entries in memory before they are journaled.** Entries are
+  staged and placed a batch at a time, so a crash loses what is staged: at most 64 KB of plain
+  entries per shard, the last 10 ms of them at low traffic. A tailer sees an entry about 10 ms
+  after its write returns: the flush interval plus the time to place its batch. A full disk stops the shard until restart rather than failing the
+  requests whose entries were staged (`r7-journal-mmap/README.md` §4.0 and §8).
 - **Damage costs up to a block.** After a hole or a bad checksum, a reader resumes at the next
   block boundary, so up to 32 KB of intact entries per damaged region are lost
-  (`r7-journal-mmap/FORMAT.md` §6).
+  (`r7-journal-mmap/FORMAT.md` §6). Compressed, a damaged batch costs all of its entries, about
+  32 KB of them before compression.
 - **CRC32C is not a MAC.** The format resists forged entries in payloads, but not a party that
   can write segment files (`FORMAT.md` §6.1 and §9). Nothing is signed: an archive kept as
   evidence belongs on write-once storage ([`docs/where-r7-fits.md`](../docs/where-r7-fits.md#the-archive-the-warc-files)).

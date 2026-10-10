@@ -88,17 +88,14 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
      * A rejected routes.yaml is a warning, not an error: the previous routes still run and serve
      * traffic, but the next restart would fail on the same file.
      */
-    static GatewayHealth of(final List<ComponentReport> components, final HotReloadService.Status routeSource, final Problem journal)
+    static GatewayHealth of(final List<ComponentReport> components, final HotReloadService.Status routeSource, final List<Problem> journal)
     {
         final List<Problem> problems = new ArrayList<>();
         if (routesRejected(routeSource))
         {
             problems.add(new Problem(null, "routes.yaml", null, ComponentStatus.Health.WARN, rejectedDetail(routeSource.rejectedAt())));
         }
-        if (journal != null)
-        {
-            problems.add(journal);
-        }
+        problems.addAll(journal);
         for (final ComponentReport report : components)
         {
             final ComponentStatus status = report.status();
@@ -136,6 +133,21 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
         return new Problem(null, "journal", null, ComponentStatus.Health.WARN,
                 "Journal disk has " + DiskSpaceUtils.formatBytes(availableBytes) + " free, less than two more segments per shard ("
                         + DiskSpaceUtils.formatBytes(neededBytes) + "); journaling stops when it is full");
+    }
+
+    /**
+     * An error for a journal shard that has stopped. A compressed journal places entries on a
+     * thread of its own, after their requests have completed, so a failure there (a full disk,
+     * a lost mapping) cannot fail those requests; the shard refuses every entry after it
+     * instead, and this is how that is seen. It lasts until the gateway restarts.
+     *
+     * @param shard   the shard's index
+     * @param failure what stopped it
+     */
+    static Problem journalShard(final int shard, final Throwable failure)
+    {
+        return new Problem(null, "journal", null, ComponentStatus.Health.ERROR,
+                "Shard " + shard + " stopped (" + failure + "); requests it would journal fail until the gateway restarts");
     }
 
     private static String rejectedDetail(final Instant rejectedAt)

@@ -788,6 +788,12 @@ public final class GatewayPipeline
         });
     }
 
+    /** The journal's shards, for their health and byte counts. */
+    public ShardedJournalWriter<? extends Journal> journalWriter()
+    {
+        return journalWriter;
+    }
+
     /**
      * Requests answered 404 because no route matched, since startup.
      */

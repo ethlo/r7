@@ -40,6 +40,7 @@ See [`plans/README.md`](plans/README.md).
 | [`history/upstream-client.md`](history/upstream-client.md) | Building `r7-upstream`, the Undertow comparison, and bringing Níma to parity |
 | [`history/journal-format-v2.md`](history/journal-format-v2.md) | Why r7f moved to block framing, and what it gave up |
 | [`history/journal-write-contention.md`](history/journal-write-contention.md) | The journal lock investigation: fault-ahead, `shard_count`, `pre_fault` |
+| [`history/journal-batch-compression.md`](history/journal-batch-compression.md) | Moving zstd off the request thread: staged batches and a writer thread per shard |
 | [`history/live-tailing.md`](history/live-tailing.md) | Microsecond tailing: the control file and the tailer's wait |
 | [`history/tailer-plugins.md`](history/tailer-plugins.md) | The one-reader, several-outputs proposal behind `r7-tailer` |
 

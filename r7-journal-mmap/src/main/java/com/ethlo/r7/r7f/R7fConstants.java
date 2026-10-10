@@ -48,30 +48,27 @@ public final class R7fConstants
     public static final int MAX_BLOCK_SIZE = 1024 * 1024;
 
     /**
-     * The one codec this version defines: fragment data stored as written.
+     * Fragment data stored as written: each record is one entry.
      */
     public static final short CODEC_NONE = 0;
 
     /**
-     * A zstd stream per block (FORMAT.md 4.4). Every entry is fed into it and flushed, and its
-     * compressed bytes are that entry's FULL fragment, so each entry is still committed by its
-     * own magic. A fragment's Flags say how its data relates to the stream. Entries too large
-     * for a block are compressed on their own and split as usual.
+     * Each record is a batch of entries compressed as one zstd frame (FORMAT.md 4.4): its
+     * content is {@code PlainLength(4) EntryCount(4)} and the frame, which decompresses to the
+     * batch's entries back to back, each in the 4.2 layout with its own Sequence. A batch is
+     * framed, split and committed exactly as an uncompressed entry is.
+     * <p>
+     * Value 1 was a zstd stream per block, flushed per entry. It is no longer read: a segment
+     * carrying it is set aside like any other unknown codec.
      */
-    public static final short CODEC_ZSTD = 1;
+    public static final short CODEC_ZSTD_BATCH = 2;
 
-    /** First entry of a block's stream: the decompressor starts fresh here. */
-    public static final byte FLAG_STREAM_START = 1;
-    /** Continues the block's stream: needs every earlier stream fragment in the block. */
-    public static final byte FLAG_STREAM_CONTINUE = 2;
-    /** Not an entry: the rest of the block, skipped because the next entry might not fit. */
-    public static final byte FLAG_PAD = 4;
-    /** {@code plainLen(4)} then a zstd frame of its own; split across blocks like any entry. */
-    public static final byte FLAG_STANDALONE = 8;
+    /** {@code PlainLength(4) EntryCount(4)}, ahead of a batch's zstd frame. */
+    public static final int BATCH_HEADER_SIZE = 2 * Integer.BYTES;
 
     public static boolean isKnownCodec(final short codec)
     {
-        return codec == CODEC_NONE || codec == CODEC_ZSTD;
+        return codec == CODEC_NONE || codec == CODEC_ZSTD_BATCH;
     }
 
     // --- Fragment framing ---

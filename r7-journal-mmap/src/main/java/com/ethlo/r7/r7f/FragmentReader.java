@@ -46,12 +46,9 @@ final class FragmentReader
     private final short codec;
     private final CRC32C crc = new CRC32C();
 
-    // zstd state (FORMAT.md 4.4), created on the first compressed entry
-    private final ByteBuffer streamSource;
+    // zstd state (FORMAT.md 4.4), created on the first batch
     private ZstdDecompressCtx zstd;
     private ByteBuffer inflated;
-    /** Where the next stream fragment must start for the decompressor's context to fit it. */
-    private long streamNext = -1;
 
     private ByteBuffer assembly;
 
@@ -62,6 +59,12 @@ final class FragmentReader
     private int sequence;
     private ByteBuffer fbSlice;
     private ByteBuffer rawSlice;
+
+    // The record last read: its entries, and where the next one starts
+    private ByteBuffer recordContent;
+    private int recordCursor;
+    private int recordRemaining;
+    private int recordLastSequence;
 
     /**
      * @param file      the segment, index 0 being the file's first byte; not modified
@@ -85,18 +88,24 @@ final class FragmentReader
         this.limit = Math.min(limit, file.capacity());
         this.blockSize = blockSize;
         this.codec = codec;
-        this.streamSource = file.duplicate();
     }
 
     /**
-     * Reads the entry an entry boundary at {@code position} leads to, skipping the padding at
-     * the end of a block first.
+     * Reads the record an entry boundary at {@code position} leads to, skipping the padding at
+     * the end of a block first, and yields its first entry. {@link #nextInRecord} yields the
+     * rest. Every entry of a record reports the record's {@link #entryStart} and
+     * {@link #entryEnd}: a batch is committed, placed and lost as one, so its entries have no
+     * offsets of their own.
+     * <p>
+     * A batch is verified whole before its first entry is yielded, so iterating it cannot fail
+     * halfway: either every entry in it is delivered or the record is {@link Status#DAMAGED}.
      */
     Status read(final long position)
     {
         fbSlice = null;
         rawSlice = null;
         problem = null;
+        recordRemaining = 0;
 
         final long start = R7fFraming.entryStart(position, blockSize);
         entryStart = start;
@@ -116,7 +125,7 @@ final class FragmentReader
             return damaged(String.format("bad fragment magic 0x%08X", magic));
         }
 
-        // The writer stamps this magic last, behind a release fence, and for a split entry
+        // The writer stamps this magic last, behind a release fence, and for a split record
         // only after every continuation is complete (FORMAT.md 5.1). Pairing an acquire here
         // is what makes all of it visible to this reader, which in production is a different
         // process sharing the mapping.
@@ -126,14 +135,6 @@ final class FragmentReader
         if (firstLength < 0)
         {
             return Status.DAMAGED;
-        }
-
-        final byte flags = file.get((int) (start + R7fConstants.FRAGMENT_OFF_FLAGS));
-        if (codec == R7fConstants.CODEC_ZSTD && fragmentType == R7fConstants.FRAGMENT_FULL
-                && flags == R7fConstants.FLAG_PAD)
-        {
-            // Not an entry: the writer closed the block off here
-            return read(start + R7fConstants.FRAGMENT_HEADER_SIZE + firstLength);
         }
 
         final ByteBuffer content;
@@ -164,152 +165,159 @@ final class FragmentReader
             return damaged("continuation fragment where an entry should start");
         }
 
-        if (codec == R7fConstants.CODEC_ZSTD)
+        if (codec == R7fConstants.CODEC_ZSTD_BATCH)
         {
-            final long produced = (flags & R7fConstants.FLAG_STANDALONE) != 0
-                    ? inflateStandalone(content, contentBase, contentLength)
-                    : inflateStream(start, flags, contentBase, contentLength);
-            if (produced < 0)
+            final int count = inflateBatch(content, contentBase, contentLength);
+            if (count < 0)
             {
                 return Status.DAMAGED;
             }
-            return parse(inflated, 0, produced);
+            return startRecord(inflated, 0, count);
         }
-        return parse(content, contentBase, contentLength);
+        if (contentLength > Integer.MAX_VALUE)
+        {
+            return damaged("entry of " + contentLength + " bytes");
+        }
+        final Status status = parse(content, contentBase, contentLength);
+        if (status == Status.ENTRY)
+        {
+            recordLastSequence = sequence;
+        }
+        return status;
     }
 
     /**
-     * A stream fragment's entry, decompressed with the context of every earlier
-     * stream fragment in its block. When this reader did not just decode the previous one —
-     * it started mid-block, from a checkpoint — the context is rebuilt from the block's start.
+     * Yields the next entry of the record {@link #read} last returned, or returns false when it
+     * has none left. Its fields replace the previous entry's.
+     */
+    boolean nextInRecord()
+    {
+        if (recordRemaining == 0)
+        {
+            return false;
+        }
+        parseAt(recordContent, recordCursor);
+        return true;
+    }
+
+    /** Whether the record has entries after the current one. */
+    boolean hasMoreInRecord()
+    {
+        return recordRemaining > 0;
+    }
+
+    /** The Sequence of the record's last entry. Valid after {@link Status#ENTRY}. */
+    int recordLastSequence()
+    {
+        return recordLastSequence;
+    }
+
+    /**
+     * Decompresses a batch, {@code PlainLength(4) EntryCount(4)} then one zstd frame, into
+     * {@link #inflated}.
      *
-     * @return the entry's plain length, or -1 with {@link #problem} set
+     * @return the entry count, or -1 with {@link #problem} set
      */
-    private long inflateStream(final long start, final byte flags, final int base, final long length)
+    private int inflateBatch(final ByteBuffer content, final int base, final long length)
     {
-        final long expected = streamNext;
-        streamNext = -1;
-        ensureZstd(4L * blockSize);
-        if (flags == R7fConstants.FLAG_STREAM_START)
+        if (length < R7fConstants.BATCH_HEADER_SIZE + 1)
         {
-            zstd.reset();
-        }
-        else if (flags != R7fConstants.FLAG_STREAM_CONTINUE)
-        {
-            damaged("unknown fragment flags " + flags);
-            return -1;
-        }
-        else if (expected != start && !replayStream(start))
-        {
-            damaged("cannot rebuild the block's compression context before offset " + start);
-            return -1;
-        }
-        final long produced = decompressStream(base, length);
-        if (produced < 0)
-        {
-            damaged("cannot decompress stream fragment at offset " + start);
-            return -1;
-        }
-        streamNext = start + R7fConstants.FRAGMENT_HEADER_SIZE + length;
-        return produced;
-    }
-
-    /**
-     * Feeds every stream fragment from the start of {@code target}'s block up to it through the
-     * decompressor, output discarded.
-     */
-    private boolean replayStream(final long target)
-    {
-        long at = Math.max(target & -blockSize, R7fConstants.PREAMBLE_SIZE);
-        boolean started = false;
-        while (at < target)
-        {
-            if (file.getInt((int) at) != R7fConstants.FRAGMENT_MAGIC)
-            {
-                return false;
-            }
-            final long length = checkFragment(at);
-            if (length < 0)
-            {
-                return false;
-            }
-            final byte flags = file.get((int) (at + R7fConstants.FRAGMENT_OFF_FLAGS));
-            if (fragmentType == R7fConstants.FRAGMENT_FULL
-                    && (flags == R7fConstants.FLAG_STREAM_START || flags == R7fConstants.FLAG_STREAM_CONTINUE))
-            {
-                if (flags == R7fConstants.FLAG_STREAM_START)
-                {
-                    zstd.reset();
-                    started = true;
-                }
-                if (!started || decompressStream((int) (at + R7fConstants.FRAGMENT_HEADER_SIZE), length) < 0)
-                {
-                    return false;
-                }
-            }
-            at += R7fConstants.FRAGMENT_HEADER_SIZE + length;
-        }
-        return started && at == target;
-    }
-
-    /**
-     * Decompresses one flushed piece of the block's stream into {@link #inflated}.
-     */
-    private long decompressStream(final int base, final long length)
-    {
-        inflated.clear();
-        streamSource.clear();
-        streamSource.limit((int) (base + length)).position(base);
-        try
-        {
-            while (true)
-            {
-                final int consumed = streamSource.position();
-                final int produced = inflated.position();
-                zstd.decompressDirectByteBufferStream(inflated, streamSource);
-                if (streamSource.position() == consumed && inflated.position() == produced)
-                {
-                    break;
-                }
-            }
-        }
-        catch (final RuntimeException e)
-        {
-            return -1;
-        }
-        return streamSource.hasRemaining() ? -1 : inflated.position();
-    }
-
-    /**
-     * {@code plainLen(4)} then a zstd frame of its own.
-     */
-    private long inflateStandalone(final ByteBuffer content, final int base, final long length)
-    {
-        if (length < Integer.BYTES + 1)
-        {
-            damaged("standalone entry too short");
+            damaged("batch too short to hold its header (" + length + " bytes)");
             return -1;
         }
         final int plainLength = content.getInt(base);
-        ensureZstd(Math.max(plainLength, 4L * blockSize));
+        final int count = content.getInt(base + Integer.BYTES);
+        // A writer only places a batch whose plain bytes fit a segment, so a larger PlainLength
+        // is damage; checked before allocating, or a corrupt header could ask for gigabytes.
+        if (count < 1 || plainLength < (long) count * R7fConstants.ENTRY_CONTENT_HEADER_SIZE || plainLength > file.capacity())
+        {
+            damaged("inconsistent batch header (plainLength=" + plainLength + ", entryCount=" + count + ")");
+            return -1;
+        }
+        ensureInflated(plainLength);
         try
         {
             final int produced = zstd.decompressDirectByteBuffer(inflated, 0, plainLength, content,
-                    base + Integer.BYTES, (int) (length - Integer.BYTES));
+                    base + R7fConstants.BATCH_HEADER_SIZE, (int) (length - R7fConstants.BATCH_HEADER_SIZE));
             if (produced == plainLength)
             {
-                return produced;
+                return verifyBatch(plainLength, count) ? count : -1;
             }
         }
         catch (final RuntimeException e)
         {
             // reported below
         }
-        damaged("cannot decompress standalone entry");
+        damaged("cannot decompress batch");
         return -1;
     }
 
-    private void ensureZstd(final long capacity)
+    /**
+     * Checks that the decompressed batch is exactly {@code count} well-formed entries with
+     * contiguous Sequences. The writer stamps a batch's Sequences in one run, so a batch that
+     * says otherwise is damaged, not a gap: a batch is placed whole or not at all, so nothing
+     * inside one can go missing on its own.
+     */
+    private boolean verifyBatch(final int plainLength, final int count)
+    {
+        int at = 0;
+        int previous = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (plainLength - at < R7fConstants.ENTRY_CONTENT_HEADER_SIZE)
+            {
+                damaged("batch entry " + i + " runs past the batch");
+                return false;
+            }
+            final int entrySequence = inflated.getInt(at);
+            final int fbLen = inflated.getInt(at + Integer.BYTES);
+            final int rawLen = inflated.getInt(at + 2 * Integer.BYTES);
+            final long end = at + R7fConstants.ENTRY_CONTENT_HEADER_SIZE + (long) fbLen + rawLen;
+            if (fbLen < 0 || rawLen < 0 || end > plainLength)
+            {
+                damaged("inconsistent lengths in batch entry " + i + " (fbLen=" + fbLen + ", rawLen=" + rawLen + ")");
+                return false;
+            }
+            if (i > 0 && entrySequence != previous + 1)
+            {
+                damaged("batch entry " + i + " has Sequence " + entrySequence + " after " + previous);
+                return false;
+            }
+            previous = entrySequence;
+            at = (int) end;
+        }
+        if (at != plainLength)
+        {
+            damaged("batch holds " + (plainLength - at) + " bytes after its last entry");
+            return false;
+        }
+        recordLastSequence = previous;
+        return true;
+    }
+
+    private Status startRecord(final ByteBuffer content, final int base, final int count)
+    {
+        recordContent = content;
+        recordCursor = base;
+        recordRemaining = count;
+        parseAt(content, base);
+        return Status.ENTRY;
+    }
+
+    /** One entry of a verified batch, which needs no checks of its own. */
+    private void parseAt(final ByteBuffer content, final int at)
+    {
+        final int fbLen = content.getInt(at + Integer.BYTES);
+        final int rawLen = content.getInt(at + 2 * Integer.BYTES);
+        sequence = content.getInt(at);
+        final int fbStart = at + R7fConstants.ENTRY_CONTENT_HEADER_SIZE;
+        fbSlice = content.slice(fbStart, fbLen).order(ByteOrder.LITTLE_ENDIAN);
+        rawSlice = rawLen > 0 ? content.slice(fbStart + fbLen, rawLen) : null;
+        recordCursor = fbStart + fbLen + rawLen;
+        recordRemaining--;
+    }
+
+    private void ensureInflated(final int capacity)
     {
         if (zstd == null)
         {
@@ -317,7 +325,7 @@ final class FragmentReader
         }
         if (inflated == null || inflated.capacity() < capacity)
         {
-            inflated = ByteBuffer.allocateDirect((int) capacity);
+            inflated = ByteBuffer.allocateDirect(Math.max(capacity, 2 * blockSize)).order(ByteOrder.BIG_ENDIAN);
         }
     }
 
@@ -485,6 +493,14 @@ final class FragmentReader
         if (type < R7fConstants.FRAGMENT_FULL || type > R7fConstants.FRAGMENT_LAST)
         {
             damaged("unknown fragment type " + type);
+            return -1;
+        }
+
+        // On every fragment, continuations included: no flag is defined (FORMAT.md 4.1)
+        final byte flags = file.get((int) (position + R7fConstants.FRAGMENT_OFF_FLAGS));
+        if (flags != 0)
+        {
+            damaged("unknown fragment flags " + flags);
             return -1;
         }
 

@@ -139,6 +139,27 @@ public final class JournalDecoder
                                      boolean activeSegment,
                                      EntryObserver entryObserver)
     {
+        return decode(buffer, listener, expectedSequence, sourceName, integrity, activeSegment, entryObserver, Integer.MAX_VALUE);
+    }
+
+    /**
+     * As {@link #decode(ByteBuffer, JournalEventListener, int, String, JournalIntegrityListener, boolean, EntryObserver)},
+     * stopping before the first entry whose sequence is {@code untilSequence} or more, with the
+     * position left at the start of its record.
+     * <p>
+     * For replaying up to a checkpoint. A checkpoint inside a batch is the batch's offset and
+     * the next sequence to deliver, so an offset alone would either stop short of the batch's
+     * delivered entries or run past its undelivered ones.
+     */
+    static DecodeStats decode(ByteBuffer buffer,
+                              JournalEventListener listener,
+                              int expectedSequence,
+                              String sourceName,
+                              JournalIntegrityListener integrity,
+                              boolean activeSegment,
+                              EntryObserver entryObserver,
+                              int untilSequence)
+    {
         // Skip preamble
         if (buffer.position() == 0)
         {
@@ -175,6 +196,7 @@ public final class JournalDecoder
         // entry it cut, then more zeroes — and they are one loss, so they are reported as one.
         long damageStart = -1;
         String damageReason = null;
+        boolean firstRecord = true;
 
         while (true)
         {
@@ -256,113 +278,148 @@ public final class JournalDecoder
                 damageStart = -1;
             }
 
-            final int sequence = reader.sequence();
-            if (expectedSequence != UNKNOWN_SEQUENCE && sequence != expectedSequence)
+            // Resuming inside a batch: a checkpoint there is the batch's offset and the sequence
+            // to deliver next, so the batch's leading entries were delivered already. Only in
+            // the first record read, and only a run that ends where the expectation says,
+            // because anywhere else a sequence below the expectation is a regression.
+            int skipBelow = Integer.MIN_VALUE;
+            if (firstRecord && expectedSequence != UNKNOWN_SEQUENCE && reader.hasMoreInRecord()
+                    && reader.sequence() < expectedSequence && expectedSequence <= reader.recordLastSequence() + 1)
             {
-                if (sequence > expectedSequence)
+                skipBelow = expectedSequence;
+            }
+            firstRecord = false;
+
+            boolean stop = false;
+            do
+            {
+                final int sequence = reader.sequence();
+                if (sequence < skipBelow)
                 {
-                    final int lost = sequence - expectedSequence;
-                    missingEntries += lost;
-                    integrity.onEntriesMissing(sourceName, startPos, expectedSequence, sequence, lost);
-                    logger.error("Sequence gap at offset {}: expected #{} but found #{} — {} entries missing.",
-                            startPos, expectedSequence, sequence, lost);
+                    continue;
                 }
-                else
+                if (sequence >= untilSequence)
                 {
-                    // FORMAT.md §6: a backward step means this is not a valid append-only
-                    // segment. Continuing would replay duplicate or out-of-order events
-                    // into the reassembler and build exchanges that never happened.
-                    integrity.onSequenceRegression(sourceName, startPos, expectedSequence, sequence);
-                    logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
-                            sourceName, startPos, expectedSequence, sequence);
-                    // A sealed segment will never change, so leaving the position on the
-                    // offending entry would have a caller that checkpoints by offset read
-                    // and report it again on every tick. Consume the rest. An active
-                    // segment is still being written, so there the position stays put.
-                    if (!activeSegment)
+                    buffer.position(startPos);
+                    stop = true;
+                    break;
+                }
+                if (expectedSequence != UNKNOWN_SEQUENCE && sequence != expectedSequence)
+                {
+                    if (sequence > expectedSequence)
                     {
-                        // Account for what is being given up. This is the one branch that
-                        // consumes bytes it could still have read, so silence here made the
-                        // stats say the read was clean — and the tailer deletes a segment it
-                        // believes it read in full. The remainder is abandoned, not absent,
-                        // and has to be counted as such.
-                        final long abandoned = limit - (long) startPos;
-                        bytesSkipped += abandoned;
-                        undeliveredBytes += abandoned;
-                        corruptEntriesSkipped++;
-                        integrity.onCorruptRegion(sourceName, startPos, abandoned,
-                                "abandoned after a sequence regression");
-                        buffer.position(limit);
+                        final int lost = sequence - expectedSequence;
+                        missingEntries += lost;
+                        integrity.onEntriesMissing(sourceName, startPos, expectedSequence, sequence, lost);
+                        logger.error("Sequence gap at offset {}: expected #{} but found #{} — {} entries missing.",
+                                startPos, expectedSequence, sequence, lost);
                     }
                     else
                     {
-                        buffer.position(startPos);
+                        // FORMAT.md §6: a backward step means this is not a valid append-only
+                        // segment. Continuing would replay duplicate or out-of-order events
+                        // into the reassembler and build exchanges that never happened.
+                        integrity.onSequenceRegression(sourceName, startPos, expectedSequence, sequence);
+                        logger.error("Sequence went backwards in {} at offset {}: expected #{} but found #{}. Stopping.",
+                                sourceName, startPos, expectedSequence, sequence);
+                        // A sealed segment will never change, so leaving the position on the
+                        // offending entry would have a caller that checkpoints by offset read
+                        // and report it again on every tick. Consume the rest. An active
+                        // segment is still being written, so there the position stays put.
+                        if (!activeSegment)
+                        {
+                            // Account for what is being given up. This is the one branch that
+                            // consumes bytes it could still have read, so silence here made the
+                            // stats say the read was clean — and the tailer deletes a segment it
+                            // believes it read in full. The remainder is abandoned, not absent,
+                            // and has to be counted as such.
+                            final long abandoned = limit - (long) startPos;
+                            bytesSkipped += abandoned;
+                            undeliveredBytes += abandoned;
+                            corruptEntriesSkipped++;
+                            integrity.onCorruptRegion(sourceName, startPos, abandoned,
+                                    "abandoned after a sequence regression");
+                            buffer.position(limit);
+                        }
+                        else
+                        {
+                            buffer.position(startPos);
+                        }
+                        stop = true;
+                        break;
                     }
+                }
+
+                try
+                {
+                    final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(reader.fbSlice());
+                    if (entryObserver != null)
+                    {
+                        entryObserver.onEntry(startPos, sequence);
+                    }
+                    dispatch(journalEvent, reader.rawSlice(), guarded);
+                    entries++;
+                }
+                catch (final ListenerFailureException e)
+                {
+                    // The consumer refused this entry. Skipping it would consume it: the caller
+                    // checkpoints past it, the segment eventually reads as fully processed, and
+                    // the tailer deletes it — so a sink that was unavailable for one tick costs a
+                    // valid exchange, permanently. That is exactly the loss this journal exists
+                    // to make impossible.
+                    //
+                    // So the reader stops here and gives up nothing. Position goes back to the
+                    // start of the record, the sequence expectation is not advanced, and the next
+                    // pass offers the same entry again; within a batch, the entries before it are
+                    // skipped on that pass as already delivered. Nothing later in this segment is
+                    // read until it is accepted, which is head-of-line blocking on purpose: an
+                    // audit log may stall loudly, but it may not skip.
+                    //
+                    // Note the one ambiguity this cannot resolve. FlatBuffers decodes lazily, so
+                    // a consumer that touches a header or attribute pulls bytes at that moment;
+                    // an undecodable payload can therefore surface as a listener failure and
+                    // stall a segment that will never decode. That is the safe direction of the
+                    // error — a stall names the segment, offset and sequence on every tick and
+                    // destroys nothing, whereas the opposite mistake is silent and permanent.
+                    buffer.position(startPos);
+                    logger.error("Entry #{} at offset {} in {} was refused by the consumer; the segment "
+                                    + "stops here and will be offered again. Nothing after it is read until "
+                                    + "it is accepted.",
+                            sequence, startPos, sourceName, e.getCause());
+                    integrity.onDeliveryStalled(sourceName, startPos, sequence, e.getCause());
+                    stop = true;
                     break;
                 }
-            }
-
-            try
-            {
-                final JournalEvent journalEvent = JournalEvent.getRootAsJournalEvent(reader.fbSlice());
-                if (entryObserver != null)
+                catch (final RuntimeException e)
                 {
-                    entryObserver.onEntry(startPos, sequence);
+                    // The framing and CRCs were valid, so the bytes are what the writer wrote, but
+                    // they are not something this build can decode — an event type it does not
+                    // know, or a payload whose internal offsets do not hold up. The consumer is
+                    // not implicated: everything it threw arrived as ListenerFailureException
+                    // above.
+                    //
+                    // Skip it and continue. Letting it out would leave this segment's progress
+                    // unrecorded and have every tick re-dispatch the same entries for ever, and
+                    // unlike a refusal there is nothing a later attempt would do differently.
+                    logger.warn("Entry #{} at offset {} holds a payload this build cannot decode: {}",
+                            sequence, startPos, e.toString());
+                    corruptEntriesSkipped++;
+                    integrity.onCorruptRegion(sourceName, startPos, 0L, "undecodable payload: " + e);
                 }
-                dispatch(journalEvent, reader.rawSlice(), guarded);
-                entries++;
+
+                // After delivery, not before. A refusal above leaves the entry unread, and the
+                // caller checkpoints the sequence alongside the offset — advancing it here would
+                // record "next expected #8" against an offset pointing at #8, and the retry would
+                // then read #8 as a sequence regression and abandon the rest of the segment.
+                expectedSequence = sequence + 1;
+                lastSequence = sequence;
             }
-            catch (final ListenerFailureException e)
+            while (reader.nextInRecord());
+
+            if (stop)
             {
-                // The consumer refused this entry. Skipping it would consume it: the caller
-                // checkpoints past it, the segment eventually reads as fully processed, and
-                // the tailer deletes it — so a sink that was unavailable for one tick costs a
-                // valid exchange, permanently. That is exactly the loss this journal exists
-                // to make impossible.
-                //
-                // So the reader stops here and gives up nothing. Position goes back to the
-                // start of the entry, the sequence expectation is not advanced, and the next
-                // pass offers the same entry again. Nothing later in this segment is read
-                // until it is accepted, which is head-of-line blocking on purpose: an audit
-                // log may stall loudly, but it may not skip.
-                //
-                // Note the one ambiguity this cannot resolve. FlatBuffers decodes lazily, so
-                // a consumer that touches a header or attribute pulls bytes at that moment;
-                // an undecodable payload can therefore surface as a listener failure and
-                // stall a segment that will never decode. That is the safe direction of the
-                // error — a stall names the segment, offset and sequence on every tick and
-                // destroys nothing, whereas the opposite mistake is silent and permanent.
-                buffer.position(startPos);
-                logger.error("Entry #{} at offset {} in {} was refused by the consumer; the segment "
-                                + "stops here and will be offered again. Nothing after it is read until "
-                                + "it is accepted.",
-                        sequence, startPos, sourceName, e.getCause());
-                integrity.onDeliveryStalled(sourceName, startPos, sequence, e.getCause());
                 break;
             }
-            catch (final RuntimeException e)
-            {
-                // The framing and CRCs were valid, so the bytes are what the writer wrote, but
-                // they are not something this build can decode — an event type it does not
-                // know, or a payload whose internal offsets do not hold up. The consumer is
-                // not implicated: everything it threw arrived as ListenerFailureException
-                // above.
-                //
-                // Skip it and continue. Letting it out would leave this segment's progress
-                // unrecorded and have every tick re-dispatch the same entries for ever, and
-                // unlike a refusal there is nothing a later attempt would do differently.
-                logger.warn("Entry #{} at offset {} holds a payload this build cannot decode: {}",
-                        sequence, startPos, e.toString());
-                corruptEntriesSkipped++;
-                integrity.onCorruptRegion(sourceName, startPos, 0L, "undecodable payload: " + e);
-            }
-
-            // After delivery, not before. A refusal above leaves the entry unread, and the
-            // caller checkpoints the sequence alongside the offset — advancing it here would
-            // record "next expected #8" against an offset pointing at #8, and the retry would
-            // then read #8 as a sequence regression and abandon the rest of the segment.
-            expectedSequence = sequence + 1;
-            lastSequence = sequence;
             buffer.position((int) reader.entryEnd());
         }
 

@@ -38,6 +38,16 @@ public final class ShardedJournalWriter<T extends Journal>
         return shards[shardIndex];
     }
 
+    public int shardCount()
+    {
+        return shards.length;
+    }
+
+    public T shard(final int index)
+    {
+        return shards[index];
+    }
+
     public void shutdown()
     {
         logger.info("Shutting down ShardedJournalWriter, closing {} shards", shards.length);

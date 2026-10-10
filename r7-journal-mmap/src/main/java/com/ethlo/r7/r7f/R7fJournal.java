@@ -15,6 +15,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
@@ -43,7 +47,6 @@ import com.ethlo.r7.r7f.fbs.ResponseBody;
 import com.ethlo.r7.r7f.fbs.UpstreamRequest;
 import com.ethlo.r7.r7f.fbs.UpstreamResponse;
 import com.ethlo.r7.util.IndexedGatewayHeaders;
-import com.github.luben.zstd.EndDirective;
 import com.github.luben.zstd.ZstdCompressCtx;
 import com.google.flatbuffers.FlatBufferBuilder;
 
@@ -116,19 +119,38 @@ public final class R7fJournal implements Journal
     private static final int BLOCK_SIZE = R7fConstants.DEFAULT_BLOCK_SIZE;
 
     /**
+     * Plain bytes a stage holds before it is compressed and placed as one batch (FORMAT.md 4.4).
+     * Larger batches compress a little better, and cost more entries when one is damaged and
+     * a longer wait for a tailer at low traffic.
+     */
+    static final int STAGE_SIZE = 32 * 1024;
+
+    /**
+     * How long an entry may wait in a stage that is not full before the writer thread places
+     * it anyway. This, not the stage size, is what a tailer waits at low traffic.
+     */
+    static final long FLUSH_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(10);
+
+    /**
      * zstd level (FORMAT.md 4.4), or 0 for none: the provider's, which has already fallen back
      * to 0 where zstd cannot be loaded.
      */
     private final int compressionLevel;
     private final short codec;
 
-    // Compression state, all of it guarded by this journal's monitor
-    private ZstdCompressCtx stream;
-    private ZstdCompressCtx single;
-    /** The block whose stream {@link #stream} is in, or -1 when the next stream entry starts one. */
-    private long streamBlock = -1;
+    // Compression state, guarded by this journal's monitor
+    private ZstdCompressCtx zstd;
     private ByteBuffer packed;
     private MemorySegment packedSegment;
+
+    /**
+     * Staging for a compressed journal, null for an uncompressed one. Request threads copy
+     * entries into it and one writer thread places them; see {@link Batcher}.
+     */
+    private final Batcher batcher;
+
+    /** Record bytes placed in segments, after compression: what this shard costs on disk. */
+    private final LongAdder bytesPlaced = new LongAdder();
 
     private MemorySegment segment;
     /**
@@ -188,9 +210,10 @@ public final class R7fJournal implements Journal
         this.finishedJournalFileSupplier = finishedJournalFileSupplier;
         this.faultAhead = FaultAhead.create(provider.isPreFault());
         this.compressionLevel = provider.getCompressionLevel();
-        this.codec = compressionLevel > 0 ? R7fConstants.CODEC_ZSTD : R7fConstants.CODEC_NONE;
+        this.codec = compressionLevel > 0 ? R7fConstants.CODEC_ZSTD_BATCH : R7fConstants.CODEC_NONE;
         this.commitSignal = provider.openCommitSignal();
         rotateSegment();
+        this.batcher = compressionLevel > 0 ? new Batcher(provider.getShardId()) : null;
     }
 
     public R7fJournal(final R7fJournalProvider provider)
@@ -400,12 +423,9 @@ public final class R7fJournal implements Journal
         JournalEvent.addEventType(fbb, type);
         JournalEvent.addEvent(fbb, offset);
         fbb.finish(JournalEvent.endJournalEvent(fbb));
-        if (compressionLevel > 0)
+        if (batcher != null)
         {
-            // The copy into one contiguous buffer happens outside the monitor; compression
-            // cannot, because the block's stream is shared and its order is the sequence order.
-            enc.fillPlain(fbb.dataBuffer(), rawData);
-            return writeCompressed(enc, rawData);
+            return batcher.stage(enc, rawData);
         }
         return writeEntry(enc, rawData);
     }
@@ -487,6 +507,7 @@ public final class R7fJournal implements Journal
 
         position = end;
         nextSequence++;
+        bytesPlaced.add(end - claimedFrom);
         commitSignal.signal();
 
         if (faultAhead != null)
@@ -494,129 +515,69 @@ public final class R7fJournal implements Journal
             faultAhead.advance(segment, position);
         }
 
-        return (int) (end - claimedFrom);
+        // The entry's content, not what it took in the segment: callers count plain bytes, and
+        // fragment headers and padding here would give the count a different unit than a
+        // compressed journal's. What it took is bytesPlaced.
+        return (int) contentLength;
     }
 
     /**
-     * {@link #writeEntry} for {@link R7fConstants#CODEC_ZSTD}.
+     * Compresses {@code count} entries, {@code plainLength} bytes of {@code plain} starting at
+     * its index 0, as one batch and commits it (FORMAT.md 4.4). The entries' Sequences are
+     * stamped here, at {@code sequenceOffsets}, because only now is it known which segment the
+     * batch lands in, and rotation restarts the Sequence.
      * <p>
-     * Compression happens under the monitor, because the block's stream is shared and its order
-     * is the sequence order. Each entry is flushed, so its bytes decode without waiting for the
-     * next one, and it is committed by its own magic like any other entry.
+     * Called by the writer thread, and by a request thread with an oversized entry while it
+     * holds the staging lock and the writer thread is idle; the monitor keeps the two apart
+     * all the same, as it does {@link #close}.
+     *
+     * @return the bytes the batch took in the segment
      */
-    private synchronized int writeCompressed(final EntryEncoder enc, final ByteBuffer rawData)
+    private synchronized long placeBatch(final EntryEncoder enc, final ByteBuffer plain, final int plainLength,
+                                         final int[] sequenceOffsets, final int count)
     {
-        if (closed)
-        {
-            throw new IllegalStateException("Journal is closed");
-        }
-        if (segment == null)
-        {
-            rotateSegment();
-        }
-        final int plainLength = enc.plainLength;
-
-        final long perBlock = R7fFraming.continuationCapacity(BLOCK_SIZE);
-        final long bound = compressBound(plainLength) + 64;
-        ensurePacked(Math.max(bound + Integer.BYTES, 2L * BLOCK_SIZE));
+        final long bound = R7fConstants.BATCH_HEADER_SIZE + compressBound(plainLength);
+        // Rotate on the worst case first, so the Sequences stamped below are this segment's
+        ensureCapacity(bound);
         final long claimedFrom = position;
-        final long publishAt;
-
-        if (bound <= perBlock)
+        for (int i = 0; i < count; i++)
         {
-            long start = R7fFraming.entryStart(position, BLOCK_SIZE);
-            if (R7fFraming.firstCapacity(start, BLOCK_SIZE) < bound)
-            {
-                // The worst case might not fit what is left of the block, and a stream cannot
-                // take an entry back once it has been fed. Close the block off.
-                writePad(start);
-                start = R7fFraming.nextBoundary(start, BLOCK_SIZE);
-            }
-            if (start + R7fConstants.FRAGMENT_HEADER_SIZE + bound > segment.byteSize())
-            {
-                rotateSegment();
-                start = R7fFraming.entryStart(position, BLOCK_SIZE);
-            }
-
-            // Only now: placing the entry may have rotated, and rotation restarts the sequence
-            enc.plain.putInt(0, nextSequence);
-            final long block = start / BLOCK_SIZE;
-            final byte flags;
-            if (block != streamBlock)
-            {
-                if (stream == null)
-                {
-                    stream = new ZstdCompressCtx();
-                }
-                stream.reset();
-                stream.setLevel(compressionLevel).setChecksum(false).setContentSize(false);
-                streamBlock = block;
-                flags = R7fConstants.FLAG_STREAM_START;
-            }
-            else
-            {
-                flags = R7fConstants.FLAG_STREAM_CONTINUE;
-            }
-
-            packed.clear();
-            enc.plain.limit(plainLength).position(0);
-            while (!stream.compressDirectByteBufferStream(packed, enc.plain, EndDirective.FLUSH))
-            {
-                // FLUSH returns true once everything fed so far is out
-            }
-            final int length = packed.position();
-            if (length > R7fFraming.firstCapacity(start, BLOCK_SIZE))
-            {
-                // Cannot happen while the bound holds. If it ever did, writing it would put a
-                // fragment across a block boundary, which every reader relies on never seeing.
-                throw new IllegalStateException("Compressed entry of " + length + " bytes exceeds its bound of " + bound);
-            }
-            enc.preparePackedSources(packedSegment, length);
-            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FULL, flags, 0, length);
-            publishAt = start;
-            position = start + R7fConstants.FRAGMENT_HEADER_SIZE + length;
-        }
-        else
-        {
-            if (single == null)
-            {
-                single = new ZstdCompressCtx().setLevel(compressionLevel).setChecksum(false);
-            }
-            // Rotate on the worst case first, so the sequence stamped below is this segment's
-            ensureCapacity(Integer.BYTES + bound);
-            enc.plain.putInt(0, nextSequence);
-            final int frame = single.compressDirectByteBuffer(packed, Integer.BYTES, packed.capacity() - Integer.BYTES,
-                    enc.plain, 0, plainLength);
-            packed.putInt(0, plainLength);
-            final long contentLength = Integer.BYTES + (long) frame;
-            enc.preparePackedSources(packedSegment, contentLength);
-            publishAt = writeFragments(enc, contentLength, R7fConstants.FLAG_STANDALONE);
-            streamBlock = -1;
+            plain.putInt(sequenceOffsets[i], nextSequence + i);
         }
 
+        ensurePacked(bound);
+        if (zstd == null)
+        {
+            zstd = new ZstdCompressCtx().setLevel(compressionLevel).setChecksum(false);
+        }
+        final int frame = zstd.compressDirectByteBuffer(packed, R7fConstants.BATCH_HEADER_SIZE,
+                packed.capacity() - R7fConstants.BATCH_HEADER_SIZE, plain, 0, plainLength);
+        packed.putInt(0, plainLength).putInt(Integer.BYTES, count);
+        final long contentLength = R7fConstants.BATCH_HEADER_SIZE + (long) frame;
+        enc.preparePackedSources(packedSegment, contentLength);
+        final long publishAt = writeFragments(enc, contentLength);
+
+        // The commit, as in writeEntry: every store above lands before the magic
         VarHandle.releaseFence();
         segment.set(INT_BE, publishAt, R7fConstants.FRAGMENT_MAGIC);
 
-        if (rawData != null && rawData.hasRemaining())
-        {
-            rawData.position(rawData.limit());
-        }
         enc.releaseSources();
-        nextSequence++;
+        nextSequence += count;
+        bytesPlaced.add(position - claimedFrom);
         commitSignal.signal();
         if (faultAhead != null)
         {
             faultAhead.advance(segment, position);
         }
-        return (int) (position - claimedFrom);
+        return position - claimedFrom;
     }
 
     /**
      * zstd's {@code ZSTD_COMPRESSBOUND}: the most a single-shot compression of
      * {@code plainLength} bytes can produce. Computed here rather than by
-     * {@code Zstd.compressBound}, which is a JNI transition per entry made while holding this
-     * journal's monitor, for what is a line of arithmetic. {@code compressBoundMatchesZstd}
-     * keeps the two equal.
+     * {@code Zstd.compressBound}, which is a JNI transition made while holding this journal's
+     * monitor, for what is a line of arithmetic. {@code compressBoundMatchesZstd} keeps the
+     * two equal.
      */
     static long compressBound(final int plainLength)
     {
@@ -628,13 +589,13 @@ public final class R7fJournal implements Journal
      * Places the content the encoder's sources describe from {@link #position}, every fragment
      * but the commit magic, and returns where that magic belongs.
      */
-    private long writeFragments(final EntryEncoder enc, final long contentLength, final byte flags)
+    private long writeFragments(final EntryEncoder enc, final long contentLength)
     {
         final long start = R7fFraming.entryStart(position, BLOCK_SIZE);
         final long firstCapacity = R7fFraming.firstCapacity(start, BLOCK_SIZE);
         if (contentLength <= firstCapacity)
         {
-            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FULL, flags, 0, contentLength);
+            writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FULL, 0, contentLength);
             position = start + R7fConstants.FRAGMENT_HEADER_SIZE + contentLength;
             return start;
         }
@@ -646,44 +607,22 @@ public final class R7fJournal implements Journal
         {
             final long length = Math.min(perBlock, contentLength - logical);
             final byte type = logical + length == contentLength ? R7fConstants.FRAGMENT_LAST : R7fConstants.FRAGMENT_MIDDLE;
-            writeFragmentBody(enc, at, type, flags, logical, length);
+            writeFragmentBody(enc, at, type, logical, length);
             segment.set(INT_BE, at, R7fConstants.FRAGMENT_MAGIC);
             logical += length;
             last = at + R7fConstants.FRAGMENT_HEADER_SIZE + length;
             at += BLOCK_SIZE;
         }
-        writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FIRST, flags, 0, firstCapacity);
+        writeFragmentBody(enc, start, R7fConstants.FRAGMENT_FIRST, 0, firstCapacity);
         position = last;
         return start;
-    }
-
-    /**
-     * A committed fragment that is not an entry, filling the rest of the block from
-     * {@code start}. Its data is the segment's own zero fill.
-     */
-    private void writePad(final long start)
-    {
-        final long length = R7fFraming.firstCapacity(start, BLOCK_SIZE);
-        segment.set(ValueLayout.JAVA_BYTE, start + R7fConstants.FRAGMENT_OFF_TYPE, R7fConstants.FRAGMENT_FULL);
-        segment.set(ValueLayout.JAVA_BYTE, start + R7fConstants.FRAGMENT_OFF_FLAGS, R7fConstants.FLAG_PAD);
-        segment.set(INT_BE, start + R7fConstants.FRAGMENT_OFF_LENGTH, (int) length);
-        final CRC32C crc = new CRC32C();
-        final long dataAt = start + R7fConstants.FRAGMENT_HEADER_SIZE;
-        crc.update(segmentView.limit((int) (start + R7fConstants.FRAGMENT_OFF_CRC)).position((int) (start + R7fConstants.FRAGMENT_OFF_TYPE)));
-        segmentView.clear();
-        crc.update(segmentView.limit((int) (dataAt + length)).position((int) dataAt));
-        segmentView.clear();
-        segment.set(INT_BE, start + R7fConstants.FRAGMENT_OFF_CRC, (int) crc.getValue());
-        VarHandle.releaseFence();
-        segment.set(INT_BE, start, R7fConstants.FRAGMENT_MAGIC);
-        position = start + R7fConstants.FRAGMENT_HEADER_SIZE + length;
     }
 
     private void ensurePacked(final long capacity)
     {
         if (packed == null || packed.capacity() < capacity)
         {
-            packed = ByteBuffer.allocateDirect((int) capacity);
+            packed = ByteBuffer.allocateDirect((int) Math.max(capacity, 2L * BLOCK_SIZE));
             packedSegment = MemorySegment.ofBuffer(packed);
         }
     }
@@ -697,13 +636,8 @@ public final class R7fJournal implements Journal
      */
     private void writeFragmentBody(final EntryEncoder enc, final long at, final byte type, final long from, final long length)
     {
-        writeFragmentBody(enc, at, type, (byte) 0, from, length);
-    }
-
-    private void writeFragmentBody(final EntryEncoder enc, final long at, final byte type, final byte flags, final long from, final long length)
-    {
         segment.set(ValueLayout.JAVA_BYTE, at + R7fConstants.FRAGMENT_OFF_TYPE, type);
-        segment.set(ValueLayout.JAVA_BYTE, at + R7fConstants.FRAGMENT_OFF_FLAGS, flags);
+        segment.set(ValueLayout.JAVA_BYTE, at + R7fConstants.FRAGMENT_OFF_FLAGS, (byte) 0);
         segment.set(INT_BE, at + R7fConstants.FRAGMENT_OFF_LENGTH, (int) length);
         final long dataAt = at + R7fConstants.FRAGMENT_HEADER_SIZE;
         enc.copyContent(segment, from, length, dataAt);
@@ -904,9 +838,11 @@ public final class R7fJournal implements Journal
         private final MemorySegment head = MemorySegment.ofArray(new byte[R7fConstants.ENTRY_CONTENT_HEADER_SIZE]);
         private long headLength = R7fConstants.ENTRY_CONTENT_HEADER_SIZE;
 
-        // Compression only: the whole content in one direct buffer, sequence left to fill in
+        // An oversized entry only: its whole content in one direct buffer, Sequence left to
+        // fill in, so that it can be compressed as a batch of its own
         private ByteBuffer plain;
         private int plainLength;
+        private final int[] plainSequenceOffset = new int[1];
 
         private void fillPlain(final ByteBuffer fbBuf, final ByteBuffer rawData)
         {
@@ -1000,8 +936,442 @@ public final class R7fJournal implements Journal
         }
     }
 
+    /**
+     * Places everything staged before this call, and returns once it is committed: for a
+     * caller that has to see its entries in the segment, such as a test or a reader in the
+     * same process. Without compression every write is committed before it returns, and this
+     * returns at once.
+     *
+     * @throws IllegalStateException when the journal has failed or is closed
+     */
+    public void flush()
+    {
+        if (batcher != null)
+        {
+            batcher.flush();
+        }
+    }
+
+    /**
+     * The failure that stopped this journal accepting entries, or null while it accepts them.
+     * Only a compressed journal fails this way: its writer thread places entries whose
+     * requests have already completed, so a failure there cannot fail those requests and is
+     * reported here instead (r7-journal-mmap/README.md 8.3).
+     */
     @Override
-    public synchronized void close() throws IOException
+    public Throwable failure()
+    {
+        return batcher != null ? batcher.failure : null;
+    }
+
+    /**
+     * For tests that assert how entries are batched, which the flush interval would otherwise
+     * make depend on how fast the machine is: a stage is then placed only when full, flushed
+     * or closed.
+     */
+    void holdBatchesUntilFull()
+    {
+        batcher.lock.lock();
+        try
+        {
+            batcher.flushIntervalNanos = Long.MAX_VALUE / 2;
+        }
+        finally
+        {
+            batcher.lock.unlock();
+        }
+    }
+
+    /**
+     * Bytes placed in segments, after compression: what this journal has cost on disk, which
+     * the per-write return values (plain bytes) do not say once entries are compressed.
+     */
+    @Override
+    public long bytesPlaced()
+    {
+        return bytesPlaced.sum();
+    }
+
+    /**
+     * The staging between request threads and the segment, for a compressed journal.
+     * <p>
+     * Compressing each entry on the request thread cost more than everything else the journal
+     * does: a flush per entry is expensive whatever the level, and since a block's stream is
+     * shared it ran under the monitor, so every request on the shard queued behind it
+     * (design/history/journal-batch-compression.md). Here a request thread only copies its
+     * entry into a stage under a short lock, and one writer thread compresses a whole stage as
+     * one batch and places it.
+     * <p>
+     * Two stages: one filling while the writer places the other. A request thread that finds
+     * its stage full waits for the writer to hand the other back, which is the journal's
+     * backpressure, as the monitor was before. Entries are never dropped.
+     * <p>
+     * What this costs is stated in r7-journal-mmap/README.md 4.0 and 8.1: an entry is in the segment only once its batch
+     * is placed, so a crash loses what is staged, and a tailer sees an entry up to
+     * {@link #FLUSH_INTERVAL_NANOS} later than it would uncompressed.
+     */
+    private final class Batcher
+    {
+        private final ReentrantLock lock = new ReentrantLock();
+        /** Signalled to the writer thread: a stage has entries, is full, or is wanted now. */
+        private final Condition work = lock.newCondition();
+        /** Signalled to request threads: a stage came back, or the journal stopped. */
+        private final Condition stageFree = lock.newCondition();
+
+        /** Where request threads append. Never null. */
+        private Stage filling = new Stage();
+        /** The other stage while the writer thread is not placing it, else null. */
+        private Stage spare = new Stage();
+        /** Bumped each time a stage is placed, so {@link #flush} can wait for its own. */
+        private long placed;
+        private long flushRequested = -1;
+        private boolean stopping;
+        private volatile Throwable failure;
+
+        /** Only the writer thread uses it: the encoder that frames each batch it places. */
+        private final EntryEncoder writerEncoder = new EntryEncoder();
+        private final Thread writer;
+
+        /** {@link #FLUSH_INTERVAL_NANOS}, unless a test holds batches until their stage is full. */
+        private long flushIntervalNanos = FLUSH_INTERVAL_NANOS;
+
+        private Batcher(final int shard)
+        {
+            // A platform thread: it is busy for as long as the shard is, and a virtual thread
+            // would pin its carrier inside the monitor anyway
+            this.writer = Thread.ofPlatform().daemon().name("r7-journal-writer-" + shard).start(this::run);
+        }
+
+        /**
+         * Copies the encoder's entry into the filling stage, with Sequence 0 for the writer
+         * thread to stamp.
+         *
+         * @return the entry's plain bytes, which is what is known about it now: its compressed
+         *         share of a batch is not, and is counted by {@link #bytesPlaced}
+         */
+        private int stage(final EntryEncoder enc, final ByteBuffer rawData)
+        {
+            final ByteBuffer fbBuf = enc.fbb.dataBuffer();
+            final int fbLen = fbBuf.remaining();
+            final int rawLen = rawData != null ? rawData.remaining() : 0;
+            final long length = R7fConstants.ENTRY_CONTENT_HEADER_SIZE + (long) fbLen + rawLen;
+            if (length > STAGE_SIZE)
+            {
+                return writeAlone(enc, fbBuf, rawData, length);
+            }
+
+            lock.lock();
+            try
+            {
+                while (true)
+                {
+                    requireOpen();
+                    final Stage stage = filling;
+                    if (stage.plain.remaining() >= length)
+                    {
+                        if (stage.count == 0)
+                        {
+                            // Starts the flush interval
+                            stage.firstNanos = System.nanoTime();
+                            work.signal();
+                        }
+                        stage.add(fbBuf, fbLen, rawData, rawLen);
+                        break;
+                    }
+                    stage.full = true;
+                    work.signal();
+                    stageFree.awaitUninterruptibly();
+                }
+            }
+            finally
+            {
+                lock.unlock();
+            }
+            if (rawLen > 0)
+            {
+                rawData.position(rawData.position() + rawLen);
+            }
+            return (int) length;
+        }
+
+        /**
+         * An entry larger than a stage, placed as a batch of its own on the calling thread.
+         * <p>
+         * It must not overtake what is already staged, or the order in the segment would stop
+         * being the order of the writes. So it waits, holding the lock, until everything staged
+         * is placed and the writer thread is idle, and places itself before letting anyone else
+         * stage. It is compressed alone, which costs nothing it would gain in a batch: an entry
+         * this large is a body, and compresses well on its own.
+         */
+        private int writeAlone(final EntryEncoder enc, final ByteBuffer fbBuf, final ByteBuffer rawData, final long length)
+        {
+            // Before waiting for anything: no segment can ever hold it, and that is the
+            // caller's fault, not the shard's
+            requireFitsASegment(R7fConstants.BATCH_HEADER_SIZE + compressBound((int) Math.min(length, Integer.MAX_VALUE - 1)));
+            enc.fillPlain(fbBuf, rawData);
+            lock.lock();
+            try
+            {
+                while (true)
+                {
+                    requireOpen();
+                    if (filling.count == 0 && spare != null)
+                    {
+                        break;
+                    }
+                    if (filling.count > 0)
+                    {
+                        filling.full = true;
+                        work.signal();
+                    }
+                    stageFree.awaitUninterruptibly();
+                }
+                try
+                {
+                    placeBatch(enc, enc.plain, enc.plainLength, enc.plainSequenceOffset, 1);
+                }
+                catch (final RuntimeException | Error e)
+                {
+                    fail(e, 0);
+                    throw e;
+                }
+            }
+            finally
+            {
+                lock.unlock();
+            }
+            if (rawData != null && rawData.hasRemaining())
+            {
+                rawData.position(rawData.limit());
+            }
+            return (int) length;
+        }
+
+        private void flush()
+        {
+            lock.lock();
+            try
+            {
+                requireOpen();
+                if (filling.count == 0 && spare != null)
+                {
+                    return;
+                }
+                // Everything staged is in the stage being placed, if any, and the filling one
+                final long target = placed + (spare == null ? 1 : 0) + (filling.count > 0 ? 1 : 0);
+                flushRequested = target;
+                work.signal();
+                while (placed < target)
+                {
+                    requireOpen();
+                    stageFree.awaitUninterruptibly();
+                }
+            }
+            finally
+            {
+                lock.unlock();
+            }
+        }
+
+        /** The writer thread: swap, place, hand back, until stopped. */
+        private void run()
+        {
+            lock.lock();
+            try
+            {
+                while (failure == null)
+                {
+                    final Stage stage = filling;
+                    if (stage.count > 0 && (stage.full || stopping || placed < flushRequested
+                            || System.nanoTime() - stage.firstNanos >= flushIntervalNanos))
+                    {
+                        filling = spare;
+                        spare = null;
+                        // Whoever waits for room can stage into the fresh one already
+                        stageFree.signalAll();
+                        Throwable failed = null;
+                        lock.unlock();
+                        try
+                        {
+                            placeBatch(writerEncoder, stage.plain, stage.plain.position(), stage.sequenceOffsets, stage.count);
+                        }
+                        catch (final Throwable e)
+                        {
+                            failed = e;
+                        }
+                        finally
+                        {
+                            lock.lock();
+                        }
+                        if (failed != null)
+                        {
+                            fail(failed, stage.count + filling.count);
+                            return;
+                        }
+                        stage.clear();
+                        spare = stage;
+                        placed++;
+                        stageFree.signalAll();
+                    }
+                    else if (stopping)
+                    {
+                        return;
+                    }
+                    else if (stage.count == 0)
+                    {
+                        work.awaitUninterruptibly();
+                    }
+                    else
+                    {
+                        final long waited = System.nanoTime() - stage.firstNanos;
+                        try
+                        {
+                            work.awaitNanos(flushIntervalNanos - waited);
+                        }
+                        catch (final InterruptedException e)
+                        {
+                            // Nobody interrupts this thread but a JVM going down; keep the
+                            // entries moving until stopped
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                lock.unlock();
+            }
+        }
+
+        /**
+         * The shard stops: a full disk or a lost mapping is the system's failure, and the
+         * entries staged when it happened are not this journal's to save. What it owes is to
+         * say so, here and through {@link #failure()}, and to refuse every later entry, so
+         * that requests fail closed from now on instead of being journaled into nothing.
+         * Called with the lock held.
+         */
+        private void fail(final Throwable cause, final int lostEntries)
+        {
+            failure = cause;
+            filling.clear();
+            logger.error("Journal shard {} stopped: {}. {} staged entr{} could not be placed and {} lost; "
+                            + "the shard refuses entries from now on.",
+                    provider.getShardId(), cause.toString(), lostEntries, lostEntries == 1 ? "y" : "ies",
+                    lostEntries == 1 ? "is" : "are", cause);
+            work.signal();
+            stageFree.signalAll();
+        }
+
+        private void requireOpen()
+        {
+            final Throwable failed = failure;
+            if (failed != null)
+            {
+                throw new IllegalStateException("Journal shard " + provider.getShardId() + " has failed", failed);
+            }
+            if (stopping)
+            {
+                throw new IllegalStateException("Journal is closed");
+            }
+        }
+
+        /**
+         * Places what is staged, then stops the writer thread.
+         *
+         * @return false if the writer was still running at the deadline
+         */
+        private boolean drainAndStop()
+        {
+            lock.lock();
+            try
+            {
+                stopping = true;
+                work.signal();
+                stageFree.signalAll();
+            }
+            finally
+            {
+                lock.unlock();
+            }
+            // An interrupt must not end the wait: the segment is sealed right after this, and a
+            // writer that has not placed its last batch yet would find the journal closed and
+            // drop it. The interrupt is kept for the caller.
+            final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+            boolean interrupted = false;
+            long remaining;
+            while (writer.isAlive() && (remaining = deadline - System.nanoTime()) > 0)
+            {
+                try
+                {
+                    TimeUnit.NANOSECONDS.timedJoin(writer, remaining);
+                }
+                catch (final InterruptedException e)
+                {
+                    interrupted = true;
+                }
+            }
+            if (interrupted)
+            {
+                Thread.currentThread().interrupt();
+            }
+            if (writer.isAlive())
+            {
+                logger.error("Journal shard {}'s writer thread was still placing entries after {} ms; "
+                        + "leaving the segment unsealed for recovery.", provider.getShardId(), FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    /** Entries staged for one batch: their plain content back to back (FORMAT.md 4.2). */
+    private static final class Stage
+    {
+        private final ByteBuffer plain = ByteBuffer.allocateDirect(STAGE_SIZE);
+        /** Where each entry's Sequence goes, for the writer thread to stamp. */
+        private int[] sequenceOffsets = new int[64];
+        private int count;
+        private long firstNanos;
+        private boolean full;
+
+        private void add(final ByteBuffer fbBuf, final int fbLen, final ByteBuffer rawData, final int rawLen)
+        {
+            if (count == sequenceOffsets.length)
+            {
+                final int[] grown = new int[count * 2];
+                System.arraycopy(sequenceOffsets, 0, grown, 0, count);
+                sequenceOffsets = grown;
+            }
+            sequenceOffsets[count++] = plain.position();
+            plain.putInt(0).putInt(fbLen).putInt(rawLen).put(fbBuf.duplicate());
+            if (rawLen > 0)
+            {
+                plain.put(rawData.duplicate());
+            }
+        }
+
+        private void clear()
+        {
+            plain.clear();
+            count = 0;
+            full = false;
+        }
+    }
+
+    @Override
+    public void close() throws IOException
+    {
+        // Outside the monitor: the writer thread takes it to place what is still staged
+        if (batcher != null && !batcher.drainAndStop())
+        {
+            // Sealing now would close the segment under a writer that may still place a
+            // batch, and that batch would be refused and lost. Left open, the segment stays
+            // .flux and recovery seals it after what the writer did place.
+            return;
+        }
+        closeSegments();
+    }
+
+    private synchronized void closeSegments() throws IOException
     {
         if (closed)
         {
@@ -1030,13 +1400,9 @@ public final class R7fJournal implements Journal
             {
                 faultAhead.close();
             }
-            if (stream != null)
+            if (zstd != null)
             {
-                stream.close();
-            }
-            if (single != null)
-            {
-                single.close();
+                zstd.close();
             }
 
             // The provider is this journal's to close. Its warmer thread runs ahead of the
@@ -1276,6 +1642,22 @@ if (finalizer.isAlive())
     }
 
     /**
+     * Rotating would not help a record that no segment can ever hold. Fails before burning a
+     * freshly warmed segment on it.
+     */
+    private void requireFitsASegment(final long contentLength)
+    {
+        final long freshStart = R7fFraming.entryStart(R7fConstants.PREAMBLE_SIZE, BLOCK_SIZE);
+        if (R7fFraming.entryEnd(freshStart, contentLength, BLOCK_SIZE) > provider.getSegmentSizeBytes())
+        {
+            throw new IllegalStateException(
+                    "Entry of " + contentLength + " bytes can never fit a segment of "
+                            + provider.getSegmentSizeBytes() + " bytes (minus a "
+                            + R7fConstants.PREAMBLE_SIZE + " byte preamble and the fragment headers)");
+        }
+    }
+
+    /**
      * Rotates when an entry of {@code contentLength} bytes, with its fragment headers and any
      * padding before it, does not fit the rest of the active segment. An entry never spans
      * segments.
@@ -1287,16 +1669,7 @@ if (finalizer.isAlive())
             throw new IllegalStateException("Journal is closed");
         }
 
-        final long freshStart = R7fFraming.entryStart(R7fConstants.PREAMBLE_SIZE, BLOCK_SIZE);
-        if (R7fFraming.entryEnd(freshStart, contentLength, BLOCK_SIZE) > provider.getSegmentSizeBytes())
-        {
-            // Rotating would not help: no segment can ever hold this entry. Fail before
-            // burning a freshly warmed segment on it.
-            throw new IllegalStateException(
-                    "Entry of " + contentLength + " bytes can never fit a segment of "
-                            + provider.getSegmentSizeBytes() + " bytes (minus a "
-                            + R7fConstants.PREAMBLE_SIZE + " byte preamble and the fragment headers)");
-        }
+        requireFitsASegment(contentLength);
 
         if (segment == null
                 || R7fFraming.entryEnd(R7fFraming.entryStart(position, BLOCK_SIZE), contentLength, BLOCK_SIZE) > segment.byteSize())
@@ -1330,7 +1703,6 @@ if (finalizer.isAlive())
         putLong(segmentStartEpochMillis);
         segment.set(INT_BE, R7fConstants.PREAMBLE_OFF_BLOCK_SIZE, BLOCK_SIZE);
         segment.set(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC, codec);
-        streamBlock = -1;
         position = R7fConstants.PREAMBLE_SIZE;
     }
 
