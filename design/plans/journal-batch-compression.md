@@ -97,9 +97,9 @@ lock; copy content into stage A   swap stage A for B when A is full
   latency this plan exists to remove. `r7-journal-mmap/README.md` §5 changes to say so.
 - **Low disk (decided 2026-10-10).** So that a full disk is seen coming, the journal reports a
   health component: WARN when free space on `work_dir` is below what two more segments per shard
-  need ($2 \times$ `shard_count` $\times$ `shard_size`). It shows on the dashboard and in
-  `r7_component_health`, and rolls up into gateway health like any other component. It does not
-  depend on batching and can ship first.
+  need ($2 \times$ `shard_count` $\times$ `shard_size`). It shows in the dashboard header and
+  the `/health` and `/ready` bodies, and rolls up into `r7_gateway_health`, as a rejected
+  routes.yaml does. It does not depend on batching and ships first (#208).
 - **Byte counts (decided 2026-10-10).** `r7_route_journal_bytes_total` counts bytes written to
   the journal, per route, from what the write calls return. A batch mixes routes, so its
   compressed size cannot be attributed to them exactly. The per-route counter therefore counts
