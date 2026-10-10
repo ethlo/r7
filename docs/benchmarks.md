@@ -36,7 +36,7 @@ The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/b
 
 One run of `sudo benchmark/bench.sh` on a 12th Gen Intel Core i5-12500 (six performance cores,
 SMT and turbo off, `performance` governor, 62 GiB RAM, Linux 6.8.0-142). The gateway image was
-`ghcr.io/ethlo/r7-gateway@sha256:IMAGE_DIGEST` (Temurin 27+35, the JVM's default collector),
+`ghcr.io/ethlo/r7-gateway@sha256:b5a7f7218bde53ce011de0f5ce6e870a0776212d2dfe04ded350bbc59d0f2877` (Temurin 27+35, the JVM's default collector),
 wrk `a211dd5` and wrk2 `44a94c1`.
 
 The six cores are split four ways: nginx on one, **the gateway on two**, the load generator on two,
@@ -66,7 +66,7 @@ on two cores, depending on the workload. Milliseconds: p50 / p99 / p99.9.
 | Journal `FULL` | 2.2 / 5.5 / 18.0 | 5.3 / 33.4 / 56.0 | 2.5 / 5.4 / 9.4 |
 
 r7 adds 2.4 to 4.8 ms at p99 over nginx on this host. The header filters and the `METADATA` journal
-add nothing beyond the run to run noise, about 1 ms. At `HEADERS` and `FULL` the 36-header request
+land within about 2 ms of passthrough in either direction, which is the run to run noise. At `HEADERS` and `FULL` the 36-header request
 pays for recording every header: its p99 reaches 19 and 33 ms.
 
 ### Saturation throughput
