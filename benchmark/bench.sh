@@ -2,7 +2,7 @@
 #
 # One command for a benchmark run that can be repeated and quoted.
 #
-#   sudo benchmark/bench.sh             # full run of the published image on a tuned host
+#   sudo benchmark/bench.sh             # run of the published image on a tuned host (~30 min)
 #   sudo benchmark/bench.sh --quick     # same pipeline with short runs, as a sanity check
 #   sudo benchmark/bench.sh --local     # build and measure this checkout instead
 #   benchmark/bench.sh --check          # no changes: show the core layout and host state
@@ -527,10 +527,18 @@ for u in "${UNTUNED[@]}"; do warn "not tuned: $u"; done
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
-PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtered,journal,sweep)
+# About half an hour: every scenario and workload the benchmark page reports, one JVM per
+# configuration. wrk runs three times, since its spread is the noise floor every cost is read
+# against. wrk2 runs once and for longer: it discards its first ~10s as calibration, and one
+# run at a fixed rate gives enough samples for p99.9. The sweep climbs the browser workload
+# only, up to saturation.
+PROFILE=(--scenario baseline,passthrough,filtered,journal,sweep
+         --warmup 15s --rewarm 5s --duration 15s --repeat 3
+         --latency-duration 30s --latency-repeat 1
+         --sweep-workload browser --sweep-percent 50,75,90,100)
 QUICK_FLAG=""
-# --quick runs every scenario with fresh JVMs, but shortened: short runs, the browser workload
-# and one repeat, so it says nothing about run-to-run spread. Later options win in run.sh.
+# --quick runs every scenario, but shortened: short runs, the browser workload and one
+# repeat, so it says nothing about run-to-run spread. Later options win in run.sh.
 (( QUICK )) && PROFILE+=(--quick --repeat 1) && QUICK_FLAG=" --quick"
 
 # In the background so a TERM to this script reaches run.sh at once; in the foreground bash

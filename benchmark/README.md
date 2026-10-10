@@ -17,7 +17,7 @@ Docker and `build-essential libssl-dev`:
 ```bash
 benchmark/bench.sh --check        # show the core layout and host state, change nothing
 sudo benchmark/bench.sh --quick   # the whole pipeline with short runs
-sudo benchmark/bench.sh           # the full, publishable profile (a few hours)
+sudo benchmark/bench.sh           # the publishable profile (about 30 minutes)
 sudo benchmark/bench.sh --local   # build and measure this checkout instead of the image
 ```
 
@@ -41,8 +41,11 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
    their own, one logical CPU per physical core. On a hybrid Intel CPU the efficiency
    cores do the housekeeping and the performance cores run the benchmark. The layout is in
    `host.txt`.
-5. **A fixed profile.** All scenarios including the sweep, all workloads, `--repeat 3
-   --restart-per-repeat`.
+5. **A fixed profile.** All scenarios on all workloads, one gateway JVM per configuration
+   (warmed 15s, and 5s more on each workload switch). wrk runs 3 × 15s, since its spread
+   is the noise floor every cost is read against; wrk2 runs once for 30s at the fixed rate.
+   The sweep climbs the browser workload at 50, 75, 90 and 100% of its saturation
+   throughput, once per point.
 
 `--local` measures a change before it is released. It downloads Temurin JDK 27 (what the
 image runs and CI builds with), checked against a SHA-256 sum in the script, builds the
@@ -93,7 +96,7 @@ gateway-*.log     gateway stdout/stderr per journal level
 | `passthrough` | r7 in the path, no filters, journaling off. The irreducible cost of proxying — **and the denominator for everything below**. |
 | `filtered` | Same route shape, through `AddCorrelationId` + request/response header rewrites. The cost of the filter chain. |
 | `journal` | `METADATA` → `HEADERS` → `FULL`, fresh JVM per level. The real cost of the mmap journal. `NONE` is deliberately absent: it is identical to `passthrough`, so selecting `journal` implies `passthrough` and reuses that run. |
-| `sweep` | wrk2 at a ladder of fixed rates against `NONE` and `FULL`: by default 50, 75, 90, 100 and 110% of the wrk throughput this host measured for that level and workload (`passthrough` for `NONE`; `journal` for `FULL` when that scenario ran, otherwise `passthrough`), so the ladder brackets the knee on any core count. `--sweep-rates` takes a fixed list instead. p99 versus offered load — the curve that actually characterises a gateway. Opt-in; not in the default suite. |
+| `sweep` | wrk2 at a ladder of fixed rates against `NONE` and `FULL`: by default 50, 75, 90, 100 and 110% of the wrk throughput this host measured for that level and workload (`passthrough` for `NONE`; `journal` for `FULL` when that scenario ran, otherwise `passthrough`), so the ladder brackets the knee on any core count. `--sweep-percent` changes the ladder, `--sweep-workload` limits the workloads it climbs, and `--sweep-rates` takes a fixed list instead. p99 versus offered load — the curve that actually characterises a gateway. Opt-in; not in the default suite. |
 
 ### Two delta columns, and only one of them is trustworthy
 
@@ -139,13 +142,21 @@ you and the run should be discarded.
 **Warmup is not optional.** A cold JVM is 3–10× slower than a warm one, and C2
 needs tens of thousands of iterations to settle. Every configuration is preceded
 by a discarded warmup (default 20s) whose output is kept in `raw/*.warmup.txt` so
-you can confirm the JIT actually settled.
+you can confirm the JIT actually settled. A JVM that moves on to another workload
+is already hot and only compiles the new request shape, so `--rewarm` can be shorter.
 
 **One run is not a measurement.** `--repeat N` runs each configuration N times and
 reports the median plus a `±` column: the peak-to-peak spread of throughput as a
 percentage of the median. That column is your noise floor, and **a difference
 smaller than it is not a finding**. Use `--repeat 3` minimum before believing any
-delta under a few percent; the report nags you if you didn't.
+delta under a few percent; the report nags you if you didn't. `--repeat` applies to the
+wrk runs against the gateway, the throughput every cost is quoted from;
+`--latency-repeat` sets the wrk2 runs and the baseline apart, since a fixed-rate run's
+percentiles come from its own histogram rather than from agreement between runs.
+
+**wrk2 calibrates first.** wrk2 discards the first 10s (plus 5ms per connection per
+thread) of every run while it calibrates, so a run must be well above that to record
+anything: `--latency-duration` sets it apart from `--duration`.
 
 By default repeats run back-to-back against one already-hot JVM, which bounds
 run-to-run noise but not JIT or JVM-to-JVM variance. `--restart-per-repeat` gives
