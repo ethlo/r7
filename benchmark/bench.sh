@@ -406,7 +406,9 @@ if (( LOCAL )); then
 
   # The image's JVM flags, and its AOT cache trained the same way Dockerfile.jvm does. The
   # cache only fits the JDK, jars and flags it was made with, so it is made here, per run.
-  JVM_FLAGS="$JVM_GC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
+  # The collector is not among them: the image trains without one and JAVA_TOOL_OPTIONS adds it
+  # at run time only, so --gc zgc runs, like the image, without a cache that fits.
+  JVM_FLAGS="--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
   TRAIN="$(as_user mktemp -d)"
   log "training the AOT cache"
   # Training exits on its own once the training requests are done; the timeout only stops a
@@ -479,7 +481,7 @@ QUICK_FLAG=""
 # would hold the signal until run.sh finished, hours later, with the host still tuned.
 PINS=(--backend-cpus "$BACKEND_CPUS" --gateway-cpus "$GATEWAY_CPUS" --load-cpus "$LOAD_CPUS")
 if (( LOCAL )); then
-  PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_FLAGS" \
+  PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_GC $JVM_FLAGS" \
     "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" 9>&- &
 else
   # The image's own entrypoint flags and AOT cache; JVM_OPTS only adds the collector choice.
