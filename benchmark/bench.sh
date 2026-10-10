@@ -476,6 +476,8 @@ for u in "${UNTUNED[@]}"; do warn "not tuned: $u"; done
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
+# Made by the invoking user: created by root, results/ would stop a later plain run.sh.
+as_user mkdir -p "$HERE/results"
 PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtered,journal,sweep)
 QUICK_FLAG=""
 # --quick runs every scenario with fresh JVMs, but shortened: short runs, the browser workload
@@ -504,7 +506,10 @@ trap 'kill -TERM "$RUN_PID" 2>/dev/null; wait "$RUN_PID" 2>/dev/null; exit 130' 
 RUN_STATUS=0
 wait "$RUN_PID" || RUN_STATUS=$?
 trap 'exit 130' INT TERM
-(( RUN_STATUS == 0 )) || die "run.sh failed (exit $RUN_STATUS); partial results in $OUT"
+if (( RUN_STATUS != 0 )); then
+  [[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER:" "$OUT"
+  die "run.sh failed (exit $RUN_STATUS); partial results in $OUT"
+fi
 if (( ${ISOLATED:-0} )); then
   wait "$WATCH_PID"
   while IFS= read -r u; do
