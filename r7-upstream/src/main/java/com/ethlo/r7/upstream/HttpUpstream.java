@@ -298,6 +298,7 @@ public final class HttpUpstream implements UpstreamHandle
                 throw new SocketTimeoutException("No time left within max_request_time to connect to " + uri);
             }
             final int timeoutMillis = (int) Math.min(HttpUpstream.this.connectTimeoutMillis, remainingMillis);
+            final long connectBy = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
             final Socket socket = new Socket();
             try
             {
@@ -308,8 +309,14 @@ public final class HttpUpstream implements UpstreamHandle
                     socket.setSoTimeout(readTimeoutMillis);
                     return new Connection(socket);
                 }
-                // The handshake is bounded by the connect timeout, then reads by the read timeout.
-                socket.setSoTimeout(timeoutMillis);
+                // The handshake gets what the TCP connect left of the connect timeout, then reads
+                // are bounded by the read timeout.
+                final long handshakeMillis = TimeUnit.NANOSECONDS.toMillis(connectBy - System.nanoTime());
+                if (handshakeMillis < 1)
+                {
+                    throw new SocketTimeoutException("Connect timeout used up before the TLS handshake with " + uri);
+                }
+                socket.setSoTimeout((int) handshakeMillis);
                 final SSLSocket tls = (SSLSocket) sslContext().getSocketFactory().createSocket(socket, host, port, true);
                 final SSLParameters parameters = tls.getSSLParameters();
                 // Verify the certificate names the host we meant, not just that some CA signed it.
