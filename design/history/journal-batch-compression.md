@@ -1,6 +1,11 @@
 # Journal compression per batch, off the request thread
 
-> **Plan, not built.** Proposed and agreed 2026-10-10. Nothing here describes how r7 behaves today.
+> **History.** Proposed and agreed 2026-10-10, built in #209. The current behaviour is specified in
+> `r7-journal-mmap/FORMAT.md` §4.4 and `r7-journal-mmap/README.md` §4.0; read this for the why.
+>
+> A pinned A/B on a 12-CPU host (gateway on 2 cores, `METADATA`, browser workload, `run.sh
+> --repeat 3`, not `bench.sh`) measured the cost against passthrough at −18.5% before and −16.9%
+> after, within run-to-run spread, and p99 at 1040 ms before and 38.5 ms after.
 
 ## The problem
 

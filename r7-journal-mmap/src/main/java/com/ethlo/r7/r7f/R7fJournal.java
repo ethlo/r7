@@ -998,7 +998,7 @@ public final class R7fJournal implements Journal
      * Compressing each entry on the request thread cost more than everything else the journal
      * does: a flush per entry is expensive whatever the level, and since a block's stream is
      * shared it ran under the monitor, so every request on the shard queued behind it
-     * (design/history/journal-write-contention.md). Here a request thread only copies its
+     * (design/history/journal-batch-compression.md). Here a request thread only copies its
      * entry into a stage under a short lock, and one writer thread compresses a whole stage as
      * one batch and places it.
      * <p>
