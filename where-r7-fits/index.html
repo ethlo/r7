@@ -992,6 +992,11 @@ read, so an exchange is found by URL and time without scanning the archive. Its 
 point into the <code>.warc.zst</code> file as written, one Zstandard frame per record: a reader loading
 records through the index needs to read Zstandard-compressed WARC, and a file decompressed with
 <code>zstd -d</code> needs an index of its own.</p>
+<p>r7 does not sign its records, so an archive that has to hold up as evidence goes on storage that
+cannot be changed once written, such as <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html">S3 Object Lock</a>
+in compliance mode, or any other WORM store. Copy a file pair once its <code>.warc.zst</code> appears: that
+rename is the seal, its <code>.cdxj</code> is already in place, and neither is written again. Never copy a
+<code>.open</code> file, nor a <code>.cdxj</code> whose <code>.warc.zst</code> is not there yet, since a restart rebuilds it.</p>
 <h2 id="monitoring-prometheus">Monitoring: Prometheus</h2>
 <p>The management port serves the gateway's own health: responses per route and status code,
 latency histograms (for routes with the <code>SimpleMetrics</code> filter), connections, journal space and
