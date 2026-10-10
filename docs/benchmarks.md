@@ -24,8 +24,9 @@ latency are reported together.
 - **Repeats.** Three runs per configuration, each with a fresh JVM and a discarded warmup.
 - **Tools.** wrk finds saturation throughput. wrk2 holds a fixed rate and records latency in an
   HdrHistogram, so its p99 and p99.9 are free of coordinated omission.
-- **Verdict.** A run is published only when its report says PUBLISHABLE: a pulled image (or a `--local`
-  build), clean tree, every tuning step applied, every run valid, repeats within 5%.
+- **Verdict.** Each report opens with PUBLISHABLE or NOT PUBLISHABLE: a pulled image (or a `--local`
+  build), clean tree, every tuning step applied, every run valid, repeats within 5%. The run below is
+  not publishable, and the Results section says which rows that leaves out.
 
 The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/blob/main/benchmark/README.md).
 
@@ -52,8 +53,8 @@ run measured.
 ### Latency at a fixed 20,000 req/s
 
 wrk2 holds the rate and corrects for coordinated omission, so these are the figures to read for
-latency. 20,000 req/s is about 45% of what the gateway saturates at on two cores. Milliseconds:
-p50 / p99 / p99.9.
+latency. All runs use 200 connections. 20,000 req/s is 38% to 54% of what the gateway saturates at
+on two cores, depending on the workload. Milliseconds: p50 / p99 / p99.9.
 
 | Scenario | Browser GET | 36-header GET | 1 KB POST |
 | --- | --- | --- | --- |
@@ -64,7 +65,7 @@ p50 / p99 / p99.9.
 | Journal `HEADERS` | 2.0 / 5.0 / 6.8 | 2.9 / 17.1 / 40.0 | 1.8 / 5.4 / 7.8 |
 | Journal `FULL` | 2.3 / 5.7 / 11.9 | 4.0 / 27.1 / 51.2 | 2.2 / 5.3 / 9.1 |
 
-r7 adds about 2 ms at p99 over nginx on this host, and `METADATA` journaling adds under 1 ms
+r7 adds 2.3 to 3.3 ms at p99 over nginx on this host, and `METADATA` journaling adds up to 1.2 ms
 more. At `HEADERS` and `FULL` the 36-header request pays for recording every header: its p99
 reaches 17 and 27 ms.
 
@@ -76,13 +77,15 @@ understate the tail, so use the table above for latency.
 
 | Scenario | Browser GET | 36-header GET | 1 KB POST |
 | --- | --- | --- | --- |
-| r7 passthrough (requests per second) | 45,700 | 37,000 | 52,200 |
-| Journal `METADATA` | −16% | −14% | −17% |
-| Journal `HEADERS` | −29% | −41% | −25% |
-| Journal `FULL` | −32% | −45% | −34% |
+| r7 passthrough (requests per second) | 45,700 (±3.1%) | 37,000 (±5.2%) | 52,200 (±3.8%) |
+| Journal `METADATA` | −16% (±3.7%) | −14% (±0.7%) | −17% (±1.7%) |
+| Journal `HEADERS` | −29% (±3.3%) | −41% (±1.7%) | −25% (±2.4%) |
+| Journal `FULL` | −32% (±3.0%) | −45% (±1.5%) | −34% (±0.9%) |
 
-The header filters cost 4.5% on the POST workload (±5.4%). Their browser and header-heavy rows are
-left out because of the timeouts above.
+`±` is the spread of throughput across the three repeats of that configuration, the run's noise
+floor; a difference smaller than it is not a finding. The header filters cost 4.5% on the POST
+workload against a spread of ±5.4%, which is inside the noise, so no filter cost is measurable
+here. Their browser and header-heavy rows are left out because of the timeouts above.
 
 ### Where the tail breaks away
 
