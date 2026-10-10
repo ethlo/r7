@@ -362,7 +362,7 @@ public final class ManagementEndpoint
                 .sample("r7_start_time_seconds", Instant.from(SystemUtil.getStartTime()).getEpochSecond());
 
         final GatewayHealth health = (GatewayHealth) json.get("health");
-        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml counting as WARN. 0 OK, 1 WARN, 2 ERROR.")
+        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml or a journal disk short of two segments per shard counting as WARN. 0 OK, 1 WARN, 2 ERROR.")
                 .sample("r7_gateway_health", healthValue(health.health()));
 
         final boolean rejected = GatewayHealth.routesRejected((HotReloadService.Status) json.get("route_source"));
