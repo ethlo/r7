@@ -46,8 +46,8 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   holding the shard's monitor, as before fault-ahead.
 - **A compressed journal holds entries in memory before they are journaled.** Entries are
   staged and placed a batch at a time, so a crash loses what is staged: at most 64 KB of plain
-  entries per shard, the last 10 ms of them at low traffic. A tailer sees an entry up to 10 ms
-  after its write returns. A full disk stops the shard until restart rather than failing the
+  entries per shard, the last 10 ms of them at low traffic. A tailer sees an entry about 10 ms
+  after its write returns: the flush interval plus the time to place its batch. A full disk stops the shard until restart rather than failing the
   requests whose entries were staged (`r7-journal-mmap/README.md` §4.0 and §8).
 - **Damage costs up to a block.** After a hole or a bad checksum, a reader resumes at the next
   block boundary, so up to 32 KB of intact entries per damaged region are lost

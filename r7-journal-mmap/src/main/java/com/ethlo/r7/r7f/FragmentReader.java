@@ -137,12 +137,6 @@ final class FragmentReader
             return Status.DAMAGED;
         }
 
-        final byte flags = file.get((int) (start + R7fConstants.FRAGMENT_OFF_FLAGS));
-        if (flags != 0)
-        {
-            return damaged("unknown fragment flags " + flags);
-        }
-
         final ByteBuffer content;
         final int contentBase;
         final long contentLength;
@@ -499,6 +493,14 @@ final class FragmentReader
         if (type < R7fConstants.FRAGMENT_FULL || type > R7fConstants.FRAGMENT_LAST)
         {
             damaged("unknown fragment type " + type);
+            return -1;
+        }
+
+        // On every fragment, continuations included: no flag is defined (FORMAT.md 4.1)
+        final byte flags = file.get((int) (position + R7fConstants.FRAGMENT_OFF_FLAGS));
+        if (flags != 0)
+        {
+            damaged("unknown fragment flags " + flags);
             return -1;
         }
 

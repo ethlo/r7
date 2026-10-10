@@ -183,7 +183,7 @@ class JournalCompressionTest
     @Test
     void aRefusalInsideABatchResumesAtTheRefusedEntry() throws IOException
     {
-        try (R7fJournal journal = journal(journalDir, 1))
+        try (R7fJournal journal = R7fJournalTestAccess.holdBatchesUntilFull(journal(journalDir, 1)))
         {
             for (int i = 0; i < 20; i++)
             {
@@ -361,7 +361,7 @@ class JournalCompressionTest
      */
     private static void writeMixed(final Path dir, final int level)
     {
-        try (R7fJournal journal = journal(dir, level))
+        try (R7fJournal journal = level > 0 ? R7fJournalTestAccess.holdBatchesUntilFull(journal(dir, level)) : journal(dir, level))
         {
             for (int i = 0; i < 400; i++)
             {

@@ -17,6 +17,13 @@ public final class R7fJournalTestAccess
         return R7fJournal.STAGE_SIZE;
     }
 
+    /** See {@link R7fJournal#holdBatchesUntilFull()}. */
+    public static R7fJournal holdBatchesUntilFull(final R7fJournal journal)
+    {
+        journal.holdBatchesUntilFull();
+        return journal;
+    }
+
     /**
      * Makes the active segment refuse writes, as a mapping that has gone bad does: the next
      * batch the writer thread places fails.

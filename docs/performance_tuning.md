@@ -160,8 +160,8 @@ of the CPU of compressing them one at a time.
 
 ### What it costs
 
-- **A tailer sees an entry when its batch is placed:** up to 10 ms after the write at low
-  traffic, sooner as traffic fills the stage.
+- **A tailer sees an entry when its batch is placed:** at low traffic, 10 ms after the write
+  plus the time to compress and place the batch; sooner as traffic fills the stage.
 - **A crash loses what is staged,** up to 64 KB of entries per shard, the last 10 ms of them at
   low traffic. A graceful shutdown places them first.
 - **Damage costs a batch,** about 32 KB of entries before compression, where uncompressed it

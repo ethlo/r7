@@ -965,6 +965,24 @@ public final class R7fJournal implements Journal
     }
 
     /**
+     * For tests that assert how entries are batched, which the flush interval would otherwise
+     * make depend on how fast the machine is: a stage is then placed only when full, flushed
+     * or closed.
+     */
+    void holdBatchesUntilFull()
+    {
+        batcher.lock.lock();
+        try
+        {
+            batcher.flushIntervalNanos = Long.MAX_VALUE / 2;
+        }
+        finally
+        {
+            batcher.lock.unlock();
+        }
+    }
+
+    /**
      * Bytes placed in segments, after compression: what this journal has cost on disk, which
      * the per-write return values (plain bytes) do not say once entries are compressed.
      */
@@ -1013,6 +1031,9 @@ public final class R7fJournal implements Journal
         /** Only the writer thread uses it: the encoder that frames each batch it places. */
         private final EntryEncoder writerEncoder = new EntryEncoder();
         private final Thread writer;
+
+        /** {@link #FLUSH_INTERVAL_NANOS}, unless a test holds batches until their stage is full. */
+        private long flushIntervalNanos = FLUSH_INTERVAL_NANOS;
 
         private Batcher(final int shard)
         {
@@ -1162,7 +1183,7 @@ public final class R7fJournal implements Journal
                 {
                     final Stage stage = filling;
                     if (stage.count > 0 && (stage.full || stopping || placed < flushRequested
-                            || System.nanoTime() - stage.firstNanos >= FLUSH_INTERVAL_NANOS))
+                            || System.nanoTime() - stage.firstNanos >= flushIntervalNanos))
                     {
                         filling = spare;
                         spare = null;
@@ -1205,7 +1226,7 @@ public final class R7fJournal implements Journal
                         final long waited = System.nanoTime() - stage.firstNanos;
                         try
                         {
-                            work.awaitNanos(FLUSH_INTERVAL_NANOS - waited);
+                            work.awaitNanos(flushIntervalNanos - waited);
                         }
                         catch (final InterruptedException e)
                         {

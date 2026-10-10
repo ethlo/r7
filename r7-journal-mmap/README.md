@@ -140,8 +140,9 @@ This is what compression costs and buys:
   than everything else the journal does, because zstd's cost was per flush, and a shared
   stream put it under the shard's monitor. A whole batch compresses in a fraction of that CPU
   and to a fraction of the bytes.
-* **An entry is readable when its batch is placed**, not when its write returns: up to 10 ms
-  later at low traffic, sooner as traffic fills stages.
+* **An entry is readable when its batch is placed**, not when its write returns. At low
+  traffic that is the 10 ms flush interval plus the time to compress and place the batch;
+  sooner as traffic fills stages.
 * **A crash loses what is staged** (§8.1), at most two stages per shard.
 * An entry larger than a stage is placed as a batch of its own, by the thread that wrote it,
   once everything staged before it is placed.
