@@ -63,14 +63,15 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
 
 ## On Níma
 
-- **The short tail at saturation rests on an undocumented JDK setting.** `R7Helidon.main` sets
-  the internal `jdk.pollerMode=3` (per-carrier I/O pollers), which a future JDK may change or
-  drop. An embedder that does not start through `R7Helidon.main` must set it itself. Without it,
-  a few requests wait up to about 0.5 s at saturation
-  ([`history/upstream-client.md`](history/upstream-client.md), "The stalls at saturation").
+- **The poller mode is an undocumented JDK setting.** `R7Helidon.main` sets the internal
+  `jdk.pollerMode` (platform-thread pollers by default, `R7_POLLER_MODE` to choose), which a
+  future JDK may change or drop. An embedder that does not start through `R7Helidon.main` must
+  set it itself. On the JDK's default pollers, new connections wait seconds at saturation
+  ([`docs/performance_tuning.md`](../docs/performance_tuning.md#latency-at-saturation-the-jdks-io-pollers)).
 - **Static files contend on a global lock.** Every file served opens a `FileChannel`, which
   registers with the JDK's `Cleaner` under one lock. At saturation the worst case measured was
-  255 ms with `jdk.pollerMode=3`, and 4 s without it.
+  255 ms with per-carrier pollers (`jdk.pollerMode=3`) and 4 s with the JDK's
+  default; platform-thread pollers, now the default, are not measured on it yet.
 
 ## Experimental: `r7-servlet`
 

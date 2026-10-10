@@ -18,6 +18,8 @@ services:
     environment:
       - JAVA_TOOL_OPTIONS=${R7_BENCH_JVM_OPTS--XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow}
       - R7_MANAGEMENT_HOST=127.0.0.1
+      # Unset or empty: the gateway's default. R7_POLLER_MODE=3 ./run.sh ... compares another.
+      - R7_POLLER_MODE=${R7_POLLER_MODE:-}
     # Bind-mounted journals are owned by the host user, but the image runs as
     # 65532. Run as the invoking user so the journal writes actually land.
     user: "${R7_BENCH_UID:-1000}:${R7_BENCH_GID:-1000}"
