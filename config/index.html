@@ -2139,7 +2139,6 @@
 </table>
 <p>The monitor starts when the routes are loaded, not with a route's first request, so a dead target is found before traffic reaches it. Targets start out healthy; the first probe runs one <code>interval</code> after loading, and a target is evicted after <code>fall</code> failed probes. A hot reload starts monitors for the new routes and stops the previous ones, so health state starts over.</p>
 <h3 id="timeouts-timeouts">Timeouts (<code>timeouts</code>)</h3>
-<p><em>Currently, only response-read timeouts are configurable at the upstream level. Connect timeouts are handled globally by the proxy client.</em></p>
 <table>
 <thead>
 <tr>
@@ -2154,7 +2153,13 @@
 <td><code>read</code></td>
 <td>Duration</td>
 <td><code>30s</code></td>
-<td>Maximum time to wait for a response after sending the request. At most <code>24d</code> (2147483647 ms, the proxy client's int millisecond limit).</td>
+<td>Maximum time to wait for a response after sending the request. At least <code>1ms</code> and at most <code>24d</code> (2147483647 ms, the proxy client's int millisecond limit).</td>
+</tr>
+<tr>
+<td><code>connect</code></td>
+<td>Duration</td>
+<td><code>5s</code></td>
+<td>Maximum time to wait for a connection to a target, including the TLS handshake for <code>https</code> targets. A target that does not answer in time counts as unreachable, and nothing has been sent to it, so the request can go to another target. Connecting never runs past the proxy's <code>max_request_time</code>: once that is used up the request is answered <code>504</code>. At least <code>1ms</code> and at most <code>24d</code>.</td>
 </tr>
 </tbody>
 </table>
