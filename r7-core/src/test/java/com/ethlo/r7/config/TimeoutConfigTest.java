@@ -92,6 +92,12 @@ class TimeoutConfigTest
     }
 
     @Test
+    void aReadTimeoutBelowOneMillisecondIsRefused()
+    {
+        assertThat(errorsFor(Duration.ofNanos(500_000))).singleElement().asString().contains("read");
+    }
+
+    @Test
     void aConnectTimeoutOfOneMillisecondIsAccepted()
     {
         assertThat(connectErrorsFor(Duration.ofMillis(1))).isEmpty();

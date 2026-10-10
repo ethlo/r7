@@ -25,6 +25,7 @@ public record TimeoutConfig(
 {
     public static final Duration DEFAULT_READ = Duration.ofSeconds(30);
     public static final Duration DEFAULT_CONNECT = Duration.ofSeconds(5);
+    private static final Duration MIN = Duration.ofMillis(1);
 
     /**
      * Both timeouts at their defaults, for an upstream with no {@code timeouts} block.
@@ -49,13 +50,13 @@ public record TimeoutConfig(
     @Override
     public void validate(final ValidationResult result)
     {
-        if (this.read != null && (this.read.isNegative() || this.read.isZero()))
-        {
-            result.addError("read", "Read timeout must be greater than 0");
-        }
         // The socket API takes whole milliseconds and reads 0 as "wait forever", so anything
         // shorter than 1 ms would turn the bound off instead of tightening it
-        if (this.connect != null && this.connect.compareTo(Duration.ofMillis(1)) < 0)
+        if (this.read != null && this.read.compareTo(MIN) < 0)
+        {
+            result.addError("read", "Read timeout must be at least 1ms, but was " + this.read);
+        }
+        if (this.connect != null && this.connect.compareTo(MIN) < 0)
         {
             result.addError("connect", "Connect timeout must be at least 1ms, but was " + this.connect);
         }

@@ -141,7 +141,7 @@ The monitor starts when the routes are loaded, not with a route's first request,
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
+| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
 | `connect` | Duration | `5s` | Maximum time to wait for a connection to a target, including the TLS handshake for `https` targets. A target that does not answer in time counts as unreachable, and nothing has been sent to it, so the request can go to another target. At least `1ms` and at most `24d`. |
 
 ### Fallback (`fallback`)
