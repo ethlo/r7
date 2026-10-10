@@ -85,13 +85,21 @@ lock; copy content into stage A   swap stage A for B when A is full
 - **Oversized entries.** A request thread with an entry larger than a stage does not copy it.
   It queues the entry on the stage as a reference and waits, so the writer thread flushes what is
   staged, writes the entry as STANDALONE, and only then releases the thread and its buffer.
-- **Failures.** A writer thread that fails (disk full, a rotation that cannot map a segment)
-  records the failure, and every later append on that shard throws it. The request pipeline then
-  fails closed, exactly as a throwing `writeEntry` makes it today. Nothing is staged that the
-  writer can no longer place.
-- **Byte counts.** The write calls return the bytes they staged, which is what the per-request
-  journal byte counts need. Bytes placed in the segment, compressed, are counted by the writer
-  thread for the metrics.
+- **Failures.** Writes become asynchronous, and that changes the failure contract. Today
+  `writeEntry` has published the magic before it returns, so a disk-full or mapping failure
+  fails the request whose entry it was. With staging, the requests whose entries are staged have
+  already returned when the writer thread fails. Proposed: the writer thread records the
+  failure, the shard refuses every later append (those requests fail closed, as today), gateway
+  health goes to ERROR so `/ready` returns 503, and the staged entries it could not place are
+  reported as lost, by count and Sequence range, through the integrity listener. The
+  alternative, making each request wait for its batch's commit, keeps today's contract but gives
+  back the latency this plan exists to remove. This is a decision for the plan's review (see
+  "Open questions").
+- **Byte counts.** `r7_route_journal_bytes_total` counts bytes written to the journal, per
+  route, from what the write calls return. A batch mixes routes, so its compressed size cannot be
+  attributed to them exactly. Proposed: the per-route counter counts plain (uncompressed) bytes
+  and is renamed to say so, and a new per-shard counter counts the compressed bytes placed.
+  Both renames are breaking metric changes, made before 1.0.
 
 ## What it buys
 
@@ -130,15 +138,18 @@ CPUs (#203), one writer per shard has headroom.
 **Tailer latency.** Today an entry is visible to a tailer the moment its magic is written. In
 the sandbox, from an exchange's end entry to the tailer's consumer, one run of
 `TailerLatencyBenchmarkTest` gave a p50 of about 0.06 to 0.2 ms and a p99 of about 0.6 to 3 ms. With batches, an entry is visible when
-its batch is placed, so the delay adds up to the time to fill a stage, capped by the flush
-interval:
+its batch is placed. Nominally the delay is the time to fill a stage, capped by the flush
+interval, plus the writer thread's time to compress and place the batch ($t_{\text{write}}$,
+under 0.1 ms for 32 KB in the sandbox measurement):
 
 $$
-t_{\text{visible}} \le \min\left(\frac{S}{r \cdot b},\; T_{\text{flush}}\right)
+t_{\text{visible}} \approx \min\left(\frac{S}{r \cdot b},\; T_{\text{flush}}\right) + t_{\text{write}}
 $$
 
 $S$ is the stage size (32 KB), $r$ the request rate on the shard, $b$ the plain bytes per
 request, and $T_{\text{flush}}$ the flush interval (10 ms).
+
+Nominal fill delay, without $t_{\text{write}}$:
 
 | Load per shard | `METADATA` ($b \approx 800$ B) | `FULL`, one 4 KB body ($b \approx 4.8$ KB) |
 |---|---|---|
@@ -146,8 +157,11 @@ request, and $T_{\text{flush}}$ the flush interval (10 ms).
 | 1k req/s | 10 ms (flush) | 7 ms |
 | idle, one request | 10 ms (flush) | 10 ms (flush) |
 
-The client never waits on any of this. Only tailers see it: WARC files, JSON lines and anything
-downstream of them get each exchange up to 10 ms later than today.
+This is not a bound. When the writer thread falls behind (a disk stall, a rotation, a host
+short of CPU), both stages fill, the delay grows by the writer's backlog, and request threads
+wait for a free stage. That is the same backpressure as today's monitor, moved: the client waits
+only then, as it does today when the monitor is contended. In steady state, tailers (WARC files,
+JSON lines and anything downstream) get each exchange about 10 ms later than today at worst.
 
 **Process crash.** Today a committed entry is in the page cache, so it survives the gateway
 process being killed. With staging, entries not yet placed are in the process's memory, and a
@@ -197,6 +211,13 @@ smaller, and the tests are the largest part.
   capped on cloud instances.
 
 ## Open questions
+
+- Writer failures: fail the shard and mark the gateway not ready, losing what was staged (the
+  proposal above), or make each request wait for its batch's commit? The first changes the
+  journal's append contract (`r7-journal-mmap/README.md` §5, "Backpressure Model"); the second gives up
+  most of the latency gain.
+- Byte metrics: per-route plain bytes plus per-shard compressed bytes, as proposed, or drop the
+  per-route byte counter?
 
 - Should the flush interval be fixed at 10 ms or configurable? A setting is one more thing to
   explain. A fixed value is enough until a deployment needs otherwise.
