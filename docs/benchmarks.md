@@ -46,9 +46,10 @@ each other.
 
 These figures give an indication of the cost, not a measurement to the decimal. They come from one
 run. The report's own verdict for that run is not publishable, because some `filtered` runs had
-request timeouts and a few configurations varied more than 5% between repeats. This page leaves out
-the rows those runs produced and keeps the rest; the throughput `±` column below is the spread the
-run measured.
+request timeouts and three throughput configurations varied more than 5% between repeats. This page
+leaves out the timeout-affected `filtered` rows. It keeps the over-threshold ones and prints each
+spread next to its value: the 36-header passthrough throughput (±5.2%), and with it the 36-header
+percentages that divide by it, carry that much uncertainty.
 
 ### Latency at a fixed 20,000 req/s
 
