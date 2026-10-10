@@ -191,30 +191,38 @@ charged to a container's memory limit, of the writeback, and of what a tailer re
 
 ### Symptom
 
-Driven past the request rate it can sustain, a gateway on the JDK's default I/O pollers answers
-a few requests very late: hundreds of milliseconds where p99 is single-digit milliseconds. The
-gateway started through `R7Helidon.main` (the jar and the images) does not run on those
-defaults. This section matters if you override them, or embed `R7Helidon` without its `main`,
-which then has to set `-Djdk.pollerMode=3` itself.
+Driven past the request rate it can sustain, a gateway on virtual-thread I/O pollers serves the
+connections it already has but leaves new ones waiting: a connection opened while every core
+is busy can wait seconds for its first request to be read. A load generator that opens all of its
+connections at once against a saturated gateway shows this as a burst of very late responses
+(wrk counts them as timeouts). The gateway started through `R7Helidon.main` (the jar and the
+images) uses platform-thread pollers, which do not do this.
 
 ### Why it happens
 
 Every connection runs on a virtual thread, and when it waits for the network the JDK parks it
-and hands the socket to an I/O poller. By default those pollers are themselves virtual threads,
-scheduled on the same carrier threads as the requests. When every carrier is busy, a poller can
-wait for one, and every connection registered with it waits too, then resumes in the same
-millisecond. Measured at saturation on Java 25 (200 connections, 20 cores): about 141k req/s,
-p99 7 ms, worst case about 540 ms.
+and hands the socket to an I/O poller. With virtual-thread pollers (the JDK default, mode 2) or
+per-carrier pollers (mode 3), a connection woken by a poller is queued on that poller's carrier.
+A new connection's thread is started by Helidon's acceptor, a platform thread, and waits in the
+scheduler's shared queue instead. A carrier runs its own queue until it is empty before looking
+at the shared one, and at saturation it is never empty, so new connections wait until the load
+drops. Platform-thread pollers (mode 1) wake every thread through the shared queue, in order.
 
-Java 27 has per-carrier pollers (`-Djdk.pollerMode=3`), which poll as part of each carrier's own
-scheduling; with them the worst case is about 20 ms. The gateway turns them on by itself.
+The measurements are in the design history
+([`upstream-client.md`](https://github.com/ethlo/r7/blob/main/design/history/upstream-client.md),
+"New connections starved at saturation"): with per-carrier pollers, a burst of late responses
+showed up in about a quarter of the runs; with platform-thread pollers, in none. Per-carrier
+pollers keep a shorter tail for connections that are already open, which is why the mode stays
+selectable.
 
 ### What to do
 
-- **Leave `jdk.pollerMode` unset** when starting through `R7Helidon.main`: an explicit value
-  replaces the gateway's choice. An embedder sets `-Djdk.pollerMode=3` itself.
-- **Do not switch to platform-thread pollers** (`-Djdk.pollerMode=1`). They compete with the
-  carriers for the cores: on Java 25 they took p99 from 7 ms to 15-50 ms at every load.
+- **Leave the default** (mode 1) unless every client holds long-lived connections and you have
+  measured the difference.
+- **`R7_POLLER_MODE`** (`1`, `2` or `3`) chooses the mode; any other value stops startup. An
+  explicit `-Djdk.pollerMode` replaces both. The setting is internal to the JDK, which may
+  change or drop it. An embedder that does not start through `R7Helidon.main` sets
+  `-Djdk.pollerMode=1` itself.
 - **Do not run the gateway at saturation.** Size it so that peak load stays below the rate it
   sustains.
 

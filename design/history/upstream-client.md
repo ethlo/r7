@@ -496,6 +496,21 @@ later. Meanwhile Níma gains what it lacks, one PR each:
   virtual threads queued on it (worst 4 s with the default pollers, 255 ms with mode 3). The fix
   is not to open a file per request for small hot files - a bounded content cache validated by
   size and modification time - and is still to do.
+- **New connections starved at saturation (2026-10-10).** Mode 3 left one stall: wrk runs on a
+  gateway pinned to 2 cores showed bursts of responses later than 5 s (104 and 86 of 200
+  connections), all at the start of a run. wrk counts a response as a timeout when it arrives
+  after `--timeout`, and does not count one that never arrives, so these were late, not lost.
+  Reproduced in a 4-vCPU cloud sandbox (Temurin 27+35, ZGC, gateway pinned to 2 vCPUs, the
+  benchmark's nginx on 1, `wrk -t2 -c1000 -d30s` with `browser-get.lua` on `/filtered`, a fresh
+  gateway per run): a probe sent straight to nginx was never slow, one through the
+  gateway took 11-20 s, and a thread dump showed 569 unnamed virtual threads that had never run
+  (wrk reported 570 timeouts). Helidon's acceptor is a platform thread, so each new
+  connection's thread starts in ForkJoinPool's shared submission queue. Under mode 3 every
+  wake-up goes to the carrier's own queue, and `topLevelExec` drains that before scanning
+  anything else, so at saturation the new threads wait. Runs with a burst: mode 3 8 of 29,
+  mode 2 1 of 8, mode 1 0 of 24. The pool's 64-idle cap was ruled out again: it churns ~100
+  connections/s at 200 clients, and lifting it changed neither throughput nor the stalls.
+  `R7Helidon.main` now defaults to mode 1, and `R7_POLLER_MODE` chooses another.
 - **Header and body limits.** Done. `limits.max_header_size`, `max_header_count` and
   `max_entity_size` now hold on every server, checked by `GatewaySecurityKit` (seven cases, a
   head and a body at the limit included). Níma bounds the request line and the header fields
