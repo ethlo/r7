@@ -3,10 +3,11 @@
 A reproducible suite for answering one question honestly: **what does it cost to
 put r7 in the request path?**
 
-Every number this suite prints is a delta against a baseline run in which the
-load generator talks straight to the backend. An absolute "r7 does N req/s"
-figure is close to meaningless — it describes the hardware, the backend and the
-load generator as much as the gateway.
+Every number this suite prints is relative: either to a baseline run in which the load
+generator talks straight to the backend (the total cost of the hop, an upper bound), or to the
+`passthrough` run (what a filter or a journal level adds; see "Two delta columns" below). An
+absolute "r7 does N req/s" figure is close to meaningless: it describes the hardware, the
+backend and the load generator as much as the gateway.
 
 ## Quick start
 
