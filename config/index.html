@@ -2089,7 +2089,7 @@
 <td><code>url</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The fully qualified URL (must begin with <code>http://</code> or <code>https://</code>). For <code>https</code>, the certificate chain is checked against the JVM trust store but the hostname is not verified, so any trusted certificate is accepted for any upstream.</td>
+<td>The fully qualified URL (must begin with <code>http://</code> or <code>https://</code>). For <code>https</code>, the certificate chain is checked against the JVM trust store and the certificate must name the target's host.</td>
 </tr>
 </tbody>
 </table>
