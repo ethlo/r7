@@ -49,8 +49,9 @@ class JournalConcurrentWriteTest
     private static final long SEGMENT_BYTES = 1024L * 1024L;
 
     /**
-     * @param compressionLevel 0 and zstd: with compression the block's stream is shared state
-     *                         under the same monitor, and its order has to be the sequence order
+     * @param compressionLevel 0 and zstd: with compression every writer stages into the same
+     *                         stage and one thread places them, and the order in the segment has
+     *                         to be the Sequence order all the same
      */
     @ParameterizedTest
     @ValueSource(ints = {0, 1})

@@ -53,10 +53,18 @@ and all, and the FIRST fragment's magic is the one stamped last. A reader stops 
 and never reaches continuations it could mistake for anything, and recovery treats complete
 continuations behind an uncommitted FIRST as the ordinary tail of a crash, not as damage.
 
+A compressed journal commits a batch of entries at a time (`FORMAT.md` §4.4), and the rule is
+the same rule at batch scale: the batch is framed like an entry and its magic is stamped last.
+Entries still staged in memory are not in the segment at all, so they are invisible for the
+simplest reason. What batching adds is a second place an entry can be before its commit, and
+that place does not survive a crash (`r7-journal-mmap/README.md` §8.1).
+
 *Checked by* `partialTrailingEntryInAnActiveSegmentIsRetriedNotConsumed`,
 `recoverySealsAtAnUnpublishedEntryWithoutReportingDamage`,
-`recoverySealsBeforeAnUncommittedSplitEntry` and
-`anActiveSegmentIsTailedAcrossSplitEntries`.
+`recoverySealsBeforeAnUncommittedSplitEntry`,
+`anActiveSegmentIsTailedAcrossSplitEntries`,
+`stagedEntriesAreInvisibleUntilTheirBatchIsPlaced` and
+`recoverySealsBeforeAnUncommittedBatch`.
 
 ## 2. A checkpoint means exactly "everything up to here reached the consumer"
 
@@ -136,8 +144,16 @@ and that answer belongs next to the policy, not at each site that might be holdi
 `aResponseBodyIsNeverJournaledAheadOfItsClientRequest`,
 `aResponseBodyJournaledAtFullIsDeliveredWithARequestBelowFull`,
 `anExchangeOpenAtAHardKillIsCompletedAfterTheRestart`,
-`anExchangeRefusedByTheConsumerSurvivesARestart` and
-`aSecondRestartBeforeTheReplayKeepsTheExchange`.
+`anExchangeRefusedByTheConsumerSurvivesARestart`,
+`aSecondRestartBeforeTheReplayKeepsTheExchange`, the same three in `TailerRestartBatchTest`, and
+`aRefusalInsideABatchResumesAtTheRefusedEntry`.
+
+With batches a checkpoint can fall inside a record: a refusal stops the reader on an entry
+whose batch began earlier. The checkpoint is then the batch's offset and the Sequence to
+deliver next, and the reader passes over the batch's leading entries on the retry, in the
+first batch it reads and only where that Sequence falls inside it (`FORMAT.md` §4.4). The
+replay that rebuilds open exchanges after a restart stops at that Sequence, not at the
+offset, or it would lose the batch's entries before it.
 
 The writer has a share in this invariant too. A reader can only deliver what it can attach, and
 a body entry for a request id it has not seen is discarded as an orphan. So every body fragment
@@ -176,7 +192,8 @@ quarantined segment never blocks its shard, exactly as the rename it replaced di
 *Checked by* `JournalInvariants.assertSegmentKeysAreUnique`,
 `segmentSequencesDoNotCollideAcrossRestart`,
 `segmentSequenceDoesNotRestartAfterEverySegmentIsDeleted`,
-`entriesLostAtTheStartOfASegmentAreReported` and
+`entriesLostAtTheStartOfASegmentAreReported`,
+`everySegmentsBatchesStartAtSequenceOne`, `sequencesThatAreNotContiguousAreDamage` and
 `aSegmentWithAnUnreadableNameIsSetAsideRatherThanReplayedOutOfOrder`,
 `quarantineNeedsNoWriteAccessToTheJournalDirectory` and
 `aQuarantinedSegmentIsReadOnceItBecomesReadableAndNeverBlocksItsShard`.

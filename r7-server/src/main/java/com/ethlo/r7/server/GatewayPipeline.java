@@ -791,6 +791,12 @@ public final class GatewayPipeline
     /**
      * Requests answered 404 because no route matched, since startup.
      */
+    /** The journal's shards, for their health and byte counts. */
+    public ShardedJournalWriter<? extends Journal> journalWriter()
+    {
+        return journalWriter;
+    }
+
     public long unroutedRequests()
     {
         return this.unroutedRequests.sum();

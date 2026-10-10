@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.GatewayScheduler;
+import com.ethlo.r7.ShardedJournalWriter;
 import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.DefaultGatewayRoute;
@@ -31,6 +32,7 @@ import com.ethlo.r7.config.HotReloadService;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.journal.JournalSecurity;
+import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.server.GatewayPipeline;
 import com.ethlo.r7.server.config.ServerConfig;
@@ -324,7 +326,30 @@ public final class ManagementEndpoint
         root.put("system", system);
         root.put("connector_statistics", connectorStatistics != null ? connectorStatistics.get() : null);
         final long availableSpace = DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()));
-        root.put("journaling", Map.of("available_space", availableSpace));
+        final ServerConfig.StorageConfig storage = serverConfig.storage();
+        final List<GatewayHealth.Problem> journalProblems = new ArrayList<>();
+        final GatewayHealth.Problem disk = GatewayHealth.journalDisk(availableSpace, 2L * storage.shardCount() * storage.shardSize().bytes());
+        if (disk != null)
+        {
+            journalProblems.add(disk);
+        }
+        final ShardedJournalWriter<? extends Journal> journal = pipeline.journalWriter();
+        final List<Map<String, Object>> shards = new ArrayList<>(journal.shardCount());
+        for (int i = 0; i < journal.shardCount(); i++)
+        {
+            final Journal shard = journal.shard(i);
+            final Throwable failure = shard.failure();
+            if (failure != null)
+            {
+                journalProblems.add(GatewayHealth.journalShard(i, failure));
+            }
+            final Map<String, Object> reading = new LinkedHashMap<>();
+            reading.put("shard", i);
+            reading.put("bytes_placed", shard.bytesPlaced());
+            reading.put("failure", failure != null ? failure.toString() : null);
+            shards.add(reading);
+        }
+        root.put("journaling", Map.of("available_space", availableSpace, "shards", shards));
         root.put("route_metrics", routeReadings.stream().map(RouteReading::metrics).toList());
 
         root.put("unrouted_requests", pipeline.unroutedRequests());
@@ -341,9 +366,7 @@ public final class ManagementEndpoint
         final HotReloadService.Status routeSource = hotReloadService.status();
         root.put("route_source", routeSource);
         root.put("route_configs", routeConfigs);
-        final ServerConfig.StorageConfig storage = serverConfig.storage();
-        final long journalNeeds = 2L * storage.shardCount() * storage.shardSize().bytes();
-        root.put("health", GatewayHealth.of(GatewayHealth.components(routeConfigs), routeSource, GatewayHealth.journalDisk(availableSpace, journalNeeds)));
+        root.put("health", GatewayHealth.of(GatewayHealth.components(routeConfigs), routeSource, journalProblems));
         return root;
     }
 
@@ -362,7 +385,7 @@ public final class ManagementEndpoint
                 .sample("r7_start_time_seconds", Instant.from(SystemUtil.getStartTime()).getEpochSecond());
 
         final GatewayHealth health = (GatewayHealth) json.get("health");
-        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml or a journal disk short of two segments per shard counting as WARN. 0 OK, 1 WARN, 2 ERROR.")
+        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml or a journal disk short of two segments per shard counting as WARN, a stopped journal shard as ERROR. 0 OK, 1 WARN, 2 ERROR.")
                 .sample("r7_gateway_health", healthValue(health.health()));
 
         final boolean rejected = GatewayHealth.routesRejected((HotReloadService.Status) json.get("route_source"));
@@ -382,6 +405,15 @@ public final class ManagementEndpoint
         final Map<String, Object> journaling = (Map<String, Object>) json.get("journaling");
         out.metric("r7_journal_available_bytes", "gauge", "Free space for journals in the work directory.")
                 .sample("r7_journal_available_bytes", ((Number) journaling.get("available_space")).longValue());
+        out.metric("r7_journal_bytes_total", "counter", "Bytes the journal placed in its segments, after compression, by shard.");
+        for (final Map<String, Object> shard : (List<Map<String, Object>>) journaling.get("shards"))
+        {
+            final long placed = ((Number) shard.get("bytes_placed")).longValue();
+            if (placed >= 0)
+            {
+                out.sample("r7_journal_bytes_total", placed, "shard", String.valueOf(shard.get("shard")));
+            }
+        }
 
         routeMetrics(out, routes);
         components(out, (List<RouteConfigDto>) json.get("route_configs"));
@@ -425,10 +457,10 @@ public final class ManagementEndpoint
             out.sample("r7_route_active_websockets", r.metrics().requestStatistics().websocketActive(), "route", r.metrics().id());
         }
 
-        out.metric("r7_route_journal_bytes_total", "counter", "Bytes written to the journal, by route.");
+        out.metric("r7_route_journal_plain_bytes_total", "counter", "Bytes journaled, by route, before compression: a batch mixes routes, so what each takes on disk is not known (r7_journal_bytes_total).");
         for (final RouteReading r : routes)
         {
-            out.sample("r7_route_journal_bytes_total", r.metrics().trafficFlow().journalStorageBytes(), "route", r.metrics().id());
+            out.sample("r7_route_journal_plain_bytes_total", r.metrics().trafficFlow().journalStorageBytes(), "route", r.metrics().id());
         }
 
         out.metric("r7_route_request_duration_seconds", "histogram", "Time from request to response, by route, since the gateway started.");

@@ -480,10 +480,17 @@ public final class R7fRecoveryManager
                 }
             }
 
-            expectedSequence = sequence + 1;
+            // A batch is verified whole and its Sequences are contiguous (FragmentReader), so
+            // only its first entry can disagree with the expectation; the rest are counted.
+            long entriesInRecord = 1;
+            while (reader.nextInRecord())
+            {
+                entriesInRecord++;
+            }
+            expectedSequence = reader.recordLastSequence() + 1;
             position = reader.entryEnd();
             lastValidPosition = position;
-            recordCount++;
+            recordCount += entriesInRecord;
         }
 
         if (damageStart >= 0)

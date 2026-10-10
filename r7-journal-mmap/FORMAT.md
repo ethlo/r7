@@ -39,7 +39,9 @@ This document MUST NOT be used to interpret event payload structure.
 * File is strictly append-only.
 * An **entry** is one journal record. A **fragment** is a framed piece of an entry; an entry
   is stored as one fragment or as several (§4). A **block** is a fixed-size, aligned region
-  of the file (§3.1).
+  of the file (§3.1). With Codec `2` what is framed is a **batch** of entries rather than
+  one entry (§4.4); everything said of framing, placing and committing an entry then applies
+  to the batch.
 
 ---
 
@@ -85,7 +87,7 @@ The first 1024 bytes MUST be reserved as a file header:
 | 38     | Data End           | 8    | Offset one past the last fragment of the last entry; valid only when sealed |
 | 46     | Seal Flags         | 4    | Bit flags; valid only when sealed. Zero for a healthy seal |
 | 50     | Block Size         | 4    | Power of two, from 4096 to 1048576              |
-| 54     | Codec              | 2    | `0` (none) or `1` (zstd, §4.4); any other value MUST be rejected |
+| 54     | Codec              | 2    | `0` (none) or `2` (zstd batches, §4.4); any other value MUST be rejected |
 | 56     | Reserved           | 968  | MUST be zero-filled                             |
 
 File Magic names the format family and is unchanged across versions; Version tells them
@@ -97,9 +99,10 @@ of two within the bounds above. A file size that is not a multiple of it is not 
 reject the segment: a writer never produces one, so it means the file lost bytes, and what
 remains is read and the loss reported (§3.2, Data End).
 
-**Codec** says how fragment data is stored. `0` means as written (§4.2). `1` means each
-entry's content is zstd-compressed, as a stream per block (§4.4). A reader MUST reject a
-segment with a Codec it does not implement rather than misread compressed data as an entry.
+**Codec** says how fragment data is stored. `0` means as written: each framed record is one
+entry (§4.2). `2` means each framed record is a batch of entries compressed as one zstd frame
+(§4.4). A reader MUST reject a segment with a Codec it does not implement rather than misread
+compressed data as an entry.
 
 ### The Seal Record
 
@@ -196,8 +199,7 @@ Any other value is damage.
 
 ### Flags
 
-Reserved for codec use. With Codec `0` a writer MUST write zero and a reader MUST ignore it.
-With Codec `1` they are defined in §4.4.
+Reserved. A writer MUST write zero, and a reader MUST treat any other value as damage.
 
 ### Reserved
 
@@ -285,56 +287,48 @@ never spans segments.
 
 ---
 
-## 4.4 Codec 1: a zstd stream per block
+## 4.4 Codec 2: zstd batches
 
-With Codec `1`, the content of §4.2 (Sequence, lengths and payloads) is compressed before it
-is framed. Framing, placement, CRCs and the commit are unchanged: they apply to the
-compressed bytes, so every entry is still committed by its own Magic (§5.1) and checked by its
-own CRCs. A reader decompresses an entry's Data to recover the §4.2 content, and the rules of
-§4.2 then apply to that content.
-
-The Flags byte of every fragment says how its Data relates to compression. Exactly one value
-is set:
-
-| Value | Name            | Meaning |
-| ----- | --------------- | ------- |
-| 1     | STREAM_START    | A FULL fragment whose Data starts a new zstd stream |
-| 2     | STREAM_CONTINUE | A FULL fragment whose Data continues the stream of the block it is in |
-| 4     | PAD             | A FULL fragment that is not an entry |
-| 8     | STANDALONE      | A fragment of an entry compressed on its own |
-
-Any other value is damage.
-
-**Stream fragments (1 and 2).** A writer keeps one zstd stream per block. For each entry it
-feeds the entry's content into the stream and flushes it (`ZSTD_e_flush`), and the bytes the
-flush produces are that entry's Data, stored as one FULL fragment. The stream carries no
-content size and no checksum. The first stream fragment in a block MUST be STREAM_START, and a
-stream MUST NOT continue across a block boundary, so decoding can always start at a block
-boundary (§6.1). A STREAM_CONTINUE fragment continues the stream begun by the nearest
-STREAM_START before it in the same block. To decode it, a reader MUST first decode every stream
-fragment between the two, in file order. A reader that resumes mid-block, for example from a
-checkpoint, rebuilds that state from the block's start and treats a failure to do so as damage.
-
-**Padding fragments (4).** A stream cannot take an entry back once it has been fed, so before
-compressing an entry the writer checks that the worst-case compressed size fits in the rest of
-the block. If it does not, the writer closes the block with a PAD fragment that fills it, and
-places the entry at the next block boundary. A PAD fragment's Data is zero. It is framed,
-checked and committed like any FULL fragment. It carries no Sequence, and a reader MUST skip it
-without delivering anything. The zero-fill padding of §4.3 still applies as well.
-
-**Standalone entries (8).** An entry whose worst-case compressed size does not fit in a whole
-block is compressed on its own and placed and split as in §4.3. The writer MUST set STANDALONE
-on every one of its fragments. Its content, once reassembled, is:
+With Codec `2`, entries are compressed in batches. A batch is framed, placed, checked and
+committed exactly as §4.3 and §5.1 frame, place, check and commit an entry: its content is
+carried by one FULL fragment or split across FIRST, MIDDLE and LAST, and its Magic commits all
+of it at once. A batch's content, once reassembled, is:
 
 ```
 PlainLength (4)
-ZstdFrame (Length - 4)
+EntryCount (4)
+ZstdFrame (Length - 8)
 ```
 
-PlainLength is big-endian, as in §2, and is the length of the §4.2 content. ZstdFrame is one
-complete zstd frame of that content. A reader MUST treat a frame that does not decompress to
-exactly PlainLength bytes as damage. A standalone entry ends the block's stream: the next
-stream fragment MUST be a STREAM_START.
+PlainLength and EntryCount are big-endian, as in §2. ZstdFrame is one complete zstd frame.
+Decompressed, it is exactly PlainLength bytes: EntryCount entries back to back, each laid out
+as §4.2, Sequence included. The rules of §4.2 apply to every entry in it.
+
+* EntryCount MUST be at least 1, and the entries MUST fill PlainLength exactly. A batch
+  whose frame does not decompress to PlainLength bytes, or whose entries do not add up to
+  it, is damage.
+* The Sequences in a batch MUST be contiguous: each one more than the one before. A batch is
+  placed whole or not at all, so nothing inside one can go missing on its own; a gap or a
+  backward step inside a batch is damage, not loss. Between batches, Sequence is checked as
+  between entries (§6).
+* The entries of a batch have no offsets of their own. A reader reports every entry of a
+  batch at the batch's offset.
+
+A writer assigns a batch's Sequences only once it knows which segment the batch lands in,
+since rotation restarts the Sequence (§4.2). It reserves the batch's worst-case compressed
+size, rotates first if that does not fit, and then stamps the entries.
+
+An entry too large to share a batch is a batch of its own, with EntryCount `1`.
+
+A **checkpoint inside a batch** is the batch's offset together with the Sequence to deliver
+next. A reader resuming there decodes the batch again and passes over the leading entries
+whose Sequences are below that one, without delivering them; they were delivered before.
+Passing over is allowed only in the first batch read from a checkpoint, and only where the
+checkpoint's Sequence falls within that batch. Anywhere else, a Sequence below the expected
+one is a backward step.
+
+Codec `1`, a zstd stream per block flushed after every entry, is withdrawn. A reader rejects a
+segment carrying it under the Codec rule (§3.2).
 
 ---
 
@@ -388,11 +382,12 @@ Two consequences follow, and implementations depend on both:
 A compliant reader MUST:
 
 1. Start at offset 1024, or at a checkpoint, which MUST be the offset of a FULL or FIRST
-   fragment the reader previously reached by the rules below
+   fragment the reader previously reached by the rules below (with Codec `2`, together with
+   the Sequence to deliver next, §4.4)
 2. At each position, skip padding (§4.3), then read a fragment header
 3. Validate CRC32C per fragment, and the placement rules of §4.3 for split entries
 4. Deliver a FULL fragment's Data as an entry; reassemble FIRST, MIDDLE… LAST into one entry
-   and deliver that
+   and deliver that. With Codec `2`, decompress the batch and deliver its entries in order
 5. Reach the next position only through a verified Length and the padding arithmetic, or by
    resynchronising at a block boundary as described below — **never by scanning for a
    Magic**
@@ -512,7 +507,7 @@ Implementations:
 
 | Condition               | Behavior                                                       |
 | ----------------------- | -------------------------------------------------------------- |
-| Process crash / SIGKILL | Page cache survives; at most the final entry is uncommitted    |
+| Process crash / SIGKILL | Page cache survives; at most the final entry is uncommitted. With Codec `2`, entries the writer had not yet placed in a batch were never in the file and are gone (r7-journal-mmap README §8.1) |
 | Power loss / host reset | Unflushed pages are lost, anywhere in the file, not only at the tail |
 | Disk full               | Writes fail; ingestion must halt upstream                      |
 | Corruption              | The damaged block's remainder is dropped; the reader resumes at the next block boundary |
@@ -563,8 +558,10 @@ The FlatBuffer schema is intentionally external to preserve:
 | 1       | Initial format: self-delimiting entries, resynchronised by scanning for the Magic |
 | 2       | Block framing: fragments that never cross a block boundary, a CRC per fragment, resynchronisation at block boundaries only (§6.1); Block Size and Codec in the preamble |
 
-Codec `1` (§4.4) was added within version 2, in the Codec field reserved for it. A version 2
-reader that does not implement it rejects such a segment under the Codec rule (§3.2).
+Codec `1`, a zstd stream per block, was added within version 2 in the Codec field reserved for
+it, and later withdrawn in favour of Codec `2` (§4.4), zstd batches. A version 2 reader that
+does not implement a segment's Codec rejects it under the Codec rule (§3.2), so a segment
+written with Codec `1` is set aside, not read.
 
 A reader MUST reject a file whose Version it does not recognise, rather than attempt to
 interpret it, and MUST NOT delete such a file on the strength of having read nothing from

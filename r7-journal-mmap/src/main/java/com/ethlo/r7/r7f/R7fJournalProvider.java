@@ -160,6 +160,11 @@ public class R7fJournalProvider implements AutoCloseable
     /**
      * An uncompressed journal.
      */
+    int getShardId()
+    {
+        return shardId;
+    }
+
     public R7fJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)
     {
         this(tempDir, shardId, segmentSizeBytes, preFault, 0);

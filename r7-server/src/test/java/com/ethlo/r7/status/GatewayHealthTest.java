@@ -88,7 +88,7 @@ class GatewayHealthTest
         assertThat(GatewayHealth.journalDisk(-1, needed)).as("unknown free space").isNull();
 
         final GatewayHealth health = GatewayHealth.of(List.of(), new HotReloadService.Status("routes.yaml", LOADED, null),
-                GatewayHealth.journalDisk(needed - 1, needed));
+                List.of(GatewayHealth.journalDisk(needed - 1, needed)));
         assertThat(health.health()).isEqualTo(ComponentStatus.Health.WARN);
         assertThat(health.problems()).singleElement().satisfies(p ->
         {
@@ -99,9 +99,22 @@ class GatewayHealthTest
         });
     }
 
+    @Test
+    void aStoppedJournalShardIsAnError()
+    {
+        final GatewayHealth health = GatewayHealth.of(List.of(), new HotReloadService.Status("routes.yaml", LOADED, null),
+                List.of(GatewayHealth.journalShard(3, new java.io.IOException("No space left on device"))));
+        assertThat(health.health()).isEqualTo(ComponentStatus.Health.ERROR);
+        assertThat(health.problems()).singleElement().satisfies(p ->
+        {
+            assertThat(p.component()).isEqualTo("journal");
+            assertThat(p.detail()).contains("Shard 3 stopped", "No space left on device", "until the gateway restarts");
+        });
+    }
+
     private static GatewayHealth health(final List<RouteConfigDto> routes, final HotReloadService.Status source)
     {
-        return GatewayHealth.of(GatewayHealth.components(routes), source, null);
+        return GatewayHealth.of(GatewayHealth.components(routes), source, List.of());
     }
 
     private static RouteConfigDto route(final String id, final FilterNode nodes)
