@@ -54,7 +54,6 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   (`r7-journal-mmap/FORMAT.md` §6).
 - **CRC32C is not a MAC.** The format resists forged entries in payloads, but not a party that
   can write segment files (`FORMAT.md` §6.1 and §9).
-- **No reader for format version 1.** A reader sets such a file aside (`FORMAT.md` §11).
 - **Live tailing needs a shared page cache.** A tailer on another host, or reading a copy of
   the files, falls back to polling. An idle tailer wakes within about 1 ms of a commit, because
   that is where its park is capped ([`history/live-tailing.md`](history/live-tailing.md)).
