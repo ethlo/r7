@@ -1033,7 +1033,8 @@ gets worse the longer the load lasts. Header-heavy traffic at <code>HEADERS</cod
 first. It grows with the number of open connections, since every connection has a thread of its
 own that may be writing.</p>
 <h3 id="why-it-happens">Why it happens</h3>
-<p>The journal is split into <code>shard_count</code> shards (default <code>2</code>). Each request goes to one shard,
+<p>The journal is split into <code>shard_count</code> shards (by default one per CPU the JVM sees, so a
+container's CPU limit counts, rounded down to a power of two, from 2 to 16). Each request goes to one shard,
 chosen by its request id. Each shard writes into one memory-mapped segment at a time, and
 writers take turns: encoding happens in parallel, but placing each entry in the segment is done
 one writer at a time per shard. That step is a short copy, cheap unless something stalls it.
@@ -1075,7 +1076,7 @@ quickly a tailer consumes sealed segments.</p>
 <tr>
 <td><code>storage.shard_count</code></td>
 <td>Fewer writers per shard: less queueing and a shorter tail. Must be a power of two.</td>
-<td>More segment files open at once. No memory cost unless <code>pre_fault</code> is on.</td>
+<td>More segment files open at once, and per shard a fault-ahead thread and about 8 MB kept faulted in (up to 128 MB at the default's cap of 16). No other memory cost unless <code>pre_fault</code> is on.</td>
 </tr>
 <tr>
 <td><code>storage.pre_fault</code></td>
@@ -1178,10 +1179,12 @@ ones the kernel can least easily reclaim.</p>
 <li><strong>Leave <code>pre_fault</code> off.</strong> Fault-ahead does its job at a fraction of the memory. Turn it on
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.</li>
-<li><strong>Keep the default of 2 shards, or raise it to 4 with many concurrent connections.</strong> With
-  fault-ahead, throughput is already level at one shard; more shards shorten the tail by
-  spreading the writers: 4 shards halved p99 compared with one. Each shard is one more open segment and, without
-  <code>pre_fault</code>, costs no memory of note.</li>
+<li><strong>Keep the default of one shard per CPU.</strong> Every connection's writer queues on its shard,
+  and with zstd on, compression runs while the shard is held, so the count has to grow with the
+  cores doing the writing: 4 shards halved p99 compared with one. Each shard is one more open
+  segment, a fault-ahead thread and 8 MB kept faulted in, and without <code>pre_fault</code> costs no
+  other memory of note. Past 16 CPUs the default stops at 16; set <code>shard_count</code> explicitly to
+  go higher.</li>
 <li><strong>Give a container headroom for page cache, not just heap.</strong> The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.</li>

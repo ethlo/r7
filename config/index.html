@@ -4116,7 +4116,7 @@
 <tr>
 <td><code>shard_count</code></td>
 <td>Integer</td>
-<td>The number of shards (files) to split the journal across, to reduce lock contention. Defaults to <code>2</code>; must be a power of two. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
+<td>The number of shards (files) to split the journal across, to reduce lock contention. Defaults to one per CPU, rounded down to a power of two, from <code>2</code> to <code>16</code>; must be a power of two. See <a href="../performance_tuning/#journal-storage-shard_count-pre_fault-and-where-segments-live">Performance tuning</a>.</td>
 </tr>
 <tr>
 <td><code>pre_fault</code></td>
