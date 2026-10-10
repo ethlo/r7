@@ -323,7 +323,8 @@ public final class ManagementEndpoint
         system.put("memory", SystemMetricsCollector.collect());
         root.put("system", system);
         root.put("connector_statistics", connectorStatistics != null ? connectorStatistics.get() : null);
-        root.put("journaling", Map.of("available_space", DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()))));
+        final long availableSpace = DiskSpaceUtils.getSafeUsableSpace(Paths.get(serverConfig.storage().workDir()));
+        root.put("journaling", Map.of("available_space", availableSpace));
         root.put("route_metrics", routeReadings.stream().map(RouteReading::metrics).toList());
 
         root.put("unrouted_requests", pipeline.unroutedRequests());
@@ -340,7 +341,9 @@ public final class ManagementEndpoint
         final HotReloadService.Status routeSource = hotReloadService.status();
         root.put("route_source", routeSource);
         root.put("route_configs", routeConfigs);
-        root.put("health", GatewayHealth.of(GatewayHealth.components(routeConfigs), routeSource));
+        final ServerConfig.StorageConfig storage = serverConfig.storage();
+        final long journalNeeds = 2L * storage.shardCount() * storage.shardSize().bytes();
+        root.put("health", GatewayHealth.of(GatewayHealth.components(routeConfigs), routeSource, GatewayHealth.journalDisk(availableSpace, journalNeeds)));
         return root;
     }
 
@@ -359,7 +362,7 @@ public final class ManagementEndpoint
                 .sample("r7_start_time_seconds", Instant.from(SystemUtil.getStartTime()).getEpochSecond());
 
         final GatewayHealth health = (GatewayHealth) json.get("health");
-        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml counting as WARN. 0 OK, 1 WARN, 2 ERROR.")
+        out.metric("r7_gateway_health", "gauge", "The gateway in one number: the worst any component reports, a rejected routes.yaml or a journal disk short of two segments per shard counting as WARN. 0 OK, 1 WARN, 2 ERROR.")
                 .sample("r7_gateway_health", healthValue(health.health()));
 
         final boolean rejected = GatewayHealth.routesRejected((HotReloadService.Status) json.get("route_source"));

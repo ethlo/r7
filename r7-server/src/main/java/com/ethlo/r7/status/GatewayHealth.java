@@ -8,6 +8,7 @@ import java.util.Set;
 
 import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.config.HotReloadService;
+import com.ethlo.r7.r7f.DiskSpaceUtils;
 import com.ethlo.r7.status.dto.FilterNode;
 import com.ethlo.r7.status.dto.RouteConfigDto;
 
@@ -24,10 +25,10 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
 {
     /**
      * @param route     the route the component belongs to, or null for a global filter (one
-     *                  instance every route shares) and for routes.yaml itself
-     * @param component the filter's name, {@code upstream} or {@code routes.yaml}
+     *                  instance every route shares), for routes.yaml itself and for the journal
+     * @param component the filter's name, {@code upstream}, {@code routes.yaml} or {@code journal}
      * @param position  the filter's place in its route's pipeline, global filters first; 0 for
-     *                  the upstream and null for routes.yaml
+     *                  the upstream and null for routes.yaml and the journal
      * @param detail    a short line for a person, or null
      */
     public record Problem(String route, String component, Integer position, ComponentStatus.Health health, String detail)
@@ -87,12 +88,16 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
      * A rejected routes.yaml is a warning, not an error: the previous routes still run and serve
      * traffic, but the next restart would fail on the same file.
      */
-    static GatewayHealth of(final List<ComponentReport> components, final HotReloadService.Status routeSource)
+    static GatewayHealth of(final List<ComponentReport> components, final HotReloadService.Status routeSource, final Problem journal)
     {
         final List<Problem> problems = new ArrayList<>();
         if (routesRejected(routeSource))
         {
             problems.add(new Problem(null, "routes.yaml", null, ComponentStatus.Health.WARN, rejectedDetail(routeSource.rejectedAt())));
+        }
+        if (journal != null)
+        {
+            problems.add(journal);
         }
         for (final ComponentReport report : components)
         {
@@ -112,6 +117,25 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
             }
         }
         return new GatewayHealth(worst, problems);
+    }
+
+    /**
+     * A warning while the journal's disk has less free space than {@code neededBytes}: two more
+     * segments for every shard. A full disk is the system's error, not r7's, and the entries in
+     * flight when it fills are lost, so the point is to see it coming. Free space that cannot be
+     * read (negative) is not reported: it says nothing about the disk.
+     *
+     * @return the problem, or null while there is room
+     */
+    static Problem journalDisk(final long availableBytes, final long neededBytes)
+    {
+        if (availableBytes < 0 || availableBytes >= neededBytes)
+        {
+            return null;
+        }
+        return new Problem(null, "journal", null, ComponentStatus.Health.WARN,
+                "Journal disk has " + DiskSpaceUtils.formatBytes(availableBytes) + " free, less than two more segments per shard ("
+                        + DiskSpaceUtils.formatBytes(neededBytes) + "); journaling stops when it is full");
     }
 
     private static String rejectedDetail(final Instant rejectedAt)
