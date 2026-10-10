@@ -1180,8 +1180,9 @@ ones the kernel can least easily reclaim.</p>
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.</li>
 <li><strong>Keep the default of one shard per CPU.</strong> Every connection's writer queues on its shard,
-  and with zstd on, compression runs while the shard is held, so the count has to grow with the
-  cores doing the writing: 4 shards halved p99 compared with one. Each shard is one more open
+  for the placement with <code>compression: none</code> and for a copy into the shard's stage with zstd,
+  and each shard's batches are compressed by one writer thread, so the count has to grow with
+  the cores doing the writing: 4 shards halved p99 compared with one. Each shard is one more open
   segment, a fault-ahead thread and 8 MB kept faulted in, and without <code>pre_fault</code> costs no
   other memory of note. Past 16 CPUs the default stops at 16; set <code>shard_count</code> explicitly to
   go higher.</li>
@@ -1215,64 +1216,36 @@ saturation throughput. In a container, also watch <code>memory.stat</code> while
 <hr />
 <h2 id="journal-compression-compression-and-compression_level">Journal compression: <code>compression</code> and <code>compression_level</code></h2>
 <h3 id="what-it-does">What it does</h3>
-<p>With <code>compression: zstd</code>, the default, each 32KB block of a journal segment carries one zstd
-stream. Every entry is fed into it and flushed as it is written, so it is still its own
-committed record: a tailer reads it as soon as it is written, a crash loses at most the entry
-being written, and damage still costs at most the rest of one block. Because an entry is
-compressed against the entries before it in the block, repetitive traffic — the same headers,
-similar bodies — compresses far better than any entry would on its own.</p>
+<p>With <code>compression: zstd</code>, the default, the request thread does not compress. It copies its
+entry into its shard's stage, a 32 KB buffer, and a writer thread per shard compresses the
+stage as one zstd frame and places it in the segment as one batch: when the stage is full, or
+10 ms after its first entry. A whole batch compresses far better than any entry would on its
+own, because the entries in it repeat each other's headers and bodies, and it costs a fraction
+of the CPU of compressing them one at a time.</p>
 <h3 id="what-it-costs">What it costs</h3>
-<p>Compression runs on the writing thread, under the shard's lock, because a block's stream is
-shared and its order is the journal's order. That costs CPU per request, which shows only near
-saturation:</p>
-<table>
-<thead>
-<tr>
-<th>Workload, journal level</th>
-<th>Throughput at saturation</th>
-<th>Latency at 1,000 req/s (p50 / p99)</th>
-<th>Journal bytes per request</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>headers, <code>HEADERS</code>, none</td>
-<td>76,500 req/s</td>
-<td>1.21 / 2.88 ms</td>
-<td>3,659</td>
-</tr>
-<tr>
-<td>headers, <code>HEADERS</code>, zstd 1</td>
-<td>63,500 req/s (-17%)</td>
-<td>1.29 / 2.66 ms</td>
-<td>273</td>
-</tr>
-<tr>
-<td>POST, <code>FULL</code>, none</td>
-<td>108,700 req/s</td>
-<td>1.28 / 2.56 ms</td>
-<td>2,872</td>
-</tr>
-<tr>
-<td>POST, <code>FULL</code>, zstd 1</td>
-<td>65,800 req/s (-39%)</td>
-<td>1.24 / 2.72 ms</td>
-<td>329</td>
-</tr>
-</tbody>
-</table>
-<p>Single short runs on the machine described above; the benchmark sends near-identical requests,
-so real traffic compresses less than this. Levels above 1 gave a few percent less disk for
-another 5-15% of throughput, and 4 shards instead of 2 won back only a little: the cost is CPU,
-not lock contention.</p>
-<p>What it saves is everything downstream of the write: about a tenth of the disk, of the page
-cache charged to a container's memory limit, of the writeback, and of what a tailer reads.</p>
+<ul>
+<li><strong>A tailer sees an entry when its batch is placed:</strong> at low traffic, 10 ms after the write
+  plus the time to compress and place the batch; sooner as traffic fills the stage.</li>
+<li><strong>A crash loses what is staged,</strong> up to 64 KB of entries per shard, the last 10 ms of them at
+  low traffic. A graceful shutdown places them first.</li>
+<li><strong>Damage costs a batch,</strong> about 32 KB of entries before compression, where uncompressed it
+  costs the rest of a 32 KB block.</li>
+<li><strong>One writer thread per shard,</strong> busy in proportion to the bytes journaled.</li>
+<li><strong>An entry larger than the stage is compressed by its request thread,</strong> as a batch of its
+  own; in practice a body chunk over 32 KB, journaled at <code>FULL</code>.</li>
+<li><strong>A full disk stops the shard</strong> until the gateway restarts, rather than failing the requests
+  whose entries were staged; gateway health shows it as <code>ERROR</code> (see the <a href="../config/#paths">management paths</a>).</li>
+</ul>
+<p>What it saves is everything downstream of the write: most of the disk, of the page cache
+charged to a container's memory limit, of the writeback, and of what a tailer reads.</p>
 <h3 id="recommendations_1">Recommendations</h3>
 <ul>
 <li><strong>Leave it on.</strong> At any load a real deployment sees, the cost does not show, and the
   journal is a fraction of the size.</li>
-<li><strong>Turn it off (<code>compression: none</code>) only if the gateway runs close to its CPU limit with
-  journaling at <code>FULL</code>,</strong> and disk and page cache are cheap where it runs.</li>
+<li><strong>Turn it off (<code>compression: none</code>) only where an entry must be on disk the moment its
+  request completes,</strong> or where disk and page cache are cheap and every core is busy. Without
+  compression each entry is placed by its own request thread and committed before the write
+  returns.</li>
 <li><strong>Leave <code>compression_level</code> at 1.</strong></li>
 </ul>
 <hr />

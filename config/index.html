@@ -3865,7 +3865,7 @@
 </span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="p">{</span><span class="nt">"route"</span><span class="p">:</span><span class="s2">"orders"</span><span class="p">,</span><span class="nt">"component"</span><span class="p">:</span><span class="s2">"CircuitBreaker"</span><span class="p">,</span><span class="nt">"position"</span><span class="p">:</span><span class="mi">2</span><span class="p">,</span><span class="nt">"health"</span><span class="p">:</span><span class="s2">"ERROR"</span><span class="p">,</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Open since 2026-10-08T10:40:12Z"</span><span class="p">},</span>
 </span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="p">{</span><span class="nt">"route"</span><span class="p">:</span><span class="kc">null</span><span class="p">,</span><span class="nt">"component"</span><span class="p">:</span><span class="s2">"routes.yaml"</span><span class="p">,</span><span class="nt">"position"</span><span class="p">:</span><span class="kc">null</span><span class="p">,</span><span class="nt">"health"</span><span class="p">:</span><span class="s2">"WARN"</span><span class="p">,</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"</span><span class="p">}]}</span>
 </span></code></pre></div>
-<p><code>health</code> is the worst any filter or upstream reports (see Component status above). A rejected <code>routes.yaml</code> and a journal disk with less free space than two more segments per shard (2 × <code>shard_count</code> × <code>shard_size</code>; component <code>journal</code>) each count as <code>WARN</code>. <code>problems</code> lists each that is not <code>OK</code>; <code>route</code> is null for a global filter, for <code>routes.yaml</code> and for <code>journal</code>. Use <code>/ready</code> as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns <code>503</code> together and the load balancer has nowhere left to send traffic.</p>
+<p><code>health</code> is the worst any filter or upstream reports (see Component status above). A rejected <code>routes.yaml</code> and a journal disk with less free space than two more segments per shard (2 × <code>shard_count</code> × <code>shard_size</code>; component <code>journal</code>) each count as <code>WARN</code>. A journal shard that stopped, because its disk filled or its mapping failed, counts as <code>ERROR</code> (component <code>journal</code>) until the gateway restarts: the shard refuses every later entry, so the requests it would journal fail closed. <code>problems</code> lists each that is not <code>OK</code>; <code>route</code> is null for a global filter, for <code>routes.yaml</code> and for <code>journal</code>. Use <code>/ready</code> as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns <code>503</code> together and the load balancer has nowhere left to send traffic.</p>
 <h4 id="metrics">Metrics</h4>
 <table>
 <thead>
@@ -3920,6 +3920,12 @@
 <td>Free space for journals in <code>work_dir</code>.</td>
 </tr>
 <tr>
+<td><code>r7_journal_bytes_total</code></td>
+<td>counter</td>
+<td><code>shard</code></td>
+<td>Bytes the journal placed in its segments, after compression.</td>
+</tr>
+<tr>
 <td><code>r7_route_requests_total</code></td>
 <td>counter</td>
 <td><code>route</code>, <code>code</code></td>
@@ -3944,10 +3950,10 @@
 <td>Open WebSocket tunnels.</td>
 </tr>
 <tr>
-<td><code>r7_route_journal_bytes_total</code></td>
+<td><code>r7_route_journal_plain_bytes_total</code></td>
 <td>counter</td>
 <td><code>route</code></td>
-<td>Bytes written to the journal.</td>
+<td>Bytes journaled, before compression. A compressed batch mixes routes, so what each route takes on disk is not known; <code>r7_journal_bytes_total</code> counts that per shard.</td>
 </tr>
 <tr>
 <td><code>r7_route_request_duration_seconds</code></td>
