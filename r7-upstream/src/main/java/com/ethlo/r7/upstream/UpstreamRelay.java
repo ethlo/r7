@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.core.proxy.NoAvailableTargetException;
@@ -60,7 +61,8 @@ public final class UpstreamRelay
             }
             catch (final ConnectFailedException e)
             {
-                if (System.nanoTime() - deadline >= 0)
+                // Under a millisecond left counts as none: socket timeouts are whole milliseconds
+                if (deadline - System.nanoTime() < TimeUnit.MILLISECONDS.toNanos(1))
                 {
                     throw new ProxyFailure(504, "Upstream timed out", new SocketTimeoutException("Connecting to " + target.uri + " used up max_request_time"));
                 }
