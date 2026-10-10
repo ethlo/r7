@@ -31,11 +31,12 @@ The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/b
 
 ## Hardware
 
-Results to be added.
+The host specification (CPU, kernel, core layout, tuning and image digest, from `host.txt`) will
+be added with the first published run.
 
 ## Results
 
-Results to be added.
+The first published run will be added here.
 
 ## Reproduce
 

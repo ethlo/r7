@@ -3,7 +3,7 @@
 A reproducible suite for answering one question honestly: **what does it cost to
 put r7 in the request path?**
 
-Every number this suite prints is relative: either to a baseline run in which the load
+Every cost this suite reports is relative: either to a baseline run in which the load
 generator talks straight to the backend (the total cost of the hop, an upper bound), or to the
 `passthrough` run (what a filter or a journal level adds; see "Two delta columns" below). An
 absolute "r7 does N req/s" figure is close to meaningless: it describes the hardware, the
@@ -204,7 +204,7 @@ conclude the wrong thing.
 `docker` measures what users actually deploy. Both use host networking for the
 backend, so neither pays Docker's NAT cost.
 
-To reproduce the memory-pressure study in `docs/benchmarks.md`:
+To measure the effect of a container memory limit:
 
 ```bash
 R7_BENCH_MEM=200M ./run.sh --mode docker --scenario passthrough --tool wrk2
