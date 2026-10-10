@@ -186,6 +186,19 @@ def group(rows):
     return out
 
 
+def repeats_floor(agg):
+    """The fewest repeats among the configurations whose spread is a noise floor.
+
+    Those are the wrk runs against the gateway: the throughput every cost is quoted from. The
+    baseline is only the floor and the backend headroom check, and wrk2 runs hold a fixed rate,
+    so the profile may run those once. With no such configuration, every one counts.
+    """
+    compared = [a["n"] for a in agg.values()
+                if a["meta"].get("tool") == "wrk"
+                and a["meta"].get("scenario") not in ("baseline", "sweep")]
+    return min(compared or [a["n"] for a in agg.values()])
+
+
 # ---------------------------------------------------------------- reporting
 
 
@@ -301,10 +314,10 @@ def report(d, fmt_kind="md"):
     if problems:
         out += ["", "**Validity warnings** (these runs should not be quoted):"] + problems
 
-    # The least-repeated configuration decides this, not the best one: a report where
+    # The least-repeated throughput configuration decides this, not the best one: a report where
     # one row has three runs and another has one is exactly the report that needs the
     # warning, and keying off the maximum is what silences it.
-    n_min = min(a["n"] for a in agg.values())
+    n_min = repeats_floor(agg)
     out += [
         "",
         "Latencies in milliseconds, medians across `n` repeats. `±` is the",
@@ -326,7 +339,7 @@ def report(d, fmt_kind="md"):
     if n_min < 3:
         out += [
             "",
-            "> Only %d repeat(s) for at least one configuration. Run with `--repeat 3` or" % n_min,
+            "> Only %d repeat(s) for at least one throughput configuration. Run with `--repeat 3` or" % n_min,
             "> more before trusting any difference under a few percent.",
         ]
     return "\n".join(out) + "\n"
@@ -336,7 +349,7 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
     """Why the results in d should not be quoted, as a list of sentences; empty if none.
 
     The bar for a published number: every planned run present (plan.tsv, written by run.sh)
-    and valid, every configuration repeated, and
+    and valid, every gateway throughput configuration repeated, and
     throughput repeats agreeing within max_spread percent. A sweep point that did not reach
     95% of its target rate is past the knee and exempt from the spread check, since
     saturation is exactly where repeats disagree; every other point is held to it.
@@ -405,9 +418,9 @@ def verdict_problems(d, min_repeat=3, max_spread=5.0):
     invalid = [k for k, a in agg.items() if a["errors"]]
     if invalid:
         problems.append("%d configuration(s) have invalid runs" % len(invalid))
-    n_min = min(a["n"] for a in agg.values())
+    n_min = repeats_floor(agg)
     if n_min < min_repeat:
-        problems.append("only %d repeat(s) for some configuration; need %d" % (n_min, min_repeat))
+        problems.append("only %d repeat(s) for some throughput configuration; need %d" % (n_min, min_repeat))
     # The backend must not be the bottleneck (README, "The backend"): per workload, the
     # unthrottled baseline has to clear every gateway row by a margin.
     for workload in sorted({a["meta"].get("workload") for a in agg.values()}):

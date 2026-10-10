@@ -24,15 +24,19 @@ TOOLS="wrk,wrk2"
 THREADS=""                # default: min(nproc/2, 16), set below
 CONNECTIONS=200
 DURATION="30s"
+LATENCY_DURATION=""       # wrk2 runs; default: --duration
 WARMUP="20s"
+REWARM=""                 # warmup on a workload switch in an already-warm JVM; default: --warmup
 RATE=20000                # wrk2 fixed request rate for the main suite
 REPEAT=1
+LATENCY_REPEAT=""         # wrk2 runs and the baseline; default: --repeat
 RESTART_PER_REPEAT=0
 SWEEP_RATES="auto"        # or a fixed list of req/s
 # auto: the sweep's rates as percentages of the throughput wrk measured for the same journal
 # level, so the ladder brackets the knee of the host it runs on rather than a guessed one.
 SWEEP_PERCENT="50,75,90,100,110"
 SWEEP_LEVELS="NONE,FULL"
+SWEEP_WORKLOADS=""        # default: --workload
 JOURNAL_LEVELS="METADATA,HEADERS,FULL"   # NONE is covered by `passthrough`
 JAR=""
 OUT=""
@@ -74,10 +78,18 @@ Options:
   --threads N                wrk threads       (default: min(nproc/2, 16))
   --connections N            open connections  (default: 200)
   --duration T               measured duration (default: 30s)
+  --latency-duration T       measured duration of wrk2 runs (default: --duration).
+                             wrk2 discards its first ~10s as calibration, so keep
+                             it well above that
   --warmup T                 discarded warmup  (default: 20s; JIT needs it)
+  --rewarm T                 discarded warmup when a warm JVM switches to another
+                             workload (default: --warmup)
   --rate N                   wrk2 target req/s for the main suite (default: 20000)
-  --repeat N                 repeats per configuration; report shows median and
-                             peak-to-peak spread (default: 1, use >= 3)
+  --repeat N                 repeats of each wrk run against the gateway; report
+                             shows median and peak-to-peak spread (default: 1,
+                             use >= 3)
+  --latency-repeat N         repeats of each wrk2 run (sweep included) and of the
+                             baseline (default: --repeat)
   --restart-per-repeat       fresh JVM for every repeat: also captures JIT and
                              JVM-to-JVM variance, at the cost of a warmup each
   --sweep-rates LIST|auto    rates for the sweep scenario (default: auto, which is
@@ -86,11 +98,15 @@ Options:
                              for the rest, or passthrough when that level was not
                              in --journal-levels or journal was not selected)
   --sweep-levels LIST        journal levels to sweep (default: NONE,FULL)
+  --sweep-percent LIST       percentages for --sweep-rates auto
+                             (default: 50,75,90,100,110)
+  --sweep-workload LIST      workloads to sweep (default: --workload)
   --journal-levels LIST      levels for the journal scenario
                              (default: METADATA,HEADERS,FULL)
   --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
-  --quick                    5s warmup, 10s runs, browser workload only
+  --quick                    5s warmup, 10s wrk and 15s wrk2 runs, browser
+                             workload only
   --backend-cpus LIST        pin nginx to these CPUs (e.g. 1)
   --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3)
   --load-cpus LIST           pin wrk/wrk2 to these CPUs (e.g. 4-5); --threads
@@ -115,16 +131,23 @@ while [[ $# -gt 0 ]]; do
     --threads)       THREADS="$2"; shift 2 ;;
     --connections)   CONNECTIONS="$2"; shift 2 ;;
     --duration)      DURATION="$2"; shift 2 ;;
+    --latency-duration) LATENCY_DURATION="$2"; shift 2 ;;
     --warmup)        WARMUP="$2"; shift 2 ;;
+    --rewarm)        REWARM="$2"; shift 2 ;;
     --rate)          RATE="$2"; shift 2 ;;
     --repeat)        REPEAT="$2"; shift 2 ;;
+    --latency-repeat) LATENCY_REPEAT="$2"; shift 2 ;;
     --restart-per-repeat) RESTART_PER_REPEAT=1; shift ;;
     --sweep-rates)   SWEEP_RATES="$2"; shift 2 ;;
     --sweep-levels)  SWEEP_LEVELS="$2"; shift 2 ;;
+    --sweep-percent) SWEEP_PERCENT="$2"; shift 2 ;;
+    --sweep-workload) SWEEP_WORKLOADS="$2"; shift 2 ;;
     --journal-levels) JOURNAL_LEVELS="$2"; shift 2 ;;
     --jar)           JAR="$2"; shift 2 ;;
     --out)           OUT="$2"; shift 2 ;;
-    --quick)         WARMUP="5s"; DURATION="10s"; WORKLOADS="browser"; shift ;;
+    # wrk2 needs more than its ~10s calibration to record anything.
+    --quick)         WARMUP="5s"; REWARM=""; DURATION="10s"; LATENCY_DURATION="15s"
+                     WORKLOADS="browser"; SWEEP_WORKLOADS=""; shift ;;
     --backend-cpus)  BACKEND_CPUS="$2"; shift 2 ;;
     --gateway-cpus)  GATEWAY_CPUS="$2"; shift 2 ;;
     --load-cpus)     LOAD_CPUS="$2"; shift 2 ;;
@@ -136,11 +159,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$MODE" == "jvm-local" || "$MODE" == "docker" ]] || die "--mode must be jvm-local or docker"
+LATENCY_DURATION="${LATENCY_DURATION:-$DURATION}"
+REWARM="${REWARM:-$WARMUP}"
+LATENCY_REPEAT="${LATENCY_REPEAT:-$REPEAT}"
+SWEEP_WORKLOADS="${SWEEP_WORKLOADS:-$WORKLOADS}"
 [[ "$REPEAT" =~ ^[0-9]+$ ]] && (( REPEAT >= 1 )) || die "--repeat must be a positive integer"
+[[ "$LATENCY_REPEAT" =~ ^[0-9]+$ ]] && (( LATENCY_REPEAT >= 1 )) \
+  || die "--latency-repeat must be a positive integer"
 
 # "baseline, passthrough" would otherwise keep " passthrough" as an item that matches nothing,
 # and that scenario would be skipped without a word.
-for v in SCENARIOS WORKLOADS TOOLS SWEEP_RATES SWEEP_LEVELS JOURNAL_LEVELS; do
+for v in SCENARIOS WORKLOADS TOOLS SWEEP_RATES SWEEP_LEVELS SWEEP_PERCENT SWEEP_WORKLOADS JOURNAL_LEVELS; do
   printf -v "$v" '%s' "${!v//[[:space:]]/}"
 done
 
@@ -153,6 +182,11 @@ if has "$SCENARIOS" sweep && [[ "$SWEEP_RATES" == "auto" ]]; then
     warn "automatic sweep rates need passthrough measured; adding it"
     SCENARIOS="passthrough,$SCENARIOS"
   fi
+  # Each ladder comes from the wrk runs of its own workload.
+  IFS=',' read -ra _swl <<< "$SWEEP_WORKLOADS"
+  for w in "${_swl[@]}"; do
+    has "$WORKLOADS" "$w" || die "--sweep-workload $w is not in --workload, so it has no wrk run to size its ladder"
+  done
 fi
 
 # The journal scenario reports against passthrough, so it needs it measured.
@@ -500,10 +534,19 @@ workload_script() {
   esac
 }
 
-# fire <tool> <scenario> <workload> <journal> <rate> <url> <repeat-index> <do-warmup>
+# Repeats of one run: --repeat for wrk against the gateway, where the spread is the noise
+# floor of a cost comparison; --latency-repeat for wrk2 and for the baseline, which is only
+# the floor and the backend headroom check.
+reps_for() {   # reps_for <scenario> <tool>
+  if [[ "$2" == "wrk2" || "$1" == "baseline" ]]; then echo "$LATENCY_REPEAT"; else echo "$REPEAT"; fi
+}
+
+# fire <tool> <scenario> <workload> <journal> <rate> <url> <repeat-index> <warmup>
+# <warmup> is a duration to warm for first, or empty for none.
 fire() {
   local tool="$1" scenario="$2" workload="$3" journal="$4" rate="$5" url="$6"
-  local rep="$7" do_warmup="$8"
+  local rep="$7" warmup="$8"
+  local reps; reps="$(reps_for "$scenario" "$tool")"
   local script; script="$(workload_script "$workload")"
 
   local -a PIN; pin_prefix "$LOAD_CPUS"
@@ -512,30 +555,32 @@ fire() {
   [[ "$scenario" == "sweep"   ]] && tag="$(printf 'sweep-%s-%s-r%08d' "$journal" "$workload" "$rate")"
   local file_tag="${tag}.n${rep}"
 
-  if (( do_warmup )); then
+  if [[ -n "$warmup" ]]; then
     # Warm at full tilt regardless of which tool measures: C2 needs volume, not
     # a fixed rate. Prefer wrk; fall back to wrk2 if only that is installed.
-    log "warmup  ${tag} (${WARMUP}, discarded)"
+    log "warmup  ${tag} (${warmup}, discarded)"
     if command -v wrk >/dev/null 2>&1; then
-      "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -s "$script" --timeout 5s "$url" \
+      "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$warmup" -s "$script" --timeout 5s "$url" \
         > "$RAW/$file_tag.warmup.txt" 2>&1 || warn "warmup ${tag} failed; see $RAW/$file_tag.warmup.txt"
     else
-      "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$WARMUP" -R"$((rate * 4))" -s "$script" \
+      "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$warmup" -R"$((rate * 4))" -s "$script" \
         --timeout 5s "$url" > "$RAW/$file_tag.warmup.txt" 2>&1 \
         || warn "warmup ${tag} failed; see $RAW/$file_tag.warmup.txt"
     fi
     sleep 2
   fi
 
-  log "measure ${tag} (${DURATION}, repeat ${rep}/${REPEAT})"
+  local duration="$DURATION"
+  [[ "$tool" == "wrk2" ]] && duration="$LATENCY_DURATION"
+  log "measure ${tag} (${duration}, repeat ${rep}/${reps})"
   # A failed run still gets a result file, so it shows in the report; its exit status goes
   # into the metadata, where the verdict rejects it rather than trusting the parser to notice.
   local status=0
   if [[ "$tool" == "wrk" ]]; then
-    "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency --timeout 5s \
+    "${PIN[@]}" wrk -t"$THREADS" -c"$CONNECTIONS" -d"$duration" --latency --timeout 5s \
         -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || status=$?
   else
-    "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" -R"$rate" --latency --timeout 5s \
+    "${PIN[@]}" wrk2 -t"$THREADS" -c"$CONNECTIONS" -d"$duration" -R"$rate" --latency --timeout 5s \
          -s "$script" "$url" > "$RAW/$file_tag.txt" 2>&1 || status=$?
   fi
   (( status == 0 )) || warn "${tool} exited with status ${status}; see $RAW/$file_tag.txt"
@@ -552,7 +597,7 @@ PY
   python3 "$HERE/lib/parse.py" parse "$RAW/$file_tag.txt" "$meta" > "$OUT/$file_tag.json"
 
   local rps; rps="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["stats"]["rps"] or 0)' "$OUT/$file_tag.json")"
-  ok "  ${tag} [${rep}/${REPEAT}]: ${rps} req/s"
+  ok "  ${tag} [${rep}/${reps}]: ${rps} req/s"
   sleep 3   # let sockets drain before the next run
 }
 
@@ -578,36 +623,66 @@ print(",".join(str(r) for r in dict.fromkeys(rates)))
 PY
 }
 
-# Run one gateway-backed scenario across workloads, tools and repeats.
-# gw_scenario <scenario> <journal-level> <url> [rate]
-gw_scenario() {
-  local scenario="$1" level="$2" url="$3" rate="${4:-$RATE}"
-  local -a wl tl
-  IFS=',' read -ra wl <<< "$WORKLOADS"
-  IFS=',' read -ra tl <<< "$TOOLS"
-  [[ "$scenario" == "sweep" ]] && tl=(wrk2)
+# The rates a sweep runs for one journal level and workload, comma-separated: the ladder
+# derived for it, or --sweep-rates when that is a fixed list.
+declare -A SWEEP_LADDER=()
+sweep_ladder() {   # sweep_ladder <level> <workload>
+  if [[ "$SWEEP_RATES" == "auto" ]]; then echo "${SWEEP_LADDER[$1/$2]}"; else echo "$SWEEP_RATES"; fi
+}
 
+# One gateway JVM through every workload of a scenario. The first workload is warmed with
+# --warmup, and each later one with --rewarm, since the JVM is already hot and only the new
+# request shape needs compiling. <only> is the one repeat index to run (--restart-per-repeat),
+# or "all" for every repeat back-to-back, which bounds run-to-run noise but not JIT variance.
+# run_jvm <scenario> <journal-level> <url> <only>
+run_jvm() {
+  local scenario="$1" level="$2" url="$3" only="$4" warm="$WARMUP" w t r n rep
+  local -a wl tl rates
+  if [[ "$scenario" == "sweep" ]]; then
+    IFS=',' read -ra wl <<< "$SWEEP_WORKLOADS"; tl=(wrk2)
+  else
+    IFS=',' read -ra wl <<< "$WORKLOADS"; IFS=',' read -ra tl <<< "$TOOLS"
+  fi
+  start_gateway "$level"
+  for w in "${wl[@]}"; do
+    rates=("$RATE")
+    [[ "$scenario" == "sweep" ]] && IFS=',' read -ra rates <<< "$(sweep_ladder "$level" "$w")"
+    for t in "${tl[@]}"; do
+      n="$(reps_for "$scenario" "$t")"
+      # A sweep climbs its ladder, so the points past the knee come last.
+      for r in "${rates[@]}"; do
+        for ((rep = 1; rep <= n; rep++)); do
+          [[ "$only" == "all" || "$only" == "$rep" ]] || continue
+          fire "$t" "$scenario" "$w" "$level" "$r" "$url" "$rep" "$warm"
+          warm=""
+        done
+      done
+    done
+    # Only a warmup that ran makes the next workload a switch in a hot JVM.
+    [[ -z "$warm" ]] && warm="$REWARM"
+  done
+  stop_gateway
+}
+
+# Run one gateway-backed scenario across workloads, tools and repeats.
+# gw_scenario <scenario> <journal-level> <url>
+gw_scenario() {
+  local scenario="$1" level="$2" url="$3" rep n
   if (( RESTART_PER_REPEAT )); then
-    for ((rep = 1; rep <= REPEAT; rep++)); do
-      start_gateway "$level"
-      for w in "${wl[@]}"; do for t in "${tl[@]}"; do
-        fire "$t" "$scenario" "$w" "$level" "$rate" "$url" "$rep" 1
-      done; done
+    # As many JVMs as the most-repeated tool this scenario runs, so none starts empty.
+    local t m; local -a tl
+    IFS=',' read -ra tl <<< "$TOOLS"
+    [[ "$scenario" == "sweep" ]] && tl=(wrk2)
+    n=0
+    for t in "${tl[@]}"; do m="$(reps_for "$scenario" "$t")"; (( m > n )) && n="$m"; done
+    for ((rep = 1; rep <= n; rep++)); do
+      run_jvm "$scenario" "$level" "$url" "$rep"
       # Measured after the stop: the journal is written asynchronously, so before it the
       # size depends on how far the writer has caught up.
-      stop_gateway
       echo "journal_bytes_${scenario}_${level}_n${rep}=$(journal_size)" >> "$OUT/environment.txt"
     done
   else
-    start_gateway "$level"
-    for w in "${wl[@]}"; do for t in "${tl[@]}"; do
-      for ((rep = 1; rep <= REPEAT; rep++)); do
-        # Warm once per (workload, tool); repeats measure run-to-run noise on an
-        # already-hot JVM. Use --restart-per-repeat to include JIT variance too.
-        fire "$t" "$scenario" "$w" "$level" "$rate" "$url" "$rep" "$(( rep == 1 ? 1 : 0 ))"
-      done
-    done; done
-    stop_gateway
+    run_jvm "$scenario" "$level" "$url" all
     echo "journal_bytes_${scenario}_${level}=$(journal_size)" >> "$OUT/environment.txt"
   fi
 }
@@ -615,17 +690,19 @@ gw_scenario() {
 # ----------------------------------------------------------------- main
 
 preflight
-log "mode=$MODE threads=$THREADS conns=$CONNECTIONS duration=$DURATION warmup=$WARMUP"
-log "rate=$RATE repeat=$REPEAT restart-per-repeat=$RESTART_PER_REPEAT"
+log "mode=$MODE threads=$THREADS conns=$CONNECTIONS duration=$DURATION latency-duration=$LATENCY_DURATION"
+log "warmup=$WARMUP rewarm=$REWARM rate=$RATE repeat=$REPEAT latency-repeat=$LATENCY_REPEAT restart-per-repeat=$RESTART_PER_REPEAT"
 log "scenarios=$SCENARIOS"
 log "results -> $OUT"
 
 {
   echo "mode=$MODE"
-  echo "threads=$THREADS connections=$CONNECTIONS duration=$DURATION warmup=$WARMUP"
-  echo "rate=$RATE repeat=$REPEAT restart_per_repeat=$RESTART_PER_REPEAT"
+  echo "threads=$THREADS connections=$CONNECTIONS duration=$DURATION latency_duration=$LATENCY_DURATION"
+  echo "warmup=$WARMUP rewarm=$REWARM"
+  echo "rate=$RATE repeat=$REPEAT latency_repeat=$LATENCY_REPEAT restart_per_repeat=$RESTART_PER_REPEAT"
   echo "scenarios=$SCENARIOS workloads=$WORKLOADS tools=$TOOLS"
-  echo "sweep_rates=$SWEEP_RATES sweep_levels=$SWEEP_LEVELS journal_levels=$JOURNAL_LEVELS"
+  echo "sweep_rates=$SWEEP_RATES sweep_percent=$SWEEP_PERCENT sweep_levels=$SWEEP_LEVELS sweep_workloads=$SWEEP_WORKLOADS"
+  echo "journal_levels=$JOURNAL_LEVELS"
   echo "host=$(uname -srm) cpus=$(getconf _NPROCESSORS_ONLN)"
   if [[ "$MODE" == "docker" ]]; then
     echo "image=$GW_IMAGE user=$GW_UID:$GW_GID"
@@ -636,6 +713,7 @@ log "results -> $OUT"
   echo "wrk2=$(wrk2 --version 2>&1 | head -n1 || echo n/a)"
   echo "jar=$JAR"
   echo "jvm_opts=$JVM_OPTS"
+  echo "r7_poller_mode=${R7_POLLER_MODE:-default}"
   echo "backend_image=$BACKEND_IMAGE"
   echo "ports=gateway:$GW_PORT management:$GW_STATUS_PORT backend:$BACKEND_PORT"
   echo "pinning=$PIN_METHOD backend_cpus=${BACKEND_CPUS:-none} gateway_cpus=${GATEWAY_CPUS:-none} load_cpus=${LOAD_CPUS:-none}"
@@ -646,9 +724,10 @@ log "results -> $OUT"
 # Every run the selected profile will make, written before any of them, so the verdict can
 # tell a run that produced no result from one that was never asked for. Mirrors the loops below.
 plan_rows() {   # plan_rows <scenario> <journal> <rate> <tool...>
-  local s="$1" j="$2" r="$3" w t rep; shift 3
+  local s="$1" j="$2" r="$3" w t rep n; shift 3
   for w in "${PLAN_WL[@]}"; do for t in "$@"; do
-    for ((rep = 1; rep <= REPEAT; rep++)); do
+    n="$(reps_for "$s" "$t")"
+    for ((rep = 1; rep <= n; rep++)); do
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$w" "$t" "$j" "$([[ "$t" == wrk2 ]] && echo "$r" || echo -)" "$rep"
     done
   done; done
@@ -665,6 +744,7 @@ IFS=',' read -ra PLAN_TL <<< "$TOOLS"
   fi
   if has "$SCENARIOS" sweep; then
     IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
+    IFS=',' read -ra PLAN_WL <<< "$SWEEP_WORKLOADS"
     if [[ "$SWEEP_RATES" == "auto" ]]; then
       # Replaced by the real rates when the sweep derives them; one left behind is a sweep
       # that never ran, and the verdict counts it as missing.
@@ -692,12 +772,18 @@ if has "$SCENARIOS" baseline; then
   log "=== scenario: baseline (no gateway) ==="
   IFS=',' read -ra WL <<< "$WORKLOADS"
   IFS=',' read -ra TL <<< "$TOOLS"
-  for w in "${WL[@]}"; do for t in "${TL[@]}"; do
-    for ((rep = 1; rep <= REPEAT; rep++)); do
-      fire "$t" baseline "$w" "-" "$RATE" \
-        "http://127.0.0.1:$BACKEND_PORT/bench/api/v1/users" "$rep" "$(( rep == 1 ? 1 : 0 ))"
+  for w in "${WL[@]}"; do
+    # nginx has no JIT; the warmup opens connections and fills caches, so --rewarm will do.
+    warm="$REWARM"
+    for t in "${TL[@]}"; do
+      n="$(reps_for baseline "$t")"
+      for ((rep = 1; rep <= n; rep++)); do
+        fire "$t" baseline "$w" "-" "$RATE" \
+          "http://127.0.0.1:$BACKEND_PORT/bench/api/v1/users" "$rep" "$warm"
+        warm=""
+      done
     done
-  done; done
+  done
 fi
 
 # 2. Passthrough: r7 in the path, no filters, journal off.
@@ -727,34 +813,27 @@ fi
 if has "$SCENARIOS" sweep; then
   log "=== scenario: sweep (wrk2, rates=$SWEEP_RATES, levels=$SWEEP_LEVELS) ==="
   IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
-  for level in "${SLEVELS[@]}"; do
-    if [[ "$SWEEP_RATES" == "auto" ]]; then
-      # One ladder per workload: a slow workload sharing a fast one's ladder could have
-      # every point past its knee.
-      IFS=',' read -ra SWL <<< "$WORKLOADS"
-      ALL_WORKLOADS="$WORKLOADS"; ALL_PLAN_WL=("${PLAN_WL[@]}")
+  IFS=',' read -ra SWL <<< "$SWEEP_WORKLOADS"
+  if [[ "$SWEEP_RATES" == "auto" ]]; then
+    # One ladder per level and workload: a slow workload sharing a fast one's ladder could
+    # have every point past its knee. All derived up front, from wrk runs that are done.
+    for level in "${SLEVELS[@]}"; do
       for w in "${SWL[@]}"; do
         rates="$(sweep_rates "$level" "$w")"
         log "sweep rates for $level/$w: $rates"
         echo "sweep_rates_${level}_${w}=$rates" >> "$OUT/environment.txt"
+        SWEEP_LADDER["$level/$w"]="$rates"
         IFS=',' read -ra SRATES <<< "$rates"
         PLAN_WL=("$w")
         awk -F'\t' -v l="$level" -v w="$w" '!($1 == "sweep" && $2 == w && $4 == l && $5 == "auto")' \
           "$OUT/plan.tsv" > "$OUT/plan.tsv.new"
         for r in "${SRATES[@]}"; do plan_rows sweep "$level" "$r" wrk2; done >> "$OUT/plan.tsv.new"
         mv "$OUT/plan.tsv.new" "$OUT/plan.tsv"
-        WORKLOADS="$w"
-        for r in "${SRATES[@]}"; do
-          gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users" "$r"
-        done
       done
-      WORKLOADS="$ALL_WORKLOADS"; PLAN_WL=("${ALL_PLAN_WL[@]}")
-    else
-      IFS=',' read -ra SRATES <<< "$SWEEP_RATES"
-      for r in "${SRATES[@]}"; do
-        gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users" "$r"
-      done
-    fi
+    done
+  fi
+  for level in "${SLEVELS[@]}"; do
+    gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users"
   done
 fi
 

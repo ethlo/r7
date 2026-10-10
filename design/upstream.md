@@ -81,6 +81,7 @@ The conformance kits hold every server to the same behaviour: `UpstreamConforman
   `request_parse_timeout` on both listeners.
 - **Header and body limits** are checked by `BlockingGateway` itself (431 and 413), since a
   server's own limits need not match `server.yaml`.
-- **I/O pollers.** `R7Helidon.main` sets `jdk.pollerMode=3` (per-carrier pollers) unless it is
-  already set. With the JDK default, a saturated gateway showed stalls of up to 2 s. See
-  [`limitations.md`](limitations.md).
+- **I/O pollers.** `R7Helidon.main` sets `jdk.pollerMode=1` (platform-thread pollers), or the
+  mode in `R7_POLLER_MODE`, unless the property is already set. With virtual-thread or
+  per-carrier pollers, new connections starved for seconds at saturation. See
+  [`docs/performance_tuning.md`](../docs/performance_tuning.md#latency-at-saturation-the-jdks-io-pollers).

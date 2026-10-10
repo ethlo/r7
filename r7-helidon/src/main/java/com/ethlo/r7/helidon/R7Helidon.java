@@ -211,28 +211,40 @@ public final class R7Helidon
         this.gateway.close();
     }
 
+    static final String POLLER_MODE_ENV = "R7_POLLER_MODE";
+
     /**
-     * The JDK's I/O pollers run by default as virtual threads on the same carriers as the
-     * requests. When the carriers are saturated a poller can wait hundreds of milliseconds for
-     * one, and every connection registered with it stalls until it runs: at saturation this
-     * produced outliers of 0.5-2 s (p99 8.6 ms) where Undertow's worst was 40 ms. Per-carrier
-     * pollers (mode 3) poll as part of each carrier's own scheduling, and the same load gives a
-     * worst case of 16-20 ms and p99 4.4 ms (design/history/upstream-client.md). Internal and
-     * undocumented, so an explicit -Djdk.pollerMode still wins, and a JDK that drops it falls back
-     * to its default.
+     * Platform-thread I/O pollers (mode 1) unless {@code R7_POLLER_MODE} or an explicit
+     * -Djdk.pollerMode says otherwise; the explicit property wins.
+     * <p>
+     * With virtual-thread pollers (2, the JDK default) or per-carrier pollers (3), a woken
+     * connection is queued on its carrier, while a new connection's thread, started by Helidon's
+     * platform-thread acceptor, waits in the scheduler's shared queue. ForkJoinPool drains a
+     * carrier's own queue before it looks there, so at saturation new connections waited 5-20 s
+     * for their first read (design/history/upstream-client.md, "New connections starved at
+     * saturation"). Platform-thread pollers wake every thread through the shared queue, in order.
+     * Mode 3 has the shorter tail for connections already open, which is why it stays selectable.
      * Set before anything opens a socket: the poller reads it once, when it starts.
+     *
+     * @param pollerModeEnv the value of {@code R7_POLLER_MODE}, or {@code null}
      */
-    static void preferPerCarrierPollers()
+    static void choosePollerMode(final String pollerModeEnv)
     {
-        if (System.getProperty("jdk.pollerMode") == null)
+        if (System.getProperty("jdk.pollerMode") != null)
         {
-            System.setProperty("jdk.pollerMode", "3");
+            return;
         }
+        final String mode = pollerModeEnv == null || pollerModeEnv.isBlank() ? "1" : pollerModeEnv.strip();
+        if (!mode.equals("1") && !mode.equals("2") && !mode.equals("3"))
+        {
+            throw new IllegalArgumentException(POLLER_MODE_ENV + " must be 1, 2 or 3, was '" + pollerModeEnv + "'");
+        }
+        System.setProperty("jdk.pollerMode", mode);
     }
 
     public static void main(final String[] args) throws IOException
     {
-        preferPerCarrierPollers();
+        choosePollerMode(System.getenv(POLLER_MODE_ENV));
         LogbackConfiguration.configure();
 
         // Helidon's System.Logger ends in java.util.logging in the repackaged jar; route that into
