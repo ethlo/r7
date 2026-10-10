@@ -546,8 +546,8 @@ public record ServerConfig(
          * {@value #MIN_DEFAULT_SHARD_COUNT} to {@value #MAX_DEFAULT_SHARD_COUNT}. A
          * thread-per-connection server queues every connection's writer on its shard's monitor,
          * and with zstd on, compression runs inside it, so a fixed count that suits a laptop
-         * becomes the bottleneck on a larger host: two shards on a 12-CPU host lost a sixth of
-         * the METADATA throughput eight shards kept. See docs/performance_tuning.md.
+         * becomes the bottleneck on a host with more cores writing. See
+         * docs/performance_tuning.md.
          */
         @Override
         public Integer shardCount()
