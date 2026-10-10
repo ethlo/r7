@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
+import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -82,7 +83,12 @@ class BlockingGatewayThreadLeakTest
 
     private static Set<Thread> liveThreads()
     {
-        return Thread.getAllStackTraces().keySet().stream().filter(Thread::isAlive).collect(Collectors.toSet());
+        // Fork/join workers, the virtual-thread carriers among them, belong to JDK-wide pools that
+        // grow and shrink on their own; a carrier started while a gateway ran is not its leak
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(Thread::isAlive)
+                .filter(thread -> !(thread instanceof ForkJoinWorkerThread))
+                .collect(Collectors.toSet());
     }
 
     private static void assertNoThreadsBeyond(final Set<Thread> before)
