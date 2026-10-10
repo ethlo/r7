@@ -669,8 +669,12 @@ run_jvm() {
 gw_scenario() {
   local scenario="$1" level="$2" url="$3" rep n
   if (( RESTART_PER_REPEAT )); then
-    n="$(reps_for "$scenario" wrk2)"
-    [[ "$scenario" != "sweep" ]] && (( REPEAT > n )) && n="$REPEAT"
+    # As many JVMs as the most-repeated tool this scenario runs, so none starts empty.
+    local t m; local -a tl
+    IFS=',' read -ra tl <<< "$TOOLS"
+    [[ "$scenario" == "sweep" ]] && tl=(wrk2)
+    n=0
+    for t in "${tl[@]}"; do m="$(reps_for "$scenario" "$t")"; (( m > n )) && n="$m"; done
     for ((rep = 1; rep <= n; rep++)); do
       run_jvm "$scenario" "$level" "$url" "$rep"
       # Measured after the stop: the journal is written asynchronously, so before it the
