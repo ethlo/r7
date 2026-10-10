@@ -42,7 +42,7 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
    cores do the housekeeping and the performance cores run the benchmark. The layout is in
    `host.txt`.
 5. **A fixed profile.** All scenarios on all workloads, one gateway JVM per configuration
-   (warmed 15s, and 5s more on each workload switch). wrk runs 3 × 15s, since its spread
+   (warmed 30s, and 15s more on each workload switch). wrk runs 3 × 15s, since its spread
    is the noise floor every cost is read against; wrk2 runs once for 30s at the fixed rate.
    The sweep climbs the browser workload at 50, 75, 90 and 100% of its saturation
    throughput, once per point.
