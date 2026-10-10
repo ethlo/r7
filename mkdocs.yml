@@ -41,15 +41,18 @@ extra_css:
 
 nav:
   - Overview: index.md
-  - Quickstart: quickstart.md
-  - Configuration: config.md
-  - Extensibility: extensibility.md
-  - Journaling: journaling.md
-  - WARC profile: warc.md
-  - Where r7 fits: where-r7-fits.md
-  - Performance tuning: performance_tuning.md
-  - Licensing: licensing.md
-  - Editor: editor.md
+  - Get started:
+      - Quickstart: quickstart.md
+      - Config editor: editor.md
+  - Reference:
+      - Configuration: config.md
+      - Journaling: journaling.md
+      - WARC profile: warc.md
+      - Extensibility: extensibility.md
+  - Operate:
+      - Where r7 fits: where-r7-fits.md
+      - Performance tuning: performance_tuning.md
+      - Benchmarks: benchmarks.md
 
 markdown_extensions:
   - admonition
