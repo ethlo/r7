@@ -33,7 +33,7 @@ SWEEP_LEVELS="NONE,FULL"
 JOURNAL_LEVELS="METADATA,HEADERS,FULL"   # NONE is covered by `passthrough`
 JAR=""
 OUT=""
-GW_PORT=8888
+GW_PORT=8888              # preferred ports; pick_ports moves each to the next free one
 GW_STATUS_PORT=18888
 BACKEND_PORT=11111
 KEEP_RUNNING=0
@@ -178,6 +178,29 @@ mkdir -p "$RUNDIR/config" "$RUNDIR/journals" "$RAW"
 
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
 
+port_in_use() {
+  local listening
+  # A failed probe is not a free port.
+  listening="$(ss -ltnH "sport = :$1" 2>/dev/null)" || die "ss failed; cannot check port $1"
+  [[ -n "$listening" ]]
+}
+
+# Each port this run listens on moves up to the next free one, so a host that already uses
+# a default port can still run the benchmark. The ports are written into the gateway and
+# backend configuration.
+pick_ports() {
+  local var p taken=" "
+  for var in GW_PORT GW_STATUS_PORT BACKEND_PORT; do
+    p="${!var}"
+    while port_in_use "$p" || [[ "$taken" == *" $p "* ]]; do
+      (( ++p <= 65535 )) || die "no free port at or above ${!var} for $var"
+    done
+    [[ "$p" == "${!var}" ]] || log "port ${!var} is taken; using $p instead"
+    printf -v "$var" '%s' "$p"
+    taken+="$p "
+  done
+}
+
 preflight() {
   need docker
   need python3
@@ -197,6 +220,8 @@ preflight() {
     [[ -n "$JAR" && -f "$JAR" ]] || die "no gateway jar found; run 'mvn -q -DskipTests install' or pass --jar"
     log "jar: $JAR"
   fi
+
+  pick_ports
 
   (( SKIP_PREFLIGHT )) && return 0
 
@@ -325,17 +350,12 @@ container_cpus() {
 GW_CPUS_RECORDED=0
 
 start_backend() {
-  if ss -ltn 2>/dev/null | grep -q ":$BACKEND_PORT "; then
-    die "port $BACKEND_PORT already in use; stop whatever is on it first"
-  fi
   log "starting nginx reference backend on :$BACKEND_PORT"
-  local conf="$HERE/backend/nginx.conf"
-  local -a pin_args=()
+  local conf="$RUNDIR/nginx.conf"
+  local -a pin_args=() sed_args=(-e "s|listen 11111 |listen $BACKEND_PORT |")
   if [[ -n "$BACKEND_CPUS" ]]; then
     # worker_processes auto counts the host's CPUs, not the container's cpuset.
-    conf="$(cd "$RUNDIR" && pwd)/nginx.conf"
-    sed -e "s|^worker_processes .*|worker_processes  $(cpu_count "$BACKEND_CPUS");|" \
-      "$HERE/backend/nginx.conf" > "$conf"
+    sed_args+=(-e "s|^worker_processes .*|worker_processes  $(cpu_count "$BACKEND_CPUS");|")
     pin_args=(--cpuset-cpus "$BACKEND_CPUS")
     # With the systemd cgroup driver containers live under system.slice, which bench.sh
     # confines to the housekeeping cores; the cpuset above would then be ignored.
@@ -343,6 +363,8 @@ start_backend() {
       pin_args+=(--cgroup-parent "$PIN_SLICE")
     fi
   fi
+  sed "${sed_args[@]}" "$HERE/backend/nginx.conf" > "$conf"
+  grep -q "listen $BACKEND_PORT " "$conf" || die "could not set the backend port in $conf"
   BACKEND_CID="$(docker run -d --rm \
     --name r7-bench-backend \
     --network host \
@@ -363,6 +385,8 @@ render_config() {
   local wd="$RUNDIR/journals"
   [[ "$MODE" == "docker" ]] && wd="/journals"
   sed -e "s|__WORK_DIR__|$wd|g" \
+      -e "s|__GW_PORT__|$GW_PORT|g" \
+      -e "s|__GW_STATUS_PORT__|$GW_STATUS_PORT|g" \
       "$HERE/config/server.yaml.tmpl" > "$RUNDIR/config/server.yaml"
 
   rm -rf "${RUNDIR:?}/journals"; mkdir -p "$RUNDIR/journals"
@@ -576,6 +600,7 @@ log "results -> $OUT"
   echo "jar=$JAR"
   echo "jvm_opts=$JVM_OPTS"
   echo "backend_image=$BACKEND_IMAGE"
+  echo "ports=gateway:$GW_PORT management:$GW_STATUS_PORT backend:$BACKEND_PORT"
   echo "pinning=$PIN_METHOD backend_cpus=${BACKEND_CPUS:-none} gateway_cpus=${GATEWAY_CPUS:-none} load_cpus=${LOAD_CPUS:-none}"
   echo "git=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo n/a)"
   echo "date=$(date -Is)"
