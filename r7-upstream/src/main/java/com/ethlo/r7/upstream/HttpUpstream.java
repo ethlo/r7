@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.util.List;
 import java.util.Set;
@@ -263,8 +264,11 @@ public final class HttpUpstream implements UpstreamHandle
         /**
          * An idle pooled connection, or a new one; {@link Connection#reused} tells which. Idle
          * connections past their TTL are closed on the way: the upstream is likely closing them.
+         *
+         * @param deadline {@link System#nanoTime()} by which the whole exchange must be done; a new
+         *                 connection is not waited for past it
          */
-        Connection acquire() throws IOException
+        Connection acquire(final long deadline) throws IOException
         {
             final long now = System.nanoTime();
             final long ttl = options.idleTtl().toNanos();
@@ -278,26 +282,34 @@ public final class HttpUpstream implements UpstreamHandle
                 }
                 c.close();
             }
-            return connect();
+            return connect(deadline);
         }
 
         /**
          * A new connection, never a pooled one.
          */
-        Connection connect() throws IOException
+        Connection connect(final long deadline) throws IOException
         {
+            // The connect timeout, cut short by what is left of max_request_time, so connecting
+            // never runs past the deadline; 0 would mean no timeout, so nothing left fails here.
+            final long remainingMillis = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (remainingMillis < 1)
+            {
+                throw new SocketTimeoutException("No time left within max_request_time to connect to " + uri);
+            }
+            final int timeoutMillis = (int) Math.min(HttpUpstream.this.connectTimeoutMillis, remainingMillis);
             final Socket socket = new Socket();
             try
             {
                 socket.setTcpNoDelay(true);
-                socket.connect(new InetSocketAddress(host, port), connectTimeoutMillis);
+                socket.connect(new InetSocketAddress(host, port), timeoutMillis);
                 if (!secure)
                 {
                     socket.setSoTimeout(readTimeoutMillis);
                     return new Connection(socket);
                 }
                 // The handshake is bounded by the connect timeout, then reads by the read timeout.
-                socket.setSoTimeout(connectTimeoutMillis);
+                socket.setSoTimeout(timeoutMillis);
                 final SSLSocket tls = (SSLSocket) sslContext().getSocketFactory().createSocket(socket, host, port, true);
                 final SSLParameters parameters = tls.getSSLParameters();
                 // Verify the certificate names the host we meant, not just that some CA signed it.

@@ -60,6 +60,10 @@ public final class UpstreamRelay
             }
             catch (final ConnectFailedException e)
             {
+                if (System.nanoTime() - deadline >= 0)
+                {
+                    throw new ProxyFailure(504, "Upstream timed out", new SocketTimeoutException("Connecting to " + target.uri + " used up max_request_time"));
+                }
                 final HttpUpstream.Target next = --triesLeft > 0 ? upstream.pick() : null;
                 if (next == null)
                 {
@@ -108,7 +112,7 @@ public final class UpstreamRelay
         {
             try
             {
-                connection = target.acquire();
+                connection = target.acquire(deadline);
             }
             catch (final ConnectException | SocketTimeoutException e)
             {
@@ -129,7 +133,7 @@ public final class UpstreamRelay
                 }
                 HttpUpstream.untrack(connection);
                 connection.close();
-                connection = target.connect();
+                connection = target.connect(deadline);
                 HttpUpstream.track(connection, deadline);
                 attempt.requestFlushed = false;
                 response = exchangeHead(connection, exchange, head, framing, options, attempt);
