@@ -13,7 +13,8 @@ host with `METADATA` journaling and the browser workload, single unpinned runs g
 | zstd, 8 shards | 95.1k | −24% |
 | `compression: none` | 111.8k | −13% |
 
-These are single runs, not `bench.sh` numbers. Their ranking is what matters here.
+These are single unpinned runs: the motivation, not a measurement. A `bench.sh --repeat 3` run
+has to confirm the ranking before this plan is built.
 
 Compression costs this much because of where it runs, not because of the level. FORMAT.md §4.4
 keeps one zstd stream per 32 KB block and flushes it after every entry, so that every entry is
@@ -52,8 +53,11 @@ assign Sequence; unlock            or when the flush interval passes;
                                    write the batch's magic last
 ```
 
-- **Format.** A new codec value replaces codec 1, which is pre-release and has no installed base
-  to keep. A batch is one record, framed, split and checked exactly as §4.3 frames an entry
+- **Format.** Batches get a new codec value, 2. Writers write only codec 2. Readers keep decoding
+  codec 1 for at least one release, so segments written before an upgrade drain normally. A
+  reader that predates codec 2 sets those segments aside under the existing unknown-codec rule
+  (`anUnknownCodecIsSetAside`), never deletes or misreads them, so the tailer and reaper upgrade
+  before or with the gateway. A batch is one record, framed, split and checked exactly as §4.3 frames an entry
   today. Its content is `PlainLength (4)`, `EntryCount (4)` and one zstd frame. Decompressed, the
   frame is the batch's §4.2 entries back to back, each with its own Sequence, so §4.2 is
   unchanged inside a batch. The stream flags, PAD fragments and per-entry flushes go away.
@@ -106,8 +110,8 @@ CPUs (#203), one writer per shard has headroom.
 ## What it costs
 
 **Tailer latency.** Today an entry is visible to a tailer the moment its magic is written. In
-the sandbox, from an exchange's end entry to the tailer's consumer, p50 is about 0.06 to 0.2 ms
-and p99 about 0.6 to 3 ms (`TailerLatencyBenchmarkTest`). With batches, an entry is visible when
+the sandbox, from an exchange's end entry to the tailer's consumer, one run of
+`TailerLatencyBenchmarkTest` gave a p50 of about 0.06 to 0.2 ms and a p99 of about 0.6 to 3 ms. With batches, an entry is visible when
 its batch is placed, so the delay adds up to the time to fill a stage, capped by the flush
 interval:
 
@@ -129,7 +133,9 @@ downstream of them get each exchange up to 10 ms later than today.
 
 **Process crash.** Today a committed entry is in the page cache, so it survives the gateway
 process being killed. With staging, entries not yet placed are in the process's memory, and a
-`kill -9` or an OOM kill loses up to one flush interval per shard. A graceful shutdown flushes
+`kill -9` or an OOM kill loses them: at most both stages, 64 KB of plain entries per shard (one stage being compressed,
+one filling). At low traffic that is the last flush interval's entries. At saturation, with the
+writer thread behind, it is the full 64 KB, about 80 `METADATA` exchanges. A graceful shutdown flushes
 first. Power loss is unchanged, since neither design calls fsync. This contradicts
 `r7-journal-mmap/README.md` §2.2 ("MUST NOT maintain user-space write buffers for durability"),
 which would have to change, and the loss has to be stated where durability is documented.
