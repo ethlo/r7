@@ -1,6 +1,6 @@
 # Journal compression per batch, off the request thread
 
-> **Plan, not built.** Proposed 2026-10-10. Nothing here describes how r7 behaves today.
+> **Plan, not built.** Proposed and agreed 2026-10-10. Nothing here describes how r7 behaves today.
 
 ## The problem
 
@@ -55,11 +55,11 @@ lock; copy content into stage A   swap stage A for B when A is full
                                    place it; write its magic last
 ```
 
-- **Format.** Batches get a new codec value, 2. Writers write only codec 2. Readers keep decoding
-  codec 1 for at least one release, so segments written before an upgrade drain normally. A
-  reader that predates codec 2 sets those segments aside under the existing unknown-codec rule
-  (`anUnknownCodecIsSetAside`), never deletes or misreads them, so the tailer and reaper upgrade
-  before or with the gateway. A batch is one record, framed, split and checked exactly as §4.3 frames an entry
+- **Format.** Batches get a new codec value, 2, and codec 1 is removed outright: no
+  compatibility before 1.0 (decided 2026-10-10). Segments left over from an older gateway carry
+  codec 1, which a new reader sets aside under the existing unknown-codec rule
+  (`anUnknownCodecIsSetAside`); it never deletes or misreads them. An old reader sets aside codec
+  2 the same way, so the gateway, tailer and reaper upgrade together. A batch is one record, framed, split and checked exactly as §4.3 frames an entry
   today. Its content is `PlainLength (4)`, `EntryCount (4)` and one zstd frame. Decompressed, the
   frame is the batch's §4.2 entries back to back, each with its own Sequence, so §4.2 is
   unchanged inside a batch. The stream flags, PAD fragments and per-entry flushes go away.
@@ -85,21 +85,26 @@ lock; copy content into stage A   swap stage A for B when A is full
 - **Oversized entries.** A request thread with an entry larger than a stage does not copy it.
   It queues the entry on the stage as a reference and waits, so the writer thread flushes what is
   staged, writes the entry as STANDALONE, and only then releases the thread and its buffer.
-- **Failures.** Writes become asynchronous, and that changes the failure contract. Today
-  `writeEntry` has published the magic before it returns, so a disk-full or mapping failure
-  fails the request whose entry it was. With staging, the requests whose entries are staged have
-  already returned when the writer thread fails. Proposed: the writer thread records the
-  failure, the shard refuses every later append (those requests fail closed, as today), gateway
-  health goes to ERROR so `/ready` returns 503, and the staged entries it could not place are
-  reported as lost, by count and Sequence range, through the integrity listener. The
-  alternative, making each request wait for its batch's commit, keeps today's contract but gives
-  back the latency this plan exists to remove. This is a decision for the plan's review (see
-  "Open questions").
-- **Byte counts.** `r7_route_journal_bytes_total` counts bytes written to the journal, per
-  route, from what the write calls return. A batch mixes routes, so its compressed size cannot be
-  attributed to them exactly. Proposed: the per-route counter counts plain (uncompressed) bytes
-  and is renamed to say so, and a new per-shard counter counts the compressed bytes placed.
-  Both renames are breaking metric changes, made before 1.0.
+- **Failures (decided 2026-10-10).** Writes become asynchronous, and that changes the failure
+  contract. Today `writeEntry` has published the magic before it returns, so a disk-full or
+  mapping failure fails the request whose entry it was. With staging, the requests whose entries
+  are staged have already returned when the writer thread fails. A full disk is a system error,
+  not an r7 error, and the in-flight entries are not r7's to save. So the writer thread records
+  the failure, the shard refuses every later append (those requests fail closed, as today),
+  gateway health goes to ERROR so `/ready` returns 503, and the staged entries it could not place
+  are reported as lost, by count and Sequence range, through the integrity listener. Making each
+  request wait for its batch's commit was rejected: it keeps today's contract but gives back the
+  latency this plan exists to remove. `r7-journal-mmap/README.md` §5 changes to say so.
+- **Low disk (decided 2026-10-10).** So that a full disk is seen coming, the journal reports a
+  health component: WARN when free space on `work_dir` is below what two more segments per shard
+  need ($2 \times$ `shard_count` $\times$ `shard_size`). It shows on the dashboard and in
+  `r7_component_health`, and rolls up into gateway health like any other component. It does not
+  depend on batching and can ship first.
+- **Byte counts (decided 2026-10-10).** `r7_route_journal_bytes_total` counts bytes written to
+  the journal, per route, from what the write calls return. A batch mixes routes, so its
+  compressed size cannot be attributed to them exactly. The per-route counter therefore counts
+  plain (uncompressed) bytes and is renamed to say so, and a new per-shard counter counts the
+  compressed bytes placed. Both are breaking metric changes, made before 1.0.
 
 ## What it buys
 
@@ -186,8 +191,8 @@ format version 2.
 - **Writer (`R7fJournal`).** The compression path is replaced by staging and a writer thread.
   The monitor shrinks to the staging copy, and segment state becomes single-threaded, which is
   simpler than today's. Rotation, close and the commit signal move to the writer thread.
-- **Format (`FORMAT.md` §4.4).** It is rewritten for batches. Codec 1's stream flags and PAD
-  fragments are removed.
+- **Format (`FORMAT.md` §4.4).** It is rewritten for batches. Codec 1, its stream flags and its
+  PAD fragments are removed, with their decoder.
 - **Reader, recovery and reassembler.** A batch yields many entries. The decoder iterates the
   §4.2 entries inside a batch and checks their Sequences exactly as it does across entries
   today. Recovery seals before an uncommitted batch, as it does before an uncommitted entry.
@@ -210,18 +215,11 @@ smaller, and the tests are the largest part.
 - **`compression: none` as the default.** It writes 3.8 times the bytes, and I/O is billed and
   capped on cloud instances.
 
-## Open questions
+## Settled defaults
 
-- Writer failures: fail the shard and mark the gateway not ready, losing what was staged (the
-  proposal above), or make each request wait for its batch's commit? The first changes the
-  journal's append contract (`r7-journal-mmap/README.md` §5, "Backpressure Model"); the second gives up
-  most of the latency gain.
-- Byte metrics: per-route plain bytes plus per-shard compressed bytes, as proposed, or drop the
-  per-route byte counter?
-
-- Should the flush interval be fixed at 10 ms or configurable? A setting is one more thing to
-  explain. A fixed value is enough until a deployment needs otherwise.
-- 32 KB or 64 KB stages? 64 KB compresses 7% better, but doubles the fill time and the entries
-  lost to damage.
-- Should batching apply when `compression: none`? Without compression there is nothing to batch
-  for, so `none` would keep today's direct, per-entry write path.
+- **Flush interval: 10 ms, fixed.** A setting is one more thing to explain. A fixed value is
+  enough until a deployment needs otherwise.
+- **Stage size: 32 KB.** 64 KB compresses 7% better, but doubles the fill time and the entries
+  lost to damage. The `bench.sh` run that confirms the plan can try both.
+- **No batching with `compression: none`.** Without compression there is nothing to batch for,
+  so `none` keeps today's direct, per-entry write path.

@@ -12,7 +12,7 @@ these stays parked.
 |---|---|---|
 | WARC profile (`WARC.md` beside `FORMAT.md`) | To do | The contract for WARC consumers. [`../warc.md`](../warc.md) calls for it. |
 | Live-tailing doorbell (step 4 of [`../history/live-tailing.md`](../history/live-tailing.md)) | Parked | Only worth building if a real consumer needs sub-millisecond latency when idle. |
-| [Journal compression per batch, off the request thread](journal-batch-compression.md) | Proposed | A writer thread per shard compresses staged entries as one frame. Supersedes the parked "writer thread per shard, or per-entry compression" question in [`../history/journal-write-contention.md`](../history/journal-write-contention.md). |
+| [Journal compression per batch, off the request thread](journal-batch-compression.md) | Agreed, to build | A writer thread per shard compresses staged entries as one frame. Supersedes the parked "writer thread per shard, or per-entry compression" question in [`../history/journal-write-contention.md`](../history/journal-write-contention.md). |
 | Static content cache for small, hot files | To do | Removes the `Cleaner` lock contention in [`../limitations.md`](../limitations.md). Validated by size and modification time. |
 | Fewer journal invariants ("How to get to two" in [`../journal-invariants.md`](../journal-invariants.md)) | Target | No owner. |
 | ASVS gaps and roadmap: bcrypt cost floor, Jazzer fuzzing, SBOM, base image scanning | To do | Tracked in [`../asvs-l2.md`](../asvs-l2.md), "Gaps". |
