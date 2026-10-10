@@ -80,9 +80,28 @@ class GatewayHealthTest
         assertThat(health.health()).isEqualTo(ComponentStatus.Health.OK);
     }
 
+    @Test
+    void aJournalDiskShortOfTwoSegmentsPerShardIsAWarning()
+    {
+        final long needed = 2L * 4 * 200 * 1024 * 1024;
+        assertThat(GatewayHealth.journalDisk(needed, needed)).as("exactly enough").isNull();
+        assertThat(GatewayHealth.journalDisk(-1, needed)).as("unknown free space").isNull();
+
+        final GatewayHealth health = GatewayHealth.of(List.of(), new HotReloadService.Status("routes.yaml", LOADED, null),
+                GatewayHealth.journalDisk(needed - 1, needed));
+        assertThat(health.health()).isEqualTo(ComponentStatus.Health.WARN);
+        assertThat(health.problems()).singleElement().satisfies(p ->
+        {
+            assertThat(p.route()).isNull();
+            assertThat(p.component()).isEqualTo("journal");
+            assertThat(p.position()).isNull();
+            assertThat(p.detail()).contains("two more segments per shard");
+        });
+    }
+
     private static GatewayHealth health(final List<RouteConfigDto> routes, final HotReloadService.Status source)
     {
-        return GatewayHealth.of(GatewayHealth.components(routes), source);
+        return GatewayHealth.of(GatewayHealth.components(routes), source, null);
     }
 
     private static RouteConfigDto route(final String id, final FilterNode nodes)
