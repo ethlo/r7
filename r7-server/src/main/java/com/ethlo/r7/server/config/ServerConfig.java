@@ -542,15 +542,31 @@ public record ServerConfig(
         static final String DEFAULT_WORK_DIR = "journals";
 
         /**
-         * Two by default: with page faults taken ahead of the writer, one shard already keeps up,
-         * but a thread-per-connection server queues every connection's writer on it. A second
-         * shard halves that queue for one more open segment and no memory of note. See
+         * One shard per CPU by default, rounded down to a power of two and kept from
+         * {@value #MIN_DEFAULT_SHARD_COUNT} to {@value #MAX_DEFAULT_SHARD_COUNT}. A
+         * thread-per-connection server queues every connection's writer on its shard's monitor,
+         * and with zstd on, compression runs inside it, so a fixed count that suits a laptop
+         * becomes the bottleneck on a host with more cores writing. See
          * docs/performance_tuning.md.
          */
         @Override
         public Integer shardCount()
         {
-            return Optional.ofNullable(this.shardCount).orElse(2);
+            return Optional.ofNullable(this.shardCount).orElseGet(() -> defaultShardCount(Runtime.getRuntime().availableProcessors()));
+        }
+
+        static final int MIN_DEFAULT_SHARD_COUNT = 2;
+
+        /**
+         * Each shard runs a fault-ahead thread and keeps 8 MB populated past its write position,
+         * so the count derived from a large host's CPUs stops here; past it, set it explicitly.
+         */
+        static final int MAX_DEFAULT_SHARD_COUNT = 16;
+
+        static int defaultShardCount(final int availableProcessors)
+        {
+            final int count = Integer.highestOneBit(Math.max(availableProcessors, MIN_DEFAULT_SHARD_COUNT));
+            return Math.min(count, MAX_DEFAULT_SHARD_COUNT);
         }
 
         @Override

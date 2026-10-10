@@ -24,7 +24,8 @@ own that may be writing.
 
 ### Why it happens
 
-The journal is split into `shard_count` shards (default `2`). Each request goes to one shard,
+The journal is split into `shard_count` shards (by default one per CPU the JVM sees, so a
+container's CPU limit counts, rounded down to a power of two, from 2 to 16). Each request goes to one shard,
 chosen by its request id. Each shard writes into one memory-mapped segment at a time, and
 writers take turns: encoding happens in parallel, but placing each entry in the segment is done
 one writer at a time per shard. That step is a short copy, cheap unless something stalls it.
@@ -62,7 +63,7 @@ quickly a tailer consumes sealed segments.
 
 | Setting | Effect | Cost |
 |---|---|---|
-| `storage.shard_count` | Fewer writers per shard: less queueing and a shorter tail. Must be a power of two. | More segment files open at once. No memory cost unless `pre_fault` is on. |
+| `storage.shard_count` | Fewer writers per shard: less queueing and a shorter tail. Must be a power of two. | More segment files open at once, and per shard a fault-ahead thread and about 8 MB kept faulted in (up to 128 MB at the default's cap of 16). No other memory cost unless `pre_fault` is on. |
 | `storage.pre_fault` | Touches each segment's pages while warming it, off the request path. With fault-ahead available, it was slower than leaving it off in every case measured. Use it only where fault-ahead is not available. | Each shard's warmed segments are charged to memory at once: the active segment plus 4 queued plus 1 being warmed. That is about 1.2 GB per shard at the default `shard_size` of 200 MB. They also take real disk space immediately rather than as written. |
 | `storage.shard_size` | Scales what `pre_fault` charges per shard (about 6 × `shard_size`). Smaller segments also rotate more often. | Each rotation does a little work under the shard's lock, so very small segments add their own stalls. |
 | Journal medium | Where `work_dir` lives: a disk-backed volume or tmpfs. | tmpfs is memory that cannot be reclaimed. See below. |
@@ -103,10 +104,12 @@ ones the kernel can least easily reclaim.
 - **Leave `pre_fault` off.** Fault-ahead does its job at a fraction of the memory. Turn it on
   only on a platform without fault-ahead (not Linux, or a kernel older than 5.14), with memory to
   spare and outside a memory-limited container.
-- **Keep the default of 2 shards, or raise it to 4 with many concurrent connections.** With
-  fault-ahead, throughput is already level at one shard; more shards shorten the tail by
-  spreading the writers: 4 shards halved p99 compared with one. Each shard is one more open segment and, without
-  `pre_fault`, costs no memory of note.
+- **Keep the default of one shard per CPU.** Every connection's writer queues on its shard,
+  and with zstd on, compression runs while the shard is held, so the count has to grow with the
+  cores doing the writing: 4 shards halved p99 compared with one. Each shard is one more open
+  segment, a fault-ahead thread and 8 MB kept faulted in, and without `pre_fault` costs no
+  other memory of note. Past 16 CPUs the default stops at 16; set `shard_count` explicitly to
+  go higher.
 - **Give a container headroom for page cache, not just heap.** The journal is written through
   the page cache, which counts toward the container's memory limit. Up to the limit, that cache
   is reclaimable. How much stays dirty depends on how fast the disk and your tailer keep up.
