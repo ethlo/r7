@@ -193,7 +193,7 @@ charged to a container's memory limit, of the writeback, and of what a tailer re
 
 Driven past the request rate it can sustain, a gateway on virtual-thread I/O pollers serves the
 connections it already has but leaves new ones waiting: a connection opened while every core
-is busy can wait 5-20 s for its first request to be read. A load generator that opens all of its
+is busy can wait seconds for its first request to be read. A load generator that opens all of its
 connections at once against a saturated gateway shows this as a burst of very late responses
 (wrk counts them as timeouts). The gateway started through `R7Helidon.main` (the jar and the
 images) uses platform-thread pollers, which do not do this.
@@ -208,16 +208,12 @@ scheduler's shared queue instead. A carrier runs its own queue until it is empty
 at the shared one, and at saturation it is never empty, so new connections wait until the load
 drops. Platform-thread pollers (mode 1) wake every thread through the shared queue, in order.
 
-Measured with the gateway on 2 cores, nginx on 1 and `wrk -c1000`, a fresh gateway per run:
-
-| Poller mode | Runs with a burst of late responses |
-|---|---|
-| 1, platform threads (r7's default) | 0 of 24 |
-| 2, virtual threads (the JDK's default) | 1 of 8 |
-| 3, per carrier | 8 of 29, each with 570-720 responses over 5 s |
-
-Mode 3 has the shorter tail for connections that are already open: on 20 cores at saturation,
-p99 4.4 ms against 5.9 ms, and 5% more throughput.
+The measurements are in the design history
+([`upstream-client.md`](https://github.com/ethlo/r7/blob/main/design/history/upstream-client.md),
+"New connections starved at saturation"): with per-carrier pollers, a burst of late responses
+showed up in about a quarter of the runs; with platform-thread pollers, in none. Per-carrier
+pollers keep a shorter tail for connections that are already open, which is why the mode stays
+selectable.
 
 ### What to do
 

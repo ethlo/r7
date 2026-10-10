@@ -421,7 +421,7 @@ give_back_results
 # ones. A backend image override is allowed, and gated in the verdict.
 unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_LOGBACK_CONFIG R7_ARGS R7_MANAGEMENT_HOST \
   JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS BENCH_BODY_BYTES \
-  R7_BENCH_IMAGE R7_BENCH_MEM R7_BENCH_MEM_RESERVE R7_BENCH_JVM_OPTS
+  R7_BENCH_IMAGE R7_BENCH_MEM R7_BENCH_MEM_RESERVE R7_BENCH_JVM_OPTS R7_POLLER_MODE
 lock_host
 [[ -f "$STATE" ]] && die "settings from an interrupted run are still saved; run --restore first"
 
