@@ -189,31 +189,32 @@ cache charged to a container's memory limit, of the writeback, and of what a tai
 
 ### Symptom
 
-Driven past the request rate it can sustain, the gateway answers a few requests very late -
-hundreds of milliseconds where p99 is single-digit milliseconds - and a load generator with a
-short timeout may report a handful of timeouts. Below saturation it does not happen.
+Driven past the request rate it can sustain, a gateway on the JDK's default I/O pollers answers
+a few requests very late: hundreds of milliseconds where p99 is single-digit milliseconds. The
+gateway started through `R7Helidon.main` (the jar and the images) does not run on those
+defaults. This section matters if you override them, or embed `R7Helidon` without its `main`,
+which then has to set `-Djdk.pollerMode=3` itself.
 
 ### Why it happens
 
 Every connection runs on a virtual thread, and when it waits for the network the JDK parks it
-and hands the socket to an I/O poller. On Java 25 those pollers are themselves virtual threads,
+and hands the socket to an I/O poller. By default those pollers are themselves virtual threads,
 scheduled on the same carrier threads as the requests. When every carrier is busy, a poller can
 wait for one, and every connection registered with it waits too, then resumes in the same
-millisecond. Measured at saturation (200 connections, 20 cores): about 141k req/s, p99 7 ms,
-worst case about 540 ms.
+millisecond. Measured at saturation on Java 25 (200 connections, 20 cores): about 141k req/s,
+p99 7 ms, worst case about 540 ms.
 
 Java 27 has per-carrier pollers (`-Djdk.pollerMode=3`), which poll as part of each carrier's own
-scheduling; with them the worst case is about 20 ms. The gateway turns them on by itself on Java
-27 and later. They do not exist on Java 25, and r7 stays on Java 25, the long-term support
-release, until the next one.
+scheduling; with them the worst case is about 20 ms. The gateway turns them on by itself.
 
 ### What to do
 
+- **Leave `jdk.pollerMode` unset** when starting through `R7Helidon.main`: an explicit value
+  replaces the gateway's choice. An embedder sets `-Djdk.pollerMode=3` itself.
+- **Do not switch to platform-thread pollers** (`-Djdk.pollerMode=1`). They compete with the
+  carriers for the cores: on Java 25 they took p99 from 7 ms to 15-50 ms at every load.
 - **Do not run the gateway at saturation.** Size it so that peak load stays below the rate it
-  sustains; the tail appears only past that point.
-- **Do not switch to platform-thread pollers** (`-Djdk.pollerMode=1`) to hide it. They end the
-  long stalls, but compete with the carriers for the cores: on Java 25 they took p99 from 7 ms
-  to 15-50 ms at every load, a worse trade than a rare outlier at saturation.
+  sustains.
 
 
 ---
@@ -239,10 +240,10 @@ fewer than two CPUs or less than about 2 GB of memory. To choose one, set it in
 `JAVA_TOOL_OPTIONS`, for example `-XX:+UseZGC` for the shortest pauses under load. The
 throughput and latency numbers on this page were measured with ZGC.
 
-On Java 25, ZGC cannot use the objects the AOT cache holds ready-made, only its classes, so with
-ZGC the gateway starts noticeably slower than with G1 or SerialGC. Where startup matters more
-than pause times (an autoscaled or frequently restarted gateway, a gateway with little CPU),
-leave the collector to the JVM.
+ZGC cannot use the AOT cache at all: the cache is made with compressed object pointers, which ZGC
+does not use, so the JVM says the cache does not fit and starts without it, noticeably slower
+than with G1, ParallelGC or SerialGC. Where startup matters more than pause times (an autoscaled
+or frequently restarted gateway, a gateway with little CPU), leave the collector to the JVM.
 
 ### Running the jar yourself
 

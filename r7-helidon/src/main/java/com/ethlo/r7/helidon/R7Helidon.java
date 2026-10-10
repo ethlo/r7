@@ -93,7 +93,7 @@ public final class R7Helidon
                 // Past max_connections the listener stops accepting and new connections wait in
                 // the backlog; an idle connection, a quiet WebSocket included, is closed after
                 // idle_timeout, checked every second so that it holds to about that.
-                .maxTcpConnections(core.maxConnections())
+                .maxConnections(core.maxConnections())
                 .backlog(core.backlog())
                 .idleConnectionTimeout(core.idleTimeout())
                 .idleConnectionPeriod(Duration.ofSeconds(1))
@@ -113,7 +113,7 @@ public final class R7Helidon
                         .addProtocol(Http1Config.builder().addReceiveListener(this.managementHeadTimeouts).build())
                         .host(management.host())
                         .port(management.port())
-                        .maxTcpConnections(management.maxConnections())
+                        .maxConnections(management.maxConnections())
                         .idleConnectionTimeout(management.idleTimeout())
                         // Helidon checks every two minutes by default, which would let an idle
                         // connection - or one trickling its request line, which Helidon counts as
@@ -217,17 +217,14 @@ public final class R7Helidon
      * one, and every connection registered with it stalls until it runs: at saturation this
      * produced outliers of 0.5-2 s (p99 8.6 ms) where Undertow's worst was 40 ms. Per-carrier
      * pollers (mode 3) poll as part of each carrier's own scheduling, and the same load gives a
-     * worst case of 16-20 ms and p99 4.4 ms (design/history/upstream-client.md). JDK 25 has no mode 3, and is
-     * left on its default. Internal and undocumented, so
-     * an explicit -Djdk.pollerMode still wins, and a JDK that drops it falls back to its default.
+     * worst case of 16-20 ms and p99 4.4 ms (design/history/upstream-client.md). Internal and
+     * undocumented, so an explicit -Djdk.pollerMode still wins, and a JDK that drops it falls back
+     * to its default.
      * Set before anything opens a socket: the poller reads it once, when it starts.
      */
     static void preferPerCarrierPollers()
     {
-        // Only where mode 3 exists: JDK 25's poller refuses "3" and fails to start. There the
-        // JDK default stays - measured on 25 at saturation, platform-thread pollers (mode 1) end
-        // the stalls but raise p99 from 7 ms to 15-50 ms, as they compete with the carriers.
-        if (System.getProperty("jdk.pollerMode") == null && Runtime.version().feature() >= 27)
+        if (System.getProperty("jdk.pollerMode") == null)
         {
             System.setProperty("jdk.pollerMode", "3");
         }

@@ -8,7 +8,16 @@
 FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
 RUN mkdir -p /journals && chown 65532:65532 /journals
 
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
+# The Java 27 runtime: Temurin's JRE on distroless's Java base (the libraries its javaNN images
+# add to the base image), which is how distroless builds those images. Distroless publishes them
+# for LTS releases only, so the image is assembled here.
+FROM eclipse-temurin:27-jre@sha256:387922dd341a11a06f39375e6b13f3cb865e09aa409789cd4f7a5a6577cd2290 AS jre
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:380a3d6a0f019235e129b19243f40c197d3713fd2ee992f6faece270a400df65 AS runtime
+COPY --from=jre /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+FROM runtime
 WORKDIR /app
 
 # Copy the reaper fat JAR
@@ -36,4 +45,4 @@ USER 65532:65532
 WORKDIR /app/config
 
 # Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.
-ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/reaper.jar"]
+ENTRYPOINT ["/opt/java/openjdk/bin/java", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/reaper.jar"]

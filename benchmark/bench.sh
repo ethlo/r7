@@ -29,9 +29,7 @@ STATE="$STATE_DIR/host-before.txt"
 
 # ----------------------------------------------------------------- pinned toolchain
 
-# The image runs on JDK 25 and CI builds with JDK 27; the benchmark does the same.
-JDK25_URL="https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz"
-JDK25_SHA256="dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e"
+# The image runs on JDK 27 and CI builds with it; the benchmark does the same.
 JDK27_URL="https://github.com/adoptium/temurin27-binaries/releases/download/jdk-27%2B35/OpenJDK27U-jdk_x64_linux_hotspot_27_35.tar.gz"
 JDK27_SHA256="1cf69a4848ffb728b3b260dfd45206a51566ab571a02a30092271d4c580bccbc"
 WRK_REPO="https://github.com/wg/wrk"
@@ -46,7 +44,6 @@ MAX_SPREAD=5
 
 IMAGE="ghcr.io/ethlo/r7-gateway:main"
 LOCAL=0
-JDK=""
 GC="default"
 QUICK=0
 ACTION="run"
@@ -65,7 +62,6 @@ Options:
   --image REF      gateway image to measure (default: ghcr.io/ethlo/r7-gateway:main)
   --local          build this checkout and run the jar on the host instead of an image
   --quick          short runs, browser workload only; never publishable
-  --jdk 25|27      with --local: JDK the jar runs on (default: 25, what the image ships)
   --gc default|zgc collector (default: the JVM's choice, as in the image)
   --check          print the core layout and current host state, change nothing
   --restore        restore host settings saved by an interrupted run
@@ -78,7 +74,6 @@ while [[ $# -gt 0 ]]; do
     --image)   IMAGE="$2"; shift 2 ;;
     --local)   LOCAL=1; shift ;;
     --quick)   QUICK=1; shift ;;
-    --jdk)     JDK="$2"; shift 2 ;;
     --gc)      GC="$2"; shift 2 ;;
     --check)   ACTION="check"; shift ;;
     --restore) ACTION="restore"; shift ;;
@@ -87,12 +82,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if (( LOCAL )); then
-  JDK="${JDK:-25}"
-  [[ "$JDK" == "25" || "$JDK" == "27" ]] || die "--jdk must be 25 or 27"
-else
-  [[ -z "$JDK" ]] || die "--jdk applies to --local; an image brings its own JDK"
-fi
 [[ "$GC" == "default" || "$GC" == "zgc" ]] || die "--gc must be default or zgc"
 
 # ----------------------------------------------------------------- host state
@@ -356,7 +345,6 @@ toolchain() {
   as_user mkdir -p "$CACHE"
   if (( LOCAL )); then
     fetch_jdk "$JDK27_URL" "$JDK27_SHA256" "$CACHE/jdk-27"
-    [[ "$JDK" == "25" ]] && fetch_jdk "$JDK25_URL" "$JDK25_SHA256" "$CACHE/jdk-25"
   fi
   build_wrk wrk  "$WRK_REPO"  "$WRK_COMMIT"
   build_wrk wrk2 "$WRK2_REPO" "$WRK2_COMMIT"
@@ -409,7 +397,7 @@ JVM_GC=""
 [[ "$GC" == "zgc" ]] && JVM_GC="-XX:+UseZGC"
 
 if (( LOCAL )); then
-  RUN_JDK="$CACHE/jdk-$JDK"
+  RUN_JDK="$CACHE/jdk-27"
   log "building r7 with JDK 27"
   ( cd "$REPO" && as_user env JAVA_HOME="$CACHE/jdk-27" \
       ./mvnw -q -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true clean package -pl r7-helidon -am )
@@ -418,9 +406,11 @@ if (( LOCAL )); then
 
   # The image's JVM flags, and its AOT cache trained the same way Dockerfile.jvm does. The
   # cache only fits the JDK, jars and flags it was made with, so it is made here, per run.
-  JVM_FLAGS="$JVM_GC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
+  # The collector is not among them: the image trains without one and JAVA_TOOL_OPTIONS adds it
+  # at run time only, so --gc zgc runs, like the image, without a cache that fits.
+  JVM_FLAGS="--enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow -Djava.security.egd=file:/dev/./urandom"
   TRAIN="$(as_user mktemp -d)"
-  log "training the AOT cache on JDK $JDK"
+  log "training the AOT cache"
   # Training exits on its own once the training requests are done; the timeout only stops a
   # hung one from holding the host tuned.
   ( cd "$TRAIN" && as_user env R7_ROUTES_CONFIG="$REPO/docker/aot-training/routes.yaml" \
@@ -428,7 +418,7 @@ if (( LOCAL )); then
       timeout 600 "$RUN_JDK/bin/java" -XX:AOTCacheOutput="$TRAIN/r7.aot" $JVM_FLAGS -Dr7.aot.training=true -jar "$JAR" ) \
     > "$TRAIN/training.log" 2>&1 || die "AOT training failed; see $TRAIN/training.log"
   [[ -f "$TRAIN/r7.aot" ]] || die "AOT training wrote no cache; see $TRAIN/training.log"
-  GATEWAY="r7 $SHA (local build, JDK $JDK)"
+  GATEWAY="r7 $SHA (local build)"
   ID="$SHA"
 else
   log "pulling $IMAGE"
@@ -491,7 +481,7 @@ QUICK_FLAG=""
 # would hold the signal until run.sh finished, hours later, with the host still tuned.
 PINS=(--backend-cpus "$BACKEND_CPUS" --gateway-cpus "$GATEWAY_CPUS" --load-cpus "$LOAD_CPUS")
 if (( LOCAL )); then
-  PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_FLAGS" \
+  PATH="$RUN_JDK/bin:$PATH" JVM_OPTS="-XX:AOTCache=$TRAIN/r7.aot $JVM_GC $JVM_FLAGS" \
     "$HERE/run.sh" --mode jvm-local --jar "$JAR" --out "$OUT" "${PINS[@]}" "${PROFILE[@]}" 9>&- &
 else
   # The image's own entrypoint flags and AOT cache; JVM_OPTS only adds the collector choice.
@@ -520,10 +510,9 @@ fi
 
 {
   if (( LOCAL )); then
-    echo "bench=bench.sh${QUICK_FLAG} --local --jdk $JDK --gc $GC"
+    echo "bench=bench.sh${QUICK_FLAG} --local --gc $GC"
     echo "gateway=local build of $SHA"
-    echo "run_jdk=$("$RUN_JDK/bin/java" -version 2>&1 | sed -n 2p)"
-    echo "build_jdk=$("$CACHE/jdk-27/bin/java" -version 2>&1 | sed -n 2p)"
+    echo "jdk=$("$RUN_JDK/bin/java" -version 2>&1 | sed -n 2p)"
   else
     echo "bench=bench.sh${QUICK_FLAG} --image $IMAGE --gc $GC"
     echo "gateway=$IMAGE_REF"
