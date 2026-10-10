@@ -59,8 +59,9 @@ lock; copy content into stage A   swap stage A for B when A is full
   compatibility before 1.0 (decided 2026-10-10). Segments left over from an older gateway carry
   codec 1, which a new reader sets aside under the existing unknown-codec rule
   (`anUnknownCodecIsSetAside`); it never deletes or misreads them. An old reader sets aside codec
-  2 the same way, so the gateway, tailer and reaper upgrade together. A batch is one record, framed, split and checked exactly as §4.3 frames an entry
-  today. Its content is `PlainLength (4)`, `EntryCount (4)` and one zstd frame. Decompressed, the
+  2 the same way, so the gateway, tailer and reaper upgrade together, after the tailer has caught
+  up: a codec-1 segment still waiting for it when it upgrades is set aside, not delivered. A batch
+  is one record, framed, split and checked exactly as §4.3 frames an entry today. Its content is `PlainLength (4)`, `EntryCount (4)` and one zstd frame. Decompressed, the
   frame is the batch's §4.2 entries back to back, each with its own Sequence, so §4.2 is
   unchanged inside a batch. The stream flags, PAD fragments and per-entry flushes go away.
 - **Commit.** The magic is still the commit, per batch instead of per entry: the writer thread
@@ -69,8 +70,8 @@ lock; copy content into stage A   swap stage A for B when A is full
 - **Staging.** Two buffers per shard, 32 KB of plain content each. A request thread that finds
   both full waits, so backpressure behaves as it does today, only less often. Entries are never
   dropped. An entry too large for a stage (a body chunk at `FULL`) makes the writer thread flush
-  the stage first and then write that entry alone, as STANDALONE entries are written today, so
-  the order stays the Sequence order.
+  the stage first and then write that entry as a batch of its own, so the order stays the
+  Sequence order.
 - **Flush interval.** At low traffic a stage fills slowly, so the writer thread also flushes a
   stage that is not full once it has waited a fixed interval. 10 ms is proposed, not
   configurable at first.
@@ -84,7 +85,8 @@ lock; copy content into stage A   swap stage A for B when A is full
   move to it. `close()` flushes both stages before sealing.
 - **Oversized entries.** A request thread with an entry larger than a stage does not copy it.
   It queues the entry on the stage as a reference and waits, so the writer thread flushes what is
-  staged, writes the entry as STANDALONE, and only then releases the thread and its buffer.
+  staged, writes the entry as a one-entry batch, and only then releases the thread and its
+  buffer. A one-entry batch has the same layout as any other, so codec 2 needs no flags.
 - **Failures (decided 2026-10-10).** Writes become asynchronous, and that changes the failure
   contract. Today `writeEntry` has published the magic before it returns, so a disk-full or
   mapping failure fails the request whose entry it was. With staging, the requests whose entries
@@ -92,7 +94,8 @@ lock; copy content into stage A   swap stage A for B when A is full
   not an r7 error, and the in-flight entries are not r7's to save. So the writer thread records
   the failure, the shard refuses every later append (those requests fail closed, as today),
   gateway health goes to ERROR so `/ready` returns 503, and the staged entries it could not place
-  are reported as lost, by count and Sequence range, through the integrity listener. Making each
+  are reported as lost by count. They have no Sequence range to report: Sequences are stamped
+  only once a batch is placed, and these never were. Making each
   request wait for its batch's commit was rejected: it keeps today's contract but gives back the
   latency this plan exists to remove. `r7-journal-mmap/README.md` §5 changes to say so.
 - **Low disk (decided 2026-10-10).** So that a full disk is seen coming, the journal reports a
