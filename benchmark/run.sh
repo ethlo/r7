@@ -105,7 +105,8 @@ Options:
                              (default: METADATA,HEADERS,FULL)
   --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
-  --quick                    5s warmup, 10s runs, browser workload only
+  --quick                    5s warmup, 10s wrk and 15s wrk2 runs, browser
+                             workload only
   --backend-cpus LIST        pin nginx to these CPUs (e.g. 1)
   --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3)
   --load-cpus LIST           pin wrk/wrk2 to these CPUs (e.g. 4-5); --threads
@@ -685,17 +686,19 @@ gw_scenario() {
 # ----------------------------------------------------------------- main
 
 preflight
-log "mode=$MODE threads=$THREADS conns=$CONNECTIONS duration=$DURATION warmup=$WARMUP"
-log "rate=$RATE repeat=$REPEAT restart-per-repeat=$RESTART_PER_REPEAT"
+log "mode=$MODE threads=$THREADS conns=$CONNECTIONS duration=$DURATION latency-duration=$LATENCY_DURATION"
+log "warmup=$WARMUP rewarm=$REWARM rate=$RATE repeat=$REPEAT latency-repeat=$LATENCY_REPEAT restart-per-repeat=$RESTART_PER_REPEAT"
 log "scenarios=$SCENARIOS"
 log "results -> $OUT"
 
 {
   echo "mode=$MODE"
-  echo "threads=$THREADS connections=$CONNECTIONS duration=$DURATION warmup=$WARMUP"
-  echo "rate=$RATE repeat=$REPEAT restart_per_repeat=$RESTART_PER_REPEAT"
+  echo "threads=$THREADS connections=$CONNECTIONS duration=$DURATION latency_duration=$LATENCY_DURATION"
+  echo "warmup=$WARMUP rewarm=$REWARM"
+  echo "rate=$RATE repeat=$REPEAT latency_repeat=$LATENCY_REPEAT restart_per_repeat=$RESTART_PER_REPEAT"
   echo "scenarios=$SCENARIOS workloads=$WORKLOADS tools=$TOOLS"
-  echo "sweep_rates=$SWEEP_RATES sweep_levels=$SWEEP_LEVELS journal_levels=$JOURNAL_LEVELS"
+  echo "sweep_rates=$SWEEP_RATES sweep_percent=$SWEEP_PERCENT sweep_levels=$SWEEP_LEVELS sweep_workloads=$SWEEP_WORKLOADS"
+  echo "journal_levels=$JOURNAL_LEVELS"
   echo "host=$(uname -srm) cpus=$(getconf _NPROCESSORS_ONLN)"
   if [[ "$MODE" == "docker" ]]; then
     echo "image=$GW_IMAGE user=$GW_UID:$GW_GID"
