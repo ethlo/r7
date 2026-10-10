@@ -1,9 +1,11 @@
 # Benchmarks
 
-Every figure here is a delta against a baseline in which the load generator talks straight to
-the backend. An absolute "r7 does N req/s" says more about the hardware, the backend and the
-load generator than about the gateway, so this page reports what putting r7 in the request
-path costs, with throughput and tail latency measured together.
+The question is what putting r7 in the request path costs. The suite reports two comparisons.
+Against the no-gateway baseline it shows the total cost of the proxy hop, an upper bound while
+the load generator shares the host. Against the passthrough run (r7 in the path, no filters, no
+journal) it shows what a filter or a journal level adds: same topology, same contention, so the
+noise cancels. Filter and journal costs are quoted against passthrough. Throughput and tail
+latency are reported together.
 
 ## Method
 
@@ -16,13 +18,14 @@ path costs, with throughput and tail latency measured together.
   other process confined to housekeeping cores through systemd.
 - **Separate cores.** nginx, the gateway and the load generator each run on cores of their own.
 - **Scenarios.** `baseline` (no gateway), `passthrough` (r7, no filters, no journal), `filtered`
-  (header filters) and `journal` at `METADATA`, `HEADERS` and `FULL`, over a browser-shaped GET,
-  a 36-header GET and a 1 KB JSON POST.
+  (header filters), `journal` at `METADATA`, `HEADERS` and `FULL`, and a `sweep` of fixed offered
+  rates that shows p99 against load. Each runs over a browser-shaped GET, a 36-header GET and a
+  1 KB JSON POST.
 - **Repeats.** Three runs per configuration, each with a fresh JVM and a discarded warmup.
 - **Tools.** wrk finds saturation throughput. wrk2 holds a fixed rate and records latency in an
   HdrHistogram, so its p99 and p99.9 are free of coordinated omission.
-- **Verdict.** A run is published only when its report says PUBLISHABLE: pulled image, clean
-  tree, every tuning step applied, every run valid, repeats within 5%.
+- **Verdict.** A run is published only when its report says PUBLISHABLE: a pulled image (or a `--local`
+  build), clean tree, every tuning step applied, every run valid, repeats within 5%.
 
 The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/blob/main/benchmark/README.md).
 
