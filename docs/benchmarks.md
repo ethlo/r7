@@ -9,7 +9,7 @@ latency are reported together.
 
 ## Method
 
-- **One command.** `sudo benchmark/bench.sh` produces the numbers in about 40 minutes. It measures
+- **One command.** `sudo benchmark/bench.sh` produces the numbers in under an hour. It measures
   the published image `ghcr.io/ethlo/r7-gateway`, resolved to its digest, with the image's own JVM
   flags and AOT cache.
 - **Pinned toolchain.** wrk and wrk2 are built from pinned commits, and the nginx backend image
