@@ -48,7 +48,9 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   block boundary, so up to 32 KB of intact entries per damaged region are lost
   (`r7-journal-mmap/FORMAT.md` §6).
 - **CRC32C is not a MAC.** The format resists forged entries in payloads, but not a party that
-  can write segment files (`FORMAT.md` §6.1 and §9).
+  can write segment files (`FORMAT.md` §6.1 and §9). Nothing is signed: an archive kept as
+  evidence belongs on write-once storage ([`docs/where-r7-fits.md`](../docs/where-r7-fits.md#the-archive-the-warc-files)).
+  A signed segment chain was designed and parked as too risky (ethlo/r7#192).
 - **Live tailing needs a shared page cache.** A tailer on another host, or reading a copy of
   the files, falls back to polling. An idle tailer wakes within about 1 ms of a commit, because
   that is where its park is capped ([`history/live-tailing.md`](history/live-tailing.md)).
