@@ -515,7 +515,10 @@ public final class R7fJournal implements Journal
             faultAhead.advance(segment, position);
         }
 
-        return (int) (end - claimedFrom);
+        // The entry's content, not what it took in the segment: callers count plain bytes, and
+        // fragment headers and padding here would give the count a different unit than a
+        // compressed journal's. What it took is bytesPlaced.
+        return (int) contentLength;
     }
 
     /**
@@ -1250,8 +1253,12 @@ public final class R7fJournal implements Journal
             }
         }
 
-        /** Places what is staged, then stops the writer thread. */
-        private void drainAndStop()
+        /**
+         * Places what is staged, then stops the writer thread.
+         *
+         * @return false if the writer was still running at the deadline
+         */
+        private boolean drainAndStop()
         {
             lock.lock();
             try
@@ -1288,8 +1295,10 @@ public final class R7fJournal implements Journal
             if (writer.isAlive())
             {
                 logger.error("Journal shard {}'s writer thread was still placing entries after {} ms; "
-                        + "closing without them.", provider.getShardId(), FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+                        + "leaving the segment unsealed for recovery.", provider.getShardId(), FINALIZER_SHUTDOWN_TIMEOUT_MILLIS);
+                return false;
             }
+            return true;
         }
     }
 
@@ -1331,9 +1340,12 @@ public final class R7fJournal implements Journal
     public void close() throws IOException
     {
         // Outside the monitor: the writer thread takes it to place what is still staged
-        if (batcher != null)
+        if (batcher != null && !batcher.drainAndStop())
         {
-            batcher.drainAndStop();
+            // Sealing now would close the segment under a writer that may still place a
+            // batch, and that batch would be refused and lost. Left open, the segment stays
+            // .flux and recovery seals it after what the writer did place.
+            return;
         }
         closeSegments();
     }

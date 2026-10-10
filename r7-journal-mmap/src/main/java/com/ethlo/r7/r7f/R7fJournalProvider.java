@@ -157,14 +157,15 @@ public class R7fJournalProvider implements AutoCloseable
         return CommitSignal.open(tempDir, shardId);
     }
 
-    /**
-     * An uncompressed journal.
-     */
+    /** The shard this provider's segments belong to, for logs and health. */
     int getShardId()
     {
         return shardId;
     }
 
+    /**
+     * An uncompressed journal.
+     */
     public R7fJournalProvider(Path tempDir, int shardId, long segmentSizeBytes, boolean preFault)
     {
         this(tempDir, shardId, segmentSizeBytes, preFault, 0);
