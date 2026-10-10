@@ -75,10 +75,68 @@ class TimeoutConfigTest
                 .hasMessageContaining("24d");
     }
 
+    @Test
+    void aConnectTimeoutBeyondTheIntMillisecondLimitIsRefusedNamingTheField()
+    {
+        assertThat(connectErrorsFor(ValidatorUtils.MAX_INT_MILLIS.plusMillis(1))).singleElement().asString()
+                .contains("connect")
+                .contains("24d");
+    }
+
+    @Test
+    void aConnectTimeoutBelowOneMillisecondIsRefused()
+    {
+        // The socket API takes whole milliseconds and reads 0 as no timeout at all
+        assertThat(connectErrorsFor(Duration.ofNanos(999_999))).singleElement().asString().contains("connect");
+        assertThat(connectErrorsFor(Duration.ZERO)).singleElement().asString().contains("connect");
+    }
+
+    @Test
+    void aConnectTimeoutOfOneMillisecondIsAccepted()
+    {
+        assertThat(connectErrorsFor(Duration.ofMillis(1))).isEmpty();
+    }
+
+    @Test
+    void theDefaultsApplyWhenNothingIsSet()
+    {
+        assertThat(TimeoutConfig.defaults().read()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(TimeoutConfig.defaults().connect()).isEqualTo(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void aRouteReadsItsConnectTimeout() throws IOException
+    {
+        final Path file = this.dir.resolve("routes.yaml");
+        Files.writeString(file, """
+                version: test
+                routes:
+                  - id: quick
+                    match:
+                      - PathPrefix:
+                          prefix: /quick
+                    upstream:
+                      targets:
+                        - url: http://localhost:1
+                      timeouts:
+                        connect: 250ms
+                """);
+        final RoutesDefinition definition = ConfigurationManager.load(file, RoutesDefinition.class);
+
+        assertThat(definition.routes().getFirst().upstream().timeouts().connect()).isEqualTo(Duration.ofMillis(250));
+    }
+
+    private static List<String> connectErrorsFor(final Duration connect)
+    {
+        final ValidationResult result = new ValidationResult();
+        new TimeoutConfig(null, connect).validate(result);
+        return result.getErrors();
+    }
+
     private static List<String> errorsFor(final Duration read)
     {
         final ValidationResult result = new ValidationResult();
-        new TimeoutConfig(read).validate(result);
+        new TimeoutConfig(read, null).validate(result);
         return result.getErrors();
     }
 }

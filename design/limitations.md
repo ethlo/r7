@@ -29,11 +29,6 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   `METADATA` records no headers, and `NONE` records no request line (`docs/config.md`,
   "Journal Redaction").
 
-## Upstream client
-
-- **The connect timeout is fixed at 5 s.** Only the read timeout is configurable per upstream
-  (`UpstreamOptions`).
-
 ## Journal
 
 - **It costs throughput at saturation.** On one laptop measurement (two shards, `HEADERS` both
