@@ -47,7 +47,7 @@ These figures give an indication of the cost, not a measurement to the decimal. 
 run. The report's own verdict for that run is not publishable, because some `filtered` runs had
 request timeouts and a few configurations varied more than 5% between repeats. This page leaves out
 the rows those runs produced and keeps the rest; the throughput `±` column below is the spread the
-run measured. The lost requests are being investigated as a possible bug.
+run measured.
 
 ### Latency at a fixed 20,000 req/s
 
@@ -64,7 +64,7 @@ p50 / p99 / p99.9.
 | Journal `HEADERS` | 2.0 / 5.0 / 6.8 | 2.9 / 17.1 / 40.0 | 1.8 / 5.4 / 7.8 |
 | Journal `FULL` | 2.3 / 5.7 / 11.9 | 4.0 / 27.1 / 51.2 | 2.2 / 5.3 / 9.1 |
 
-r7 adds about 2 ms at p99 over nginx on this host, and journaling up to `METADATA` adds about 1 ms
+r7 adds about 2 ms at p99 over nginx on this host, and `METADATA` journaling adds under 1 ms
 more. At `HEADERS` and `FULL` the 36-header request pays for recording every header: its p99
 reaches 17 and 27 ms.
 
