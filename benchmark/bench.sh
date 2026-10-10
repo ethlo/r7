@@ -157,7 +157,8 @@ set_sysfs() {
   if [[ ! -w "$path" ]]; then
     UNTUNED+=("$what: $path not available"); return 0
   fi
-  local old; old="$(cat "$path")"
+  local old
+  old="$(cat "$path" 2>/dev/null)" || { UNTUNED+=("$what: reading $path failed"); return 0; }
   if [[ "$old" != "$value" ]]; then
     save sysfs "$path" "$old"
     echo "$value" > "$path" 2>/dev/null || { UNTUNED+=("$what: writing $path failed"); return 0; }
@@ -185,10 +186,14 @@ turbo_off() {
   TUNING+=("turbo=off")
 }
 
+# An offline CPU (an SMT sibling smt_off just took down) keeps its cpufreq directory, but the
+# kernel answers EBUSY for its inactive policy. It gets its governor back when it comes online.
 governor_performance() {
-  local f found=0
+  local f cpu found=0
   for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
     [[ -e "$f" ]] || continue
+    cpu="${f%/cpufreq/*}"
+    [[ "$(cat "$cpu/online" 2>/dev/null || echo 1)" == 1 ]] || continue
     found=1
     set_sysfs "$f" performance "performance governor"
   done
