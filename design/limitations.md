@@ -29,11 +29,6 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   `METADATA` records no headers, and `NONE` records no request line (`docs/config.md`,
   "Journal Redaction").
 
-## Upstream client
-
-- **The connect timeout is fixed at 5 s.** Only the read timeout is configurable per upstream
-  (`UpstreamOptions`).
-
 ## Journal
 
 - **It costs throughput at saturation.** On one laptop measurement (two shards, `HEADERS` both
@@ -56,18 +51,17 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   can write segment files (`FORMAT.md` §6.1 and §9). Nothing is signed: an archive kept as
   evidence belongs on write-once storage ([`docs/where-r7-fits.md`](../docs/where-r7-fits.md#the-archive-the-warc-files)).
   A signed segment chain was designed and parked as too risky (ethlo/r7#192).
-- **No reader for format version 1.** A reader sets such a file aside (`FORMAT.md` §11).
 - **Live tailing needs a shared page cache.** A tailer on another host, or reading a copy of
   the files, falls back to polling. An idle tailer wakes within about 1 ms of a commit, because
   that is where its park is capped ([`history/live-tailing.md`](history/live-tailing.md)).
 
 ## On Níma
 
-- **Tail stalls at saturation depend on the JDK.** On JDK 27 and later, r7 sets the internal,
-  undocumented `jdk.pollerMode=3`, which a future JDK may change or drop. An embedder that does
-  not start through `R7Helidon.main` must set it itself. JDK 25 has no such mode: at saturation
-  a few requests wait up to about 0.5 s ([`history/upstream-client.md`](history/upstream-client.md),
-  "The stalls at saturation").
+- **The short tail at saturation rests on an undocumented JDK setting.** `R7Helidon.main` sets
+  the internal `jdk.pollerMode=3` (per-carrier I/O pollers), which a future JDK may change or
+  drop. An embedder that does not start through `R7Helidon.main` must set it itself. Without it,
+  a few requests wait up to about 0.5 s at saturation
+  ([`history/upstream-client.md`](history/upstream-client.md), "The stalls at saturation").
 - **Static files contend on a global lock.** Every file served opens a `FileChannel`, which
   registers with the JDK's `Cleaner` under one lock. At saturation the worst case measured was
   255 ms with `jdk.pollerMode=3`, and 4 s without it.

@@ -7,13 +7,22 @@
 FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
 RUN mkdir -p /journals && chown 65532:65532 /journals
 
+# The Java 27 runtime: Temurin's JRE on distroless's Java base (the libraries its javaNN images
+# add to the base image), which is how distroless builds those images. Distroless publishes them
+# for LTS releases only, so the image is assembled here.
+FROM eclipse-temurin:27-jre@sha256:387922dd341a11a06f39375e6b13f3cb865e09aa409789cd4f7a5a6577cd2290 AS jre
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:380a3d6a0f019235e129b19243f40c197d3713fd2ee992f6faece270a400df65 AS runtime
+COPY --from=jre /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # The AOT cache (JEP 483): a training run of the gateway records the classes it loads and links
 # while starting and serving its first requests, and the image starts from that record instead of
 # loading them from the jars again. The cache only fits the exact JDK, jars and flags it was made
 # with, so it is made here, in the same base image, with the same java flags as the entrypoint
 # below; a JVM that finds it does not fit says so and starts without it. Training writes journals,
 # so it runs in a stage of its own and only the cache is kept.
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629 AS aot
+FROM runtime AS aot
 WORKDIR /app
 
 # We assume the jar and its lib/ are already built by the CI runner. The pattern skips the
@@ -26,9 +35,9 @@ ENV R7_JOURNAL_DIR=/tmp/aot-training-journals
 # The gateway does not start without a fingerprint key. This one only fingerprints the training
 # requests, in this stage; the image does not carry it, and every deployment sets its own.
 ENV R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key-not-in-the-image
-RUN ["java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-jar", "/app/r7.jar"]
+RUN ["/opt/java/openjdk/bin/java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-jar", "/app/r7.jar"]
 
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:ca60da1345c0f17b6d019049e6749e15f10fd3c0da86dec938d2b4ec565d0629
+FROM runtime
 WORKDIR /app
 
 # From the training stage, not the build context, so that they are the very files the cache was
@@ -54,7 +63,7 @@ ENV R7_MANAGEMENT_HOST=0.0.0.0
 ENV R7_JOURNAL_DIR=/journals
 # Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.
 # No garbage collector is named: the JVM picks one for the container's CPUs and memory, and one
-# set in JAVA_TOOL_OPTIONS (-XX:+UseZGC for the shortest pauses) applies as it is. On JDK 25 the
-# AOT cache's pre-built objects only work with the JVM's other collectors, so ZGC starts slower
-# (docs/performance_tuning.md).
-ENTRYPOINT ["java", "-XX:AOTCache=/app/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/r7.jar"]
+# set in JAVA_TOOL_OPTIONS (-XX:+UseZGC for the shortest pauses) applies as it is. ZGC cannot use
+# the AOT cache, which is made with compressed object pointers, so with it the gateway starts
+# without the cache and slower (docs/performance_tuning.md).
+ENTRYPOINT ["/opt/java/openjdk/bin/java", "-XX:AOTCache=/app/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/r7.jar"]

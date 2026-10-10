@@ -32,11 +32,10 @@ public record UpstreamOptions(Duration readTimeout, Duration connectTimeout, Dur
 {
     private static final int MAX_HEAD_BYTES = 64 * 1024;
     private static final int MAX_HEADER_COUNT = 200;
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
 
     public static UpstreamOptions defaults()
     {
-        return new UpstreamOptions(Duration.ofSeconds(30), CONNECT_TIMEOUT, Duration.ofSeconds(30), MAX_HEAD_BYTES, MAX_HEADER_COUNT,
+        return new UpstreamOptions(TimeoutConfig.DEFAULT_READ, TimeoutConfig.DEFAULT_CONNECT, Duration.ofSeconds(30), MAX_HEAD_BYTES, MAX_HEADER_COUNT,
                 Integer.MAX_VALUE, Integer.MAX_VALUE, Duration.ofMinutes(1), null);
     }
 
@@ -46,8 +45,8 @@ public record UpstreamOptions(Duration readTimeout, Duration connectTimeout, Dur
     public static UpstreamOptions of(final ServerConfig serverConfig, final UpstreamConfig upstream)
     {
         final ServerConfig.ProxyConfig proxy = serverConfig.proxy();
-        final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(new TimeoutConfig(null));
-        return new UpstreamOptions(timeouts.read(), CONNECT_TIMEOUT, proxy.ttl(), MAX_HEAD_BYTES, MAX_HEADER_COUNT,
+        final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(TimeoutConfig.defaults());
+        return new UpstreamOptions(timeouts.read(), timeouts.connect(), proxy.ttl(), MAX_HEAD_BYTES, MAX_HEADER_COUNT,
                 proxy.maxConnectionsPerTarget(), proxy.maxQueueSize(), proxy.maxRequestTime(), null);
     }
 

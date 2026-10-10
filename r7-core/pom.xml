@@ -129,8 +129,23 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <workingDirectory>${project.basedir}/src/test/resources</workingDirectory>
+                    <!-- Jazzer and Mockito attach their agents at run time. On JDK 27 Jazzer's agent
+                         fails to start when it is the first one attached, which is the case when a
+                         fuzz test runs on its own; allowing dynamic agents up front avoids that and
+                         the JDK's warning about them. -->
+                    <argLine>@{argLine} -XX:+EnableDynamicAgentLoading</argLine>
                     <environmentVariables>
-                        <JAZZER_DISABLED_HOOKS>com.code_intelligence.jazzer.sanitizers.RegexInjection</JAZZER_DISABLED_HOOKS>
+                        <!-- OsCommandInjection hooks the JDK's own ProcessBuilder, which Jazzer 0.30.0
+                             cannot read on JDK 27 (class file version 71), so it never installs there.
+                             r7 starts no processes; turn it back on with a Jazzer that reads JDK 27. -->
+                        <JAZZER_DISABLED_HOOKS>com.code_intelligence.jazzer.sanitizers.RegexInjection${path.separator}com.code_intelligence.jazzer.sanitizers.OsCommandInjection</JAZZER_DISABLED_HOOKS>
+                        <!-- Mockito defines its mocks at the running JDK's class file version (71 on
+                             JDK 27), which Jazzer 0.30.0 cannot read, and puts them in the package of
+                             the mocked type. Jazzer globs match only by package, so r7-api, home of
+                             every mocked type, is excluded from Jazzer's hooks. Nothing in r7-api calls
+                             an API a sanitizer guards; when fuzzing, its code is still instrumented for
+                             coverage. -->
+                        <JAZZER_CUSTOM_HOOK_EXCLUDES>com.ethlo.r7.api.**</JAZZER_CUSTOM_HOOK_EXCLUDES>
                     </environmentVariables>
                 </configuration>
             </plugin>

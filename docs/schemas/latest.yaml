@@ -1199,14 +1199,20 @@ $defs:
           timeouts:
             type: object
             properties:
+              connect:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Maximum time to wait for a connection to a target, including the TLS handshake for https targets. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 5s
               read:
                 type: string
                 pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
                 errorMessage:
                   pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-                description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-            required:
-            - read
+                description: "Maximum time to wait for a response after sending the request. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 30s
             additionalProperties: false
         required:
         - targets

@@ -83,7 +83,7 @@ Route predicates match the decoded request path, while the upstream receives the
 * a control character (for example from `%00` or `%0a`);
 * percent-encoding of `.`, `/`, `\` or `%` that is still present after decoding — an encoded slash (`%2F`) or double-encoding such as `%252e`.
 
-The check always runs and is not configurable: no route is consulted, no filter runs and nothing is journaled for a rejected request. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
+The check always runs and is not configurable: no route is consulted and no filter runs for a rejected request. It is journaled only when [Unrouted Requests](#unrouted-requests-routesyaml-unrouted) is configured. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
 
 ### Transfer-Encoding
 
@@ -121,7 +121,7 @@ Defines the physical endpoints requests will be routed to. The upstream must con
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). For `https`, the certificate chain is checked against the JVM trust store but the hostname is not verified, so any trusted certificate is accepted for any upstream. |
+| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). For `https`, the certificate chain is checked against the JVM trust store and the certificate must name the target's host. |
 
 ### Health Check (`health_check`)
 
@@ -139,11 +139,10 @@ The monitor starts when the routes are loaded, not with a route's first request,
 
 ### Timeouts (`timeouts`)
 
-*Currently, only response-read timeouts are configurable at the upstream level. Connect timeouts are handled globally by the proxy client.*
-
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
+| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
+| `connect` | Duration | `5s` | Maximum time to wait for a connection to a target, including the TLS handshake for `https` targets. A target that does not answer in time counts as unreachable, and nothing has been sent to it, so the request can go to another target. Connecting never runs past the proxy's `max_request_time`: once that is used up the request is answered `504`. At least `1ms` and at most `24d`. |
 
 ### Fallback (`fallback`)
 
@@ -790,7 +789,7 @@ Levels and `status_overrides` work as for a route, except that `FULL` is refused
 
 ## 8. Complete Example Configuration
 
-The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, resilient fallback routing, and active health checks.
+The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, journaling of unrouted requests, resilient fallback routing, and active health checks.
 
 ```yaml title="routes.yaml"
 version: '{{git.rev.abbr}}'
@@ -799,6 +798,19 @@ version: '{{git.rev.abbr}}'
 global_filters:
   - SimpleMetrics
   - AddCorrelationId
+
+# Journal requests refused before routing, such as ambiguous paths and TRACE,
+# but not plain route misses (404)
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+      status_overrides:
+        404: NONE
+    response:
+      level: METADATA
+      status_overrides:
+        404: NONE
 
 routes:
   # Internal health loopback (Short-circuiting proxy)

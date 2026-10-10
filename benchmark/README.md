@@ -43,10 +43,10 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
 5. **A fixed profile.** All scenarios including the sweep, all workloads, `--repeat 3
    --restart-per-repeat`.
 
-`--local` measures a change before it is released. It downloads Temurin JDK 25 (what the
-image runs) and JDK 27 (what CI builds with), checked against SHA-256 sums in the script,
-builds the checkout, trains its AOT cache the way `Dockerfile.jvm` does, and runs the jar
-on the host with the image's JVM flags. `--jdk 27` runs it on JDK 27 instead.
+`--local` measures a change before it is released. It downloads Temurin JDK 27 (what the
+image runs and CI builds with), checked against a SHA-256 sum in the script, builds the
+checkout, trains its AOT cache the way `Dockerfile.jvm` does, and runs the jar on the host
+with the image's JVM flags.
 
 The report starts with a verdict. It says **PUBLISHABLE** only when the gateway was a
 pulled image (or a `--local` build), the working tree was clean, every tuning step applied,

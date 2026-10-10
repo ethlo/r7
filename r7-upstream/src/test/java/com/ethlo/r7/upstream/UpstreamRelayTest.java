@@ -13,6 +13,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -115,6 +116,25 @@ class UpstreamRelayTest
         exchange.headers.add("Content-Length", "5, 6");
         assertRefused(exchange);
         assertThat(upstreamReceived()).isEmpty();
+    }
+
+    @Test
+    void connectingNeverOutlastsMaxRequestTime() throws Exception
+    {
+        // An https target that accepts and then says nothing: the TLS handshake waits on it,
+        // bounded by the connect timeout, which here is far longer than max_request_time
+        try (ServerSocket silent = new ServerSocket(0, 50, InetAddress.getLoopbackAddress()))
+        {
+            final UpstreamOptions d = UpstreamOptions.defaults();
+            final HttpUpstream slow = new HttpUpstream(new UpstreamOptions(d.readTimeout(), Duration.ofSeconds(30), d.idleTtl(), d.maxHeadBytes(),
+                    d.maxHeaderCount(), d.maxConnectionsPerTarget(), d.maxQueuePerTarget(), Duration.ofMillis(300), null));
+            slow.onTargetUp(URI.create("https://127.0.0.1:" + silent.getLocalPort()));
+
+            final long start = System.nanoTime();
+            assertThatThrownBy(() -> UpstreamRelay.relay(slow, new FakeExchange("GET", ""), "test"))
+                    .isInstanceOfSatisfying(ProxyFailure.class, f -> assertThat(f.status()).isEqualTo(504));
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(5));
+        }
     }
 
     private void assertRefused(final FakeExchange exchange)

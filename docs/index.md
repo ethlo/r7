@@ -179,7 +179,7 @@ graph LR
     R7 --> Dash[Live dashboard]
 ```
 
-- **Runtime:** Java 25+, on Helidon Níma with one virtual thread per connection. Each request,
+- **Runtime:** Java 27, on Helidon Níma with one virtual thread per connection. Each request,
   the upstream call included, runs on that thread in a single synchronous flow: nothing crosses
   threads, and there are no reactive pipelines or worker pools in the request path.
 - **Streaming:** request and response bodies are streamed through, not buffered or modified, which

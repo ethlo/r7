@@ -62,9 +62,9 @@ public class ModelMapper
         final List<String> targets = upstream.targets() != null
                 ? upstream.targets().stream().map(t -> SensitiveConfig.redactUrlCredentials(t.url())).toList()
                 : List.of();
-        final Duration readTimeout = Optional.ofNullable(upstream.timeouts()).orElse(new TimeoutConfig(null)).read();
+        final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(TimeoutConfig.defaults());
         final String fallbackRouteId = upstream.fallback() != null ? upstream.fallback().routeId() : null;
-        return new UpstreamDto(targets, readTimeout, upstream.healthCheck(), fallbackRouteId);
+        return new UpstreamDto(targets, timeouts.read(), timeouts.connect(), upstream.healthCheck(), fallbackRouteId);
     }
 
     /**
