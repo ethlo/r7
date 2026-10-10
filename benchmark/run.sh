@@ -82,7 +82,7 @@ Options:
                              JVM-to-JVM variance, at the cost of a warmup each
   --sweep-rates LIST|auto    rates for the sweep scenario (default: auto, which is
                              50,75,90,100,110% of the wrk throughput measured for
-                             each level: passthrough for NONE, the journal scenario
+                             each level and workload: passthrough for NONE, the journal scenario
                              for the rest, or passthrough when that level was not
                              in --journal-levels or journal was not selected)
   --sweep-levels LIST        journal levels to sweep (default: NONE,FULL)
@@ -556,18 +556,18 @@ PY
   sleep 3   # let sockets drain before the next run
 }
 
-# sweep_rates <level>: the automatic rates for one journal level, comma-separated. The
-# reference is the highest wrk throughput (median of repeats) across workloads for that
-# level, so every workload's knee falls inside the ladder: passthrough for NONE, the journal
-# scenario for the others, or passthrough when that level was not measured.
+# sweep_rates <level> <workload>: the automatic rates for one journal level and workload,
+# comma-separated. The reference is wrk's throughput (median of repeats) for that workload at
+# that level: passthrough for NONE, the journal scenario for the others, or passthrough when
+# that level was not measured.
 sweep_rates() {
   local ref=""
   if [[ "$1" != "NONE" ]]; then
-    ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" journal "$1")"
-    [[ -n "$ref" ]] || warn "no wrk run of journal=$1 to size its sweep; using passthrough"
+    ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" journal "$1" "$2")"
+    [[ -n "$ref" ]] || warn "no wrk run of journal=$1 for $2 to size its sweep; using passthrough"
   fi
-  [[ -n "$ref" ]] || ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" passthrough NONE)"
-  [[ -n "$ref" ]] || die "no wrk passthrough result to size the sweep; pass --sweep-rates"
+  [[ -n "$ref" ]] || ref="$(python3 "$HERE/lib/parse.py" max-rps "$OUT" passthrough NONE "$2")"
+  [[ -n "$ref" ]] || die "no wrk passthrough result for $2 to size the sweep; pass --sweep-rates"
   python3 - "$ref" "$SWEEP_PERCENT" <<'PY'
 import sys
 ref, pcts = float(sys.argv[1]), sys.argv[2].split(",")
@@ -727,19 +727,32 @@ if has "$SCENARIOS" sweep; then
   IFS=',' read -ra SLEVELS <<< "$SWEEP_LEVELS"
   for level in "${SLEVELS[@]}"; do
     if [[ "$SWEEP_RATES" == "auto" ]]; then
-      rates="$(sweep_rates "$level")"
-      log "sweep rates for $level: $rates"
-      echo "sweep_rates_${level}=$rates" >> "$OUT/environment.txt"
-      IFS=',' read -ra SRATES <<< "$rates"
-      awk -F'\t' -v l="$level" '!($1 == "sweep" && $4 == l && $5 == "auto")' "$OUT/plan.tsv" > "$OUT/plan.tsv.new"
-      for r in "${SRATES[@]}"; do plan_rows sweep "$level" "$r" wrk2; done >> "$OUT/plan.tsv.new"
-      mv "$OUT/plan.tsv.new" "$OUT/plan.tsv"
+      # One ladder per workload: a slow workload sharing a fast one's ladder could have
+      # every point past its knee.
+      IFS=',' read -ra SWL <<< "$WORKLOADS"
+      ALL_WORKLOADS="$WORKLOADS"; ALL_PLAN_WL=("${PLAN_WL[@]}")
+      for w in "${SWL[@]}"; do
+        rates="$(sweep_rates "$level" "$w")"
+        log "sweep rates for $level/$w: $rates"
+        echo "sweep_rates_${level}_${w}=$rates" >> "$OUT/environment.txt"
+        IFS=',' read -ra SRATES <<< "$rates"
+        PLAN_WL=("$w")
+        awk -F'\t' -v l="$level" -v w="$w" '!($1 == "sweep" && $2 == w && $4 == l && $5 == "auto")' \
+          "$OUT/plan.tsv" > "$OUT/plan.tsv.new"
+        for r in "${SRATES[@]}"; do plan_rows sweep "$level" "$r" wrk2; done >> "$OUT/plan.tsv.new"
+        mv "$OUT/plan.tsv.new" "$OUT/plan.tsv"
+        WORKLOADS="$w"
+        for r in "${SRATES[@]}"; do
+          gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users" "$r"
+        done
+      done
+      WORKLOADS="$ALL_WORKLOADS"; PLAN_WL=("${ALL_PLAN_WL[@]}")
     else
       IFS=',' read -ra SRATES <<< "$SWEEP_RATES"
+      for r in "${SRATES[@]}"; do
+        gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users" "$r"
+      done
     fi
-    for r in "${SRATES[@]}"; do
-      gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users" "$r"
-    done
   done
 fi
 

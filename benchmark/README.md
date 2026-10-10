@@ -92,7 +92,7 @@ gateway-*.log     gateway stdout/stderr per journal level
 | `passthrough` | r7 in the path, no filters, journaling off. The irreducible cost of proxying — **and the denominator for everything below**. |
 | `filtered` | Same route shape, through `AddCorrelationId` + request/response header rewrites. The cost of the filter chain. |
 | `journal` | `METADATA` → `HEADERS` → `FULL`, fresh JVM per level. The real cost of the mmap journal. `NONE` is deliberately absent: it is identical to `passthrough`, so selecting `journal` implies `passthrough` and reuses that run. |
-| `sweep` | wrk2 at a ladder of fixed rates against `NONE` and `FULL`: by default 50, 75, 90, 100 and 110% of the wrk throughput this host measured for that level (`passthrough` for `NONE`; `journal` for `FULL` when that scenario ran, otherwise `passthrough`), so the ladder brackets the knee on any core count. `--sweep-rates` takes a fixed list instead. p99 versus offered load — the curve that actually characterises a gateway. Opt-in; not in the default suite. |
+| `sweep` | wrk2 at a ladder of fixed rates against `NONE` and `FULL`: by default 50, 75, 90, 100 and 110% of the wrk throughput this host measured for that level and workload (`passthrough` for `NONE`; `journal` for `FULL` when that scenario ran, otherwise `passthrough`), so the ladder brackets the knee on any core count. `--sweep-rates` takes a fixed list instead. p99 versus offered load — the curve that actually characterises a gateway. Opt-in; not in the default suite. |
 
 ### Two delta columns, and only one of them is trustworthy
 

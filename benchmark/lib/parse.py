@@ -4,7 +4,7 @@
     parse.py parse  <raw.txt> <meta.json> > result.json
     parse.py report <results-dir> [--format md|tsv]
     parse.py verdict <results-dir>     # reasons the results are not publishable, one per line
-    parse.py max-rps <results-dir> <scenario> <journal>   # highest wrk median req/s, or nothing
+    parse.py max-rps <results-dir> <scenario> <journal> <workload>   # wrk median req/s, or nothing
 
 Repeats of the same configuration are grouped and reported as a median plus a
 spread, because a single run cannot tell you whether a 0.3ms difference is a
@@ -455,7 +455,8 @@ if __name__ == "__main__":
     elif cmd == "max-rps":
         rps = [a["rps"] for a in group(load_results(sys.argv[2])).values()
                if a["meta"].get("scenario") == sys.argv[3] and a["meta"].get("tool") == "wrk"
-               and (a["meta"].get("journal") or "-") == sys.argv[4] and a["rps"]]
+               and (a["meta"].get("journal") or "-") == sys.argv[4]
+               and a["meta"].get("workload") == sys.argv[5] and a["rps"]]
         if rps:
             print(round(max(rps)))
     elif cmd == "verdict":
