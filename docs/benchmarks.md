@@ -21,11 +21,12 @@ latency are reported together.
   (header filters), `journal` at `METADATA`, `HEADERS` and `FULL`, and a `sweep` of fixed offered
   rates that shows p99 against load. Each runs over a browser-shaped GET, a 36-header GET and a
   1 KB JSON POST.
-- **Repeats.** Three runs per configuration, each with a fresh JVM and a discarded warmup.
+- **Repeats.** One JVM per configuration with a discarded warmup; wrk runs three times, and the
+  spread between those runs is printed next to every throughput figure.
 - **Tools.** wrk finds saturation throughput. wrk2 holds a fixed rate and records latency in an
   HdrHistogram, so its p99 and p99.9 are free of coordinated omission.
 - **Verdict.** A run is published only when its report says PUBLISHABLE: a pulled image (or a `--local`
-  build), clean tree, every tuning step applied, every run valid, repeats within 5%.
+  build), clean tree, every tuning step applied, every run valid.
 
 The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/blob/main/benchmark/README.md).
 
