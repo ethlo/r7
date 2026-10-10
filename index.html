@@ -1021,7 +1021,7 @@ trades one for the other.</p>
     Tailers --&gt; Store[ClickHouse / S3 / Elasticsearch]
     R7 --&gt; Dash[Live dashboard]</code></pre>
 <ul>
-<li><strong>Runtime:</strong> Java 25+, on Helidon Níma with one virtual thread per connection. Each request,
+<li><strong>Runtime:</strong> Java 27, on Helidon Níma with one virtual thread per connection. Each request,
   the upstream call included, runs on that thread in a single synchronous flow: nothing crosses
   threads, and there are no reactive pipelines or worker pools in the request path.</li>
 <li><strong>Streaming:</strong> request and response bodies are streamed through, not buffered or modified, which
