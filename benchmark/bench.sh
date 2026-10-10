@@ -112,6 +112,17 @@ stop_leftovers() {
   [[ -z "$running" ]] || { warn "benchmark containers are still running"; return 1; }
 }
 
+# An empty AllowedCPUs (the usual original) makes systemd stop managing the unit's cpuset, and
+# the cgroup keeps the housekeeping list it was confined to: everything in user.slice stayed on
+# CPU 0 after a run. So the unit is first opened to every CPU, which empty then leaves in place.
+restore_cpuset() {
+  local unit="$1" value="$2"
+  if [[ -z "$value" ]]; then
+    systemctl set-property --runtime "$unit" "AllowedCPUs=$(cat /sys/devices/system/cpu/possible)" || return 1
+  fi
+  systemctl set-property --runtime "$unit" "AllowedCPUs=$value"
+}
+
 # A setting that fails to restore stays in the state file, so --restore can retry it.
 restore_host() {
   [[ -f "$STATE" ]] || return 0
@@ -126,7 +137,7 @@ restore_host() {
     case "$kind" in
       sysfs)   { echo "$value" > "$target"; } 2>/dev/null && restored=1 || restored=0 ;;
       sysctl)  sysctl -qw "$target=$value" && restored=1 || restored=0 ;;
-      cpuset)  systemctl set-property --runtime "$target" "AllowedCPUs=$value" && restored=1 || restored=0 ;;
+      cpuset)  restore_cpuset "$target" "$value" && restored=1 || restored=0 ;;
       *)       restored=0 ;;
     esac
     (( restored )) || { warn "could not restore $kind $target to '$value'"; failed=("$line" "${failed[@]}"); }
