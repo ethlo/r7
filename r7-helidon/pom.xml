@@ -16,11 +16,11 @@
     <name>r7-helidon</name>
     <url>https://github.com/ethlo/r7</url>
     <properties>
-        <!-- Helidon pairs its releases with Java's: 4.5.x is the LTS line for Java 25, 27 is for
-             Java 27 only, and 29 will be the LTS for Java 29. The default is the LTS pairing, so
-             r7-helidon runs on the same Java as the rest of r7; -Phelidon-27 builds the Java 27
-             line, which is the only one with per-carrier I/O pollers (design/history/upstream-client.md). -->
-        <helidon.version>4.5.5</helidon.version>
+        <!-- Helidon pairs its releases with Java's: 27 is the line for Java 27, and the only one
+             with per-carrier I/O pollers (design/history/upstream-client.md). The images run
+             Java 27, so the gateway host is built for it; the rest of r7 stays on 25. -->
+        <helidon.version>27.0.0</helidon.version>
+        <maven.compiler.release>27</maven.compiler.release>
     </properties>
     <build>
         <plugins>
@@ -95,15 +95,6 @@
             </plugin>
         </plugins>
     </build>
-    <profiles>
-        <profile>
-            <id>helidon-27</id>
-            <properties>
-                <helidon.version>27.0.0</helidon.version>
-                <maven.compiler.release>27</maven.compiler.release>
-            </properties>
-        </profile>
-    </profiles>
     <dependencies>
         <dependency>
             <groupId>com.ethlo.r7</groupId>
