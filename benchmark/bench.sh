@@ -378,6 +378,20 @@ fi
 
 [[ $EUID -eq 0 ]] || die "run with sudo: tuning the host needs root (try --check first)"
 
+# Results belong to the invoking user, however the run ends: left to root, results/ stops a
+# later plain run.sh from creating its directory.
+give_back_results() {
+  [[ -n "${SUDO_USER:-}" ]] || return 0
+  [[ -d "$HERE/results" ]] && chown "$SUDO_USER:" "$HERE/results" || true
+  [[ -n "${OUT:-}" && -d "$OUT" ]] && chown -R "$SUDO_USER:" "$OUT" || true
+  return 0
+}
+
+# Before anything that can fail, so a root-owned results/ from an earlier run is repaired
+# even when this one stops early.
+mkdir -p "$HERE/results"
+give_back_results
+
 # Nothing inherited may change what is measured: r7 prefers these over the generated config,
 # the JVM reads the option variables, and run.sh and the compose file read the R7_BENCH_
 # ones. A backend image override is allowed, and gated in the verdict.
@@ -456,15 +470,6 @@ else
   ID="$(sed 's/.*sha256://' <<< "$IMAGE_REF" | cut -c1-12)"
 fi
 
-# Results belong to the invoking user, however the run ends: left to root, results/ stops a
-# later plain run.sh from creating its directory.
-give_back_results() {
-  [[ -n "${SUDO_USER:-}" ]] || return 0
-  [[ -d "$HERE/results" ]] && chown "$SUDO_USER:" "$HERE/results" || true
-  [[ -n "${OUT:-}" && -d "$OUT" ]] && chown -R "$SUDO_USER:" "$OUT" || true
-  return 0
-}
-
 # From here on the host is changed; the trap puts it back however the run ends.
 : > "$STATE"
 trap 'give_back_results; restore_host' EXIT
@@ -485,8 +490,6 @@ for u in "${UNTUNED[@]}"; do warn "not tuned: $u"; done
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
-mkdir -p "$HERE/results"
-give_back_results
 PROFILE=(--repeat 3 --restart-per-repeat --scenario baseline,passthrough,filtered,journal,sweep)
 QUICK_FLAG=""
 # --quick runs every scenario with fresh JVMs, but shortened: short runs, the browser workload
