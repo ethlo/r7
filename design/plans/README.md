@@ -10,7 +10,7 @@ these stays parked.
 
 | Plan | State | Notes |
 |---|---|---|
-| WARC profile (`WARC.md` beside `FORMAT.md`) | To do | The contract for WARC consumers. [`../warc.md`](../warc.md) calls for it, and [`../limitations.md`](../limitations.md) lists its absence. |
+| WARC profile (`WARC.md` beside `FORMAT.md`) | To do | The contract for WARC consumers. [`../warc.md`](../warc.md) calls for it. |
 | Live-tailing doorbell (step 4 of [`../history/live-tailing.md`](../history/live-tailing.md)) | Parked | Only worth building if a real consumer needs sub-millisecond latency when idle. |
 | Journal write path: a writer thread per shard, or per-entry compression | Parked | Both options cost something. See "Open questions" in [`../history/journal-write-contention.md`](../history/journal-write-contention.md). Worth revisiting only if journaled throughput limits a deployment. |
 | Static content cache for small, hot files | To do | Removes the `Cleaner` lock contention in [`../limitations.md`](../limitations.md). Validated by size and modification time. |
