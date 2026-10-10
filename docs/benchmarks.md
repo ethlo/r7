@@ -53,8 +53,10 @@ that spread is not a finding.
 ### Latency at a fixed 20,000 req/s
 
 wrk2 holds the rate and corrects for coordinated omission, so these are the figures to read for
-latency. All runs use 200 connections. 20,000 req/s is 46% to 61% of what the gateway saturates at
-on two cores, depending on the workload. Milliseconds: p50 / p99 / p99.9.
+latency. All runs use 200 connections. 20,000 req/s is 46% to 61% of what the passthrough gateway
+saturates at on two cores, depending on the workload. With the `HEADERS` and `FULL` journal on the
+36-header request, saturation is 21,400 and 20,100 req/s, so that rate is 94% and 99% of capacity.
+Milliseconds: p50 / p99 / p99.9.
 
 | Scenario | Browser GET | 36-header GET | 1 KB POST |
 | --- | --- | --- | --- |
@@ -66,8 +68,8 @@ on two cores, depending on the workload. Milliseconds: p50 / p99 / p99.9.
 | Journal `FULL` | 2.2 / 5.5 / 18.0 | 5.3 / 33.4 / 56.0 | 2.5 / 5.4 / 9.4 |
 
 r7 adds 2.4 to 4.8 ms at p99 over nginx on this host. The header filters and the `METADATA` journal
-land within about 2 ms of passthrough in either direction, which is the run to run noise. At `HEADERS` and `FULL` the 36-header request
-pays for recording every header: its p99 reaches 19 and 33 ms.
+land within about 2 ms of passthrough in either direction, which is the run to run noise.
+At `HEADERS` and `FULL` the 36-header request sits at or near its saturation point at this rate, and its p99 of 19 and 33 ms is queueing at that load.
 
 ### Saturation throughput
 
