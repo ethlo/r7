@@ -58,8 +58,10 @@ with the image's JVM flags.
 The report starts with a verdict. It says **PUBLISHABLE** only when the gateway was a
 pulled image (or a `--local` build), the working tree was clean, every tuning step applied,
 every planned run produced a valid result, every wrk2 run reported its p99 and p99.9 and,
-outside the sweep, reached 95% of its target rate, and every throughput configuration ran
-three times; otherwise it lists why not. How far the repeats agree is not part of the
+outside the sweep, reached 95% of its target rate unless its configuration saturates below
+that rate (marked `capacity`), the backend cleared every r7 row by 10% (a peer at the
+backend's limit is marked `backend`, see "The backend"), and every throughput configuration
+ran three times; otherwise it lists why not. How far the repeats agree is not part of the
 verdict: every row carries its spread (`±`), so the reader sees the noise next to the number.
 Alongside the usual results it writes `host.txt` (CPU, kernel, tuning, layout, image
 digest or JDK builds, tool commits, git SHA), `host-before.txt` (the settings it changed and
@@ -145,8 +147,13 @@ read from the page cache with their descriptors cached; the POST answer is an in
 This is deliberately the cheapest credible HTTP responder available. Anything
 richer (an echo server, a Node or Python app) becomes the bottleneck long before
 r7 does, and the benchmark then measures the backend. If the baseline row's
-throughput is not comfortably above every gateway row, the backend is limiting
-you and the run should be discarded.
+throughput is not comfortably above every r7 row, the backend is limiting
+you and the run should be discarded; the verdict fails it under 10%. A peer
+that comes within 10% of the baseline is marked `backend` in the report
+instead: nginx proxies as fast as nginx answers, so its throughput is the
+backend's limit by design, and its own is at least that. A fixed-rate run of a
+configuration that saturates below that rate is marked `capacity`, since its
+latency is a queue.
 
 ## Methodology notes
 

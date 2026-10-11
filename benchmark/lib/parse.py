@@ -186,6 +186,25 @@ def group(rows):
     return out
 
 
+def is_peer(meta):
+    return (meta.get("scenario") or "").startswith("peer-")
+
+
+def backend_bound(a, base):
+    """A peer's saturation row within the 10% headroom margin of the baseline: its throughput is
+    the backend's limit, not the peer's."""
+    return (is_peer(a["meta"]) and a["meta"].get("tool") == "wrk" and base is not None
+            and a["rps"] and base["rps"] and base["rps"] < 1.1 * a["rps"])
+
+
+def above_capacity(meta, rows):
+    """Whether every wrk run of meta's configuration saturated below meta's fixed rate."""
+    same = [r["stats"].get("rps") or 0 for r in rows
+            if r["meta"].get("tool") == "wrk"
+            and all(r["meta"].get(f) == meta.get(f) for f in ("scenario", "workload", "journal"))]
+    return bool(meta.get("rate")) and bool(same) and max(same) < meta["rate"]
+
+
 def repeats_floor(agg):
     """The fewest repeats among the configurations whose spread is a noise floor.
 
@@ -232,7 +251,8 @@ def table(header, lines):
 
 
 def report(d, fmt_kind="md"):
-    agg = group(load_results(d))
+    rows = load_results(d)
+    agg = group(rows)
     if not agg:
         return "No results in %s\n" % d
 
@@ -276,6 +296,10 @@ def report(d, fmt_kind="md"):
 
         b = base_ref.get(ref_key)
         r = r7_ref.get(ref_key)
+        if bad == "ok" and backend_bound(a, b):
+            bad = "backend"
+        if bad == "ok" and m.get("tool") == "wrk2" and above_capacity(m, rows):
+            bad = "capacity"
         # baseline has no gateway in it, so "cost relative to the gateway" is
         # not a thing it has; leave that cell empty rather than printing a
         # meaningless positive delta.
@@ -336,6 +360,19 @@ def report(d, fmt_kind="md"):
         "latency figures are the ones to quote. wrk rows show saturation",
         "throughput; their latency figures understate the tail.",
     ]
+    if any(backend_bound(a, base_ref.get((a["meta"].get("workload"), "wrk", None)))
+           for a in agg.values()):
+        out += [
+            "",
+            "`backend` in `bad`: a peer within 10% of the baseline, so its throughput is the",
+            "backend's limit and the peer's own is at least that.",
+        ]
+    if any(x[-1] == "capacity" for x in main):
+        out += [
+            "",
+            "`capacity` in `bad`: a wrk2 run above what its configuration saturates at (its wrk",
+            "rows), so its latency is a queue, not the gateway's latency at that rate.",
+        ]
     if n_min < 3:
         out += [
             "",
@@ -404,10 +441,13 @@ def verdict_problems(d, min_repeat=3):
     if no_tail:
         problems.append("%d wrk2 run(s) report no p99 or p99.9 latency" % len(no_tail))
     # A fixed-rate latency comparison only means something at the rate it asked for; only
-    # the sweep is meant to fall short, since finding where it does is its purpose.
+    # the sweep is meant to fall short, since finding where it does is its purpose. A run
+    # whose configuration saturates below that rate (its wrk rows) is above capacity, a
+    # result the report marks; falling short of a rate the gateway sustains is a failure.
     short = [r for r in rows if r["meta"].get("tool") == "wrk2"
              and r["meta"].get("scenario") != "sweep" and r["meta"].get("rate")
-             and (r["stats"].get("rps") or 0) < 0.95 * r["meta"]["rate"]]
+             and (r["stats"].get("rps") or 0) < 0.95 * r["meta"]["rate"]
+             and not above_capacity(r["meta"], rows)]
     if short:
         problems.append("%d non-sweep wrk2 run(s) delivered under 95%% of their target rate"
                         % len(short))
@@ -421,13 +461,16 @@ def verdict_problems(d, min_repeat=3):
     if n_min < min_repeat:
         problems.append("only %d repeat(s) for some throughput configuration; need %d" % (n_min, min_repeat))
     # The backend must not be the bottleneck (README, "The backend"): per workload, the
-    # unthrottled baseline has to clear every gateway row by a margin.
+    # unthrottled baseline has to clear every r7 row by a margin. A peer is left out: nginx
+    # proxies as fast as nginx answers, so it reaches the backend's limit by design, and the
+    # report marks such a row rather than the run failing for it.
     for workload in sorted({a["meta"].get("workload") for a in agg.values()}):
         wrk = [a for a in agg.values()
                if a["meta"].get("workload") == workload and a["meta"].get("tool") == "wrk"]
         base = [a["rps"] for a in wrk if a["meta"].get("scenario") == "baseline" and a["rps"]]
         gw = [a["rps"] for a in wrk
-              if a["meta"].get("scenario") not in ("baseline", "sweep") and a["rps"]]
+              if a["meta"].get("scenario") not in ("baseline", "sweep")
+              and not is_peer(a["meta"]) and a["rps"]]
         if not base:
             problems.append("no wrk baseline for %s, so backend headroom is unknown" % workload)
         elif gw and base[0] < 1.1 * max(gw):
