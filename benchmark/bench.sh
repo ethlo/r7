@@ -70,9 +70,9 @@ Options:
   --image REF      gateway image to measure (default: ghcr.io/ethlo/r7-gateway:main)
   --local          build this checkout and run the jar on the host instead of an image
   --quick          short runs, api-get workload only; never publishable
-  --gc default|zgc collector (default: the JVM's choice, as in the image: G1 on the
-                   benchmark's 2 gateway CPUs; ZGC's concurrent threads share those
-                   cores with the journal and gave a longer tail there)
+  --gc default|zgc collector (default: the JVM's own choice for the gateway's cores and
+                   memory, as in the image; the one it ran is recorded as gc_gateway
+                   in environment.txt and named in the verdict)
   --check          print the core layout and current host state, change nothing
   --restore        restore host settings saved by an interrupted run
   -h, --help       this
@@ -610,6 +610,17 @@ done
   && REASONS+=("the working tree changed during the run")
 [[ "$(git -C "$REPO" rev-parse --short HEAD)" == "$SHA" ]] || REASONS+=("HEAD moved during the run")
 for u in "${UNTUNED[@]}"; do REASONS+=("not tuned: $u"); done
+# The collector is read from the running JVMs (run.sh), not inferred from the flags: with
+# --gc default the JVM chooses it from the cores and memory it is given.
+GC_GATEWAY="$(sed -n 's/^gc_gateway=//p' "$OUT/environment.txt" 2>/dev/null | head -n1 || true)"
+if [[ -z "$GC_GATEWAY" || "$GC_GATEWAY" == unknown ]]; then
+  REASONS+=("the gateway's collector was not recorded")
+elif [[ "$GC" == zgc && "$GC_GATEWAY" != ZGC ]]; then
+  REASONS+=("--gc zgc, but the gateway ran $GC_GATEWAY")
+fi
+GC_PEER="$(sed -n 's/^gc_peer_cloud-gateway=//p' "$OUT/environment.txt" 2>/dev/null | head -n1 || true)"
+[[ -n "$GC_PEER" && "$GC_PEER" != "$GC_GATEWAY" ]] \
+  && REASONS+=("cloud-gateway ran ${GC_PEER}, r7 ran ${GC_GATEWAY:-unknown}")
 # A validator that fails must block the verdict, not silently report no problems.
 if PROBLEMS="$(python3 -B -c "import sys; sys.path.insert(0, sys.argv[1]); import parse
 for p in parse.verdict_problems(sys.argv[2], 3): print(p)" "$HERE/lib" "$OUT")"; then
@@ -620,7 +631,7 @@ fi
 
 {
   if (( ${#REASONS[@]} == 0 )); then
-    echo "**PUBLISHABLE** — $GATEWAY, $(lscpu | sed -n 's/^Model name:[[:space:]]*//p' | head -n1)"
+    echo "**PUBLISHABLE** — $GATEWAY, $(lscpu | sed -n 's/^Model name:[[:space:]]*//p' | head -n1), $GC_GATEWAY"
   else
     echo "**NOT PUBLISHABLE**"
     for r in "${REASONS[@]}"; do echo "- $r"; done
