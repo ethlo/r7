@@ -304,11 +304,8 @@ java -cp "r7.jar:plugins/*" com.ethlo.r7.helidon.R7Helidon
 
 ### Docker Compose Example
 
-The image's entrypoint is `java -jar`, so mount your jars and override the entrypoint with the
-image's own flags plus the classpath. The image's AOT cache still applies, since your jars come
-after the classpath it was built with. Copy the flags from the entrypoint of the image you run
-(`docker inspect --format '{{json .Config.Entrypoint}}' ghcr.io/ethlo/r7-gateway:main`) when
-you upgrade.
+The image puts every jar in `/app/plugins` on the classpath, so mounting your jars there is all it
+takes. The image's AOT cache still applies.
 
 ```yaml title="docker-compose.yaml"
 services:
@@ -320,15 +317,8 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./plugins:/app/plugins:ro   # your extension jars
-    entrypoint:
-      - java
-      - -XX:AOTCache=/app/r7.aot
-      - --enable-native-access=ALL-UNNAMED
-      - --sun-misc-unsafe-memory-access=allow
-      - -Djava.security.egd=file:/dev/./urandom
-      - -cp
-      - /app/r7.jar:/app/plugins/*
-      - com.ethlo.r7.helidon.R7Helidon
 ```
+
+With `docker run`, add `-v "$PWD/plugins:/app/plugins:ro"`.
 
 The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (`HasHeader` and `BlockToken`) will be fully operational alongside the native r7 filters.

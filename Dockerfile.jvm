@@ -35,7 +35,7 @@ ENV R7_JOURNAL_DIR=/tmp/aot-training-journals
 # The gateway does not start without a fingerprint key. This one only fingerprints the training
 # requests, in this stage; the image does not carry it, and every deployment sets its own.
 ENV R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key-not-in-the-image
-RUN ["/opt/java/openjdk/bin/java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-jar", "/app/r7.jar"]
+RUN ["/opt/java/openjdk/bin/java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-cp", "/app/r7.jar:/app/plugins/*", "com.ethlo.r7.helidon.R7Helidon"]
 
 FROM runtime
 WORKDIR /app
@@ -61,9 +61,13 @@ ENV R7_MANAGEMENT_HOST=0.0.0.0
 # docs use; without it a container started with no server.yaml tries to create /app/journals,
 # which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
 ENV R7_JOURNAL_DIR=/journals
+# Extension jars: mount a directory of them at /app/plugins (docs/extensibility.md). The classpath
+# is given with -cp instead of -jar because -jar ignores any classpath beyond the jar's manifest.
+# The AOT cache is trained with the same classpath; jars found in /app/plugins at run time come
+# after it, which the cache accepts, and a missing directory is ignored.
 # Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.
 # No garbage collector is named: the JVM picks one for the container's CPUs and memory, and one
 # set in JAVA_TOOL_OPTIONS (-XX:+UseZGC for the shortest pauses) applies as it is. ZGC cannot use
 # the AOT cache, which is made with compressed object pointers, so with it the gateway starts
 # without the cache and slower (docs/performance_tuning.md).
-ENTRYPOINT ["/opt/java/openjdk/bin/java", "-XX:AOTCache=/app/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/r7.jar"]
+ENTRYPOINT ["/opt/java/openjdk/bin/java", "-XX:AOTCache=/app/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-cp", "/app/r7.jar:/app/plugins/*", "com.ethlo.r7.helidon.R7Helidon"]
