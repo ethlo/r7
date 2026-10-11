@@ -38,6 +38,7 @@ SWEEP_PERCENT="50,75,90,100,110"
 SWEEP_LEVELS="NONE,FULL"
 SWEEP_WORKLOADS=""        # default: --workload
 JOURNAL_LEVELS="METADATA,HEADERS,FULL"   # NONE is covered by `passthrough`
+PEERS="nginx,cloud-gateway"               # other gateways for the `peers` scenario
 JAR=""
 OUT=""
 GW_PORT=8888              # preferred ports; pick_ports moves each to the next free one
@@ -52,6 +53,9 @@ PIN_SLICE="r7bench.slice"
 
 # Pinned by digest (nginx 1.31.6) so the backend cannot change under a comparison.
 BACKEND_IMAGE="${R7_BENCH_BACKEND_IMAGE:-nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2}"
+# The peers, pinned the same way. The nginx proxy is the backend's image with another config.
+PEER_NGINX_IMAGE="${R7_BENCH_PEER_NGINX_IMAGE:-$BACKEND_IMAGE}"
+PEER_CLOUD_GATEWAY_IMAGE="${R7_BENCH_PEER_CLOUD_GATEWAY_IMAGE:-ethlocom/cloud-gateway:1.7.9@sha256:87a2e2d3f4895aba73d4fd80301dce6ea12aab9a3b369e69c10a776a8907b9e7}"
 
 JVM_OPTS_DEFAULT="-XX:+UseZGC --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow"
 # Set but empty means no extra options: in docker mode, the image's own entrypoint flags.
@@ -71,8 +75,8 @@ usage() {
 
 Options:
   --mode jvm-local|docker    How to launch the gateway under test (default: jvm-local)
-  --scenario LIST            baseline,passthrough,filtered,journal,sweep
-                             (default: all but sweep)
+  --scenario LIST            baseline,passthrough,filtered,journal,sweep,peers
+                             (default: all but sweep and peers)
   --workload LIST            browser,api-get,api-post,headers
                              (default: all but headers, a 38-header profiling
                              workload)
@@ -105,6 +109,9 @@ Options:
   --sweep-workload LIST      workloads to sweep (default: --workload)
   --journal-levels LIST      levels for the journal scenario
                              (default: METADATA,HEADERS,FULL)
+  --peers LIST               other gateways for the peers scenario, measured like
+                             passthrough on the gateway's cores
+                             (default: nginx,cloud-gateway)
   --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
   --quick                    5s warmup, 10s wrk and 15s wrk2 runs, api-get
@@ -145,6 +152,7 @@ while [[ $# -gt 0 ]]; do
     --sweep-percent) SWEEP_PERCENT="$2"; shift 2 ;;
     --sweep-workload) SWEEP_WORKLOADS="$2"; shift 2 ;;
     --journal-levels) JOURNAL_LEVELS="$2"; shift 2 ;;
+    --peers)         PEERS="$2"; shift 2 ;;
     --jar)           JAR="$2"; shift 2 ;;
     --out)           OUT="$2"; shift 2 ;;
     # wrk2 needs more than its ~10s calibration to record anything.
@@ -171,7 +179,7 @@ SWEEP_WORKLOADS="${SWEEP_WORKLOADS:-$WORKLOADS}"
 
 # "baseline, passthrough" would otherwise keep " passthrough" as an item that matches nothing,
 # and that scenario would be skipped without a word.
-for v in SCENARIOS WORKLOADS TOOLS SWEEP_RATES SWEEP_LEVELS SWEEP_PERCENT SWEEP_WORKLOADS JOURNAL_LEVELS; do
+for v in SCENARIOS WORKLOADS TOOLS SWEEP_RATES SWEEP_LEVELS SWEEP_PERCENT SWEEP_WORKLOADS JOURNAL_LEVELS PEERS; do
   printf -v "$v" '%s' "${!v//[[:space:]]/}"
 done
 
@@ -195,6 +203,18 @@ fi
 if has "$SCENARIOS" journal && ! has "$SCENARIOS" passthrough; then
   warn "journal scenario needs passthrough as its NONE reference; adding it"
   SCENARIOS="passthrough,$SCENARIOS"
+fi
+
+# So do the peers: their `vs r7` column is against passthrough.
+if has "$SCENARIOS" peers; then
+  IFS=',' read -ra _pl <<< "$PEERS"
+  for p in "${_pl[@]}"; do
+    [[ "$p" == "nginx" || "$p" == "cloud-gateway" ]] || die "unknown peer: $p (nginx, cloud-gateway)"
+  done
+  if ! has "$SCENARIOS" passthrough; then
+    warn "peers scenario needs passthrough to compare with; adding it"
+    SCENARIOS="passthrough,$SCENARIOS"
+  fi
 fi
 
 
@@ -345,6 +365,7 @@ fi
 # ----------------------------------------------------------------- lifecycle
 
 BACKEND_CID=""
+PEER_CID=""
 GW_PID=""
 GW_COMPOSE=0
 COMPOSE_FILES=()
@@ -491,7 +512,64 @@ start_gateway() {
   fi
 }
 
+# A peer gateway in place of r7: same port, same cores, same memory limit as the r7 container,
+# in front of the same backend. Its configuration is in peers/.
+# start_peer <peer>
+start_peer() {
+  local peer="$1" conf image
+  local -a args=(--name r7-bench-peer --network host --ulimit nofile=200000:200000
+                 --memory "${R7_BENCH_MEM:-990M}")
+  mkdir -p "$RUNDIR/peers"
+  if [[ -n "$GATEWAY_CPUS" ]]; then
+    args+=(--cpuset-cpus "$GATEWAY_CPUS")
+    if [[ "$PIN_METHOD" == "systemd" && "$(docker info -f '{{.CgroupDriver}}' 2>/dev/null)" == "systemd" ]]; then
+      args+=(--cgroup-parent "$PIN_SLICE")
+    fi
+  fi
+  case "$peer" in
+    nginx)
+      image="$PEER_NGINX_IMAGE"
+      conf="$RUNDIR/peers/nginx-proxy.conf"
+      # worker_processes auto would count the host's CPUs, not the container's cpuset.
+      local workers="auto"
+      [[ -n "$GATEWAY_CPUS" ]] && workers="$(cpu_count "$GATEWAY_CPUS")"
+      sed -e "s|__WORKERS__|$workers|" -e "s|__GW_PORT__|$GW_PORT|" -e "s|__BACKEND_PORT__|$BACKEND_PORT|" \
+        "$HERE/peers/nginx-proxy.conf" > "$conf"
+      args+=(-v "$conf:/etc/nginx/nginx.conf:ro")
+      ;;
+    cloud-gateway)
+      image="$PEER_CLOUD_GATEWAY_IMAGE"
+      conf="$RUNDIR/peers/cloud-gateway"
+      mkdir -p "$conf"
+      sed -e "s|__GW_PORT__|$GW_PORT|" -e "s|__BACKEND_URL__|http://127.0.0.1:$BACKEND_PORT|" \
+        "$HERE/peers/cloud-gateway.yaml" > "$conf/application.yaml"
+      # The image's memory calculator leaves Netty 10 MB of direct memory, which runs out at
+      # 200 connections (OutOfDirectMemoryError). 200 MB is what cloud-gateway's own
+      # docker-compose.yml sets.
+      # The same collector as r7, so the comparison is between the gateways, not their GC.
+      local gc=""
+      [[ " $JVM_OPTS " == *" -XX:+UseZGC "* ]] && gc=" -XX:+UseZGC"
+      args+=(-v "$conf:/config:ro" -e SPRING_CONFIG_LOCATION=/config/application.yaml
+             -e "JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=200M$gc")
+      ;;
+    *) die "unknown peer: $peer" ;;
+  esac
+  log "starting peer $peer"
+  GW_LEVEL="$peer"
+  PEER_CID="$(docker run -d --rm "${args[@]}" "$image")" || die "could not start peer $peer"
+  wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "peer $peer" 120
+  ok "peer ready ($peer)"
+}
+
 stop_gateway() {
+  if [[ -n "$PEER_CID" ]]; then
+    docker logs "$PEER_CID" >> "$OUT/gateway-peer-$GW_LEVEL.log" 2>&1 || true
+    if ! docker rm -f "$PEER_CID" >/dev/null 2>&1; then
+      warn "could not stop the peer container"
+      return 1
+    fi
+    PEER_CID=""
+  fi
   if [[ -n "$GW_PID" ]]; then
     kill "$GW_PID" 2>/dev/null || true
     wait "$GW_PID" 2>/dev/null || true
@@ -661,7 +739,7 @@ run_jvm() {
   else
     IFS=',' read -ra wl <<< "$WORKLOADS"; IFS=',' read -ra tl <<< "$TOOLS"
   fi
-  start_gateway "$level"
+  if [[ "$scenario" == peer-* ]]; then start_peer "${scenario#peer-}"; else start_gateway "$level"; fi
   for w in "${wl[@]}"; do
     rates=("$RATE")
     [[ "$scenario" == "sweep" ]] && IFS=',' read -ra rates <<< "$(sweep_ladder "$level" "$w")"
@@ -697,11 +775,12 @@ gw_scenario() {
       run_jvm "$scenario" "$level" "$url" "$rep"
       # Measured after the stop: the journal is written asynchronously, so before it the
       # size depends on how far the writer has caught up.
-      echo "journal_bytes_${scenario}_${level}_n${rep}=$(journal_size)" >> "$OUT/environment.txt"
+      [[ "$scenario" == peer-* ]] \
+        || echo "journal_bytes_${scenario}_${level}_n${rep}=$(journal_size)" >> "$OUT/environment.txt"
     done
   else
     run_jvm "$scenario" "$level" "$url" all
-    echo "journal_bytes_${scenario}_${level}=$(journal_size)" >> "$OUT/environment.txt"
+    [[ "$scenario" == peer-* ]] || echo "journal_bytes_${scenario}_${level}=$(journal_size)" >> "$OUT/environment.txt"
   fi
 }
 
@@ -733,6 +812,9 @@ log "results -> $OUT"
   echo "jvm_opts=$JVM_OPTS"
   echo "r7_poller_mode=${R7_POLLER_MODE:-default}"
   echo "backend_image=$BACKEND_IMAGE"
+  if has "$SCENARIOS" peers; then
+    echo "peers=$PEERS peer_nginx_image=$PEER_NGINX_IMAGE peer_cloud_gateway_image=$PEER_CLOUD_GATEWAY_IMAGE"
+  fi
   echo "ports=gateway:$GW_PORT management:$GW_STATUS_PORT backend:$BACKEND_PORT"
   echo "pinning=$PIN_METHOD backend_cpus=${BACKEND_CPUS:-none} gateway_cpus=${GATEWAY_CPUS:-none} load_cpus=${LOAD_CPUS:-none}"
   echo "git=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo n/a)"
@@ -756,6 +838,10 @@ IFS=',' read -ra PLAN_TL <<< "$TOOLS"
   has "$SCENARIOS" baseline    && plan_rows baseline - "$RATE" "${PLAN_TL[@]}"
   has "$SCENARIOS" passthrough && plan_rows passthrough NONE "$RATE" "${PLAN_TL[@]}"
   has "$SCENARIOS" filtered    && plan_rows filtered NONE "$RATE" "${PLAN_TL[@]}"
+  if has "$SCENARIOS" peers; then
+    IFS=',' read -ra PLIST <<< "$PEERS"
+    for p in "${PLIST[@]}"; do plan_rows "peer-$p" - "$RATE" "${PLAN_TL[@]}"; done
+  fi
   if has "$SCENARIOS" journal; then
     IFS=',' read -ra LEVELS <<< "$JOURNAL_LEVELS"
     for level in "${LEVELS[@]}"; do plan_rows journal "$level" "$RATE" "${PLAN_TL[@]}"; done
@@ -826,7 +912,16 @@ if has "$SCENARIOS" journal; then
   done
 fi
 
-# 5. Rate sweep: p99 against offered load. The curve that characterises a
+# 5. Peers: other gateways in r7's place, measured the way passthrough is.
+if has "$SCENARIOS" peers; then
+  log "=== scenario: peers ($PEERS) ==="
+  IFS=',' read -ra PLIST <<< "$PEERS"
+  for p in "${PLIST[@]}"; do
+    gw_scenario "peer-$p" - "http://127.0.0.1:$GW_PORT/bench"
+  done
+fi
+
+# 6. Rate sweep: p99 against offered load. The curve that characterises a
 #    gateway, and the only way to find the knee rather than guess at it.
 if has "$SCENARIOS" sweep; then
   log "=== scenario: sweep (wrk2, rates=$SWEEP_RATES, levels=$SWEEP_LEVELS) ==="
