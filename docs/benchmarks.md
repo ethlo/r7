@@ -96,7 +96,7 @@ spread of its three repeats.
 | Journal `HEADERS` | −25% (±5.4%) | −21% (±5.9%) | −24% (±0.8%) |
 | Journal `FULL` | −54% (±2.5%) | −34% (±0.6%) | −34% (±0.6%) |
 
-The filters cost up to 5% on the API requests and 11% on the browser page, within its spread of
+The filters cost up to 5% on the API requests and 11% on the browser page, whose repeats spread
 8.7%. `METADATA` costs 4% and 5% on the GETs and 14% on the POST. `HEADERS` costs 21% to 25%.
 `FULL` costs 34% on the API requests and 54% on the browser page, which records 8 KB of HTML with
 every exchange.

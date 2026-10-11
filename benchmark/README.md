@@ -58,8 +58,10 @@ with the image's JVM flags.
 The report starts with a verdict. It says **PUBLISHABLE** only when the gateway was a
 pulled image (or a `--local` build), the working tree was clean, every tuning step applied,
 every planned run produced a valid result, every wrk2 run reported its p99 and p99.9 and,
-outside the sweep, reached 95% of its target rate, and every throughput configuration ran
-three times; otherwise it lists why not. How far the repeats agree is not part of the
+outside the sweep, reached 95% of its target rate unless its configuration saturates below
+that rate (marked `capacity`), the backend cleared every r7 row by 10% (a peer at the
+backend's limit is marked `backend`, see "The backend"), and every throughput configuration
+ran three times; otherwise it lists why not. How far the repeats agree is not part of the
 verdict: every row carries its spread (`±`), so the reader sees the noise next to the number.
 Alongside the usual results it writes `host.txt` (CPU, kernel, tuning, layout, image
 digest or JDK builds, tool commits, git SHA), `host-before.txt` (the settings it changed and
