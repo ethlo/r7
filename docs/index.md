@@ -121,6 +121,22 @@ r7 also refuses requests that the gateway and your service would read differentl
 
 [Configuration reference](config.md)
 
+### Batteries included
+
+Most routes need no code. r7 ships with 33 filters and 15 predicates, configured in YAML and
+checked against the schema like everything else:
+
+- **Matching:** path, prefix and regex paths, host, method, client address, headers, query
+  parameters and cookies, combined with `and`, `or` and `not`.
+- **Rewriting:** add, set and remove headers, cookies and query parameters; strip a prefix,
+  rewrite a path, redirect, add a correlation id.
+- **Guarding:** required headers, parameters and cookies, basic auth, CORS and request size
+  limits.
+- **Traffic:** rate limiting, circuit breaking and upstream fallback.
+- **Answering directly:** a fixed response or static content, without calling an upstream.
+
+[Every filter and predicate](config.md#5-predicates)
+
 ### Extensions in plain Java
 
 When the built-in filters are not enough, you write a filter as a Java class and drop the jar
