@@ -18,8 +18,9 @@ latency are reported together.
   other process confined to housekeeping cores through systemd.
 - **Separate cores.** nginx, the gateway and the load generator each run on cores of their own.
 - **Scenarios.** `baseline` (no gateway), `passthrough` (r7, no filters, no journal), `filtered`
-  (header filters), `journal` at `METADATA`, `HEADERS` and `FULL`, and a `sweep` of fixed offered
-  rates on the API GET that shows p99 against load. The scenarios run over three requests a
+  (header filters), `journal` at `METADATA`, `HEADERS` and `FULL`, `peers` (an nginx reverse
+  proxy and Spring Cloud Gateway in r7's place), and a `sweep` of fixed offered rates on the API
+  GET that shows p99 against load. The scenarios run over three requests a
   gateway sees, each answered with a response of matching shape: a browser page GET (20 headers,
   8 KB of HTML back), an API GET (10 headers, 2 KB of JSON back) and an API POST (a 1 KB JSON body,
   a 201 with a small JSON body back).
@@ -29,8 +30,10 @@ latency are reported together.
 - **Tools.** wrk finds saturation throughput. wrk2 holds a fixed rate and records latency in an
   HdrHistogram, so its p99 and p99.9 are free of coordinated omission.
 - **Verdict.** Each report opens with PUBLISHABLE or NOT PUBLISHABLE: a pulled image (or a
-  `--local` build), clean tree, every tuning step applied, every planned run present and valid.
-  The spread is not part of the verdict; each row carries its own.
+  `--local` build), clean tree, every tuning step applied, every planned run present and valid,
+  and the backend faster than every r7 row by 10%. The spread is not part of the verdict; each row
+  carries its own. A peer that reaches the backend's limit, and a fixed-rate run above what its
+  configuration saturates at, are marked in the report as results rather than failing the run.
 
 The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/blob/main/benchmark/README.md).
 
@@ -38,8 +41,9 @@ The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/b
 
 One run of `sudo benchmark/bench.sh` on a 12th Gen Intel Core i5-12500 (six performance cores,
 SMT and turbo off, `performance` governor, 62 GiB RAM, Linux 6.8.0-142). The gateway image was
-`ghcr.io/ethlo/r7-gateway@sha256:97f0d156cfa4a722cb9bb09386f636659014f267e7679691b79c1faeb4bc6aaf` (Temurin 27+35, G1, the JVM's default collector at two CPUs),
-wrk `a211dd5` and wrk2 `44a94c1`.
+`ghcr.io/ethlo/r7-gateway@sha256:292e25edcc827cda7cfc1fce81cc2e86935539e21078794835159524d67e1a19`
+(Temurin 27+35, G1, the JVM's default collector at two CPUs), from r7 `2d06d07`, with wrk `a211dd5`
+and wrk2 `44a94c1`.
 
 The six cores are split four ways: nginx on one, **the gateway on two**, the load generator on two,
 the OS on one. Everything the gateway does, including the journal, shares those two cores. The
@@ -55,27 +59,27 @@ that spread is not a finding.
 ### Latency at a fixed 20,000 req/s
 
 wrk2 holds the rate and corrects for coordinated omission, so these are the figures to read for
-latency. All runs use 200 connections. 20,000 req/s is 53% of what the passthrough gateway
-saturates at on two cores for the API requests and 71% for the browser page. With the `HEADERS`
-journal the browser page saturates at 21,800 req/s, so that rate is 92% of capacity; with `FULL` it
-saturates at 13,700 req/s, below the rate, and that cell is left out. Milliseconds: p50 / p99 /
+latency. All runs use 200 connections. 20,000 req/s is 46% of what the passthrough gateway
+saturates at on two cores for the API requests and 62% for the browser page. With the `HEADERS`
+journal the browser page saturates at 24,000 req/s, so that rate is 83% of capacity; with `FULL` it
+saturates at 14,900 req/s, below the rate, and that cell is left out. Milliseconds: p50 / p99 /
 p99.9.
 
 | Scenario | Browser page GET | API GET | API POST |
 | --- | --- | --- | --- |
-| No gateway (nginx direct) | 1.1 / 2.2 / 2.6 | 1.2 / 2.7 / 3.2 | 1.1 / 2.3 / 2.5 |
-| r7 passthrough | 2.2 / 10.8 / 19.9 | 2.5 / 6.3 / 9.0 | 2.4 / 5.0 / 8.8 |
-| r7 with three header filters | 3.1 / 7.1 / 9.2 | 2.6 / 6.2 / 7.7 | 2.0 / 4.5 / 6.3 |
-| Journal `METADATA` | 3.3 / 7.1 / 14.8 | 2.5 / 5.2 / 7.0 | 2.4 / 6.0 / 7.7 |
-| Journal `HEADERS` | 6.8 / 20.9 / 43.6 | 2.6 / 5.6 / 7.2 | 2.6 / 5.8 / 9.7 |
-| Journal `FULL` | above capacity | 3.4 / 9.7 / 15.6 | 3.3 / 10.6 / 30.9 |
+| No gateway (nginx direct) | 1.0 / 2.2 / 2.6 | 1.0 / 2.1 / 2.4 | 1.1 / 2.3 / 2.6 |
+| r7 passthrough | 3.1 / 7.8 / 17.5 | 2.1 / 4.4 / 5.6 | 2.0 / 4.3 / 5.4 |
+| r7 with three header filters | 2.6 / 6.6 / 8.7 | 2.0 / 4.1 / 5.1 | 2.0 / 4.5 / 5.5 |
+| Journal `METADATA` | 2.6 / 5.5 / 10.3 | 2.1 / 4.3 / 5.7 | 2.1 / 4.4 / 5.7 |
+| Journal `HEADERS` | 3.4 / 8.2 / 17.0 | 2.1 / 5.0 / 13.5 | 2.2 / 4.8 / 7.6 |
+| Journal `FULL` | above capacity | 2.6 / 5.8 / 9.3 | 2.6 / 5.9 / 17.0 |
 
-On the API requests r7 adds 2.7 to 3.6 ms at p99 over nginx, and the header filters, `METADATA` and
-`HEADERS` stay within 1.1 ms of passthrough at p99. `FULL` records every body and adds 3.4 and
-5.6 ms at p99. The browser page returns 8 KB per request and runs at 71% of capacity at this rate,
-so its tail is longer. Its passthrough p99 of 10.8 ms is above the filtered run's 7.1 ms: there, the
-difference between two single wrk2 runs is larger than what the filters cost, so read its rows as a
-range rather than a ranking.
+On the API requests r7 adds 2.0 to 2.3 ms at p99 over nginx. The header filters and `METADATA` stay
+within 0.3 ms of passthrough at p99, and `HEADERS` within 0.6 ms. `FULL` records every body and adds
+1.4 and 1.6 ms at p99. The browser page returns 8 KB per request and runs at 62% of capacity at this
+rate, so its tail is longer. Its passthrough p99 of 7.8 ms is above the filtered run's 6.6 ms and
+`METADATA`'s 5.5 ms: there, the difference between two single wrk2 runs is larger than what the
+filters or the journal cost, so read its rows as a range rather than a ranking.
 
 ### Saturation throughput
 
@@ -86,15 +90,47 @@ spread of its three repeats.
 
 | Scenario | Browser page GET | API GET | API POST |
 | --- | --- | --- | --- |
-| r7 passthrough (requests per second) | 28,300 (±5.7%) | 37,800 (±6.2%) | 37,600 (±3.1%) |
-| r7 with three header filters | −7% (±4.8%) | −2% (±3.0%) | −3% (±1.8%) |
-| Journal `METADATA` | −5% (±7.2%) | −5% (±1.3%) | −6% (±2.9%) |
-| Journal `HEADERS` | −23% (±5.7%) | −18% (±2.5%) | −18% (±0.3%) |
-| Journal `FULL` | −52% (±4.4%) | −31% (±1.9%) | −28% (±3.4%) |
+| r7 passthrough (requests per second) | 32,100 (±3.7%) | 43,600 (±5.1%) | 44,900 (±2.7%) |
+| r7 with three header filters | −11% (±8.7%) | −1% (±3.2%) | −5% (±3.8%) |
+| Journal `METADATA` | −4% (±4.5%) | −5% (±0.6%) | −14% (±0.6%) |
+| Journal `HEADERS` | −25% (±5.4%) | −21% (±5.9%) | −24% (±0.8%) |
+| Journal `FULL` | −54% (±2.5%) | −34% (±0.6%) | −34% (±0.6%) |
 
-The filters cost up to 7% and `METADATA` up to 6%, both within or close to the spread. `HEADERS`
-costs 18% to 23%. `FULL` costs 28% to 31% on the API requests and 52% on the browser page, which
-records 8 KB of HTML with every exchange.
+The filters cost up to 5% on the API requests and 11% on the browser page, within its spread of
+8.7%. `METADATA` costs 4% and 5% on the GETs and 14% on the POST. `HEADERS` costs 21% to 25%.
+`FULL` costs 34% on the API requests and 54% on the browser page, which records 8 KB of HTML with
+every exchange.
+
+### Against other gateways
+
+The same run puts two other gateways in r7's place: same port, same two cores, same 990 MB
+memory limit, same backend and workloads. One is nginx as a reverse proxy with upstream keep-alive
+and no access log. The other is [cloud-gateway](https://github.com/ethlo/cloud-gateway), Spring
+Cloud Gateway on WebFlux, with its own capture off, on the same collector as r7. Their
+configurations are in
+[`benchmark/peers/`](https://github.com/ethlo/r7/tree/main/benchmark/peers). Saturation in requests
+per second, each value with the spread of its three repeats:
+
+| Gateway | Browser page GET | API GET | API POST |
+| --- | --- | --- | --- |
+| nginx reverse proxy | 85,700 (±0.9%), the backend's limit | 60,300 (±8.9%), the backend's limit | 107,000 (±5.1%), the backend's limit |
+| r7 passthrough | 32,100 (±3.7%) | 43,600 (±5.1%) | 44,900 (±2.7%) |
+| cloud-gateway | 13,950 (±8.1%) | 18,600 (±7.0%) | 15,400 (±0.6%) |
+
+nginx proxies as fast as the backend answers on its one core (85,000, 62,900 and 101,300 req/s
+direct), so its own ceiling is higher than these figures. r7 sustains 2.3 to 2.9 times
+cloud-gateway's throughput on the same cores. At a fixed 20,000 req/s, milliseconds, p50 / p99 /
+p99.9:
+
+| Gateway | Browser page GET | API GET | API POST |
+| --- | --- | --- | --- |
+| nginx reverse proxy | 1.3 / 2.6 / 2.9 | 1.2 / 2.4 / 2.8 | 1.4 / 2.4 / 2.6 |
+| r7 passthrough | 3.1 / 7.8 / 17.5 | 2.1 / 4.4 / 5.6 | 2.0 / 4.3 / 5.4 |
+| cloud-gateway | above capacity | above capacity | above capacity |
+
+On the API requests r7 adds 1.9 and 2.0 ms at p99 over the nginx proxy. cloud-gateway saturates
+below 20,000 req/s on all three requests, so at that rate its latency is a queue of seconds rather
+than its latency at that load.
 
 ### Where the tail breaks away
 
@@ -103,13 +139,13 @@ measured, show how p99 grows with offered load. Milliseconds:
 
 | Journal off: offered (req/s) | p99 | Journal `FULL`: offered (req/s) | p99 |
 | --- | --- | --- | --- |
-| 18,900 | 3.0 | 13,000 | 3.3 |
-| 28,400 | 10.1 | 19,500 | 8.9 |
-| 34,000 | 33.0 | 23,400 | 165.3 |
-| 37,800 | 371.7 | 26,000 | 1,900 |
+| 21,800 | 2.9 | 14,300 | 3.0 |
+| 32,700 | 6.5 | 21,500 | 4.9 |
+| 39,300 | 55.8 | 25,800 | 72.4 |
+| 43,600 | 221.2 | 28,700 | 864 |
 
-With the journal off, p99 stays under 11 ms up to 28,400 req/s, reaches 33 ms at 34,000 and breaks away at 37,800. With `FULL`
-it stays under 9 ms to 19,500 req/s and breaks away by 23,400.
+With the journal off, p99 stays under 7 ms up to 32,700 req/s, reaches 56 ms at 39,300 and breaks
+away at 43,600. With `FULL` it stays under 5 ms to 21,500 req/s and breaks away by 25,800.
 
 ## Reproduce
 
