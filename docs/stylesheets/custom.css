@@ -221,3 +221,21 @@ body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] 
 /* Mobile drawer: the repo block and title bar are brand surfaces, so they stay ink, not the theme's indigo. */
 .md-nav__source,
 .md-nav--primary > .md-nav__title { background-color: var(--r7-ink); color: #e4e4e7; }
+
+/* Charts on the benchmarks page: inline SVG, so text and rules follow the page's scheme. */
+.r7-chart { width: 100%; max-width: 40rem; height: auto; display: block; margin: 1rem 0; }
+.r7-chart .grid { stroke: var(--md-default-fg-color--lightest); stroke-width: 1; }
+.r7-chart .axis { stroke: var(--md-default-fg-color--light); stroke-width: 1; }
+.r7-chart text { font-family: var(--r7-font); font-size: 12px; fill: var(--md-default-fg-color--light); }
+.r7-chart .direct { fill: var(--md-default-fg-color); }
+.r7-chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.r7-chart .dot { stroke: var(--md-default-bg-color); stroke-width: 2; }
+.r7-chart .off { stroke: #2a78d6; }
+.r7-chart circle.off { fill: #2a78d6; }
+.r7-chart .full { stroke: #eb6834; }
+.r7-chart circle.full { fill: #eb6834; }
+[data-md-color-scheme="slate"] .r7-chart .off { stroke: #3987e5; }
+[data-md-color-scheme="slate"] .r7-chart circle.off { fill: #3987e5; }
+[data-md-color-scheme="slate"] .r7-chart .full { stroke: #d95926; }
+[data-md-color-scheme="slate"] .r7-chart circle.full { fill: #d95926; }
+.r7-chart .dot.off, .r7-chart .dot.full { stroke: var(--md-default-bg-color); }
