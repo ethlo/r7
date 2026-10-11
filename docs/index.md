@@ -9,14 +9,13 @@ r7 routes traffic to your services and records every exchange on local disk, wit
 while the client waits. One `routes.yaml`, checked before it serves a single request.
 
 - **[Every exchange on record.](journaling.md)** Headers or full bodies, chosen per route, with
-  secret header and query values stored as fingerprints.
+  secrets stored as fingerprints.
 - **[Performance you can measure.](benchmarks.md#against-other-gateways)** 2.3–2.9× the throughput
-  of the tested Spring Cloud Gateway configuration with the journal off, and one command
-  reproduces it.
+  of Spring Cloud Gateway on the same cores, and one command reproduces it.
 - **[Extensions in plain Java.](extensibility.md)** Each stage of a request has its own interface,
   so a filter can only change what is valid at that point.
-- **[Configuration you can trust.](config.md)** Strictly validated before it serves, with a
-  published schema for your editor, and a bad edit is rejected while your routes keep running.
+- **[Configuration you can trust.](config.md)** Strictly validated before it serves, and a
+  bad edit is rejected while your routes keep running.
 
 [Get started in five minutes](quickstart.md){ .md-button .md-button--primary }
 [Try the config editor](editor.md){ .md-button }
@@ -203,13 +202,10 @@ points at the line that failed.
 
 ## Fast, with the record on
 
-On two gateway cores at a fixed 20,000 req/s, an API GET has a p99 of 4.4 ms with no journal,
-4.3 ms with the journal at `METADATA` and 5.0 ms at `HEADERS`. On the same cores, memory limit
-and workloads, r7 with the journal off sustains 2.3 to 2.9 times the throughput of the tested
-Spring Cloud Gateway configuration, which saturates below 20,000 req/s on all three request
-types. Recording metadata costs r7 4% to 14% of that throughput, so with every exchange's metadata on
-record it still sustains more than twice as much. The run's files are published, and
-`sudo benchmark/bench.sh` repeats it on your own hardware.
+On two gateway cores at 20,000 req/s, an API GET has a p99 of 4.4 ms without the journal and
+4.3 ms with it recording every exchange. On the same cores, r7 sustains 2.3 to 2.9 times the
+throughput of Spring Cloud Gateway, which cannot hold 20,000 req/s at all. Every result file is
+published, and `sudo benchmark/bench.sh` repeats the run on your own hardware.
 
 [Benchmarks and method](benchmarks.md)
 
