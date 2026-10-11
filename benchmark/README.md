@@ -26,9 +26,11 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
 1. **The published gateway.** By default it measures `ghcr.io/ethlo/r7-gateway:main`
    (`--image` picks another), resolved to its digest and recorded, so a later run can pull
    the same image even after the tag has moved. The image runs as shipped: its own JVM,
-   flags, with ZGC for the shortest pauses (`--gc default` leaves the collector to the JVM;
-   ZGC cannot use the AOT cache, which only costs startup), with host
-   networking and the memory limit in `docker-compose.bench.yaml`.
+   flags and AOT cache, and the collector the JVM picks for the gateway's cores and memory
+   (`--gc zgc` for ZGC), with host networking and the memory limit in
+   `docker-compose.bench.yaml`. The collector each JVM ran is read from the running process
+   and recorded as `gc_gateway` (and `gc_peer_cloud-gateway`) in `environment.txt`;
+   cloud-gateway is given r7's collector by name, and the verdict fails if the two differ.
 2. **A pinned toolchain.** wrk and wrk2 are built from pinned commits and the nginx backend
    image is pinned by digest, all in `benchmark/.cache/`; the host's own `wrk` is never used.
 3. **A tuned host.** SMT and turbo off, `performance` governor, the sysctls below, and

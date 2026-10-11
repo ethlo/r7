@@ -38,7 +38,7 @@ The full methodology is in [`benchmark/README.md`](https://github.com/ethlo/r7/b
 
 One run of `sudo benchmark/bench.sh` on a 12th Gen Intel Core i5-12500 (six performance cores,
 SMT and turbo off, `performance` governor, 62 GiB RAM, Linux 6.8.0-142). The gateway image was
-`ghcr.io/ethlo/r7-gateway@sha256:97f0d156cfa4a722cb9bb09386f636659014f267e7679691b79c1faeb4bc6aaf` (Temurin 27+35, the JVM's default collector),
+`ghcr.io/ethlo/r7-gateway@sha256:97f0d156cfa4a722cb9bb09386f636659014f267e7679691b79c1faeb4bc6aaf` (Temurin 27+35, G1, the JVM's default collector at two CPUs),
 wrk `a211dd5` and wrk2 `44a94c1`.
 
 The six cores are split four ways: nginx on one, **the gateway on two**, the load generator on two,

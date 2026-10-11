@@ -419,6 +419,31 @@ container_cpus() {
   [[ -n "$pid" && "$pid" != 0 ]] && effective_cpus "$pid"
   return 0
 }
+# The collector a running JVM chose, read from its thread names: with no collector flag the
+# JVM picks one from the CPUs and memory it sees, so the flags cannot say which one produced
+# a result, and the choice moves with the core layout, the memory limit and the JDK.
+# jvm_gc <pid>: G1, ZGC, Shenandoah, Parallel, Serial, or unknown when no JVM is found.
+jvm_gc() {
+  local -a pids=("$1")
+  local names="" i=0 p
+  # A launcher (cloud-gateway's buildpack) may run the JVM as a child rather than exec it.
+  while (( i < ${#pids[@]} )); do
+    p="${pids[i++]}"
+    names+="$(cat /proc/"$p"/task/*/comm 2>/dev/null || true)"$'\n'
+    pids+=($(cat /proc/"$p"/task/*/children 2>/dev/null || true))
+  done
+  case "$names" in
+    *$'\n'"G1 "*|"G1 "*)              echo G1 ;;
+    *$'\n'ZDirector*|ZDirector*)       echo ZGC ;;
+    *$'\n'Shenandoah*|Shenandoah*)     echo Shenandoah ;;
+    *$'\n'"GC Thread#"*|"GC Thread#"*) echo Parallel ;;
+    *$'\n'"VM Thread"*|"VM Thread"*)   echo Serial ;;
+    *)                                  echo unknown ;;
+  esac
+}
+container_pid() {
+  docker inspect -f '{{.State.Pid}}' "$1" 2>/dev/null || true
+}
 GW_CPUS_RECORDED=0
 
 start_backend() {
@@ -505,9 +530,11 @@ start_gateway() {
   wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "gateway" 120
   ok "gateway ready (journal=$level)"
   if (( ! GW_CPUS_RECORDED )); then
-    local cpus
-    if [[ -n "$GW_PID" ]]; then cpus="$(effective_cpus "$GW_PID")"; else cpus="$(container_cpus r7-bench-gateway)"; fi
+    local cpus pid
+    if [[ -n "$GW_PID" ]]; then pid="$GW_PID"; else pid="$(container_pid r7-bench-gateway)"; fi
+    cpus="$(effective_cpus "$pid")"
     echo "effective_cpus_gateway=${cpus:-unknown}" >> "$OUT/environment.txt"
+    echo "gc_gateway=$(jvm_gc "$pid")" >> "$OUT/environment.txt"
     GW_CPUS_RECORDED=1
   fi
 }
@@ -546,9 +573,15 @@ start_peer() {
       # The image's memory calculator leaves Netty 10 MB of direct memory, which runs out at
       # 200 connections (OutOfDirectMemoryError). 200 MB is what cloud-gateway's own
       # docker-compose.yml sets.
-      # The same collector as r7, so the comparison is between the gateways, not their GC.
-      local gc=""
-      [[ " $JVM_OPTS " == *" -XX:+UseZGC "* ]] && gc=" -XX:+UseZGC"
+      # The collector r7 ran with (passthrough always runs first), so the comparison is
+      # between the gateways, not their GC. Named outright: cloud-gateway is on JDK 25, whose
+      # ergonomics pick Serial below 1792 MB where r7's JDK 27 picks G1.
+      local gc
+      case "$(sed -n 's/^gc_gateway=//p' "$OUT/environment.txt" | head -n1)" in
+        G1) gc=" -XX:+UseG1GC" ;; ZGC) gc=" -XX:+UseZGC" ;; Shenandoah) gc=" -XX:+UseShenandoahGC" ;;
+        Parallel) gc=" -XX:+UseParallelGC" ;; Serial) gc=" -XX:+UseSerialGC" ;;
+        *) die "r7's collector is not recorded (gc_gateway in environment.txt); the peer cannot match it" ;;
+      esac
       args+=(-v "$conf:/config:ro" -e SPRING_CONFIG_LOCATION=/config/application.yaml
              -e "JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=200M$gc")
       ;;
@@ -559,6 +592,9 @@ start_peer() {
   PEER_CID="$(docker run -d --rm "${args[@]}" "$image")" || die "could not start peer $peer"
   wait_for "http://127.0.0.1:$GW_PORT/bench/__bench_health" "peer $peer" 120
   ok "peer ready ($peer)"
+  if [[ "$peer" == cloud-gateway ]] && ! grep -q "^gc_peer_$peer=" "$OUT/environment.txt"; then
+    echo "gc_peer_$peer=$(jvm_gc "$(container_pid "$PEER_CID")")" >> "$OUT/environment.txt"
+  fi
 }
 
 stop_gateway() {
