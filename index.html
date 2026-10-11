@@ -479,6 +479,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#batteries-included" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Batteries included
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#extensions-in-plain-java" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -491,6 +502,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fast-with-the-record-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Fast, with the record on
+      </span>
+    </span>
+  </a>
   
 </li>
       
@@ -968,12 +990,18 @@
 
 
 <h1 class="r7-hero" id="r7-the-gateway-that-remembers-every-request">r7: the gateway that remembers every request</h1>
-<p>When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
-services and records every exchange, with its headers or its full bodies, to local disk, with
-secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
-you already run. There is no capture system to run beside the gateway, and no network call while
-the client waits.</p>
-<p>One <code>routes.yaml</code>, checked before it serves a single request.</p>
+<p>r7 routes traffic to your services and records every exchange on local disk, with no network call
+while the client waits. One <code>routes.yaml</code>, checked before it serves a single request.</p>
+<ul>
+<li><strong><a href="journaling/">Every exchange on record.</a></strong> Headers or full bodies, chosen per route, with
+  secrets stored as fingerprints.</li>
+<li><strong><a href="benchmarks/#against-other-gateways">Performance you can measure.</a></strong> 2.3–2.9× the throughput
+  of Spring Cloud Gateway on the same cores, and one command reproduces it.</li>
+<li><strong><a href="extensibility/">Extensions in plain Java.</a></strong> Each stage of a request has its own interface,
+  so a filter can only change what is valid at that point.</li>
+<li><strong><a href="config/">Configuration you can trust.</a></strong> Strictly validated before it serves, and a
+  bad edit is rejected while your routes keep running.</li>
+</ul>
 <p><a class="md-button md-button--primary" href="quickstart/">Get started in five minutes</a>
 <a class="md-button" href="editor/">Try the config editor</a></p>
 <hr />
@@ -1048,6 +1076,20 @@ prefix and regex matches. Each filter does one job and runs in the order it is l
 <p>r7 also refuses requests that the gateway and your service would read differently, such as
 <code>/public/../admin</code> or an encoded slash, so a route that protects a path really does protect it.</p>
 <p><a href="config/">Configuration reference</a></p>
+<h3 id="batteries-included">Batteries included</h3>
+<p>Most routes need no code. r7 ships with 33 filters and 15 predicates, configured in YAML and
+validated at startup like everything else:</p>
+<ul>
+<li><strong>Matching:</strong> path, prefix and regex paths, host, method, client address, headers, query
+  parameters and cookies, combined with <code>and</code>, <code>or</code> and <code>not</code>.</li>
+<li><strong>Rewriting:</strong> add, set and remove headers, cookies and query parameters; strip a prefix,
+  rewrite a path, redirect, add a correlation id.</li>
+<li><strong>Guarding:</strong> required headers, parameters and cookies, basic auth, CORS and request size
+  limits.</li>
+<li><strong>Traffic:</strong> rate limiting, circuit breaking and upstream fallback.</li>
+<li><strong>Answering directly:</strong> a fixed response or static content, without calling an upstream.</li>
+</ul>
+<p><a href="config/#5-predicates">Every filter and predicate</a></p>
 <h3 id="extensions-in-plain-java">Extensions in plain Java</h3>
 <p>When the built-in filters are not enough, you write a filter as a Java class and drop the jar
 on the classpath. Each stage of a request has its own interface, and each hands the filter only
@@ -1083,6 +1125,39 @@ what it may change at that point:</p>
 </tr>
 </tbody>
 </table>
+<p>A filter that drops a query parameter before the request goes upstream is a settings record and
+one method:</p>
+<div class="language-java highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// The settings, validated when the routes load</span>
+</span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kd">public</span><span class="w"> </span><span class="kd">record</span> <span class="nc">Config</span><span class="p">(</span><span class="nd">@Description</span><span class="p">(</span><span class="s">"The name of the query parameter to remove."</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">)</span>
+</span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">        </span><span class="kd">implements</span><span class="w"> </span><span class="n">ValidatableConfig</span>
+</span><span id="True-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">{</span>
+</span><span id="True-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nd">@Override</span>
+</span><span id="True-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">validate</span><span class="p">(</span><span class="kd">final</span><span class="w"> </span><span class="n">ValidationResult</span><span class="w"> </span><span class="n">result</span><span class="p">)</span>
+</span><span id="True-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="True-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">ValidatorUtils</span><span class="p">(</span><span class="n">result</span><span class="p">).</span><span class="na">required</span><span class="p">(</span><span class="s">"name"</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">);</span>
+</span><span id="True-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">}</span>
+</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="c1">// The filter, created from those settings</span>
+</span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="kd">final</span><span class="w"> </span><span class="kd">class</span> <span class="nc">RemoveQueryParameter</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">UpstreamRequestGatewayFilter</span>
+</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="p">{</span>
+</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">paramName</span><span class="p">;</span>
+</span><span id="True-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+</span><span id="True-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">    </span><span class="n">RemoveQueryParameter</span><span class="p">(</span><span class="kd">final</span><span class="w"> </span><span class="n">Config</span><span class="w"> </span><span class="n">config</span><span class="p">)</span>
+</span><span id="True-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="True-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">paramName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">config</span><span class="p">.</span><span class="na">name</span><span class="p">();</span>
+</span><span id="True-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="True-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>
+</span><span id="True-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">    </span><span class="nd">@Override</span>
+</span><span id="True-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onUpstreamRequest</span><span class="p">(</span><span class="kd">final</span><span class="w"> </span><span class="n">UpstreamRequestGatewayExchange</span><span class="w"> </span><span class="n">exchange</span><span class="p">)</span>
+</span><span id="True-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="True-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">        </span><span class="n">exchange</span><span class="p">.</span><span class="na">upstreamRequest</span><span class="p">().</span><span class="na">queryParams</span><span class="p">().</span><span class="na">remove</span><span class="p">(</span><span class="n">paramName</span><span class="p">);</span>
+</span><span id="True-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="True-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>The factory that names the filter and creates it from its settings, and its <code>@AutoService</code>
+registration, are in
+<a href="https://github.com/ethlo/r7/blob/main/r7-core/src/main/java/com/ethlo/r7/filters/RemoveQueryParameterFactory.java"><code>RemoveQueryParameterFactory</code></a>.</p>
 <p>The compiler enforces this: no filter can change the request as the client sent it, so the
 journal's record of it is what arrived. A filter's settings are a Java record that validates
 itself, so a mistake in a plugin's YAML is reported at startup like one in a built-in filter.</p>
@@ -1091,6 +1166,13 @@ included. There is no reactive chain, no callbacks and no handoff to a worker po
 is straight-line code: it can call a database or another service directly, and a stack trace
 points at the line that failed.</p>
 <p><a href="extensibility/">Write a filter or predicate</a></p>
+<hr />
+<h2 id="fast-with-the-record-on">Fast, with the record on</h2>
+<p>On two gateway cores at 20,000 req/s, an API GET has a p99 of 4.4 ms without the journal and
+4.3 ms with it recording every exchange. On the same cores, r7 sustains 2.3 to 2.9 times the
+throughput of Spring Cloud Gateway, which cannot hold 20,000 req/s at all. Every result file is
+published, and <code>sudo benchmark/bench.sh</code> repeats the run on your own hardware.</p>
+<p><a href="benchmarks/">Benchmarks and method</a></p>
 <hr />
 <h2 id="choose-r7-when">Choose r7 when</h2>
 <ul>
