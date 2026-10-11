@@ -1,0 +1,85 @@
+**NOT PUBLISHABLE**
+- 4 non-sweep wrk2 run(s) delivered under 95% of their target rate
+- backend headroom under 10% for api-get: baseline 62856 req/s, gateway up to 60333
+- backend headroom under 10% for api-post: baseline 101289 req/s, gateway up to 107024
+- backend headroom under 10% for browser: baseline 85038 req/s, gateway up to 85711
+
+| scenario           | workload | tool | journal  | n | req/s  | ±    | vs base | vs r7   | p50      | p99      | p99.9     | max      | bad |
+|--------------------|----------|------|----------|---|--------|------|---------|---------|----------|----------|-----------|----------|-----|
+| baseline           | api-get  | wrk  | -        | 1 | 62856  | -    | -       | -       | 3.190    | 3.310    | -         | 3.66     | ok  |
+| baseline           | api-get  | wrk2 | -        | 1 | 19836  | -    | -       | -       | 1.040    | 2.070    | 2.440     | 3.17     | ok  |
+| baseline           | api-post | wrk  | -        | 1 | 101289 | -    | -       | -       | 1.970    | 2.010    | -         | 2.35     | ok  |
+| baseline           | api-post | wrk2 | -        | 1 | 19584  | -    | -       | -       | 1.070    | 2.330    | 2.570     | 2.98     | ok  |
+| baseline           | browser  | wrk  | -        | 1 | 85038  | -    | -       | -       | 2.350    | 2.390    | -         | 2.76     | ok  |
+| baseline           | browser  | wrk2 | -        | 1 | 19837  | -    | -       | -       | 0.970    | 2.210    | 2.550     | 2.95     | ok  |
+| filtered           | api-get  | wrk  | NONE     | 3 | 43120  | 3.2% | -31.4%  | -1.2%   | 4.640    | 7.520    | -         | 13.74    | ok  |
+| filtered           | api-get  | wrk2 | NONE     | 1 | 19836  | -    | +0.0%   | +0.0%   | 1.980    | 4.130    | 5.070     | 6.24     | ok  |
+| filtered           | api-post | wrk  | NONE     | 3 | 42902  | 3.8% | -57.6%  | -4.5%   | 4.720    | 7.660    | -         | 13.63    | ok  |
+| filtered           | api-post | wrk2 | NONE     | 1 | 19836  | -    | +1.3%   | -0.0%   | 2.040    | 4.480    | 5.530     | 6.90     | ok  |
+| filtered           | browser  | wrk  | NONE     | 3 | 28659  | 8.7% | -66.3%  | -10.7%  | 7.110    | 11.940   | -         | 49.00    | ok  |
+| filtered           | browser  | wrk2 | NONE     | 1 | 19584  | -    | -1.3%   | -1.3%   | 2.570    | 6.640    | 8.680     | 10.84    | ok  |
+| journal            | api-get  | wrk  | FULL     | 3 | 28697  | 0.6% | -54.3%  | -34.2%  | 6.330    | 49.580   | -         | 109.21   | ok  |
+| journal            | api-get  | wrk2 | FULL     | 1 | 19836  | -    | -0.0%   | -0.0%   | 2.630    | 5.840    | 9.270     | 14.66    | ok  |
+| journal            | api-post | wrk  | FULL     | 3 | 29800  | 0.6% | -70.6%  | -33.6%  | 5.970    | 42.550   | -         | 102.87   | ok  |
+| journal            | api-post | wrk2 | FULL     | 1 | 19837  | -    | +1.3%   | +0.0%   | 2.630    | 5.890    | 17.020    | 29.92    | ok  |
+| journal            | browser  | wrk  | FULL     | 3 | 14925  | 2.5% | -82.4%  | -53.5%  | 14.700   | 118.430  | -         | 301.10   | ok  |
+| journal            | browser  | wrk2 | FULL     | 1 | 15119  | -    | -23.8%  | -23.8%  | 4600.000 | 8440.000 | 9550.000  | 10010.00 | ok  |
+| journal            | api-get  | wrk  | HEADERS  | 3 | 34523  | 5.9% | -45.1%  | -20.9%  | 5.180    | 60.520   | -         | 174.65   | ok  |
+| journal            | api-get  | wrk2 | HEADERS  | 1 | 19836  | -    | +0.0%   | -0.0%   | 2.070    | 5.040    | 13.490    | 21.89    | ok  |
+| journal            | api-post | wrk  | HEADERS  | 3 | 34162  | 0.8% | -66.3%  | -23.9%  | 5.240    | 42.480   | -         | 141.67   | ok  |
+| journal            | api-post | wrk2 | HEADERS  | 1 | 19836  | -    | +1.3%   | -0.0%   | 2.170    | 4.760    | 7.610     | 17.73    | ok  |
+| journal            | browser  | wrk  | HEADERS  | 3 | 23962  | 5.4% | -71.8%  | -25.3%  | 7.680    | 80.190   | -         | 176.22   | ok  |
+| journal            | browser  | wrk2 | HEADERS  | 1 | 19836  | -    | -0.0%   | +0.0%   | 3.390    | 8.240    | 17.010    | 31.31    | ok  |
+| journal            | api-get  | wrk  | METADATA | 3 | 41260  | 0.6% | -34.4%  | -5.4%   | 4.840    | 24.600   | -         | 72.12    | ok  |
+| journal            | api-get  | wrk2 | METADATA | 1 | 19836  | -    | +0.0%   | -0.0%   | 2.050    | 4.340    | 5.660     | 7.48     | ok  |
+| journal            | api-post | wrk  | METADATA | 3 | 38448  | 0.6% | -62.0%  | -14.4%  | 5.260    | 28.380   | -         | 95.47    | ok  |
+| journal            | api-post | wrk2 | METADATA | 1 | 19836  | -    | +1.3%   | +0.0%   | 2.060    | 4.350    | 5.660     | 7.68     | ok  |
+| journal            | browser  | wrk  | METADATA | 3 | 30841  | 4.5% | -63.7%  | -3.9%   | 5.620    | 113.580  | -         | 287.48   | ok  |
+| journal            | browser  | wrk2 | METADATA | 1 | 19836  | -    | -0.0%   | +0.0%   | 2.550    | 5.450    | 10.300    | 23.49    | ok  |
+| passthrough        | api-get  | wrk  | NONE     | 3 | 43636  | 5.1% | -30.6%  | -       | 4.470    | 7.520    | -         | 15.49    | ok  |
+| passthrough        | api-get  | wrk2 | NONE     | 1 | 19836  | -    | +0.0%   | -       | 2.070    | 4.410    | 5.590     | 9.24     | ok  |
+| passthrough        | api-post | wrk  | NONE     | 3 | 44909  | 2.7% | -55.7%  | -       | 4.540    | 7.490    | -         | 13.94    | ok  |
+| passthrough        | api-post | wrk2 | NONE     | 1 | 19836  | -    | +1.3%   | -       | 2.000    | 4.340    | 5.430     | 7.96     | ok  |
+| passthrough        | browser  | wrk  | NONE     | 3 | 32088  | 3.7% | -62.3%  | -       | 6.970    | 12.100   | -         | 28.04    | ok  |
+| passthrough        | browser  | wrk2 | NONE     | 1 | 19836  | -    | -0.0%   | -       | 3.100    | 7.800    | 17.470    | 27.78    | ok  |
+| peer-cloud-gateway | api-get  | wrk  | -        | 3 | 18583  | 7.0% | -70.4%  | -57.4%  | 10.690   | 23.210   | -         | 45.24    | ok  |
+| peer-cloud-gateway | api-get  | wrk2 | -        | 1 | 17507  | -    | -11.7%  | -11.7%  | 2130.000 | 5540.000 | 5810.000  | 5970.00  | ok  |
+| peer-cloud-gateway | api-post | wrk  | -        | 3 | 15358  | 0.6% | -84.8%  | -65.8%  | 12.440   | 27.130   | -         | 49.25    | ok  |
+| peer-cloud-gateway | api-post | wrk2 | -        | 1 | 15412  | -    | -21.3%  | -22.3%  | 4040.000 | 8420.000 | 8720.000  | 8860.00  | ok  |
+| peer-cloud-gateway | browser  | wrk  | -        | 3 | 13950  | 8.1% | -83.6%  | -56.5%  | 12.830   | 29.700   | -         | 94.47    | ok  |
+| peer-cloud-gateway | browser  | wrk2 | -        | 1 | 14387  | -    | -27.5%  | -27.5%  | 5120.000 | 9760.000 | 10130.000 | 10360.00 | ok  |
+| peer-nginx         | api-get  | wrk  | -        | 3 | 60333  | 8.9% | -4.0%   | +38.3%  | 3.310    | 3.570    | -         | 5.97     | ok  |
+| peer-nginx         | api-get  | wrk2 | -        | 1 | 19836  | -    | +0.0%   | -0.0%   | 1.150    | 2.430    | 2.810     | 3.29     | ok  |
+| peer-nginx         | api-post | wrk  | -        | 3 | 107024 | 5.1% | +5.7%   | +138.3% | 1.870    | 1.970    | -         | 4.07     | ok  |
+| peer-nginx         | api-post | wrk2 | -        | 1 | 19836  | -    | +1.3%   | +0.0%   | 1.390    | 2.410    | 2.640     | 3.13     | ok  |
+| peer-nginx         | browser  | wrk  | -        | 3 | 85711  | 0.9% | +0.8%   | +167.1% | 2.330    | 2.510    | -         | 4.66     | ok  |
+| peer-nginx         | browser  | wrk2 | -        | 1 | 19836  | -    | -0.0%   | +0.0%   | 1.250    | 2.550    | 2.860     | 3.25     | ok  |
+
+### Rate sweep (wrk2)
+
+| journal | workload | rate  | n | req/s | p50     | p99     | p99.9    | max     | bad |
+|---------|----------|-------|---|-------|---------|---------|----------|---------|-----|
+| FULL    | api-get  | 14300 | 1 | 14184 | 1.260   | 3.030   | 4.810    | 9.42    | ok  |
+| FULL    | api-get  | 21500 | 1 | 21324 | 1.500   | 4.930   | 11.380   | 20.06   | ok  |
+| FULL    | api-get  | 25800 | 1 | 25588 | 1.900   | 72.380  | 135.550  | 227.33  | ok  |
+| FULL    | api-get  | 28700 | 1 | 28113 | 157.700 | 863.740 | 1220.000 | 1360.00 | ok  |
+| NONE    | api-get  | 21800 | 1 | 21622 | 1.280   | 2.940   | 4.590    | 9.05    | ok  |
+| NONE    | api-get  | 32700 | 1 | 32430 | 1.650   | 6.530   | 20.960   | 32.54   | ok  |
+| NONE    | api-get  | 39300 | 1 | 38974 | 2.210   | 55.780  | 68.030   | 86.78   | ok  |
+| NONE    | api-get  | 43600 | 1 | 43212 | 65.310  | 221.180 | 250.620  | 276.48  | ok  |
+
+Latencies in milliseconds, medians across `n` repeats. `±` is the
+peak-to-peak spread of throughput as a percentage of the median: your
+noise floor. A difference smaller than `±` is not a finding.
+
+`vs base` is throughput against the no-gateway baseline. It is inflated
+whenever the load generator shares a host with the gateway, so treat it
+as an upper bound on cost, not a measurement.
+
+`vs r7` is throughput against the `passthrough` run - same topology, same
+co-location, so the co-location noise cancels. **This is the number to
+quote for filter and journal cost.**
+
+wrk2 rows are rate-limited and correct for coordinated omission, so their
+latency figures are the ones to quote. wrk rows show saturation
+throughput; their latency figures understate the tail.
