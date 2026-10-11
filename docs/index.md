@@ -5,13 +5,17 @@ hide:
 
 # r7: the gateway that remembers every request { .r7-hero }
 
-When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
-services and records every exchange, with its headers or its full bodies, to local disk, with
-secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
-you already run. There is no capture system to run beside the gateway, and no network call while
-the client waits.
+r7 routes traffic to your services and records every exchange on local disk, with no network call
+while the client waits. One `routes.yaml`, checked before it serves a single request.
 
-One `routes.yaml`, checked before it serves a single request.
+- **[Every exchange on record.](journaling.md)** Headers or full bodies, chosen per route, with
+  secrets stored as fingerprints.
+- **[Performance you can measure.](benchmarks.md#against-other-gateways)** 2.3–2.9× the throughput
+  of Spring Cloud Gateway on the same cores, and one command reproduces it.
+- **[Extensions in plain Java.](extensibility.md)** Each stage of a request has its own interface,
+  so a filter can only change what is valid at that point.
+- **[Configuration you can trust.](config.md)** Strictly validated before it serves, and a
+  bad edit is rejected while your routes keep running.
 
 [Get started in five minutes](quickstart.md){ .md-button .md-button--primary }
 [Try the config editor](editor.md){ .md-button }
@@ -117,6 +121,22 @@ r7 also refuses requests that the gateway and your service would read differentl
 
 [Configuration reference](config.md)
 
+### Batteries included
+
+Most routes need no code. r7 ships with 33 filters and 15 predicates, configured in YAML and
+validated at startup like everything else:
+
+- **Matching:** path, prefix and regex paths, host, method, client address, headers, query
+  parameters and cookies, combined with `and`, `or` and `not`.
+- **Rewriting:** add, set and remove headers, cookies and query parameters; strip a prefix,
+  rewrite a path, redirect, add a correlation id.
+- **Guarding:** required headers, parameters and cookies, basic auth, CORS and request size
+  limits.
+- **Traffic:** rate limiting, circuit breaking and upstream fallback.
+- **Answering directly:** a fixed response or static content, without calling an upstream.
+
+[Every filter and predicate](config.md#5-predicates)
+
 ### Extensions in plain Java
 
 When the built-in filters are not enough, you write a filter as a Java class and drop the jar
@@ -130,6 +150,43 @@ what it may change at that point:
 | Client response | the client's request, the upstream request and response | the status and headers the client gets |
 | Completed | the whole exchange, once the response has been sent | nothing that was sent |
 
+A filter that drops a query parameter before the request goes upstream is a settings record and
+one method:
+
+```java
+// The settings, validated when the routes load
+public record Config(@Description("The name of the query parameter to remove.") String name)
+        implements ValidatableConfig
+{
+    @Override
+    public void validate(final ValidationResult result)
+    {
+        new ValidatorUtils(result).required("name", name);
+    }
+}
+
+// The filter, created from those settings
+final class RemoveQueryParameter implements UpstreamRequestGatewayFilter
+{
+    private final String paramName;
+
+    RemoveQueryParameter(final Config config)
+    {
+        this.paramName = config.name();
+    }
+
+    @Override
+    public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
+    {
+        exchange.upstreamRequest().queryParams().remove(paramName);
+    }
+}
+```
+
+The factory that names the filter and creates it from its settings, and its `@AutoService`
+registration, are in
+[`RemoveQueryParameterFactory`](https://github.com/ethlo/r7/blob/main/r7-core/src/main/java/com/ethlo/r7/filters/RemoveQueryParameterFactory.java).
+
 The compiler enforces this: no filter can change the request as the client sent it, so the
 journal's record of it is what arrived. A filter's settings are a Java record that validates
 itself, so a mistake in a plugin's YAML is reported at startup like one in a built-in filter.
@@ -140,6 +197,17 @@ is straight-line code: it can call a database or another service directly, and a
 points at the line that failed.
 
 [Write a filter or predicate](extensibility.md)
+
+---
+
+## Fast, with the record on
+
+On two gateway cores at 20,000 req/s, an API GET has a p99 of 4.4 ms without the journal and
+4.3 ms with it recording every exchange. On the same cores, r7 sustains 2.3 to 2.9 times the
+throughput of Spring Cloud Gateway, which cannot hold 20,000 req/s at all. Every result file is
+published, and `sudo benchmark/bench.sh` repeats the run on your own hardware.
+
+[Benchmarks and method](benchmarks.md)
 
 ---
 
