@@ -138,7 +138,7 @@ class JournalCompressionTest
     {
         final CollectingSink sink = new CollectingSink();
         final R7Tailer tailer = new R7Tailer(journalDir, sink, sink, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
-        try (R7fJournal journal = journal(journalDir, 1))
+        try (R7fJournal journal = R7fJournalTestAccess.holdBatchesUntilFull(journal(journalDir, 1)))
         {
             exchange(journal, "x-0", body(0));
             journal.flush();
