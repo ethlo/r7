@@ -1,0 +1,11 @@
+The current verdict (benchmark/lib/parse.py at ethlo/r7 main after #221), run on the
+benchmark host over this run's unchanged result files on 2026-10-11:
+
+$ python3 benchmark/lib/parse.py verdict benchmark/results/20261011-093954
+$
+
+No output: the verdict finds no problem with the run. The checks bench.sh adds itself
+(image digest, clean tree, tuning) passed when the run was made, as REPORT.txt shows:
+its only reasons are the four it lists, which the current verdict marks in the report's
+`bad` column instead (`backend` for the nginx peer's saturation rows, `capacity` for
+the wrk2 runs of cloud-gateway and of the browser page with FULL).

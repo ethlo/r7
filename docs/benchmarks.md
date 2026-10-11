@@ -46,10 +46,13 @@ SMT and turbo off, `performance` governor, 62 GiB RAM, Linux 6.8.0-142). The gat
 and wrk2 `44a94c1`. The run's [report](assets/benchmarks/20261011-093954/REPORT.txt),
 [`environment.txt`](assets/benchmarks/20261011-093954/environment.txt) (with the collector each JVM
 ran, `gc_gateway` and `gc_peer_cloud-gateway`) and
-[`host.txt`](assets/benchmarks/20261011-093954/host.txt) are published as they came out of it. The
-report's NOT PUBLISHABLE reasons all come from rows the current verdict marks instead: the nginx
-peer at the backend's limit, and the wrk2 runs of cloud-gateway and of the browser page with
-`FULL`, whose configurations saturate below 20,000 req/s.
+[`host.txt`](assets/benchmarks/20261011-093954/host.txt) are published as they came out of it.
+The report was written by the verdict before [#221](https://github.com/ethlo/r7/pull/221) and says NOT PUBLISHABLE. Every reason
+it lists is a row the current verdict marks instead of failing: the nginx peer at the backend's
+limit, and the wrk2 runs of cloud-gateway and of the browser page with `FULL`, whose
+configurations saturate below 20,000 req/s. The
+[current verdict over the same result files](assets/benchmarks/20261011-093954/verdict-current.txt)
+finds no problem.
 
 The six cores are split four ways: nginx on one, **the gateway on two**, the load generator on two,
 the OS on one. Everything the gateway does, including the journal, shares those two cores. The
