@@ -71,10 +71,11 @@ p99.9.
 | Journal `FULL` | above capacity | 3.4 / 9.7 / 15.6 | 3.3 / 10.6 / 30.9 |
 
 On the API requests r7 adds 2.7 to 3.6 ms at p99 over nginx, and the header filters, `METADATA` and
-`HEADERS` stay within a millisecond of passthrough. `FULL` records every body and adds 3 to 6 ms at
-p99. The browser page returns 8 KB per request and runs closer to capacity at this rate, so its
-tail is longer: its passthrough and filtered rows differ by more than any cost a filter adds, which
-is the run to run noise of a single wrk2 run near the knee.
+`HEADERS` stay within 1.1 ms of passthrough at p99. `FULL` records every body and adds 3.4 and
+5.6 ms at p99. The browser page returns 8 KB per request and runs at 71% of capacity at this rate,
+so its tail is longer. Its passthrough p99 of 10.8 ms is above the filtered run's 7.1 ms: there, the
+difference between two single wrk2 runs is larger than what the filters cost, so read its rows as a
+range rather than a ranking.
 
 ### Saturation throughput
 
