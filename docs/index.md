@@ -9,7 +9,7 @@ r7 routes traffic to your services and records every exchange on local disk, wit
 while the client waits. One `routes.yaml`, checked before it serves a single request.
 
 - **[Every exchange on record.](journaling.md)** Headers or full bodies, chosen per route, with
-  secret values stored as fingerprints.
+  secret header and query values stored as fingerprints.
 - **[Performance you can measure.](benchmarks.md#against-other-gateways)** 2.3–2.9× the throughput
   of the tested Spring Cloud Gateway configuration with the journal off, and one command
   reproduces it.
