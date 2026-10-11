@@ -2,7 +2,7 @@
 #
 # One command for a benchmark run that can be repeated and quoted.
 #
-#   sudo benchmark/bench.sh             # run of the published image on a tuned host (~30 min)
+#   sudo benchmark/bench.sh             # run of the published image on a tuned host (~50 min)
 #   sudo benchmark/bench.sh --quick     # same pipeline with short runs, as a sanity check
 #   sudo benchmark/bench.sh --local     # build and measure this checkout instead
 #   benchmark/bench.sh --check          # no changes: show the core layout and host state
@@ -416,7 +416,7 @@ give_back_results
 
 # Nothing inherited may change what is measured: r7 prefers these over the generated config,
 # the JVM reads the option variables, and run.sh and the compose file read the R7_BENCH_
-# ones. A backend image override is allowed, and gated in the verdict.
+# ones. Backend and peer image overrides are allowed, and gated in the verdict.
 unset R7_ROUTES_CONFIG R7_SERVER_CONFIG R7_LOGBACK_CONFIG R7_ARGS R7_MANAGEMENT_HOST \
   JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS BENCH_BODY_BYTES \
   R7_BENCH_IMAGE R7_BENCH_MEM R7_BENCH_MEM_RESERVE R7_BENCH_JVM_OPTS R7_POLLER_MODE
@@ -600,6 +600,9 @@ REASONS=()
 (( ${NO_DIGEST:-0} )) && REASONS+=("$IMAGE has no registry digest (a local image, or none matched the reference), so nobody else can pull the same one")
 [[ -n "${R7_BENCH_BACKEND_IMAGE:-}" && "$R7_BENCH_BACKEND_IMAGE" != *@sha256:* ]] \
   && REASONS+=("R7_BENCH_BACKEND_IMAGE is not pinned by digest")
+for v in R7_BENCH_PEER_NGINX_IMAGE R7_BENCH_PEER_CLOUD_GATEWAY_IMAGE; do
+  [[ -n "${!v:-}" && "${!v}" != *@sha256:* ]] && REASONS+=("$v is not pinned by digest")
+done
 [[ -n "$DIRTY" ]] && REASONS+=("uncommitted changes in the working tree")
 # Checked again: an edit or a commit during the run would change what later runs measured.
 [[ -z "$DIRTY" && -n "$(git -C "$REPO" status --porcelain --untracked-files=normal)" ]] \
