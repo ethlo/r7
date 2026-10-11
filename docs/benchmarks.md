@@ -43,7 +43,13 @@ One run of `sudo benchmark/bench.sh` on a 12th Gen Intel Core i5-12500 (six perf
 SMT and turbo off, `performance` governor, 62 GiB RAM, Linux 6.8.0-142). The gateway image was
 `ghcr.io/ethlo/r7-gateway@sha256:292e25edcc827cda7cfc1fce81cc2e86935539e21078794835159524d67e1a19`
 (Temurin 27+35, G1, the JVM's default collector at two CPUs), from r7 `2d06d07`, with wrk `a211dd5`
-and wrk2 `44a94c1`.
+and wrk2 `44a94c1`. The run's [report](assets/benchmarks/20261011-093954/REPORT.txt),
+[`environment.txt`](assets/benchmarks/20261011-093954/environment.txt) (with the collector each JVM
+ran, `gc_gateway` and `gc_peer_cloud-gateway`) and
+[`host.txt`](assets/benchmarks/20261011-093954/host.txt) are published as they came out of it. The
+report's NOT PUBLISHABLE reasons all come from rows the current verdict marks instead: the nginx
+peer at the backend's limit, and the wrk2 runs of cloud-gateway and of the browser page with
+`FULL`, whose configurations saturate below 20,000 req/s.
 
 The six cores are split four ways: nginx on one, **the gateway on two**, the load generator on two,
 the OS on one. Everything the gateway does, including the journal, shares those two cores. The

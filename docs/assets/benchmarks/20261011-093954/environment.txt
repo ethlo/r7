@@ -1,0 +1,36 @@
+mode=docker
+threads=2 connections=200 duration=15s latency_duration=30s
+warmup=30s rewarm=15s
+rate=20000 repeat=3 latency_repeat=1 restart_per_repeat=0
+scenarios=baseline,passthrough,filtered,journal,peers,sweep workloads=browser,api-get,api-post tools=wrk,wrk2
+sweep_rates=auto sweep_percent=50,75,90,100 sweep_levels=NONE,FULL sweep_workloads=api-get
+journal_levels=METADATA,HEADERS,FULL
+host=Linux 6.8.0-142-generic x86_64 cpus=6
+image=ghcr.io/ethlo/r7-gateway@sha256:292e25edcc827cda7cfc1fce81cc2e86935539e21078794835159524d67e1a19 user=65532:65532
+wrk=wrk a211dd5 [epoll] Copyright (C) 2012 Will Glozer
+n/a
+wrk2=wrk 4.0.0 [epoll] Copyright (C) 2012 Will Glozer
+n/a
+jar=
+jvm_opts=
+r7_poller_mode=default
+backend_image=nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
+peers=nginx,cloud-gateway peer_nginx_image=nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2 peer_cloud_gateway_image=ethlocom/cloud-gateway:1.7.9@sha256:87a2e2d3f4895aba73d4fd80301dce6ea12aab9a3b369e69c10a776a8907b9e7
+ports=gateway:8889 management:18889 backend:11111
+pinning=systemd backend_cpus=2 gateway_cpus=8,10 load_cpus=4,6
+git=2d06d07
+date=2026-10-11T09:39:54+00:00
+effective_cpus_backend=2
+effective_cpus_load=4,6
+effective_cpus_gateway=8,10
+gc_gateway=G1
+journal_bytes_passthrough_NONE=24576
+journal_bytes_filtered_NONE=24576
+journal_bytes_journal_METADATA=578854912
+journal_bytes_journal_HEADERS=1258340352
+journal_bytes_journal_FULL=3112263680
+gc_peer_cloud-gateway=G1
+sweep_rates_NONE_api-get=21800,32700,39300,43600
+sweep_rates_FULL_api-get=14300,21500,25800,28700
+journal_bytes_sweep_NONE=24576
+journal_bytes_sweep_FULL=1103151104
