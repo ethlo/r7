@@ -5,13 +5,17 @@ hide:
 
 # r7: the gateway that remembers every request { .r7-hero }
 
-When someone asks what a client actually sent you, r7 has the answer. It routes traffic to your
-services and records every exchange, with its headers or its full bodies, to local disk, with
-secret header and query values stored as fingerprints. A tailer ships the record as WARC and JSON lines into the tools
-you already run. There is no capture system to run beside the gateway, and no network call while
-the client waits.
+r7 routes traffic to your services and records every exchange on local disk, with no network call
+while the client waits. One `routes.yaml`, checked before it serves a single request.
 
-One `routes.yaml`, checked before it serves a single request.
+- **[Every exchange on record.](journaling.md)** Headers or full bodies, chosen per route, with
+  secret values stored as fingerprints.
+- **[Performance you can measure.](benchmarks.md#against-other-gateways)** 2.3–2.9× the throughput
+  of the tested Spring Cloud Gateway configuration, and one command reproduces it.
+- **[Extensions in plain Java.](extensibility.md)** Each stage of a request has its own interface,
+  so a filter can only change what is valid at that point.
+- **[Configuration you can trust.](config.md)** Checked against a published schema before it
+  serves, and a bad edit is rejected while your routes keep running.
 
 [Get started in five minutes](quickstart.md){ .md-button .md-button--primary }
 [Try the config editor](editor.md){ .md-button }
@@ -130,6 +134,27 @@ what it may change at that point:
 | Client response | the client's request, the upstream request and response | the status and headers the client gets |
 | Completed | the whole exchange, once the response has been sent | nothing that was sent |
 
+A filter that drops a query parameter before the request goes upstream is a config record and
+one method:
+
+```java
+public record Config(@Description("The name of the query parameter to remove.") String name)
+        implements ValidatableConfig
+{
+    @Override
+    public void validate(final ValidationResult result)
+    {
+        new ValidatorUtils(result).required("name", name);
+    }
+}
+
+@Override
+public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
+{
+    exchange.upstreamRequest().queryParams().remove(paramName);
+}
+```
+
 The compiler enforces this: no filter can change the request as the client sent it, so the
 journal's record of it is what arrived. A filter's settings are a Java record that validates
 itself, so a mistake in a plugin's YAML is reported at startup like one in a built-in filter.
@@ -140,6 +165,18 @@ is straight-line code: it can call a database or another service directly, and a
 points at the line that failed.
 
 [Write a filter or predicate](extensibility.md)
+
+---
+
+## Fast, with the record on
+
+On two gateway cores at a fixed 20,000 req/s, an API GET has a p99 of 4.4 ms with no journal,
+4.3 ms with the journal at `METADATA` and 5.0 ms at `HEADERS`. On the same cores, memory limit
+and workloads, r7 sustains 2.3 to 2.9 times the throughput of the tested Spring Cloud Gateway
+configuration, which saturates below 20,000 req/s on all three request types. The run's
+files are published, and `sudo benchmark/bench.sh` repeats it on your own hardware.
+
+[Benchmarks and method](benchmarks.md)
 
 ---
 
