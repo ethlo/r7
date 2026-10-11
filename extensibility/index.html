@@ -1237,11 +1237,8 @@ classpath from the jar's manifest alone (<code>r7.jar</code> plus the jars in <c
 <div class="language-bash highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>java<span class="w"> </span>-cp<span class="w"> </span><span class="s2">"r7.jar:plugins/*"</span><span class="w"> </span>com.ethlo.r7.helidon.R7Helidon
 </span></code></pre></div>
 <h3 id="docker-compose-example">Docker Compose Example</h3>
-<p>The image's entrypoint is <code>java -jar</code>, so mount your jars and override the entrypoint with the
-image's own flags plus the classpath. The image's AOT cache still applies, since your jars come
-after the classpath it was built with. Copy the flags from the entrypoint of the image you run
-(<code>docker inspect --format '{{json .Config.Entrypoint}}' ghcr.io/ethlo/r7-gateway:main</code>) when
-you upgrade.</p>
+<p>The image puts every jar in <code>/app/plugins</code> on the classpath, so mounting your jars there is all it
+takes. The image's AOT cache still applies.</p>
 <div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">services</span><span class="p">:</span>
 </span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
 </span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:main</span>
@@ -1251,16 +1248,8 @@ you upgrade.</p>
 </span><span id="True-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
 </span><span id="True-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./config:/app/config:ro</span>
 </span><span id="True-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./plugins:/app/plugins:ro</span><span class="w">   </span><span class="c1"># your extension jars</span>
-</span><span id="True-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="nt">entrypoint</span><span class="p">:</span>
-</span><span id="True-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">java</span>
-</span><span id="True-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-XX:AOTCache=/app/r7.aot</span>
-</span><span id="True-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--enable-native-access=ALL-UNNAMED</span>
-</span><span id="True-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--sun-misc-unsafe-memory-access=allow</span>
-</span><span id="True-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-Djava.security.egd=file:/dev/./urandom</span>
-</span><span id="True-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-cp</span>
-</span><span id="True-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/app/r7.jar:/app/plugins/*</span>
-</span><span id="True-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">com.ethlo.r7.helidon.R7Helidon</span>
 </span></code></pre></div>
+<p>With <code>docker run</code>, add <code>-v "$PWD/plugins:/app/plugins:ro"</code>.</p>
 <p>The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
 
 
