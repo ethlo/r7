@@ -1,4 +1,4 @@
-The current verdict (benchmark/lib/parse.py at ethlo/r7 main after #221), run on the
+The current verdict (benchmark/lib/parse.py at ethlo/r7 ffd7cce, main after #221), run on the
 benchmark host over this run's unchanged result files on 2026-10-11:
 
 $ python3 benchmark/lib/parse.py verdict benchmark/results/20261011-093954
