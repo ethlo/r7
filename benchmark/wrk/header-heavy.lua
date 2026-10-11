@@ -1,8 +1,9 @@
--- Header-heavy GET: browser baseline plus proxy/tracing headers (36 total).
+-- Header-heavy GET: browser baseline plus proxy/tracing headers (38 with Host).
 --
 -- This is what a request looks like after it has passed a CDN, a WAF and a
 -- service mesh. It targets the header-storage path (ArrayBackedPairStorage)
--- and the journal HEADERS encoder specifically.
+-- and the journal HEADERS encoder specifically. A profiling workload, not a
+-- published one: run it with `--workload headers`. The backend answers "OK".
 --
 -- Self-contained by design: wrk loads the script once per thread, and relative
 -- `dofile` resolution inside wrk is not something to bet a benchmark on.

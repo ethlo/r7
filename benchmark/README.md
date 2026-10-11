@@ -41,10 +41,10 @@ sudo benchmark/bench.sh --local   # build and measure this checkout instead of t
    their own, one logical CPU per physical core. On a hybrid Intel CPU the efficiency
    cores do the housekeeping and the performance cores run the benchmark. The layout is in
    `host.txt`.
-5. **A fixed profile.** All scenarios on all workloads, one gateway JVM per configuration
+5. **A fixed profile.** All scenarios on the three published workloads, one gateway JVM per configuration
    (warmed 30s, and 15s more on each workload switch). wrk runs 3 × 15s, since its spread
    is the noise floor every cost is read against; wrk2 runs once for 30s at the fixed rate.
-   The sweep climbs the browser workload at 50, 75, 90 and 100% of its saturation
+   The sweep climbs the api-get workload at 50, 75, 90 and 100% of its saturation
    throughput, once per point.
 
 `--local` measures a change before it is released. It downloads Temurin JDK 27 (what the
@@ -110,13 +110,18 @@ overstates the cost. Treat it as an upper bound.
 contention. The noise cancels. **This is the number to quote for filter and
 journal cost**, and it is why `passthrough` is mandatory rather than optional.
 
-Each scenario runs across three workloads:
+Each scenario runs across three workloads, each a request a gateway really sees, answered
+with a response of matching shape:
 
-| Workload | Shape |
-| --- | --- |
-| `browser` | GET, 16 Chrome headers, keep-alive, tiny response. The common case. |
-| `headers` | GET, 36 headers (CDN + WAF + mesh + B3/W3C tracing). Targets header storage and the `HEADERS` journal encoder. |
-| `post` | POST, ~1KB JSON body. Targets body teeing and `BODY` markers — a path GET benchmarks never touch. Size overridable via `BENCH_BODY_BYTES`. |
+| Workload | Request | Response |
+| --- | --- | --- |
+| `browser` | GET, a Chrome navigation behind a load balancer: 16 browser headers plus X-Forwarded-For, X-Forwarded-Proto and traceparent | 200, 8 KB HTML, with Cache-Control, Vary, Set-Cookie and ETag |
+| `api-get` | GET, 10 headers with Host: bearer token, traceparent, X-Request-ID, forwarding headers | 200, 2 KB JSON |
+| `api-post` | POST, the api-get headers plus a ~1 KB JSON body. Targets body teeing and `BODY` markers, a path GET benchmarks never touch. Size overridable via `BENCH_BODY_BYTES` | 201, ~130 bytes of JSON and a Location header |
+
+`headers` (GET, 38 headers with Host: CDN, WAF, mesh, B3 and W3C tracing; response `OK`) is a
+profiling workload for header storage and the `HEADERS` journal encoder. No real service
+sends that many, so it is not in the default set: run it with `--workload headers`.
 
 And across two tools, because they answer different questions:
 
@@ -128,9 +133,10 @@ And across two tools, because they answer different questions:
 
 ## The backend
 
-`backend/nginx.conf`: a single `return 200 "OK"`, `access_log off`, `reuseport`,
-and effectively unlimited keep-alive. No disk I/O, no filesystem lookups, no
-application runtime.
+`backend/nginx.conf`: fixed responses per workload, `access_log off`, `reuseport`,
+and effectively unlimited keep-alive. The two GET bodies are files in `backend/www/`,
+read from the page cache with their descriptors cached; the POST answer is an inline
+`return`. No disk I/O, no application runtime.
 
 This is deliberately the cheapest credible HTTP responder available. Anything
 richer (an echo server, a Node or Python app) becomes the bottleneck long before
@@ -226,7 +232,7 @@ R7_BENCH_MEM=200M ./run.sh --mode docker --scenario passthrough --tool wrk2
 
 ```bash
 ./run.sh --scenario journal                  # just the journaling matrix
-./run.sh --workload post --tool wrk2         # just POST latency
+./run.sh --workload api-post --tool wrk2     # just POST latency
 ./run.sh --rate 50000 --duration 60s         # push the fixed-rate test harder
 ./run.sh --connections 1000 --threads 16     # connection-heavy
 ./run.sh --keep-running                      # leave the stack up to poke at

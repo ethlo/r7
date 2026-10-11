@@ -19,7 +19,7 @@ REPO="$(cd "$HERE/.." && pwd)"
 
 MODE="jvm-local"          # jvm-local | docker
 SCENARIOS="baseline,passthrough,filtered,journal"
-WORKLOADS="browser,headers,post"
+WORKLOADS="browser,api-get,api-post"   # headers: opt-in, for profiling
 TOOLS="wrk,wrk2"
 THREADS=""                # default: min(nproc/2, 16), set below
 CONNECTIONS=200
@@ -73,7 +73,9 @@ Options:
   --mode jvm-local|docker    How to launch the gateway under test (default: jvm-local)
   --scenario LIST            baseline,passthrough,filtered,journal,sweep
                              (default: all but sweep)
-  --workload LIST            browser,headers,post                   (default: all)
+  --workload LIST            browser,api-get,api-post,headers
+                             (default: all but headers, a 38-header profiling
+                             workload)
   --tool LIST                wrk,wrk2                               (default: both)
   --threads N                wrk threads       (default: min(nproc/2, 16))
   --connections N            open connections  (default: 200)
@@ -105,7 +107,7 @@ Options:
                              (default: METADATA,HEADERS,FULL)
   --jar PATH                 gateway jar (default: newest r7-helidon/target/*.jar)
   --out DIR                  results dir (default: benchmark/results/<timestamp>)
-  --quick                    5s warmup, 10s wrk and 15s wrk2 runs, browser
+  --quick                    5s warmup, 10s wrk and 15s wrk2 runs, api-get
                              workload only
   --backend-cpus LIST        pin nginx to these CPUs (e.g. 1)
   --gateway-cpus LIST        pin the gateway to these CPUs (e.g. 2-3)
@@ -147,7 +149,7 @@ while [[ $# -gt 0 ]]; do
     --out)           OUT="$2"; shift 2 ;;
     # wrk2 needs more than its ~10s calibration to record anything.
     --quick)         WARMUP="5s"; REWARM=""; DURATION="10s"; LATENCY_DURATION="15s"
-                     WORKLOADS="browser"; SWEEP_WORKLOADS=""; shift ;;
+                     WORKLOADS="api-get"; SWEEP_WORKLOADS=""; shift ;;
     --backend-cpus)  BACKEND_CPUS="$2"; shift 2 ;;
     --gateway-cpus)  GATEWAY_CPUS="$2"; shift 2 ;;
     --load-cpus)     LOAD_CPUS="$2"; shift 2 ;;
@@ -420,6 +422,7 @@ start_backend() {
     --ulimit nofile=200000:200000 \
     "${pin_args[@]}" \
     -v "$conf:/etc/nginx/nginx.conf:ro" \
+    -v "$HERE/backend/www:/srv/bench:ro" \
     "$BACKEND_IMAGE")"
   wait_for "http://127.0.0.1:$BACKEND_PORT/__bench_health" "backend"
   ok "backend ready"
@@ -527,10 +530,23 @@ journal_size() {
 
 workload_script() {
   case "$1" in
-    browser) echo "$HERE/wrk/browser-get.lua" ;;
-    headers) echo "$HERE/wrk/header-heavy.lua" ;;
-    post)    echo "$HERE/wrk/post-json.lua" ;;
-    *)       die "unknown workload: $1" ;;
+    browser)  echo "$HERE/wrk/browser-get.lua" ;;
+    api-get)  echo "$HERE/wrk/api-get.lua" ;;
+    api-post) echo "$HERE/wrk/api-post.lua" ;;
+    headers)  echo "$HERE/wrk/header-heavy.lua" ;;
+    *)        die "unknown workload: $1" ;;
+  esac
+}
+
+# The path each workload requests under a route prefix. The backend picks the response by
+# it (backend/nginx.conf).
+workload_path() {
+  case "$1" in
+    browser)  echo "/app/dashboard" ;;
+    api-get)  echo "/api/v1/orders/1234" ;;
+    api-post) echo "/api/v1/orders" ;;
+    headers)  echo "/api/v1/users" ;;
+    *)        die "unknown workload: $1" ;;
   esac
 }
 
@@ -541,10 +557,12 @@ reps_for() {   # reps_for <scenario> <tool>
   if [[ "$2" == "wrk2" || "$1" == "baseline" ]]; then echo "$LATENCY_REPEAT"; else echo "$REPEAT"; fi
 }
 
-# fire <tool> <scenario> <workload> <journal> <rate> <url> <repeat-index> <warmup>
-# <warmup> is a duration to warm for first, or empty for none.
+# fire <tool> <scenario> <workload> <journal> <rate> <base-url> <repeat-index> <warmup>
+# <base-url> is the route prefix, which the workload's path is appended to. <warmup> is a
+# duration to warm for first, or empty for none.
 fire() {
-  local tool="$1" scenario="$2" workload="$3" journal="$4" rate="$5" url="$6"
+  local tool="$1" scenario="$2" workload="$3" journal="$4" rate="$5"
+  local url; url="$6$(workload_path "$workload")"
   local rep="$7" warmup="$8"
   local reps; reps="$(reps_for "$scenario" "$tool")"
   local script; script="$(workload_script "$workload")"
@@ -779,7 +797,7 @@ if has "$SCENARIOS" baseline; then
       n="$(reps_for baseline "$t")"
       for ((rep = 1; rep <= n; rep++)); do
         fire "$t" baseline "$w" "-" "$RATE" \
-          "http://127.0.0.1:$BACKEND_PORT/bench/api/v1/users" "$rep" "$warm"
+          "http://127.0.0.1:$BACKEND_PORT/bench" "$rep" "$warm"
         warm=""
       done
     done
@@ -790,13 +808,13 @@ fi
 #    This is the denominator for everything below it.
 if has "$SCENARIOS" passthrough; then
   log "=== scenario: passthrough (r7, no filters, journal=NONE) ==="
-  gw_scenario passthrough NONE "http://127.0.0.1:$GW_PORT/bench/api/v1/users"
+  gw_scenario passthrough NONE "http://127.0.0.1:$GW_PORT/bench"
 fi
 
 # 3. Filtered: the cost of the filter chain, journal still off.
 if has "$SCENARIOS" filtered; then
   log "=== scenario: filtered (AddCorrelationId + header rewrites) ==="
-  gw_scenario filtered NONE "http://127.0.0.1:$GW_PORT/filtered/api/v1/users"
+  gw_scenario filtered NONE "http://127.0.0.1:$GW_PORT/filtered"
 fi
 
 # 4. Journal cost matrix. NONE is deliberately absent: it is `passthrough`.
@@ -804,7 +822,7 @@ if has "$SCENARIOS" journal; then
   log "=== scenario: journal ($JOURNAL_LEVELS) ==="
   IFS=',' read -ra LEVELS <<< "$JOURNAL_LEVELS"
   for level in "${LEVELS[@]}"; do
-    gw_scenario journal "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users"
+    gw_scenario journal "$level" "http://127.0.0.1:$GW_PORT/bench"
   done
 fi
 
@@ -833,7 +851,7 @@ if has "$SCENARIOS" sweep; then
     done
   fi
   for level in "${SLEVELS[@]}"; do
-    gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench/api/v1/users"
+    gw_scenario sweep "$level" "http://127.0.0.1:$GW_PORT/bench"
   done
 fi
 
