@@ -239,3 +239,5 @@ body[data-md-color-scheme="slate"][data-md-color-primary][data-md-color-accent] 
 [data-md-color-scheme="slate"] .r7-chart .full { stroke: #d95926; }
 [data-md-color-scheme="slate"] .r7-chart circle.full { fill: #d95926; }
 .r7-chart .dot.off, .r7-chart .dot.full { stroke: var(--md-default-bg-color); }
+.r7-chart .range { stroke: var(--md-default-fg-color--light); stroke-width: 2; }
+.r7-chart circle.base { fill: var(--md-default-fg-color--light); }
