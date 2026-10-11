@@ -3,8 +3,9 @@
 #
 # Rendered by run.sh: __GW_PORT__ and __BACKEND_URL__. One route to the same backend
 # r7 proxies to, with capture off and no logging provider or matcher, so it compares with
-# r7's passthrough run. Everything else is the image's default, JVM settings
-# included, as r7 is measured with its published image.
+# r7's passthrough run. Everything else is the image's default, as r7 is measured
+# with its published image; run.sh adds the direct-memory size cloud-gateway's own
+# compose file sets and the collector r7 runs with.
 
 server:
   port: __GW_PORT__

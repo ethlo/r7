@@ -41,7 +41,7 @@ WRK2_COMMIT="44a94c17d8e6a0bac8559b53da76848e430cb7a7"
 
 IMAGE="ghcr.io/ethlo/r7-gateway:main"
 LOCAL=0
-GC="default"
+GC="zgc"
 QUICK=0
 ACTION="run"
 
@@ -70,7 +70,8 @@ Options:
   --image REF      gateway image to measure (default: ghcr.io/ethlo/r7-gateway:main)
   --local          build this checkout and run the jar on the host instead of an image
   --quick          short runs, api-get workload only; never publishable
-  --gc default|zgc collector (default: the JVM's choice, as in the image)
+  --gc zgc|default collector (default: zgc, for the shortest pauses; default leaves it
+                   to the JVM, as the image does)
   --check          print the core layout and current host state, change nothing
   --restore        restore host settings saved by an interrupted run
   -h, --help       this

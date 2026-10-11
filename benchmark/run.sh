@@ -546,8 +546,11 @@ start_peer() {
       # The image's memory calculator leaves Netty 10 MB of direct memory, which runs out at
       # 200 connections (OutOfDirectMemoryError). 200 MB is what cloud-gateway's own
       # docker-compose.yml sets.
+      # The same collector as r7, so the comparison is between the gateways, not their GC.
+      local gc=""
+      [[ " $JVM_OPTS " == *" -XX:+UseZGC "* ]] && gc=" -XX:+UseZGC"
       args+=(-v "$conf:/config:ro" -e SPRING_CONFIG_LOCATION=/config/application.yaml
-             -e JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=200M)
+             -e "JAVA_TOOL_OPTIONS=-XX:MaxDirectMemorySize=200M$gc")
       ;;
     *) die "unknown peer: $peer" ;;
   esac
