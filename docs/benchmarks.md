@@ -62,7 +62,7 @@ each other.
 ## Results
 
 These figures give an indication of the cost, not a measurement to the decimal. They come from one
-run, and every throughput figure carries the spread of its three repeats. Those repeats run against
+run, and every gateway throughput figure carries the spread of its three repeats. Those repeats run against
 one gateway process, one after another, so the spread is the noise within a run, not between runs. A difference
 smaller than that spread is not a finding.
 
