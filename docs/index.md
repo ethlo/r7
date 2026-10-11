@@ -11,11 +11,12 @@ while the client waits. One `routes.yaml`, checked before it serves a single req
 - **[Every exchange on record.](journaling.md)** Headers or full bodies, chosen per route, with
   secret values stored as fingerprints.
 - **[Performance you can measure.](benchmarks.md#against-other-gateways)** 2.3–2.9× the throughput
-  of the tested Spring Cloud Gateway configuration, and one command reproduces it.
+  of the tested Spring Cloud Gateway configuration with the journal off, and one command
+  reproduces it.
 - **[Extensions in plain Java.](extensibility.md)** Each stage of a request has its own interface,
   so a filter can only change what is valid at that point.
-- **[Configuration you can trust.](config.md)** Checked against a published schema before it
-  serves, and a bad edit is rejected while your routes keep running.
+- **[Configuration you can trust.](config.md)** Strictly validated before it serves, with a
+  published schema for your editor, and a bad edit is rejected while your routes keep running.
 
 [Get started in five minutes](quickstart.md){ .md-button .md-button--primary }
 [Try the config editor](editor.md){ .md-button }
@@ -124,7 +125,7 @@ r7 also refuses requests that the gateway and your service would read differentl
 ### Batteries included
 
 Most routes need no code. r7 ships with 33 filters and 15 predicates, configured in YAML and
-checked against the schema like everything else:
+validated at startup like everything else:
 
 - **Matching:** path, prefix and regex paths, host, method, client address, headers, query
   parameters and cookies, combined with `and`, `or` and `not`.
@@ -150,10 +151,11 @@ what it may change at that point:
 | Client response | the client's request, the upstream request and response | the status and headers the client gets |
 | Completed | the whole exchange, once the response has been sent | nothing that was sent |
 
-A filter that drops a query parameter before the request goes upstream is a config record and
+A filter that drops a query parameter before the request goes upstream is a settings record and
 one method:
 
 ```java
+// The settings, validated when the routes load
 public record Config(@Description("The name of the query parameter to remove.") String name)
         implements ValidatableConfig
 {
@@ -164,12 +166,27 @@ public record Config(@Description("The name of the query parameter to remove.") 
     }
 }
 
-@Override
-public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
+// The filter, created from those settings
+final class RemoveQueryParameter implements UpstreamRequestGatewayFilter
 {
-    exchange.upstreamRequest().queryParams().remove(paramName);
+    private final String paramName;
+
+    RemoveQueryParameter(final Config config)
+    {
+        this.paramName = config.name();
+    }
+
+    @Override
+    public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
+    {
+        exchange.upstreamRequest().queryParams().remove(paramName);
+    }
 }
 ```
+
+The factory that names the filter and creates it from its settings, and its `@AutoService`
+registration, are in
+[`RemoveQueryParameterFactory`](https://github.com/ethlo/r7/blob/main/r7-core/src/main/java/com/ethlo/r7/filters/RemoveQueryParameterFactory.java).
 
 The compiler enforces this: no filter can change the request as the client sent it, so the
 journal's record of it is what arrived. A filter's settings are a Java record that validates
@@ -188,9 +205,11 @@ points at the line that failed.
 
 On two gateway cores at a fixed 20,000 req/s, an API GET has a p99 of 4.4 ms with no journal,
 4.3 ms with the journal at `METADATA` and 5.0 ms at `HEADERS`. On the same cores, memory limit
-and workloads, r7 sustains 2.3 to 2.9 times the throughput of the tested Spring Cloud Gateway
-configuration, which saturates below 20,000 req/s on all three request types. The run's
-files are published, and `sudo benchmark/bench.sh` repeats it on your own hardware.
+and workloads, r7 with the journal off sustains 2.3 to 2.9 times the throughput of the tested
+Spring Cloud Gateway configuration, which saturates below 20,000 req/s on all three request
+types. Recording metadata costs r7 4% to 14% of that throughput, so with every exchange's metadata on
+record it still sustains more than twice as much. The run's files are published, and
+`sudo benchmark/bench.sh` repeats it on your own hardware.
 
 [Benchmarks and method](benchmarks.md)
 
