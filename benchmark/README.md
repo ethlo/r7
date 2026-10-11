@@ -17,7 +17,7 @@ Docker and `build-essential libssl-dev`:
 ```bash
 benchmark/bench.sh --check        # show the core layout and host state, change nothing
 sudo benchmark/bench.sh --quick   # the whole pipeline with short runs
-sudo benchmark/bench.sh           # the publishable profile (about 30 minutes)
+sudo benchmark/bench.sh           # the publishable profile (about 50 minutes)
 sudo benchmark/bench.sh --local   # build and measure this checkout instead of the image
 ```
 
@@ -97,6 +97,7 @@ gateway-*.log     gateway stdout/stderr per journal level
 | `passthrough` | r7 in the path, no filters, journaling off. The irreducible cost of proxying — **and the denominator for everything below**. |
 | `filtered` | Same route shape, through `AddCorrelationId` + request/response header rewrites. The cost of the filter chain. |
 | `journal` | `METADATA` → `HEADERS` → `FULL`, fresh JVM per level. The real cost of the mmap journal. `NONE` is deliberately absent: it is identical to `passthrough`, so selecting `journal` implies `passthrough` and reuses that run. |
+| `peers` | Other gateways in r7's place, measured the way `passthrough` is: same port, same cores, same memory limit, same backend, same workloads. `nginx` is nginx as a reverse proxy with upstream keep-alive and no access log (`peers/nginx-proxy.conf`); `cloud-gateway` is [ethlo cloud-gateway](https://github.com/ethlo/cloud-gateway), Spring Cloud Gateway on WebFlux, with capture off (`peers/cloud-gateway.yaml`). Both images are pinned by digest. `--peers` picks them; `vs r7` compares them with `passthrough`. Opt-in; `bench.sh` runs it. |
 | `sweep` | wrk2 at a ladder of fixed rates against `NONE` and `FULL`: by default 50, 75, 90, 100 and 110% of the wrk throughput this host measured for that level and workload (`passthrough` for `NONE`; `journal` for `FULL` when that scenario ran, otherwise `passthrough`), so the ladder brackets the knee on any core count. `--sweep-percent` changes the ladder, `--sweep-workload` limits the workloads it climbs, and `--sweep-rates` takes a fixed list instead. p99 versus offered load — the curve that actually characterises a gateway. Opt-in; not in the default suite. |
 
 ### Two delta columns, and only one of them is trustworthy

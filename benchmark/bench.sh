@@ -524,14 +524,15 @@ for u in "${UNTUNED[@]}"; do warn "not tuned: $u"; done
 
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="$HERE/results/$TS"
-# About half an hour: every scenario and workload the benchmark page reports, one JVM per
+# About fifty minutes: every scenario and workload the benchmark page reports, one JVM per
 # configuration. wrk runs three times, since its spread is the noise floor every cost is read
 # against. wrk2 runs once and for longer: it discards its first ~10s as calibration, and one
-# run at a fixed rate gives enough samples for p99.9. The sweep climbs the api-get workload
-# only, up to saturation. The warmups are as long as they are because a first run (2026-10-10,
-# 15s and 5s) still climbed up to 12% across the three repeats of the first workload after a
-# JVM start, and up to 5% after a workload switch.
-PROFILE=(--scenario baseline,passthrough,filtered,journal,sweep
+# run at a fixed rate gives enough samples for p99.9. The peers (an nginx proxy and
+# cloud-gateway) run the way passthrough does. The sweep climbs the api-get workload only, up
+# to saturation. The warmups are as long as they are because a first run (2026-10-10, 15s and
+# 5s) still climbed up to 12% across the three repeats of the first workload after a JVM
+# start, and up to 5% after a workload switch.
+PROFILE=(--scenario baseline,passthrough,filtered,journal,peers,sweep
          --warmup 30s --rewarm 15s --duration 15s --repeat 3
          --latency-duration 30s --latency-repeat 1
          --sweep-workload api-get --sweep-percent 50,75,90,100)
