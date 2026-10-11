@@ -46,10 +46,13 @@ SMT and turbo off, `performance` governor, 62 GiB RAM, Linux 6.8.0-142). The gat
 and wrk2 `44a94c1`. The run's [report](assets/benchmarks/20261011-093954/REPORT.txt),
 [`environment.txt`](assets/benchmarks/20261011-093954/environment.txt) (with the collector each JVM
 ran, `gc_gateway` and `gc_peer_cloud-gateway`) and
-[`host.txt`](assets/benchmarks/20261011-093954/host.txt) are published as they came out of it. The
-report's NOT PUBLISHABLE reasons all come from rows the current verdict marks instead: the nginx
-peer at the backend's limit, and the wrk2 runs of cloud-gateway and of the browser page with
-`FULL`, whose configurations saturate below 20,000 req/s.
+[`host.txt`](assets/benchmarks/20261011-093954/host.txt) are published as they came out of it.
+The report was written by the verdict before [#221](https://github.com/ethlo/r7/pull/221) and says NOT PUBLISHABLE. Every reason
+it lists is a row the current verdict marks instead of failing: the nginx peer at the backend's
+limit, and the wrk2 runs of cloud-gateway and of the browser page with `FULL`, whose
+configurations saturate below 20,000 req/s. The
+[current verdict over the same result files](assets/benchmarks/20261011-093954/verdict-current.txt)
+finds no problem.
 
 The six cores are split four ways: nginx on one, **the gateway on two**, the load generator on two,
 the OS on one. Everything the gateway does, including the journal, shares those two cores. The
@@ -59,8 +62,9 @@ each other.
 ## Results
 
 These figures give an indication of the cost, not a measurement to the decimal. They come from one
-run, and every throughput figure carries the spread of its three repeats. A difference smaller than
-that spread is not a finding.
+run, and every gateway throughput figure carries the spread of its three repeats. Those repeats run against
+one gateway process, one after another, so the spread is the noise within a run, not between runs. A difference
+smaller than that spread is not a finding.
 
 ### Latency at a fixed 20,000 req/s
 
@@ -109,13 +113,13 @@ every exchange.
 
 ### Against other gateways
 
-The same run puts two other gateways in r7's place: same port, same two cores, same 990 MB
-memory limit, same backend and workloads. One is nginx as a reverse proxy with upstream keep-alive
-and no access log. The other is [cloud-gateway](https://github.com/ethlo/cloud-gateway), Spring
-Cloud Gateway on WebFlux, with its own capture off, on the same collector as r7. Their
-configurations are in
-[`benchmark/peers/`](https://github.com/ethlo/r7/tree/main/benchmark/peers). Saturation in requests
-per second, each value with the spread of its three repeats:
+The same run puts two other gateways in r7's place, each as configured in
+[`benchmark/peers/`](https://github.com/ethlo/r7/tree/main/benchmark/peers): same port, same two
+cores, same 990 MB memory limit, same backend and workloads. One is nginx as a reverse proxy with
+upstream keep-alive and no access log. The other is
+[cloud-gateway](https://github.com/ethlo/cloud-gateway), Spring Cloud Gateway on WebFlux with one
+route and its own capture off, on the same collector as r7. The ratios below are for
+these configurations. Saturation in requests per second, each value with the spread of its three repeats:
 
 | Gateway | Browser page GET | API GET | API POST |
 | --- | --- | --- | --- |
@@ -141,7 +145,11 @@ than its latency at that load.
 ### Where the tail breaks away
 
 Fixed-rate sweeps on the API GET, at 50, 75, 90 and 100% of the saturation throughput the run
-measured, show how p99 grows with offered load. Milliseconds:
+measured, show how p99 grows with offered load. Each configuration is swept up to its own
+saturation, so the two lines end at different rates. p99 in milliseconds, on a log scale:
+
+<svg class="r7-chart" viewBox="0 0 640 320" role="img" aria-labelledby="r7-sweep-title" xmlns="http://www.w3.org/2000/svg"><title id="r7-sweep-title">API GET p99 latency against offered load, journal off and FULL</title><line class="grid" x1="56" x2="520" y1="276.0" y2="276.0"/><text class="tick" x="48" y="280.0" text-anchor="end">1</text><line class="grid" x1="56" x2="520" y1="190.7" y2="190.7"/><text class="tick" x="48" y="194.7" text-anchor="end">10</text><line class="grid" x1="56" x2="520" y1="105.3" y2="105.3"/><text class="tick" x="48" y="109.3" text-anchor="end">100</text><line class="grid" x1="56" x2="520" y1="20.0" y2="20.0"/><text class="tick" x="48" y="24.0" text-anchor="end">1,000</text><text class="tick" x="56.0" y="294" text-anchor="middle">10k</text><text class="tick" x="120.4" y="294" text-anchor="middle">15k</text><text class="tick" x="184.9" y="294" text-anchor="middle">20k</text><text class="tick" x="249.3" y="294" text-anchor="middle">25k</text><text class="tick" x="313.8" y="294" text-anchor="middle">30k</text><text class="tick" x="378.2" y="294" text-anchor="middle">35k</text><text class="tick" x="442.7" y="294" text-anchor="middle">40k</text><text class="tick" x="507.1" y="294" text-anchor="middle">45k</text><line class="axis" x1="56" x2="520" y1="276" y2="276"/><text class="label" x="288" y="314" text-anchor="middle">offered load (req/s)</text><text class="label" transform="translate(14,148) rotate(-90)" text-anchor="middle">p99 (ms, log scale)</text><path class="line off" d="M208.1,236.0 L348.6,206.5 L433.6,127.0 L489.1,75.9"/><circle class="dot off" cx="208.1" cy="236.0" r="4"><title>Journal off: 21,800 req/s offered, p99 2.94 ms</title></circle><circle class="dot off" cx="348.6" cy="206.5" r="4"><title>Journal off: 32,700 req/s offered, p99 6.53 ms</title></circle><circle class="dot off" cx="433.6" cy="127.0" r="4"><title>Journal off: 39,300 req/s offered, p99 55.78 ms</title></circle><circle class="dot off" cx="489.1" cy="75.9" r="4"><title>Journal off: 43,600 req/s offered, p99 221.18 ms</title></circle><text class="direct" x="499.1" y="79.9">Journal off</text><path class="line full" d="M111.4,234.9 L204.2,216.9 L259.6,117.3 L297.0,25.4"/><circle class="dot full" cx="111.4" cy="234.9" r="4"><title>Journal FULL: 14,300 req/s offered, p99 3.03 ms</title></circle><circle class="dot full" cx="204.2" cy="216.9" r="4"><title>Journal FULL: 21,500 req/s offered, p99 4.93 ms</title></circle><circle class="dot full" cx="259.6" cy="117.3" r="4"><title>Journal FULL: 25,800 req/s offered, p99 72.38 ms</title></circle><circle class="dot full" cx="297.0" cy="25.4" r="4"><title>Journal FULL: 28,700 req/s offered, p99 863.74 ms</title></circle><text class="direct" x="307.0" y="29.4">Journal FULL</text></svg>
+
 
 | Journal off: offered (req/s) | p99 | Journal `FULL`: offered (req/s) | p99 |
 | --- | --- | --- | --- |
