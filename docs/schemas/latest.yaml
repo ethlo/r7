@@ -528,7 +528,7 @@ $defs:
               description: The regular expression to match against the path.
             replacement:
               type: string
-              description: "The replacement: $1 for a numbered group, {name} for a named one. \\{ is a literal brace."
+              description: "The replacement: $1 for a numbered group, {name} for a named one, {query.NAME} for a query parameter of the request. A literal ? starts the query the upstream receives, whose parameters each need a name and whose captures and query values must be parameter values. \\{, \\?, \\& and \\= are literal characters."
           required:
           - regexp
           - replacement

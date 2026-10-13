@@ -10,7 +10,6 @@ import java.util.regex.Pattern;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
-import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.config.model.HttpStatus;
@@ -349,7 +348,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     }
                     else if (part.query() != null)
                     {
-                        final String value = queryValue(exchange.clientRequest().queryParams(), part.query());
+                        final String value = ReplacementTemplate.queryValue(exchange.clientRequest().queryParams(), part.query());
                         if (value == null)
                         {
                             this.refuse(exchange);
@@ -414,24 +413,6 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     MediaTypes.TEXT_PLAIN_UTF8,
                     this.invalidLocationBody.asReadOnlyBuffer()
             ));
-        }
-
-        /**
-         * The parameter's value, or null when there is none to redirect with: it is missing, or it
-         * is repeated with values that differ, so no single value is the client's meaning.
-         */
-        private static String queryValue(final QueryParams params, final String name)
-        {
-            String value = null;
-            for (final String candidate : params.getAll(name))
-            {
-                if (value != null && !value.equals(candidate))
-                {
-                    return null;
-                }
-                value = candidate;
-            }
-            return value;
         }
 
         private static String stripAsciiWhitespace(final String value)

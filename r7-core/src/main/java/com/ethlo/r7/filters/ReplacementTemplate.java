@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.util.PathEncoder;
 
 /**
@@ -46,8 +47,31 @@ final class ReplacementTemplate
      * ({@code query} set), the last two with the component their position in the template puts
      * them in.
      */
-    record Part(String literal, int group, String query, Component component)
+    record Part(String literal, int group, String query, Component component, boolean startsQuery, boolean data)
     {
+        Part(final String literal, final int group, final String query, final Component component)
+        {
+            this(literal, group, query, component, false, false);
+        }
+
+        /**
+         * The unescaped {@code ?} of a decoded template, where the query starts: not text, since
+         * what follows is parameters, not path.
+         */
+        static Part queryStart()
+        {
+            return new Part(null, -1, null, Component.QUERY_OR_FRAGMENT, true, false);
+        }
+
+        /**
+         * An escaped character in the query of a decoded template: text of a name or value, never
+         * the {@code &} or {@code =} that separates them.
+         */
+        static Part data(final char c)
+        {
+            return new Part(String.valueOf(c), -1, null, Component.QUERY_OR_FRAGMENT, false, true);
+        }
+
         static Part literal(final String text, final Component component)
         {
             return new Part(text, -1, null, component);
@@ -56,6 +80,11 @@ final class ReplacementTemplate
         boolean isLiteral()
         {
             return this.literal != null;
+        }
+
+        boolean isCapture()
+        {
+            return this.literal == null && !this.startsQuery;
         }
     }
 
@@ -67,7 +96,10 @@ final class ReplacementTemplate
      *
      * @param wire whether the result is sent as written, so a literal brace must be written
      *             percent-encoded: r7 never emits a raw brace in a URI. A decoded result
-     *             ({@code RewritePath}'s path) is encoded later, where the brace is encoded with it.
+     *             ({@code RewritePath}'s) is encoded later, where the brace is encoded with it;
+     *             its first unescaped {@code ?} then starts the query, as a {@link Part#startsQuery()}
+     *             part, and {@code #} is an ordinary character. An escaped character after it is
+     *             a {@link Part#data()} part, so an escaped {@code &} or {@code =} stays text.
      * @throws IllegalArgumentException with a message that names the mistake
      */
     static List<Part> parse(final String template, final Pattern pattern, final boolean wire)
@@ -76,14 +108,21 @@ final class ReplacementTemplate
         final List<Part> parts = new ArrayList<>();
         final StringBuilder literal = new StringBuilder();
         Component component = Component.PATH;
+        boolean inQuery = false;
         int i = 0;
         while (i < template.length())
         {
             final char c = template.charAt(i);
-            if (c == '\\' && i + 1 < template.length())
+            if (c == '\\' && i + 1 < template.length() && inQuery)
+            {
+                flush(parts, literal, component);
+                parts.add(Part.data(template.charAt(i + 1)));
+                i += 2;
+            }
+            else if (c == '\\' && i + 1 < template.length())
             {
                 appendLiteral(literal, template.charAt(i + 1), wire);
-                component = componentAfter(template.charAt(i + 1), component);
+                component = wire ? componentAfter(template.charAt(i + 1), component) : component;
                 i += 2;
             }
             else if (c == '$')
@@ -141,10 +180,18 @@ final class ReplacementTemplate
                 }
                 i = close + 1;
             }
+            else if (!wire && c == '?' && !inQuery)
+            {
+                flush(parts, literal, component);
+                parts.add(Part.queryStart());
+                component = Component.QUERY_OR_FRAGMENT;
+                inQuery = true;
+                i++;
+            }
             else
             {
                 appendLiteral(literal, c, wire);
-                component = componentAfter(c, component);
+                component = wire ? componentAfter(c, component) : component;
                 i++;
             }
         }
@@ -152,6 +199,25 @@ final class ReplacementTemplate
         // unmatched remainder of the path is appended.
         parts.add(Part.literal(literal.toString(), component));
         return List.copyOf(parts);
+    }
+
+    /**
+     * The client's value for a {@code {query.NAME}} placeholder, or null when there is none to use:
+     * the parameter is missing, or repeated with values that differ, so no single value is the
+     * client's meaning.
+     */
+    static String queryValue(final QueryParams params, final String name)
+    {
+        String value = null;
+        for (final String candidate : params.getAll(name))
+        {
+            if (value != null && !value.equals(candidate))
+            {
+                return null;
+            }
+            value = candidate;
+        }
+        return value;
     }
 
     private static void flush(final List<Part> parts, final StringBuilder literal, final Component component)
