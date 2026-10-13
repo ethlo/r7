@@ -17,7 +17,8 @@ public record UpstreamDto(
         @JsonProperty("read_timeout") Duration readTimeout,
         @JsonProperty("connect_timeout") Duration connectTimeout,
         @JsonProperty("health_check") HealthCheckConfig healthCheck,
-        @JsonProperty("fallback_route_id") String fallbackRouteId
+        @JsonProperty("fallback_route_id") String fallbackRouteId,
+        @JsonProperty("preserve_host") boolean preserveHost
 )
 {
 }

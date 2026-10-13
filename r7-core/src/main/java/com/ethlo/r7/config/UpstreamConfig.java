@@ -18,13 +18,21 @@ public record UpstreamConfig(
         @Description("List of backend servers to forward traffic to.")
         List<TargetConfig> targets,
         @DefaultValue("{}")
-        @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback
+        @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback,
+        @DefaultValue("false")
+        @Description("Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.") Boolean preserveHost
 ) implements ValidatableConfig
 {
     @Override
     public Strategy strategy()
     {
         return Optional.ofNullable(this.strategy).orElse(Strategy.ROUND_ROBIN);
+    }
+
+    @Override
+    public Boolean preserveHost()
+    {
+        return Optional.ofNullable(this.preserveHost).orElse(false);
     }
 
     @Override

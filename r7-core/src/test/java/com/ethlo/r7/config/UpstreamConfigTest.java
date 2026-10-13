@@ -11,7 +11,7 @@ class UpstreamConfigTest
     @Test
     void strategyDefaultsToRoundRobin()
     {
-        final UpstreamConfig config = new UpstreamConfig(null, null, null, List.of(), null);
+        final UpstreamConfig config = new UpstreamConfig(null, null, null, List.of(), null, null);
         assertThat(config.strategy()).isEqualTo(Strategy.ROUND_ROBIN);
     }
 }

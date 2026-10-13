@@ -114,6 +114,7 @@ The `upstream` block defines where r7 forwards requests, managing load balancing
 | `health_check` | Object | None | Active background health monitoring. |
 | `timeouts` | Object | None | Networking timeouts for this upstream. |
 | `fallback` | Object | None | Alternate routing logic if primary targets fail. |
+| `preserve_host` | Boolean | `false` | Sends the client's `Host` header to the target instead of the target's own, for an upstream that serves several sites by name. A request without a `Host` gets the target's. TLS server name indication and the certificate check still use the target's host. `X-Forwarded-Host` carries the client's `Host` either way. |
 
 ### Targets
 
@@ -1084,6 +1085,8 @@ Before a request is proxied, r7 removes the client headers an upstream must not 
 * **Forwarding and identity claims**, unless the peer is in `trusted_proxies`: `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `X-Cluster-Client-IP`, and the path overrides `X-Original-URL` and `X-Rewrite-URL`. The `X-Forwarded-*` match is on the header name's letters, not its exact spelling: `X_Forwarded_For` and other underscore or mixed-separator variants are stripped too, since CGI-derived backends (classic CGI, FastCGI, and frameworks that read headers out of a CGI-style environment) fold every `-` in a header name to `_` before their application code ever sees it, so such a backend reads either spelling identically.
 
 r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself. For a trusted proxy it extends that proxy's values (its client's address stays in `X-Forwarded-For`, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the `X-Forwarded-*` headers they receive from r7.
+
+r7 sends the target's own `Host` (its host, and its port when the target URL names one), or the client's with [`preserve_host`](#4-upstream-configuration).
 
 ### Proxy Client (`proxy`)
 
