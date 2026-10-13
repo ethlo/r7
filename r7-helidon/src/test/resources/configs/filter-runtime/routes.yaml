@@ -36,6 +36,10 @@ routes:
       - SetResponseHeader:
           name: X-Onion
           value: inner
+      # Response filters run once per response, however it was produced.
+      - AddResponseHeader:
+          name: X-Once
+          value: "1"
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

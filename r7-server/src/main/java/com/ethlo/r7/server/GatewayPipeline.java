@@ -430,7 +430,8 @@ public final class GatewayPipeline
     }
 
     /**
-     * Called by the server when the response is about to commit.
+     * Called by the server when the response is about to commit: the one place a response is
+     * finalised, whether the upstream, a filter, static content or r7 itself answered.
      */
     public void onResponseCommit(final ServerExchange ex)
     {
@@ -451,17 +452,31 @@ public final class GatewayPipeline
         // truthfully. Gating on the client's Upgrade header alone (checked before the
         // request was even proxied) would call every rejected upgrade attempt a live
         // websocket, including ones the upstream answered with a plain error.
-        final boolean upgraded = ex.clientResponse().status() == SWITCHING_PROTOCOLS && ex.webSocketRequested;
+        final boolean upgraded = !ex.isShortCircuited() && ex.clientResponse().status() == SWITCHING_PROTOCOLS && ex.webSocketRequested;
         ex.webSocketUpgraded = upgraded;
         if (upgraded)
         {
             attachWebSocketLifecycleTracking(ex);
         }
 
+        // Reverse iteration on the way out (onion): the filter declared first is closest to the
+        // client and gets the final say.
         final ClientResponseGatewayFilter[] beforeCommitFilters = ex.responseRoute.beforeCommitGatewayFilters();
         for (int i = beforeCommitFilters.length - 1; i >= 0; i--)
         {
             beforeCommitFilters[i].onClientResponse(ex);
+        }
+
+        // A short-circuit body is r7's (or its configuration's), not the upstream's: r7 vouches
+        // for its Content-Type, unless the filter that answered, or a response filter, says
+        // otherwise. Static content labels its own files.
+        if (ex.isShortCircuited() && ex.getAttachment(StaticContentFactory.STATIC_SERVE_REQUEST_KEY) == null)
+        {
+            final MutableGatewayHeaders headers = ex.clientResponse().headers();
+            if (!headers.contains(X_CONTENT_TYPE_OPTIONS))
+            {
+                headers.set(X_CONTENT_TYPE_OPTIONS, NOSNIFF);
+            }
         }
     }
 
@@ -469,29 +484,16 @@ public final class GatewayPipeline
     {
         ex.reasonFilter = reasonFilter;
 
-        // Applied before response filters run - not after, in sendResponse() - so that a filter's
-        // onClientResponse sees the real refusal outcome
-        // instead of the exchange's still-default 200. It also means a filter that sets its own
-        // header here is the last word on it, rather than being overwritten by this reapplying
-        // the refusal's original headers afterwards.
+        // Applied now, so the response filters see the refusal's status rather than the
+        // exchange's default 200, and a header they set is the last word on it.
         final com.ethlo.r7.api.ShortCircuitGatewayResponse terminationResponse = ex.shortCircuitResponse;
         ex.clientResponse().status(terminationResponse.status());
         terminationResponse.headers().forEach(((name, value) -> ex.clientResponse().headers().set(name, value)));
 
-        // Reverse iteration on the way out (onion), exactly like the normal response path in
-        // onResponseCommit: the filter declared first is closest to the client and gets the
-        // final say, matching a request that actually reached the upstream and came back.
-        final ClientResponseGatewayFilter[] beforeCommitFilters = route.beforeCommitGatewayFilters();
-        for (int i = beforeCommitFilters.length - 1; i >= 0; i--)
-        {
-            beforeCommitFilters[i].onClientResponse(ex);
-        }
-
-        // Attach the completion listener so the journal records
-        ex.responseRoute = route;
-        ex.listenForCompletion();
-
-        // The server triggers the listener above when done.
+        // The response filters run at commit, as for a proxied response, not here: a response
+        // is finalised in one place however it was produced, so static content's own status
+        // (304, 404, 206) and headers are what the filters see, and they have the final say.
+        registerResponseListeners(ex, route);
         sendResponse(ex);
     }
 
@@ -505,17 +507,7 @@ public final class GatewayPipeline
             return;
         }
 
-        // The refusal's status and headers were already applied in shortCircuit(), before
-        // response filters ran (see the comment there): re-applying terminationResponse here
-        // would silently undo whatever a response filter (e.g. AddResponseHeader, CircuitBreaker)
-        // just set, since this runs after them.
-        // A short-circuit body is r7's (or its configuration's), not the upstream's: r7 vouches
-        // for its Content-Type, unless the filter that answered says otherwise.
-        final MutableGatewayHeaders headers = ex.clientResponse().headers();
-        if (!headers.contains(X_CONTENT_TYPE_OPTIONS))
-        {
-            headers.set(X_CONTENT_TYPE_OPTIONS, NOSNIFF);
-        }
+        // Commits first: the response filters run there.
         ex.sendBody(ex.shortCircuitResponse.body());
     }
 
