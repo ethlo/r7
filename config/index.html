@@ -2215,6 +2215,7 @@
 <li><strong>Root Response Filters:</strong> The root's response phases, last.</li>
 <li><strong>Async Journaling:</strong> The request/response pair is dispatched to disk.</li>
 </ol>
+<p>A request a filter answers itself (<code>ReturnResponse</code>, a refusal, a redirect, <code>StaticContent</code>) skips step 5 and goes through steps 6 to 8 like a proxied one: the response filters run once, just before the response head is written, on the status and headers of the answer as it was made, and a header they set is the one the client receives.</p>
 <h3 id="ambiguous-paths">Ambiguous Paths</h3>
 <p>Route predicates match the decoded request path, while the upstream receives the raw URI and applies its own normalisation. If the two disagree, a request can match a permissive route yet reach a resource that another route protects — <code>/public/../admin</code> matches <code>PathPrefix: /public</code>, and most upstreams serve it as <code>/admin</code>. r7 therefore refuses, with <code>400 Bad Request</code>, any request whose decoded path contains:</p>
 <ul>
@@ -3740,7 +3741,7 @@
 </tbody>
 </table>
 <h4 id="staticcontent">StaticContent</h4>
-<p>Short-circuits the pipeline to serve static files directly from the disk. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), every answer carries <code>X-Content-Type-Options: nosniff</code>, and a directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> and an <code>ETag</code>, answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>.</p>
+<p>Short-circuits the pipeline to serve static files directly from the disk. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), and static content sets <code>X-Content-Type-Options: nosniff</code> on every answer before response filters run. A directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> and an <code>ETag</code>, answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>. Response filters on the route see that status (<code>304</code>, <code>404</code>, <code>206</code>) and have the last word on its headers, including the ability to replace or remove <code>X-Content-Type-Options</code>.</p>
 <table>
 <thead>
 <tr>
