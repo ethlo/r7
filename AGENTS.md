@@ -37,6 +37,7 @@ audits them into memory-mapped binary journals. Pre-release. Docs source lives i
 ```bash
 java -jar r7-helidon/target/r7-helidon-1.0-SNAPSHOT.jar          # reads ./routes.yaml, optional ./server.yaml (needs target/lib/)
 R7_ROUTES_CONFIG=... R7_SERVER_CONFIG=... java -jar ...          # override config paths
+java -jar ... --validate-only                                    # load + validate config, start nothing: exit 0 valid, 1 invalid, 2 usage
 docker compose up -d                                             # nginx test backend on :11111
 ./build.sh          # debug build of the gateway image from Dockerfile.jvm, as CI does (r7-gateway)
 ```

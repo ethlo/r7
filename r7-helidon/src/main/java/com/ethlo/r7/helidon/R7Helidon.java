@@ -3,6 +3,7 @@ package com.ethlo.r7.helidon;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -17,7 +18,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
+
 import com.ethlo.r7.logging.LogbackConfiguration;
+import com.ethlo.r7.server.blocking.ConfigCheck;
 import com.ethlo.r7.server.blocking.BlockingGateway;
 import com.ethlo.r7.server.config.ServerConfig;
 import com.ethlo.r7.status.ManagementEndpoint;
@@ -53,6 +58,8 @@ public final class R7Helidon
      * Set only by Dockerfile.jvm's AOT training run: start, serve a few requests, stop and exit.
      */
     static final String AOT_TRAINING_PROPERTY = "r7.aot.training";
+    static final String VALIDATE_ONLY = "--validate-only";
+    static final int USAGE_ERROR = 2;
 
     private final BlockingGateway gateway;
     private final HeadTimeouts dataHeadTimeouts;
@@ -245,13 +252,25 @@ public final class R7Helidon
     public static void main(final String[] args) throws IOException
     {
         choosePollerMode(System.getenv(POLLER_MODE_ENV));
-        LogbackConfiguration.configure();
+        final LoggerContext logging = LogbackConfiguration.configure();
 
         // Helidon's System.Logger ends in java.util.logging in the repackaged jar; route that into
         // logback too. The configuration's LevelChangePropagator keeps JUL's levels in step, so a
         // disabled record is dropped before the bridge builds an event for it.
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
+
+        if (args.length > 0)
+        {
+            // Warnings (a value that looks like a mistake) still show; the progress of loading,
+            // which says nothing the result line does not, does not.
+            logging.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).setLevel(Level.WARN);
+            logging.getLogger("r7").setLevel(Level.WARN);
+            final int status = command(args, System.getenv(), System.out, System.err);
+            // Stopped before exiting, to flush the asynchronous appender
+            logging.stop();
+            System.exit(status);
+        }
 
         final R7Helidon gateway = new R7Helidon(BlockingGateway.fromEnvironment());
         if (Boolean.getBoolean(AOT_TRAINING_PROPERTY))
@@ -265,6 +284,28 @@ public final class R7Helidon
             Runtime.getRuntime().halt(0);
         }
         Runtime.getRuntime().addShutdownHook(new Thread(gateway::stop, "r7-shutdown-hook"));
+    }
+
+    /**
+     * Runs what the command line asks for, other than starting the gateway: only
+     * {@value #VALIDATE_ONLY} so far.
+     *
+     * @param environment supplies the config file paths only; everything else is resolved from the
+     *                    process environment, as at startup (see {@link ConfigCheck#run})
+     *
+     * @return the exit status: 0 when the configuration is valid, 1 when it is not, 2 for
+     * arguments this does not understand
+     */
+    static int command(final String[] args, final Map<String, String> environment, final PrintStream out, final PrintStream err)
+    {
+        if (args.length == 1 && VALIDATE_ONLY.equals(args[0]))
+        {
+            return ConfigCheck.run(environment, out, err);
+        }
+        err.println("Unknown arguments: " + String.join(" ", args));
+        err.println("Usage: r7 [" + VALIDATE_ONLY + "]");
+        err.println("  " + VALIDATE_ONLY + "  load and validate routes.yaml and server.yaml as at startup, then exit: 0 if valid, 1 if not");
+        return USAGE_ERROR;
     }
 
     /**

@@ -98,10 +98,7 @@ public final class BlockingGateway implements AutoCloseable
             Thread.ofPlatform().daemon().name("r7-journal-open").start(journalOpening);
 
             this.metricsRegistry = new MetricsRegistry(new FileTelemetryRepository(workDir), this.scheduler);
-            final ConfigurationManager configurationManager = new ConfigurationManager(new EngineContext(Map.of(
-                    GatewayScheduler.class, this.scheduler,
-                    MetricsRegistry.class, this.metricsRegistry,
-                    Fingerprint.class, Fingerprint.of(storage.journalSecurity().fingerprintKey()))));
+            final ConfigurationManager configurationManager = new ConfigurationManager(engineContext(this.scheduler, this.metricsRegistry, storage));
             final HotReloadService hotReloadService = new HotReloadService(this.scheduler, routesFile, configurationManager, routeRegistry);
             this.journalWriter = opened(journalOpening);
 
@@ -131,6 +128,18 @@ public final class BlockingGateway implements AutoCloseable
             this.scheduler.shutdown();
             throw e;
         }
+    }
+
+    /**
+     * The services filter factories may ask for, the same for a gateway and for a config check:
+     * a factory that finds one missing would fail the check of a config the gateway accepts.
+     */
+    static EngineContext engineContext(final GatewayScheduler scheduler, final MetricsRegistry metricsRegistry, final ServerConfig.StorageConfig storage)
+    {
+        return new EngineContext(Map.of(
+                GatewayScheduler.class, scheduler,
+                MetricsRegistry.class, metricsRegistry,
+                Fingerprint.class, Fingerprint.of(storage.journalSecurity().fingerprintKey())));
     }
 
     /**
@@ -185,8 +194,15 @@ public final class BlockingGateway implements AutoCloseable
     public static BlockingGateway fromEnvironment() throws IOException
     {
         final Map<String, String> environment = System.getenv();
-        final Path routesFile = Paths.get(environment.getOrDefault(ROUTES_ENVIRONMENT_VARIABLE, DEFAULT_ROUTES_FILE));
-        return new BlockingGateway(routesFile, serverFile(environment.get(SERVER_ENVIRONMENT_VARIABLE), SERVER_ENVIRONMENT_VARIABLE));
+        return new BlockingGateway(routesFile(environment), serverFile(environment.get(SERVER_ENVIRONMENT_VARIABLE), SERVER_ENVIRONMENT_VARIABLE));
+    }
+
+    /**
+     * The routes file: {@code routes.yaml} in the working directory unless {@code R7_ROUTES_CONFIG} names another.
+     */
+    static Path routesFile(final Map<String, String> environment)
+    {
+        return Paths.get(environment.getOrDefault(ROUTES_ENVIRONMENT_VARIABLE, DEFAULT_ROUTES_FILE));
     }
 
     /**
@@ -212,7 +228,7 @@ public final class BlockingGateway implements AutoCloseable
         return path;
     }
 
-    private static void requireRoutesFile(final Path routesFile)
+    static void requireRoutesFile(final Path routesFile)
     {
         if (!Files.isRegularFile(routesFile))
         {
@@ -341,7 +357,7 @@ public final class BlockingGateway implements AutoCloseable
         return new HttpUpstream(UpstreamOptions.of(this.serverConfig, route.routeDefinition().upstream()));
     }
 
-    private static ServerConfig loadServerSettings(final Path serverFile)
+    static ServerConfig loadServerSettings(final Path serverFile)
     {
         ServerConfig serverConfig;
         if (!Files.exists(serverFile))

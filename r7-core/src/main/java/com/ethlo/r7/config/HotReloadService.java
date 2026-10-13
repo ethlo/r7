@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 
 import com.ethlo.r7.GatewayScheduler;
 import com.ethlo.r7.api.GatewayRoute;
-import com.ethlo.r7.validation.ValidationResult;
 
 public final class HotReloadService
 {
@@ -96,30 +95,14 @@ public final class HotReloadService
         try
         {
             log.info("Loading routes from {}", configFilePath.toAbsolutePath());
-            RoutesDefinition routesConfig = this.configManager.loadRoutes(this.configFilePath);
-
-            if (routesConfig == null)
-            {
-                log.warn("No routes found");
-                routesConfig = new RoutesDefinition(null, List.of(), List.of(), null);
-            }
-
-
-            final ValidationResult validationResult = new ValidationResult();
-            routesConfig.validate(validationResult);
-            if (validationResult.hasErrors())
-            {
-                throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));
-            }
-
-            final RouteRegistry.Snapshot snapshot = this.configManager.build(routesConfig);
+            final RouteRegistry.Snapshot snapshot = this.configManager.buildFrom(this.configFilePath);
             this.prepare(snapshot.routes());
             final List<GatewayRoute> previous = this.routeRegistry.getRoutes();
             this.routeRegistry.publish(snapshot);
             this.loadedAt = Instant.now();
             this.rejectedAt = null;
             this.retire(previous);
-            log.info("Configuration {} successfully loaded {} routes from version {}", this.configFilePath, routesConfig.routes().size(), routesConfig.version());
+            log.info("Configuration {} successfully loaded {} routes from version {}", this.configFilePath, snapshot.routes().size(), snapshot.version());
         }
         catch (final RuntimeException e)
         {
