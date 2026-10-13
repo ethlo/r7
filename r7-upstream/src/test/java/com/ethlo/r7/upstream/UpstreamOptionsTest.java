@@ -21,7 +21,7 @@ class UpstreamOptionsTest
     void aRoutesTimeoutsReachTheClient()
     {
         final UpstreamOptions options = UpstreamOptions.of(ServerConfig.standard(),
-                upstream(new TimeoutConfig(Duration.ofSeconds(7), Duration.ofMillis(250))));
+                upstream(new TimeoutConfig(Duration.ofSeconds(7), Duration.ofMillis(250)), null));
 
         assertThat(options.readTimeout()).isEqualTo(Duration.ofSeconds(7));
         assertThat(options.connectTimeout()).isEqualTo(Duration.ofMillis(250));
@@ -30,14 +30,23 @@ class UpstreamOptionsTest
     @Test
     void anUpstreamWithoutTimeoutsGetsTheDefaults()
     {
-        final UpstreamOptions options = UpstreamOptions.of(ServerConfig.standard(), upstream(null));
+        final UpstreamOptions options = UpstreamOptions.of(ServerConfig.standard(), upstream(null, null));
 
         assertThat(options.readTimeout()).isEqualTo(TimeoutConfig.DEFAULT_READ);
         assertThat(options.connectTimeout()).isEqualTo(TimeoutConfig.DEFAULT_CONNECT);
+        assertThat(options.preserveHost()).isFalse();
     }
 
-    private static UpstreamConfig upstream(final TimeoutConfig timeouts)
+    @Test
+    void anUpstreamCanPreserveHost()
     {
-        return new UpstreamConfig(null, null, timeouts, List.of(new TargetConfig("http://localhost:1")), null, null);
+        final UpstreamOptions options = UpstreamOptions.of(ServerConfig.standard(), upstream(null, true));
+
+        assertThat(options.preserveHost()).isTrue();
+    }
+
+    private static UpstreamConfig upstream(final TimeoutConfig timeouts, final Boolean preserveHost)
+    {
+        return new UpstreamConfig(null, null, timeouts, List.of(new TargetConfig("http://localhost:1")), null, preserveHost);
     }
 }
