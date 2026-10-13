@@ -995,7 +995,7 @@ so the image's non-root user can write to it, which a directory you create yours
 exposing it, read <a href="../config/#management-configuration-management">Management Configuration</a>.</p>
 <h2 id="routes-configuration">Routes Configuration</h2>
 <p>Create <code>routes.yaml</code>. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and records every request and response in full.</p>
-<div class="language-yaml highlight"><span class="filename">routes.yaml</span><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">global_filters</span><span class="p">:</span>
+<div class="language-yaml highlight"><span class="filename">routes.yaml</span><pre><span></span><code><span id="True-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">filters</span><span class="p">:</span>
 </span><span id="True-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
 </span><span id="True-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
 </span><span id="True-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nt">routes</span><span class="p">:</span>

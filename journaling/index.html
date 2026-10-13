@@ -1084,7 +1084,9 @@ matches (no route, ambiguous path, TRACE and similar) are journaled only when co
 <a href="../config/#unrouted-requests-routesyaml-unrouted">Unrouted Requests</a>.</p>
 <p>Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (<code>gateway.route.id</code>, <code>gateway.target</code>; the JSON line has them as <code>route_id</code> and
-<code>upstream_request.targets</code>), and the journal stores ISO-8859-1 text only. A route
+<code>upstream_request.targets</code>), and the journal stores ISO-8859-1 text only. A route declared in
+a <a href="../config/#root-groups-and-routes">group</a> is also recorded with the group's id as
+<code>gateway.route.group</code> (in the JSON line's <code>attributes</code>). A route or group
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.</p>
 <h3 id="redacted-header-and-query-parameter-values">Redacted header and query parameter values</h3>
 <p><strong>Headers.</strong> At <code>HEADERS</code> and <code>FULL</code>, every header name is journaled, but a value is written as
