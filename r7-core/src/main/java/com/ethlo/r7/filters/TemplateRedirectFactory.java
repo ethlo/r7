@@ -338,7 +338,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     {
                         throw new IllegalArgumentException("Illegal group reference in: " + template);
                     }
-                    if (ref > groupCount)
+                    if (pattern == NO_GROUPS || ref > groupCount)
                     {
                         throw new IllegalArgumentException("$" + ref + " needs a source pattern with that many groups.");
                     }
