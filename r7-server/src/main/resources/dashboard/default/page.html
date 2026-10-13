@@ -1562,6 +1562,7 @@
             <div class="spacer-sm"></div>
             ${mRow('READ TIMEOUT', formatDuration(u.read_timeout), false)}
             ${mRow('CONNECT TIMEOUT', formatDuration(u.connect_timeout), false)}
+            ${mRow('HOST HEADER', u.preserve_host ? 'CLIENT\'S (PRESERVED)' : 'TARGET\'S', false)}
             ${hc ? `
                 ${mRow('HEALTH CHECK', `GET ${esc(hc.path)} every ${formatDuration(hc.interval)}`, false)}
                 ${mRow('DOWN AFTER / UP AFTER', `${hc.fall} / ${hc.rise} probes`, false)}

@@ -20,7 +20,9 @@ public record UpstreamConfig(
         @Description("List of backend servers to forward traffic to. Required after inheritance: a route takes it from its group or the root when it names none.")
         List<TargetConfig> targets,
         @DefaultValue("{}")
-        @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback
+        @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback,
+        @DefaultValue("false")
+        @Description("Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.") Boolean preserveHost
 ) implements ValidatableConfig
 {
     @Override
@@ -57,6 +59,12 @@ public record UpstreamConfig(
      * of the effective upstream, checked per route once inheritance is resolved: a group may name
      * only the {@code timeouts} its routes share.
      */
+    @Override
+    public Boolean preserveHost()
+    {
+        return Optional.ofNullable(this.preserveHost).orElse(false);
+    }
+
     @Override
     public void validate(final ValidationResult result)
     {

@@ -59,7 +59,8 @@ final class Http1
 
     /**
      * The request line and headers to send upstream: the headers as the pipeline left them, with
-     * Host rewritten to the target, the gateway's X-Forwarded-* added (extending a trusted
+     * Host rewritten to the target (or the client's kept, with preserve_host), the gateway's
+     * X-Forwarded-* added (extending a trusted
      * proxy's chain, starting one otherwise), and framing and
      * Expect left to this hop.
      */
@@ -73,8 +74,13 @@ final class Http1
             throw new ClientProtocolException("The request target cannot be forwarded");
         }
         sb.append(exchange.forwardMethod()).append(' ').append(target.basePath).append(requestTarget).append(" HTTP/1.1\r\n");
-        sb.append("Host: ").append(target.hostHeader).append("\r\n");
         final String originalHost = headers.getFirst("Host");
+        final boolean preserve = target.preserveHost() && originalHost != null;
+        if (preserve && (!isFieldValue(originalHost) || originalHost.isEmpty()))
+        {
+            throw new ClientProtocolException("The Host header cannot be forwarded as HTTP/1.1");
+        }
+        sb.append("Host: ").append(preserve ? originalHost : target.hostHeader).append("\r\n");
         final boolean check = !exchange.parsedAsHttp1();
         final boolean[] valid = {true};
         headers.forEach(sb, (b, name, value) ->
