@@ -409,7 +409,12 @@ custom predicate's bug), the whole condition counts as false, not the leaf: unde
 false leaf would turn the rule on. Later rules still run, the exchange is journaled at what the
 remaining rules and the base resolve to, and the record carries
 `gateway.journal.rule_error` with the rule's id or path, so an audit can tell a rule that did
-not match from one that could not be evaluated. A `match` that throws still fails closed with
+not match from one that could not be evaluated. An exchange that resolves to `NONE` in both
+directions has no record to carry it, and a rule that fails is often one meant to raise the
+level, so the failure is counted whether or not a record is written: the management view shows
+a `rule_errors` count per rule (id or path) beside its definition, and the first failure of a
+rule after each config load is logged as a warning with its path and the exception; later ones
+only count, so a failing rule on a hot route cannot flood the log. A `match` that throws still fails closed with
 `500`, as today: routing a request whose condition could not be decided is the unsafe choice.
 
 ### Recording which rule fired
@@ -504,9 +509,13 @@ The management API and `r7-editor` show each route's effective configuration: it
 group's ANDed in, its filters in the order they run and the level each was declared on, its
 resolved upstream, and its journal policy (base levels, then its rules, its group's and the
 root's, in the order they are checked). Where an inner rule names a key an outer rule also
-names, the view marks the outer rule as shadowed for that key on that route: a route rule that
-matches everything with `response: NONE` shows the root's "5xx → `FULL`" as shadowed there, so
-an audit sees which routes a gateway-wide rule does not reach. The dashboard says "root" or "gateway-wide" where it says
+names, the view shows the outer rule as **may be overridden** for that key on that route, with
+the inner rule that takes precedence: a route rule `POST → response: NONE` beneath the root's
+"5xx → `FULL`" shows the root rule as possibly overridden for `response`, since a `5xx` to a
+`GET` still reaches it. The view never claims an outer rule is fully overridden: whether one
+condition covers another is not decidable for opaque, third-party predicates, and an audit
+view must not state what it cannot prove. The journal answers it per exchange
+(`gateway.journal.rule`). The dashboard says "root" or "gateway-wide" where it says
 "global" today.
 
 ## Implementation notes
@@ -685,7 +694,7 @@ lands before it, with its own docs and tests.
 | Change | Shape | Existing configs |
 |---|---|---|
 | `RewritePath` can set the query | A literal `?` in `replacement` starts the query. Captures after it are encoded as a single query value, as `TemplateRedirect` does, so a captured value cannot add a parameter; the client's own query is passed on as it came, its parameters included. The two are merged: a name the rewrite sets replaces every occurrence the client sent, so `?uid=123&uid=456` rewritten to `?uid={query.refid}` reaches the upstream as one `uid`, and every other parameter keeps its occurrences and order. | **Changes meaning:** today a `?` in `replacement` is sent as `%3F` inside the path. r7 cannot tell which was meant, so the docs and migration notes say so. |
-| Template placeholders in braces | In `RewritePath` `replacement` and `TemplateRedirect` `target`, a named group is `{name}` and a query value `{query.refid}`; `$1`, `$2` stay, and `\{` is a literal brace in the string YAML hands r7 (plain or single-quoted `replacement: /a\{b`; double-quoted, YAML needs its own escape: `"/a\\{b"`). `${...}` is then only ever environment interpolation, and no template needs `$$`; the `$${...}` escape stays for any other value that needs a literal `${` (`docs/config.md` §1 loses its template example). Raw braces are not allowed in a URI (RFC 3986), so a placeholder cannot clash with a literal one in practice; Spring Cloud Gateway users know `{segment}` from its path templates. `{{ }}` for environment variables was rejected instead (see Rejected). | **Changes syntax:** `$${name}` is refused at load: `[routes.x.filters[0].TemplateRedirect.target] Write a named group as {name}, not $${name}.` A `{` in a replacement today is a literal one and becomes a placeholder; one naming no group is refused at load. |
+| Template placeholders in braces | In `RewritePath` `replacement` and `TemplateRedirect` `target`, a named group is `{name}` and a query value `{query.refid}`; `$1`, `$2` stay, and `\{` is a literal brace in the string YAML hands r7 (plain or single-quoted `replacement: /a\{b`; double-quoted, YAML needs its own escape: `"/a\\{b"`). A literal brace is a character of the result, not URI syntax, so it reaches the wire percent-encoded like any character outside RFC 3986: `RewritePath` passes it through the path encoder (or, after `?`, the query-value encoder), and `TemplateRedirect` encodes it in `Location`, so `target: /a\{b` answers `Location: /a%7Bb`. r7 never emits a raw brace in a URI; tested for both filters, in the path and in the query. `${...}` is then only ever environment interpolation, and no template needs `$$`; the `$${...}` escape stays for any other value that needs a literal `${` (`docs/config.md` §1 loses its template example). Raw braces are not allowed in a URI (RFC 3986), so a placeholder cannot clash with a literal one in practice; Spring Cloud Gateway users know `{segment}` from its path templates. `{{ }}` for environment variables was rejected instead (see Rejected). | **Changes syntax:** `$${name}` is refused at load: `[routes.x.filters[0].TemplateRedirect.target] Write a named group as {name}, not $${name}.` A `{` in a replacement today is a literal one and becomes a placeholder; one naming no group is refused at load. |
 | Several `RewritePath`s documented | Each tests the path the client sent (`RewritePathFactory:74`), never another rewrite's output, so rewrites cannot cascade; when several match, the last one declared wins, and a route's rewrite therefore wins over its group's. Unchanged behaviour, written down. No `rules:` list: one would only restate this. | Unchanged. |
 | Query values in `TemplateRedirect` | `{query.refid}`, encoded as a query value like path captures are; a repeated parameter is refused with `400` unless every occurrence agrees, and so is a missing one: there is no value to redirect with. | Additive. |
 | `TemplateRedirect` `status` limited to redirects | `301`, `302`, `303`, `307` or `308`; anything else is refused at load. Today any code is accepted, and `status: 200` sends a `Location` no client follows. | **Refuses** a config that loads today; none can have worked as a redirect. |
@@ -723,7 +732,7 @@ tokens that were not verified (a forgeable username has no place in an audit rec
 | A `Journal` filter | Filters run after the levels are fixed, and journaling would depend on filter order. |
 | "Most detailed level wins" | Rules could not lower a level (health checks to `NONE`). |
 | Override by id, type or name (`replaces:`, `inherit_rules: false`, `journal: NONE` meaning "ignore outer rules") | Removal, and lookups across the file; it no longer reads top to bottom. A filter type can legitimately be stacked, so override by type drops one silently. |
-| Locked root rules (`enforce: true`) that inner rules cannot override, or a load warning when one does | The file is one artifact with one author and one review, so a lock guards only against that author; an override is a deliberate rule, and a warning would fire on every legitimate one. The journal records which rule fired (`gateway.journal.rule`), and the management view marks shadowed outer rules per route. A route's base level never lowers an outer rule; only an inner rule naming the same key does. |
+| Locked root rules (`enforce: true`) that inner rules cannot override, or a load warning when one does | The file is one artifact with one author and one review, so a lock guards only against that author; an override is a deliberate rule, and a warning would fire on every legitimate one. The journal records which rule fired (`gateway.journal.rule`), and the management view shows, per route, which outer rules an inner rule may override. A route's base level never lowers an outer rule; only an inner rule naming the same key does. |
 | `not:` taking a list | `not: [A, B]` was ANDed, NOT(A AND B), and reads just as well as "neither A nor B". `not` takes one condition; `not: { or: [...] }` and `not: { and: [...] }` say which is meant. A list is refused at load. |
 | `upstream` replaced as a whole | A route that only needs another timeout would repeat its targets, and the root could not set timeouts for everyone. |
 | Rule reuse through YAML anchors | Jackson 3.2.3's `readTree` turns an alias to a mapping into the anchor's name as a string, so a reused rule fails to bind. Reuse is what nesting is for; templating belongs to Helm or Kustomize. |
@@ -760,7 +769,7 @@ One branch and pull request per slice, each green on `./mvnw clean install` with
 - `docs/config.md`: §2 states the instance rule; §3 the order with group filters; a new section
   for groups and inheritance; §7 rewritten around `on_request`, `on_response` and the root
   `journal`; §8 and every snippet migrated (`DocsConfigSnippetsTest`).
-- `docs/journaling.md`: `gateway.journal.rule`, `gateway.route.group`, `truncate_body_at` and the
+- `docs/journaling.md`: `gateway.journal.rule`, `gateway.journal.rule_error` (and the `rule_errors` count for exchanges with no record), `gateway.route.group`, `truncate_body_at` and the
   truncation flags. Next to `truncate_body_at`, the reason to set it: request bodies are bounded
   by `limits.max_entity_size`, response bodies by nothing, so at `FULL` a 2 GB download writes
   2 GB to the journal, and a tailer holds every fragment of an in-flight exchange in its heap
@@ -780,7 +789,7 @@ One branch and pull request per slice, each green on `./mvnw clean install` with
   route, group and root rules matching at once for different directions; rule predicates
   matching the client's request after `RewritePath` and header filters changed it; upstreams
   shared only when every key is; `unrouted` rules with a request predicate checked only on `no_route` (including under `not`), rules of only `UnroutedReason`/`Sample` on every refusal, `UnroutedReason` refused outside `unrouted`, `on_response` refused; empty `match: []` never matching and nested empty conditions refused; `leg` on built-in and third-party
-  predicates, false on unproxied exchanges; upstream request predicates matching and response predicates false after a refused connect and after a read timeout (no upstream response journaled); root filters not running on any refusal; a rule whose `MatchResponseHeader` exceeds its budget not firing, under `not` too, with the response delivered and `gateway.journal.rule_error` set; upstream response predicates matching the head when the body then times out; a group `CircuitBreaker`, and a root one covering both routes, counting exactly one failure when its route falls back to a route answering `200`; a breaker counting a `200` whose body times out as a failure; a breaker counting neither for a `ReturnResponse` `503` nor success for an upstream `503` a response filter turned into `200`; the mixed-leg rule through a status-changing filter; one `Sample` draw per exchange; `truncate_body_at`
+  predicates, false on unproxied exchanges; upstream request predicates matching and response predicates false after a refused connect and after a read timeout (no upstream response journaled); root filters not running on any refusal; a rule whose `MatchResponseHeader` exceeds its budget not firing, under `not` too, with the response delivered and `gateway.journal.rule_error` set; a failing rule on an exchange that resolves to `NONE` counted in `rule_errors` with no record written, and warned once per rule per load; upstream response predicates matching the head when the body then times out; a group `CircuitBreaker`, and a root one covering both routes, counting exactly one failure when its route falls back to a route answering `200`; a breaker counting a `200` whose body times out as a failure; a breaker counting a success, not a failure, when the client disconnects while the upstream body is still streaming (the outcome set explicitly, not left to fall out of the body not completing); a breaker counting neither for a `ReturnResponse` `503` nor success for an upstream `503` a response filter turned into `200`; the mixed-leg rule through a status-changing filter; one `Sample` draw per exchange; `truncate_body_at`
   inherited into rules, the truncation flag in the record and in both tailer outputs, unset for a body exactly at the cap and set one byte over; rule ids
   journaled in place of paths; each validation error; the response
   capture raised at commit for proxied and short-circuited responses; upstream legs at resolved
