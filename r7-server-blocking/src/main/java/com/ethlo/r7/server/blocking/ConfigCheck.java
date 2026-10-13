@@ -31,7 +31,10 @@ public final class ConfigCheck
 
     /**
      * @param environment where {@code R7_ROUTES_CONFIG} and {@code R7_SERVER_CONFIG} are read
-     *                    from; {@code ${VAR}} references in the files are resolved as at startup
+     *                    from, and nothing else: {@code ${VAR}} references and the environment-backed
+     *                    server defaults ({@code R7_JOURNAL_DIR}, {@code R7_MANAGEMENT_HOST},
+     *                    {@code R7_FINGERPRINT_KEY}) resolve against the process environment, exactly
+     *                    as at startup, so a check validates what a start would run
      * @param out         gets one line naming the files when they are valid
      * @param err         gets the errors when they are not
      * @return {@link #VALID} or {@link #INVALID}

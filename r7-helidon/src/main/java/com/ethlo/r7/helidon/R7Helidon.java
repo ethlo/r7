@@ -290,6 +290,9 @@ public final class R7Helidon
      * Runs what the command line asks for, other than starting the gateway: only
      * {@value #VALIDATE_ONLY} so far.
      *
+     * @param environment supplies the config file paths only; everything else is resolved from the
+     *                    process environment, as at startup (see {@link ConfigCheck#run})
+     *
      * @return the exit status: 0 when the configuration is valid, 1 when it is not, 2 for
      * arguments this does not understand
      */
