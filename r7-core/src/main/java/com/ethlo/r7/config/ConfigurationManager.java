@@ -342,7 +342,8 @@ public final class ConfigurationManager
     private static Placed placeRoute(final RouteDefinition route, final GroupDefinition group, final UpstreamConfig outer, final String path, final ValidationResult validationResult)
     {
         final UpstreamConfig merged = route.upstream() != null ? route.upstream().inherit(outer) : outer;
-        final boolean namedBelowRoot = route.upstream() != null || (group != null && group.upstream() != null);
+        final boolean namedBelowRoot = (route.upstream() != null && route.upstream().namesAnyKey())
+                || (group != null && group.upstream() != null && group.upstream().namesAnyKey());
         UpstreamConfig effective = merged;
         if (merged != null && merged.targets() == null)
         {

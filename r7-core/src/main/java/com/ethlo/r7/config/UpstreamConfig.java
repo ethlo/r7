@@ -55,6 +55,16 @@ public record UpstreamConfig(
         );
     }
 
+    /**
+     * Whether this level names any upstream key. Read from the components, not the defaulting
+     * accessors: {@code upstream: {}} names nothing, and is the same as leaving the block out.
+     */
+    public boolean namesAnyKey()
+    {
+        return this.strategy != null || this.healthCheck != null || this.timeouts != null
+                || this.targets != null || this.fallback != null || this.preserveHost != null;
+    }
+
     @Override
     public Boolean preserveHost()
     {

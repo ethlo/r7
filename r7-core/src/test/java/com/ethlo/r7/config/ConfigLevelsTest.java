@@ -201,6 +201,24 @@ class ConfigLevelsTest
                 """);
         assertThat(route(snapshot, "static").routeDefinition().upstream()).isNull();
 
+        // An empty block names no key: the same as leaving it out
+        final RouteRegistry.Snapshot empty = build("""
+                routes:
+                  - group: g
+                    upstream: {}
+                    routes:
+                      - id: static
+                        match:
+                          - PathPrefix:
+                              prefix: /
+                        upstream: {}
+                        filters:
+                          - ReturnResponse:
+                              status: 200
+                              body: ok
+                """);
+        assertThat(route(empty, "static").routeDefinition().upstream()).isNull();
+
         assertThatThrownBy(() -> build("""
                 routes:
                   - group: g
