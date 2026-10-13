@@ -483,9 +483,11 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `source` | String | Yes | The regular expression pattern to match against the request path. |
-| `target` | String | Yes | The destination URL template. Regex capture groups are referenced as in Java's `Matcher.replaceFirst`: by number (`$1`, `$2`, ...) or by name, written `$${name}` because `${...}` on its own is [environment variable interpolation](#environment-variable-interpolation). `\$` is a literal `$`. |
-| `status` | Integer | No | The HTTP redirect status code. Defaults to `302` (Found). |
+| `source` | String | No | The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; `target` then holds literal text and `{query.NAME}` placeholders only, and a `$1` or `${name}` is refused at startup (`$1 needs a source pattern with that many groups.`). |
+| `target` | String | Yes | The destination URL template. A query parameter's value is `{query.NAME}`. Regex capture groups are referenced as in Java's `Matcher.replaceFirst`: by number (`$1`, `$2`, ...) or by name, written `$${name}` because `${...}` on its own is [environment variable interpolation](#environment-variable-interpolation). `\$` is a literal `$`. |
+| `status` | Integer | No | The HTTP redirect status code: `301`, `302`, `303`, `307` or `308`. Defaults to `302` (Found). Any other code is refused at startup: a client follows a `Location` only on a redirect. |
+
+A route that only redirects needs no `source`: `target: "/?uid=urn:example:{query.refid}"` sends every request it sees to `/` with the client's `refid` as `uid`. The parameter must be present, and a repeated one must repeat the same value each time; otherwise the request is answered `400`, since there is no single value to redirect with. The value is encoded for the part of the URL it lands in, like a capture group, and like one it may not appear in the scheme or host of an absolute `target`.
 
 The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path `target` (`/new/$1`) must produce a path: a location starting with `//`, `/\`, `\`, a scheme or whitespace is refused with `400`, because a browser would leave the site for it (`/go//evil.example` would otherwise redirect to `//evil.example`). An absolute `target` must have the form `http://host...`, `https://host...` or `//host...` with a non-empty host; any other scheme (`javascript:`, `data:`, even written with `//`), a scheme without `//`, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's `/`, `?` or `#`; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.
 

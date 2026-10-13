@@ -5,6 +5,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -12,6 +14,8 @@ import org.mockito.ArgumentCaptor;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.api.QueryParams;
+import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -233,5 +237,103 @@ class TemplateRedirectFactoryTest
     {
         assertThat(location("^/old/(.*)$", "/new/$1", "/old/\u65e5\u672c")).isEqualTo("/new/%E6%97%A5%E6%9C%AC");
         assertThat(location("^/search/(.*)$", "/find?q=$1", "/search/x ")).isEqualTo("/find?q=x%20");
+    }
+
+    private static ShortCircuitGatewayResponse redirectWithQuery(final String source, final String target, final String path, final String... nameValues)
+    {
+        final GatewayRequest request = mock(GatewayRequest.class);
+        when(request.path()).thenReturn(path);
+        final QueryParams params = mock(QueryParams.class);
+        when(params.getAll(org.mockito.ArgumentMatchers.anyString())).thenAnswer(call ->
+        {
+            final List<String> values = new java.util.ArrayList<>();
+            for (int i = 0; i < nameValues.length; i += 2)
+            {
+                if (nameValues[i].equals(call.getArgument(0)))
+                {
+                    values.add(nameValues[i + 1]);
+                }
+            }
+            return values;
+        });
+        when(request.queryParams()).thenReturn(params);
+        final ClientRequestGatewayExchange exchange = mock(ClientRequestGatewayExchange.class);
+        when(exchange.clientRequest()).thenReturn(request);
+
+        new TemplateRedirectFactory().create(new TemplateRedirectFactory.Config(source, target, null), null).onClientRequest(exchange);
+
+        final ArgumentCaptor<ShortCircuitGatewayResponse> response = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+        verify(exchange).shortCircuit(response.capture());
+        return response.getValue();
+    }
+
+    private static List<String> errors(final String source, final String target, final Integer status)
+    {
+        final ValidationResult result = new ValidationResult();
+        new TemplateRedirectFactory.Config(source, target, status == null ? null : new HttpStatus(status)).validate(result);
+        return result.getErrors();
+    }
+
+    @Test
+    void aQueryValueIsEncodedForWhereItLands()
+    {
+        final ShortCircuitGatewayResponse response = redirectWithQuery(null, "/?uid=urn:example:{query.refid}", "/anything", "refid", "a&b?c");
+        assertThat(response.status()).isEqualTo(HttpStatuses.FOUND);
+        assertThat(response.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("/?uid=urn:example:a%26b%3Fc");
+    }
+
+    @Test
+    void aQueryValueInThePathCannotLeaveIt()
+    {
+        final ShortCircuitGatewayResponse response = redirectWithQuery(null, "/go/{query.to}", "/x", "to", "a/b?c");
+        assertThat(response.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("/go/a/b%3Fc");
+    }
+
+    @Test
+    void aRepeatedQueryParameterIsRefusedUnlessEveryOccurrenceAgrees()
+    {
+        assertThat(redirectWithQuery(null, "/x/{query.id}", "/p", "id", "1", "id", "1").headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("/x/1");
+        assertThat(redirectWithQuery(null, "/x/{query.id}", "/p", "id", "1", "id", "2").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+    }
+
+    @Test
+    void aMissingQueryParameterIsRefused()
+    {
+        assertThat(redirectWithQuery(null, "/x/{query.id}", "/p", "other", "1").status()).isEqualTo(HttpStatuses.BAD_REQUEST);
+    }
+
+    @Test
+    void aQueryValueIsCombinedWithCaptureGroups()
+    {
+        final ShortCircuitGatewayResponse response = redirectWithQuery("^/old/(.*)$", "/new/$1?ref={query.r}", "/old/a", "r", "7");
+        assertThat(response.headers().getFirst(HttpHeaders.LOCATION)).isEqualTo("/new/a?ref=7");
+    }
+
+    @Test
+    void withoutASourceACaptureReferenceIsRefusedAtLoad()
+    {
+        assertThat(errors(null, "/x/$1", null)).singleElement().asString().contains("$1 needs a source pattern with that many groups.");
+        assertThat(errors(null, "/x/${name}", null)).singleElement().asString().contains("${name} needs a source pattern with a group of that name.");
+        assertThat(errors(null, "/?uid={query.refid}", null)).isEmpty();
+    }
+
+    @Test
+    void aQueryValueInTheOriginIsRefusedAtLoad()
+    {
+        assertThat(errors(null, "https://{query.h}.example/x", null)).singleElement().asString().contains("literal");
+        assertThat(errors(null, "https://good.example/{query.h}", null)).isEmpty();
+    }
+
+    @Test
+    void onlyRedirectStatusesAreAccepted()
+    {
+        for (final int ok : new int[]{301, 302, 303, 307, 308})
+        {
+            assertThat(errors(null, "/x", ok)).isEmpty();
+        }
+        for (final int bad : new int[]{200, 300, 304, 404})
+        {
+            assertThat(errors(null, "/x", bad)).singleElement().asString().contains("status", "301, 302, 303, 307 or 308");
+        }
     }
 }
