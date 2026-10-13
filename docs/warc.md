@@ -54,6 +54,9 @@ happened:
   since the journal then [records it at `METADATA`](config.md#logging-levels-routesyaml-journal).
 - Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
   itself (a rate limit, a redirect) has records 1 and 4.
+- Record 3 exists only when an upstream sent a response head. A proxied request whose upstream
+  refused the connection, timed out or broke the protocol before answering has records 1, 2 and
+  4, and record 4 is r7's own `502`, `503` or `504`.
 - Every record of an exchange names all the others in `WARC-Concurrent-To`, and carries the
   same `WARC-R7-Request-Id`.
 - An incomplete exchange (the gateway stopped before it finished, or it was evicted while being

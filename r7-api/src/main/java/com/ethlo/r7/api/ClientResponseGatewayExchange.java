@@ -17,7 +17,9 @@ public interface ClientResponseGatewayExchange extends GatewayExchange
     GatewayRequest upstreamRequest();
 
     /**
-     * @return the response received from the upstream service
+     * @return the response head the upstream sent; status {@code 0} and no headers when no
+     * upstream sent one: the exchange was not proxied, or the proxy failed before a response
+     * head arrived and r7 is answering with its own {@code 502}, {@code 503} or {@code 504}
      */
     GatewayResponse upstreamResponse();
 

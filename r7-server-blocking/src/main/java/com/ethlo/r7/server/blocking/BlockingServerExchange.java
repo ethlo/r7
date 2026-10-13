@@ -662,6 +662,9 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     @Override
     public OutputStream commit(final boolean body) throws IOException
     {
+        // Only the relay calls this, with the upstream's head on the client response; r7's own
+        // answers, proxy failures included, commit through sendBody.
+        upstreamResponseCommitting();
         commit();
         writeHead();
         if (!body)
@@ -707,6 +710,7 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     {
         // The pipeline's commit work first: it sees the 101, marks the exchange an upgraded
         // WebSocket and registers what must run when the connection closes.
+        upstreamResponseCommitting();
         commit();
         this.headWritten = true;
         this.tunnel = tunnel;
