@@ -2200,6 +2200,12 @@
 <td>None</td>
 <td>Alternate routing logic if primary targets fail.</td>
 </tr>
+<tr>
+<td><code>preserve_host</code></td>
+<td>Boolean</td>
+<td><code>false</code></td>
+<td>Sends the client's <code>Host</code> header to the target instead of the target's own, for an upstream that serves several sites by name. A request without a <code>Host</code> gets the target's. TLS server name indication and the certificate check still use the target's host. <code>X-Forwarded-Host</code> carries the client's <code>Host</code> either way.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="targets">Targets</h3>
@@ -4246,6 +4252,7 @@
 <li><strong>Forwarding and identity claims</strong>, unless the peer is in <code>trusted_proxies</code>: <code>Forwarded</code>, <code>X-Forwarded-*</code>, <code>X-Real-IP</code>, <code>X-Client-IP</code>, <code>True-Client-IP</code>, <code>X-Cluster-Client-IP</code>, and the path overrides <code>X-Original-URL</code> and <code>X-Rewrite-URL</code>. The <code>X-Forwarded-*</code> match is on the header name's letters, not its exact spelling: <code>X_Forwarded_For</code> and other underscore or mixed-separator variants are stripped too, since CGI-derived backends (classic CGI, FastCGI, and frameworks that read headers out of a CGI-style environment) fold every <code>-</code> in a header name to <code>_</code> before their application code ever sees it, so such a backend reads either spelling identically.</li>
 </ul>
 <p>r7 then sets <code>X-Forwarded-For</code>, <code>-Proto</code>, <code>-Host</code>, <code>-Port</code> and <code>-Server</code> itself. For a trusted proxy it extends that proxy's values (its client's address stays in <code>X-Forwarded-For</code>, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the <code>X-Forwarded-*</code> headers they receive from r7.</p>
+<p>r7 sends the target's own <code>Host</code> (its host, and its port when the target URL names one), or the client's with <a href="#4-upstream-configuration"><code>preserve_host</code></a>.</p>
 <h3 id="proxy-client-proxy">Proxy Client (<code>proxy</code>)</h3>
 <p>Configures r7's upstream client, an HTTP/1.1 client with a keep-alive pool per target.</p>
 <table>
