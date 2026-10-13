@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +17,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 
+import com.ethlo.r7.condition.Leg;
+import com.ethlo.r7.condition.SampleConfig;
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.config.model.HttpStatus;
@@ -24,6 +27,8 @@ import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.spi.GatewayResponsePredicateFactory;
+import com.ethlo.r7.util.PredicateRegistry;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonValue;
@@ -303,9 +308,8 @@ public final class JsonSchemaGenerator
     private SchemaNode buildFilterDefinition()
     {
         return buildSpiDefinition(
-                GatewayFilterFactory.class,
-                GatewayFilterFactory::name,
-                GatewayFilterFactory::configClass,
+                spiEntries(GatewayFilterFactory.class, GatewayFilterFactory::name, GatewayFilterFactory::configClass),
+                Map.of(),
                 Map.of()
         );
     }
@@ -321,35 +325,64 @@ public final class JsonSchemaGenerator
         logicalOperators.put("or", arrayRef);
         logicalOperators.put("and", arrayRef);
 
-        return buildSpiDefinition(
-                GatewayPredicateFactory.class,
-                GatewayPredicateFactory::name,
-                GatewayPredicateFactory::configClass,
-                logicalOperators
-        );
+        // Sample is a node of the condition tree, not a predicate: no factory, and no leg.
+        final Description sampleDescription = SampleConfig.class.getAnnotation(Description.class);
+        final ObjectSchema sample = (ObjectSchema) buildInnerConfigSchema(SampleConfig.class);
+        logicalOperators.put(PredicateRegistry.SAMPLE, new ObjectSchema(
+                sample.type(), sample.properties(), sample.required(), sample.additionalProperties(),
+                sample.minProperties(), sample.maxProperties(), sample.anyOf(), sample.oneOf(),
+                sampleDescription.value(), sample.defaultValue(), sample.defaultSnippets()));
+
+        final List<SpiEntry> entries = new ArrayList<>(spiEntries(GatewayPredicateFactory.class, GatewayPredicateFactory::name, GatewayPredicateFactory::configClass));
+        entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
+
+        // r7 takes leg out before a predicate's own parameters bind, so every predicate has it.
+        final SchemaNode leg = new PrimitiveSchema("string", Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,
+                "Which leg of the exchange to test: client (the default) or upstream.", null, null, null);
+
+        return buildSpiDefinition(entries, logicalOperators, Map.of(PredicateRegistry.LEG, leg));
     }
 
-    private <T> SchemaNode buildSpiDefinition(
-            final Class<T> spiClass,
-            final Function<T, String> nameExtractor,
-            final Function<T, Class<?>> configExtractor,
-            final Map<String, SchemaNode> extraProperties)
+    private record SpiEntry(String name, Class<?> configClass, String description)
+    {
+    }
+
+    private static <T> List<SpiEntry> spiEntries(final Class<T> spiClass, final Function<T, String> nameExtractor, final Function<T, Class<?>> configExtractor)
+    {
+        final List<SpiEntry> entries = new ArrayList<>();
+        ServiceLoader.load(spiClass).forEach(factory -> {
+            final Description descAnnotation = factory.getClass().getAnnotation(Description.class);
+            entries.add(new SpiEntry(nameExtractor.apply(factory), configExtractor.apply(factory), descAnnotation != null ? descAnnotation.value() : null));
+        });
+        return entries;
+    }
+
+    /**
+     * @param commonParameters parameters r7 itself accepts on every entry, beside the entry's own
+     */
+    private SchemaNode buildSpiDefinition(
+            final List<SpiEntry> entries,
+            final Map<String, SchemaNode> extraProperties,
+            final Map<String, SchemaNode> commonParameters)
     {
         final Map<String, SchemaNode> properties = new TreeMap<>(extraProperties);
         final List<String> parameterlessComponents = new ArrayList<>();
 
-        ServiceLoader.load(spiClass).forEach(factory -> {
-            final String name = nameExtractor.apply(factory);
-            final Class<?> configClass = configExtractor.apply(factory);
-
-            final Description descAnnotation = factory.getClass().getAnnotation(Description.class);
-            final String description = (descAnnotation != null) ? descAnnotation.value() : null;
+        entries.forEach(entry -> {
+            final String name = entry.name();
+            final Class<?> configClass = entry.configClass();
+            final String description = entry.description();
 
             if (configClass != null && configClass.isRecord())
             {
                 if (configClass.getRecordComponents().length == 0)
                 {
                     parameterlessComponents.add(name);
+                    if (!commonParameters.isEmpty())
+                    {
+                        properties.put(name, new ObjectSchema("object", new TreeMap<>(commonParameters), null, new BoolProps(false),
+                                null, null, null, null, description, null, null));
+                    }
                 }
                 else
                 {
@@ -369,8 +402,10 @@ public final class JsonSchemaGenerator
                             snippets = List.of(new Snippet("Insert " + name, description != null ? description : "Configure " + name, snippetBody));
                         }
 
+                        final Map<String, SchemaNode> parameters = new TreeMap<>(os.properties());
+                        parameters.putAll(commonParameters);
                         properties.put(name, new ObjectSchema(
-                                        os.type(), os.properties(), os.required(), os.additionalProperties(),
+                                        os.type(), parameters, os.required(), os.additionalProperties(),
                                         os.minProperties(), os.maxProperties(), os.anyOf(), os.oneOf(),
                                         description, os.defaultValue(), snippets
                                 )

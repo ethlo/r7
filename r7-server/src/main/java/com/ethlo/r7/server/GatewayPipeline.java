@@ -191,7 +191,7 @@ public final class GatewayPipeline
         final DefaultGatewayRoute route;
         try
         {
-            route = (DefaultGatewayRoute) routing.findRoute(ex.liveRequest);
+            route = (DefaultGatewayRoute) routing.findRoute(ex);
         }
         catch (final RegexBudget.RegexBudgetExceededException e)
         {

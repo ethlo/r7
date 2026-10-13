@@ -20,10 +20,11 @@ import java.util.Optional;
 import java.util.Set;
 
 import com.ethlo.r7.api.GatewayFilter;
-import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.condition.AndCondition;
+import com.ethlo.r7.condition.Condition;
+import com.ethlo.r7.condition.ConditionScope;
 import com.ethlo.r7.config.model.HttpStatus;
-import com.ethlo.r7.predicates.AndPredicate;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -266,20 +267,20 @@ public final class ConfigurationManager
                     {
                         instantiateFilters(new FilterCreationContext(group.group(), engineContext), groupResult.nested("filters"), groupFilters, filterDef);
                     }
-                    final GatewayPredicate groupPredicate = group.match() == null
-                            ? TruePredicate.INSTANCE
-                            : this.buildPredicate(group.match(), groupResult, "routes." + group.group());
+                    final Condition groupMatch = group.match() == null
+                            ? Condition.TRUE
+                            : this.buildMatch(group.match(), groupResult, "routes." + group.group());
 
                     final List<GatewayRoute> members = new ArrayList<>();
-                    final List<GatewayPredicate> memberPredicates = new ArrayList<>();
+                    final List<Condition> memberMatches = new ArrayList<>();
                     for (int i = 0; i < group.routes().size(); i++)
                     {
-                        final BuiltRoute built = this.buildRoute(placed.get(index++), rootFilters, groupFilters, groupPredicate, validationResult);
+                        final BuiltRoute built = this.buildRoute(placed.get(index++), rootFilters, groupFilters, groupMatch, validationResult);
                         members.add(built.route());
-                        memberPredicates.add(built.ownPredicate());
+                        memberMatches.add(built.ownMatch());
                     }
                     routes.addAll(members);
-                    table.add(new RouteRegistry.Group(group.group(), groupPredicate, members, memberPredicates));
+                    table.add(new RouteRegistry.Group(group.group(), groupMatch, members, memberMatches));
                 }
             }
         }
@@ -304,10 +305,10 @@ public final class ConfigurationManager
     }
 
     /**
-     * @param ownPredicate the route's own match, without its group's: what the routing table
-     *                     tests once the group's has matched
+     * @param ownMatch the route's own match, without its group's: what the routing table tests
+     *                 once the group's has matched
      */
-    private record BuiltRoute(DefaultGatewayRoute route, GatewayPredicate ownPredicate)
+    private record BuiltRoute(DefaultGatewayRoute route, Condition ownMatch)
     {
     }
 
@@ -364,7 +365,7 @@ public final class ConfigurationManager
         return new Placed(route.withUpstream(effective), route, group, path, upstreamLevel);
     }
 
-    private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final GatewayPredicate groupPredicate, final ValidationResult validationResult)
+    private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final Condition groupMatch, final ValidationResult validationResult)
     {
         final RouteDefinition routeDefinition = placed.route();
         final ValidationResult routeResult = validationResult.nested(placed.path());
@@ -383,34 +384,34 @@ public final class ConfigurationManager
         final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal(), routeResult.nested("journal"));
 
         // An empty match is a fallback-only route (docs/config.md): it must stay
-        // false, as build() would turn an empty tree into an always-true predicate.
-        GatewayPredicate predicate = FalsePredicate.INSTANCE;
+        // false, as build() would turn an empty tree into an always-true condition.
+        Condition match = Condition.FALSE;
         if (routeDefinition.match() != null && !routeDefinition.match().isFallbackOnly())
         {
-            predicate = this.buildPredicate(routeDefinition.match(), routeResult, placed.path());
+            match = this.buildMatch(routeDefinition.match(), routeResult, placed.path());
         }
 
         final List<String> urls = routeDefinition.upstream() != null
                 ? routeDefinition.upstream().targets().stream().map(TargetConfig::url).toList()
                 : List.of();
-        final GatewayPredicate effective = groupPredicate != null ? new AndPredicate(List.of(groupPredicate, predicate)) : predicate;
+        final Condition effective = groupMatch != null ? new AndCondition(List.of(groupMatch, match)) : match;
         final DefaultGatewayRoute route = new DefaultGatewayRoute(urls, effective, filters, rootFilters.size(), groupFilters.size(),
                 placed.group() != null ? placed.group().group() : null, placed.upstreamLevel(), journalConfig, routeDefinition);
-        return new BuiltRoute(route, predicate);
+        return new BuiltRoute(route, match);
     }
 
-    private GatewayPredicate buildPredicate(final ConditionDefinition match, final ValidationResult result, final String path)
+    private Condition buildMatch(final ConditionDefinition match, final ValidationResult result, final String path)
     {
         // An empty match matches nothing: for a route, one reached only as a fallback; for a
         // group, one whose routes are.
         if (match.isFallbackOnly())
         {
-            return FalsePredicate.INSTANCE;
+            return Condition.FALSE;
         }
-        match.validateTree(result, predicateRegistry);
+        match.validateTree(result);
         try
         {
-            return match.build(predicateRegistry, result);
+            return match.build(predicateRegistry, ConditionScope.ROUTE_MATCH, result);
         }
         catch (final ConfigurationException e)
         {
@@ -545,7 +546,7 @@ public final class ConfigurationManager
         final RouteDefinition definition = new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, journal, List.of());
         final ValidationResult validationResult = new ValidationResult();
         final RouteJournalConfig journalConfig = createJournalConfig(journal, validationResult.nested("unrouted").nested("journal"));
-        return new DefaultGatewayRoute(List.of(), FalsePredicate.INSTANCE, List.of(), journalConfig, definition);
+        return new DefaultGatewayRoute(List.of(), Condition.FALSE, List.of(), journalConfig, definition);
     }
 
     /**

@@ -5,10 +5,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.ethlo.r7.api.GatewayPredicate;
-import com.ethlo.r7.predicates.AndPredicate;
-import com.ethlo.r7.predicates.NotPredicate;
-import com.ethlo.r7.predicates.OrPredicate;
+import com.ethlo.r7.condition.AndCondition;
+import com.ethlo.r7.condition.Condition;
+import com.ethlo.r7.condition.ConditionScope;
+import com.ethlo.r7.condition.NotCondition;
+import com.ethlo.r7.condition.OrCondition;
 import com.ethlo.r7.util.PredicateRegistry;
 import com.ethlo.r7.validation.ValidationResult;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -96,40 +97,35 @@ public final class ConditionDefinition
         return null;
     }
 
-    public GatewayPredicate build(final PredicateRegistry registry, final ValidationResult validationResult)
+    /**
+     * Builds the condition tree. Errors are reported on {@code result} under the node's path, as
+     * {@link #validateTree} reports them ({@code match[0].Host.leg}), and a refused entry builds
+     * to {@link Condition#FALSE} so the tree stays whole but fails closed.
+     */
+    public Condition build(final PredicateRegistry registry, final ConditionScope scope, final ValidationResult result)
+    {
+        return build(registry, scope, result, "match");
+    }
+
+    private Condition build(final PredicateRegistry registry, final ConditionScope scope, final ValidationResult result, final String path)
     {
         if (!shapeErrors.isEmpty())
         {
             // validateTree has reported it; never let a half-bound node build to true.
-            return FalsePredicate.INSTANCE;
+            return Condition.FALSE;
         }
 
-        final List<GatewayPredicate> list = new ArrayList<>();
+        final List<Condition> list = new ArrayList<>();
 
-        this.predicates.forEach((name, value) ->
-        {
-            try
-            {
-                list.add(registry.create(name, value));
-            }
-            catch (final ConfigurationException | IllegalArgumentException e)
-            {
-                // 1. Report the error so the user sees it
-                validationResult.addError(name, e.getMessage());
-                // 2. Insert the Poison Pill so the tree remains structurally intact but fails-closed
-                list.add(FalsePredicate.INSTANCE);
-            }
-        });
+        final ValidationResult nodeResult = result.nested(path);
+        this.predicates.forEach((name, value) -> list.add(registry.condition(name, value, scope, nodeResult)));
 
         if (this.and != null && !this.and.isEmpty())
         {
-            final List<GatewayPredicate> andChildren = new ArrayList<>(this.and.size());
+            final List<Condition> andChildren = new ArrayList<>(this.and.size());
             for (int i = 0; i < this.and.size(); i++)
             {
-                final ValidationResult nestedResult = validationResult.nested("and[" + i + "]");
-                // We no longer need try-catch here because the child's build()
-                // method internally handles its own exceptions now.
-                andChildren.add(this.and.get(i).build(registry, nestedResult));
+                andChildren.add(this.and.get(i).build(registry, scope, result, (writtenAsList ? path : path + ".and") + "[" + i + "]"));
             }
 
             if (andChildren.size() == 1)
@@ -138,47 +134,44 @@ public final class ConditionDefinition
             }
             else
             {
-                list.add(new AndPredicate(andChildren));
+                list.add(new AndCondition(andChildren));
             }
         }
 
         if (this.or != null && !this.or.isEmpty())
         {
-            final List<GatewayPredicate> orChildren = new ArrayList<>(this.or.size());
+            final List<Condition> orChildren = new ArrayList<>(this.or.size());
             for (int i = 0; i < this.or.size(); i++)
             {
-                final ValidationResult nestedResult = validationResult.nested("or[" + i + "]");
-                orChildren.add(this.or.get(i).build(registry, nestedResult));
+                orChildren.add(this.or.get(i).build(registry, scope, result, path + ".or[" + i + "]"));
             }
-            list.add(new OrPredicate(orChildren));
+            list.add(new OrCondition(orChildren));
         }
 
         if (this.not != null)
         {
-            final ValidationResult nestedResult = validationResult.nested("not");
-            list.add(new NotPredicate(this.not.build(registry, nestedResult)));
+            list.add(new NotCondition(this.not.build(registry, scope, result, path + ".not")));
         }
 
-        // Optimize the evaluation tree
         if (list.isEmpty())
         {
-            return TruePredicate.INSTANCE;
+            return Condition.TRUE;
         }
         if (list.size() == 1)
         {
             return list.getFirst();
         }
 
-        return new AndPredicate(list);
+        return new AndCondition(list);
     }
 
     /**
-     * Recursively validates the tree's shape and that every predicate it names exists. Errors
+     * Recursively validates the tree's shape; {@link #build} checks the predicates it names. Errors
      * carry the node's path below {@code result}, e.g. {@code routes.orders.match.or[1].not}.
      */
-    public void validateTree(final ValidationResult result, final PredicateRegistry registry)
+    public void validateTree(final ValidationResult result)
     {
-        validateTree(result, "match", registry, true);
+        validateTree(result, "match", true);
     }
 
     /**
@@ -200,7 +193,7 @@ public final class ConditionDefinition
                 && not == null;
     }
 
-    private void validateTree(final ValidationResult result, final String path, final PredicateRegistry registry, final boolean topLevel)
+    private void validateTree(final ValidationResult result, final String path, final boolean topLevel)
     {
         if (!shapeErrors.isEmpty())
         {
@@ -232,19 +225,11 @@ public final class ConditionDefinition
             return;
         }
 
-        predicates.keySet().forEach(name ->
-        {
-            if (!registry.exists(name))
-            {
-                result.addError(path, "Unknown matcher type: '" + name + "'");
-            }
-        });
-
         if (and != null)
         {
             for (int i = 0; i < and.size(); i++)
             {
-                and.get(i).validateTree(result, (writtenAsList ? path : path + ".and") + "[" + i + "]", registry, false);
+                and.get(i).validateTree(result, (writtenAsList ? path : path + ".and") + "[" + i + "]", false);
             }
         }
 
@@ -252,13 +237,13 @@ public final class ConditionDefinition
         {
             for (int i = 0; i < or.size(); i++)
             {
-                or.get(i).validateTree(result, path + ".or[" + i + "]", registry, false);
+                or.get(i).validateTree(result, path + ".or[" + i + "]", false);
             }
         }
 
         if (not != null)
         {
-            not.validateTree(result, path + ".not", registry, false);
+            not.validateTree(result, path + ".not", false);
         }
     }
 

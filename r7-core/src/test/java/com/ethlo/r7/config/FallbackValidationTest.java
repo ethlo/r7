@@ -168,7 +168,7 @@ class FallbackValidationTest
 
         final StartedWithUpstreamPhase started = new StartedWithUpstreamPhase();
         final com.ethlo.r7.api.UpstreamRequestGatewayFilter upstreamOnly = new UpstreamOnly();
-        final DefaultGatewayRoute a = new DefaultGatewayRoute(List.of(), loadedA.predicate(), List.of(started, upstreamOnly), 0, loadedA.journal(), loadedA.routeDefinition());
+        final DefaultGatewayRoute a = new DefaultGatewayRoute(List.of(), loadedA.match(), List.of(started, upstreamOnly), 0, loadedA.journal(), loadedA.routeDefinition());
 
         final DefaultGatewayRoute bAfterA = a.asFallbackOfThis(b);
 

@@ -129,6 +129,16 @@ match:
 
 ```
 
+### The predicate contract
+
+r7 may test a predicate more than once per exchange, and when routes share a group, once for all of them. A predicate therefore has no side effects and gives the same answer for the same request every time: no counters, no random draws, no calls out. Sampling is `Sample`'s, a node r7 evaluates over the exchange (see [Sample](config.md#sample)).
+
+r7 handles `leg` for every predicate: it takes the parameter out before the configuration binds, and hands the predicate the request of that leg, or answers `false` without asking when the leg has no request yet. A config record with a component named `leg` is refused when the gateway starts, as is a predicate named `and`, `or`, `not` or `Sample`.
+
+### Response predicates
+
+A predicate that tests a response implements `GatewayResponsePredicate` (`boolean test(GatewayResponse response)`) and is created by a `GatewayResponsePredicateFactory`, with the same `name`, `configClass` and `create` as a request predicate's factory. Request and response predicates share one namespace: a name registered as both is refused when the gateway starts. A route's `match` refuses a response predicate, since no response exists when a route is chosen: `[routes.x.match[0].HasStatus] HasStatus tests a response, which does not exist yet when a route is chosen.`
+
 ---
 
 ## 2. Implementing a Custom Filter
@@ -282,6 +292,8 @@ Create the file: `src/main/resources/META-INF/services/com.ethlo.r7.spi.GatewayP
 com.example.r7.predicates.HasHeaderFactory
 
 ```
+
+A response predicate's factory is listed in `META-INF/services/com.ethlo.r7.spi.GatewayResponsePredicateFactory` instead.
 
 **File 2: Filter Registration**
 Create the file: `src/main/resources/META-INF/services/com.ethlo.r7.spi.GatewayFilterFactory`
