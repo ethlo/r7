@@ -138,6 +138,36 @@ class HttpUpstreamClientTest
     }
 
     @Test
+    void theTargetsHostIsSentUnlessTheClientsIsPreserved() throws Exception
+    {
+        try (Upstream live = Upstream.answering(OK))
+        {
+            final HttpUpstream plain = new HttpUpstream(UpstreamOptions.defaults());
+            plain.onTargetUp(URI.create(live.url()));
+            relay(plain);
+            assertThat(live.lastRequest()).contains("\r\nHost: 127.0.0.1:" + live.port() + "\r\n").doesNotContain("\r\nHost: gateway.example");
+
+            final HttpUpstream preserving = new HttpUpstream(UpstreamOptions.defaults().withPreserveHost(true));
+            preserving.onTargetUp(URI.create(live.url()));
+            relay(preserving);
+            assertThat(live.lastRequest()).contains("\r\nHost: gateway.example\r\n").doesNotContain("\r\nHost: 127.0.0.1");
+        }
+    }
+
+    @Test
+    void aPreservedHostDoesNotChangeWhichCertificateNameIsChecked() throws Exception
+    {
+        final KeyStore keys = selfSigned("localhost");
+        try (Upstream tls = Upstream.tls(OK, serverContext(keys)))
+        {
+            final HttpUpstream upstream = new HttpUpstream(UpstreamOptions.defaults().withSslContext(clientContext(keys)).withPreserveHost(true));
+            upstream.onTargetUp(URI.create("https://localhost:" + tls.port()));
+            assertThat(relay(upstream).status()).isEqualTo(200);
+            assertThat(tls.lastRequest()).contains("\r\nHost: gateway.example\r\n");
+        }
+    }
+
+    @Test
     void anHttpsTargetWhoseCertificateNamesAnotherHostIsRefused() throws Exception
     {
         final KeyStore keys = selfSigned("other.example");

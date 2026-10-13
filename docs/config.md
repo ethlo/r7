@@ -114,6 +114,7 @@ The `upstream` block defines where r7 forwards requests, managing load balancing
 | `health_check` | Object | None | Active background health monitoring. |
 | `timeouts` | Object | None | Networking timeouts for this upstream. |
 | `fallback` | Object | None | Alternate routing logic if primary targets fail. |
+| `preserve_host` | Boolean | `false` | Sends the client's `Host` header to the target instead of the target's own, for an upstream that serves several sites by name. A request without a `Host` gets the target's. TLS server name indication and the certificate check still use the target's host. `X-Forwarded-Host` carries the client's `Host` either way. |
 
 ### Targets
 

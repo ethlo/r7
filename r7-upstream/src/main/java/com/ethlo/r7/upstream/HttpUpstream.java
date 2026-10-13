@@ -221,6 +221,11 @@ public final class HttpUpstream implements UpstreamHandle
             this.hostHeader = uri.getPort() != -1 ? host + ":" + port : host;
         }
 
+        boolean preserveHost()
+        {
+            return options.preserveHost();
+        }
+
         /**
          * Takes one of the target's in-flight slots, waiting for one until {@code deadline} if
          * all are taken and the queue has room.

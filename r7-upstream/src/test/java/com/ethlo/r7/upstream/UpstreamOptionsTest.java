@@ -38,6 +38,6 @@ class UpstreamOptionsTest
 
     private static UpstreamConfig upstream(final TimeoutConfig timeouts)
     {
-        return new UpstreamConfig(null, null, timeouts, List.of(new TargetConfig("http://localhost:1")), null);
+        return new UpstreamConfig(null, null, timeouts, List.of(new TargetConfig("http://localhost:1")), null, null);
     }
 }

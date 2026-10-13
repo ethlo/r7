@@ -26,12 +26,19 @@ import com.ethlo.r7.server.config.ServerConfig;
  * @param maxQueuePerTarget       most requests waiting for one of those; beyond it, 503
  * @param maxRequestTime          longest a whole upstream exchange may take, waiting included
  * @param sslContext              for https targets; null for the JVM's default
+ * @param preserveHost            forward the client's Host header instead of the target's
  */
 public record UpstreamOptions(Duration readTimeout, Duration connectTimeout, Duration idleTtl, int maxHeadBytes, int maxHeaderCount,
-                              int maxConnectionsPerTarget, int maxQueuePerTarget, Duration maxRequestTime, SSLContext sslContext)
+                              int maxConnectionsPerTarget, int maxQueuePerTarget, Duration maxRequestTime, SSLContext sslContext, boolean preserveHost)
 {
     private static final int MAX_HEAD_BYTES = 64 * 1024;
     private static final int MAX_HEADER_COUNT = 200;
+
+    public UpstreamOptions(final Duration readTimeout, final Duration connectTimeout, final Duration idleTtl, final int maxHeadBytes, final int maxHeaderCount,
+                           final int maxConnectionsPerTarget, final int maxQueuePerTarget, final Duration maxRequestTime, final SSLContext sslContext)
+    {
+        this(readTimeout, connectTimeout, idleTtl, maxHeadBytes, maxHeaderCount, maxConnectionsPerTarget, maxQueuePerTarget, maxRequestTime, sslContext, false);
+    }
 
     public static UpstreamOptions defaults()
     {
@@ -47,16 +54,21 @@ public record UpstreamOptions(Duration readTimeout, Duration connectTimeout, Dur
         final ServerConfig.ProxyConfig proxy = serverConfig.proxy();
         final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(TimeoutConfig.defaults());
         return new UpstreamOptions(timeouts.read(), timeouts.connect(), proxy.ttl(), MAX_HEAD_BYTES, MAX_HEADER_COUNT,
-                proxy.maxConnectionsPerTarget(), proxy.maxQueueSize(), proxy.maxRequestTime(), null);
+                proxy.maxConnectionsPerTarget(), proxy.maxQueueSize(), proxy.maxRequestTime(), null, upstream.preserveHost());
     }
 
     public UpstreamOptions withSslContext(final SSLContext context)
     {
-        return new UpstreamOptions(readTimeout, connectTimeout, idleTtl, maxHeadBytes, maxHeaderCount, maxConnectionsPerTarget, maxQueuePerTarget, maxRequestTime, context);
+        return new UpstreamOptions(readTimeout, connectTimeout, idleTtl, maxHeadBytes, maxHeaderCount, maxConnectionsPerTarget, maxQueuePerTarget, maxRequestTime, context, preserveHost);
     }
 
     public UpstreamOptions withLimits(final int maxConnectionsPerTarget, final int maxQueuePerTarget, final Duration maxRequestTime)
     {
-        return new UpstreamOptions(readTimeout, connectTimeout, idleTtl, maxHeadBytes, maxHeaderCount, maxConnectionsPerTarget, maxQueuePerTarget, maxRequestTime, sslContext);
+        return new UpstreamOptions(readTimeout, connectTimeout, idleTtl, maxHeadBytes, maxHeaderCount, maxConnectionsPerTarget, maxQueuePerTarget, maxRequestTime, sslContext, preserveHost);
+    }
+
+    public UpstreamOptions withPreserveHost(final boolean preserveHost)
+    {
+        return new UpstreamOptions(readTimeout, connectTimeout, idleTtl, maxHeadBytes, maxHeaderCount, maxConnectionsPerTarget, maxQueuePerTarget, maxRequestTime, sslContext, preserveHost);
     }
 }
