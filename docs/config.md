@@ -468,7 +468,7 @@ Removes a specified number of structural path segments from the beginning of the
 
 #### RewritePath
 
-Transforms the upstream request path using regular expressions. Every match of `regexp` is replaced. A numbered group is `$1`, `$2`, a named group is `{name}`, and `\{` is a literal brace (see [Templates](#templates)).
+Transforms the upstream request path using regular expressions. Every match of `regexp` is replaced. A numbered group is `$1`, `$2`, a named group is `{name}`, and `\{` is a literal brace (see [Templates](#templates)). A literal `?` in `replacement` starts the query.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -485,12 +485,33 @@ Both filters work on the **decoded** path and the gateway percent-encodes the re
 | --- | --- |
 | `$1`, `$2`, ... | the numbered group of the regular expression |
 | `{name}` | the group `(?<name>...)` |
-| `{query.NAME}` | the value of the client's query parameter `NAME` (`TemplateRedirect`) |
-| `\x` | the character `x` literally: `\$` a dollar sign, `\{` a brace |
+| `{query.NAME}` | the value of the client's query parameter `NAME` |
+| `\x` | the character `x` literally: `\$` a dollar sign, `\{` a brace, `\?` a question mark that stays in the path |
 
 A brace that is not escaped starts a placeholder, and one that names no group, or is never closed, is refused at startup: `[routes.x.filters[0].RewritePath.replacement] {b} needs a source pattern with that named group (write \{ for a literal brace).` The old `$${name}` form is refused too, with `Write a named group as {name}, not $${name}.` In YAML, `\{` is written as is in a plain or single-quoted string, and as `"\\{"` in a double-quoted one.
 
 A literal brace is a character of the result, not URI syntax, so it is sent percent-encoded like any character RFC 3986 does not allow: `target: /a\{b` answers `Location: /a%7Bb`, and a `RewritePath` `replacement` of `/a\{b` reaches the upstream as `/a%7Bb`. r7 never sends a raw brace in a URI.
+
+A `RewritePath` `replacement` with a `?` sets the query the upstream receives:
+
+```yaml
+routes:
+  - id: legacy-items
+    match:
+      - PathPrefix:
+          prefix: /legacy
+    filters:
+      - RewritePath:
+          regexp: "^/legacy/(?<id>[0-9]+)$"
+          replacement: "/items?uid={id}&ref={query.refid}"
+    upstream:
+      targets:
+        - url: "http://127.0.0.1:8081"
+```
+
+Captures and `{query.NAME}` values after the `?` are each one parameter value, so a request cannot add a parameter by what it sends (`/legacy/1%26admin%3Dtrue` sets `uid=1&admin=true`, one value). The client's own query is passed on as it came, and merged with the rewrite's: a name the rewrite sets replaces every occurrence the client sent (`?uid=123&uid=456` rewritten to `?uid={query.refid}` reaches the upstream as one `uid`), and every other parameter keeps its occurrences and order. A `{query.NAME}` the client left out, or repeated with differing values, is answered with `400`. A replacement with a `?` rewrites the first match only, and what follows the match in the path goes on the end of the last value. Write the replacement decoded, as for the path.
+
+**Changed in 1.0:** a `?` in `replacement` used to be sent as `%3F` inside the path, and now starts the query. Write `\?` to keep a question mark in the path (`"/a\\?b"` in a double-quoted YAML string). Rewrites do not cascade: each tests the path the client sent, never another rewrite's output, and when several match, the last one declared wins, so a route's rewrite wins over its group's.
 
 #### TemplateRedirect
 

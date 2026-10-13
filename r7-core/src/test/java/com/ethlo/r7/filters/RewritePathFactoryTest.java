@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,9 @@ import org.mockito.ArgumentCaptor;
 
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayRequest;
+import com.ethlo.r7.api.MutableQueryParams;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
+import com.ethlo.r7.util.constants.HttpStatuses;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -83,5 +87,152 @@ class RewritePathFactoryTest
         assertThat(errors("^/(?<a>.*)$", "/x/{b}")).singleElement().asString().contains("{b} needs a source pattern with that named group");
         assertThat(errors("^/(.*)$", "/x/{")).singleElement().asString().contains("Unterminated {");
         assertThat(errors("^/(.*)$", "/x/$2")).singleElement().asString().contains("$2 needs a source pattern with that many groups.");
+    }
+
+    /**
+     * Query parameters as a list of pairs, with the replace-every-occurrence rule of the server's.
+     */
+    private static final class Params implements MutableQueryParams
+    {
+        final List<String[]> pairs = new ArrayList<>();
+
+        Params(final String... namesAndValues)
+        {
+            for (int i = 0; i < namesAndValues.length; i += 2)
+            {
+                this.pairs.add(new String[]{namesAndValues[i], namesAndValues[i + 1]});
+            }
+        }
+
+        @Override
+        public void set(final String name, final String value)
+        {
+            this.remove(name);
+            this.add(name, value);
+        }
+
+        @Override
+        public void add(final String name, final String value)
+        {
+            this.pairs.add(new String[]{name, value});
+        }
+
+        @Override
+        public void remove(final String name)
+        {
+            this.pairs.removeIf(pair -> pair[0].equals(name));
+        }
+
+        @Override
+        public String getFirst(final String name)
+        {
+            return this.pairs.stream().filter(pair -> pair[0].equals(name)).map(pair -> pair[1]).findFirst().orElse(null);
+        }
+
+        @Override
+        public Iterable<String> getAll(final String name)
+        {
+            return this.pairs.stream().filter(pair -> pair[0].equals(name)).map(pair -> pair[1]).toList();
+        }
+
+        @Override
+        public String toQueryString()
+        {
+            return this.pairs.stream().map(pair -> pair[0] + "=" + pair[1]).collect(java.util.stream.Collectors.joining("&"));
+        }
+    }
+
+    /**
+     * Path and query the upstream would get, or the status the rewrite answered with.
+     */
+    private record Rewritten(String path, String query, Integer refusedWith)
+    {
+    }
+
+    private static Rewritten rewriteQuery(final String regexp, final String replacement, final String path, final String... clientQuery)
+    {
+        final Params client = new Params(clientQuery);
+        final GatewayRequest request = mock(GatewayRequest.class);
+        when(request.path()).thenReturn(path);
+        when(request.queryParams()).thenReturn(client);
+        final Params upstreamParams = new Params(clientQuery);
+        final MutableGatewayRequest upstream = mock(MutableGatewayRequest.class);
+        when(upstream.queryParams()).thenReturn(upstreamParams);
+        final UpstreamRequestGatewayExchange exchange = mock(UpstreamRequestGatewayExchange.class);
+        when(exchange.clientRequest()).thenReturn(request);
+        when(exchange.upstreamRequest()).thenReturn(upstream);
+
+        new RewritePathFactory().create(new RewritePathFactory.Config(regexp, replacement), null).onUpstreamRequest(exchange);
+
+        final ArgumentCaptor<String> newPath = ArgumentCaptor.forClass(String.class);
+        verify(upstream, org.mockito.Mockito.atMost(1)).path(newPath.capture());
+        final ArgumentCaptor<ShortCircuitGatewayResponse> refusal = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+        verify(exchange, org.mockito.Mockito.atMost(1)).shortCircuit(refusal.capture());
+        return new Rewritten(newPath.getAllValues().isEmpty() ? null : newPath.getValue(), upstreamParams.toQueryString(),
+                refusal.getAllValues().isEmpty() ? null : refusal.getValue().status());
+    }
+
+    @Test
+    void aQuestionMarkStartsTheQuery()
+    {
+        final Rewritten out = rewriteQuery("^/old/(.*)$", "/new/$1?a=1&b=2", "/old/x");
+        assertThat(out.path()).isEqualTo("/new/x");
+        assertThat(out.query()).isEqualTo("a=1&b=2");
+    }
+
+    @Test
+    void anEscapedQuestionMarkStaysInThePath()
+    {
+        final Rewritten out = rewriteQuery("^/old$", "/new\\?x", "/old");
+        assertThat(out.path()).isEqualTo("/new?x");
+        assertThat(out.query()).isEmpty();
+    }
+
+    /**
+     * ?uid=123&uid=456 rewritten to ?uid={query.refid} reaches the upstream as one uid, and the
+     * client's other parameters keep their occurrences and order.
+     */
+    @Test
+    void aParameterTheRewriteSetsReplacesEveryOccurrenceTheClientSent()
+    {
+        final Rewritten out = rewriteQuery("^/old$", "/new?uid={query.refid}", "/old", "x", "1", "uid", "123", "y", "2", "uid", "456", "x", "3", "refid", "R");
+        assertThat(out.query()).isEqualTo("x=1&y=2&x=3&refid=R&uid=R");
+    }
+
+    /**
+     * Request text is a value: neither a capture nor a query value can add a parameter or turn
+     * one into another.
+     */
+    @Test
+    void requestTextCanNotAddAParameter()
+    {
+        final Rewritten captured = rewriteQuery("^/old/(.*)$", "/new?q=$1", "/old/a&admin=true");
+        assertThat(captured.query()).isEqualTo("q=a&admin=true");
+        assertThat(captured.query().split("&")).hasSize(2);
+        assertThat(captured.path()).isEqualTo("/new");
+
+        final Rewritten value = rewriteQuery("^/old$", "/new?q={query.v}", "/old", "v", "1&admin=true");
+        assertThat(value.query()).isEqualTo("v=1&admin=true&q=1&admin=true");
+    }
+
+    @Test
+    void whatFollowsTheMatchIsTheEndOfTheLastValue()
+    {
+        final Rewritten out = rewriteQuery("^/old", "/new?from=", "/old/a&b");
+        assertThat(out.query()).isEqualTo("from=/a&b");
+    }
+
+    @Test
+    void aMissingOrAmbiguousQueryValueIsRefused()
+    {
+        assertThat(rewriteQuery("^/old$", "/new?u={query.refid}", "/old").refusedWith()).isEqualTo(HttpStatuses.BAD_REQUEST);
+        assertThat(rewriteQuery("^/old$", "/new?u={query.refid}", "/old", "refid", "1", "refid", "2").refusedWith()).isEqualTo(HttpStatuses.BAD_REQUEST);
+        assertThat(rewriteQuery("^/old$", "/new?u={query.refid}", "/old", "refid", "1", "refid", "1").refusedWith()).isNull();
+    }
+
+    @Test
+    void aLiteralBraceInTheQueryIsADecodedCharacter()
+    {
+        assertThat(rewriteQuery("^/old$", "/new?v=\\{1\\}", "/old").query()).isEqualTo("v={1}");
     }
 }
