@@ -74,6 +74,54 @@ class ConfigurationManagerBugsTest
                 .hasMessageContaining("Path:");
     }
 
+    /**
+     * An empty match block is documented as never matching (fallback-only routes), but
+     * build() turned the empty tree into TruePredicate: the route caught every request.
+     */
+    @Test
+    void emptyMatchNeverMatches() throws Exception
+    {
+        final Path file = write("""
+                version: test
+                routes:
+                  - id: fallback-only
+                    match: []
+                    upstream:
+                      targets:
+                        - url: http://localhost:1
+                """);
+
+        final RoutesDefinition config = ConfigurationManager.load(file, RoutesDefinition.class);
+        assertThat(manager.build(config).routes().getFirst().predicate()).isSameAs(FalsePredicate.INSTANCE);
+    }
+
+    /**
+     * An empty node below the top built to true as well: 'not: {}' and '- {}' made the route a
+     * catch-all, and 'or: []' dropped out of the tree. They are refused instead.
+     */
+    @Test
+    void emptyNestedConditionsAreRefused() throws Exception
+    {
+        for (final String match : new String[]{"[ {} ]", "[ { not: {} } ]", "[ { or: [] } ]", "[ { Method: { methods: [GET] }, and: [] } ]"})
+        {
+            final Path file = write("""
+                    version: test
+                    routes:
+                      - id: bad
+                        match: %s
+                        upstream:
+                          targets:
+                            - url: http://localhost:1
+                    """.formatted(match));
+
+            final RoutesDefinition config = ConfigurationManager.load(file, RoutesDefinition.class);
+            assertThatThrownBy(() -> manager.build(config))
+                    .as(match)
+                    .isInstanceOf(ConfigurationException.class)
+                    .hasMessageContaining("Empty");
+        }
+    }
+
     private Path write(final String yaml) throws Exception
     {
         final Path file = dir.resolve("routes.yaml");

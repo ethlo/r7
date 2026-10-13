@@ -147,6 +147,43 @@ public final class ConditionDefinition
      */
     public void validateTree(final ValidationResult result, final PredicateRegistry registry)
     {
+        validateTree(result, registry, true);
+    }
+
+    /**
+     * True when the node names nothing to test. {@link #build} would turn it into an
+     * always-true predicate, so an empty top-level {@code match} is a route that matches
+     * nothing (reachable only as a fallback) and an empty node anywhere below it is refused.
+     */
+    public boolean isEmpty()
+    {
+        return predicates.isEmpty()
+                && (and == null || and.isEmpty())
+                && (or == null || or.isEmpty())
+                && not == null;
+    }
+
+    private void validateTree(final ValidationResult result, final PredicateRegistry registry, final boolean topLevel)
+    {
+        // Below the top, an empty node used to build to true: 'not: {}' or '- {}' made the
+        // route a catch-all, and 'or: []' silently dropped out of the tree.
+        if (!topLevel)
+        {
+            if (isEmpty())
+            {
+                result.addError("match", "Empty condition: name at least one predicate, or remove it");
+                return;
+            }
+        }
+        if (and != null && and.isEmpty() && !(topLevel && isEmpty()))
+        {
+            result.addError("match", "Empty 'and': name at least one predicate, or remove it");
+        }
+        if (or != null && or.isEmpty())
+        {
+            result.addError("match", "Empty 'or': name at least one predicate, or remove it");
+        }
+
         // Check flat leaf nodes
         predicates.keySet().forEach(name ->
         {
@@ -159,17 +196,17 @@ public final class ConditionDefinition
         // Recurse down the logical branches
         if (and != null)
         {
-            and.forEach(c -> c.validateTree(result, registry));
+            and.forEach(c -> c.validateTree(result, registry, false));
         }
 
         if (or != null)
         {
-            or.forEach(c -> c.validateTree(result, registry));
+            or.forEach(c -> c.validateTree(result, registry, false));
         }
 
         if (not != null)
         {
-            not.validateTree(result, registry);
+            not.validateTree(result, registry, false);
         }
     }
 
@@ -216,7 +253,7 @@ public final class ConditionDefinition
 
         if (parts.isEmpty())
         {
-            return "MATCH_ALL";
+            return "MATCH_NONE";
         }
 
         if (parts.size() == 1)

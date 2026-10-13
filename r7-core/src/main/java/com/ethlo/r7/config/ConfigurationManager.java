@@ -141,8 +141,10 @@ public final class ConfigurationManager
                             validationResult.nested("routes").nested(routeDefinition.id()).nested("journal"));
 
                     // Validate the structure and the plugin names
+                    // An empty match is a fallback-only route (docs/config.md): it must stay
+                    // false, as build() would turn an empty tree into an always-true predicate.
                     GatewayPredicate predicate = FalsePredicate.INSTANCE;
-                    if (routeDefinition.match() != null)
+                    if (routeDefinition.match() != null && !routeDefinition.match().isEmpty())
                     {
                         routeDefinition.match().validateTree(validationResult, predicateRegistry);
 
