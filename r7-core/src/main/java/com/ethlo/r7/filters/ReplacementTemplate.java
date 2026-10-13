@@ -47,11 +47,11 @@ final class ReplacementTemplate
      * ({@code query} set), the last two with the component their position in the template puts
      * them in.
      */
-    record Part(String literal, int group, String query, Component component, boolean startsQuery)
+    record Part(String literal, int group, String query, Component component, boolean startsQuery, boolean data)
     {
         Part(final String literal, final int group, final String query, final Component component)
         {
-            this(literal, group, query, component, false);
+            this(literal, group, query, component, false, false);
         }
 
         /**
@@ -60,7 +60,16 @@ final class ReplacementTemplate
          */
         static Part queryStart()
         {
-            return new Part(null, -1, null, Component.QUERY_OR_FRAGMENT, true);
+            return new Part(null, -1, null, Component.QUERY_OR_FRAGMENT, true, false);
+        }
+
+        /**
+         * An escaped character in the query of a decoded template: text of a name or value, never
+         * the {@code &} or {@code =} that separates them.
+         */
+        static Part data(final char c)
+        {
+            return new Part(String.valueOf(c), -1, null, Component.QUERY_OR_FRAGMENT, false, true);
         }
 
         static Part literal(final String text, final Component component)
@@ -89,7 +98,8 @@ final class ReplacementTemplate
      *             percent-encoded: r7 never emits a raw brace in a URI. A decoded result
      *             ({@code RewritePath}'s) is encoded later, where the brace is encoded with it;
      *             its first unescaped {@code ?} then starts the query, as a {@link Part#startsQuery()}
-     *             part, and {@code #} is an ordinary character.
+     *             part, and {@code #} is an ordinary character. An escaped character after it is
+     *             a {@link Part#data()} part, so an escaped {@code &} or {@code =} stays text.
      * @throws IllegalArgumentException with a message that names the mistake
      */
     static List<Part> parse(final String template, final Pattern pattern, final boolean wire)
@@ -103,7 +113,13 @@ final class ReplacementTemplate
         while (i < template.length())
         {
             final char c = template.charAt(i);
-            if (c == '\\' && i + 1 < template.length())
+            if (c == '\\' && i + 1 < template.length() && inQuery)
+            {
+                flush(parts, literal, component);
+                parts.add(Part.data(template.charAt(i + 1)));
+                i += 2;
+            }
+            else if (c == '\\' && i + 1 < template.length())
             {
                 appendLiteral(literal, template.charAt(i + 1), wire);
                 component = wire ? componentAfter(template.charAt(i + 1), component) : component;

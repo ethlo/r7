@@ -3,9 +3,9 @@ package com.ethlo.r7.filters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -36,7 +36,14 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
     private static final String FILTER_NAME = "RewritePath";
 
     /** The query parameters a rewrite set, so a later rewrite can put them back. */
-    private static final StateKey<Set<String>> REWRITTEN = new StateKey<>("rewrite_path.query");
+    private static final StateKey<List<Rewritten>> REWRITTEN = new StateKey<>("rewrite_path.query");
+
+    /**
+     * A parameter a rewrite set: the values it had before and the values the rewrite left.
+     */
+    private record Rewritten(String name, List<String> before, List<String> written)
+    {
+    }
 
     @Override
     public String name()
@@ -60,7 +67,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
             @Description("The regular expression to match against the path.")
             String regexp,
 
-            @Description("The replacement: $1 for a numbered group, {name} for a named one, {query.NAME} for a query parameter of the request. A literal ? starts the query the upstream receives. \\{ and \\? are literal characters.")
+            @Description("The replacement: $1 for a numbered group, {name} for a named one, {query.NAME} for a query parameter of the request. A literal ? starts the query the upstream receives, whose captures and query values must be parameter values. \\{, \\?, \\& and \\= are literal characters.")
             String replacement) implements ValidatableConfig
     {
         @Override
@@ -88,15 +95,57 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
         }
     }
 
+    /**
+     * The parsed replacement, refused when request text could name a parameter: a capture or
+     * {@code {query.NAME}} where a name goes, or a query that ends in a name, where the rest of
+     * the path would land.
+     */
     private static List<Part> parts(final Pattern regexp, final String replacement)
     {
-        return ReplacementTemplate.parse(replacement, regexp, false);
+        final List<Part> parts = ReplacementTemplate.parse(replacement, regexp, false);
+        boolean inQuery = false;
+        boolean inValue = false;
+        for (final Part part : parts)
+        {
+            if (part.startsQuery())
+            {
+                inQuery = true;
+            }
+            else if (!inQuery || part.data())
+            {
+                continue;
+            }
+            else if (part.isLiteral())
+            {
+                for (int i = 0; i < part.literal().length(); i++)
+                {
+                    final char c = part.literal().charAt(i);
+                    if (c == '&')
+                    {
+                        inValue = false;
+                    }
+                    else if (c == '=')
+                    {
+                        inValue = true;
+                    }
+                }
+            }
+            else if (!inValue)
+            {
+                throw new IllegalArgumentException("A capture or {query.NAME} after the ? must be in a parameter value (name=$1), so a request can not name a parameter.");
+            }
+        }
+        if (inQuery && !inValue)
+        {
+            throw new IllegalArgumentException("The query of the replacement must end in a parameter value (name=...), where the rest of the path goes.");
+        }
+        return parts;
     }
 
     /**
-     * Splits a query into parameters by what the template wrote: its own {@code &} and the first
-     * {@code =} after it are structure, and anything taken from the request is data, whatever
-     * characters it holds.
+     * Splits a query into parameters by what the template wrote: its own unescaped {@code &} and
+     * the first unescaped {@code =} after it are structure, and anything taken from the request,
+     * or escaped in the template, is data, whatever characters it holds.
      */
     private static final class QueryBuilder
     {
@@ -226,7 +275,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                 this.refuse(exchange);
                 return;
             }
-            this.restoreClientQuery(exchange);
+            restoreEarlierRewrite(exchange);
             exchange.upstreamRequest().path(rewritten);
         }
 
@@ -237,26 +286,41 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
 
         /**
          * Every rewrite tests the path the client sent, so the last match wins; the parameters an
-         * earlier rewrite set go back to what the client sent, or the earlier one would leak into
-         * the later one's result.
+         * earlier rewrite set go back to what they were before it, or the earlier one would leak
+         * into the later one's result. A parameter another filter has changed since is that
+         * filter's now, and is left as it is.
          */
-        private static void restoreClientQuery(final UpstreamRequestGatewayExchange exchange)
+        private static void restoreEarlierRewrite(final UpstreamRequestGatewayExchange exchange)
         {
-            final Set<String> earlier = exchange.getAttachment(REWRITTEN);
+            final List<Rewritten> earlier = exchange.getAttachment(REWRITTEN);
             if (earlier == null)
             {
                 return;
             }
             final MutableQueryParams params = exchange.upstreamRequest().queryParams();
-            for (final String name : earlier)
+            for (final Rewritten rewritten : earlier)
             {
-                params.remove(name);
-                for (final String value : exchange.clientRequest().queryParams().getAll(name))
+                if (!values(params, rewritten.name()).equals(rewritten.written()))
                 {
-                    params.add(name, value);
+                    continue;
+                }
+                params.remove(rewritten.name());
+                for (final String value : rewritten.before())
+                {
+                    params.add(rewritten.name(), value);
                 }
             }
             exchange.setAttachment(REWRITTEN, null);
+        }
+
+        private static List<String> values(final MutableQueryParams params, final String name)
+        {
+            final List<String> values = new ArrayList<>();
+            for (final String value : params.getAll(name))
+            {
+                values.add(value);
+            }
+            return values;
         }
 
         /**
@@ -277,6 +341,11 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                 if (part.startsQuery())
                 {
                     inQuery = true;
+                    continue;
+                }
+                else if (part.data())
+                {
+                    query.data(part.literal());
                     continue;
                 }
                 else if (part.isLiteral())
@@ -318,14 +387,15 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
             }
             query.data(path.substring(matcher.end()));
 
-            restoreClientQuery(exchange);
+            restoreEarlierRewrite(exchange);
             exchange.upstreamRequest().path(newPath.toString());
             final MutableQueryParams params = exchange.upstreamRequest().queryParams();
-            final Set<String> set = new HashSet<>();
+            final Map<String, List<String>> before = new LinkedHashMap<>();
             for (final String[] pair : query.pairs())
             {
-                if (set.add(pair[0]))
+                if (!before.containsKey(pair[0]))
                 {
+                    before.put(pair[0], values(params, pair[0]));
                     params.set(pair[0], pair[1]);
                 }
                 else
@@ -333,7 +403,9 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                     params.add(pair[0], pair[1]);
                 }
             }
-            exchange.setAttachment(REWRITTEN, set);
+            final List<Rewritten> rewritten = new ArrayList<>(before.size());
+            before.forEach((name, values) -> rewritten.add(new Rewritten(name, values, values(params, name))));
+            exchange.setAttachment(REWRITTEN, rewritten);
         }
 
         @Override

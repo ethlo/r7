@@ -244,14 +244,15 @@ class RewritePathFactoryTest
         assertThat(rewriteQuery("^/old$", "/new/{query.id}", "/old").refusedWith()).isEqualTo(HttpStatuses.BAD_REQUEST);
     }
 
-    @Test
-    void theLastMatchingRewriteDoesNotInheritAnEarlierOnesQuery()
+    /**
+     * An exchange whose client sent /old with the given query, the upstream query starting as a
+     * copy of it, and attachments that persist between filters.
+     */
+    private static UpstreamRequestGatewayExchange exchange(final Params upstreamParams, final String... clientQuery)
     {
-        final Params client = new Params("keep", "1");
         final GatewayRequest request = mock(GatewayRequest.class);
         when(request.path()).thenReturn("/old");
-        when(request.queryParams()).thenReturn(client);
-        final Params upstreamParams = new Params("keep", "1");
+        when(request.queryParams()).thenReturn(new Params(clientQuery));
         final MutableGatewayRequest upstream = mock(MutableGatewayRequest.class);
         when(upstream.queryParams()).thenReturn(upstreamParams);
         final UpstreamRequestGatewayExchange exchange = mock(UpstreamRequestGatewayExchange.class);
@@ -264,10 +265,79 @@ class RewritePathFactoryTest
             return null;
         }).when(exchange).setAttachment(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
         when(exchange.getAttachment(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> attachments.get(call.getArgument(0)));
+        return exchange;
+    }
 
-        new RewritePathFactory().create(new RewritePathFactory.Config("^/old$", "/a?a=1&keep=2"), null).onUpstreamRequest(exchange);
-        new RewritePathFactory().create(new RewritePathFactory.Config("^/old$", "/b?b=2"), null).onUpstreamRequest(exchange);
+    private static void apply(final String replacement, final UpstreamRequestGatewayExchange exchange)
+    {
+        new RewritePathFactory().create(new RewritePathFactory.Config("^/old$", replacement), null).onUpstreamRequest(exchange);
+    }
+
+    @Test
+    void theLastMatchingRewriteDoesNotInheritAnEarlierOnesQuery()
+    {
+        final Params upstreamParams = new Params("keep", "1");
+        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "keep", "1");
+
+        apply("/a?a=1&keep=2", exchange);
+        apply("/b?b=2", exchange);
 
         assertThat(upstreamParams.toQueryString()).isEqualTo("keep=1&b=2");
+    }
+
+    /**
+     * A parameter a filter between two rewrites changed is that filter's: the later rewrite puts
+     * back only what the earlier one wrote, and to what it was before it, not to the client's.
+     */
+    @Test
+    void anEarlierRewriteIsUndoneWithoutUndoingOtherFilters()
+    {
+        final Params upstreamParams = new Params("keep", "1", "own", "1");
+        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "keep", "1", "own", "1");
+        upstreamParams.set("keep", "before");
+
+        apply("/a?a=1&keep=2&own=2", exchange);
+        upstreamParams.set("own", "other");
+        apply("/b?b=2", exchange);
+
+        assertThat(upstreamParams.toQueryString()).isEqualTo("own=other&keep=before&b=2");
+    }
+
+    @Test
+    void anEscapedDelimiterInTheQueryIsText()
+    {
+        final Rewritten ampersand = rewriteQuery("^/old$", "/new?q=a\\&b", "/old");
+        assertThat(ampersand.params()).hasSize(1);
+        assertThat(ampersand.params().get(0)).containsExactly("q", "a&b");
+
+        final Rewritten equals = rewriteQuery("^/old$", "/new?a\\=b=c\\=d", "/old");
+        assertThat(equals.params()).hasSize(1);
+        assertThat(equals.params().get(0)).containsExactly("a=b", "c=d");
+
+        assertThat(rewriteQuery("^/old$", "/new\\&x", "/old").path()).isEqualTo("/new&x");
+    }
+
+    @Test
+    void requestTextWhereANameGoesIsRefused()
+    {
+        assertThat(errors("^/old/(.*)$", "/new?$1=x")).singleElement().asString()
+                .contains("A capture or {query.NAME} after the ? must be in a parameter value (name=$1), so a request can not name a parameter.");
+        assertThat(errors("^/old$", "/new?a=1&{query.n}=x")).singleElement().asString().contains("must be in a parameter value");
+        assertThat(errors("^/old/(.*)$", "/new?a\\=$1=x")).singleElement().asString().contains("must be in a parameter value");
+        assertThat(errors("^/old/(.*)$", "/new?a=$1&b=\\&$1")).isEmpty();
+    }
+
+    /**
+     * The rest of the path goes on the end of the last value, so a query must end in one: ending
+     * in a name, it would let the path name a parameter.
+     */
+    @Test
+    void aQueryThatEndsInANameIsRefused()
+    {
+        final String message = "The query of the replacement must end in a parameter value (name=...), where the rest of the path goes.";
+        assertThat(errors("^/old", "/new?flag")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?a=1&")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?a=1&b=")).isEmpty();
     }
 }
