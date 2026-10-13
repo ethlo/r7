@@ -119,13 +119,15 @@ must not depend on `r7-server` or on `r7-journal-mmap` (see `design/history/serv
 `GatewayPipeline.handle` (r7-server) is the hot path, and the ordering it implements is specified in
 `docs/config.md` §3:
 
-1. global request filters → 2. route predicates in declaration order, first match wins (404 if
-none) → 3. route request filters → 4. upstream proxy → 5. route response filters → 6. global
-response filters → 7. async journal dispatch.
+1. route predicates in declaration order, a group's match tested once before its routes', first
+match wins (404 if none) → 2. root, then group, then route request filters → 3. upstream proxy →
+4. route, then group, then root response filters → 5. async journal dispatch.
 
 Things that are load-bearing here:
 
-- Filters are declared in one flat list and are **phase-aware** by which interface they
+- Filters are declared at three levels (root, group, route; `DefaultGatewayRoute` holds them as
+  one ordered chain) and each declaration is one instance shared by every route beneath it.
+  They are **phase-aware** by which interface they
   implement (`ClientRequestGatewayFilter`, `UpstreamRequestGatewayFilter`,
   `ClientResponseGatewayFilter`, `CompletedGatewayFilter`). Response-phase filters are
   registered during the request phase and executed on the way out, onion-style.
