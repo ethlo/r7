@@ -133,6 +133,8 @@ Understanding the exact pipeline order is critical for operating r7. For a given
 7. **Root Response Filters:** The root's response phases, last.
 8. **Async Journaling:** The request/response pair is dispatched to disk.
 
+A request a filter answers itself (`ReturnResponse`, a refusal, a redirect, `StaticContent`) skips step 5 and goes through steps 6 to 8 like a proxied one: the response filters run once, just before the response head is written, on the status and headers of the answer as it was made, and a header they set is the one the client receives.
+
 ### Ambiguous Paths
 
 Route predicates match the decoded request path, while the upstream receives the raw URI and applies its own normalisation. If the two disagree, a request can match a permissive route yet reach a resource that another route protects — `/public/../admin` matches `PathPrefix: /public`, and most upstreams serve it as `/admin`. r7 therefore refuses, with `400 Bad Request`, any request whose decoded path contains:
@@ -822,7 +824,7 @@ Short-circuits the routing pipeline, halting execution and immediately returning
 
 #### StaticContent
 
-Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), every answer carries `X-Content-Type-Options: nosniff`, and a directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`.
+Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), and static content sets `X-Content-Type-Options: nosniff` on every answer before response filters run. A directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`. Response filters on the route see that status (`304`, `404`, `206`) and have the last word on its headers, including the ability to replace or remove `X-Content-Type-Options`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

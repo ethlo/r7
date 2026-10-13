@@ -65,13 +65,14 @@ public abstract class StaticContentKit
         Files.writeString(routes, """
                 version: static-kit
                 routes:
-                %s%s%s%s%s
+                %s%s%s%s%s%s
                 """.formatted(
                 route("static", this.site, ""),
                 route("static-hidden", this.site, "serve_hidden_files: true"),
                 route("static-listing", this.site, "list_directory: true"),
                 route("static-follow", this.site, "follow_symlinks: true"),
-                route("static-swap", this.dir.resolve("swap/current"), "")), StandardCharsets.UTF_8);
+                route("static-swap", this.dir.resolve("swap/current"), ""),
+                filteredRoute(this.site)), StandardCharsets.UTF_8);
         final Path server = this.dir.resolve("server.yaml");
         Files.writeString(server, """
                 server:
@@ -100,6 +101,30 @@ public abstract class StaticContentKit
                           base_directory: %s
                           %s
                 """.formatted(prefix, prefix, base.toAbsolutePath(), option);
+    }
+
+    /**
+     * Static content behind response filters: they run once, at commit, on the answer static
+     * content made, so they see its status and have the last word on its headers.
+     */
+    private static String filteredRoute(final Path base)
+    {
+        return """
+                  - id: static-filtered
+                    match:
+                      - PathPrefix:
+                          prefix: /static-filtered/
+                    filters:
+                      - AddResponseHeader:
+                          name: X-Once
+                          value: "1"
+                      - RemoveResponseHeader:
+                          name: Accept-Ranges
+                      - StripPathPrefix:
+                          parts: 1
+                      - StaticContent:
+                          base_directory: %s
+                """.formatted(base.toAbsolutePath());
     }
 
     private void write(final String relative, final String content) throws IOException
@@ -154,6 +179,22 @@ public abstract class StaticContentKit
         final HttpResponse<String> response = get("/static/no-such-file.txt");
         assertThat(response.statusCode()).isEqualTo(404);
         assertThat(response.headers().firstValue("X-Content-Type-Options")).contains("nosniff");
+    }
+
+    @Test
+    void responseFiltersRunOnceOnWhatStaticContentAnswered() throws Exception
+    {
+        final HttpResponse<String> found = get("/static-filtered/test.txt");
+        assertThat(found.statusCode()).isEqualTo(200);
+        assertThat(found.body()).isEqualTo(TEXT);
+        assertThat(found.headers().allValues("X-Once")).containsExactly("1");
+        // Set by static content, removed by a response filter: the filter has the last word.
+        assertThat(found.headers().firstValue("Accept-Ranges")).isEmpty();
+
+        final HttpResponse<String> missing = get("/static-filtered/no-such-file.txt");
+        assertThat(missing.statusCode()).isEqualTo(404);
+        assertThat(missing.headers().allValues("X-Once")).containsExactly("1");
+        assertThat(missing.headers().firstValue("X-Content-Type-Options")).contains("nosniff");
     }
 
     @Test

@@ -9,6 +9,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -91,10 +92,12 @@ public class FilterRuntimeE2ETest extends AbstractR7IntegrationTest
         // The buggy forward order left the last-declared filter's value ("inner") standing, and
         // separately, the refusal's own headers being re-applied afterwards would have stomped
         // on whichever value survived.
-        given().when().get("/onion-order")
+        final List<String> once = given().when().get("/onion-order")
                 .then()
                 .statusCode(400)
-                .header("X-Onion", equalTo("outer"));
+                .header("X-Onion", equalTo("outer"))
+                .extract().headers().getValues("X-Once");
+        org.assertj.core.api.Assertions.assertThat(once).containsExactly("1");
     }
 
     @Test
