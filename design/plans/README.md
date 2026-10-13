@@ -10,6 +10,7 @@ these stays parked.
 
 | Plan | State | Notes |
 |---|---|---|
+| [The 1.0 config model](config-model.md): root keys, groups, journal rules | Spec, in review | Replaces `global_filters`, per-route-only journaling and `status_overrides`. Settles what cannot change after 1.0. |
 | WARC profile (`WARC.md` beside `FORMAT.md`) | To do | The contract for WARC consumers. [`../warc.md`](../warc.md) calls for it. |
 | Live-tailing doorbell (step 4 of [`../history/live-tailing.md`](../history/live-tailing.md)) | Parked | Only worth building if a real consumer needs sub-millisecond latency when idle. |
 | Static content cache for small, hot files | To do | Removes the `Cleaner` lock contention in [`../limitations.md`](../limitations.md). Validated by size and modification time. |
