@@ -84,9 +84,17 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 validator.requiredRegexp("source", this.source());
             }
 
-            if (this.status() != null && this.status().code() != null && !REDIRECT_STATUSES.contains(this.status().code()))
+            if (this.status() != null)
             {
-                validator.invalid("status", this.status().code(), "must be a redirect status: 301, 302, 303, 307 or 308");
+                final Integer code = this.status().code();
+                if (code == null)
+                {
+                    this.status().validate(result);
+                }
+                else if (!REDIRECT_STATUSES.contains(code))
+                {
+                    validator.invalid("status", code, "must be a redirect status: 301, 302, 303, 307 or 308");
+                }
             }
 
             final String target = this.target();
