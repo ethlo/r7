@@ -498,7 +498,7 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `source` | String | No | The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; `target` then holds literal text and `{query.NAME}` placeholders only, and a `$1` or `${name}` is refused at startup (`$1 needs a source pattern with that many groups.`). |
+| `source` | String | No | The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; `target` then holds literal text and `{query.NAME}` placeholders only, and a `$1` or `{name}` is refused at startup (`$1 needs a source pattern with that many groups.`). |
 | `target` | String | Yes | The destination URL template. A numbered group is `$1`, `$2`, ...; a named group is `{name}`; a query parameter's value is `{query.NAME}`; `\$` is a literal `$` and `\{` a literal brace (see [Templates](#templates)). |
 | `status` | Integer | No | The HTTP redirect status code: `301`, `302`, `303`, `307` or `308`. Defaults to `302` (Found). Any other code is refused at startup: a client follows a `Location` only on a redirect. |
 

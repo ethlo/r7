@@ -6,10 +6,10 @@ import java.util.regex.Pattern;
 public final class EnvInterpolator
 {
     // Matches ${VAR_NAME} or ${VAR_NAME:default_value}, and the escape $${...}. The escape exists
-    // because ${...} is also syntax elsewhere in a config value: TemplateRedirect's target names a
-    // capture group as ${name}. Without it such a value is read as a variable and either fails
-    // validation as "missing" or, worse, silently takes the value of a variable that happens to
-    // share the group's name.
+    // because a value may need a literal ${...} for its own syntax. Without it such a value is read
+    // as a variable and either fails validation as "missing" or, worse, silently takes the value
+    // of a variable that happens to share the name. (RewritePath and TemplateRedirect write named
+    // groups as {name}, so they do not need it.)
     private static final Pattern ENV_PATTERN = Pattern.compile("(\\$?)\\$\\{([^}]+)}");
 
     private EnvInterpolator()

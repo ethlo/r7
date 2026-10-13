@@ -65,7 +65,7 @@ class RewritePathFactoryTest
      * filter hands over the decoded character.
      */
     @Test
-    void aEscapedBraceIsALiteralBrace()
+    void anEscapedBraceIsALiteralBrace()
     {
         assertThat(rewrite("^/a$", "/a\\{b\\}", "/a")).isEqualTo("/a{b}");
         assertThat(errors("^/a$", "/a\\{b")).isEmpty();
