@@ -137,7 +137,7 @@ r7 handles `leg` for every predicate: it takes the parameter out before the conf
 
 ### Response predicates
 
-A predicate that tests a response implements `GatewayResponsePredicate` (`boolean test(GatewayResponse response)`) and is created by a `GatewayResponsePredicateFactory`, with the same `name`, `configClass` and `create` as a request predicate's factory. Request and response predicates share one namespace: a name registered as both is refused when the gateway starts. A route's `match` refuses a response predicate, since no response exists when a route is chosen: `[routes.x.match[0].HasStatus] HasStatus tests a response, which does not exist yet when a route is chosen.`
+A predicate that tests a response implements `GatewayResponsePredicate` (`boolean test(GatewayResponse response)`) and is created by a `GatewayResponsePredicateFactory`, with the same `name`, `configClass` and `create` as a request predicate's factory. Request and response predicates share one namespace: a name registered as both is refused when the gateway starts. A route's `match` refuses a response predicate, since no response exists when a route is chosen: `[routes.x.match[0].HasStatus] HasStatus tests a response, which does not exist yet when a route is chosen; use it in on_response.`
 
 ---
 

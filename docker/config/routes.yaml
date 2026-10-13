@@ -38,14 +38,15 @@ routes:
       - AddCorrelationId
       - RequireAuthorizationHeader
     journal:
-      request:
-        level: NONE
-        status_overrides:
-          401,403: HEADERS
-          429: METADATA
-          5xx: HEADERS
-      response:
-        level: NONE
+      on_response:
+        - match:
+            - Status:
+                include: [401, 403, 5xx]
+          request: { level: HEADERS }
+        - match:
+            - Status:
+                include: [429]
+          request: { level: METADATA }
 
   - id: ws-test
     upstream:
@@ -57,9 +58,14 @@ routes:
     journal:
       request:
         level: METADATA
-        status_overrides:
-          5xx: HEADERS
       response:
         level: HEADERS
-        status_overrides:
-          2xx: NONE
+      on_response:
+        - match:
+            - Status:
+                include: [5xx]
+          request: { level: HEADERS }
+        - match:
+            - Status:
+                include: [2xx]
+          response: { level: NONE }

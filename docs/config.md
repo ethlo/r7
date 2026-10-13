@@ -16,7 +16,8 @@ The r7 configuration engine is strictly validated at startup. The gateway will *
 * An entry of `routes` that is neither a route nor a group: `needs 'id' for a route, or 'group' for a group of routes`; one with both, a group inside a group, or a route with `routes` is refused by name too.
 * A `null` that would remove an inherited value (`upstream: null`, `targets: null`, `filters: null`): `null cannot remove an inherited upstream; leave the key out to inherit it.`
 * `global_filters`, replaced in 1.0 by `filters` at the root: `global_filters was replaced in 1.0 by filters at the root, with the same meaning: one instance of each filter for the whole gateway. Rename the key.`
-* Malformed journal `status_overrides` keys (see [Status Overrides](#status-overrides-status_overrides)).
+* `status_overrides`, replaced in 1.0 by [journal rules](#journal-rules-on_request-on_response): `status_overrides was replaced in 1.0 by journal rules: write an on_response rule matching Status, ...`
+* A journal rule that cannot be honoured, such as one that changes a request level that can be `FULL` after its body has streamed (see [Journal Rules](#journal-rules-on_request-on_response)).
 
 ### Root, Groups and Routes
 
@@ -222,13 +223,13 @@ A `fallback` on a group or at the root is inherited by every route beneath it, t
 
 ## 5. Predicates
 
-Predicates determine whether an incoming request matches a route.
+Predicates decide whether a request matches a route, and whether a [journal rule](#journal-rules-on_request-on_response) fires.
 
 * **Regex Semantics:** All regex predicates and `RequireMatch*` filters use standard Java Regex syntax and must match the **whole value**, as if anchored with `^` and `$`: `user` does not match `superuser`. Use `.*user.*` to match anywhere in the value. Matching is **case-sensitive** unless the inline flag `(?i)` is used.
 * **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
 * **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Exact or Regex:** `Path`, `PathPrefix`, `Host`, `RequestHeader`, `QueryParameter` and `Cookie` compare values literally; their `Match*` siblings take a regex. A literal value that looks like a regex (`/api/.*`, `^Bearer .+$`, `[a-f0-9]{32}`), or a path or host with Spring Cloud Gateway wildcards or templates (`/api/**`, `/users/{id}`, `*.example.com`), is logged as a warning when the routes load, with its path and line, because it would only match a client that sends those exact characters.
-* **Legs:** Every predicate takes a `leg` parameter beside its own: `client`, the default, tests the request as the client sent it, and `upstream` the request r7 sends to the upstream. When a route is chosen there is no upstream request yet, so a route's `match` refuses `leg: upstream`: `[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leave leg out to test the client's.`
+* **Legs:** Every predicate takes a `leg` parameter beside its own: `client`, the default, tests the request as the client sent it, and `upstream` the request r7 sends to the upstream. When a route is chosen there is no upstream request yet, so a route's `match` refuses `leg: upstream`: `[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leg: upstream is allowed only in on_response.`
 * **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes. Only that list form is fallback-only: any other empty condition, at the top of a match or inside it (`match: {}`, `match: { or: [] }`, `match: { and: [] }`, `- {}`, `not: {}`), is refused at startup.
 
 ### Logical Meta-Predicates
@@ -265,7 +266,7 @@ routes:
 | --- | --- | --- | --- |
 | `rate` | Number | Yes | The share of exchanges to match: greater than `0`, at most `1`. |
 
-Routing makes one draw per exchange, so every `Sample` in the routes' matches tests the same number: the exchanges `Sample: { rate: 0.05 }` matches are among those `Sample: { rate: 0.1 }` matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. `Sample` tests the exchange, not a request, so it has no `leg`, and one written is refused: `[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.`
+Routing makes one draw per exchange, so every `Sample` in the routes' matches tests the same number: the exchanges `Sample: { rate: 0.05 }` matches are among those `Sample: { rate: 0.1 }` matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. Journal rules make one draw of their own per exchange, shared by every `Sample` in them. `Sample` tests the exchange, not a request, so it has no `leg`, and one written is refused: `[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.`
 
 ---
 
@@ -412,6 +413,44 @@ Matches the client's IP address against a specific IP or a CIDR subnet block. It
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `source` | String | Yes | The IP address or CIDR notation (e.g., `192.168.1.5` or `10.0.0.0/24`). |
+
+### Response Matching
+
+Response predicates test the response, so they are accepted only where one exists: in a journal rule's [`on_response`](#journal-rules-on_request-on_response). In a route's `match` or in `on_request` they are refused: `[routes.x.match[0].Status] Status tests a response, which does not exist yet when a route is chosen; use it in on_response.` With `leg: upstream` they test the upstream's response; on an exchange no upstream answered, that leg has no response and the predicate does not match.
+
+#### Status
+
+Matches if the response status is one of the listed codes or classes.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `include` | List | Yes | Codes (`404`) and classes (`5xx`, case-insensitive), from `100` to `599`. |
+
+#### ResponseHeader
+
+Matches if every occurrence of a response header exactly matches the provided string.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header. |
+| `value` | String | Yes | The exact value the header must contain. |
+
+#### HasResponseHeader
+
+Matches if the response has the header, ignoring its value.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header to check for. |
+
+#### MatchResponseHeader
+
+Matches if every occurrence of a response header matches a regular expression, within the regex budget.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header. |
+| `regexp` | String | Yes | A regex pattern the header value must match. |
 
 ---
 
@@ -729,16 +768,19 @@ filters:
       users:
         - "alice:${ALICE_HTPASSWD_ENTRY}"
 journal:
-  request:
-    status_overrides:
-      401: METADATA   # every failed login is journaled, even when the route journals nothing else
+  on_response:
+    - id: failed-logins     # every failed login is journaled, even when nothing else is
+      match:
+        - Status:
+            include: [401]
+      request: { level: METADATA }
 ```
 
 The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
 
 Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so generate entries with `htpasswd -nB -C 12 <user>`, which also prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
 
-**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the route's journal with its request ID, client address, and time; the `status_overrides` entry above records it even on a route that otherwise journals nothing.
+**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the journal with its request ID, client address, and time; the `failed-logins` rule above records it even on a route that otherwise journals nothing, and names itself in `gateway.journal.rule`.
 
 A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
 
@@ -855,7 +897,7 @@ Where and how journals are written on disk is set in `server.yaml`; see [Storage
 
 ### Logging Levels (`routes.yaml -> journal`)
 
-Verbosity can be set generically or overridden conditionally based on HTTP status codes.
+Each direction, `request` and `response`, has a level. `journal` is declared at the root, on a group and on a route; each direction's level is taken from the innermost of them that names it, and a direction nothing names is `NONE`.
 
 | Level | Captured Data | Notes |
 | --- | --- | --- |
@@ -868,29 +910,52 @@ Header and query parameter values that may be secrets are journaled as fingerpri
 
 A request at `NONE` is still recorded at `METADATA` (start line, client address, timing) when its response is journaled, to anchor the response.
 
-#### Status Overrides (`status_overrides`)
+### Journal Rules (`on_request`, `on_response`)
 
-Each direction (`request`, `response`) takes an optional `status_overrides` map from a status key to a level, applied when the response status matches:
+The levels an exchange deserves depend on what happens to it: a failed login or a `5xx` is worth more than the thousandth `200`. Rules raise or lower the levels for the exchanges their `match` selects:
 
 ```yaml
 journal:
+  request:
+    level: METADATA
   response:
     level: METADATA
-    status_overrides:
-      5xx: HEADERS       # a whole status class
-      401,403: HEADERS   # a comma-separated list of codes
-      429: HEADERS       # a single code
+  on_request:
+    - id: debug-traffic
+      match:
+        - HasRequestHeader:
+            name: X-Debug
+      request: { level: HEADERS }
+  on_response:
+    - id: server-errors
+      match:
+        - Status:
+            include: [5xx]
+      response: { level: FULL }
+    - id: teapots
+      match:
+        - Status:
+            include: [418]
+      request: { level: NONE }
+      response: { level: NONE }
 ```
 
-| Key form | Example | Matches |
-| --- | --- | --- |
-| Status class `Nxx` | `4xx`, `5XX` | Every code in that class. `N` is `1` to `5`; case-insensitive. |
-| Single code | `429` | That code. Must be three digits, `100`–`599`. |
-| Comma-separated list | `401,403` | Each listed code. Every entry is a single code; classes and ranges are not allowed inside a list. |
+* **When they run.** `on_request` is checked once the route is chosen, before its filters, against the request as the client sent it. `on_response` is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use [response predicates](#response-matching) and `leg: upstream`.
+* **Which rule wins.** For each direction, the first matching rule that names it wins; a rule naming only `response` leaves the request to the rules after it. `on_response` overrides what `on_request` resolved. A route's rules are checked first, then its group's, then the root's.
+* **Recorded.** Each rule that fires is journaled in the `gateway.journal.rule` attribute, by its `id`, or its path (`routes.orders.journal.on_response[0]`) when it has none. Ids are unique across the file.
+* **Failures.** A rule whose predicate fails (a regex over its budget) does not fire, under `not` as well, and the exchange carries on: its label is journaled in `gateway.journal.rule_error`, and the first failure is logged once per load.
 
-Any other key (a range such as `500-599`, `999`, `6xx`, an empty list entry) is rejected at startup and on hot reload with an error naming the field, e.g. `[routes.my-route.journal.response.status_overrides] Invalid status override key '500-599'`. Avoid overlapping keys (`5xx` and `503`): which one wins for the shared codes follows map order and is not part of the contract.
+Bodies stream as they pass, which fixes two things at load:
 
-An override may not raise a direction to `FULL` unless its base level is already `FULL` (bodies are captured as they stream, and a lower base installs no capture), and a `FULL` request may not be lowered (its body is written before any status exists). Both are refused at startup.
+| Rule | Refused with |
+| --- | --- |
+| `on_response` sets `request: FULL` | `[routes.orders.journal.on_response[0].request] FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.` |
+| `on_response` names `request` while the base or an `on_request` rule can make it `FULL` | `[routes.orders.journal.on_response[0].request] cannot change the request level: journal.on_request[0] can make it FULL, and a request body that was journaled cannot be un-written.` |
+| A rule without `match`, or with `match: []` | `[routes.orders.journal.on_request[0]] match is required` |
+| A rule naming neither direction | `[routes.orders.journal.on_request[0]] sets no level; name request, response or both` |
+| Two rules with one `id` | `[routes.orders.journal.on_request[1].id] 'debug-traffic' is already the id of journal.on_request[0]` |
+
+The response body is captured from its first byte whatever level `on_response` gives it, since the rules run before it is written.
 
 ### Unrouted Requests (`routes.yaml -> unrouted`)
 
@@ -911,15 +976,11 @@ unrouted:
   journal:
     request:
       level: HEADERS
-      status_overrides:
-        404: NONE      # route misses: not journaled at all...
     response:
       level: METADATA
-      status_overrides:
-        404: NONE      # ...which needs both directions, as overrides apply per direction
 ```
 
-Levels and `status_overrides` work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+Levels work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. The root's `journal` does not apply here. Rules are refused: `on_response`, because r7's answer to a refused request is fixed by its reason, and `on_request`, which is not supported under `unrouted` yet. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
 
 ---
 
@@ -935,18 +996,13 @@ filters:
   - SimpleMetrics
   - AddCorrelationId
 
-# Journal requests refused before routing, such as ambiguous paths and TRACE,
-# but not plain route misses (404)
+# Journal requests refused before routing: route misses, ambiguous paths, TRACE
 unrouted:
   journal:
     request:
       level: HEADERS
-      status_overrides:
-        404: NONE
     response:
       level: METADATA
-      status_overrides:
-        404: NONE
 
 routes:
   # Internal health loopback (Short-circuiting proxy)
@@ -1017,11 +1073,13 @@ routes:
     journal:
       request:
         level: METADATA
-        status_overrides:
-          5xx: HEADERS
-          401,403: HEADERS
       response:
         level: METADATA
+      on_response:
+        - match:
+            - Status:
+                include: [5xx, 401, 403]
+          request: { level: HEADERS }
 
   - id: fallback-stub
     match: [] # Empty match blocks are never hit naturally; used only via fallback

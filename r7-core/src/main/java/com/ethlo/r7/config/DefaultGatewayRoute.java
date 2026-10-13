@@ -19,6 +19,7 @@ import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.condition.Condition;
+import com.ethlo.r7.journal.JournalPolicy;
 
 public class DefaultGatewayRoute implements GatewayRoute
 {
@@ -41,7 +42,7 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final List<String> uri;
     private final Condition match;
     private final List<GatewayFilter> filters;
-    private final RouteJournalConfig journal;
+    private final JournalPolicy journal;
     private final RouteDefinition routeDefinition;
     private final ClientRequestGatewayFilter[] clientRequestFilters;
     private final CompletedGatewayFilter[] completedGatewayFilters;
@@ -54,7 +55,7 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final Map<String, DefaultGatewayRoute> fallbacksOfThis = new ConcurrentHashMap<>();
     private final Map<StateKey<?>, Object> attachments;
 
-    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final JournalPolicy journal, final RouteDefinition routeDefinition)
     {
         this(uri, match, filters, 0, journal, routeDefinition);
     }
@@ -62,7 +63,7 @@ public class DefaultGatewayRoute implements GatewayRoute
     /**
      * @param rootFilterCount how many leading entries of {@code filters} are the root's
      */
-    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final int rootFilterCount, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final int rootFilterCount, final JournalPolicy journal, final RouteDefinition routeDefinition)
     {
         this(uri, match, filters, rootFilterCount, 0, null, journal, routeDefinition);
     }
@@ -74,7 +75,7 @@ public class DefaultGatewayRoute implements GatewayRoute
      * @param groupFilterCount how many entries after those are its group's
      * @param group            the id of the group the route is declared in, or {@code null}
      */
-    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final int rootFilterCount, final int groupFilterCount, final String group, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final int rootFilterCount, final int groupFilterCount, final String group, final JournalPolicy journal, final RouteDefinition routeDefinition)
     {
         this(uri, match, filters, rootFilterCount, groupFilterCount, group, Level.ROUTE, journal, routeDefinition);
     }
@@ -84,7 +85,7 @@ public class DefaultGatewayRoute implements GatewayRoute
      *                      route if it names any, else its group if that names any, else the
      *                      root. Routes with one upstream level and owner share one upstream.
      */
-    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final int rootFilterCount, final int groupFilterCount, final String group, final Level upstreamLevel, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    public DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final int rootFilterCount, final int groupFilterCount, final String group, final Level upstreamLevel, final JournalPolicy journal, final RouteDefinition routeDefinition)
     {
         this(uri, match, filters, List.of(), rootFilterCount, groupFilterCount, group, upstreamLevel, journal, routeDefinition, new ConcurrentHashMap<>());
     }
@@ -95,7 +96,7 @@ public class DefaultGatewayRoute implements GatewayRoute
      *                    on the route that fell back to this one; empty for a matched route
      * @param attachments shared with the route this one is derived from, if any
      */
-    private DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final List<GatewayFilter> started, final int rootFilterCount, final int groupFilterCount, final String group, final Level upstreamLevel, final RouteJournalConfig journal, final RouteDefinition routeDefinition, final Map<StateKey<?>, Object> attachments)
+    private DefaultGatewayRoute(final List<String> uri, final Condition match, final List<GatewayFilter> filters, final List<GatewayFilter> started, final int rootFilterCount, final int groupFilterCount, final String group, final Level upstreamLevel, final JournalPolicy journal, final RouteDefinition routeDefinition, final Map<StateKey<?>, Object> attachments)
     {
         this.attachments = attachments;
         this.id = routeDefinition.id();
@@ -334,7 +335,7 @@ public class DefaultGatewayRoute implements GatewayRoute
                 .toString();
     }
 
-    public RouteJournalConfig journal()
+    public JournalPolicy journal()
     {
         return journal;
     }

@@ -25,6 +25,9 @@ import com.ethlo.r7.condition.AndCondition;
 import com.ethlo.r7.condition.Condition;
 import com.ethlo.r7.condition.ConditionScope;
 import com.ethlo.r7.config.model.HttpStatus;
+import com.ethlo.r7.journal.JournalPolicy;
+import com.ethlo.r7.journal.JournalRule;
+import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -137,7 +140,7 @@ public final class ConfigurationManager
         if (routesConfig == null)
         {
             log.warn("No routes found");
-            routesConfig = new RoutesDefinition(null, null, null, List.of(), null);
+            routesConfig = new RoutesDefinition(null, null, null, null, List.of(), null);
         }
 
         final ValidationResult validationResult = new ValidationResult();
@@ -231,6 +234,7 @@ public final class ConfigurationManager
         // 2. Semantic Analysis Pass - Check for collisions and dangling references, on the
         // routes as inheritance leaves them: a fallback named by a group is every route's in it.
         validateUniqueIds(config.routes());
+        validateUniqueRuleIds(config, validationResult);
         final List<Placed> placed = place(config, validationResult);
         validationResult.throwIfInvalid();
         validateCrossRouteReferences(placed);
@@ -246,6 +250,11 @@ public final class ConfigurationManager
             instantiateFilters(new FilterCreationContext(ROOT_FILTER_ROUTE_ID, engineContext), validationResult.nested("filters"), rootFilters, filterDef);
         }
 
+        // Journal rules, like filters, are built once where they are declared: a root or group rule
+        // is one instance, with one error count, for every route beneath it.
+        final CompiledJournal rootJournal = this.compileJournal(config.journal(), "journal", validationResult);
+        final Set<String> reported = new HashSet<>();
+
         final List<GatewayRoute> routes = new ArrayList<>();
         final List<RouteRegistry.RoutingEntry> table = new ArrayList<>();
         int index = 0;
@@ -255,7 +264,7 @@ public final class ConfigurationManager
             {
                 case RouteDefinition ignored ->
                 {
-                    final DefaultGatewayRoute route = this.buildRoute(placed.get(index++), rootFilters, List.of(), null, validationResult).route();
+                    final DefaultGatewayRoute route = this.buildRoute(placed.get(index++), rootFilters, List.of(), null, rootJournal, null, reported, validationResult).route();
                     routes.add(route);
                     table.add(new RouteRegistry.Single(route));
                 }
@@ -267,6 +276,7 @@ public final class ConfigurationManager
                     {
                         instantiateFilters(new FilterCreationContext(group.group(), engineContext), groupResult.nested("filters"), groupFilters, filterDef);
                     }
+                    final CompiledJournal groupJournal = this.compileJournal(group.journal(), "routes." + group.group() + ".journal", validationResult);
                     final Condition groupMatch = group.match() == null
                             ? Condition.TRUE
                             : this.buildMatch(group.match(), groupResult, "routes." + group.group());
@@ -275,7 +285,7 @@ public final class ConfigurationManager
                     final List<Condition> memberMatches = new ArrayList<>();
                     for (int i = 0; i < group.routes().size(); i++)
                     {
-                        final BuiltRoute built = this.buildRoute(placed.get(index++), rootFilters, groupFilters, groupMatch, validationResult);
+                        final BuiltRoute built = this.buildRoute(placed.get(index++), rootFilters, groupFilters, groupMatch, rootJournal, groupJournal, reported, validationResult);
                         members.add(built.route());
                         memberMatches.add(built.ownMatch());
                     }
@@ -365,7 +375,8 @@ public final class ConfigurationManager
         return new Placed(route.withUpstream(effective), route, group, path, upstreamLevel);
     }
 
-    private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final Condition groupMatch, final ValidationResult validationResult)
+    private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final Condition groupMatch,
+                                  final CompiledJournal rootJournal, final CompiledJournal groupJournal, final Set<String> reported, final ValidationResult validationResult)
     {
         final RouteDefinition routeDefinition = placed.route();
         final ValidationResult routeResult = validationResult.nested(placed.path());
@@ -381,7 +392,8 @@ public final class ConfigurationManager
             }
         }
 
-        final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal(), routeResult.nested("journal"));
+        final CompiledJournal routeJournal = this.compileJournal(routeDefinition.journal(), placed.path() + ".journal", validationResult);
+        final JournalPolicy journalConfig = policy(routeJournal, groupJournal, rootJournal, reported, validationResult);
 
         // An empty match is a fallback-only route (docs/config.md): it must stay
         // false, as build() would turn an empty tree into an always-true condition.
@@ -534,7 +546,9 @@ public final class ConfigurationManager
 
     /**
      * A route that is never matched and has no filters or upstream: it only carries the journal
-     * levels that requests refused before routing are recorded at.
+     * levels that requests refused before routing are recorded at. It does not inherit the
+     * root's journal: refusals are mostly scanner traffic, and levels chosen for real routes
+     * would journal it by accident.
      */
     private GatewayRoute createUnroutedRoute(final UnroutedDefinition unrouted)
     {
@@ -544,25 +558,168 @@ public final class ConfigurationManager
         }
         final JournalDefinition journal = unrouted.journal();
         final RouteDefinition definition = new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, journal, List.of());
-        final ValidationResult validationResult = new ValidationResult();
-        final RouteJournalConfig journalConfig = createJournalConfig(journal, validationResult.nested("unrouted").nested("journal"));
-        return new DefaultGatewayRoute(List.of(), Condition.FALSE, List.of(), journalConfig, definition);
+        final JournalPolicy policy = JournalPolicy.of(levelOf(journal.request()), levelOf(journal.response()));
+        return new DefaultGatewayRoute(List.of(), Condition.FALSE, List.of(), policy, definition);
+    }
+
+    private static JournalLevel levelOf(final JournalDirectionDefinition direction)
+    {
+        return direction != null && direction.level() != null ? direction.level() : JournalLevel.NONE;
     }
 
     /**
-     * Builds and validates a route's journal levels. The validation was once defined but never
-     * called, which let a FULL request be lowered by an override - a configuration the journal
-     * cannot honour, since the request body is written before the status exists.
+     * A journal block as declared at one level, its rules built.
+     *
+     * @param path where it is declared: {@code journal}, {@code routes.<group>.journal}, ...
      */
-    private RouteJournalConfig createJournalConfig(final JournalDefinition definition, final ValidationResult result)
+    private record CompiledJournal(JournalDefinition definition, String path, List<JournalRule> onRequest, List<JournalRule> onResponse)
     {
-        final RouteJournalConfig config = new RouteJournalConfig(
-                new JournalDirectionConfig(definition.request().level(), JournalOverrideParser.parseOverrides(definition.request().statusOverrides())),
-                new JournalDirectionConfig(definition.response().level(), JournalOverrideParser.parseOverrides(definition.response().statusOverrides()))
-        );
-        config.validate(result);
-        result.throwIfInvalid();
-        return config;
+    }
+
+    private CompiledJournal compileJournal(final JournalDefinition definition, final String path, final ValidationResult validationResult)
+    {
+        if (definition == null)
+        {
+            return null;
+        }
+        return new CompiledJournal(definition, path,
+                this.compileRules(definition.onRequest(), path + ".on_request", ConditionScope.ON_REQUEST, validationResult),
+                this.compileRules(definition.onResponse(), path + ".on_response", ConditionScope.ON_RESPONSE, validationResult));
+    }
+
+    private List<JournalRule> compileRules(final List<JournalRuleDefinition> rules, final String listPath, final ConditionScope scope, final ValidationResult validationResult)
+    {
+        final List<JournalRule> compiled = new ArrayList<>(rules.size());
+        for (int i = 0; i < rules.size(); i++)
+        {
+            final JournalRuleDefinition rule = rules.get(i);
+            final String path = listPath + "[" + i + "]";
+            final Condition condition;
+            try
+            {
+                condition = rule.match().build(predicateRegistry, scope, validationResult.nested(path));
+            }
+            catch (final ConfigurationException e)
+            {
+                throw new ConfigurationException(String.format("[%s.match] %s", path, e.getMessage()));
+            }
+            compiled.add(new JournalRule(rule.id() != null ? rule.id() : path, path, condition,
+                    rule.request() != null ? rule.request().level() : null,
+                    rule.response() != null ? rule.response().level() : null));
+        }
+        return compiled;
+    }
+
+    /**
+     * A route's journal policy: each base level from the innermost level naming it, else
+     * {@code NONE}; the rules of every level, the route's checked first, then its group's, then
+     * the root's.
+     * <p>
+     * Refuses an {@code on_response} rule naming the request while the request can be
+     * {@code FULL}: its body streams into the journal before any response exists and cannot be
+     * un-written. Checked per route, since the rule that can make it {@code FULL} may sit at
+     * another level, and reported once per offending rule however many routes share it.
+     */
+    private static JournalPolicy policy(final CompiledJournal route, final CompiledJournal group, final CompiledJournal root, final Set<String> reported, final ValidationResult validationResult)
+    {
+        JournalLevel request = null;
+        String requestFrom = null;
+        JournalLevel response = null;
+        final List<JournalRule> onRequest = new ArrayList<>();
+        final List<JournalRule> onResponse = new ArrayList<>();
+        for (final CompiledJournal level : new CompiledJournal[]{route, group, root})
+        {
+            if (level == null)
+            {
+                continue;
+            }
+            final JournalDefinition definition = level.definition();
+            if (request == null && definition.request() != null && definition.request().level() != null)
+            {
+                request = definition.request().level();
+                requestFrom = level.path() + ".request";
+            }
+            if (response == null && definition.response() != null && definition.response().level() != null)
+            {
+                response = definition.response().level();
+            }
+            onRequest.addAll(level.onRequest());
+            onResponse.addAll(level.onResponse());
+        }
+
+        String fullFrom = request == JournalLevel.FULL ? "the base level " + requestFrom + " is FULL" : null;
+        for (final JournalRule rule : onRequest)
+        {
+            if (fullFrom == null && rule.request() == JournalLevel.FULL)
+            {
+                fullFrom = rule.path() + " can make it FULL";
+            }
+        }
+        if (fullFrom != null)
+        {
+            for (final JournalRule rule : onResponse)
+            {
+                if (rule.request() != null && rule.request() != JournalLevel.FULL && reported.add(rule.path()))
+                {
+                    validationResult.nested(rule.path()).addError("request", "cannot change the request level: " + fullFrom
+                            + ", and a request body that was journaled cannot be un-written.");
+                }
+            }
+        }
+
+        return new JournalPolicy(request != null ? request : JournalLevel.NONE, response != null ? response : JournalLevel.NONE, onRequest, onResponse);
+    }
+
+    /**
+     * A rule's id is journaled in place of its path, so it must name one rule in the file.
+     */
+    private static void validateUniqueRuleIds(final RoutesDefinition config, final ValidationResult validationResult)
+    {
+        final Map<String, String> seen = new HashMap<>();
+        collectRuleIds(config.journal(), "journal", seen, validationResult);
+        for (final RouteEntry entry : config.routes())
+        {
+            switch (entry)
+            {
+                case RouteDefinition route -> collectRuleIds(route.journal(), "routes." + route.id() + ".journal", seen, validationResult);
+                case GroupDefinition group ->
+                {
+                    collectRuleIds(group.journal(), "routes." + group.group() + ".journal", seen, validationResult);
+                    for (final RouteDefinition route : group.routes())
+                    {
+                        collectRuleIds(route.journal(), "routes." + group.group() + ".routes." + route.id() + ".journal", seen, validationResult);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void collectRuleIds(final JournalDefinition journal, final String path, final Map<String, String> seen, final ValidationResult validationResult)
+    {
+        if (journal == null)
+        {
+            return;
+        }
+        collectRuleIds(journal.onRequest(), path + ".on_request", seen, validationResult);
+        collectRuleIds(journal.onResponse(), path + ".on_response", seen, validationResult);
+    }
+
+    private static void collectRuleIds(final List<JournalRuleDefinition> rules, final String listPath, final Map<String, String> seen, final ValidationResult validationResult)
+    {
+        for (int i = 0; i < rules.size(); i++)
+        {
+            final String id = rules.get(i).id();
+            if (id == null)
+            {
+                continue;
+            }
+            final String path = listPath + "[" + i + "]";
+            final String previous = seen.putIfAbsent(id, path);
+            if (previous != null)
+            {
+                validationResult.nested(path).addError("id", "'" + id + "' is already the id of " + previous);
+            }
+        }
     }
 
     private void instantiateFilters(final FilterCreationContext filterCreationContext, final ValidationResult validationResult, final List<GatewayFilter> instantiatedFilters, final FilterDefinition filterDef)

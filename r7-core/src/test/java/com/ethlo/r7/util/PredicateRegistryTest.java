@@ -122,6 +122,6 @@ class PredicateRegistryTest
 
         assertThat(registry.exists("Answered")).isTrue();
         assertThat(registry.condition("Answered", Map.of(), ConditionScope.ROUTE_MATCH, result)).isSameAs(Condition.FALSE);
-        assertThat(result.getErrors()).containsExactly("[Answered] Answered tests a response, which does not exist yet when a route is chosen.");
+        assertThat(result.getErrors()).containsExactly("[Answered] Answered tests a response, which does not exist yet when a route is chosen; use it in on_response.");
     }
 }

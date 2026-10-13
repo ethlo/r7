@@ -69,7 +69,7 @@ class PredicateLegAndSampleTest
                     leg: upstream
                 """))
                 .isInstanceOf(ConfigurationException.class)
-                .hasMessageContaining("[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leave leg out to test the client's.");
+                .hasMessageContaining("[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leg: upstream is allowed only in on_response.");
     }
 
     @Test

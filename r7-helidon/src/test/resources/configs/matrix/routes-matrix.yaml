@@ -38,10 +38,12 @@ routes:
       targets:
         - url: "http://${UPSTREAM_HOST}:${WIREMOCK_PORT}"
     journal:
-      request:
-        level: NONE
-        status_overrides:
-          429: METADATA
-          5xx: HEADERS
-      response:
-        level: NONE
+      on_response:
+        - match:
+            - Status:
+                include: [429]
+          request: { level: METADATA }
+        - match:
+            - Status:
+                include: [5xx]
+          request: { level: HEADERS }

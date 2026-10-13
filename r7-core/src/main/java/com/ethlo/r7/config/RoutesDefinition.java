@@ -11,13 +11,16 @@ import tools.jackson.databind.annotation.JsonDeserialize;
 
 /**
  * The root of {@code routes.yaml}: a group without a match and without an id. Its
- * {@code filters} are one instance each for the whole gateway, and its {@code upstream} keys are
- * inherited by every route that does not name them, directly or through its group.
+ * {@code filters} are one instance each for the whole gateway, its {@code upstream} keys and
+ * {@code journal} levels are inherited by every route that does not name them, directly or
+ * through its group, and its journal rules apply to every route, after the group's and the
+ * route's own. Not to {@code unrouted}, which has a journal of its own.
  */
 public record RoutesDefinition(
         @Nullable String version,
         @Nullable List<FilterDefinition> filters,
         @Nullable UpstreamConfig upstream,
+        @Nullable JournalDefinition journal,
         // On the component rather than on RouteEntry: an annotation there would be inherited by
         // the records the deserializer binds, which would then recurse into it
         @JsonDeserialize(contentUsing = RouteEntryDeserializer.class)
@@ -31,6 +34,10 @@ public record RoutesDefinition(
         if (this.upstream != null)
         {
             this.upstream.validate(result.nested("upstream"));
+        }
+        if (this.journal != null)
+        {
+            this.journal.validate(result.nested("journal"));
         }
         for (final RouteEntry entry : routes())
         {

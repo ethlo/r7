@@ -1,9 +1,7 @@
 package com.ethlo.r7.config;
 
 import java.util.List;
-import java.util.Optional;
 
-import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidationResult;
 
@@ -62,11 +60,5 @@ public record RouteDefinition(String id,
         {
             result.addError("match", "Route '" + this.id() + "' needs a match; write 'match: []' for a route reached only as a fallback");
         }
-    }
-
-    @Override
-    public JournalDefinition journal()
-    {
-        return Optional.ofNullable(journal).orElse(new JournalDefinition(new JournalDirectionDefinition(JournalLevel.NONE, null), new JournalDirectionDefinition(JournalLevel.NONE, null)));
     }
 }

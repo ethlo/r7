@@ -13,14 +13,16 @@ import tools.jackson.databind.JsonNode;
  *   <li>an explicit {@code null} for {@code upstream}, any of its keys, {@code filters} or
  *   {@code journal}. Written under a group it reads as "none here", but nothing can remove what an
  *   outer level declared, and a record cannot tell {@code null} from a key left out;</li>
- *   <li>{@code global_filters}, removed in 1.0, which deserves its replacement's name rather than
- *   "unknown property".</li>
+ *   <li>{@code global_filters} and {@code status_overrides}, removed in 1.0, which deserve their
+ *   replacement's name rather than "unknown property".</li>
  * </ul>
  * Paths name entries by their id, as validation does: {@code routes.tenant-a.routes.orders}.
  */
 public final class RoutesTreeCheck
 {
     static final String GLOBAL_FILTERS_REMOVED = "global_filters was replaced in 1.0 by filters at the root, with the same meaning: one instance of each filter for the whole gateway. Rename the key.";
+
+    static final String STATUS_OVERRIDES_REMOVED = "status_overrides was replaced in 1.0 by journal rules: write an on_response rule matching Status, e.g. on_response: [{match: [{Status: {include: [5xx]}}], response: {level: FULL}}].";
 
     private static final List<String> UPSTREAM_KEYS = List.of("strategy", "health_check", "timeouts", "targets", "fallback", "preserve_host");
 
@@ -43,6 +45,11 @@ public final class RoutesTreeCheck
             result.addError("global_filters", GLOBAL_FILTERS_REMOVED);
         }
         checkInheritedKeys(root, result);
+        final JsonNode unrouted = root.get("unrouted");
+        if (unrouted != null && unrouted.isObject())
+        {
+            checkJournal(unrouted.get("journal"), result.nested("unrouted").nested("journal"));
+        }
 
         final JsonNode routes = root.get("routes");
         if (routes != null && routes.isArray())
@@ -123,6 +130,23 @@ public final class RoutesTreeCheck
             if (value != null && value.isNull())
             {
                 result.addError(key, "null cannot remove inherited " + key + "; leave the key out.");
+            }
+        }
+        checkJournal(level.get("journal"), result.nested("journal"));
+    }
+
+    private static void checkJournal(final JsonNode journal, final ValidationResult result)
+    {
+        if (journal == null || !journal.isObject())
+        {
+            return;
+        }
+        for (final String direction : List.of("request", "response"))
+        {
+            final JsonNode value = journal.get(direction);
+            if (value != null && value.isObject() && value.has("status_overrides"))
+            {
+                result.nested(direction).addError("status_overrides", STATUS_OVERRIDES_REMOVED);
             }
         }
     }
