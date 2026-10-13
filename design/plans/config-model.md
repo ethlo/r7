@@ -84,7 +84,7 @@ a group without a `match` and without an id.
 |---|---|---|---|
 | `version` | yes, as today | | |
 | `id` | | `group: <id>` | `id: <id>` |
-| `match` | | optional | required (as today) |
+| `match` | | optional | required: `match: []` matches nothing, for a route reached only as a fallback. Today a route with filters may leave it out and then silently never matches; 1.0 refuses that (implemented with the `match: []` fix). |
 | `filters` | yes | yes | yes |
 | `upstream` | yes | yes | yes |
 | `journal` | yes | yes | yes |
@@ -214,7 +214,7 @@ journal:
   on_request:
     - match:
         - not:
-            - Method: { include: [GET] }
+            Method: { include: [GET] }
       request: { level: FULL }               # captured up to 64KB
 ```
 
@@ -299,7 +299,7 @@ Startup errors, each naming the rule by its path as validation does today:
 | Case | Message (draft) |
 |---|---|
 | `on_response` rule sets `request: FULL` | `[routes.orders.journal.on_response[0].request] FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.` |
-| `on_response` rule names `request` while the base or any reachable `on_request` rule can make the request `FULL` | `[routes.orders.journal.on_response[0].request] cannot change the request level: on_request[0] can make it FULL, and a request body that was journaled cannot be un-written.` |
+| `on_response` rule names `request` while the base or any reachable `on_request` rule can make the request `FULL` | `[routes.orders.journal.on_response[0].request] cannot change the request level: journal.on_request[0] (the root's) can make it FULL, and a request body that was journaled cannot be un-written.` Both rules are named by their full path, since the one that makes the request `FULL` may sit at another level: a rule added at the root can make inner rules invalid. |
 | Response predicate in `on_request` or in a route or group `match` | `[routes.orders.journal.on_request[0].match] Status needs the response; use it in on_response.` |
 | Rule without `match` | `[routes.orders.journal.on_request[0]] match is required` |
 | Rule naming neither direction | `[routes.orders.journal.on_request[0]] sets no level; name request, response or both` |
@@ -503,7 +503,10 @@ smuggling attempts are journaled at `HEADERS`.
 The management API and `r7-editor` show each route's effective configuration: its match with the
 group's ANDed in, its filters in the order they run and the level each was declared on, its
 resolved upstream, and its journal policy (base levels, then its rules, its group's and the
-root's, in the order they are checked). The dashboard says "root" or "gateway-wide" where it says
+root's, in the order they are checked). Where an inner rule names a key an outer rule also
+names, the view marks the outer rule as shadowed for that key on that route: a route rule that
+matches everything with `response: NONE` shows the root's "5xx → `FULL`" as shadowed there, so
+an audit sees which routes a gateway-wide rule does not reach. The dashboard says "root" or "gateway-wide" where it says
 "global" today.
 
 ## Implementation notes
@@ -511,7 +514,10 @@ root's, in the order they are checked). The dashboard says "root" or "gateway-wi
 - **Groups** are flattened at config load: each route gets its effective `match` (a group
   predicate ANDed with its own, evaluated once per group so a non-matching group skips its
   routes), its filter chain built from shared instances, its upstream, and its journal policy.
-  The request path keeps working on flat `DefaultGatewayRoute`s.
+  The request path keeps working on flat `DefaultGatewayRoute`s. Routing falls through: a
+  request that matches a group's `match` but none of its routes continues with the next entry
+  after the group, exactly as if the group's routes were written there flat. A group is not a
+  boundary, and a request it does not place can still reach a later route or the catch-all.
 - **Shared upstreams.** Today each route builds its own `HttpUpstream`
   (`BlockingGateway`), holding the targets, the pool, the health state and the timeouts
   together: a pooled socket gets its read timeout when it is opened. Two routes share one
@@ -602,7 +608,7 @@ journal:
   on_request:
     - match:
         - not:
-            - Method: { include: [GET] }
+            Method: { include: [GET] }
         - or:
             - Path:       { path: /core/events/capture }
             - PathPrefix: { prefix: /core/masterdata/ }
@@ -717,6 +723,8 @@ tokens that were not verified (a forgeable username has no place in an audit rec
 | A `Journal` filter | Filters run after the levels are fixed, and journaling would depend on filter order. |
 | "Most detailed level wins" | Rules could not lower a level (health checks to `NONE`). |
 | Override by id, type or name (`replaces:`, `inherit_rules: false`, `journal: NONE` meaning "ignore outer rules") | Removal, and lookups across the file; it no longer reads top to bottom. A filter type can legitimately be stacked, so override by type drops one silently. |
+| Locked root rules (`enforce: true`) that inner rules cannot override, or a load warning when one does | The file is one artifact with one author and one review, so a lock guards only against that author; an override is a deliberate rule, and a warning would fire on every legitimate one. The journal records which rule fired (`gateway.journal.rule`), and the management view marks shadowed outer rules per route. A route's base level never lowers an outer rule; only an inner rule naming the same key does. |
+| `not:` taking a list | `not: [A, B]` was ANDed, NOT(A AND B), and reads just as well as "neither A nor B". `not` takes one condition; `not: { or: [...] }` and `not: { and: [...] }` say which is meant. A list is refused at load. |
 | `upstream` replaced as a whole | A route that only needs another timeout would repeat its targets, and the root could not set timeouts for everyone. |
 | Rule reuse through YAML anchors | Jackson 3.2.3's `readTree` turns an alias to a mapping into the anchor's name as a string, so a reused rule fails to bind. Reuse is what nesting is for; templating belongs to Helm or Kustomize. |
 | Journaling the config version with every exchange | Bytes on every record for what the deployment history already answers. |
