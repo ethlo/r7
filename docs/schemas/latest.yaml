@@ -743,7 +743,7 @@ $defs:
           properties:
             source:
               type: string
-              description: The regular expression pattern to match against the request path.
+              description: "The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, and the target can use only {query.NAME} placeholders."
             status:
               anyOf:
               - type: integer
@@ -751,13 +751,12 @@ $defs:
                 maximum: 599
               - type: string
                 pattern: "^\\$\\{.*\\}$"
-              description: The HTTP status code to return for the redirect.
+              description: "The HTTP status code to return for the redirect: 301, 302, 303, 307 or 308."
               default: 302
             target:
               type: string
-              description: "The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation."
+              description: "The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation. {query.NAME} is the value of a query parameter."
           required:
-          - source
           - target
           additionalProperties: false
           description: Redirects requests based on a path pattern match using a template for the target URL.
@@ -765,8 +764,7 @@ $defs:
           - label: Insert TemplateRedirect
             description: Redirects requests based on a path pattern match using a template for the target URL.
             body:
-              source: $1
-              target: $2
+              target: $1
       additionalProperties: true
       minProperties: 1
       maxProperties: 1

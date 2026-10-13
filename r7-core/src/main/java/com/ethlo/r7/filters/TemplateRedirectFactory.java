@@ -4,16 +4,19 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
@@ -34,6 +37,9 @@ import com.google.auto.service.AutoService;
 public final class TemplateRedirectFactory implements GatewayFilterFactory<TemplateRedirectFactory.Config>
 {
     private static final String FILTER_NAME = "TemplateRedirect";
+    private static final Set<Integer> REDIRECT_STATUSES = Set.of(301, 302, 303, 307, 308);
+    private static final Pattern NO_GROUPS = Pattern.compile("");
+    private static final String QUERY_PREFIX = "{query.";
     private static final ByteBuffer EMPTY_BODY = ByteBuffer.allocateDirect(0);
 
     @Override
@@ -55,13 +61,14 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
     }
 
     public record Config(
-            @Description("The regular expression pattern to match against the request path.")
+            @Description("The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, and the target can use only {query.NAME} placeholders.")
+            @Nullable
             String source,
 
-            @Description("The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation.")
+            @Description("The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation. {query.NAME} is the value of a query parameter.")
             String target,
 
-            @Description("The HTTP status code to return for the redirect.")
+            @Description("The HTTP status code to return for the redirect: 301, 302, 303, 307 or 308.")
             @DefaultValue("302")
             HttpStatus status) implements ValidatableConfig
     {
@@ -69,37 +76,61 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result)
-                    .requiredRegexp("source", this.source())
                     .notBlank("target", this.target())
                     .safeHeaderText("target", this.target())
                     .validRegexReplacement("target", this.source(), this.target());
+            if (this.source() != null)
+            {
+                validator.requiredRegexp("source", this.source());
+            }
+
+            if (this.status() != null && this.status().code() != null && !REDIRECT_STATUSES.contains(this.status().code()))
+            {
+                validator.invalid("status", this.status().code(), "must be a redirect status: 301, 302, 303, 307 or 308");
+            }
 
             final String target = this.target();
             if (target == null)
             {
                 return;
             }
+            if (this.source() == null || this.source().isBlank())
+            {
+                try
+                {
+                    parse(target, NO_GROUPS);
+                }
+                catch (final IllegalArgumentException e)
+                {
+                    validator.invalid("target", target, e.getMessage());
+                }
+            }
             final int schemeSeparator = target.indexOf("://");
             if (!target.isEmpty() && (isAsciiWhitespace(target.charAt(0)) || isAsciiWhitespace(target.charAt(target.length() - 1))))
             {
                 validator.invalid("target", target, "a redirect target must not start or end with whitespace, which browsers strip before following it");
             }
-            else if (schemeSeparator > 0 && isInSchemePosition(target, schemeSeparator) && target.substring(0, schemeSeparator).indexOf('$') >= 0)
+            else if (schemeSeparator > 0 && isInSchemePosition(target, schemeSeparator) && hasPlaceholder(target.substring(0, schemeSeparator)))
             {
                 validator.invalid("target", target, "the scheme of a redirect target must be literal: "
-                        + "a capture group there lets any request choose where it is redirected to");
+                        + "a capture group or query value there lets any request choose where it is redirected to");
             }
             else if (originEnd(target) == NO_AUTHORITY)
             {
                 validator.invalid("target", target, "a redirect target must be a path, //host... or http(s)://host...: "
                         + "other schemes (javascript:, data:), a scheme without '//' and a host, or an empty host are not a safe origin");
             }
-            else if (originEnd(target) >= 0 && target.substring(0, originEnd(target)).indexOf('$') >= 0)
+            else if (originEnd(target) >= 0 && hasPlaceholder(target.substring(0, originEnd(target))))
             {
                 validator.invalid("target", target, "the scheme and host of a redirect target must be literal: "
-                        + "a capture group there lets any request choose where it is redirected to");
+                        + "a capture group or query value there lets any request choose where it is redirected to");
             }
         }
+    }
+
+    private static boolean hasPlaceholder(final String text)
+    {
+        return text.indexOf('$') >= 0 || text.contains(QUERY_PREFIX);
     }
 
     /**
@@ -243,11 +274,21 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
     }
 
     /**
-     * One piece of a parsed target: literal template text ({@code group < 0}), or a capture group
-     * together with the component its position in the template puts it in.
+     * One piece of a parsed target: literal template text, a capture group, or a query parameter
+     * ({@code query} set), the last two with the component their position in the template puts
+     * them in.
      */
-    record Part(String literal, int group, Component component)
+    record Part(String literal, int group, String query, Component component)
     {
+        static Part literal(final String text, final Component component)
+        {
+            return new Part(text, -1, null, component);
+        }
+
+        boolean isLiteral()
+        {
+            return this.literal != null;
+        }
     }
 
     /**
@@ -282,7 +323,8 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     final Integer named = close < 0 ? null : pattern.namedGroups().get(template.substring(i + 2, close));
                     if (named == null)
                     {
-                        throw new IllegalArgumentException("No group named in: " + template);
+                        throw new IllegalArgumentException(close < 0 ? "Unterminated ${ in: " + template
+                                : "${" + template.substring(i + 2, close) + "} needs a source pattern with a group of that name.");
                     }
                     group = named;
                     i = close + 1;
@@ -292,9 +334,13 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     // Same rule as Matcher.appendReplacement: take further digits only while the
                     // number they make is still a group of the pattern.
                     int ref = template.charAt(i + 1) - '0';
-                    if (ref < 0 || ref > 9 || ref > groupCount)
+                    if (ref < 0 || ref > 9)
                     {
                         throw new IllegalArgumentException("Illegal group reference in: " + template);
+                    }
+                    if (ref > groupCount)
+                    {
+                        throw new IllegalArgumentException("$" + ref + " needs a source pattern with that many groups.");
                     }
                     i += 2;
                     while (i < template.length() && Character.isDigit(template.charAt(i)))
@@ -311,10 +357,21 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 }
                 if (!literal.isEmpty())
                 {
-                    parts.add(new Part(literal.toString(), -1, component));
+                    parts.add(Part.literal(literal.toString(), component));
                     literal.setLength(0);
                 }
-                parts.add(new Part(null, group, component));
+                parts.add(new Part(null, group, null, component));
+            }
+            else if (c == '{' && template.startsWith(QUERY_PREFIX, i) && template.indexOf('}', i) > i + QUERY_PREFIX.length())
+            {
+                final int close = template.indexOf('}', i);
+                if (!literal.isEmpty())
+                {
+                    parts.add(Part.literal(literal.toString(), component));
+                    literal.setLength(0);
+                }
+                parts.add(new Part(null, -1, template.substring(i + QUERY_PREFIX.length(), close), component));
+                i = close + 1;
             }
             else
             {
@@ -325,7 +382,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         }
         // A trailing part carries the component the template ends in, which is where the
         // unmatched remainder of the path is appended.
-        parts.add(new Part(literal.toString(), -1, component));
+        parts.add(Part.literal(literal.toString(), component));
         return List.copyOf(parts);
     }
 
@@ -344,11 +401,11 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
         public GF(final Config config)
         {
-            this.sourcePattern = Pattern.compile(config.source());
+            this.sourcePattern = config.source() == null || config.source().isBlank() ? null : Pattern.compile(config.source());
 
             // Consume the standard regex string exactly as provided
             this.targetTemplate = config.target();
-            this.targetParts = parse(config.target(), this.sourcePattern);
+            this.targetParts = parse(config.target(), this.sourcePattern != null ? this.sourcePattern : NO_GROUPS);
 
             if (config.status() != null)
             {
@@ -367,9 +424,9 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
         public void onClientRequest(final ClientRequestGatewayExchange exchange)
         {
             final String currentPath = exchange.clientRequest().path();
-            final Matcher matcher = RegexBudget.matcher(this.sourcePattern, currentPath);
+            final Matcher matcher = this.sourcePattern != null ? RegexBudget.matcher(this.sourcePattern, currentPath) : null;
 
-            if (matcher.find())
+            if (matcher == null || matcher.find())
             {
                 // Two renderings of the same substitution, as Matcher.replaceFirst would build
                 // it: the request text as the server decoded it, and percent-encoded for the
@@ -380,16 +437,30 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 // redirect off the template's origin once decoded is refused rather than served.
                 final StringBuilder raw = new StringBuilder(currentPath.length() + this.targetTemplate.length());
                 final StringBuilder encoded = new StringBuilder(currentPath.length() + this.targetTemplate.length());
-                final String before = currentPath.substring(0, matcher.start());
-                raw.append(before);
-                encoded.append(Component.PATH.encode(before));
+                if (matcher != null)
+                {
+                    final String before = currentPath.substring(0, matcher.start());
+                    raw.append(before);
+                    encoded.append(Component.PATH.encode(before));
+                }
                 Component last = Component.PATH;
                 for (final Part part : this.targetParts)
                 {
-                    if (part.group() < 0)
+                    if (part.isLiteral())
                     {
                         raw.append(part.literal());
                         encoded.append(part.literal());
+                    }
+                    else if (part.query() != null)
+                    {
+                        final String value = queryValue(exchange.clientRequest().queryParams(), part.query());
+                        if (value == null)
+                        {
+                            this.refuse(exchange);
+                            return;
+                        }
+                        raw.append(value);
+                        encoded.append(part.component().encode(value));
                     }
                     else
                     {
@@ -402,9 +473,12 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                     }
                     last = part.component();
                 }
-                final String after = currentPath.substring(matcher.end());
-                raw.append(after);
-                encoded.append(last.encode(after));
+                if (matcher != null)
+                {
+                    final String after = currentPath.substring(matcher.end());
+                    raw.append(after);
+                    encoded.append(last.encode(after));
+                }
 
                 final String location = encoded.toString();
 
@@ -422,11 +496,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 if (!staysOnTemplateOrigin(this.targetTemplate, decodedLocation)
                         || !isSafeLocation(location) || !staysOnTemplateOrigin(this.targetTemplate, location))
                 {
-                    exchange.shortCircuit(new ShortCircuitGatewayResponse(
-                            HttpStatuses.BAD_REQUEST,
-                            MediaTypes.TEXT_PLAIN_UTF8,
-                            this.invalidLocationBody.asReadOnlyBuffer()
-                    ));
+                    this.refuse(exchange);
                     return;
                 }
 
@@ -439,6 +509,33 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                         EMPTY_BODY.slice()
                 ));
             }
+        }
+
+        private void refuse(final ClientRequestGatewayExchange exchange)
+        {
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(
+                    HttpStatuses.BAD_REQUEST,
+                    MediaTypes.TEXT_PLAIN_UTF8,
+                    this.invalidLocationBody.asReadOnlyBuffer()
+            ));
+        }
+
+        /**
+         * The parameter's value, or null when there is none to redirect with: it is missing, or it
+         * is repeated with values that differ, so no single value is the client's meaning.
+         */
+        private static String queryValue(final QueryParams params, final String name)
+        {
+            String value = null;
+            for (final String candidate : params.getAll(name))
+            {
+                if (value != null && !value.equals(candidate))
+                {
+                    return null;
+                }
+                value = candidate;
+            }
+            return value;
         }
 
         private static String stripAsciiWhitespace(final String value)
