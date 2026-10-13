@@ -437,9 +437,9 @@ journaled with `gateway.route.group`.
 
 ## Unrouted
 
-`unrouted` covers requests refused before or instead of routing: an ambiguous path, a bad
-`Transfer-Encoding`, `TRACE`, a pattern that exhausted its regex budget, and a route miss. It is a
-top-level section, not a group:
+`unrouted` covers requests refused before routing—an ambiguous path, a bad
+`Transfer-Encoding`, or `TRACE`—plus a route miss and regex-budget exhaustion while evaluating
+route predicates. It is a top-level section, not a group:
 
 - Its only key is `journal`. A group's `match`, `filters`, `upstream` and `routes` mean nothing
   for a request that was refused before routing, so the schema does not offer them.
