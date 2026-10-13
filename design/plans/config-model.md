@@ -109,7 +109,7 @@ naming the entry:
 | `match` | ANDed, outer first. A route can only narrow its group. |
 | `filters` | Added: outer filters run before inner ones on the request, and after them on the response (onion). |
 | `upstream` | Replaced **per key**: `targets`, `strategy`, `timeouts`, `health_check`, `fallback` and `preserve_host` are each taken from the innermost level that names them. A key is replaced whole: a route that names `timeouts` gives both `connect` and `read`. |
-| `journal` | `request` and `response` replaced per direction; `on_request` and `on_response` rules checked innermost first, each direction on its own (see "Journal"). |
+| `journal` | Each key within `request` and `response` is inherited independently; `on_request` and `on_response` rules are checked innermost first, per direction key (see "Journal"). |
 
 A route needs an upstream after inheritance, or a filter that answers every request it sees
 (`StaticContent`, `ReturnResponse`, `TemplateRedirect` without a `source`); the existing runtime
