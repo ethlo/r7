@@ -2452,7 +2452,7 @@
 </tr>
 </tbody>
 </table>
-<p>The draw is made once per exchange, so every <code>Sample</code> of one exchange tests the same number: the exchanges <code>Sample: { rate: 0.05 }</code> matches are among those <code>Sample: { rate: 0.1 }</code> matches, never a separate 5%. <code>Sample</code> tests the exchange, not a request, so it has no <code>leg</code>, and one written is refused: <code>[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.</code></p>
+<p>Routing makes one draw per exchange, so every <code>Sample</code> in the routes' matches tests the same number: the exchanges <code>Sample: { rate: 0.05 }</code> matches are among those <code>Sample: { rate: 0.1 }</code> matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. <code>Sample</code> tests the exchange, not a request, so it has no <code>leg</code>, and one written is refused: <code>[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.</code></p>
 <hr />
 <h3 id="uri-path-matching">URI &amp; Path Matching</h3>
 <h4 id="path">Path</h4>
