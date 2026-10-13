@@ -16,7 +16,7 @@ import com.ethlo.r7.status.dto.FilterNode;
 
 public final class PipelineVisualizer
 {
-    public static FilterNode buildNestedVisualization(final UpstreamConfig upstreamConfig, final ComponentStatus upstreamStatus, final GatewayFilter[] routeFilters, final IntFunction<DefaultGatewayRoute.FilterLevel> levels)
+    public static FilterNode buildNestedVisualization(final UpstreamConfig upstreamConfig, final ComponentStatus upstreamStatus, final GatewayFilter[] routeFilters, final IntFunction<DefaultGatewayRoute.Level> levels)
     {
         // The innermost core of the onion
         FilterNode currentNode = new FilterNode("upstream", upstreamConfig != null ? SensitiveConfig.redactUrlCredentials(upstreamConfig.toString()) : "None", "route", false, false, false, false, upstreamStatus, null);

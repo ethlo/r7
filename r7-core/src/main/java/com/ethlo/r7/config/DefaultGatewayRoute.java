@@ -25,13 +25,19 @@ public class DefaultGatewayRoute implements GatewayRoute
     /**
      * Where a filter of a route's chain was declared: {@link #filterLevel(int)}.
      */
-    public enum FilterLevel
+    /**
+     * Where something a route uses was declared in routes.yaml: at the root, on the route's
+     * group, or on the route itself. What is declared above a route is one instance for every
+     * route beneath that declaration.
+     */
+    public enum Level
     {
         ROOT, GROUP, ROUTE
     }
 
     private final String id;
     private final String group;
+    private final Level upstreamLevel;
     private final List<String> uri;
     private final GatewayPredicate predicate;
     private final List<GatewayFilter> filters;
@@ -70,7 +76,17 @@ public class DefaultGatewayRoute implements GatewayRoute
      */
     public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final int rootFilterCount, final int groupFilterCount, final String group, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
     {
-        this(uri, predicate, filters, List.of(), rootFilterCount, groupFilterCount, group, journal, routeDefinition, new ConcurrentHashMap<>());
+        this(uri, predicate, filters, rootFilterCount, groupFilterCount, group, Level.ROUTE, journal, routeDefinition);
+    }
+
+    /**
+     * @param upstreamLevel the level every key of the route's effective upstream comes from: the
+     *                      route if it names any, else its group if that names any, else the
+     *                      root. Routes with one upstream level and owner share one upstream.
+     */
+    public DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final int rootFilterCount, final int groupFilterCount, final String group, final Level upstreamLevel, final RouteJournalConfig journal, final RouteDefinition routeDefinition)
+    {
+        this(uri, predicate, filters, List.of(), rootFilterCount, groupFilterCount, group, upstreamLevel, journal, routeDefinition, new ConcurrentHashMap<>());
     }
 
     /**
@@ -79,11 +95,12 @@ public class DefaultGatewayRoute implements GatewayRoute
      *                    on the route that fell back to this one; empty for a matched route
      * @param attachments shared with the route this one is derived from, if any
      */
-    private DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final List<GatewayFilter> started, final int rootFilterCount, final int groupFilterCount, final String group, final RouteJournalConfig journal, final RouteDefinition routeDefinition, final Map<StateKey<?>, Object> attachments)
+    private DefaultGatewayRoute(final List<String> uri, final GatewayPredicate predicate, final List<GatewayFilter> filters, final List<GatewayFilter> started, final int rootFilterCount, final int groupFilterCount, final String group, final Level upstreamLevel, final RouteJournalConfig journal, final RouteDefinition routeDefinition, final Map<StateKey<?>, Object> attachments)
     {
         this.attachments = attachments;
         this.id = routeDefinition.id();
         this.group = group;
+        this.upstreamLevel = upstreamLevel;
         this.uri = uri;
         this.predicate = predicate;
         this.journal = journal;
@@ -125,13 +142,13 @@ public class DefaultGatewayRoute implements GatewayRoute
      * @return where the filter at {@code index} of {@link #filters()} was declared, for a route
      * as loaded (not one built by {@link #asFallbackOfThis})
      */
-    public FilterLevel filterLevel(final int index)
+    public Level filterLevel(final int index)
     {
         if (index < this.rootFilterCount)
         {
-            return FilterLevel.ROOT;
+            return Level.ROOT;
         }
-        return index < this.rootFilterCount + this.groupFilterCount ? FilterLevel.GROUP : FilterLevel.ROUTE;
+        return index < this.rootFilterCount + this.groupFilterCount ? Level.GROUP : Level.ROUTE;
     }
 
     /**
@@ -141,6 +158,30 @@ public class DefaultGatewayRoute implements GatewayRoute
     public String group()
     {
         return this.group;
+    }
+
+    /**
+     * @return the level the route's upstream was declared on; {@link Level#ROUTE} for a route
+     * without an upstream
+     */
+    public Level upstreamLevel()
+    {
+        return this.upstreamLevel;
+    }
+
+    /**
+     * @return what identifies the route's upstream within one loaded configuration: routes with
+     * the same key inherit every upstream key from the same declarations, and share one upstream
+     * (one connection pool, one health state). Group and route ids are one namespace.
+     */
+    public String upstreamKey()
+    {
+        return switch (this.upstreamLevel)
+        {
+            case ROOT -> "root";
+            case GROUP -> "group:" + this.group;
+            case ROUTE -> "route:" + this.id;
+        };
     }
 
     /**
@@ -187,7 +228,7 @@ public class DefaultGatewayRoute implements GatewayRoute
             // The started request filters lead the chain: every one of them is in 'carried', and
             // nothing in 'carried' is a request filter that has not started.
             final List<GatewayFilter> startedInOrder = carried.stream().filter(started::contains).toList();
-            return new DefaultGatewayRoute(fallback.uri, fallback.predicate, chain, startedInOrder, 0, 0, fallback.group, fallback.journal, fallback.routeDefinition, fallback.attachments);
+            return new DefaultGatewayRoute(fallback.uri, fallback.predicate, chain, startedInOrder, 0, 0, fallback.group, fallback.upstreamLevel, fallback.journal, fallback.routeDefinition, fallback.attachments);
         });
     }
 

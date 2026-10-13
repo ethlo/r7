@@ -162,6 +162,33 @@ class ConfigLevelsTest
     }
 
     @Test
+    void anUpstreamBelongsToTheInnermostLevelNamingAnyOfItsKeys() throws IOException
+    {
+        final RouteRegistry.Snapshot snapshot = build(GROUPED + """
+                  - group: plain
+                    upstream: {}
+                    routes:
+                      - id: plain-a
+                        match:
+                          - PathPrefix:
+                              prefix: /plain/a
+                      - id: plain-b
+                        match:
+                          - PathPrefix:
+                              prefix: /plain/b
+                        upstream: {}
+                """);
+
+        assertThat(route(snapshot, "users").upstreamKey()).isEqualTo("group:api");
+        assertThat(route(snapshot, "users").upstreamLevel()).isEqualTo(DefaultGatewayRoute.Level.GROUP);
+        assertThat(route(snapshot, "orders").upstreamKey()).isEqualTo("route:orders");
+        // Neither the route nor its group names a key, empty blocks included: the root's
+        assertThat(route(snapshot, "catch-all").upstreamKey()).isEqualTo("root");
+        assertThat(route(snapshot, "plain-a").upstreamKey()).isEqualTo("root");
+        assertThat(route(snapshot, "plain-b").upstreamKey()).isEqualTo("root");
+    }
+
+    @Test
     void eachLevelsFiltersAreOneInstanceForEverythingBeneathIt() throws IOException
     {
         final RouteRegistry.Snapshot snapshot = build(GROUPED);
@@ -177,9 +204,9 @@ class ConfigLevelsTest
         assertThat(users.filters().get(0)).isSameAs(orders.filters().get(0)).isSameAs(catchAll.filters().get(0));
         assertThat(users.filters().get(1)).isSameAs(orders.filters().get(1)).isNotSameAs(users.filters().get(0));
 
-        assertThat(orders.filterLevel(0)).isEqualTo(DefaultGatewayRoute.FilterLevel.ROOT);
-        assertThat(orders.filterLevel(1)).isEqualTo(DefaultGatewayRoute.FilterLevel.GROUP);
-        assertThat(orders.filterLevel(2)).isEqualTo(DefaultGatewayRoute.FilterLevel.ROUTE);
+        assertThat(orders.filterLevel(0)).isEqualTo(DefaultGatewayRoute.Level.ROOT);
+        assertThat(orders.filterLevel(1)).isEqualTo(DefaultGatewayRoute.Level.GROUP);
+        assertThat(orders.filterLevel(2)).isEqualTo(DefaultGatewayRoute.Level.ROUTE);
     }
 
     @Test

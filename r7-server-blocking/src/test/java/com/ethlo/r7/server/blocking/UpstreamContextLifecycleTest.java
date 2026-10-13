@@ -117,6 +117,89 @@ class UpstreamContextLifecycleTest
         awaitAtLeast(this.firstProbes, first + 2);
     }
 
+    @Test
+    void routesTakingEveryUpstreamKeyFromOneDeclarationShareOneUpstream() throws Exception
+    {
+        final AtomicInteger connects = new AtomicInteger();
+        final ServerConfig config = ServerConfig.standard();
+        final GatewayPipeline handler = new GatewayPipeline(config, this.registry, null, new StandardErrorHandler(), this.scheduler, route ->
+        {
+            connects.incrementAndGet();
+            return new HttpUpstream(UpstreamOptions.of(config, route.routeDefinition().upstream()));
+        });
+
+        final List<GatewayRoute> routes = this.build(this.sharingRoutes());
+        handler.prepare(routes);
+
+        // The group's two plain routes share; the one naming timeouts and the root's are their own
+        assertThat(connects).hasValue(3);
+        this.registry.updateRoutes("test", routes);
+        final Map<String, Map<String, Boolean>> states = handler.upstreamTargetStates();
+        assertThat(states).containsOnlyKeys("a", "b", "own", "root-route");
+        awaitAtLeast(this.firstProbes, 2);
+
+        handler.retire(routes);
+
+        // One monitor per shared upstream, each stopped once
+        assertStopped(this.firstProbes, "probes of the group's shared upstream");
+        assertStopped(this.secondProbes, "probes of the route's own upstream");
+    }
+
+    @Test
+    void aSharedUpstreamProbesOnceForAllItsRoutes() throws Exception
+    {
+        this.registry.updateRoutes("test", this.build(this.sharingRoutes()));
+        final GatewayPipeline handler = this.newHandler();
+        awaitAtLeast(this.firstProbes, 1);
+
+        // Two routes on one monitor: one probe per interval, not two. Measured over a window
+        // long enough for a duplicate monitor to show as about twice the rate.
+        final int before = this.firstProbes.get();
+        TimeUnit.MILLISECONDS.sleep(500);
+        final int probes = this.firstProbes.get() - before;
+        assertThat(probes).as("probes of the shared upstream in 500ms at a 50ms interval").isBetween(1, 14);
+
+        handler.retire(this.registry.getRoutes());
+    }
+
+    private String sharingRoutes()
+    {
+        final int port = this.upstream.getAddress().getPort();
+        return """
+                  - group: g
+                    upstream:
+                      targets:
+                        - url: http://127.0.0.1:%d
+                      health_check:
+                        path: /first-health
+                        interval: 50ms
+                    routes:
+                      - id: a
+                        match:
+                          - PathPrefix:
+                              prefix: /a
+                      - id: b
+                        match:
+                          - PathPrefix:
+                              prefix: /b
+                      - id: own
+                        match:
+                          - PathPrefix:
+                              prefix: /own
+                        upstream:
+                          health_check:
+                            path: /second-health
+                            interval: 50ms
+                  - id: root-route
+                    match:
+                      - PathPrefix:
+                          prefix: /
+                    upstream:
+                      targets:
+                        - url: http://127.0.0.1:%d
+                """.formatted(port, port);
+    }
+
     /**
      * The route with its upstream read timeout replaced, constructed directly and so without the
      * validation {@link ConfigurationManager#build} would apply.
