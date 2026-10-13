@@ -146,7 +146,7 @@ public final class ConfigurationManager
                     GatewayPredicate predicate = FalsePredicate.INSTANCE;
                     if (routeDefinition.match() != null && !routeDefinition.match().isFallbackOnly())
                     {
-                        routeDefinition.match().validateTree(validationResult, predicateRegistry);
+                        routeDefinition.match().validateTree(validationResult.nested("routes").nested(routeDefinition.id()), predicateRegistry);
 
                         try
                         {

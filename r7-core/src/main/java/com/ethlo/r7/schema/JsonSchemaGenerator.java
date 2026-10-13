@@ -263,7 +263,8 @@ public final class JsonSchemaGenerator
 
         logicalOperators.put("not", new RefSchema("#/$defs/predicate", null, null));
 
-        final SchemaNode arrayRef = new ArraySchema("array", new RefSchema("#/$defs/predicate", null, null), null, null);
+        // minItems mirrors the load-time refusal of 'and: []' and 'or: []', so the editor flags them too.
+        final SchemaNode arrayRef = new ArraySchema("array", new RefSchema("#/$defs/predicate", null, null), null, null, 1);
         logicalOperators.put("or", arrayRef);
         logicalOperators.put("and", arrayRef);
 
@@ -664,9 +665,14 @@ public final class JsonSchemaGenerator
             String type,
             SchemaNode items,
             String description,
-            @JsonProperty("default") Object defaultValue
+            @JsonProperty("default") Object defaultValue,
+            Integer minItems
     ) implements SchemaNode
     {
+        public ArraySchema(final String type, final SchemaNode items, final String description, final Object defaultValue)
+        {
+            this(type, items, description, defaultValue, null);
+        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

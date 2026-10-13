@@ -145,7 +145,8 @@ class ConfigurationManagerBugsTest
 
             assertThatThrownBy(() -> manager.build(ConfigurationManager.load(file, RoutesDefinition.class)))
                     .as(match)
-                    .hasMessageContaining("takes a list of conditions");
+                    .hasMessageContaining("takes a list of conditions")
+                    .hasMessageMatching("(?s).*\\[routes\\.bad\\.match(\\[0])?\\.(and|or)].*");
         }
     }
 
@@ -168,7 +169,8 @@ class ConfigurationManagerBugsTest
                 """);
 
         assertThatThrownBy(() -> manager.build(ConfigurationManager.load(file, RoutesDefinition.class)))
-                .hasMessageContaining("'not' takes one condition");
+                .hasMessageContaining("'not' takes one condition")
+                .hasMessageContaining("[routes.bad.match[0].not]");
     }
 
     /**

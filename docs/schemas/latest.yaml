@@ -1049,12 +1049,14 @@ $defs:
           type: array
           items:
             $ref: "#/$defs/predicate"
+          minItems: 1
         not:
           $ref: "#/$defs/predicate"
         or:
           type: array
           items:
             $ref: "#/$defs/predicate"
+          minItems: 1
       additionalProperties: true
       minProperties: 1
       maxProperties: 1
