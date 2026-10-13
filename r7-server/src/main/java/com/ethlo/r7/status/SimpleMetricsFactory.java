@@ -74,7 +74,7 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
 
         /**
          * Resolved per exchange, by the route that actually matched it, rather than bound once
-         * at construction time: when this filter is declared in {@code global_filters}, one
+         * at construction time: when this filter is declared at the root of routes.yaml, one
          * instance is now shared by every route (see M5 in the filter-runtime review), so a
          * bucket fixed at creation would put every route's traffic into whichever single route
          * happened to be in scope when the shared instance was built - the fallback route's own

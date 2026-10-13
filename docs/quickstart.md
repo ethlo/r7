@@ -79,7 +79,7 @@ exposing it, read [Management Configuration](config.md#management-configuration-
 Create `routes.yaml`. This routes all incoming traffic to the echo server, injects a correlation ID, adds a custom response header, and records every request and response in full.
 
 ```yaml title="routes.yaml"
-global_filters:
+filters:
   - AddCorrelationId
   - SimpleMetrics
 routes:

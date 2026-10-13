@@ -99,7 +99,6 @@ public abstract class StaticContentKit
                       - StaticContent:
                           base_directory: %s
                           %s
-                    upstream: null
                 """.formatted(prefix, prefix, base.toAbsolutePath(), option);
     }
 

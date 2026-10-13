@@ -33,12 +33,12 @@ to a later one, such as an authenticated user, goes in a typed attachment
 and can appear in its output.
 
 One class can implement several of these interfaces when it acts in more than one stage, as the
-built-in `RateLimiter` and `CircuitBreaker` do. When each stage runs, and in which order global
-and route filters run in it, is in [Execution Semantics](config.md#3-execution-semantics).
+built-in `RateLimiter` and `CircuitBreaker` do. When each stage runs, and in which order root,
+group and route filters run in it, is in [Execution Semantics](config.md#3-execution-semantics).
 
 A filter that needs to know the request is being retried on a fallback route implements
 `FallbackAwareGatewayFilter`; `onFallback` is called on the request-phase filters the fallback
-inherits (global and carried ones), before the fallback's own filters run. A `CompletedGatewayFilter`
+inherits (the root's, the first route's group's and its own), before the fallback's own filters run. A `CompletedGatewayFilter`
 can read `CompletedGatewayExchange.upstreamOutcome()`: `NOT_ASKED`, `ANSWERED`, `NO_RESPONSE`,
 `BODY_FAILED` or `CLIENT_ABORTED`, with the time to the response head. That is what `CircuitBreaker` judges by.
 

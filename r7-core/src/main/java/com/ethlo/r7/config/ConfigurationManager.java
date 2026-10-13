@@ -1,23 +1,34 @@
 package com.ethlo.r7.config;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.config.model.HttpStatus;
+import com.ethlo.r7.predicates.AndPredicate;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.FilterRegistry;
 import com.ethlo.r7.util.PredicateRegistry;
-import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import org.slf4j.Logger;
@@ -34,11 +45,12 @@ import tools.jackson.dataformat.yaml.JacksonYAMLParseException;
 public final class ConfigurationManager
 {
     /**
-     * The {@link FilterCreationContext#routeId()} global filters are created under: they belong
+     * The {@link FilterCreationContext#routeId()} root filters are created under: they belong
      * to no single route, and no filter factory currently reads this value, but a real route ID
-     * would misleadingly claim ownership by whichever route happened to build first.
+     * would misleadingly claim ownership by whichever route happened to build first. A group's
+     * filters are created under the group's id, for the same reason.
      */
-    private static final String GLOBAL_FILTER_ROUTE_ID = "<global>";
+    private static final String ROOT_FILTER_ROUTE_ID = "<root>";
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurationManager.class);
 
@@ -73,7 +85,18 @@ public final class ConfigurationManager
 
     public static <T> T load(Path yamlFile, Class<T> type)
     {
+        if (type == RoutesDefinition.class)
+        {
+            return type.cast(loadRoutes(yamlFile, readString(yamlFile), (root, positions) ->
+            {
+            }));
+        }
         return YamlConfigSupport.load(mapper, yamlFile, type);
+    }
+
+    private static RoutesDefinition loadRoutes(final Path yamlFile, final String contents, final YamlConfigSupport.TreeInspector inspector)
+    {
+        return YamlConfigSupport.load(mapper, yamlFile, contents, RoutesDefinition.class, (root, positions) -> RoutesTreeCheck.check(root), inspector);
     }
 
     /**
@@ -82,22 +105,38 @@ public final class ConfigurationManager
      */
     public RoutesDefinition loadRoutes(final Path yamlFile)
     {
+        return this.loadRoutes(yamlFile, readString(yamlFile));
+    }
+
+    private RoutesDefinition loadRoutes(final Path yamlFile, final String contents)
+    {
         final RegexLookalikeCheck check = new RegexLookalikeCheck(this.predicateRegistry);
-        return YamlConfigSupport.load(mapper, yamlFile, RoutesDefinition.class, (root, positions) ->
+        return loadRoutes(yamlFile, contents, (root, positions) ->
                 check.check(root, positions).forEach(warning -> log.warn("{} {}", yamlFile, warning)));
     }
 
     /**
      * Reads, validates and instantiates a routes file without publishing it: what the gateway
      * does with its routes at startup and on every reload, and all that a config check does.
+     * The snapshot carries the file's source digest, of the bytes read and parsed here.
      */
     public RouteRegistry.Snapshot buildFrom(final Path routesFile)
     {
-        RoutesDefinition routesConfig = this.loadRoutes(routesFile);
+        final byte[] bytes;
+        try
+        {
+            bytes = Files.readAllBytes(routesFile);
+        }
+        catch (final IOException e)
+        {
+            throw new UncheckedIOException(e);
+        }
+
+        RoutesDefinition routesConfig = this.loadRoutes(routesFile, decode(routesFile, bytes));
         if (routesConfig == null)
         {
             log.warn("No routes found");
-            routesConfig = new RoutesDefinition(null, List.of(), List.of(), null);
+            routesConfig = new RoutesDefinition(null, null, null, List.of(), null);
         }
 
         final ValidationResult validationResult = new ValidationResult();
@@ -106,7 +145,56 @@ public final class ConfigurationManager
         {
             throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));
         }
-        return this.build(routesConfig);
+        return this.build(routesConfig, sourceDigest(bytes));
+    }
+
+    /**
+     * The SHA-256 of a routes file as read, in hex. Taken before {@code ${VAR}} interpolation, so
+     * a secret passed in through the environment never enters it: it identifies the file, and the
+     * deployment's own record of its environment covers the rest.
+     */
+    public static String sourceDigest(final byte[] bytes)
+    {
+        try
+        {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        }
+        catch (final NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException("Every JVM provides SHA-256", e);
+        }
+    }
+
+    private static String readString(final Path file)
+    {
+        try
+        {
+            return decode(file, Files.readAllBytes(file));
+        }
+        catch (final IOException e)
+        {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Strict UTF-8, as {@link Files#readString} is: a malformed file is refused, not read with
+     * replacement characters in it.
+     */
+    private static String decode(final Path file, final byte[] bytes)
+    {
+        try
+        {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        }
+        catch (final CharacterCodingException e)
+        {
+            throw new ConfigurationException("Invalid configuration file: " + file + " is not valid UTF-8");
+        }
     }
 
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
@@ -119,6 +207,15 @@ public final class ConfigurationManager
      */
     public RouteRegistry.Snapshot build(RoutesDefinition config)
     {
+        return this.build(config, null);
+    }
+
+    /**
+     * @param sourceDigest the routes file's {@link #sourceDigest}, or {@code null} when it was
+     *                     not loaded from one
+     */
+    public RouteRegistry.Snapshot build(final RoutesDefinition config, final String sourceDigest)
+    {
         final ValidationResult validationResult = new ValidationResult();
 
         if (config.routes() == null || config.routes().isEmpty())
@@ -127,72 +224,65 @@ public final class ConfigurationManager
         }
 
         // 1. Structural Syntax Pass - Validate every individual object
-        config.validate(validationResult.nested("routes"));
+        config.validate(validationResult);
+        validationResult.throwIfInvalid();
 
-        // 2. Semantic Analysis Pass - Check for collisions and dangling references
-        validateUniqueRouteIds(config.routes());
-        validateCrossRouteReferences(config.routes());
-        validationResult.throwIfInvalid(); // Fail before any instantiation
+        // 2. Semantic Analysis Pass - Check for collisions and dangling references, on the
+        // routes as inheritance leaves them: a fallback named by a group is every route's in it.
+        validateUniqueIds(config.routes());
+        final List<Placed> placed = place(config, validationResult);
+        validationResult.throwIfInvalid();
+        validateCrossRouteReferences(placed);
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
-        // Global filters are instantiated exactly once, outside the per-route loop, and the
-        // same filter instances are then prepended to every route: a global RateLimiter or
-        // CircuitBreaker must see every request against one shared bucket/state, not a fresh
-        // instance - and its private cache - per route it happens to be wired onto.
-        final List<GatewayFilter> globalFilters = new ArrayList<>();
-        for (final FilterDefinition filterDef : config.globalFilters())
+        // A filter is one instance for everything beneath where it is declared: the root's once,
+        // a group's once, and the same instances are then put in front of every route below. A
+        // RateLimiter or CircuitBreaker declared there must see every request against one shared
+        // bucket/state, not a fresh instance - and its private cache - per route it is wired onto.
+        final List<GatewayFilter> rootFilters = new ArrayList<>();
+        for (final FilterDefinition filterDef : config.filters())
         {
-            instantiateFilters(new FilterCreationContext(GLOBAL_FILTER_ROUTE_ID, engineContext), validationResult, globalFilters, filterDef);
+            instantiateFilters(new FilterCreationContext(ROOT_FILTER_ROUTE_ID, engineContext), validationResult.nested("filters"), rootFilters, filterDef);
         }
 
-        final List<GatewayRoute> routes = config.routes().stream()
-                .map(routeDefinition ->
+        final List<GatewayRoute> routes = new ArrayList<>();
+        final List<RouteRegistry.RoutingEntry> table = new ArrayList<>();
+        int index = 0;
+        for (final RouteEntry entry : config.routes())
+        {
+            switch (entry)
+            {
+                case RouteDefinition ignored ->
                 {
-                    final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id(), engineContext);
-
-                    final List<GatewayFilter> filters = new ArrayList<>(globalFilters);
-                    if (routeDefinition.filters() != null)
+                    final DefaultGatewayRoute route = this.buildRoute(placed.get(index++), rootFilters, List.of(), null, validationResult).route();
+                    routes.add(route);
+                    table.add(new RouteRegistry.Single(route));
+                }
+                case GroupDefinition group ->
+                {
+                    final ValidationResult groupResult = validationResult.nested("routes").nested(group.group());
+                    final List<GatewayFilter> groupFilters = new ArrayList<>();
+                    for (final FilterDefinition filterDef : Optional.ofNullable(group.filters()).orElse(List.of()))
                     {
-                        for (final FilterDefinition filterDef : routeDefinition.filters())
-                        {
-                            instantiateFilters(filterCreationContext, validationResult, filters, filterDef);
-                        }
+                        instantiateFilters(new FilterCreationContext(group.group(), engineContext), groupResult.nested("filters"), groupFilters, filterDef);
                     }
+                    final GatewayPredicate groupPredicate = group.match() == null
+                            ? TruePredicate.INSTANCE
+                            : this.buildPredicate(group.match(), groupResult, "routes." + group.group());
 
-                    final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal(),
-                            validationResult.nested("routes").nested(routeDefinition.id()).nested("journal"));
-
-                    // Validate the structure and the plugin names
-                    // An empty match is a fallback-only route (docs/config.md): it must stay
-                    // false, as build() would turn an empty tree into an always-true predicate.
-                    GatewayPredicate predicate = FalsePredicate.INSTANCE;
-                    if (routeDefinition.match() != null && !routeDefinition.match().isFallbackOnly())
+                    final List<GatewayRoute> members = new ArrayList<>();
+                    final List<GatewayPredicate> memberPredicates = new ArrayList<>();
+                    for (int i = 0; i < group.routes().size(); i++)
                     {
-                        routeDefinition.match().validateTree(validationResult.nested("routes").nested(routeDefinition.id()), predicateRegistry);
-
-                        try
-                        {
-                            predicate = routeDefinition.match().build(predicateRegistry, validationResult);
-                        }
-                        catch (final ConfigurationException e)
-                        {
-                            // Grab the route ID for the breadcrumb, fallback to 'unknown' if not set yet
-                            final String routeId = routeDefinition.id();
-                            throw new ConfigurationException(String.format("[routes.%s.match] %s", routeId, e.getMessage()));
-                        }
+                        final BuiltRoute built = this.buildRoute(placed.get(index++), rootFilters, groupFilters, groupPredicate, validationResult);
+                        members.add(built.route());
+                        memberPredicates.add(built.ownPredicate());
                     }
-
-                    final List<TargetConfig> upstreamTargets = routeDefinition.upstream() != null ? routeDefinition.upstream().targets() : List.of();
-                    if (routeDefinition.upstream() != null && upstreamTargets == null)
-                    {
-                        new ValidatorUtils(validationResult).invalid("targets", null, "upstream targets required");
-                        validationResult.throwIfInvalid();
-                    }
-
-                    final List<String> urls = upstreamTargets.stream().map(TargetConfig::url).toList();
-                    return (GatewayRoute) new DefaultGatewayRoute(urls, predicate, filters, globalFilters.size(), journalConfig, routeDefinition);
-                })
-                .toList();
+                    routes.addAll(members);
+                    table.add(new RouteRegistry.Group(group.group(), groupPredicate, members, memberPredicates));
+                }
+            }
+        }
 
         // Predicate/filter instantiation (step 3) reports its errors onto the same
         // validationResult rather than throwing, so a poisoned predicate (e.g. an unknown
@@ -200,45 +290,204 @@ public final class ConfigurationManager
         // silently, and possibly inverted to match everything. Fail closed here instead.
         validationResult.throwIfInvalid();
 
-        return new RouteRegistry.Snapshot(config.version(), routes, createUnroutedRoute(config.unrouted()));
+        return new RouteRegistry.Snapshot(config.version(), sourceDigest, routes, table, createUnroutedRoute(config.unrouted()));
     }
 
-    private void validateUniqueRouteIds(List<RouteDefinition> routes)
+    /**
+     * A route where it is written, with its effective upstream.
+     *
+     * @param group the group it is declared in, or {@code null}
+     * @param path  its validation path: {@code routes.<id>}, or {@code routes.<group>.routes.<id>}
+     */
+    private record Placed(RouteDefinition route, RouteDefinition declared, GroupDefinition group, String path)
     {
-        final Set<String> seen = new HashSet<>();
-        routes.forEach(r -> {
-            if (!seen.add(r.id()))
-            {
-                throw new ConfigurationException(String.format("[routes.%s] id is not unique", r.id()));
-            }
-        });
     }
 
-    private void validateCrossRouteReferences(final List<RouteDefinition> routes)
+    /**
+     * @param ownPredicate the route's own match, without its group's: what the routing table
+     *                     tests once the group's has matched
+     */
+    private record BuiltRoute(DefaultGatewayRoute route, GatewayPredicate ownPredicate)
     {
-        for (final RouteDefinition r : routes)
+    }
+
+    /**
+     * Every route in the order written, each with the upstream keys it names merged over its
+     * group's and then the root's. A route with no {@code targets} after that has no upstream,
+     * unless it or its group named upstream keys: those mean nothing without targets, so naming
+     * them is refused rather than ignored. Keys named only at the root are for the routes that
+     * have targets, and leave one without them - a {@code StaticContent} route - as it is.
+     */
+    private List<Placed> place(final RoutesDefinition config, final ValidationResult validationResult)
+    {
+        final List<Placed> placed = new ArrayList<>();
+        for (final RouteEntry entry : config.routes())
         {
-            if (r.upstream() != null && r.upstream().fallback() != null)
+            switch (entry)
             {
-                final FallbackConfig fallbackRoute = r.upstream().fallback();
-                final String fallbackRouteId = fallbackRoute.routeId();
-                if (fallbackRouteId != null && !fallbackRouteId.isBlank())
+                case RouteDefinition route -> placed.add(placeRoute(route, null, config.upstream(), "routes." + route.id(), validationResult));
+                case GroupDefinition group ->
                 {
-                    // Prevent infinite loops
-                    if (fallbackRouteId.equals(r.id()))
+                    final UpstreamConfig groupUpstream = group.upstream() != null ? group.upstream().inherit(config.upstream()) : config.upstream();
+                    for (final RouteDefinition route : group.routes())
                     {
-                        throw new ConfigurationException("Configuration error: Route '" + r.id() + "' specifies itself as its fallback.route_id.");
-                    }
-
-                    // Ensure the fallback route actually exists in the registry
-                    if (routes.stream().noneMatch(e -> e.id().equals(fallbackRouteId)))
-                    {
-                        throw new ConfigurationException("Configuration error: Route '" + r.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that does not exist.");
+                        placed.add(placeRoute(route, group, groupUpstream, "routes." + group.group() + ".routes." + route.id(), validationResult));
                     }
                 }
             }
         }
-        validateAcyclicFallbacks(routes);
+        return placed;
+    }
+
+    private static Placed placeRoute(final RouteDefinition route, final GroupDefinition group, final UpstreamConfig outer, final String path, final ValidationResult validationResult)
+    {
+        final UpstreamConfig merged = route.upstream() != null ? route.upstream().inherit(outer) : outer;
+        final boolean namedBelowRoot = (route.upstream() != null && route.upstream().namesAnyKey())
+                || (group != null && group.upstream() != null && group.upstream().namesAnyKey());
+        UpstreamConfig effective = merged;
+        if (merged != null && merged.targets() == null)
+        {
+            if (namedBelowRoot)
+            {
+                final String where = group != null ? "here, on group '" + group.group() + "' or at the root" : "here or at the root";
+                validationResult.addError(path + ".upstream.targets", "Upstream configuration must contain at least one target configuration: name targets " + where);
+            }
+            effective = null;
+        }
+        return new Placed(route.withUpstream(effective), route, group, path);
+    }
+
+    private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final GatewayPredicate groupPredicate, final ValidationResult validationResult)
+    {
+        final RouteDefinition routeDefinition = placed.route();
+        final ValidationResult routeResult = validationResult.nested(placed.path());
+        final FilterCreationContext filterCreationContext = new FilterCreationContext(routeDefinition.id(), engineContext);
+
+        final List<GatewayFilter> filters = new ArrayList<>(rootFilters);
+        filters.addAll(groupFilters);
+        if (routeDefinition.filters() != null)
+        {
+            for (final FilterDefinition filterDef : routeDefinition.filters())
+            {
+                instantiateFilters(filterCreationContext, routeResult.nested("filters"), filters, filterDef);
+            }
+        }
+
+        final RouteJournalConfig journalConfig = createJournalConfig(routeDefinition.journal(), routeResult.nested("journal"));
+
+        // An empty match is a fallback-only route (docs/config.md): it must stay
+        // false, as build() would turn an empty tree into an always-true predicate.
+        GatewayPredicate predicate = FalsePredicate.INSTANCE;
+        if (routeDefinition.match() != null && !routeDefinition.match().isFallbackOnly())
+        {
+            predicate = this.buildPredicate(routeDefinition.match(), routeResult, placed.path());
+        }
+
+        final List<String> urls = routeDefinition.upstream() != null
+                ? routeDefinition.upstream().targets().stream().map(TargetConfig::url).toList()
+                : List.of();
+        final GatewayPredicate effective = groupPredicate != null ? new AndPredicate(List.of(groupPredicate, predicate)) : predicate;
+        final DefaultGatewayRoute route = new DefaultGatewayRoute(urls, effective, filters, rootFilters.size(), groupFilters.size(),
+                placed.group() != null ? placed.group().group() : null, journalConfig, routeDefinition);
+        return new BuiltRoute(route, predicate);
+    }
+
+    private GatewayPredicate buildPredicate(final ConditionDefinition match, final ValidationResult result, final String path)
+    {
+        // An empty match matches nothing: for a route, one reached only as a fallback; for a
+        // group, one whose routes are.
+        if (match.isFallbackOnly())
+        {
+            return FalsePredicate.INSTANCE;
+        }
+        match.validateTree(result, predicateRegistry);
+        try
+        {
+            return match.build(predicateRegistry, result);
+        }
+        catch (final ConfigurationException e)
+        {
+            throw new ConfigurationException(String.format("[%s.match] %s", path, e.getMessage()));
+        }
+    }
+
+    /**
+     * Group ids and route ids are one namespace: {@code gateway.route.group} and
+     * {@code fallback.route_id} must never be ambiguous.
+     */
+    private void validateUniqueIds(final List<RouteEntry> entries)
+    {
+        final Set<String> seen = new HashSet<>();
+        for (final RouteEntry entry : entries)
+        {
+            final List<String> ids = new ArrayList<>();
+            ids.add(entry.entryId());
+            if (entry instanceof GroupDefinition group)
+            {
+                group.routes().forEach(r -> ids.add(r.id()));
+            }
+            for (final String id : ids)
+            {
+                if (!seen.add(id))
+                {
+                    throw new ConfigurationException(String.format("[routes.%s] id is not unique: group and route ids share one namespace", id));
+                }
+            }
+        }
+    }
+
+    private void validateCrossRouteReferences(final List<Placed> placed)
+    {
+        final Set<String> routeIds = new HashSet<>();
+        placed.forEach(p -> routeIds.add(p.route().id()));
+        final Set<String> groupIds = new HashSet<>();
+        placed.stream().filter(p -> p.group() != null).forEach(p -> groupIds.add(p.group().group()));
+
+        for (final Placed p : placed)
+        {
+            final RouteDefinition r = p.route();
+            final String fallbackRouteId = fallbackOf(r);
+            if (fallbackRouteId == null)
+            {
+                continue;
+            }
+            final boolean ownFallback = p.declared().upstream() != null && p.declared().upstream().fallback() != null;
+            // Prevent infinite loops
+            if (fallbackRouteId.equals(r.id()))
+            {
+                if (ownFallback)
+                {
+                    throw new ConfigurationException("Configuration error: Route '" + r.id() + "' specifies itself as its fallback.route_id.");
+                }
+                final String from = p.group() != null && p.group().upstream() != null && p.group().upstream().fallback() != null
+                        ? "group '" + p.group().group() + "'"
+                        : "the root";
+                throw new ConfigurationException("Configuration error: Route '" + r.id() + "' inherits fallback.route_id '" + fallbackRouteId + "' from " + from
+                        + ", which names the route itself. Declare the fallback route outside the group, or the fallback on the routes that use it.");
+            }
+
+            if (groupIds.contains(fallbackRouteId))
+            {
+                throw new ConfigurationException("Configuration error: Route '" + r.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that is a group; a fallback names a route.");
+            }
+
+            // Ensure the fallback route actually exists in the registry
+            if (!routeIds.contains(fallbackRouteId))
+            {
+                throw new ConfigurationException("Configuration error: Route '" + r.id() + "' references a fallback.route_id '" + fallbackRouteId + "' that does not exist.");
+            }
+        }
+        validateAcyclicFallbacks(placed.stream().map(Placed::route).toList());
+    }
+
+    private static String fallbackOf(final RouteDefinition route)
+    {
+        if (route.upstream() == null || route.upstream().fallback() == null)
+        {
+            return null;
+        }
+        final String id = route.upstream().fallback().routeId();
+        return id == null || id.isBlank() ? null : id;
     }
 
     /**
@@ -251,13 +500,10 @@ public final class ConfigurationManager
         final Map<String, String> fallbackOf = new HashMap<>();
         for (final RouteDefinition r : routes)
         {
-            if (r.upstream() != null && r.upstream().fallback() != null)
+            final String target = fallbackOf(r);
+            if (target != null)
             {
-                final String target = r.upstream().fallback().routeId();
-                if (target != null && !target.isBlank())
-                {
-                    fallbackOf.put(r.id(), target);
-                }
+                fallbackOf.put(r.id(), target);
             }
         }
 

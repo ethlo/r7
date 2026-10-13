@@ -12,8 +12,66 @@ The r7 configuration engine is strictly validated at startup. The gateway will *
 * Invalid regular expressions or malformed CIDR blocks.
 * Cyclic/recursive `fallback` routing loops.
 * Unresolvable environment variables without default values.
-* Duplicate Route IDs (Route IDs must be globally unique).
+* Duplicate ids. Route ids and group ids share one namespace, so `gateway.route.group` and `fallback.route_id` always name one thing: `[routes.a] id is not unique: group and route ids share one namespace`.
+* An entry of `routes` that is neither a route nor a group: `needs 'id' for a route, or 'group' for a group of routes`; one with both, a group inside a group, or a route with `routes` is refused by name too.
+* A `null` that would remove an inherited value (`upstream: null`, `targets: null`, `filters: null`): `null cannot remove an inherited upstream; leave the key out to inherit it.`
+* `global_filters`, replaced in 1.0 by `filters` at the root: `global_filters was replaced in 1.0 by filters at the root, with the same meaning: one instance of each filter for the whole gateway. Rename the key.`
 * Malformed journal `status_overrides` keys (see [Status Overrides](#status-overrides-status_overrides)).
+
+### Root, Groups and Routes
+
+Routes that share filters, an upstream or a match say so once. `routes.yaml` has three levels: the root, groups and routes. `filters` and `upstream` are declared at any of them, and a group's `match` is ANDed in front of each of its routes' own:
+
+```yaml
+version: "2026-10-13"
+
+filters:                     # every route, one instance each for the gateway
+  - SimpleMetrics
+
+upstream:                    # inherited key by key
+  timeouts:
+    read: 10s
+  targets:
+    - url: "http://default-backend:8080"
+
+routes:
+  - group: api
+    match:
+      - PathPrefix:
+          prefix: /api/
+    filters:                 # the group's routes, one instance each for the group
+      - RateLimiter:
+          capacity: 100
+          refill_tokens: 100
+          refill_period: 1s
+    upstream:
+      targets:
+        - url: "http://api-backend:8080"
+    routes:
+      - id: orders
+        match:
+          - PathPrefix:
+              prefix: /api/orders/
+        upstream:
+          timeouts:
+            read: 2s         # targets from the group, connect from the default
+      - id: users
+        match:
+          - PathPrefix:
+              prefix: /api/users/
+
+  - id: site                 # the root's targets and timeouts
+    match:
+      - PathPrefix:
+          prefix: /
+```
+
+* **Order.** Entries are tried in the order written, a group's routes in place. A group's `match` is tested once; a request it does not match skips the group's routes, and one it matches but none of its routes does goes on to the entry after the group. A group without `match` matches every request. Groups nest one level: a group holds routes, not groups.
+* **Filters.** A request runs the root's filters, then its group's, then its route's own, and their response phases in the reverse order. A filter is one instance for everything beneath the level it is declared on: a `RateLimiter` at the root is one set of buckets for the gateway, one in a group is one set for the group's routes.
+* **Upstream.** Each key of `upstream` (`targets`, `timeouts`, `health_check`, `strategy`, `fallback`, `preserve_host`) comes from the route if it names it, else its group, else the root. A route with `targets` at no level has no upstream, which suits a route whose filters answer every request (`ReturnResponse`, `StaticContent`); if the route or its group names `upstream` keys but no level names `targets`, the file is refused: `[routes.api.routes.orders.upstream.targets] Upstream configuration must contain at least one target configuration: name targets here, on group 'api' or at the root`. Leaving a key out inherits it; `null` cannot remove an inherited value.
+* **Journal.** A route in a group is journaled with `gateway.route.group` next to `gateway.route.id`.
+
+Every load logs the file's `version` and the SHA-256 of the file as read, before interpolation: `Configuration routes.yaml successfully loaded 3 routes from version 2026-10-13, source digest sha256:…`. The management API shows them as `route_version` and `route_source_digest`, so a running gateway names the exact file it loaded.
 
 ### Environment Variable Interpolation
 
@@ -56,7 +114,7 @@ r7 supports zero-downtime configuration reloads.
 * Swapping the `routes.yaml` configuration is an **atomic operation**.
 * In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.
 * Stateful filter data (like `CircuitBreaker` tripping states and `RateLimiter` token buckets) is intentionally reset upon reload. This is **by design and not configurable**, guaranteeing immediate, strict adherence to the new configuration parameters.
-* A filter declared in `global_filters` is instantiated **once** and that single instance is shared by every route. A `RateLimiter` in `global_filters` therefore enforces one limit across the whole gateway, drawing from one set of buckets no matter which route a request matched; a `CircuitBreaker` there tracks one upstream health state for all of them. This differs from declaring the same filter under several routes' own `filters:` blocks, where each route gets its own independent instance and state.
+* A filter is instantiated **once per declaration**, and that instance is shared by every route beneath the level it is declared on. A `RateLimiter` in the root `filters` enforces one limit across the whole gateway, drawing from one set of buckets no matter which route a request matched; one in a group's `filters` enforces one limit across that group's routes; a `CircuitBreaker` at either level tracks one upstream health state for all of them. The same filter declared under several routes' own `filters:` blocks gives each route its own independent instance and state.
 
 ---
 
@@ -65,13 +123,13 @@ r7 supports zero-downtime configuration reloads.
 Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
 
 0. **Request Validation:** Before anything else runs, a request with a bad [Transfer-Encoding](#transfer-encoding) or an [ambiguous path](#ambiguous-paths) is rejected with `400 Bad Request`.
-1. **Global Request Filters:** Executed on every incoming request.
-2. **Route Predicate Evaluation:** Routes are evaluated in declaration order.
-3. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
-4. **Route Request Filters:** Pre-upstream mutations and enforcements execute in declaration order.
+1. **Route Predicate Evaluation:** Routes are evaluated in declaration order; a group's `match` is tested once, before its routes' own (see [Root, Groups and Routes](#root-groups-and-routes)).
+2. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
+3. **Root Request Filters:** The root `filters`, in declaration order.
+4. **Group and Route Request Filters:** The matched route's group's `filters`, then the route's own, in declaration order.
 5. **Upstream Proxy Execution:** The request is dispatched to the load-balanced target.
-6. **Route Response Filters:** Post-upstream mutations execute.
-7. **Global Response Filters:** Final global response mutations.
+6. **Route and Group Response Filters:** The route's own response phases, then its group's.
+7. **Root Response Filters:** The root's response phases, last.
 8. **Async Journaling:** The request/response pair is dispatched to disk.
 
 ### Ambiguous Paths
@@ -91,26 +149,26 @@ A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked
 
 ### Phase-Aware Filters
 
-Filters are inherently phase-aware. Although they are declared in a single, unified list (either in `global_filters` or a route's `filters` block), they automatically participate only in the lifecycle phases relevant to their behavior.
+Filters are inherently phase-aware. Although they are declared in a single, unified list (the root's, a group's or a route's `filters` block), they automatically participate only in the lifecycle phases relevant to their behavior.
 
-* *Example:* `AddRequestHeader` executes immediately during phase 4. However, response-mutating filters like `SetResponseHeader` are registered during phase 4 but their execution is **deferred** until phase 6 (after the upstream response is received or generated).
+* *Example:* `AddRequestHeader` executes immediately during phase 3 or 4. However, response-mutating filters like `SetResponseHeader` are registered then but their execution is **deferred** until phase 6 or 7 (after the upstream response is received or generated).
 
 ### Short-Circuiting Flow
 
 Intentional short-circuits (such as a failed `Require*` validation or a `ReturnResponse` execution) are standard pipeline control flows, not runtime exceptions.
 
-If a filter short-circuits execution, phase 4 (remaining request filters) and phase 5 (Upstream Proxy Execution) are **skipped**. The pipeline immediately transitions to phase 6, executing any deferred **Route Response Filters** followed by **Global Response Filters** against the generated response context.
+If a filter short-circuits execution, the remaining request filters and phase 5 (Upstream Proxy Execution) are **skipped**. The pipeline immediately transitions to the response phases of the filters whose request phase ran, innermost first, against the generated response context.
 
 ---
 
 ## 4. Upstream Configuration
 
-The `upstream` block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency.
+The `upstream` block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency. It is written on a route, a group or the root, and each key is inherited separately: see [Root, Groups and Routes](#root-groups-and-routes).
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
 | `strategy` | Enum | `ROUND_ROBIN` | How requests are spread across the available targets. `ROUND_ROBIN` is currently the only strategy: each request starts at the next target in turn, passing over targets that are down or whose connection pool is full. |
-| `targets` | List | Required | A list of downstream nodes (`url`) capable of handling the request. |
+| `targets` | List | Required, at some level | A list of downstream nodes (`url`) capable of handling the request. Inherited from the group or the root when the route does not name it. |
 | `health_check` | Object | None | Active background health monitoring. |
 | `timeouts` | Object | None | Networking timeouts for this upstream. |
 | `fallback` | Object | None | Alternate routing logic if primary targets fail. |
@@ -149,11 +207,13 @@ The monitor starts when the routes are loaded, not with a route's first request,
 
 Configures behavior when none of the route's upstream targets is available (all marked down by `health_check`). **Cyclic references (`a -> b -> a`) are rejected at startup**; a chain `a -> b -> c` is allowed, and each route in it falls back only when its own targets are down.
 
-The request is handed to the fallback route **before** the first route's upstream-phase filters run, and is then processed as if it had matched the fallback route: its request filters, its upstream filters, its upstream (or its own fallback), and its response filters. Upstream-phase filters of the first route (`InjectBasicAuth`, `SetRequestHeader`, rewrites) therefore never reach the fallback's upstream. Filters whose request phase already ran for the first route - global filters and that route's own request filters such as `Cors` or `RateLimiter` - are not run again, but still receive their later phases (upstream, response and completion) on the same instances, so their state stays balanced and their clean-up applies to the fallback upstream too. Global filters run once per request. The exchange is journaled at the first route's journal levels and tagged with `gateway.fallback.id`.
+The request is handed to the fallback route **before** the first route's upstream-phase filters run, and is then processed as if it had matched the fallback route: its request filters, its upstream filters, its upstream (or its own fallback), and its response filters. Upstream-phase filters of the first route (`InjectBasicAuth`, `SetRequestHeader`, rewrites) therefore never reach the fallback's upstream. Filters whose request phase already ran for the first route - the root's, its group's and its own request filters such as `Cors` or `RateLimiter` - are not run again, but still receive their later phases (upstream, response and completion) on the same instances, so their state stays balanced and their clean-up applies to the fallback upstream too. The fallback's group's filters run if it is in another group; root filters run once per request. The exchange is journaled at the first route's journal levels and tagged with `gateway.fallback.id`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `route_id` | String | Yes | The `id` of another route to execute (e.g., a stubbed mock route). |
+| `route_id` | String | Yes | The `id` of another route to execute (e.g., a stubbed mock route). A group's id is refused: a fallback names a route. |
+
+A `fallback` on a group or at the root is inherited by every route beneath it, the fallback route included if it is there, and a route whose inherited fallback names itself is refused: `Route 'spare' inherits fallback.route_id 'spare' from group 'api', which names the route itself.` Declare the fallback route outside the group, or the `fallback` on the routes that use it. A `fallback` at the root therefore always names a route beneath it, and is always refused.
 
 ---
 
@@ -815,8 +875,8 @@ The following example demonstrates a standard r7 configuration, showcasing path 
 ```yaml title="routes.yaml"
 version: '{{git.rev.abbr}}'
 
-# Global filters applied to all routes
-global_filters:
+# Filters applied to all routes, one instance each for the gateway
+filters:
   - SimpleMetrics
   - AddCorrelationId
 
@@ -860,7 +920,6 @@ routes:
           value: nosniff
       - StaticContent:
           base_directory: /var/www/html/
-    upstream: null
 
   # Complex routing with nested logical predicates
   - id: protected-admin-api
@@ -918,7 +977,6 @@ routes:
       - SetResponseHeader:
           name: Content-Type
           value: application/json
-    upstream: null
 
 ```
 
@@ -1026,7 +1084,7 @@ While the snapshot is fresh, both paths answer with the gateway's health, so one
   {"route":null,"component":"routes.yaml","position":null,"health":"WARN","detail":"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"}]}
 ```
 
-`health` is the worst any filter or upstream reports (see Component status above). A rejected `routes.yaml` and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`) each count as `WARN`. A journal shard that stopped, because its disk filled or its mapping failed, counts as `ERROR` (component `journal`) until the gateway restarts: the shard refuses every later entry, so the requests it would journal fail closed. `problems` lists each that is not `OK`; `route` is null for a global filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
+`health` is the worst any filter or upstream reports (see Component status above). A rejected `routes.yaml` and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`) each count as `WARN`. A journal shard that stopped, because its disk filled or its mapping failed, counts as `ERROR` (component `journal`) until the gateway restarts: the shard refuses every later entry, so the requests it would journal fail closed. `problems` lists each that is not `OK`; `route` is the group's id for a group's filter, and null for a root filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
 
 #### Metrics
 
@@ -1053,7 +1111,7 @@ While the snapshot is fresh, both paths answer with the gateway's health, so one
 | `r7_jvm_gc_seconds_total` | counter | | Time spent in garbage collection. |
 | `r7_process_open_fds`, `r7_process_max_fds` | gauge | | Open file descriptors, and the limit. |
 
-The `route_*` metrics cover routes with the `SimpleMetrics` filter. Their counts, other than the duration histogram, are saved in `work_dir` and carry on across restarts, like the dashboard's. `component` is the filter's name, or `upstream`; `position` is the filter's place in the route's pipeline, global filters first, and `0` for the upstream, so two filters of one kind on a route stay apart. A global filter is one instance in front of every route, so it is reported once, without a `route` label. The names and labels above are a contract: a change to them is a breaking change.
+The `route_*` metrics cover routes with the `SimpleMetrics` filter. Their counts, other than the duration histogram, are saved in `work_dir` and carry on across restarts, like the dashboard's. `component` is the filter's name, or `upstream`; `position` is the filter's place in the route's pipeline, root filters first, and `0` for the upstream, so two filters of one kind on a route stay apart. A root filter is one instance in front of every route, so it is reported once, without a `route` label; a group's filter is reported once, with the group's id as `route`. The names and labels above are a contract: a change to them is a breaking change.
 
 ### HTTP Options (`http`)
 

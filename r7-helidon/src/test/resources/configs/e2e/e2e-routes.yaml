@@ -1,4 +1,4 @@
-global_filters:
+filters:
   - SimpleMetrics
 
 routes:
@@ -11,7 +11,6 @@ routes:
           parts: 1
       - StaticContent:
           base_directory: /tmp
-    upstream: null
 
   - id: static-swap-test
     match:
@@ -22,7 +21,6 @@ routes:
           parts: 1
       - StaticContent:
           base_directory: /tmp/static-swap-test/current
-    upstream: null
 
   - id: static-symlink-blocked-test
     match:
@@ -33,7 +31,6 @@ routes:
           parts: 1
       - StaticContent:
           base_directory: /tmp/static-symlink-test
-    upstream: null
 
   - id: static-symlink-followed-test
     match:
@@ -45,7 +42,6 @@ routes:
       - StaticContent:
           base_directory: /tmp/static-symlink-test
           follow_symlinks: true
-    upstream: null
 
   - id: static-listing-off-test
     match:
@@ -56,7 +52,6 @@ routes:
           parts: 1
       - StaticContent:
           base_directory: /tmp/static-listing-test
-    upstream: null
 
   - id: static-listing-on-test
     match:
@@ -68,7 +63,6 @@ routes:
       - StaticContent:
           base_directory: /tmp/static-listing-test
           list_directory: true
-    upstream: null
 
   - id: query-modify-test
     match:

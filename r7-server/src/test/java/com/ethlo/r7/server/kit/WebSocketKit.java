@@ -72,7 +72,7 @@ public abstract class WebSocketKit
         this.dir = Files.createTempDirectory("r7-websocket-kit-");
         this.gatewayPort = freePort();
         this.managementPort = freePort();
-        final StringBuilder routes = new StringBuilder("version: websocket-kit\nglobal_filters:\n  - SimpleMetrics\nroutes:\n");
+        final StringBuilder routes = new StringBuilder("version: websocket-kit\nfilters:\n  - SimpleMetrics\nroutes:\n");
         for (final Map.Entry<String, ScriptedUpstream> e : this.upstreams.entrySet())
         {
             routes.append("""

@@ -73,11 +73,11 @@ let isHoverEnabled = true;
 
 // Holds static descriptions for the root configuration keys
 const rootPropertyDocs = {
-    "global_filters": "A list of filters applied globally to every request passing through the gateway.",
     "routes": "The routing table defining how incoming traffic is matched and forwarded.",
     "id": "A unique identifier for this route. Used for logging, metrics, and fallback references.",
     "match": "Conditions that must be met for this route to handle a request. If omitted, NO requests match.",
-    "filters": "A list of processing steps applied to the request before forwarding, and to the response before returning.",
+    "filters": "A list of processing steps applied to the request before forwarding, and to the response before returning. At the root they apply to every route, in a group to its routes: one instance for everything beneath where they are declared.",
+    "group": "A unique identifier for a group of routes, in one namespace with route ids. Its match, filters and upstream apply to each of its routes.",
     "upstream": "Configuration for routing traffic to backend services.",
     "health_check": "Active health checking configuration for the backend targets.",
     "fallback": "Fallback routing behavior triggered when all upstream targets fail.",

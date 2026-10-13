@@ -66,6 +66,7 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         Assertions.assertEquals(404, entry.getStatus());
         Assertions.assertEquals(UnroutedDefinition.ROUTE_ID, entry.getAttributes().getFirst("gateway.route.id"));
         Assertions.assertEquals("no_route", entry.getAttributes().getFirst("gateway.unrouted.reason"));
+        Assertions.assertNull(entry.getAttributes().getFirst("gateway.route.group"));
         Assertions.assertEquals(JournalLevel.HEADERS, entry.getClientRequestLevel());
         Assertions.assertEquals(JournalLevel.METADATA, entry.getClientResponseLevel());
     }
@@ -129,6 +130,7 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         final JournalExchange entry = awaitEntry(marker);
         Assertions.assertEquals(101, entry.getStatus());
         Assertions.assertEquals("ws", entry.getAttributes().getFirst("gateway.route.id"));
+        Assertions.assertEquals("sockets", entry.getAttributes().getFirst("gateway.route.group"));
         Assertions.assertTrue(entry.getAttributes().getFirst("gateway.target").startsWith("http://localhost:"));
         Assertions.assertTrue(entry.getProxyFirstByteReceivedTs() >= entry.getProxyStartTs(), "the 101 head was read");
         Assertions.assertEquals(-1, entry.getProxyEndTs(), "a tunnel's upstream response has no end of its own");

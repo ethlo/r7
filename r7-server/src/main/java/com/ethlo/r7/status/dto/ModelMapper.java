@@ -43,13 +43,14 @@ public class ModelMapper
 
         return new RouteConfigDto(
                 def.id(),
+                route.group(),
                 order,
                 toPredicateNode(route.predicate()),
                 journal,
                 def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
                 toUpstream(def.upstream()),
                 filters,
-                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), upstreamStatus, route.filters().toArray(new GatewayFilter[0]), route.globalFilterCount())
+                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), upstreamStatus, route.filters().toArray(new GatewayFilter[0]), route::filterLevel)
         );
     }
 

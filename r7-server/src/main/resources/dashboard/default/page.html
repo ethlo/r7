@@ -1010,7 +1010,7 @@
 
     // Changes whenever routes.yaml is reloaded, which is when configuration panels must redraw.
     function configRevision(data) {
-        return `${data.route_version}|${data.route_source?.loaded_at}`;
+        return `${data.route_version}|${data.route_source_digest}|${data.route_source?.loaded_at}`;
     }
 
     // ==========================================================================
@@ -1066,7 +1066,7 @@
             ? `${problems.length} component${problems.length === 1 ? '' : 's'} not OK`
             : 'Every filter and upstream reports OK');
         // A rejected routes.yaml has its own banner below. It is the one problem with neither a
-        // route nor a position: a global filter has a position, so a custom filter that happens
+        // route nor a position: a root filter has a position, so a custom filter that happens
         // to be named routes.yaml is still listed.
         const shown = problems.filter(p => !(p.route == null && p.position == null && p.component === 'routes.yaml'));
         if (!shown.length) {
@@ -1074,9 +1074,11 @@
             return;
         }
         list.innerHTML = shown.map(p => {
-            const where = p.route != null
+            // A group's filter is reported under the group's id, which has no page of its own
+            const isRoute = p.route != null && (data.route_configs || []).some(r => r.id === p.route);
+            const where = isRoute
                 ? `<a href="#/route/${esc(encodeURIComponent(p.route))}" data-route-id="${esc(p.route)}">${esc(p.route)}</a>`
-                : '<span class="text-dim">global</span>';
+                : p.route != null ? `<span class="text-dim">group ${esc(p.route)}</span>` : '<span class="text-dim">root</span>';
             const component = p.position ? `${esc(p.component)} (#${esc(p.position)})` : esc(p.component);
             return `<div><span class="tag ${HEALTH_TAG_CLASS[p.health] || ''}">${esc(p.health)}</span> ${where} / ${component}${p.detail ? ` <span class="text-dim">- ${esc(p.detail)}</span>` : ''}</div>`;
         }).join('');
@@ -1186,6 +1188,7 @@
             <div class="panel-section-title">Sources</div>
             ${mRow('ROUTES', `<span class="text-dim">${longText(src.file || '--', '60vw')}</span>`, true)}
             ${mRow('ROUTES VERSION', esc(data.route_version || 'unversioned'), false)}
+            ${mRow('ROUTES SOURCE DIGEST', data.route_source_digest ? `<span class="text-dim">sha256:${longText(data.route_source_digest, '60vw')}</span>` : '--', true)}
             ${mRow('ROUTES LOADED AT', src.loaded_at ? esc(new Date(src.loaded_at).toLocaleString()) : '--', false)}
             ${mRow('SERVER', sys.configuration_file ? `<span class="text-dim">${longText(sys.configuration_file, '60vw')}</span>` : '<span class="text-dim">NONE - BUILT-IN DEFAULTS</span>', true)}
             <div class="muted-note">
@@ -1435,16 +1438,22 @@
         const own = config.filters || [];
         let ownIndex = 0;
         return nodes.map(n => {
-            const args = !n.global && own[ownIndex] && own[ownIndex].name === n.name ? own[ownIndex].args : undefined;
-            if (!n.global) ownIndex++;
+            const ownFilter = n.level === 'route';
+            const args = ownFilter && own[ownIndex] && own[ownIndex].name === n.name ? own[ownIndex].args : undefined;
+            if (ownFilter) ownIndex++;
             let summary = n.summary || '';
             if (summary.startsWith(n.name + ': ')) summary = summary.substring(n.name.length + 2);
             else if (summary.startsWith(n.name)) summary = summary.substring(n.name.length).trim();
-            return {name: n.name, global: n.global, summary, args, status: n.status, node: n};
+            return {name: n.name, level: n.level, summary, args, status: n.status, node: n};
         });
     }
 
-    const globalTag = (f) => f.global ? ' <span class="tag" title="From global_filters in routes.yaml">GLOBAL</span>' : '';
+    // A root or group filter is one instance shared by every route beneath where it is declared
+    const LEVEL_TAGS = {
+        root: ' <span class="tag" title="Declared at the root of routes.yaml: one instance for the gateway">ROOT</span>',
+        group: ' <span class="tag" title="Declared on the route\'s group: one instance for the group\'s routes">GROUP</span>'
+    };
+    const globalTag = (f) => LEVEL_TAGS[f.level] || '';
 
     // What a filter or the upstream reports about itself (StatusReporting): OK, WARN or ERROR
     const HEALTH_TAG_CLASS = {OK: 'tag-up', WARN: 'tag-warn', ERROR: 'tag-down'};

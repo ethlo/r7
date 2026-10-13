@@ -23,19 +23,21 @@ routes:
         level: METADATA
 
   # Journaled, behind an upstream that answers every request with 101 (WebSocketUpstream in
-  # UnroutedJournalTest).
-  - id: ws
-    match:
-      - PathPrefix:
-          prefix: /ws
+  # UnroutedJournalTest). In a group, which the journal names as gateway.route.group.
+  - group: sockets
     upstream:
       targets:
         - url: http://localhost:${WS_UPSTREAM_PORT}
-    journal:
-      request:
-        level: METADATA
-      response:
-        level: METADATA
+    routes:
+      - id: ws
+        match:
+          - PathPrefix:
+              prefix: /ws
+        journal:
+          request:
+            level: METADATA
+          response:
+            level: METADATA
 
   - id: known
     match:

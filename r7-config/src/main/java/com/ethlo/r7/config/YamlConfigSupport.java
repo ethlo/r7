@@ -110,11 +110,26 @@ public final class YamlConfigSupport
         {
             throw new UncheckedIOException(e);
         }
+        return load(mapper, yamlFile, contents, type, (root, positions) ->
+        {
+        }, inspector);
+    }
 
+    /**
+     * As {@link #load(ObjectMapper, Path, Class, TreeInspector)}, from {@code contents} already
+     * read from {@code yamlFile}, and with {@code beforeBinding} run on the interpolated tree
+     * before it is bound. That is the one place to refuse what binding cannot see: a record
+     * cannot tell a key written as {@code null} from one left out, and an unknown key fails with
+     * Jackson's generic message where a removed one deserves its replacement's name.
+     * {@code beforeBinding} refuses by throwing {@link ConfigurationException}.
+     */
+    public static <T> T load(final ObjectMapper mapper, final Path yamlFile, final String contents, final Class<T> type, final TreeInspector beforeBinding, final TreeInspector inspector)
+    {
         try
         {
             final JsonNode root = mapper.readTree(contents);
             interpolateTree(root);
+            beforeBinding.inspect(root, new YamlSourcePositions(mapper, contents));
             final T value = mapper.treeToValue(root, type);
             inspector.inspect(root, new YamlSourcePositions(mapper, contents));
             return value;

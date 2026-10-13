@@ -68,16 +68,23 @@ public final class JsonSchemaGenerator
         defs.put("filter", buildFilterDefinition());
         defs.put("predicate", buildPredicateDefinition());
         defs.put("route", buildRouteDefinition());
+        defs.put("group", buildGroupDefinition());
 
         final Map<String, SchemaNode> properties = new TreeMap<>();
 
-        properties.put("global_filters", new ArraySchema(
+        properties.put("version", new PrimitiveSchema(
+                "string", null, null, null, null,
+                "A version label for this file, logged with the file's source digest on every load and shown by the management API.",
+                null, null, null
+        ));
+        properties.put("filters", new ArraySchema(
                         "array",
                         new RefSchema("#/$defs/filter", null, null),
-                        "A list of filters applied globally to every request passing through the gateway.",
+                        "Filters for every route: one instance each for the whole gateway. They run before a group's and a route's on the request, and after them on the response.",
                         null
                 )
         );
+        properties.put("upstream", buildUpstreamSchema("Upstream keys every route inherits, each unless its group or the route names it."));
 
         final List<String> belowFull = List.of("NONE", "HEADERS", "METADATA");
         properties.put("unrouted", new ObjectSchema(
@@ -94,8 +101,8 @@ public final class JsonSchemaGenerator
 
         properties.put("routes", new ArraySchema(
                         "array",
-                        new RefSchema("#/$defs/route", null, null),
-                        "The routing table defining how incoming traffic is matched and forwarded.",
+                        new OneOfSchema(List.of(new RefSchema("#/$defs/route", null, null), new RefSchema("#/$defs/group", null, null)), null, null),
+                        "The routing table, tried in order: routes (id) and groups of routes (group). The first route that matches takes the request.",
                         null
                 )
         );
@@ -171,19 +178,18 @@ public final class JsonSchemaGenerator
                 )
         );
 
-        properties.put("upstream", buildUpstreamSchema());
+        properties.put("upstream", buildUpstreamSchema("Where this route forwards requests. Each key not named here is inherited from the route's group, then the root."));
         properties.put("journal", buildJournalSchema(List.of("NONE", "HEADERS", "METADATA", "FULL"), null, "Observability and logging configuration for this specific route."));
 
-        final SchemaNode requireUpstream = new ObjectSchema(null, null, List.of("upstream"), null, null, null, null, null, null, null, null);
-        final SchemaNode requireFilters = new ObjectSchema(null, null, List.of("filters"), null, null, null, null, null, null, null, null);
-
+        // Neither upstream nor filters is required here: a route may inherit its upstream from
+        // its group or the root, which a schema of the route alone cannot see.
         return new ObjectSchema(
                 "object",
                 properties,
                 List.of("id", "match"),
                 new BoolProps(false),
                 null, null,
-                List.of(requireUpstream, requireFilters),
+                null,
                 null,
                 "Defines a single traffic route and its associated behaviors.",
                 null,
@@ -191,9 +197,56 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private SchemaNode buildUpstreamSchema()
+    private SchemaNode buildGroupDefinition()
     {
-        return buildInnerConfigSchema(UpstreamConfig.class);
+        final Map<String, SchemaNode> properties = new TreeMap<>();
+        properties.put("group", new PrimitiveSchema(
+                "string", null, null, null, null,
+                "A unique identifier for this group, in one namespace with route ids. Journaled as gateway.route.group for each of its routes.",
+                null, null, null
+        ));
+        properties.put("match", new ArraySchema(
+                "array",
+                new RefSchema("#/$defs/predicate", null, null),
+                "Conditions ANDed before each route's own. Optional; a request this does not match skips the group's routes and goes on to the next entry.",
+                null
+        ));
+        properties.put("filters", new ArraySchema(
+                "array",
+                new RefSchema("#/$defs/filter", null, null),
+                "Filters for every route of the group: one instance each for the group. They run after the root's and before a route's own on the request.",
+                null
+        ));
+        properties.put("upstream", buildUpstreamSchema("Upstream keys the group's routes inherit, each unless the route names it; keys not named here are inherited from the root."));
+        properties.put("routes", new ArraySchema(
+                "array",
+                new RefSchema("#/$defs/route", null, null),
+                "The group's routes, tried in order. Groups nest one level: a group holds routes, not groups.",
+                null,
+                1
+        ));
+        return new ObjectSchema(
+                "object",
+                properties,
+                List.of("group", "routes"),
+                new BoolProps(false),
+                null, null,
+                null,
+                null,
+                "Routes sharing a match, filters and upstream.",
+                null,
+                null
+        );
+    }
+
+    private SchemaNode buildUpstreamSchema(final String description)
+    {
+        final SchemaNode schema = buildInnerConfigSchema(UpstreamConfig.class);
+        if (schema instanceof ObjectSchema o)
+        {
+            return new ObjectSchema(o.type(), o.properties(), o.required(), o.additionalProperties(), o.minProperties(), o.maxProperties(), o.anyOf(), o.oneOf(), description, o.defaultValue(), o.defaultSnippets());
+        }
+        return schema;
     }
 
     /**

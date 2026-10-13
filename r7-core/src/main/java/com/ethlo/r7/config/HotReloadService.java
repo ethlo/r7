@@ -102,7 +102,7 @@ public final class HotReloadService
             this.loadedAt = Instant.now();
             this.rejectedAt = null;
             this.retire(previous);
-            log.info("Configuration {} successfully loaded {} routes from version {}", this.configFilePath, snapshot.routes().size(), snapshot.version());
+            log.info("Configuration {} successfully loaded {} routes from version {}, source digest sha256:{}", this.configFilePath, snapshot.routes().size(), snapshot.version(), snapshot.sourceDigest());
         }
         catch (final RuntimeException e)
         {

@@ -1,6 +1,6 @@
 version: 'integration-test-v1'
 
-global_filters:
+filters:
   - AddCorrelationId
 
 routes:

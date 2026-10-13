@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
@@ -15,7 +16,8 @@ public record UpstreamConfig(
         @Description("How requests are spread across the healthy targets.") Strategy strategy,
         @DefaultValue("{}") HealthCheckConfig healthCheck,
         @DefaultValue("{}") TimeoutConfig timeouts,
-        @Description("List of backend servers to forward traffic to.")
+        @Nullable
+        @Description("List of backend servers to forward traffic to. Required after inheritance: a route takes it from its group or the root when it names none.")
         List<TargetConfig> targets,
         @DefaultValue("{}")
         @Description("How to handle routing if upstream servers becomes unavailable") FallbackConfig fallback,
@@ -29,25 +31,62 @@ public record UpstreamConfig(
         return Optional.ofNullable(this.strategy).orElse(Strategy.ROUND_ROBIN);
     }
 
+    /**
+     * This upstream's keys, each taken from here when named here and from {@code outer}
+     * otherwise. A key is replaced whole: naming {@code timeouts} gives both of its values, and
+     * nothing an outer level named can be removed (an explicit {@code null} is refused before
+     * binding, by {@link RoutesTreeCheck}).
+     *
+     * @param outer the enclosing level's effective upstream, or {@code null}
+     */
+    public UpstreamConfig inherit(final UpstreamConfig outer)
+    {
+        if (outer == null)
+        {
+            return this;
+        }
+        return new UpstreamConfig(
+                this.strategy != null ? this.strategy : outer.strategy,
+                this.healthCheck != null ? this.healthCheck : outer.healthCheck,
+                this.timeouts != null ? this.timeouts : outer.timeouts,
+                this.targets != null ? this.targets : outer.targets,
+                this.fallback != null ? this.fallback : outer.fallback,
+                this.preserveHost != null ? this.preserveHost : outer.preserveHost
+        );
+    }
+
+    /**
+     * Whether this level names any upstream key. Read from the components, not the defaulting
+     * accessors: {@code upstream: {}} names nothing, and is the same as leaving the block out.
+     */
+    public boolean namesAnyKey()
+    {
+        return this.strategy != null || this.healthCheck != null || this.timeouts != null
+                || this.targets != null || this.fallback != null || this.preserveHost != null;
+    }
+
     @Override
     public Boolean preserveHost()
     {
         return Optional.ofNullable(this.preserveHost).orElse(false);
     }
 
+    /**
+     * Validates the keys this level names. Whether there are {@code targets} at all is a property
+     * of the effective upstream, checked per route once inheritance is resolved: a group may name
+     * only the {@code timeouts} its routes share.
+     */
     @Override
     public void validate(final ValidationResult result)
     {
         final ValidatorUtils validator = new ValidatorUtils(result);
 
-        // Ensure the targets list itself is defined and contains at least one node
-        if (this.targets == null || this.targets.isEmpty())
+        if (this.targets != null && this.targets.isEmpty())
         {
             validator.invalid("targets", null, "Upstream configuration must contain at least one target configuration");
         }
-        else
+        else if (this.targets != null)
         {
-            // Cascade validation down through each target item in the collection
             for (int i = 0; i < this.targets.size(); i++)
             {
                 final TargetConfig target = this.targets.get(i);

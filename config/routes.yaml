@@ -1,7 +1,7 @@
 version: my-version-42
 
 # Global filters applied to every request
-global_filters:
+filters:
   - SimpleMetrics:
       period: 5m
       interval: 2s

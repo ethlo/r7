@@ -363,6 +363,7 @@ public final class ManagementEndpoint
             routeConfigs.add(ModelMapper.mapRouteConfig((DefaultGatewayRoute) route, i + 1, pipeline.upstreamStatus(route), this.safeRequestHeaders, this.safeResponseHeaders));
         }
         root.put("route_version", routeRegistry.getConfigVersion());
+        root.put("route_source_digest", routeRegistry.getSourceDigest());
         final HotReloadService.Status routeSource = hotReloadService.status();
         root.put("route_source", routeSource);
         root.put("route_configs", routeConfigs);
@@ -513,7 +514,8 @@ public final class ManagementEndpoint
         }
     }
 
-    // A global filter belongs to no route: its route label is empty, as Prometheus reads a missing one
+    // A root filter belongs to no route: its route label is empty, as Prometheus reads a missing one.
+    // A group's filter is labelled with the group's id.
     private static String label(final String route)
     {
         return route != null ? route : "";

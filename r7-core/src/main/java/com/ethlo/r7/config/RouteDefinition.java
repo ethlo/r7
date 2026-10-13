@@ -5,15 +5,33 @@ import java.util.Optional;
 
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.util.ValidatorUtils;
-import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 
+/**
+ * A route as written, or, once loaded, with its effective {@code upstream}: the keys it
+ * inherits from its group and the root merged in (see {@link UpstreamConfig#inherit}). Its
+ * {@code match} and {@code filters} stay its own.
+ */
 public record RouteDefinition(String id,
                               UpstreamConfig upstream,
                               ConditionDefinition match,
                               JournalDefinition journal,
-                              List<FilterDefinition> filters) implements ValidatableConfig
+                              List<FilterDefinition> filters) implements RouteEntry
 {
+    @Override
+    public String entryId()
+    {
+        return this.id;
+    }
+
+    /**
+     * @return this route with {@code effective} in place of the upstream it declared
+     */
+    public RouteDefinition withUpstream(final UpstreamConfig effective)
+    {
+        return new RouteDefinition(this.id, effective, this.match, this.journal, this.filters);
+    }
+
     @Override
     public void validate(final ValidationResult result)
     {
