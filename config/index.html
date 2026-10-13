@@ -1331,6 +1331,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Templates
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#templateredirect" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2089,8 +2100,8 @@
 <li>Values are injected prior to type-casting.</li>
 <li>If a variable is missing and no default is provided, configuration validation fails.</li>
 <li><code>$${...}</code> is not interpolated: it stands for the literal text <code>${...}</code>. Use it where a value
-  needs <code>${</code> for its own syntax, such as a named capture group in a <code>TemplateRedirect</code> target
-  (<code>/new/$${rest}</code>). Written as <code>${rest}</code>, it would be read as a variable called <code>rest</code>.</li>
+  needs <code>${</code> for its own syntax. The <code>RewritePath</code> and <code>TemplateRedirect</code> templates do not: they
+  write a named group as <code>{name}</code>, so <code>${...}</code> there is always an environment variable.</li>
 </ul>
 <h3 id="header-case-sensitivity">Header Case Sensitivity</h3>
 <p>In strict accordance with RFC 7230, <strong>all HTTP header evaluations in r7 are case-insensitive</strong>. This applies to predicate matching (<code>RequestHeader</code>), filter mutations (<code>SetRequestHeader</code>), and CORS validations. It also holds for the headers a journal consumer reads back through <code>R7Tailer</code>: a lookup for <code>content-type</code> finds a header journaled as <code>Content-Type</code>, while iteration still shows each name as it was written. Folding is ASCII-only and does not depend on the JVM's default locale.</p>
@@ -3044,7 +3055,7 @@
 </tbody>
 </table>
 <h4 id="rewritepath">RewritePath</h4>
-<p>Transforms the upstream request path using regular expressions. Uses standard Java Matcher replacement semantics (<code>$1</code>, <code>$2</code>).</p>
+<p>Transforms the upstream request path using regular expressions. Every match of <code>regexp</code> is replaced. A numbered group is <code>$1</code>, <code>$2</code>, a named group is <code>{name}</code>, and <code>\{</code> is a literal brace (see <a href="#templates">Templates</a>).</p>
 <table>
 <thead>
 <tr>
@@ -3065,11 +3076,41 @@
 <td><code>replacement</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The replacement string applied to the matched path.</td>
+<td>The replacement applied to each match: <code>$1</code> for a numbered group, <code>{name}</code> for a named one.</td>
 </tr>
 </tbody>
 </table>
 <p>Both filters work on the <strong>decoded</strong> path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (<code>/api/a%3Fb</code> stripped by one part reaches the upstream as <code>/a%3Fb</code>, never as <code>/a?b</code>). Needless encoding of ordinary characters is normalised (<code>%41</code> is sent as <code>A</code>). Write a <code>replacement</code> in decoded form too: a literal <code>%20</code> in it is sent as <code>%2520</code>.</p>
+<h4 id="templates">Templates</h4>
+<p><code>RewritePath</code> <code>replacement</code> and <code>TemplateRedirect</code> <code>target</code> share one syntax:</p>
+<table>
+<thead>
+<tr>
+<th>Write</th>
+<th>For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>$1</code>, <code>$2</code>, ...</td>
+<td>the numbered group of the regular expression</td>
+</tr>
+<tr>
+<td><code>{name}</code></td>
+<td>the group <code>(?&lt;name&gt;...)</code></td>
+</tr>
+<tr>
+<td><code>{query.NAME}</code></td>
+<td>the value of the client's query parameter <code>NAME</code> (<code>TemplateRedirect</code>)</td>
+</tr>
+<tr>
+<td><code>\x</code></td>
+<td>the character <code>x</code> literally: <code>\$</code> a dollar sign, <code>\{</code> a brace</td>
+</tr>
+</tbody>
+</table>
+<p>A brace that is not escaped starts a placeholder, and one that names no group, or is never closed, is refused at startup: <code>[routes.x.filters[0].RewritePath.replacement] {b} needs a source pattern with that named group (write \{ for a literal brace).</code> The old <code>$${name}</code> form is refused too, with <code>Write a named group as {name}, not $${name}.</code> In YAML, <code>\{</code> is written as is in a plain or single-quoted string, and as <code>"\\{"</code> in a double-quoted one.</p>
+<p>A literal brace is a character of the result, not URI syntax, so it is sent percent-encoded like any character RFC 3986 does not allow: <code>target: /a\{b</code> answers <code>Location: /a%7Bb</code>, and a <code>RewritePath</code> <code>replacement</code> of <code>/a\{b</code> reaches the upstream as <code>/a%7Bb</code>. r7 never sends a raw brace in a URI.</p>
 <h4 id="templateredirect">TemplateRedirect</h4>
 <p>Intercepts the request and immediately issues an HTTP redirect (3xx) based on a regex match of the path and a substitution template.</p>
 <table>
@@ -3086,13 +3127,13 @@
 <td><code>source</code></td>
 <td>String</td>
 <td>No</td>
-<td>The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; <code>target</code> then holds literal text and <code>{query.NAME}</code> placeholders only, and a <code>$1</code> or <code>${name}</code> is refused at startup (<code>$1 needs a source pattern with that many groups.</code>).</td>
+<td>The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; <code>target</code> then holds literal text and <code>{query.NAME}</code> placeholders only, and a <code>$1</code> or <code>{name}</code> is refused at startup (<code>$1 needs a source pattern with that many groups.</code>).</td>
 </tr>
 <tr>
 <td><code>target</code></td>
 <td>String</td>
 <td>Yes</td>
-<td>The destination URL template. A query parameter's value is <code>{query.NAME}</code>. Regex capture groups are referenced as in Java's <code>Matcher.replaceFirst</code>: by number (<code>$1</code>, <code>$2</code>, ...) or by name, written <code>$${name}</code> because <code>${...}</code> on its own is <a href="#environment-variable-interpolation">environment variable interpolation</a>. <code>\$</code> is a literal <code>$</code>.</td>
+<td>The destination URL template. A numbered group is <code>$1</code>, <code>$2</code>, ...; a named group is <code>{name}</code>; a query parameter's value is <code>{query.NAME}</code>; <code>\$</code> is a literal <code>$</code> and <code>\{</code> a literal brace (see <a href="#templates">Templates</a>).</td>
 </tr>
 <tr>
 <td><code>status</code></td>
