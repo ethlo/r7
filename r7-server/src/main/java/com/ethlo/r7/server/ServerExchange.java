@@ -401,8 +401,13 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
         {
             return new UpstreamOutcome(UpstreamOutcome.Kind.CLIENT_ABORTED, headNanos);
         }
-        // A head with no end and no upstream read failure is r7's own refusal (a 101 it cannot tunnel).
-        return new UpstreamOutcome(this.upstreamBodyFailed ? UpstreamOutcome.Kind.BODY_FAILED : UpstreamOutcome.Kind.NOT_ASKED, headNanos);
+        if (this.upstreamBodyFailed)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.BODY_FAILED, headNanos);
+        }
+        // A protocol error after the head (an unsolicited 101) is the upstream's failure; with no
+        // recorded cause, a head with no end is r7's own refusal (a 101 it cannot tunnel).
+        return new UpstreamOutcome(this.upstreamFailed ? UpstreamOutcome.Kind.NO_RESPONSE : UpstreamOutcome.Kind.NOT_ASKED, headNanos);
     }
 
     /**

@@ -435,7 +435,9 @@ public final class UpstreamRelay
         {
             // Not out.close(): that would complete the client's message around a partial body.
             exchange.abortResponse();
-            if (!(e instanceof ClientWriteException))
+            // Only an IOException from the upstream side: a RuntimeException here is r7's own
+            // (the tee, the journal, the output stream) and says nothing about the upstream.
+            if (e instanceof IOException && !(e instanceof ClientWriteException))
             {
                 exchange.onUpstreamBodyFailed();
             }
