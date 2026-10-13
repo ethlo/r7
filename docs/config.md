@@ -164,13 +164,13 @@ Predicates determine whether an incoming request matches a route.
 * **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
 * **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Exact or Regex:** `Path`, `PathPrefix`, `Host`, `RequestHeader`, `QueryParameter` and `Cookie` compare values literally; their `Match*` siblings take a regex. A literal value that looks like a regex (`/api/.*`, `^Bearer .+$`, `[a-f0-9]{32}`), or a path or host with Spring Cloud Gateway wildcards or templates (`/api/**`, `/users/{id}`, `*.example.com`), is logged as a warning when the routes load, with its path and line, because it would only match a client that sends those exact characters.
-* **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes.
+* **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes. Only that list form is fallback-only: any other empty condition, at the top of a match or inside it (`match: {}`, `match: { or: [] }`, `match: { and: [] }`, `- {}`, `not: {}`), is refused at startup.
 
 ### Logical Meta-Predicates
 
 * `and`: True if **all** child predicates are true. Short-circuits on first failure.
 * `or`: True if **at least one** child predicate is true. Short-circuits on first success.
-* `not`: Inverts the result of a **single** child predicate.
+* `not`: Inverts the result of a **single** child condition, written as a mapping (`not: { Method: { methods: [GET] } }`). A list is refused at startup, since `not: [A, B]` reads both as "not all of" and "none of": write `not: { or: [...] }` for none of several, `not: { and: [...] }` for not all of them.
 
 ---
 
@@ -853,9 +853,9 @@ routes:
               - HasRequestHeader:
                   name: X-Internal-VPN
           - not:
-              - MatchQueryParameter:
-                  name: debug
-                  regexp: "true|1"
+              MatchQueryParameter:
+                name: debug
+                regexp: "true|1"
     upstream:
       strategy: ROUND_ROBIN
       health_check:

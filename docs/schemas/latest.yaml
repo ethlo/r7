@@ -1049,12 +1049,14 @@ $defs:
           type: array
           items:
             $ref: "#/$defs/predicate"
+          minItems: 1
         not:
           $ref: "#/$defs/predicate"
         or:
           type: array
           items:
             $ref: "#/$defs/predicate"
+          minItems: 1
       additionalProperties: true
       minProperties: 1
       maxProperties: 1
@@ -1116,7 +1118,7 @@ $defs:
         type: array
         items:
           $ref: "#/$defs/predicate"
-        description: "Conditions that must be met for this route to handle a request. If omitted, no requests match."
+        description: "Conditions that must be met for this route to handle a request. Required; an empty list (match: []) matches nothing, for a route reached only as a fallback."
       upstream:
         type: object
         properties:
@@ -1219,6 +1221,7 @@ $defs:
         additionalProperties: false
     required:
     - id
+    - match
     additionalProperties: false
     anyOf:
     - required:

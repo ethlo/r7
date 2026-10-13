@@ -38,10 +38,11 @@ public record RouteDefinition(String id,
             journal.validate(result.nested("journal"));
         }
 
-        // A route must have a purpose
-        if (this.match() == null && (this.filters() == null || this.filters().isEmpty()))
+        // A route without a match used to load and never match, silently, when it had filters:
+        // a forgotten 'match' then looks like a dead route. Fallback-only is said explicitly.
+        if (this.match() == null)
         {
-            result.addError("id", "Route '" + this.id() + "' must define at least one match or one filter");
+            result.addError("match", "Route '" + this.id() + "' needs a match; write 'match: []' for a route reached only as a fallback");
         }
     }
 
