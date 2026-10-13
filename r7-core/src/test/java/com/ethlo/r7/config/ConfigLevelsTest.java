@@ -71,6 +71,7 @@ class ConfigLevelsTest
                   refill_tokens: 100
                   refill_period: 1s
             upstream:
+              preserve_host: true
               timeouts:
                 read: 7s
               targets:
@@ -102,6 +103,7 @@ class ConfigLevelsTest
                           name: X-Orders
                           value: "1"
                     upstream:
+                      preserve_host: false
                       timeouts:
                         read: 2s
               - id: catch-all
@@ -148,10 +150,12 @@ class ConfigLevelsTest
         final UpstreamConfig users = route(snapshot, "users").routeDefinition().upstream();
         assertThat(users.targets()).extracting(t -> t.url().toString()).containsExactly("http://api:1");
         assertThat(users.timeouts().read()).hasSeconds(7);
+        assertThat(users.preserveHost()).isTrue();
 
         final UpstreamConfig orders = route(snapshot, "orders").routeDefinition().upstream();
         assertThat(orders.targets()).extracting(t -> t.url().toString()).containsExactly("http://api:1");
         assertThat(orders.timeouts().read()).hasSeconds(2);
+        assertThat(orders.preserveHost()).isFalse();
 
         final UpstreamConfig catchAll = route(snapshot, "catch-all").routeDefinition().upstream();
         assertThat(catchAll.targets()).extracting(t -> t.url().toString()).containsExactly("http://root:1");

@@ -50,8 +50,15 @@ public record UpstreamConfig(
                 this.healthCheck != null ? this.healthCheck : outer.healthCheck,
                 this.timeouts != null ? this.timeouts : outer.timeouts,
                 this.targets != null ? this.targets : outer.targets,
-                this.fallback != null ? this.fallback : outer.fallback
+                this.fallback != null ? this.fallback : outer.fallback,
+                this.preserveHost != null ? this.preserveHost : outer.preserveHost
         );
+    }
+
+    @Override
+    public Boolean preserveHost()
+    {
+        return Optional.ofNullable(this.preserveHost).orElse(false);
     }
 
     /**
@@ -59,12 +66,6 @@ public record UpstreamConfig(
      * of the effective upstream, checked per route once inheritance is resolved: a group may name
      * only the {@code timeouts} its routes share.
      */
-    @Override
-    public Boolean preserveHost()
-    {
-        return Optional.ofNullable(this.preserveHost).orElse(false);
-    }
-
     @Override
     public void validate(final ValidationResult result)
     {

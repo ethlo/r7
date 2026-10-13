@@ -22,7 +22,7 @@ public final class RoutesTreeCheck
 {
     static final String GLOBAL_FILTERS_REMOVED = "global_filters was replaced in 1.0 by filters at the root, with the same meaning: one instance of each filter for the whole gateway. Rename the key.";
 
-    private static final List<String> UPSTREAM_KEYS = List.of("strategy", "health_check", "timeouts", "targets", "fallback");
+    private static final List<String> UPSTREAM_KEYS = List.of("strategy", "health_check", "timeouts", "targets", "fallback", "preserve_host");
 
     private RoutesTreeCheck()
     {

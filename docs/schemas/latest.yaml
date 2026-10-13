@@ -857,6 +857,13 @@ $defs:
                 description: Number of consecutive successes required to mark target up
                 default: 2
             additionalProperties: false
+          preserve_host:
+            anyOf:
+            - type: boolean
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.
+            default: false
           strategy:
             anyOf:
             - type: string
@@ -1482,6 +1489,13 @@ properties:
             description: Number of consecutive successes required to mark target up
             default: 2
         additionalProperties: false
+      preserve_host:
+        anyOf:
+        - type: boolean
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.
+        default: false
       strategy:
         anyOf:
         - type: string
