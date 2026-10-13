@@ -33,6 +33,7 @@ import com.ethlo.r7.server.UpstreamHandle;
 import com.ethlo.r7.status.TrafficMetrics;
 import com.ethlo.r7.upstream.HttpUpstream;
 import com.ethlo.r7.upstream.ProxiedExchange;
+import com.ethlo.r7.core.proxy.ProxyPoolExhaustedException;
 import com.ethlo.r7.upstream.ProxyFailure;
 import com.ethlo.r7.upstream.RequestBodyTooLargeException;
 import com.ethlo.r7.upstream.Tunnel;
@@ -609,6 +610,11 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         }
         catch (final ProxyFailure failure)
         {
+            // A full local pool means the upstream was never asked: gateway saturation is not its failure.
+            if (failure.status() >= 500 && failure.getCause() != null && !(failure.getCause() instanceof ProxyPoolExhaustedException))
+            {
+                upstreamFailedToAnswer();
+            }
             respondError(failure.status(), failure.message());
             if (failure.getCause() != null)
             {
@@ -704,6 +710,18 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     public void onUpstreamResponseEnd()
     {
         upstreamResponseEndRead();
+    }
+
+    @Override
+    public void onUpstreamBodyFailed()
+    {
+        upstreamBodyReadFailed();
+    }
+
+    @Override
+    public void onClientAborted()
+    {
+        clientAbortedResponse();
     }
 
     @Override

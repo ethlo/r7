@@ -23,6 +23,7 @@ import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.GatewayErrorHandler;
+import com.ethlo.r7.api.FallbackAwareGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayHeaders;
@@ -319,6 +320,13 @@ public final class GatewayPipeline
                 logger.debug("Routing to fallback route: {}", fallbackRoute.id());
                 ex.attributes().set("gateway.fallback.id", fallbackRoute.id());
 
+                // Said to the filters whose request phase ran, so one that judges upstream health
+                // does not have to read the attribute above, which is telemetry.
+                for (final FallbackAwareGatewayFilter started : fallbackRoute.startedFallbackAwareFilters())
+                {
+                    started.onFallback(ex);
+                }
+
                 // The fallback route runs as if the request had matched it: its own request
                 // filters, on this same thread, then its own upstream filters and
                 // upstream, or its own fallback. Global filters already ran once for this request.
@@ -457,8 +465,7 @@ public final class GatewayPipeline
         ex.reasonFilter = reasonFilter;
 
         // Applied before response filters run - not after, in sendResponse() - so that a filter's
-        // onClientResponse (CircuitBreaker's above all: it reads clientResponse().status() to
-        // tell a refused half-open probe from a successful one) sees the real refusal outcome
+        // onClientResponse sees the real refusal outcome
         // instead of the exchange's still-default 200. It also means a filter that sets its own
         // header here is the last word on it, rather than being overwritten by this reapplying
         // the refusal's original headers afterwards.

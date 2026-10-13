@@ -176,6 +176,12 @@ public final class UpstreamRelay
             // The client's doing, not the upstream's; nothing to report.
             throw new ProxyFailure(400, "Bad request", null);
         }
+        catch (final ClientWriteException e)
+        {
+            exchange.onClientAborted();
+            // No cause: the client left, which StandardErrorHandler would otherwise log as an upstream error.
+            throw new ProxyFailure(502, "Upstream failed", null);
+        }
         catch (final IOException e)
         {
             if (connection != null && connection.expired)
@@ -289,6 +295,18 @@ public final class UpstreamRelay
     }
 
     /**
+     * A write to the client failed while relaying the response: the client's doing, not the
+     * upstream's.
+     */
+    private static final class ClientWriteException extends IOException
+    {
+        ClientWriteException(final IOException cause)
+        {
+            super(cause.getMessage(), cause);
+        }
+    }
+
+    /**
      * A read of the client's request body failed: the client went away or sent a broken body. Kept
      * apart from a failed write upstream, which may mean the upstream has already answered.
      */
@@ -383,7 +401,7 @@ public final class UpstreamRelay
         if (noBody)
         {
             exchange.onUpstreamResponseEnd();
-            exchange.commit(false);
+            commitToClient(exchange, false);
             return !head.close;
         }
         if (!head.chunked && head.contentLength >= 0)
@@ -392,7 +410,7 @@ public final class UpstreamRelay
         }
 
         final HttpUpstream.LineReader in = connection.reader;
-        final OutputStream out = exchange.commit(true);
+        final OutputStream out = commitToClient(exchange, true);
         final boolean reusable;
         try
         {
@@ -417,11 +435,36 @@ public final class UpstreamRelay
         {
             // Not out.close(): that would complete the client's message around a partial body.
             exchange.abortResponse();
+            // Only an IOException from the upstream side: a RuntimeException here is r7's own
+            // (the tee, the journal, the output stream) and says nothing about the upstream.
+            if (e instanceof IOException && !(e instanceof ClientWriteException))
+            {
+                exchange.onUpstreamBodyFailed();
+            }
             throw e;
         }
         exchange.onUpstreamResponseEnd();
-        out.close();
+        try
+        {
+            out.close();
+        }
+        catch (final IOException e)
+        {
+            throw new ClientWriteException(e);
+        }
         return reusable;
+    }
+
+    private static OutputStream commitToClient(final ProxiedExchange exchange, final boolean body) throws IOException
+    {
+        try
+        {
+            return exchange.commit(body);
+        }
+        catch (final IOException e)
+        {
+            throw new ClientWriteException(e);
+        }
     }
 
     /**
@@ -554,6 +597,13 @@ public final class UpstreamRelay
     private static void writeResponseBody(final OutputStream out, final ProxiedExchange exchange, final byte[] buffer, final int n) throws IOException
     {
         exchange.onResponseBody(buffer, 0, n);
-        out.write(buffer, 0, n);
+        try
+        {
+            out.write(buffer, 0, n);
+        }
+        catch (final IOException e)
+        {
+            throw new ClientWriteException(e);
+        }
     }
 }

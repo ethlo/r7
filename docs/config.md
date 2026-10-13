@@ -683,12 +683,15 @@ Provides token-bucket rate limiting. Requests exceeding the limit are rejected w
 
 #### CircuitBreaker
 
-Monitors upstream responses and temporarily blocks routing **for the entire route** if a specified threshold of `5xx` server errors is reached. Fast-fails with `503 Service Unavailable` while open, and allows a single probe request through during half-open state.
+Judges what the **upstream** did for each exchange, once it is complete, and temporarily blocks routing **for the entire route** when `failure_threshold` failures in a row are reached. Fast-fails with `503 Service Unavailable` while open, and allows a single probe request through during half-open state.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `failure_threshold` | Integer | Yes | The number of consecutive `5xx` failures required to trip the circuit open. |
+| `failure_threshold` | Integer | Yes | The number of consecutive failures required to trip the circuit open. |
 | `cooldown_period` | Duration | Yes | The time to wait (e.g., `12s`) before transitioning to a half-open state to probe upstream health. |
+| `slow_call` | Duration | No | An upstream that takes longer than this to start its response (measured from when r7 began proxying) counts as a failure, whatever its status. Must be greater than zero. |
+
+A **failure** is an upstream `5xx`, no response at all (refused, reset, timed out), a response body that broke off, an answer slower than `slow_call`, or a request that fell back to another route. A **success** is any other upstream answer. **Neither** counts for or against, and leaves the failure count as it is: a request r7 answered itself without asking the upstream (a `ReturnResponse` `5xx`, a request another filter refused), or a client that disconnected. A half-open probe that proves nothing returns the circuit to open.
 
 ---
 

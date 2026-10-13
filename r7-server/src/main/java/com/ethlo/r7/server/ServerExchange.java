@@ -16,6 +16,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
+import com.ethlo.r7.api.UpstreamOutcome;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.filters.StaticContentFactory;
@@ -82,6 +83,13 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     // Whether the response committing is that head, relayed. If not, r7 answers in its place,
     // and the upstream response is taken from the head as read instead.
     boolean upstreamResponseRelayed;
+    // Whether a write to the client failed while the upstream's response was being relayed: the
+    // client went away, which says nothing about the upstream.
+    boolean clientAborted;
+    // Whether the proxy failed in a way the upstream caused, recorded when it happens: the status
+    // the client finally gets can be rewritten by a response filter, so it cannot tell.
+    boolean upstreamFailed;
+    boolean upstreamBodyFailed;
     long journalBytes;
 
     protected ServerExchange(final GatewayPipeline pipeline)
@@ -351,6 +359,55 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     public boolean hasUpstreamResponse()
     {
         return this.upstreamResponded;
+    }
+
+    /**
+     * Marks that the client could not be written to while the upstream's response was relayed.
+     */
+    protected final void clientAbortedResponse()
+    {
+        this.clientAborted = true;
+    }
+
+    protected final void upstreamFailedToAnswer()
+    {
+        this.upstreamFailed = true;
+    }
+
+    protected final void upstreamBodyReadFailed()
+    {
+        this.upstreamBodyFailed = true;
+    }
+
+    @Override
+    public UpstreamOutcome upstreamOutcome()
+    {
+        if (!wasProxied())
+        {
+            return UpstreamOutcome.NOT_ASKED;
+        }
+        if (!this.upstreamResponded)
+        {
+            // r7's own answer in the upstream's place: only a failure the upstream caused counts
+            // against it, not the client's own fault (400, 413) or a local limit.
+            return this.upstreamFailed ? UpstreamOutcome.NO_RESPONSE : UpstreamOutcome.NOT_ASKED;
+        }
+        final long headNanos = this.upstreamHeadNanos - this.proxyStartNanos;
+        if (this.webSocketUpgraded || this.upstreamEndNanos != NOT_RECORDED)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.ANSWERED, headNanos);
+        }
+        if (this.clientAborted)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.CLIENT_ABORTED, headNanos);
+        }
+        if (this.upstreamBodyFailed)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.BODY_FAILED, headNanos);
+        }
+        // A protocol error after the head (an unsolicited 101) is the upstream's failure; with no
+        // recorded cause, a head with no end is r7's own refusal (a 101 it cannot tunnel).
+        return new UpstreamOutcome(this.upstreamFailed ? UpstreamOutcome.Kind.NO_RESPONSE : UpstreamOutcome.Kind.NOT_ASKED, headNanos);
     }
 
     /**

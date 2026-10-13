@@ -35,6 +35,15 @@ public interface CompletedGatewayExchange extends GatewayExchange
     GatewayResponse upstreamResponse();
 
     /**
+     * @return how the exchange fared with its upstream; {@link UpstreamOutcome.Kind#NOT_ASKED}
+     * when it was not proxied
+     */
+    default UpstreamOutcome upstreamOutcome()
+    {
+        return UpstreamOutcome.NOT_ASKED;
+    }
+
+    /**
      * Indicates whether the exchange reached the upstream proxy phase.
      * * @return true if an upstream request was attempted;
      * false if the exchange was short-circuited.

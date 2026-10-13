@@ -134,6 +134,23 @@ public interface ProxiedExchange
     }
 
     /**
+     * Called when writing the upstream's response to the client failed, before the relay gives up:
+     * the client went away. The upstream is not at fault, which matters to anything judging its
+     * health.
+     */
+    default void onClientAborted()
+    {
+    }
+
+    /**
+     * Called when reading the upstream's response body failed after its head was relayed: broken
+     * framing, a reset or a timeout. Not called for a failure that is r7's or the client's own.
+     */
+    default void onUpstreamBodyFailed()
+    {
+    }
+
+    /**
      * Called with each block of response body, before it is written to the client.
      */
     default void onResponseBody(final byte[] buffer, final int offset, final int length)

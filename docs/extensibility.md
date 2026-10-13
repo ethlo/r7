@@ -36,6 +36,12 @@ One class can implement several of these interfaces when it acts in more than on
 built-in `RateLimiter` and `CircuitBreaker` do. When each stage runs, and in which order global
 and route filters run in it, is in [Execution Semantics](config.md#3-execution-semantics).
 
+A filter that needs to know the request is being retried on a fallback route implements
+`FallbackAwareGatewayFilter`; `onFallback` is called on the request-phase filters the fallback
+inherits (global and carried ones), before the fallback's own filters run. A `CompletedGatewayFilter`
+can read `CompletedGatewayExchange.upstreamOutcome()`: `NOT_ASKED`, `ANSWERED`, `NO_RESPONSE`,
+`BODY_FAILED` or `CLIENT_ABORTED`, with the time to the response head. That is what `CircuitBreaker` judges by.
+
 ## 1. Implementing a Custom Predicate
 
 A Predicate evaluates an incoming `GatewayRequest` and returns a boolean indicating whether the route should match.

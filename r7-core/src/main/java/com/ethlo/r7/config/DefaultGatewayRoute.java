@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
+import com.ethlo.r7.api.FallbackAwareGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRoute;
@@ -26,6 +27,7 @@ public class DefaultGatewayRoute implements GatewayRoute
     private final RouteDefinition routeDefinition;
     private final ClientRequestGatewayFilter[] clientRequestFilters;
     private final CompletedGatewayFilter[] completedGatewayFilters;
+    private final FallbackAwareGatewayFilter[] startedFallbackAwareFilters;
     private final ClientResponseGatewayFilter[] beforeCommitGatewayFilters;
     private final UpstreamRequestGatewayFilter[] beforeUpstreamGatewayFilters;
     private final List<GatewayFilter> globalFilters;
@@ -76,6 +78,12 @@ public class DefaultGatewayRoute implements GatewayRoute
         this.beforeUpstreamGatewayFilters = ofType(allPhases, UpstreamRequestGatewayFilter.class, new UpstreamRequestGatewayFilter[0]);
         this.beforeCommitGatewayFilters = ofType(allPhases, ClientResponseGatewayFilter.class, new ClientResponseGatewayFilter[0]);
         this.completedGatewayFilters = ofType(allPhases, CompletedGatewayFilter.class, new CompletedGatewayFilter[0]);
+
+        this.startedFallbackAwareFilters = concat(this.globalFilters, this.carriedFilters).stream()
+                .filter(ClientRequestGatewayFilter.class::isInstance)
+                .filter(FallbackAwareGatewayFilter.class::isInstance)
+                .map(FallbackAwareGatewayFilter.class::cast)
+                .toArray(FallbackAwareGatewayFilter[]::new);
 
         this.globalClientRequestFilterCount = (int) this.globalFilters.stream()
                 .filter(f -> f instanceof ClientRequestGatewayFilter)
@@ -193,6 +201,16 @@ public class DefaultGatewayRoute implements GatewayRoute
     public ClientRequestGatewayFilter[] clientRequestFilters()
     {
         return clientRequestFilters;
+    }
+
+    /**
+     * The filters to tell that the request fell back to this route, when this is a fallback route
+     * built by {@link #asFallbackOfThis}: those that were carried or global, whose request phase
+     * ran on the route that fell back. This route's own filters are not among them.
+     */
+    public FallbackAwareGatewayFilter[] startedFallbackAwareFilters()
+    {
+        return startedFallbackAwareFilters;
     }
 
     public CompletedGatewayFilter[] completedGatewayFilters()
