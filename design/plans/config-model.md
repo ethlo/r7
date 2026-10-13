@@ -429,8 +429,8 @@ gateway.journal.rule = journal.on_response[0]
 Every record then answers "which rule decided this?". What that rule said at the time is
 answered by the config that was live: on every load and hot reload r7 logs the root `version`
 and a SHA-256 digest of the file as read, the **source digest** (before `${VAR}` interpolation,
-so no secret enters it), and the management view shows both for the live config. The source
-digest identifies the file, not the effective config: the same file under a changed environment
+so interpolated secret values do not enter it), and the management view shows both for the live
+config. The source digest identifies the file, not the effective config: the same file under a changed environment
 variable has the same digest, and the deployment's own revision of its environment covers that.
 The journal is unchanged: no version or digest on each exchange. A route in a group is also
 journaled with `gateway.route.group`.
