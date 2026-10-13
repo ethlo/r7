@@ -2620,7 +2620,7 @@
 <td><code>hosts</code></td>
 <td>List of Strings</td>
 <td>Yes</td>
-<td>A list of acceptable hostnames (e.g., <code>["api.example.com", "v2.example.com"]</code>).</td>
+<td>A list of acceptable hostnames (e.g., <code>["api.example.com", "v2.example.com"]</code>). An entry may hold several, separated by commas, so <code>hosts: ["${HOST_LIST}"]</code> works for a comma-separated variable.</td>
 </tr>
 </tbody>
 </table>
