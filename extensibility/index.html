@@ -714,6 +714,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="1. Implementing a Custom Predicate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-predicate-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The predicate contract
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-predicates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Response predicates
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1097,6 +1125,11 @@ can read <code>CompletedGatewayExchange.upstreamOutcome()</code>: <code>NOT_ASKE
 </span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">HasHeader</span><span class="p">:</span>
 </span><span id="True-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">      </span><span class="nt">header_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-My-Custom-Header</span>
 </span></code></pre></div>
+<h3 id="the-predicate-contract">The predicate contract</h3>
+<p>r7 may test a predicate more than once per exchange, and when routes share a group, once for all of them. A predicate therefore has no side effects and gives the same answer for the same request every time: no counters, no random draws, no calls out. Sampling is <code>Sample</code>'s, a node r7 evaluates over the exchange (see <a href="../config/#sample">Sample</a>).</p>
+<p>r7 handles <code>leg</code> for every predicate: it takes the parameter out before the configuration binds, and hands the predicate the request of that leg, or answers <code>false</code> without asking when the leg has no request yet. A config record with a component named <code>leg</code> is refused when the gateway starts, as is a predicate named <code>and</code>, <code>or</code>, <code>not</code> or <code>Sample</code>.</p>
+<h3 id="response-predicates">Response predicates</h3>
+<p>A predicate that tests a response implements <code>GatewayResponsePredicate</code> (<code>boolean test(GatewayResponse response)</code>) and is created by a <code>GatewayResponsePredicateFactory</code>, with the same <code>name</code>, <code>configClass</code> and <code>create</code> as a request predicate's factory. Request and response predicates share one namespace: a name registered as both is refused when the gateway starts. A route's <code>match</code> refuses a response predicate, since no response exists when a route is chosen: <code>[routes.x.match[0].HasStatus] HasStatus tests a response, which does not exist yet when a route is chosen.</code></p>
 <hr />
 <h2 id="2-implementing-a-custom-filter">2. Implementing a Custom Filter</h2>
 <p>To create a custom filter, implement <code>GatewayFilterFactory</code>. The filter it creates implements the interface of each stage it works in, from the table above.</p>
@@ -1227,6 +1260,7 @@ Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.Gat
 <p><strong>Content:</strong></p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>com.example.r7.predicates.HasHeaderFactory
 </span></code></pre></div>
+<p>A response predicate's factory is listed in <code>META-INF/services/com.ethlo.r7.spi.GatewayResponsePredicateFactory</code> instead.</p>
 <p><strong>File 2: Filter Registration</strong>
 Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.GatewayFilterFactory</code></p>
 <p><strong>Content:</strong></p>

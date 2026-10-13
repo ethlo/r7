@@ -920,6 +920,12 @@ $defs:
         Cookie:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the cookie.
@@ -940,6 +946,12 @@ $defs:
         HasCookie:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the cookie to check for.
@@ -955,6 +967,12 @@ $defs:
         HasQueryParameter:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the query parameter.
@@ -970,6 +988,12 @@ $defs:
         HasRequestHeader:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the header.
@@ -990,6 +1014,12 @@ $defs:
               items:
                 type: string
               description: List of hostnames to match against.
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
           required:
           - hosts
           additionalProperties: false
@@ -1002,6 +1032,12 @@ $defs:
         MatchCookie:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the cookie.
@@ -1022,6 +1058,12 @@ $defs:
         MatchPath:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             regexp:
               type: string
               description: The regular expression to match against the request path.
@@ -1037,6 +1079,12 @@ $defs:
         MatchQueryParameter:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the query parameter.
@@ -1057,6 +1105,12 @@ $defs:
         MatchRequestHeader:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the header.
@@ -1082,6 +1136,12 @@ $defs:
               items:
                 type: string
               description: "List of allowed HTTP methods (e.g., GET, POST)."
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
           required:
           - include
           additionalProperties: false
@@ -1094,6 +1154,12 @@ $defs:
         Path:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             path:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -1112,6 +1178,12 @@ $defs:
         PathPrefix:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             prefix:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -1130,6 +1202,12 @@ $defs:
         QueryParameter:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the query parameter.
@@ -1150,6 +1228,12 @@ $defs:
         RemoteAddr:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             source:
               type: string
               description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
@@ -1165,6 +1249,12 @@ $defs:
         RequestHeader:
           type: object
           properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the request header.
@@ -1182,6 +1272,19 @@ $defs:
             body:
               name: $1
               value: $2
+        Sample:
+          type: object
+          properties:
+            rate:
+              anyOf:
+              - type: number
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The share of exchanges to match: greater than 0, at most 1 (0.01 is one in a hundred)."
+          required:
+          - rate
+          additionalProperties: false
+          description: "Matches a share of exchanges, drawn once per exchange from a random source."
         and:
           type: array
           items:
