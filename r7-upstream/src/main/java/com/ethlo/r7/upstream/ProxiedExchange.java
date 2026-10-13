@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.util.List;
 
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayResponse;
@@ -113,9 +114,14 @@ public interface ProxiedExchange
 
     /**
      * Called once the upstream's final response head has been read, before any of it reaches the
-     * client. For the journal's upstream timing.
+     * client, and before the relay decides whether it can relay it: a 101 r7 refuses to tunnel is
+     * still a head the upstream sent. For the journal's upstream timing and its upstream response.
+     *
+     * @param status  the upstream's status
+     * @param headers the headers as read, name, value, name, value, ..., less those describing
+     *                the upstream's hop; read-only, and unchanged for the rest of the exchange
      */
-    default void onUpstreamResponseHead()
+    default void onUpstreamResponseHead(final int status, final List<String> headers)
     {
     }
 

@@ -56,7 +56,8 @@ happened:
   itself (a rate limit, a redirect) has records 1 and 4.
 - Record 3 exists only when an upstream sent a response head. A proxied request whose upstream
   refused the connection, timed out or broke the protocol before answering has records 1, 2 and
-  4, and record 4 is r7's own `502`, `503` or `504`.
+  4, and record 4 is r7's own `502`, `503` or `504`. A head r7 refuses to relay, such as a `101`
+  the client never asked for, is still record 3, followed by r7's `502` as record 4.
 - Every record of an exchange names all the others in `WARC-Concurrent-To`, and carries the
   same `WARC-R7-Request-Id`.
 - An incomplete exchange (the gateway stopped before it finished, or it was evicted while being

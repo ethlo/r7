@@ -43,3 +43,17 @@ routes:
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # Answers a plain GET with a 101: r7 refuses the switch and answers 502 itself.
+  - id: switching
+    match:
+      - PathPrefix:
+          prefix: /switching
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: HEADERS
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${SWITCHING_PORT}

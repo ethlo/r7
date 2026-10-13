@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -89,6 +90,9 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     private String[] attempted;
     private Tunnel tunnel;
     private Runnable[] closeListeners;
+    // The upstream's response head as read, kept for upstreamResponseAsRead().
+    private int upstreamHeadStatus;
+    private List<String> upstreamHeadHeaders;
     private final AtomicBoolean connectionClosed = new AtomicBoolean();
 
     private long requestBodyBytes;
@@ -261,6 +265,17 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     protected GatewayResponse snapshotResponse()
     {
         return new ImmutableGatewayResponse(this.protocol, copyOf(clientResponse().headers()), clientResponse().status(), true);
+    }
+
+    @Override
+    protected GatewayResponse upstreamResponseAsRead()
+    {
+        final WireHeaders headers = new WireHeaders();
+        for (int i = 0; i < this.upstreamHeadHeaders.size(); i += 2)
+        {
+            headers.addFromWire(this.upstreamHeadHeaders.get(i), this.upstreamHeadHeaders.get(i + 1));
+        }
+        return new ImmutableGatewayResponse(this.protocol, headers, this.upstreamHeadStatus, false);
     }
 
     private static MutableGatewayHeaders copyOf(final GatewayHeaders headers)
@@ -676,8 +691,12 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     }
 
     @Override
-    public void onUpstreamResponseHead()
+    public void onUpstreamResponseHead(final int status, final List<String> headers)
     {
+        // Kept by reference, not copied: only a head r7 then refuses to relay is ever built
+        // into a response, so a relayed one costs nothing more.
+        this.upstreamHeadStatus = status;
+        this.upstreamHeadHeaders = headers;
         upstreamResponseHeadRead();
     }
 

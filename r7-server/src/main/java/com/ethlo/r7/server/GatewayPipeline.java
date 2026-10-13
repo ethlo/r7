@@ -424,9 +424,14 @@ public final class GatewayPipeline
         // Only a head the upstream sent: on a proxy failure r7 commits its own 502, 503 or 504,
         // which is the client's leg alone. Recorded as the upstream's, it would put words in the
         // upstream's mouth that an audit then cannot tell from what the upstream said.
-        if (ex.upstreamResponded)
+        if (ex.upstreamResponseRelayed)
         {
             ex.upstreamResponse = ex.snapshotResponse();
+        }
+        else if (ex.upstreamResponded)
+        {
+            // A head r7 read and then refused to relay, answering in its place.
+            ex.upstreamResponse = ex.upstreamResponseAsRead();
         }
 
         // Only now, with the upstream's actual status known, can "upgraded" be answered

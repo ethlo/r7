@@ -74,10 +74,14 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     long proxyStartNanos = NOT_RECORDED;
     long upstreamHeadNanos = NOT_RECORDED;
     long upstreamEndNanos = NOT_RECORDED;
-    // Whether the response being committed is the upstream's own head. Not wasProxied(): a
-    // proxied exchange the upstream never answered is committed with r7's own 502, 503 or 504,
-    // and that must not be recorded, matched or counted as something the upstream sent.
+    // Whether an upstream sent a response head. Not wasProxied(): a proxied exchange the upstream
+    // never answered is committed with r7's own 502, 503 or 504, and that must not be recorded,
+    // matched or counted as something the upstream sent. Set when the head is read, not when it
+    // commits: a head r7 then refuses (a 101 it cannot tunnel) is still the upstream's answer.
     boolean upstreamResponded;
+    // Whether the response committing is that head, relayed. If not, r7 answers in its place,
+    // and the upstream response is taken from the head as read instead.
+    boolean upstreamResponseRelayed;
     long journalBytes;
 
     protected ServerExchange(final GatewayPipeline pipeline)
@@ -150,6 +154,12 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
      * upstream's response commits, once {@link #upstreamResponseCommitting()} has been called.
      */
     protected abstract GatewayResponse snapshotResponse();
+
+    /**
+     * The upstream's response head as read, for an upstream response that was not relayed; called
+     * when r7's own answer commits after {@link #upstreamResponseHeadRead()}.
+     */
+    protected abstract GatewayResponse upstreamResponseAsRead();
 
     // --- Answering, teeing, proxying ---------------------------------------------------------
 
@@ -314,11 +324,13 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     }
 
     /**
-     * Marks that the upstream's response head has been read.
+     * Marks that the upstream's response head has been read; from here on the exchange has an
+     * upstream response, whether or not it reaches the client.
      */
     protected final void upstreamResponseHeadRead()
     {
         this.upstreamHeadNanos = System.nanoTime();
+        this.upstreamResponded = true;
     }
 
     /**
@@ -328,11 +340,11 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
      */
     protected final void upstreamResponseCommitting()
     {
-        this.upstreamResponded = true;
+        this.upstreamResponseRelayed = true;
     }
 
     /**
-     * Whether an upstream sent this exchange a response head that was relayed. False for an
+     * Whether an upstream sent this exchange a response head, relayed or not. False for an
      * exchange that was not proxied, and for one the upstream never answered (a refused connect,
      * a timeout or a protocol error before a response head), whose response is r7's own.
      */

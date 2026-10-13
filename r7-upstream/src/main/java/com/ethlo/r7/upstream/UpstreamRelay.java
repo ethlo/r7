@@ -140,7 +140,7 @@ public final class UpstreamRelay
                 attempt.requestFlushed = false;
                 response = exchangeHead(connection, exchange, head, framing, options, attempt);
             }
-            exchange.onUpstreamResponseHead();
+            exchange.onUpstreamResponseHead(response.status, response.relayed);
             if (response.status == 101)
             {
                 // The connection is the tunnel's from here: no longer bounded by max_request_time,
