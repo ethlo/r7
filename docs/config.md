@@ -26,8 +26,8 @@ Configuration values support environment variable injection using the `${VAR_NAM
 * Values are injected prior to type-casting.
 * If a variable is missing and no default is provided, configuration validation fails.
 * `$${...}` is not interpolated: it stands for the literal text `${...}`. Use it where a value
-  needs `${` for its own syntax, such as a named capture group in a `TemplateRedirect` target
-  (`/new/$${rest}`). Written as `${rest}`, it would be read as a variable called `rest`.
+  needs `${` for its own syntax. The `RewritePath` and `TemplateRedirect` templates do not: they
+  write a named group as `{name}`, so `${...}` there is always an environment variable.
 
 ### Header Case Sensitivity
 
@@ -468,14 +468,29 @@ Removes a specified number of structural path segments from the beginning of the
 
 #### RewritePath
 
-Transforms the upstream request path using regular expressions. Uses standard Java Matcher replacement semantics (`$1`, `$2`).
+Transforms the upstream request path using regular expressions. Every match of `regexp` is replaced. A numbered group is `$1`, `$2`, a named group is `{name}`, and `\{` is a literal brace (see [Templates](#templates)).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `regexp` | String | Yes | The regular expression pattern to match against the request path. |
-| `replacement` | String | Yes | The replacement string applied to the matched path. |
+| `replacement` | String | Yes | The replacement applied to each match: `$1` for a numbered group, `{name}` for a named one. |
 
 Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Needless encoding of ordinary characters is normalised (`%41` is sent as `A`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
+
+#### Templates
+
+`RewritePath` `replacement` and `TemplateRedirect` `target` share one syntax:
+
+| Write | For |
+| --- | --- |
+| `$1`, `$2`, ... | the numbered group of the regular expression |
+| `{name}` | the group `(?<name>...)` |
+| `{query.NAME}` | the value of the client's query parameter `NAME` (`TemplateRedirect`) |
+| `\x` | the character `x` literally: `\$` a dollar sign, `\{` a brace |
+
+A brace that is not escaped starts a placeholder, and one that names no group, or is never closed, is refused at startup: `[routes.x.filters[0].RewritePath.replacement] {b} needs a source pattern with that named group (write \{ for a literal brace).` The old `$${name}` form is refused too, with `Write a named group as {name}, not $${name}.` In YAML, `\{` is written as is in a plain or single-quoted string, and as `"\\{"` in a double-quoted one.
+
+A literal brace is a character of the result, not URI syntax, so it is sent percent-encoded like any character RFC 3986 does not allow: `target: /a\{b` answers `Location: /a%7Bb`, and a `RewritePath` `replacement` of `/a\{b` reaches the upstream as `/a%7Bb`. r7 never sends a raw brace in a URI.
 
 #### TemplateRedirect
 
@@ -484,7 +499,7 @@ Intercepts the request and immediately issues an HTTP redirect (3xx) based on a 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `source` | String | No | The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; `target` then holds literal text and `{query.NAME}` placeholders only, and a `$1` or `${name}` is refused at startup (`$1 needs a source pattern with that many groups.`). |
-| `target` | String | Yes | The destination URL template. A query parameter's value is `{query.NAME}`. Regex capture groups are referenced as in Java's `Matcher.replaceFirst`: by number (`$1`, `$2`, ...) or by name, written `$${name}` because `${...}` on its own is [environment variable interpolation](#environment-variable-interpolation). `\$` is a literal `$`. |
+| `target` | String | Yes | The destination URL template. A numbered group is `$1`, `$2`, ...; a named group is `{name}`; a query parameter's value is `{query.NAME}`; `\$` is a literal `$` and `\{` a literal brace (see [Templates](#templates)). |
 | `status` | Integer | No | The HTTP redirect status code: `301`, `302`, `303`, `307` or `308`. Defaults to `302` (Found). Any other code is refused at startup: a client follows a `Location` only on a redirect. |
 
 A route that only redirects needs no `source`: `target: "/?uid=urn:example:{query.refid}"` sends every request it sees to `/` with the client's `refid` as `uid`. The parameter must be present, and a repeated one must repeat the same value each time; otherwise the request is answered `400`, since there is no single value to redirect with. The value is encoded for the part of the URL it lands in, like a capture group, and like one it may not appear in the scheme or host of an absolute `target`.

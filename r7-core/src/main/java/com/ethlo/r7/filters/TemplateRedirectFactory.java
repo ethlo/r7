@@ -17,11 +17,12 @@ import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
+import com.ethlo.r7.filters.ReplacementTemplate.Component;
+import com.ethlo.r7.filters.ReplacementTemplate.Part;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
-import com.ethlo.r7.util.PathEncoder;
 import com.ethlo.r7.util.ValidatorUtils;
 import com.ethlo.r7.util.constants.HttpHeaders;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -38,8 +39,6 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 {
     private static final String FILTER_NAME = "TemplateRedirect";
     private static final Set<Integer> REDIRECT_STATUSES = Set.of(301, 302, 303, 307, 308);
-    private static final Pattern NO_GROUPS = Pattern.compile("");
-    private static final String QUERY_PREFIX = "{query.";
     private static final ByteBuffer EMPTY_BODY = ByteBuffer.allocateDirect(0);
 
     @Override
@@ -65,20 +64,39 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             @Nullable
             String source,
 
-            @Description("The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation. {query.NAME} is the value of a query parameter.")
+            @Description("The template for the target URL (e.g., /new/$1). A numbered group is $1, a named group {name} and the value of a query parameter {query.NAME}. \\{ is a literal brace.")
             String target,
 
             @Description("The HTTP status code to return for the redirect: 301, 302, 303, 307 or 308.")
             @DefaultValue("302")
             HttpStatus status) implements ValidatableConfig
     {
+        /**
+         * The source pattern, {@link ReplacementTemplate#NO_GROUPS} when there is none, or null
+         * when it does not compile (reported on its own).
+         */
+        private Pattern sourcePattern()
+        {
+            if (this.source() == null || this.source().isBlank())
+            {
+                return ReplacementTemplate.NO_GROUPS;
+            }
+            try
+            {
+                return Pattern.compile(this.source());
+            }
+            catch (final java.util.regex.PatternSyntaxException e)
+            {
+                return null;
+            }
+        }
+
         @Override
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result)
                     .notBlank("target", this.target())
-                    .safeHeaderText("target", this.target())
-                    .validRegexReplacement("target", this.source(), this.target());
+                    .safeHeaderText("target", this.target());
             if (this.source() != null)
             {
                 validator.requiredRegexp("source", this.source());
@@ -102,15 +120,16 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
             {
                 return;
             }
-            if (this.source() == null || this.source().isBlank())
+            final Pattern pattern = this.sourcePattern();
+            if (pattern != null)
             {
                 try
                 {
-                    parse(target, NO_GROUPS);
+                    ReplacementTemplate.parse(target, pattern, true);
                 }
                 catch (final IllegalArgumentException e)
                 {
-                    validator.invalid("target", target, e.getMessage());
+                    result.addError("target", e.getMessage());
                 }
             }
             final int schemeSeparator = target.indexOf("://");
@@ -138,7 +157,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
     private static boolean hasPlaceholder(final String text)
     {
-        return text.indexOf('$') >= 0 || text.contains(QUERY_PREFIX);
+        return text.indexOf('$') >= 0 || text.indexOf('{') >= 0;
     }
 
     /**
@@ -268,137 +287,6 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
                 && location.regionMatches(true, 0, template, 0, templateOriginEnd);
     }
 
-    /**
-     * The URI component a piece of request text lands in, which decides how it is encoded.
-     */
-    enum Component
-    {
-        PATH, QUERY_OR_FRAGMENT;
-
-        String encode(final String decoded)
-        {
-            return this == PATH ? PathEncoder.encode(decoded) : PathEncoder.encodeQueryValue(decoded);
-        }
-    }
-
-    /**
-     * One piece of a parsed target: literal template text, a capture group, or a query parameter
-     * ({@code query} set), the last two with the component their position in the template puts
-     * them in.
-     */
-    record Part(String literal, int group, String query, Component component)
-    {
-        static Part literal(final String text, final Component component)
-        {
-            return new Part(text, -1, null, component);
-        }
-
-        boolean isLiteral()
-        {
-            return this.literal != null;
-        }
-    }
-
-    /**
-     * Parses a target in {@link Matcher#appendReplacement} syntax ({@code $n}, {@code ${name}},
-     * {@code \x}) so each capture group can be encoded for where it lands, which
-     * {@link Matcher#replaceFirst} cannot do. A group is in the query or fragment once a literal
-     * {@code ?} or {@code #} precedes it; request text can never move that boundary, because it
-     * is encoded before it is spliced in.
-     */
-    static List<Part> parse(final String template, final Pattern pattern)
-    {
-        final int groupCount = pattern.matcher("").groupCount();
-        final List<Part> parts = new ArrayList<>();
-        final StringBuilder literal = new StringBuilder();
-        Component component = Component.PATH;
-        int i = 0;
-        while (i < template.length())
-        {
-            final char c = template.charAt(i);
-            if (c == '\\' && i + 1 < template.length())
-            {
-                literal.append(template.charAt(i + 1));
-                component = componentAfter(template.charAt(i + 1), component);
-                i += 2;
-            }
-            else if (c == '$' && i + 1 < template.length())
-            {
-                final int group;
-                if (template.charAt(i + 1) == '{')
-                {
-                    final int close = template.indexOf('}', i + 2);
-                    final Integer named = close < 0 ? null : pattern.namedGroups().get(template.substring(i + 2, close));
-                    if (named == null)
-                    {
-                        throw new IllegalArgumentException(close < 0 ? "Unterminated ${ in: " + template
-                                : "${" + template.substring(i + 2, close) + "} needs a source pattern with a group of that name.");
-                    }
-                    group = named;
-                    i = close + 1;
-                }
-                else
-                {
-                    // Same rule as Matcher.appendReplacement: take further digits only while the
-                    // number they make is still a group of the pattern.
-                    int ref = template.charAt(i + 1) - '0';
-                    if (ref < 0 || ref > 9)
-                    {
-                        throw new IllegalArgumentException("Illegal group reference in: " + template);
-                    }
-                    if (pattern == NO_GROUPS || ref > groupCount)
-                    {
-                        throw new IllegalArgumentException("$" + ref + " needs a source pattern with that many groups.");
-                    }
-                    i += 2;
-                    while (i < template.length() && Character.isDigit(template.charAt(i)))
-                    {
-                        final int next = ref * 10 + (template.charAt(i) - '0');
-                        if (next > groupCount)
-                        {
-                            break;
-                        }
-                        ref = next;
-                        i++;
-                    }
-                    group = ref;
-                }
-                if (!literal.isEmpty())
-                {
-                    parts.add(Part.literal(literal.toString(), component));
-                    literal.setLength(0);
-                }
-                parts.add(new Part(null, group, null, component));
-            }
-            else if (c == '{' && template.startsWith(QUERY_PREFIX, i) && template.indexOf('}', i) > i + QUERY_PREFIX.length())
-            {
-                final int close = template.indexOf('}', i);
-                if (!literal.isEmpty())
-                {
-                    parts.add(Part.literal(literal.toString(), component));
-                    literal.setLength(0);
-                }
-                parts.add(new Part(null, -1, template.substring(i + QUERY_PREFIX.length(), close), component));
-                i = close + 1;
-            }
-            else
-            {
-                literal.append(c);
-                component = componentAfter(c, component);
-                i++;
-            }
-        }
-        // A trailing part carries the component the template ends in, which is where the
-        // unmatched remainder of the path is appended.
-        parts.add(Part.literal(literal.toString(), component));
-        return List.copyOf(parts);
-    }
-
-    private static Component componentAfter(final char c, final Component current)
-    {
-        return c == '?' || c == '#' ? Component.QUERY_OR_FRAGMENT : current;
-    }
-
     private static final class GF implements ClientRequestGatewayFilter, ShortInfo
     {
         private final Pattern sourcePattern;
@@ -413,7 +301,7 @@ public final class TemplateRedirectFactory implements GatewayFilterFactory<Templ
 
             // Consume the standard regex string exactly as provided
             this.targetTemplate = config.target();
-            this.targetParts = parse(config.target(), this.sourcePattern != null ? this.sourcePattern : NO_GROUPS);
+            this.targetParts = ReplacementTemplate.parse(config.target(), this.sourcePattern != null ? this.sourcePattern : ReplacementTemplate.NO_GROUPS, true);
 
             if (config.status() != null)
             {
