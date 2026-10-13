@@ -4042,7 +4042,7 @@
 <td><code>r7_route_upstream_responses_total</code></td>
 <td>counter</td>
 <td><code>route</code>, <code>code</code></td>
-<td>Responses received from upstreams.</td>
+<td>Responses received from upstreams. A proxied request no upstream answered is not counted here; its <code>502</code>, <code>503</code> or <code>504</code> is r7's, in <code>r7_route_requests_total</code>.</td>
 </tr>
 <tr>
 <td><code>r7_route_active_requests</code></td>

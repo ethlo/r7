@@ -1435,7 +1435,7 @@ object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archi
 <tr>
 <td><code>upstream_response</code></td>
 <td>object</td>
-<td>When the request was proxied: the upstream's response</td>
+<td>When the request was proxied: the upstream's response, and the round trip's timing. When no upstream sent a response head (a refused connect, a timeout or a protocol error before one), it holds only the timing, at level <code>NONE</code>: r7's own <code>502</code>, <code>503</code> or <code>504</code> is recorded in <code>client_response</code>, never as the upstream's</td>
 </tr>
 <tr>
 <td><code>client_response</code></td>
@@ -1526,7 +1526,7 @@ object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archi
 <td><code>targets</code></td>
 <td>array of strings</td>
 <td><code>upstream_request</code></td>
-<td>With an end event: the upstream URLs tried, in order. When the last one answered, its response is the one recorded; when none did, the recorded response is the gateway's own <code>502</code>, <code>503</code> or <code>504</code></td>
+<td>With an end event: the upstream URLs tried, in order. When the last one answered, its response is the one in <code>upstream_response</code>; when none did, <code>upstream_response</code> has no status line and <code>client_response</code> holds r7's own <code>502</code>, <code>503</code> or <code>504</code></td>
 </tr>
 <tr>
 <td><code>headers</code></td>
