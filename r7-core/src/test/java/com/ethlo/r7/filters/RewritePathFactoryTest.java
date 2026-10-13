@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayRequest;
+import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
 import com.ethlo.r7.util.constants.HttpStatuses;
@@ -102,6 +103,13 @@ class RewritePathFactoryTest
             {
                 this.pairs.add(new String[]{namesAndValues[i], namesAndValues[i + 1]});
             }
+        }
+
+        @Override
+        public int forEach(final EntryConsumer consumer)
+        {
+            this.pairs.forEach(pair -> consumer.accept(pair[0], pair[1]));
+            return this.pairs.size();
         }
 
         @Override
@@ -339,5 +347,63 @@ class RewritePathFactoryTest
         assertThat(errors("^/old", "/new?a=1&")).singleElement().asString().contains(message);
         assertThat(errors("^/old", "/new?")).singleElement().asString().contains(message);
         assertThat(errors("^/old", "/new?a=1&b=")).isEmpty();
+    }
+
+    /**
+     * A parameter with an empty name is refused at load rather than written or dropped: the
+     * upstream's parser decides what it means.
+     */
+    @Test
+    void aParameterWithAnEmptyNameIsRefused()
+    {
+        final String message = "Every parameter after the ? needs a name: ?=x, ?&a=1 and ?a=1&&b=2 each have an empty one.";
+        assertThat(errors("^/old", "/new?=x")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?&a=1")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?a=1&&b=2")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?a=1&=2")).singleElement().asString().contains(message);
+        assertThat(errors("^/old", "/new?\\==1")).isEmpty();
+        assertThat(errors("^/old", "/new?flag&a=")).isEmpty();
+        assertThat(errors("^/old", "/new?a==1")).isEmpty();
+    }
+
+    @Test
+    void aNameWrittenAsAnEscapedCharacterIsKept()
+    {
+        final Rewritten out = rewriteQuery("^/old$", "/new?\\==1", "/old");
+        assertThat(out.params()).hasSize(1);
+        assertThat(out.params().get(0)).containsExactly("=", "1");
+    }
+
+    /**
+     * An earlier rewrite's parameters go back where the client had them, not to the end.
+     */
+    @Test
+    void anEarlierRewriteIsUndoneInTheClientsOrder()
+    {
+        final Params upstreamParams = new Params("a", "1", "b", "2", "a", "3", "c", "4");
+        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "a", "1", "b", "2", "a", "3", "c", "4");
+
+        apply("/x?a=9&c=8", exchange);
+        assertThat(upstreamParams.toQueryString()).isEqualTo("b=2&a=9&c=8");
+        apply("/y?d=5", exchange);
+
+        assertThat(upstreamParams.toQueryString()).isEqualTo("a=1&b=2&a=3&c=4&d=5");
+    }
+
+    /**
+     * When a filter between the rewrites removed the parameter one put back followed, it goes
+     * after the one before that.
+     */
+    @Test
+    void anUndoneParameterFollowsTheNearestParameterStillThere()
+    {
+        final Params upstreamParams = new Params("x", "1", "y", "2", "a", "3", "z", "4");
+        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "x", "1", "y", "2", "a", "3", "z", "4");
+
+        apply("/x?a=9", exchange);
+        upstreamParams.remove("y");
+        apply("/y?d=5", exchange);
+
+        assertThat(upstreamParams.toQueryString()).isEqualTo("x=1&a=3&z=4&d=5");
     }
 }

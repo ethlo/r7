@@ -7,6 +7,13 @@ public interface QueryParams
     Iterable<String> getAll(final String name);
 
     /**
+     * Calls the consumer with every parameter in order, once per occurrence.
+     *
+     * @return the number of parameters
+     */
+    int forEach(EntryConsumer consumer);
+
+    /**
      * @return how many times the parameter occurs. Implementations backed by a collection should
      * override this so a caller can tell a single occurrence apart without copying the values.
      */

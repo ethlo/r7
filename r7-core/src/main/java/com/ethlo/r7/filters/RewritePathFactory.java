@@ -3,14 +3,18 @@ package com.ethlo.r7.filters;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.MutableQueryParams;
+import com.ethlo.r7.api.QueryParams;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
@@ -35,13 +39,14 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
 {
     private static final String FILTER_NAME = "RewritePath";
 
-    /** The query parameters a rewrite set, so a later rewrite can put them back. */
-    private static final StateKey<List<Rewritten>> REWRITTEN = new StateKey<>("rewrite_path.query");
+    /** What a rewrite did to the query, so a later rewrite can put it back. */
+    private static final StateKey<Earlier> EARLIER = new StateKey<>("rewrite_path.query");
 
     /**
-     * A parameter a rewrite set: the values it had before and the values the rewrite left.
+     * The upstream query before a rewrite, as names and values in turn, and the parameters the
+     * rewrite set with the values it left them.
      */
-    private record Rewritten(String name, List<String> before, List<String> written)
+    private record Earlier(List<String> before, Map<String, List<String>> written)
     {
     }
 
@@ -67,7 +72,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
             @Description("The regular expression to match against the path.")
             String regexp,
 
-            @Description("The replacement: $1 for a numbered group, {name} for a named one, {query.NAME} for a query parameter of the request. A literal ? starts the query the upstream receives, whose captures and query values must be parameter values. \\{, \\?, \\& and \\= are literal characters.")
+            @Description("The replacement: $1 for a numbered group, {name} for a named one, {query.NAME} for a query parameter of the request. A literal ? starts the query the upstream receives, whose parameters each need a name and whose captures and query values must be parameter values. \\{, \\?, \\& and \\= are literal characters.")
             String replacement) implements ValidatableConfig
     {
         @Override
@@ -98,35 +103,46 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
     /**
      * The parsed replacement, refused when request text could name a parameter: a capture or
      * {@code {query.NAME}} where a name goes, or a query that ends in a name, where the rest of
-     * the path would land.
+     * the path would land. A parameter with an empty name is refused too: the upstream's parser
+     * would drop it or keep it, and r7 can not say which.
      */
     private static List<Part> parts(final Pattern regexp, final String replacement)
     {
         final List<Part> parts = ReplacementTemplate.parse(replacement, regexp, false);
         boolean inQuery = false;
         boolean inValue = false;
+        boolean named = false;
         for (final Part part : parts)
         {
             if (part.startsQuery())
             {
                 inQuery = true;
             }
-            else if (!inQuery || part.data())
+            else if (!inQuery)
             {
                 continue;
+            }
+            else if (part.data())
+            {
+                named |= !inValue;
             }
             else if (part.isLiteral())
             {
                 for (int i = 0; i < part.literal().length(); i++)
                 {
                     final char c = part.literal().charAt(i);
-                    if (c == '&')
+                    if (c == '&' || (c == '=' && !inValue))
                     {
-                        inValue = false;
+                        if (!inValue && !named)
+                        {
+                            throw new IllegalArgumentException("Every parameter after the ? needs a name: ?=x, ?&a=1 and ?a=1&&b=2 each have an empty one.");
+                        }
+                        inValue = c == '=';
+                        named = false;
                     }
-                    else if (c == '=')
+                    else
                     {
-                        inValue = true;
+                        named |= !inValue;
                     }
                 }
             }
@@ -169,7 +185,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                 }
                 else
                 {
-                    this.data(String.valueOf(c));
+                    (this.inValue ? this.value : this.name).append(c);
                 }
             }
         }
@@ -181,10 +197,8 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
 
         private void endPair()
         {
-            if (!this.name.isEmpty())
-            {
-                this.pairs.add(new String[]{this.name.toString(), this.value.toString()});
-            }
+            // parts() refuses a template with an empty name, and request text is never a name.
+            this.pairs.add(new String[]{this.name.toString(), this.value.toString()});
             this.name.setLength(0);
             this.value.setLength(0);
             this.inValue = false;
@@ -288,37 +302,109 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
          * Every rewrite tests the path the client sent, so the last match wins; the parameters an
          * earlier rewrite set go back to what they were before it, or the earlier one would leak
          * into the later one's result. A parameter another filter has changed since is that
-         * filter's now, and is left as it is.
+         * filter's now, and is left as it is. What goes back goes back where it was: after the
+         * parameter it followed before the earlier rewrite, or the nearest one before that which
+         * is still there.
          */
         private static void restoreEarlierRewrite(final UpstreamRequestGatewayExchange exchange)
         {
-            final List<Rewritten> earlier = exchange.getAttachment(REWRITTEN);
+            final Earlier earlier = exchange.getAttachment(EARLIER);
             if (earlier == null)
             {
                 return;
             }
+            exchange.setAttachment(EARLIER, null);
             final MutableQueryParams params = exchange.upstreamRequest().queryParams();
-            for (final Rewritten rewritten : earlier)
+            final List<String> current = pairs(params);
+            final Set<String> restored = new HashSet<>();
+            earlier.written().forEach((name, written) ->
             {
-                if (!values(params, rewritten.name()).equals(rewritten.written()))
+                if (values(current, name).equals(written))
                 {
-                    continue;
+                    restored.add(name);
                 }
-                params.remove(rewritten.name());
-                for (final String value : rewritten.before())
+            });
+            if (restored.isEmpty())
+            {
+                return;
+            }
+
+            final List<String> kept = new ArrayList<>(current.size());
+            for (int i = 0; i < current.size(); i += 2)
+            {
+                if (!restored.contains(current.get(i)))
                 {
-                    params.add(rewritten.name(), value);
+                    kept.add(current.get(i));
+                    kept.add(current.get(i + 1));
                 }
             }
-            exchange.setAttachment(REWRITTEN, null);
+            final List<String> merged = new ArrayList<>(kept.size() + earlier.before().size());
+            final Map<String, Integer> seen = new HashMap<>();
+            int next = 0;
+            for (int i = 0; i < earlier.before().size(); i += 2)
+            {
+                final String name = earlier.before().get(i);
+                if (restored.contains(name))
+                {
+                    merged.add(name);
+                    merged.add(earlier.before().get(i + 1));
+                    continue;
+                }
+                final int at = occurrence(kept, name, seen.merge(name, 1, Integer::sum) - 1);
+                for (; next <= at; next += 2)
+                {
+                    merged.add(kept.get(next));
+                    merged.add(kept.get(next + 1));
+                }
+            }
+            merged.addAll(kept.subList(next, kept.size()));
+
+            for (int i = 0; i < current.size(); i += 2)
+            {
+                params.remove(current.get(i));
+            }
+            for (int i = 0; i < merged.size(); i += 2)
+            {
+                params.add(merged.get(i), merged.get(i + 1));
+            }
         }
 
-        private static List<String> values(final MutableQueryParams params, final String name)
+        /**
+         * The index of the name of the given occurrence of a parameter, or -1 if there are fewer.
+         */
+        private static int occurrence(final List<String> pairs, final String name, final int occurrence)
+        {
+            int found = 0;
+            for (int i = 0; i < pairs.size(); i += 2)
+            {
+                if (pairs.get(i).equals(name) && found++ == occurrence)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static List<String> pairs(final QueryParams params)
+        {
+            final List<String> pairs = new ArrayList<>();
+            params.forEach((name, value) ->
+            {
+                pairs.add(name);
+                pairs.add(value);
+            });
+            return pairs;
+        }
+
+        private static List<String> values(final List<String> pairs, final String name)
         {
             final List<String> values = new ArrayList<>();
-            for (final String value : params.getAll(name))
+            for (int i = 0; i < pairs.size(); i += 2)
             {
-                values.add(value);
+                if (pairs.get(i).equals(name))
+                {
+                    values.add(pairs.get(i + 1));
+                }
             }
             return values;
         }
@@ -390,22 +476,23 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
             restoreEarlierRewrite(exchange);
             exchange.upstreamRequest().path(newPath.toString());
             final MutableQueryParams params = exchange.upstreamRequest().queryParams();
-            final Map<String, List<String>> before = new LinkedHashMap<>();
+            final List<String> before = pairs(params);
+            final Map<String, List<String>> written = new LinkedHashMap<>();
             for (final String[] pair : query.pairs())
             {
-                if (!before.containsKey(pair[0]))
+                final List<String> values = written.get(pair[0]);
+                if (values == null)
                 {
-                    before.put(pair[0], values(params, pair[0]));
                     params.set(pair[0], pair[1]);
+                    written.put(pair[0], new ArrayList<>(List.of(pair[1])));
                 }
                 else
                 {
                     params.add(pair[0], pair[1]);
+                    values.add(pair[1]);
                 }
             }
-            final List<Rewritten> rewritten = new ArrayList<>(before.size());
-            before.forEach((name, values) -> rewritten.add(new Rewritten(name, values, values(params, name))));
-            exchange.setAttachment(REWRITTEN, rewritten);
+            exchange.setAttachment(EARLIER, new Earlier(before, written));
         }
 
         @Override
