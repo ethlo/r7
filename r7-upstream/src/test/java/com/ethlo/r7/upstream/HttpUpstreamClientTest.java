@@ -138,7 +138,7 @@ class HttpUpstreamClientTest
     }
 
     @Test
-    void theTargetsHostIsSentUnlessTheClientsIsPreserved() throws Exception
+    void theTargetsHostIsSentUnlessTheOriginalHostIsPreserved() throws Exception
     {
         try (Upstream live = Upstream.answering(OK))
         {
