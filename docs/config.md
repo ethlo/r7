@@ -911,6 +911,34 @@ The `server.yaml` file controls the foundational infrastructure of the r7 gatewa
 
 r7 reads `routes.yaml` and `server.yaml` from the directory you start it in; `R7_ROUTES_CONFIG` and `R7_SERVER_CONFIG` name other paths. The container images start in `/app/config`, so mount your files there. `routes.yaml` is required, and r7 refuses to start without it. A `server.yaml` named by `R7_SERVER_CONFIG` must exist too: r7 will not fall back to the defaults when the file you pointed it at is missing, since that would quietly drop your limits and trusted proxies.
 
+### Checking a configuration before it ships
+
+A `routes.yaml` rendered in CI is proven only by the loader that will run it: a JSON Schema cannot see a duplicate route id, a fallback loop or a filter's cross-field rules. `--validate-only` loads `routes.yaml` and `server.yaml` as a start does, from the same paths, with the same `${VAR}` interpolation and checks, and builds every route, filter and predicate. Then it exits, without binding a port, creating the journal directory or contacting an upstream:
+
+```bash
+java -jar r7-helidon-1.0-SNAPSHOT.jar --validate-only
+```
+
+```bash
+docker run --rm --env-file .env \
+  -v "$PWD/routes.yaml:/app/config/routes.yaml:ro" \
+  ghcr.io/ethlo/r7-gateway:main --validate-only
+```
+
+A valid configuration prints one line on stdout and exits `0`:
+
+```text
+routes.yaml OK, with the built-in server defaults (no server.yaml)
+```
+
+An invalid one prints the errors startup would, prefixed with the file, on stderr and exits `1`:
+
+```text
+routes.yaml: [routes.api] id is not unique
+```
+
+Any other argument exits `2`. Extension jars on the classpath (`/app/plugins` in the image) are loaded as at startup, so mount them for the check too, or their filters are reported as unknown. The check reads the environment as startup does: every `${VAR}` without a default must be set, and so must `R7_FINGERPRINT_KEY` when there is no `server.yaml`. A CI job without production secrets sets placeholders; the check verifies their form, not their value.
+
 ### Server Configuration (`server`)
 
 Defines the gateway's listening interface and port, and how many connections it holds.

@@ -105,7 +105,9 @@ Unknown filter: 'AddResponseHeadr'. Did you mean 'AddResponseHeader'? Available 
 Unknown keys, invalid regular expressions, duplicate route ids, fallback loops and missing
 environment variables are all caught at startup. A misspelled option or broken YAML is reported
 with its line and column. Edit `routes.yaml` while r7 runs and it reloads on its own; an edit
-that does not validate is rejected, and the routes you had keep serving traffic.
+that does not validate is rejected, and the routes you had keep serving traffic. In CI,
+`--validate-only` runs the same checks and exits `1` with the same messages, without starting
+anything ([checking a configuration](config.md#checking-a-configuration-before-it-ships)).
 
 The [online config editor](editor.md) checks your routes against the full schema as you type,
 with autocomplete for every filter and predicate.
