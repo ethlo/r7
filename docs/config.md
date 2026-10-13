@@ -300,7 +300,7 @@ Matches the incoming request against a list of allowed `Host` headers. It automa
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `hosts` | List of Strings | Yes | A list of acceptable hostnames (e.g., `["api.example.com", "v2.example.com"]`). |
+| `hosts` | List of Strings | Yes | A list of acceptable hostnames (e.g., `["api.example.com", "v2.example.com"]`). An entry may hold several, separated by commas, so `hosts: ["${HOST_LIST}"]` works for a comma-separated variable. |
 
 #### Method
 
