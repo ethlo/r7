@@ -1016,6 +1016,11 @@ and can appear in its output.</p>
 <p>One class can implement several of these interfaces when it acts in more than one stage, as the
 built-in <code>RateLimiter</code> and <code>CircuitBreaker</code> do. When each stage runs, and in which order global
 and route filters run in it, is in <a href="../config/#3-execution-semantics">Execution Semantics</a>.</p>
+<p>A filter that needs to know the request is being retried on a fallback route implements
+<code>FallbackAwareGatewayFilter</code>; <code>onFallback</code> is called on the request-phase filters the fallback
+inherits (global and carried ones), before the fallback's own filters run. A <code>CompletedGatewayFilter</code>
+can read <code>CompletedGatewayExchange.upstreamOutcome()</code>: <code>NOT_ASKED</code>, <code>ANSWERED</code>, <code>NO_RESPONSE</code>,
+<code>BODY_FAILED</code> or <code>CLIENT_ABORTED</code>, with the time to the response head. That is what <code>CircuitBreaker</code> judges by.</p>
 <h2 id="1-implementing-a-custom-predicate">1. Implementing a Custom Predicate</h2>
 <p>A Predicate evaluates an incoming <code>GatewayRequest</code> and returns a boolean indicating whether the route should match.</p>
 <p>To create a custom predicate, you must implement the <code>GatewayPredicateFactory</code> interface. This factory handles configuration validation and instantiates the actual <code>GatewayPredicate</code>.</p>

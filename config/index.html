@@ -3539,7 +3539,7 @@
 </tbody>
 </table>
 <h4 id="circuitbreaker">CircuitBreaker</h4>
-<p>Monitors upstream responses and temporarily blocks routing <strong>for the entire route</strong> if a specified threshold of <code>5xx</code> server errors is reached. Fast-fails with <code>503 Service Unavailable</code> while open, and allows a single probe request through during half-open state.</p>
+<p>Judges what the <strong>upstream</strong> did for each exchange, once it is complete, and temporarily blocks routing <strong>for the entire route</strong> when <code>failure_threshold</code> failures in a row are reached. Fast-fails with <code>503 Service Unavailable</code> while open, and allows a single probe request through during half-open state.</p>
 <table>
 <thead>
 <tr>
@@ -3554,7 +3554,7 @@
 <td><code>failure_threshold</code></td>
 <td>Integer</td>
 <td>Yes</td>
-<td>The number of consecutive <code>5xx</code> failures required to trip the circuit open.</td>
+<td>The number of consecutive failures required to trip the circuit open.</td>
 </tr>
 <tr>
 <td><code>cooldown_period</code></td>
@@ -3562,8 +3562,15 @@
 <td>Yes</td>
 <td>The time to wait (e.g., <code>12s</code>) before transitioning to a half-open state to probe upstream health.</td>
 </tr>
+<tr>
+<td><code>slow_call</code></td>
+<td>Duration</td>
+<td>No</td>
+<td>An upstream that takes longer than this to start its response (measured from when r7 began proxying) counts as a failure, whatever its status. Must be greater than zero.</td>
+</tr>
 </tbody>
 </table>
+<p>A <strong>failure</strong> is an upstream <code>5xx</code>, no response at all (refused, reset, timed out), a response body that broke off, an answer slower than <code>slow_call</code>, or a request that fell back to another route. A <strong>success</strong> is any other upstream answer. <strong>Neither</strong> counts for or against, and leaves the failure count as it is: a request r7 answered itself without asking the upstream (a <code>ReturnResponse</code> <code>5xx</code>, a request another filter refused), or a client that disconnected. A half-open probe that proves nothing returns the circuit to open.</p>
 <hr />
 <h3 id="short-circuiting-overrides">Short-Circuiting &amp; Overrides</h3>
 <h4 id="returnresponse">ReturnResponse</h4>
