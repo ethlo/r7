@@ -2,6 +2,9 @@ package com.ethlo.r7.server;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -729,17 +732,27 @@ public final class GatewayPipeline
     // ============================================================================================
 
     /**
-     * Builds the upstream context of every route in a generation before it is published.
+     * Builds the upstream context of every route in a generation before it is published. Routes
+     * with one {@link DefaultGatewayRoute#upstreamKey()} take every upstream key from the same
+     * declarations and share one context: one connection pool, one health monitor, so a target
+     * marked down is down for all of them. A generation shares nothing with the one it replaces.
      */
     public void prepare(final List<GatewayRoute> routes)
     {
+        final Map<String, RouteUpstreamContext> contexts = new HashMap<>();
         try
         {
             for (final GatewayRoute route : routes)
             {
                 if (route instanceof DefaultGatewayRoute defaultRoute && defaultRoute.routeDefinition().upstream() != null)
                 {
-                    defaultRoute.attach(UPSTREAM_CONTEXT, this.createUpstreamContext(defaultRoute));
+                    RouteUpstreamContext context = contexts.get(defaultRoute.upstreamKey());
+                    if (context == null)
+                    {
+                        context = this.createUpstreamContext(defaultRoute);
+                        contexts.put(defaultRoute.upstreamKey(), context);
+                    }
+                    defaultRoute.attach(UPSTREAM_CONTEXT, context);
                 }
             }
         }
@@ -759,12 +772,14 @@ public final class GatewayPipeline
      */
     public void retire(final List<GatewayRoute> routes)
     {
+        // A context shared by several routes is stopped once.
+        final Set<RouteUpstreamContext> stopped = Collections.newSetFromMap(new IdentityHashMap<>());
         for (final GatewayRoute route : routes)
         {
             if (route instanceof DefaultGatewayRoute defaultRoute)
             {
                 final RouteUpstreamContext context = defaultRoute.attachment(UPSTREAM_CONTEXT);
-                if (context != null)
+                if (context != null && stopped.add(context))
                 {
                     context.stop();
                 }

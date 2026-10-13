@@ -299,7 +299,7 @@ public final class ConfigurationManager
      * @param group the group it is declared in, or {@code null}
      * @param path  its validation path: {@code routes.<id>}, or {@code routes.<group>.routes.<id>}
      */
-    private record Placed(RouteDefinition route, RouteDefinition declared, GroupDefinition group, String path)
+    private record Placed(RouteDefinition route, RouteDefinition declared, GroupDefinition group, String path, DefaultGatewayRoute.Level upstreamLevel)
     {
     }
 
@@ -342,8 +342,9 @@ public final class ConfigurationManager
     private static Placed placeRoute(final RouteDefinition route, final GroupDefinition group, final UpstreamConfig outer, final String path, final ValidationResult validationResult)
     {
         final UpstreamConfig merged = route.upstream() != null ? route.upstream().inherit(outer) : outer;
-        final boolean namedBelowRoot = (route.upstream() != null && route.upstream().namesAnyKey())
-                || (group != null && group.upstream() != null && group.upstream().namesAnyKey());
+        final boolean namedOnRoute = route.upstream() != null && route.upstream().namesAnyKey();
+        final boolean namedOnGroup = group != null && group.upstream() != null && group.upstream().namesAnyKey();
+        final boolean namedBelowRoot = namedOnRoute || namedOnGroup;
         UpstreamConfig effective = merged;
         if (merged != null && merged.targets() == null)
         {
@@ -354,7 +355,13 @@ public final class ConfigurationManager
             }
             effective = null;
         }
-        return new Placed(route.withUpstream(effective), route, group, path);
+        // Every key comes from the innermost level naming any: a route naming one key takes the
+        // rest from outside, but its upstream as a whole is then configured differently from its
+        // siblings', so it is its own.
+        final DefaultGatewayRoute.Level upstreamLevel = namedOnRoute ? DefaultGatewayRoute.Level.ROUTE
+                : namedOnGroup ? DefaultGatewayRoute.Level.GROUP
+                : effective != null ? DefaultGatewayRoute.Level.ROOT : DefaultGatewayRoute.Level.ROUTE;
+        return new Placed(route.withUpstream(effective), route, group, path, upstreamLevel);
     }
 
     private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final GatewayPredicate groupPredicate, final ValidationResult validationResult)
@@ -388,7 +395,7 @@ public final class ConfigurationManager
                 : List.of();
         final GatewayPredicate effective = groupPredicate != null ? new AndPredicate(List.of(groupPredicate, predicate)) : predicate;
         final DefaultGatewayRoute route = new DefaultGatewayRoute(urls, effective, filters, rootFilters.size(), groupFilters.size(),
-                placed.group() != null ? placed.group().group() : null, journalConfig, routeDefinition);
+                placed.group() != null ? placed.group().group() : null, placed.upstreamLevel(), journalConfig, routeDefinition);
         return new BuiltRoute(route, predicate);
     }
 
