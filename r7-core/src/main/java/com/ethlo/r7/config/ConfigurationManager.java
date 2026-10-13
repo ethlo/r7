@@ -87,6 +87,28 @@ public final class ConfigurationManager
                 check.check(root, positions).forEach(warning -> log.warn("{} {}", yamlFile, warning)));
     }
 
+    /**
+     * Reads, validates and instantiates a routes file without publishing it: what the gateway
+     * does with its routes at startup and on every reload, and all that a config check does.
+     */
+    public RouteRegistry.Snapshot buildFrom(final Path routesFile)
+    {
+        RoutesDefinition routesConfig = this.loadRoutes(routesFile);
+        if (routesConfig == null)
+        {
+            log.warn("No routes found");
+            routesConfig = new RoutesDefinition(null, List.of(), List.of(), null);
+        }
+
+        final ValidationResult validationResult = new ValidationResult();
+        routesConfig.validate(validationResult);
+        if (validationResult.hasErrors())
+        {
+            throw new ConfigurationException("routes.yaml validation failed. Errors: " + String.join(", ", validationResult.getErrors()));
+        }
+        return this.build(routesConfig);
+    }
+
     public void load(RoutesDefinition config, RouteRegistry routeRegistry)
     {
         routeRegistry.publish(this.build(config));

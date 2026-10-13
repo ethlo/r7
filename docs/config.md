@@ -992,7 +992,7 @@ While the snapshot is fresh, both paths answer with the gateway's health, so one
 | `r7_journal_available_bytes` | gauge | | Free space for journals in `work_dir`. |
 | `r7_journal_bytes_total` | counter | `shard` | Bytes the journal placed in its segments, after compression. |
 | `r7_route_requests_total` | counter | `route`, `code` | Responses sent to clients. |
-| `r7_route_upstream_responses_total` | counter | `route`, `code` | Responses received from upstreams. |
+| `r7_route_upstream_responses_total` | counter | `route`, `code` | Responses received from upstreams. A proxied request no upstream answered is not counted here; its `502`, `503` or `504` is r7's, in `r7_route_requests_total`. |
 | `r7_route_active_requests` | gauge | `route` | Requests in progress. |
 | `r7_route_active_websockets` | gauge | `route` | Open WebSocket tunnels. |
 | `r7_route_journal_plain_bytes_total` | counter | `route` | Bytes journaled, before compression. A compressed batch mixes routes, so what each route takes on disk is not known; `r7_journal_bytes_total` counts that per shard. |

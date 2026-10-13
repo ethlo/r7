@@ -138,7 +138,7 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
             final int clientStatus = exchange.clientResponse() != null ? exchange.clientResponse().status() : 0;
             bucket.recordClientStatus(clientStatus);
 
-            if (serverExchange.wasProxied())
+            if (serverExchange.hasUpstreamResponse())
             {
                 bucket.recordUpstreamStatus(exchange.upstreamResponse().status());
             }

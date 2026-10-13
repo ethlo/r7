@@ -1,0 +1,45 @@
+version: upstream-failure-journal-test
+
+routes:
+  # Nothing listens on port 1: the connect is refused and r7 answers 503 itself (no target reachable).
+  - id: refused
+    match:
+      - PathPrefix:
+          prefix: /refused
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: HEADERS
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:1
+
+  # The upstream answers after the read timeout: r7 answers 504 itself.
+  - id: slow
+    match:
+      - PathPrefix:
+          prefix: /slow
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: HEADERS
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+      timeouts:
+        read: 200ms
+
+  - id: answered
+    match:
+      - PathPrefix:
+          prefix: /answered
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: HEADERS
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
