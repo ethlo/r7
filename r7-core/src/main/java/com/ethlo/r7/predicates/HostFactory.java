@@ -1,5 +1,6 @@
 package com.ethlo.r7.predicates;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.ethlo.r7.api.GatewayPredicate;
@@ -48,6 +49,40 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
         {
             new ValidatorUtils(result)
                     .notEmpty("hosts", hosts);
+            if (hosts != null && !hosts.isEmpty() && names().isEmpty())
+            {
+                result.addError("hosts", "Holds no host name. An entry may hold several, separated by commas.");
+            }
+        }
+
+        /**
+         * Every host name, with comma-separated entries split. Interpolation yields one string per
+         * scalar, so {@code ["${HOST_LIST}"]} is how a comma-separated variable becomes several hosts.
+         * Only this predicate splits: a host name never holds a comma.
+         */
+        List<String> names()
+        {
+            if (hosts == null)
+            {
+                return List.of();
+            }
+            final List<String> names = new ArrayList<>();
+            for (final String entry : hosts)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+                for (final String part : entry.split(",", -1))
+                {
+                    final String name = part.strip();
+                    if (!name.isEmpty())
+                    {
+                        names.add(name);
+                    }
+                }
+            }
+            return names;
         }
     }
 
@@ -57,7 +92,7 @@ public class HostFactory implements GatewayPredicateFactory<HostFactory.Config>
 
         public GP(Config config)
         {
-            this.hosts = config.hosts().toArray(new String[0]);
+            this.hosts = config.names().toArray(new String[0]);
         }
 
         @Override
