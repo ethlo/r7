@@ -136,7 +136,7 @@ public class PredicateRegistry
                 return Condition.FALSE;
             }
             final SampleConfig config = this.bind(name, yamlValue, SampleConfig.class, result);
-            return config != null ? new SampleCondition(config.rate()) : Condition.FALSE;
+            return config != null ? new SampleCondition(config.rate(), scope.draw()) : Condition.FALSE;
         }
 
         final GatewayPredicateFactory<?> requestFactory = this.requestFactories.get(name);

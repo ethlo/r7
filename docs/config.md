@@ -263,7 +263,7 @@ routes:
 | --- | --- | --- | --- |
 | `rate` | Number | Yes | The share of exchanges to match: greater than `0`, at most `1`. |
 
-The draw is made once per exchange, so every `Sample` of one exchange tests the same number: the exchanges `Sample: { rate: 0.05 }` matches are among those `Sample: { rate: 0.1 }` matches, never a separate 5%. `Sample` tests the exchange, not a request, so it has no `leg`, and one written is refused: `[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.`
+Routing makes one draw per exchange, so every `Sample` in the routes' matches tests the same number: the exchanges `Sample: { rate: 0.05 }` matches are among those `Sample: { rate: 0.1 }` matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. `Sample` tests the exchange, not a request, so it has no `leg`, and one written is refused: `[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.`
 
 ---
 
