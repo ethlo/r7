@@ -59,7 +59,8 @@ final class Http1
 
     /**
      * The request line and headers to send upstream: the headers as the pipeline left them, with
-     * Host rewritten to the target, the gateway's X-Forwarded-* added (extending a trusted
+     * Host rewritten to the target (or the client's kept, with preserve_host), the gateway's
+     * X-Forwarded-* added (extending a trusted
      * proxy's chain, starting one otherwise), and framing and
      * Expect left to this hop.
      */

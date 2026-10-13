@@ -64,7 +64,7 @@ public class ModelMapper
                 : List.of();
         final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(TimeoutConfig.defaults());
         final String fallbackRouteId = upstream.fallback() != null ? upstream.fallback().routeId() : null;
-        return new UpstreamDto(targets, timeouts.read(), timeouts.connect(), upstream.healthCheck(), fallbackRouteId);
+        return new UpstreamDto(targets, timeouts.read(), timeouts.connect(), upstream.healthCheck(), fallbackRouteId, upstream.preserveHost());
     }
 
     /**

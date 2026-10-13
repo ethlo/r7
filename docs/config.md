@@ -1066,6 +1066,8 @@ Before a request is proxied, r7 removes the client headers an upstream must not 
 
 r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself. For a trusted proxy it extends that proxy's values (its client's address stays in `X-Forwarded-For`, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the `X-Forwarded-*` headers they receive from r7.
 
+r7 sends the target's own `Host` (its host, and its port when the target URL names one), or the client's with [`preserve_host`](#4-upstream-configuration).
+
 ### Proxy Client (`proxy`)
 
 Configures r7's upstream client, an HTTP/1.1 client with a keep-alive pool per target.
