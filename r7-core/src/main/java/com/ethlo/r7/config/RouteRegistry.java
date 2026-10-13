@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.ethlo.r7.api.GatewayPredicate;
-import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.condition.Condition;
+import com.ethlo.r7.condition.ConditionInput;
 
 public class RouteRegistry
 {
@@ -20,29 +20,37 @@ public class RouteRegistry
     }
 
     /**
-     * A route at the top level, matched by its own predicate.
+     * A route at the top level, matched by its own condition.
      */
-    public record Single(GatewayRoute route) implements RoutingEntry
+    public record Single(GatewayRoute route, Condition match) implements RoutingEntry
     {
+        /**
+         * A route's own entry: its {@link DefaultGatewayRoute#match()}; another implementation
+         * of {@link GatewayRoute} is reached only by id, as a fallback.
+         */
+        public Single(final GatewayRoute route)
+        {
+            this(route, route instanceof DefaultGatewayRoute defaultRoute ? defaultRoute.match() : Condition.FALSE);
+        }
     }
 
     /**
-     * A group's routes behind the group's own predicate, tested once: a request it does not
+     * A group's routes behind the group's own condition, tested once: a request it does not
      * match skips every route of the group, and one it matches but no route of it does goes on
      * to the next entry, as if the routes were written there flat.
      *
-     * @param routePredicates each route's own predicate, without the group's ANDed in (which
-     *                        {@link GatewayRoute#predicate()} has, for display)
+     * @param routeMatches each route's own condition, without the group's ANDed in (which
+     *                     {@link DefaultGatewayRoute#match()} has, for display)
      */
-    public record Group(String id, GatewayPredicate predicate, List<GatewayRoute> routes, List<GatewayPredicate> routePredicates) implements RoutingEntry
+    public record Group(String id, Condition match, List<GatewayRoute> routes, List<Condition> routeMatches) implements RoutingEntry
     {
         public Group
         {
             routes = List.copyOf(routes);
-            routePredicates = List.copyOf(routePredicates);
-            if (routes.size() != routePredicates.size())
+            routeMatches = List.copyOf(routeMatches);
+            if (routes.size() != routeMatches.size())
             {
-                throw new IllegalArgumentException("One predicate per route");
+                throw new IllegalArgumentException("One condition per route");
             }
         }
     }
@@ -75,7 +83,10 @@ public class RouteRegistry
             this(version, null, routes, routes.stream().map(r -> (RoutingEntry) new Single(r)).toList(), unrouted);
         }
 
-        public GatewayRoute findRoute(final GatewayRequest gatewayRequest)
+        /**
+         * @param exchange the exchange being routed: its client request, and its sample draw
+         */
+        public GatewayRoute findRoute(final ConditionInput exchange)
         {
             for (final RoutingEntry entry : this.table)
             {
@@ -83,19 +94,19 @@ public class RouteRegistry
                 {
                     case Single single ->
                     {
-                        if (single.route().predicate().test(gatewayRequest))
+                        if (single.match().test(exchange))
                         {
                             return single.route();
                         }
                     }
                     case Group group ->
                     {
-                        if (group.predicate().test(gatewayRequest))
+                        if (group.match().test(exchange))
                         {
-                            final List<GatewayPredicate> predicates = group.routePredicates();
-                            for (int i = 0; i < predicates.size(); i++)
+                            final List<Condition> matches = group.routeMatches();
+                            for (int i = 0; i < matches.size(); i++)
                             {
-                                if (predicates.get(i).test(gatewayRequest))
+                                if (matches.get(i).test(exchange))
                                 {
                                     return group.routes().get(i);
                                 }
@@ -141,9 +152,9 @@ public class RouteRegistry
         return this.current.get();
     }
 
-    public GatewayRoute findRoute(GatewayRequest gatewayRequest)
+    public GatewayRoute findRoute(final ConditionInput exchange)
     {
-        return this.current.get().findRoute(gatewayRequest);
+        return this.current.get().findRoute(exchange);
     }
 
     public List<GatewayRoute> getRoutes()

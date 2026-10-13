@@ -210,7 +210,7 @@ class UpstreamContextLifecycleTest
         final RouteDefinition definition = original.routeDefinition();
         final UpstreamConfig upstream = definition.upstream();
         final UpstreamConfig slow = new UpstreamConfig(upstream.strategy(), upstream.healthCheck(), new TimeoutConfig(read, null), upstream.targets(), upstream.fallback(), upstream.preserveHost());
-        return new DefaultGatewayRoute(original.uri(), original.predicate(), original.filters(), original.journal(),
+        return new DefaultGatewayRoute(original.uri(), original.match(), original.filters(), original.journal(),
                 new RouteDefinition(definition.id(), slow, definition.match(), definition.journal(), definition.filters()));
     }
 

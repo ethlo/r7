@@ -23,6 +23,10 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayRoute;
+import com.ethlo.r7.condition.Condition;
+import com.ethlo.r7.condition.ConditionInput;
+import com.ethlo.r7.condition.Leg;
+import com.ethlo.r7.condition.RequestCondition;
 import com.ethlo.r7.spi.EngineContext;
 
 /**
@@ -47,20 +51,20 @@ class ConfigLevelsTest
         return (DefaultGatewayRoute) snapshot.routes().stream().filter(r -> r.id().equals(id)).findFirst().orElseThrow();
     }
 
-    private static GatewayRequest request(final String path)
+    private static ConditionInput request(final String path)
     {
         final GatewayRequest request = mock(GatewayRequest.class);
         when(request.path()).thenReturn(path);
         when(request.uri()).thenReturn(path);
         when(request.method()).thenReturn("GET");
-        return request;
+        return ConditionInput.of(request);
     }
 
-    private static GatewayPredicate predicate(final java.util.function.Predicate<GatewayRequest> test)
+    private static Condition predicate(final java.util.function.Predicate<GatewayRequest> test)
     {
         final GatewayPredicate predicate = mock(GatewayPredicate.class);
         when(predicate.test(org.mockito.ArgumentMatchers.any())).thenAnswer(i -> test.test(i.getArgument(0)));
-        return predicate;
+        return new RequestCondition(predicate, Leg.CLIENT);
     }
 
     private static final String GROUPED = """
@@ -131,8 +135,8 @@ class ConfigLevelsTest
     void aGroupsPredicateIsTestedOnceForAllItsRoutes()
     {
         final AtomicInteger groupTests = new AtomicInteger();
-        final GatewayPredicate group = predicate(r -> groupTests.incrementAndGet() > 0);
-        final GatewayPredicate never = predicate(r -> false);
+        final Condition group = predicate(r -> groupTests.incrementAndGet() > 0);
+        final Condition never = predicate(r -> false);
         final GatewayRoute a = mock(GatewayRoute.class);
         final GatewayRoute b = mock(GatewayRoute.class);
         final RouteRegistry.Snapshot snapshot = new RouteRegistry.Snapshot("v", null, List.of(a, b),

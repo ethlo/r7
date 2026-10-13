@@ -22,13 +22,6 @@ public interface GatewayRoute
     List<String> uri();
 
     /**
-     * The logic used to determine if an incoming request matches this route.
-     *
-     * @return the route predicate
-     */
-    GatewayPredicate predicate();
-
-    /**
      * The ordered list of filters to be applied to requests matching this route.
      *
      * @return the configured filters

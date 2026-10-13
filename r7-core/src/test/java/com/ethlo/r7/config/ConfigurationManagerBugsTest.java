@@ -10,6 +10,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.ethlo.r7.condition.Condition;
 import com.ethlo.r7.spi.EngineContext;
 
 /**
@@ -92,7 +93,7 @@ class ConfigurationManagerBugsTest
                 """);
 
         final RoutesDefinition config = ConfigurationManager.load(file, RoutesDefinition.class);
-        assertThat(manager.build(config).routes().getFirst().predicate()).isSameAs(FalsePredicate.INSTANCE);
+        assertThat(manager.build(config).routes().getFirst()).extracting(r -> ((DefaultGatewayRoute) r).match()).isSameAs(Condition.FALSE);
     }
 
     /**

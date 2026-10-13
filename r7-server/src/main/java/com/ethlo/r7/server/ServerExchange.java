@@ -2,6 +2,7 @@ package com.ethlo.r7.server;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
@@ -18,6 +19,8 @@ import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.UpstreamOutcome;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.condition.ConditionInput;
+import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.journal.StatefulJournal;
@@ -38,7 +41,7 @@ import com.ethlo.r7.status.TrafficMetrics;
  * framing, hop-by-hop and forwarding headers, the client address - is the pipeline's, applied to
  * what the server exposes here, so every server gets the same checks.
  */
-public abstract class ServerExchange implements ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange
+public abstract class ServerExchange implements ConditionInput, ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange
 {
     /**
      * An upstream timing not taken. {@link System#nanoTime()} can return any value, but this one
@@ -91,6 +94,8 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     boolean upstreamFailed;
     boolean upstreamBodyFailed;
     long journalBytes;
+    // The one draw every Sample of this exchange tests against; NaN until the first asks.
+    private double sampleDraw = Double.NaN;
 
     protected ServerExchange(final GatewayPipeline pipeline)
     {
@@ -307,6 +312,40 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     public boolean wasProxied()
     {
         return this.proxyStartNanos != NOT_RECORDED;
+    }
+
+    // --- What conditions test ---------------------------------------------------------------
+
+    @Override
+    public GatewayRequest request(final Leg leg)
+    {
+        if (leg == Leg.CLIENT)
+        {
+            // Before open() the snapshot is not taken yet; when a route is chosen the live
+            // request is still the client's, unchanged.
+            return this.clientRequest != null ? this.clientRequest : this.liveRequest;
+        }
+        return this.proxyStartNanos != NOT_RECORDED ? this.upstreamRequest : null;
+    }
+
+    @Override
+    public GatewayResponse response(final Leg leg)
+    {
+        if (leg == Leg.CLIENT)
+        {
+            return this.clientResponse;
+        }
+        return this.upstreamHeadNanos != NOT_RECORDED ? this.upstreamResponse : null;
+    }
+
+    @Override
+    public double sampleDraw()
+    {
+        if (Double.isNaN(this.sampleDraw))
+        {
+            this.sampleDraw = ThreadLocalRandom.current().nextDouble();
+        }
+        return this.sampleDraw;
     }
 
     // --- For metrics ------------------------------------------------------------------------

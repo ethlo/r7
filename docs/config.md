@@ -226,6 +226,7 @@ Predicates determine whether an incoming request matches a route.
 * **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
 * **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
 * **Exact or Regex:** `Path`, `PathPrefix`, `Host`, `RequestHeader`, `QueryParameter` and `Cookie` compare values literally; their `Match*` siblings take a regex. A literal value that looks like a regex (`/api/.*`, `^Bearer .+$`, `[a-f0-9]{32}`), or a path or host with Spring Cloud Gateway wildcards or templates (`/api/**`, `/users/{id}`, `*.example.com`), is logged as a warning when the routes load, with its path and line, because it would only match a client that sends those exact characters.
+* **Legs:** Every predicate takes a `leg` parameter beside its own: `client`, the default, tests the request as the client sent it, and `upstream` the request r7 sends to the upstream. When a route is chosen there is no upstream request yet, so a route's `match` refuses `leg: upstream`: `[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leave leg out to test the client's.`
 * **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes. Only that list form is fallback-only: any other empty condition, at the top of a match or inside it (`match: {}`, `match: { or: [] }`, `match: { and: [] }`, `- {}`, `not: {}`), is refused at startup.
 
 ### Logical Meta-Predicates
@@ -233,6 +234,36 @@ Predicates determine whether an incoming request matches a route.
 * `and`: True if **all** child predicates are true. Short-circuits on first failure.
 * `or`: True if **at least one** child predicate is true. Short-circuits on first success.
 * `not`: Inverts the result of a **single** child condition, written as a mapping (`not: { Method: { methods: [GET] } }`). A list is refused at startup, since `not: [A, B]` reads both as "not all of" and "none of": write `not: { or: [...] }` for none of several, `not: { and: [...] }` for not all of them.
+
+### Sample
+
+Sending a share of traffic to a new version means choosing requests at random. `Sample` matches a share of exchanges, drawn from a random source; in a route's `match` it sends that share to a canary:
+
+```yaml
+routes:
+  - id: checkout-canary
+    match:
+      - PathPrefix:
+          prefix: /checkout/
+      - Sample:
+          rate: 0.05        # one exchange in twenty
+    upstream:
+      targets:
+        - url: "http://checkout-v2:8080"
+  - id: checkout
+    match:
+      - PathPrefix:
+          prefix: /checkout/
+    upstream:
+      targets:
+        - url: "http://checkout:8080"
+```
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `rate` | Number | Yes | The share of exchanges to match: greater than `0`, at most `1`. |
+
+The draw is made once per exchange, so every `Sample` of one exchange tests the same number: the exchanges `Sample: { rate: 0.05 }` matches are among those `Sample: { rate: 0.1 }` matches, never a separate 5%. `Sample` tests the exchange, not a request, so it has no `leg`, and one written is refused: `[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.`
 
 ---
 

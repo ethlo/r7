@@ -1,5 +1,6 @@
 package com.ethlo.r7.status.dto;
 
+import com.ethlo.r7.condition.Condition;
 import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.journal.HeaderNameSet;
 import com.ethlo.r7.util.FilterRegistry;
@@ -13,12 +14,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.ethlo.r7.api.GatewayFilter;
-import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.config.UpstreamConfig;
-import com.ethlo.r7.predicates.CompositePredicate;
 import com.ethlo.r7.status.PipelineVisualizer;
 import com.ethlo.r7.status.RouteMetricsBucket;
 
@@ -45,7 +44,7 @@ public class ModelMapper
                 def.id(),
                 route.group(),
                 order,
-                toPredicateNode(route.predicate()),
+                toMatchNode(route.match()),
                 journal,
                 def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
                 toUpstream(def.upstream()),
@@ -79,26 +78,22 @@ public class ModelMapper
         return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, safeRequestHeaders, safeResponseHeaders);
     }
 
-    private static MatchDto toPredicateNode(final GatewayPredicate predicate)
+    private static MatchDto toMatchNode(final Condition condition)
     {
-        if (predicate == null)
+        if (condition == null)
         {
             return null;
         }
 
         final List<MatchDto> childNodes = new ArrayList<>();
-        final List<GatewayPredicate> children = predicate instanceof CompositePredicate compositePredicate ? compositePredicate.children() : null;
-        if (children != null)
+        for (final Condition child : condition.children())
         {
-            for (final GatewayPredicate child : children)
-            {
-                childNodes.add(toPredicateNode(child));
-            }
+            childNodes.add(toMatchNode(child));
         }
 
         return new MatchDto(
-                predicate.name(),
-                predicate.summary(),
+                condition.name(),
+                condition.summary(),
                 childNodes
         );
     }
