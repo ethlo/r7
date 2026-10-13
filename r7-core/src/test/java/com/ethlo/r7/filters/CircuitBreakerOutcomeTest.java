@@ -83,4 +83,32 @@ class CircuitBreakerOutcomeTest
         breaker.complete(CircuitBreakerKit.answeredAfter(Duration.ofMillis(500), 200));
         assertThat(breaker.health()).isEqualTo("ERROR");
     }
+
+    @Test
+    void aRequestAdmittedBeforeTheProbeCannotResolveTheProbe()
+    {
+        final CircuitBreakerKit.Breaker breaker = CircuitBreakerKit.breaker(2, Duration.ZERO, null);
+        final CircuitBreakerKit.Exchange stale = CircuitBreakerKit.answered(200);
+        breaker.complete(CircuitBreakerKit.answered(500));
+        breaker.complete(CircuitBreakerKit.answered(500));
+        assertThat(breaker.health()).isEqualTo("ERROR");
+
+        final CircuitBreakerKit.Exchange probe = CircuitBreakerKit.answered(500);
+        assertThat(breaker.through(probe)).isTrue();
+        assertThat(breaker.health()).isEqualTo("WARN");
+
+        breaker.complete(stale);
+        assertThat(breaker.health()).as("a stale success does not close it").isEqualTo("WARN");
+
+        breaker.complete(probe);
+        assertThat(breaker.health()).as("the failed probe reopens it").isEqualTo("ERROR");
+    }
+
+    @Test
+    void aSlowCallTooLongForNanosIsAValidationErrorNotAnException()
+    {
+        final com.ethlo.r7.validation.ValidationResult result = new com.ethlo.r7.validation.ValidationResult();
+        new CircuitBreakerFactory.Config(1, LONG, Duration.ofDays(200_000)).validate(result);
+        assertThat(result.hasErrors()).isTrue();
+    }
 }

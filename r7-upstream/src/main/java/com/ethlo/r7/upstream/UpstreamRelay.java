@@ -179,7 +179,8 @@ public final class UpstreamRelay
         catch (final ClientWriteException e)
         {
             exchange.onClientAborted();
-            throw new ProxyFailure(502, "Upstream failed", new ProxyConnectionException("Writing the response to the client failed: " + e.getMessage()));
+            // No cause: the client left, which StandardErrorHandler would otherwise log as an upstream error.
+            throw new ProxyFailure(502, "Upstream failed", null);
         }
         catch (final IOException e)
         {
@@ -434,6 +435,10 @@ public final class UpstreamRelay
         {
             // Not out.close(): that would complete the client's message around a partial body.
             exchange.abortResponse();
+            if (!(e instanceof ClientWriteException))
+            {
+                exchange.onUpstreamBodyFailed();
+            }
             throw e;
         }
         exchange.onUpstreamResponseEnd();

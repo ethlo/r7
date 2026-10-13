@@ -86,9 +86,10 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             new ValidatorUtils(result)
                     .required("failure_threshold", failureThreshold())
                     .required("cooldown_period", cooldownPeriod());
-            if (slowCall() != null && (slowCall().isNegative() || slowCall().isZero()))
+            if (slowCall() != null)
             {
-                result.addError("slow_call", "Must be greater than zero, received " + slowCall());
+                // Bounded by what a long of nanoseconds holds, as the filter converts it.
+                new ValidatorUtils(result).requirePositive("slow_call", slowCall(), Duration.ofNanos(Long.MAX_VALUE));
             }
         }
 
@@ -222,16 +223,17 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
                 // The breaker's own refusal says nothing about the upstream.
                 return;
             }
+            final boolean probe = mark != null && mark.probe;
             switch (verdict(mark, exchange.upstreamOutcome(), exchange))
             {
-                case FAILURE -> this.handleFailure();
-                case SUCCESS -> this.handleSuccess();
+                case FAILURE -> this.handleFailure(probe);
+                case SUCCESS -> this.handleSuccess(probe);
                 case NEITHER ->
                 {
                     // A probe that proved nothing must not leave the circuit half-open, where every
                     // request is refused and none is left to probe. The cool-down has passed, so the
                     // next request probes.
-                    if (mark != null && mark.probe)
+                    if (probe)
                     {
                         this.state.compareAndSet(State.HALF_OPEN, State.OPEN);
                     }
@@ -258,14 +260,19 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             };
         }
 
-        private void handleFailure()
+        // Only the probe resolves half-open. A request admitted while closed that finishes after
+        // the probe started says nothing about whether the upstream has recovered.
+        private void handleFailure(final boolean probe)
         {
             final State currentState = this.state.get();
 
             if (currentState == State.HALF_OPEN)
             {
-                this.openTimestamp.set(System.currentTimeMillis());
-                this.state.set(State.OPEN);
+                if (probe)
+                {
+                    this.openTimestamp.set(System.currentTimeMillis());
+                    this.state.set(State.OPEN);
+                }
             }
             else if (currentState == State.CLOSED)
             {
@@ -280,14 +287,17 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             }
         }
 
-        private void handleSuccess()
+        private void handleSuccess(final boolean probe)
         {
             final State currentState = this.state.get();
 
             if (currentState == State.HALF_OPEN)
             {
-                this.consecutiveFailures.set(0);
-                this.state.set(State.CLOSED);
+                if (probe)
+                {
+                    this.consecutiveFailures.set(0);
+                    this.state.set(State.CLOSED);
+                }
             }
             else if (currentState == State.CLOSED)
             {

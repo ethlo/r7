@@ -609,6 +609,10 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         }
         catch (final ProxyFailure failure)
         {
+            if (failure.status() >= 500 && failure.getCause() != null)
+            {
+                upstreamFailedToAnswer();
+            }
             respondError(failure.status(), failure.message());
             if (failure.getCause() != null)
             {
@@ -704,6 +708,12 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     public void onUpstreamResponseEnd()
     {
         upstreamResponseEndRead();
+    }
+
+    @Override
+    public void onUpstreamBodyFailed()
+    {
+        upstreamBodyReadFailed();
     }
 
     @Override

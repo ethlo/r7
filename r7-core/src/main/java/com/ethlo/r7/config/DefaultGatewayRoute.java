@@ -79,7 +79,11 @@ public class DefaultGatewayRoute implements GatewayRoute
         this.beforeCommitGatewayFilters = ofType(allPhases, ClientResponseGatewayFilter.class, new ClientResponseGatewayFilter[0]);
         this.completedGatewayFilters = ofType(allPhases, CompletedGatewayFilter.class, new CompletedGatewayFilter[0]);
 
-        this.startedFallbackAwareFilters = ofType(concat(this.globalFilters, this.carriedFilters), FallbackAwareGatewayFilter.class, new FallbackAwareGatewayFilter[0]);
+        this.startedFallbackAwareFilters = concat(this.globalFilters, this.carriedFilters).stream()
+                .filter(ClientRequestGatewayFilter.class::isInstance)
+                .filter(FallbackAwareGatewayFilter.class::isInstance)
+                .map(FallbackAwareGatewayFilter.class::cast)
+                .toArray(FallbackAwareGatewayFilter[]::new);
 
         this.globalClientRequestFilterCount = (int) this.globalFilters.stream()
                 .filter(f -> f instanceof ClientRequestGatewayFilter)

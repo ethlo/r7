@@ -86,6 +86,10 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     // Whether a write to the client failed while the upstream's response was being relayed: the
     // client went away, which says nothing about the upstream.
     boolean clientAborted;
+    // Whether the proxy failed in a way the upstream caused, recorded when it happens: the status
+    // the client finally gets can be rewritten by a response filter, so it cannot tell.
+    boolean upstreamFailed;
+    boolean upstreamBodyFailed;
     long journalBytes;
 
     protected ServerExchange(final GatewayPipeline pipeline)
@@ -365,6 +369,16 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
         this.clientAborted = true;
     }
 
+    protected final void upstreamFailedToAnswer()
+    {
+        this.upstreamFailed = true;
+    }
+
+    protected final void upstreamBodyReadFailed()
+    {
+        this.upstreamBodyFailed = true;
+    }
+
     @Override
     public UpstreamOutcome upstreamOutcome()
     {
@@ -374,16 +388,21 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
         }
         if (!this.upstreamResponded)
         {
-            // r7's own answer in the upstream's place: a 5xx means the upstream let it down,
-            // anything else (400, 413) is the request's own fault.
-            return this.clientResponse.status() >= 500 ? UpstreamOutcome.NO_RESPONSE : UpstreamOutcome.NOT_ASKED;
+            // r7's own answer in the upstream's place: only a failure the upstream caused counts
+            // against it, not the client's own fault (400, 413) or a local limit.
+            return this.upstreamFailed ? UpstreamOutcome.NO_RESPONSE : UpstreamOutcome.NOT_ASKED;
         }
         final long headNanos = this.upstreamHeadNanos - this.proxyStartNanos;
         if (this.webSocketUpgraded || this.upstreamEndNanos != NOT_RECORDED)
         {
             return new UpstreamOutcome(UpstreamOutcome.Kind.ANSWERED, headNanos);
         }
-        return new UpstreamOutcome(this.clientAborted ? UpstreamOutcome.Kind.CLIENT_ABORTED : UpstreamOutcome.Kind.BODY_FAILED, headNanos);
+        if (this.clientAborted)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.CLIENT_ABORTED, headNanos);
+        }
+        // A head with no end and no upstream read failure is r7's own refusal (a 101 it cannot tunnel).
+        return new UpstreamOutcome(this.upstreamBodyFailed ? UpstreamOutcome.Kind.BODY_FAILED : UpstreamOutcome.Kind.NOT_ASKED, headNanos);
     }
 
     /**
