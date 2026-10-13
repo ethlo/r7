@@ -129,7 +129,9 @@ matches (no route, ambiguous path, TRACE and similar) are journaled only when co
 
 Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (`gateway.route.id`, `gateway.target`; the JSON line has them as `route_id` and
-`upstream_request.targets`), and the journal stores ISO-8859-1 text only. A route
+`upstream_request.targets`), and the journal stores ISO-8859-1 text only. A route declared in
+a [group](config.md#root-groups-and-routes) is also recorded with the group's id as
+`gateway.route.group` (in the JSON line's `attributes`). A route or group
 id or target URL with a character outside ISO-8859-1 is refused at startup, naming the field.
 
 ### Redacted header and query parameter values

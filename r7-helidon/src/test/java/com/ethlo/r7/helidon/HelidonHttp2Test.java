@@ -69,7 +69,6 @@ class HelidonHttp2Test
                           parts: 1
                       - StaticContent:
                           base_directory: %s
-                    upstream: null
                   - id: proxied
                     match:
                       - PathPrefix:

@@ -25,7 +25,7 @@ import java.util.stream.Stream;
  *     file name the docs site shows above the snippet. {@link #FILES} lists the names a title
  *     can take.</li>
  *     <li>{@code ```yaml} with no title: part of a {@code routes.yaml}, either top-level keys
- *     ({@code routes}, {@code global_filters}, ...) or the keys of one route ({@code match},
+ *     ({@code routes}, {@code filters}, ...) or the keys of one route ({@code match},
  *     {@code filters}, {@code journal}, ...). The gateway's docs test completes it with a
  *     placeholder route before loading it.</li>
  *     <li>{@code <!-- docs-check: skip -->} on the line right above the fence: not checked. For

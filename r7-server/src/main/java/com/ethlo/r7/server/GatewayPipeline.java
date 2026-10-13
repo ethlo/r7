@@ -78,6 +78,7 @@ import com.ethlo.r7.util.constants.MediaTypes;
 public final class GatewayPipeline
 {
     static final String ROUTE_ID_KEY = "gateway.route.id";
+    static final String ROUTE_GROUP_KEY = "gateway.route.group";
     public static final String UNROUTED_REASON_KEY = "gateway.unrouted.reason";
     static final String UPSTREAM_TARGET_KEY = "gateway.target";
     static final String SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
@@ -329,8 +330,9 @@ public final class GatewayPipeline
 
                 // The fallback route runs as if the request had matched it: its own request
                 // filters, on this same thread, then its own upstream filters and
-                // upstream, or its own fallback. Global filters already ran once for this request.
-                executeRequestFilters(ex, fallbackRoute, fallbackRoute.globalClientRequestFilterCount());
+                // upstream, or its own fallback. Request filters that already ran for this
+                // request (the root's, a shared group's, the first route's) do not run again.
+                executeRequestFilters(ex, fallbackRoute, fallbackRoute.startedClientRequestFilterCount());
                 return;
             }
 
@@ -628,6 +630,10 @@ public final class GatewayPipeline
     private static void tagExchangeAttributes(final ServerExchange ex)
     {
         ex.attributes().add(ROUTE_ID_KEY, ex.route.id());
+        if (ex.route.group() != null)
+        {
+            ex.attributes().add(ROUTE_GROUP_KEY, ex.route.group());
+        }
         Optional.ofNullable(ex.reasonFilter).map(GatewayFilter::name).ifPresent(name ->
                 ex.attributes().add(SHORT_CIRCUIT_FILTER_KEY, name));
 

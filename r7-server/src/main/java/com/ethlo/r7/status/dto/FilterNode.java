@@ -4,13 +4,15 @@ import com.ethlo.r7.api.ComponentStatus;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * @param global true for an instance of one of routes.yaml's {@code global_filters}
+ * @param level  where the filter was declared: {@code root} (one instance for the gateway),
+ *               {@code group} (one for the routes of its group) or {@code route}; {@code route}
+ *               for the upstream
  * @param status what the filter, or the upstream, reports about itself; null when it reports nothing
  */
 public record FilterNode(
         String name,
         String summary,
-        boolean global,
+        String level,
         @JsonProperty("on_client_request")
         boolean onClientRequest,
         @JsonProperty("on_upstream_request")

@@ -20,7 +20,7 @@ class GatewayHealthTest
     @Test
     void aGatewayWhoseComponentsAreAllOkIsOk()
     {
-        final GatewayHealth health = health(List.of(route("a", node("CircuitBreaker", false, ComponentStatus.ok(), upstream(ComponentStatus.ok())))), LOADED_OK);
+        final GatewayHealth health = health(List.of(route("a", node("CircuitBreaker", "route", ComponentStatus.ok(), upstream(ComponentStatus.ok())))), LOADED_OK);
         assertThat(health.health()).isEqualTo(ComponentStatus.Health.OK);
         assertThat(health.problems()).isEmpty();
     }
@@ -29,8 +29,8 @@ class GatewayHealthTest
     void theWorstComponentDecidesAndEveryOneNotOkIsListed()
     {
         final GatewayHealth health = health(List.of(
-                route("a", node("RateLimiter", false, status(ComponentStatus.Health.WARN, "full"), upstream(ComponentStatus.ok()))),
-                route("b", node("CircuitBreaker", false, status(ComponentStatus.Health.ERROR, "Open"), upstream(status(ComponentStatus.Health.WARN, "1 of 2 targets down"))))), LOADED_OK);
+                route("a", node("RateLimiter", "route", status(ComponentStatus.Health.WARN, "full"), upstream(ComponentStatus.ok()))),
+                route("b", node("CircuitBreaker", "route", status(ComponentStatus.Health.ERROR, "Open"), upstream(status(ComponentStatus.Health.WARN, "1 of 2 targets down"))))), LOADED_OK);
 
         assertThat(health.health()).isEqualTo(ComponentStatus.Health.ERROR);
         assertThat(health.problems()).containsExactly(
@@ -40,17 +40,34 @@ class GatewayHealthTest
     }
 
     /**
-     * A global filter is one instance in front of every route: it is one problem, not one per route.
+     * A root filter is one instance in front of every route: it is one problem, not one per route.
      */
     @Test
-    void aGlobalFilterIsListedOnceWithoutARoute()
+    void aRootFilterIsListedOnceWithoutARoute()
     {
         final ComponentStatus open = status(ComponentStatus.Health.ERROR, "Open");
         final GatewayHealth health = health(List.of(
-                route("a", node("CircuitBreaker", true, open, upstream(null))),
-                route("b", node("CircuitBreaker", true, open, upstream(null)))), LOADED_OK);
+                route("a", node("CircuitBreaker", "root", open, upstream(null))),
+                route("b", node("CircuitBreaker", "root", open, upstream(null)))), LOADED_OK);
 
         assertThat(health.problems()).containsExactly(new GatewayHealth.Problem(null, "CircuitBreaker", 1, ComponentStatus.Health.ERROR, "Open"));
+    }
+
+    /**
+     * A group's filter is one instance in front of the group's routes: one problem, under the group.
+     */
+    @Test
+    void aGroupFilterIsListedOnceUnderItsGroup()
+    {
+        final ComponentStatus open = status(ComponentStatus.Health.ERROR, "Open");
+        final GatewayHealth health = health(List.of(
+                route("a", "g", node("CircuitBreaker", "group", open, upstream(null))),
+                route("b", "g", node("CircuitBreaker", "group", open, upstream(null))),
+                route("c", "h", node("CircuitBreaker", "group", open, upstream(null)))), LOADED_OK);
+
+        assertThat(health.problems()).containsExactly(
+                new GatewayHealth.Problem("g", "CircuitBreaker", 1, ComponentStatus.Health.ERROR, "Open"),
+                new GatewayHealth.Problem("h", "CircuitBreaker", 1, ComponentStatus.Health.ERROR, "Open"));
     }
 
     /**
@@ -119,17 +136,22 @@ class GatewayHealthTest
 
     private static RouteConfigDto route(final String id, final FilterNode nodes)
     {
-        return new RouteConfigDto(id, 1, null, null, null, null, List.of(), nodes);
+        return route(id, null, nodes);
     }
 
-    private static FilterNode node(final String name, final boolean global, final ComponentStatus status, final FilterNode child)
+    private static RouteConfigDto route(final String id, final String group, final FilterNode nodes)
     {
-        return new FilterNode(name, name, global, true, false, false, false, status, child);
+        return new RouteConfigDto(id, group, 1, null, null, null, null, List.of(), nodes);
+    }
+
+    private static FilterNode node(final String name, final String level, final ComponentStatus status, final FilterNode child)
+    {
+        return new FilterNode(name, name, level, true, false, false, false, status, child);
     }
 
     private static FilterNode upstream(final ComponentStatus status)
     {
-        return new FilterNode("upstream", "http://localhost", false, false, false, false, false, status, null);
+        return new FilterNode("upstream", "http://localhost", "route", false, false, false, false, status, null);
     }
 
     private static ComponentStatus status(final ComponentStatus.Health health, final String detail)

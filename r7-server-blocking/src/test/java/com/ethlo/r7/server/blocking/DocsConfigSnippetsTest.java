@@ -30,7 +30,7 @@ class DocsConfigSnippetsTest
 {
     private static final YAMLMapper YAML = new YAMLMapper();
 
-    private static final Set<String> ROUTES_KEYS = Set.of("version", "global_filters", "routes", "unrouted");
+    private static final Set<String> ROUTES_KEYS = Set.of("version", "filters", "upstream", "routes", "unrouted");
     private static final Set<String> ROUTE_KEYS = Set.of("id", "match", "upstream", "filters", "journal");
 
     /**
@@ -113,9 +113,13 @@ class DocsConfigSnippetsTest
         final ObjectNode file = YAML.createObjectNode();
         final ObjectNode route = (ObjectNode) YAML.readTree(PLACEHOLDER_ROUTE);
         boolean routeKeys = false;
+        // filters and upstream are keys of both: they are the root's in a snippet with a list of
+        // routes, and the placeholder route's in a fragment of one route
+        final boolean wholeFile = parsed.has("routes");
         for (final var entry : parsed.properties())
         {
-            if (ROUTES_KEYS.contains(entry.getKey()))
+            final boolean both = ROUTES_KEYS.contains(entry.getKey()) && ROUTE_KEYS.contains(entry.getKey());
+            if (ROUTES_KEYS.contains(entry.getKey()) && (!both || wholeFile))
             {
                 file.set(entry.getKey(), entry.getValue());
             }

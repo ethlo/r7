@@ -16,13 +16,13 @@ import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.spi.EngineContext;
 
 /**
- * M5: a global filter is declared once, in {@code global_filters}, precisely so every route
+ * M5: a global filter is declared once, at the root of routes.yaml, precisely so every route
  * shares its state - one RateLimiter bucket set across the whole gateway, one CircuitBreaker per
  * upstream regardless of how many routes lead to it. Instantiating it again for every route it
  * gets attached to (as {@link ConfigurationManager#build} once did, inside the per-route
  * transformation loop) silently multiplies the configured limit by the route count instead.
  */
-class GlobalFilterSharingTest
+class RootFilterSharingTest
 {
     @TempDir
     Path dir;
@@ -51,10 +51,10 @@ class GlobalFilterSharingTest
     }
 
     @Test
-    void aGlobalRateLimiterIsTheSameInstanceOnEveryRoute() throws IOException
+    void aRootRateLimiterIsTheSameInstanceOnEveryRoute() throws IOException
     {
         final String globals = """
-                global_filters:
+                filters:
                   - RateLimiter:
                       capacity: 1
                       refill_tokens: 1
@@ -77,7 +77,7 @@ class GlobalFilterSharingTest
     @Test
     void aRouteLevelRateLimiterIsStillPerRoute() throws IOException
     {
-        // A filter declared under a route's own `filters:` (not `global_filters:`) has always
+        // A filter declared under a route's own `filters:` (not the root `filters:`) has always
         // been route-scoped and must stay that way: only the global-filter sharing changed.
         final String routeWithOwnLimiter = """
                   - id: solo

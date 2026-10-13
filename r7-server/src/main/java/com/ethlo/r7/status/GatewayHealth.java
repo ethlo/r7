@@ -24,10 +24,12 @@ import com.ethlo.r7.status.dto.RouteConfigDto;
 public record GatewayHealth(ComponentStatus.Health health, List<Problem> problems)
 {
     /**
-     * @param route     the route the component belongs to, or null for a global filter (one
-     *                  instance every route shares), for routes.yaml itself and for the journal
+     * @param route     the route the component belongs to; the group for a group's filter (one
+     *                  instance its routes share; group and route ids are one namespace); null
+     *                  for a root filter (one instance every route shares), for routes.yaml
+     *                  itself and for the journal
      * @param component the filter's name, {@code upstream}, {@code routes.yaml} or {@code journal}
-     * @param position  the filter's place in its route's pipeline, global filters first; 0 for
+     * @param position  the filter's place in its route's pipeline, root filters first; 0 for
      *                  the upstream and null for routes.yaml and the journal
      * @param detail    a short line for a person, or null
      */
@@ -38,7 +40,7 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
     /**
      * One component's report, as the metrics and the roll-up both read it.
      *
-     * @param route null for a global filter
+     * @param route the group for a group's filter, null for a root filter
      */
     record ComponentReport(String route, String component, int position, ComponentStatus status)
     {
@@ -51,23 +53,31 @@ public record GatewayHealth(ComponentStatus.Health health, List<Problem> problem
 
     /**
      * Each route's components that report a status: its filters, numbered by their place in the
-     * route's pipeline (global filters first), and its upstream as position 0. A global filter is
+     * route's pipeline (root filters first), and its upstream as position 0. A root filter is
      * one instance shared by every route, so it is reported once and without a route: under each
-     * route its gateway-wide counts would be summed once per route.
+     * route its gateway-wide counts would be summed once per route. A group's filter is likewise
+     * reported once, under the group's id.
      */
     static List<ComponentReport> components(final List<RouteConfigDto> routes)
     {
         final List<ComponentReport> reported = new ArrayList<>();
-        final Set<Integer> globalsReported = new HashSet<>();
+        final Set<String> sharedReported = new HashSet<>();
         for (final RouteConfigDto route : routes)
         {
             int position = 1;
             for (FilterNode node = route.filterNodes(); node != null; node = node.child())
             {
                 final boolean upstream = node.child() == null;
-                if (node.status() != null && (!node.global() || globalsReported.add(position)))
+                final String owner = switch (node.level())
                 {
-                    reported.add(new ComponentReport(node.global() ? null : route.id(), upstream ? "upstream" : node.name(), upstream ? 0 : position, node.status()));
+                    case "root" -> null;
+                    case "group" -> route.group();
+                    default -> route.id();
+                };
+                final boolean shared = !"route".equals(node.level());
+                if (node.status() != null && (!shared || sharedReported.add(owner + "#" + position)))
+                {
+                    reported.add(new ComponentReport(owner, upstream ? "upstream" : node.name(), upstream ? 0 : position, node.status()));
                 }
                 position++;
             }

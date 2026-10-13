@@ -197,7 +197,7 @@ timeouts. This catches the classic failure where a rate limiter or an auth
 filter turns the run into a 429 benchmark and the throughput looks great.
 
 **Config is deliberately bare.** `config/routes.yaml.tmpl` has no
-`global_filters`. Metrics, CORS and size limits are real costs, but they are
+root `filters`. Metrics, CORS and size limits are real costs, but they are
 *feature* costs — measure them by adding a scenario, not by baking them into the
 number you call "gateway overhead".
 

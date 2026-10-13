@@ -83,7 +83,7 @@ class FallbackValidationTest
     }
 
     /**
-     * Global filters are instantiated once and shared by every route (see M5 in the filter-runtime
+     * Root filters are instantiated once and shared by every route (see M5 in the filter-runtime
      * review: instantiating one per route silently multiplied a global RateLimiter's or
      * CircuitBreaker's limit by the route count). A request's global request phase therefore runs
      * on the very same instances regardless of which route matched, fallback or not, and that
@@ -93,7 +93,7 @@ class FallbackValidationTest
     void fallbackRunsWithTheMatchedRoutesGlobalFilterInstances() throws IOException
     {
         final String globals = """
-                global_filters:
+                filters:
                   - RequestSizeLimit:
                       max_size: 1MB
                   - SetResponseHeader:
@@ -109,7 +109,7 @@ class FallbackValidationTest
         final DefaultGatewayRoute bAfterA = a.asFallbackOfThis(b);
 
         // Request phase: only the global, and it is a's instance
-        assertThat(bAfterA.globalClientRequestFilterCount()).isEqualTo(1);
+        assertThat(bAfterA.startedClientRequestFilterCount()).isEqualTo(1);
         assertThat(bAfterA.clientRequestFilters()[0]).isSameAs(a.clientRequestFilters()[0]);
         // Response phase: a's global instance, then b's own filter
         assertThat(bAfterA.beforeCommitGatewayFilters()).hasSize(2);
@@ -139,7 +139,9 @@ class FallbackValidationTest
         final DefaultGatewayRoute bAfterA = a.asFallbackOfThis(b);
 
         final Object cors = a.clientRequestFilters()[0];
-        assertThat(bAfterA.clientRequestFilters()).isEmpty();
+        // The started filter leads the chain only to be skipped: its request phase already ran
+        assertThat(bAfterA.clientRequestFilters()).containsExactly((com.ethlo.r7.api.ClientRequestGatewayFilter) cors);
+        assertThat(bAfterA.startedClientRequestFilterCount()).isEqualTo(1);
         assertThat(bAfterA.beforeUpstreamGatewayFilters()).isEmpty();
         assertThat(bAfterA.beforeCommitGatewayFilters()).containsExactly((com.ethlo.r7.api.ClientResponseGatewayFilter) cors);
 
@@ -170,7 +172,8 @@ class FallbackValidationTest
 
         final DefaultGatewayRoute bAfterA = a.asFallbackOfThis(b);
 
-        assertThat(bAfterA.clientRequestFilters()).isEmpty();
+        assertThat(bAfterA.clientRequestFilters()).containsExactly(started);
+        assertThat(bAfterA.startedClientRequestFilterCount()).isEqualTo(1);
         assertThat(bAfterA.beforeUpstreamGatewayFilters()).containsExactly(started);
     }
 

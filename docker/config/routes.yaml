@@ -1,5 +1,5 @@
 version: my-version-4.1
-global_filters:
+filters:
   - SimpleMetrics
   - AddCorrelationId
 routes:

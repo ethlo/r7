@@ -10,7 +10,6 @@ routes:
           parts: 1
       - StaticContent:
           base_directory: /tmp
-    upstream: null
 
   - id: static-hidden-allowed
     match:
@@ -22,4 +21,3 @@ routes:
       - StaticContent:
           base_directory: /tmp
           serve_hidden_files: true
-    upstream: null

@@ -82,7 +82,7 @@ class PrometheusTextTest
     }
 
     /**
-     * A global filter is one instance in front of every route: its counts are gateway-wide, so
+     * A root filter is one instance in front of every route: its counts are gateway-wide, so
      * it is reported once without a route, or summing over routes would multiply them.
      */
     @Test
@@ -104,9 +104,9 @@ class PrometheusTextTest
 
     private static RouteConfigDto route(final String id, final ComponentStatus global, final ComponentStatus own)
     {
-        final FilterNode upstream = new FilterNode("upstream", "None", false, false, false, false, false, null, null);
-        final FilterNode breaker = new FilterNode("CircuitBreaker", "", false, true, false, true, false, own, upstream);
-        final FilterNode limiter = new FilterNode("RateLimiter", "", true, true, false, true, false, global, breaker);
-        return new RouteConfigDto(id, 1, null, null, null, null, List.of(), limiter);
+        final FilterNode upstream = new FilterNode("upstream", "None", "route", false, false, false, false, null, null);
+        final FilterNode breaker = new FilterNode("CircuitBreaker", "", "route", true, false, true, false, own, upstream);
+        final FilterNode limiter = new FilterNode("RateLimiter", "", "root", true, false, true, false, global, breaker);
+        return new RouteConfigDto(id, null, 1, null, null, null, null, List.of(), limiter);
     }
 }
