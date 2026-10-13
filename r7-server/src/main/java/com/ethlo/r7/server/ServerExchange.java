@@ -16,6 +16,7 @@ import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.MutableGatewayRequest;
 import com.ethlo.r7.api.MutableGatewayResponse;
 import com.ethlo.r7.api.ShortCircuitGatewayResponse;
+import com.ethlo.r7.api.UpstreamOutcome;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.filters.StaticContentFactory;
@@ -82,6 +83,9 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     // Whether the response committing is that head, relayed. If not, r7 answers in its place,
     // and the upstream response is taken from the head as read instead.
     boolean upstreamResponseRelayed;
+    // Whether a write to the client failed while the upstream's response was being relayed: the
+    // client went away, which says nothing about the upstream.
+    boolean clientAborted;
     long journalBytes;
 
     protected ServerExchange(final GatewayPipeline pipeline)
@@ -351,6 +355,35 @@ public abstract class ServerExchange implements ClientRequestGatewayExchange, Up
     public boolean hasUpstreamResponse()
     {
         return this.upstreamResponded;
+    }
+
+    /**
+     * Marks that the client could not be written to while the upstream's response was relayed.
+     */
+    protected final void clientAbortedResponse()
+    {
+        this.clientAborted = true;
+    }
+
+    @Override
+    public UpstreamOutcome upstreamOutcome()
+    {
+        if (!wasProxied())
+        {
+            return UpstreamOutcome.NOT_ASKED;
+        }
+        if (!this.upstreamResponded)
+        {
+            // r7's own answer in the upstream's place: a 5xx means the upstream let it down,
+            // anything else (400, 413) is the request's own fault.
+            return this.clientResponse.status() >= 500 ? UpstreamOutcome.NO_RESPONSE : UpstreamOutcome.NOT_ASKED;
+        }
+        final long headNanos = this.upstreamHeadNanos - this.proxyStartNanos;
+        if (this.webSocketUpgraded || this.upstreamEndNanos != NOT_RECORDED)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.ANSWERED, headNanos);
+        }
+        return new UpstreamOutcome(this.clientAborted ? UpstreamOutcome.Kind.CLIENT_ABORTED : UpstreamOutcome.Kind.BODY_FAILED, headNanos);
     }
 
     /**

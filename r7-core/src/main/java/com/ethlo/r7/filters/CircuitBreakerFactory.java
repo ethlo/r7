@@ -14,13 +14,18 @@ import java.util.concurrent.atomic.LongAdder;
 
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
-import com.ethlo.r7.api.ClientResponseGatewayExchange;
-import com.ethlo.r7.api.ClientResponseGatewayFilter;
+import com.ethlo.r7.api.CompletedGatewayExchange;
+import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.ComponentStatus;
+import com.ethlo.r7.api.FallbackAwareGatewayFilter;
+import com.ethlo.r7.api.GatewayExchange;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.StatusReporting;
+import com.ethlo.r7.api.UpstreamOutcome;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
@@ -35,7 +40,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-@Description("Stops forwarding traffic to a failing upstream until it recovers.")
+@Description("Stops forwarding traffic to a failing upstream until it recovers. Judges each exchange by how its upstream fared, once the exchange is over.")
 public final class CircuitBreakerFactory implements GatewayFilterFactory<CircuitBreakerFactory.Config>
 {
     private static final byte[] REJECT_PAYLOAD = "Service Unavailable - Circuit Open".getBytes(StandardCharsets.UTF_8);
@@ -69,7 +74,11 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             Integer failureThreshold,
 
             @Description("The duration the circuit remains open before attempting to close.")
-            Duration cooldownPeriod) implements ValidatableConfig
+            Duration cooldownPeriod,
+
+            @Description("An upstream response head that arrives later than this after the request was forwarded counts as a failure, whatever its status and whether or not the client waited. Without it, slowness counts only through the read timeout.")
+            @Nullable
+            Duration slowCall) implements ValidatableConfig
     {
         @Override
         public void validate(final ValidationResult result)
@@ -77,6 +86,10 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             new ValidatorUtils(result)
                     .required("failure_threshold", failureThreshold())
                     .required("cooldown_period", cooldownPeriod());
+            if (slowCall() != null && (slowCall().isNegative() || slowCall().isZero()))
+            {
+                result.addError("slow_call", "Must be greater than zero, received " + slowCall());
+            }
         }
 
         @Override
@@ -85,15 +98,46 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             return new StringJoiner(", ", Config.class.getSimpleName() + "[", "]")
                     .add("failure_threshold=" + failureThreshold())
                     .add("cooldown_period=" + cooldownPeriod())
+                    .add("slow_call=" + slowCall())
                     .toString();
         }
     }
 
-    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo, StatusReporting
+    /**
+     * What this breaker knows of one exchange beyond the upstream's outcome. A key shared by every
+     * breaker, not one per instance: a key's id indexes an array in each exchange, and ids are never
+     * reused, so a key per instance would grow it with every configuration reload. An exchange can
+     * pass several breakers (a route's and a root's), so the marks are told apart by owner.
+     * Allocated only for the exchanges that need one: a rejected one, a probe, one that fell back.
+     */
+    private static final StateKey<Mark> MARKS = new StateKey<>("circuit_breaker.marks");
+
+    private static final class Mark
+    {
+        final Object owner;
+        final Mark next;
+        boolean rejected;
+        boolean probe;
+        boolean fellBack;
+
+        Mark(final Object owner, final Mark next)
+        {
+            this.owner = owner;
+            this.next = next;
+        }
+    }
+
+    private enum Verdict
+    {
+        FAILURE, SUCCESS, NEITHER
+    }
+
+    private static final class GF implements ClientRequestGatewayFilter, FallbackAwareGatewayFilter, CompletedGatewayFilter, ShortInfo, StatusReporting
     {
         private final Config config;
         private final long cooldownMillis;
         private final int failureThreshold;
+        private final long slowCallNanos;
 
         private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
         private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
@@ -105,6 +149,26 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             this.config = config;
             this.cooldownMillis = config.cooldownPeriod().toMillis();
             this.failureThreshold = config.failureThreshold();
+            this.slowCallNanos = config.slowCall() != null ? config.slowCall().toNanos() : Long.MAX_VALUE;
+        }
+
+        private Mark mark(final GatewayExchange exchange, final boolean create)
+        {
+            final Mark head = exchange.getAttachment(MARKS);
+            for (Mark mark = head; mark != null; mark = mark.next)
+            {
+                if (mark.owner == this)
+                {
+                    return mark;
+                }
+            }
+            if (!create)
+            {
+                return null;
+            }
+            final Mark created = new Mark(this, head);
+            exchange.setAttachment(MARKS, created);
+            return created;
         }
 
         @Override
@@ -124,6 +188,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
                 {
                     if (this.state.compareAndSet(State.OPEN, State.HALF_OPEN))
                     {
+                        mark(exchange, true).probe = true;
                         return;
                     }
                 }
@@ -138,16 +203,59 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
         }
 
         @Override
-        public void onClientResponse(final ClientResponseGatewayExchange exchange)
+        public void onFallback(final GatewayExchange exchange)
         {
-            if (HttpStatuses.is5xx(exchange.clientResponse().status()))
+            mark(exchange, true).fellBack = true;
+        }
+
+        /**
+         * Judges the exchange by its upstream, not by the status the client got: a filter may have
+         * answered in the upstream's place, or changed what it said, and a body can break after a
+         * good head.
+         */
+        @Override
+        public void onCompleted(final CompletedGatewayExchange exchange)
+        {
+            final Mark mark = mark(exchange, false);
+            if (mark != null && mark.rejected)
             {
-                this.handleFailure();
+                // The breaker's own refusal says nothing about the upstream.
+                return;
             }
-            else
+            switch (verdict(mark, exchange.upstreamOutcome(), exchange))
             {
-                this.handleSuccess();
+                case FAILURE -> this.handleFailure();
+                case SUCCESS -> this.handleSuccess();
+                case NEITHER ->
+                {
+                    // A probe that proved nothing must not leave the circuit half-open, where every
+                    // request is refused and none is left to probe. The cool-down has passed, so the
+                    // next request probes.
+                    if (mark != null && mark.probe)
+                    {
+                        this.state.compareAndSet(State.HALF_OPEN, State.OPEN);
+                    }
+                }
             }
+        }
+
+        private Verdict verdict(final Mark mark, final UpstreamOutcome outcome, final CompletedGatewayExchange exchange)
+        {
+            // The fallback is the failure, once: what the fallback route then answers is not counted.
+            if (mark != null && mark.fellBack)
+            {
+                return Verdict.FAILURE;
+            }
+            if (outcome.headNanos() > this.slowCallNanos)
+            {
+                return Verdict.FAILURE;
+            }
+            return switch (outcome.kind())
+            {
+                case NOT_ASKED, CLIENT_ABORTED -> Verdict.NEITHER;
+                case NO_RESPONSE, BODY_FAILED -> Verdict.FAILURE;
+                case ANSWERED -> HttpStatuses.is5xx(exchange.upstreamResponse().status()) ? Verdict.FAILURE : Verdict.SUCCESS;
+            };
         }
 
         private void handleFailure()
@@ -190,6 +298,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
         private void rejectRequest(final ClientRequestGatewayExchange exchange)
         {
             this.rejected.increment();
+            mark(exchange, true).rejected = true;
             final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(1)
                     .set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
 
@@ -206,6 +315,7 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
             return new StringJoiner(", ", FILTER_NAME + "[", "]")
                     .add("failure_threshold=" + this.config.failureThreshold())
                     .add("cool_down=" + this.config.cooldownPeriod())
+                    .add("slow_call=" + this.config.slowCall())
                     .toString();
         }
 

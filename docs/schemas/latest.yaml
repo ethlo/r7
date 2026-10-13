@@ -120,14 +120,20 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: The number of consecutive failures before the circuit opens.
+            slow_call:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "An upstream response head that arrives later than this after the request was forwarded counts as a failure, whatever its status and whether or not the client waited. Without it, slowness counts only through the read timeout. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
           required:
           - failure_threshold
           - cooldown_period
           additionalProperties: false
-          description: Stops forwarding traffic to a failing upstream until it recovers.
+          description: "Stops forwarding traffic to a failing upstream until it recovers. Judges each exchange by how its upstream fared, once the exchange is over."
           defaultSnippets:
           - label: Insert CircuitBreaker
-            description: Stops forwarding traffic to a failing upstream until it recovers.
+            description: "Stops forwarding traffic to a failing upstream until it recovers. Judges each exchange by how its upstream fared, once the exchange is over."
             body:
               failure_threshold: $1
               cooldown_period: $2

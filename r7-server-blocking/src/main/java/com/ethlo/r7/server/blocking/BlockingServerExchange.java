@@ -707,6 +707,12 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     }
 
     @Override
+    public void onClientAborted()
+    {
+        clientAbortedResponse();
+    }
+
+    @Override
     public void onResponseBody(final byte[] buffer, final int offset, final int length)
     {
         this.responseBodyBytes += length;

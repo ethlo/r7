@@ -134,6 +134,15 @@ public interface ProxiedExchange
     }
 
     /**
+     * Called when writing the upstream's response to the client failed, before the relay gives up:
+     * the client went away. The upstream is not at fault, which matters to anything judging its
+     * health.
+     */
+    default void onClientAborted()
+    {
+    }
+
+    /**
      * Called with each block of response body, before it is written to the client.
      */
     default void onResponseBody(final byte[] buffer, final int offset, final int length)
