@@ -12,6 +12,7 @@ import java.util.regex.PatternSyntaxException;
 
 import com.ethlo.r7.api.MutableQueryParams;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.doc.Description;
@@ -33,6 +34,9 @@ import com.google.auto.service.AutoService;
 public final class RewritePathFactory implements GatewayFilterFactory<RewritePathFactory.Config>
 {
     private static final String FILTER_NAME = "RewritePath";
+
+    /** The query parameters a rewrite set, so a later rewrite can put them back. */
+    private static final StateKey<Set<String>> REWRITTEN = new StateKey<>("rewrite_path.query");
 
     @Override
     public String name()
@@ -164,7 +168,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
          * Every match replaced, as {@link Matcher#replaceAll} does, with the template's parts.
          * The result is decoded text: the path is encoded when it is set.
          */
-        private String replaceAll(final Matcher matcher, final String path)
+        private String replaceAll(final UpstreamRequestGatewayExchange exchange, final Matcher matcher, final String path)
         {
             final StringBuilder out = new StringBuilder(path.length() + this.replacement.length());
             int last = 0;
@@ -176,6 +180,15 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                     if (part.isLiteral())
                     {
                         out.append(part.literal());
+                    }
+                    else if (part.query() != null)
+                    {
+                        final String value = ReplacementTemplate.queryValue(exchange.clientRequest().queryParams(), part.query());
+                        if (value == null)
+                        {
+                            return null;
+                        }
+                        out.append(value);
                     }
                     else if (part.isCapture())
                     {
@@ -207,7 +220,43 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                 this.rewriteWithQuery(exchange, matcher, path);
                 return;
             }
-            exchange.upstreamRequest().path(replaceAll(matcher, path));
+            final String rewritten = replaceAll(exchange, matcher, path);
+            if (rewritten == null)
+            {
+                this.refuse(exchange);
+                return;
+            }
+            this.restoreClientQuery(exchange);
+            exchange.upstreamRequest().path(rewritten);
+        }
+
+        private void refuse(final UpstreamRequestGatewayExchange exchange)
+        {
+            exchange.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.BAD_REQUEST, MediaTypes.TEXT_PLAIN_UTF8, this.missingValueBody.asReadOnlyBuffer()));
+        }
+
+        /**
+         * Every rewrite tests the path the client sent, so the last match wins; the parameters an
+         * earlier rewrite set go back to what the client sent, or the earlier one would leak into
+         * the later one's result.
+         */
+        private static void restoreClientQuery(final UpstreamRequestGatewayExchange exchange)
+        {
+            final Set<String> earlier = exchange.getAttachment(REWRITTEN);
+            if (earlier == null)
+            {
+                return;
+            }
+            final MutableQueryParams params = exchange.upstreamRequest().queryParams();
+            for (final String name : earlier)
+            {
+                params.remove(name);
+                for (final String value : exchange.clientRequest().queryParams().getAll(name))
+                {
+                    params.add(name, value);
+                }
+            }
+            exchange.setAttachment(REWRITTEN, null);
         }
 
         /**
@@ -247,7 +296,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                     text = ReplacementTemplate.queryValue(exchange.clientRequest().queryParams(), part.query());
                     if (text == null)
                     {
-                        exchange.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.BAD_REQUEST, MediaTypes.TEXT_PLAIN_UTF8, this.missingValueBody.asReadOnlyBuffer()));
+                        this.refuse(exchange);
                         return;
                     }
                 }
@@ -269,6 +318,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
             }
             query.data(path.substring(matcher.end()));
 
+            restoreClientQuery(exchange);
             exchange.upstreamRequest().path(newPath.toString());
             final MutableQueryParams params = exchange.upstreamRequest().queryParams();
             final Set<String> set = new HashSet<>();
@@ -283,6 +333,7 @@ public final class RewritePathFactory implements GatewayFilterFactory<RewritePat
                     params.add(pair[0], pair[1]);
                 }
             }
+            exchange.setAttachment(REWRITTEN, set);
         }
 
         @Override

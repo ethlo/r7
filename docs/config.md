@@ -486,7 +486,7 @@ Both filters work on the **decoded** path and the gateway percent-encodes the re
 | `$1`, `$2`, ... | the numbered group of the regular expression |
 | `{name}` | the group `(?<name>...)` |
 | `{query.NAME}` | the value of the client's query parameter `NAME` |
-| `\x` | the character `x` literally: `\$` a dollar sign, `\{` a brace, `\?` a question mark that stays in the path |
+| `\x` | the character `x` literally: `\$` a dollar sign and `\{` a brace. In `RewritePath`, `\?` keeps a question mark in the path; a `TemplateRedirect` target is already wire-encoded, so write `%3F` there. |
 
 A brace that is not escaped starts a placeholder, and one that names no group, or is never closed, is refused at startup: `[routes.x.filters[0].RewritePath.replacement] {b} needs a source pattern with that named group (write \{ for a literal brace).` The old `$${name}` form is refused too, with `Write a named group as {name}, not $${name}.` In YAML, `\{` is written as is in a plain or single-quoted string, and as `"\\{"` in a double-quoted one.
 
@@ -509,7 +509,7 @@ routes:
         - url: "http://127.0.0.1:8081"
 ```
 
-Captures and `{query.NAME}` values after the `?` are each one parameter value, so a request cannot add a parameter by what it sends (`/legacy/1%26admin%3Dtrue` sets `uid=1&admin=true`, one value). The client's own query is passed on as it came, and merged with the rewrite's: a name the rewrite sets replaces every occurrence the client sent (`?uid=123&uid=456` rewritten to `?uid={query.refid}` reaches the upstream as one `uid`), and every other parameter keeps its occurrences and order. A `{query.NAME}` the client left out, or repeated with differing values, is answered with `400`. A replacement with a `?` rewrites the first match only, and what follows the match in the path goes on the end of the last value. Write the replacement decoded, as for the path.
+Captures and `{query.NAME}` values after the `?` are each one parameter value, so a request cannot add a parameter by what it sends (`/legacy/1%26admin%3Dtrue` sets `uid=1&admin=true`, one value). The client's existing parameters are kept by decoded name, value, occurrence and order (the query is then form-encoded as UTF-8), and merged with the rewrite's: a name the rewrite sets replaces every occurrence the client sent (`?uid=123&uid=456` rewritten to `?uid={query.refid}` reaches the upstream as one `uid`), and every other parameter keeps its occurrences and order. A `{query.NAME}` the client left out, or repeated with differing values, is answered with `400`. A replacement with a `?` rewrites the first match only, and what follows the match in the path goes on the end of the last value. Write the replacement decoded, as for the path.
 
 **Changed in 1.0:** a `?` in `replacement` used to be sent as `%3F` inside the path, and now starts the query. Write `\?` to keep a question mark in the path (`"/a\\?b"` in a double-quoted YAML string). Rewrites do not cascade: each tests the path the client sent, never another rewrite's output, and when several match, the last one declared wins, so a route's rewrite wins over its group's.
 

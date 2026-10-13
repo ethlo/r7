@@ -145,7 +145,7 @@ class RewritePathFactoryTest
     /**
      * Path and query the upstream would get, or the status the rewrite answered with.
      */
-    private record Rewritten(String path, String query, Integer refusedWith)
+    private record Rewritten(String path, String query, Integer refusedWith, List<String[]> params)
     {
     }
 
@@ -169,7 +169,7 @@ class RewritePathFactoryTest
         final ArgumentCaptor<ShortCircuitGatewayResponse> refusal = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
         verify(exchange, org.mockito.Mockito.atMost(1)).shortCircuit(refusal.capture());
         return new Rewritten(newPath.getAllValues().isEmpty() ? null : newPath.getValue(), upstreamParams.toQueryString(),
-                refusal.getAllValues().isEmpty() ? null : refusal.getValue().status());
+                refusal.getAllValues().isEmpty() ? null : refusal.getValue().status(), upstreamParams.pairs);
     }
 
     @Test
@@ -207,12 +207,13 @@ class RewritePathFactoryTest
     void requestTextCanNotAddAParameter()
     {
         final Rewritten captured = rewriteQuery("^/old/(.*)$", "/new?q=$1", "/old/a&admin=true");
-        assertThat(captured.query()).isEqualTo("q=a&admin=true");
-        assertThat(captured.query().split("&")).hasSize(2);
+        assertThat(captured.params()).hasSize(1);
+        assertThat(captured.params().get(0)).containsExactly("q", "a&admin=true");
         assertThat(captured.path()).isEqualTo("/new");
 
         final Rewritten value = rewriteQuery("^/old$", "/new?q={query.v}", "/old", "v", "1&admin=true");
-        assertThat(value.query()).isEqualTo("v=1&admin=true&q=1&admin=true");
+        assertThat(value.params()).hasSize(2);
+        assertThat(value.params().get(1)).containsExactly("q", "1&admin=true");
     }
 
     @Test
@@ -234,5 +235,39 @@ class RewritePathFactoryTest
     void aLiteralBraceInTheQueryIsADecodedCharacter()
     {
         assertThat(rewriteQuery("^/old$", "/new?v=\\{1\\}", "/old").query()).isEqualTo("v={1}");
+    }
+
+    @Test
+    void aQueryValueInThePathIsResolved()
+    {
+        assertThat(rewriteQuery("^/old$", "/new/{query.id}", "/old", "id", "7").path()).isEqualTo("/new/7");
+        assertThat(rewriteQuery("^/old$", "/new/{query.id}", "/old").refusedWith()).isEqualTo(HttpStatuses.BAD_REQUEST);
+    }
+
+    @Test
+    void theLastMatchingRewriteDoesNotInheritAnEarlierOnesQuery()
+    {
+        final Params client = new Params("keep", "1");
+        final GatewayRequest request = mock(GatewayRequest.class);
+        when(request.path()).thenReturn("/old");
+        when(request.queryParams()).thenReturn(client);
+        final Params upstreamParams = new Params("keep", "1");
+        final MutableGatewayRequest upstream = mock(MutableGatewayRequest.class);
+        when(upstream.queryParams()).thenReturn(upstreamParams);
+        final UpstreamRequestGatewayExchange exchange = mock(UpstreamRequestGatewayExchange.class);
+        when(exchange.clientRequest()).thenReturn(request);
+        when(exchange.upstreamRequest()).thenReturn(upstream);
+        final java.util.Map<Object, Object> attachments = new java.util.HashMap<>();
+        org.mockito.Mockito.doAnswer(call ->
+        {
+            attachments.put(call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(exchange).setAttachment(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        when(exchange.getAttachment(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> attachments.get(call.getArgument(0)));
+
+        new RewritePathFactory().create(new RewritePathFactory.Config("^/old$", "/a?a=1&keep=2"), null).onUpstreamRequest(exchange);
+        new RewritePathFactory().create(new RewritePathFactory.Config("^/old$", "/b?b=2"), null).onUpstreamRequest(exchange);
+
+        assertThat(upstreamParams.toQueryString()).isEqualTo("keep=1&b=2");
     }
 }
