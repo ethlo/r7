@@ -158,7 +158,7 @@ public final class JsonSchemaGenerator
         properties.put("match", new ArraySchema(
                         "array",
                         new RefSchema("#/$defs/predicate", null, null),
-                        "Conditions that must be met for this route to handle a request. If omitted, no requests match.",
+                        "Conditions that must be met for this route to handle a request. Required; an empty list (match: []) matches nothing, for a route reached only as a fallback.",
                         null
                 )
         );
@@ -180,7 +180,7 @@ public final class JsonSchemaGenerator
         return new ObjectSchema(
                 "object",
                 properties,
-                List.of("id"),
+                List.of("id", "match"),
                 new BoolProps(false),
                 null, null,
                 List.of(requireUpstream, requireFilters),

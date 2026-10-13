@@ -1,7 +1,6 @@
 package com.ethlo.r7.config;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +20,10 @@ public final class ConditionDefinition
     public List<ConditionDefinition> or;
     public ConditionDefinition not;
 
+    // Only 'match: []' is fallback-only. 'match: { and: [] }' leaves the same fields as '[]',
+    // so how the node was written has to be kept to refuse the explicit operator.
+    private boolean writtenAsEmptyList;
+
     public ConditionDefinition()
     {
     }
@@ -34,6 +37,7 @@ public final class ConditionDefinition
         {
             // Case: match: [ {PathStartsWith: /hello}, {Method: GET} ]
             def.and = list.stream().map(ConditionDefinition::create).toList();
+            def.writtenAsEmptyList = list.isEmpty();
         }
         else if (raw instanceof Map<?, ?> map)
         {
@@ -42,9 +46,9 @@ public final class ConditionDefinition
                 String key = String.valueOf(k);
                 switch (key)
                 {
-                    case "and" -> def.and = createList(v);
-                    case "or" -> def.or = createList(v);
-                    case "not" -> def.not = create(v);
+                    case "and" -> def.and = createList("and", v);
+                    case "or" -> def.or = createList("or", v);
+                    case "not" -> def.not = createNot(v);
 
                     // Jackson natively handles whether 'v' is a String or an Object
                     default -> def.predicates.put(key, v);
@@ -63,13 +67,27 @@ public final class ConditionDefinition
         return def;
     }
 
-    private static List<ConditionDefinition> createList(Object v)
+    private static ConditionDefinition createNot(final Object v)
+    {
+        // A list here was ANDed: 'not: [A, B]' meant NOT(A AND B), which reads just as well as
+        // "neither A nor B", NOT(A OR B). Making the operator explicit leaves one reading.
+        if (v instanceof List<?>)
+        {
+            throw new ConfigurationException("'not' takes one condition, not a list: write 'not: { Method: ... }', "
+                    + "or 'not: { or: [...] }' for none of several, 'not: { and: [...] }' for not all of them");
+        }
+        return create(v);
+    }
+
+    private static List<ConditionDefinition> createList(final String operator, final Object v)
     {
         if (v instanceof List<?> list)
         {
             return list.stream().map(ConditionDefinition::create).toList();
         }
-        return Collections.emptyList();
+        // A mapping here used to become an empty list: 'and: { Path: ... }' loaded and the
+        // route never matched, and under an 'or' it surfaced as a misleading "Empty 'or'".
+        throw new ConfigurationException("'" + operator + "' takes a list of conditions, e.g. '" + operator + ": [ {Method: ...}, {Path: ...} ]'");
     }
 
     public GatewayPredicate build(final PredicateRegistry registry, final ValidationResult validationResult)
@@ -151,11 +169,17 @@ public final class ConditionDefinition
     }
 
     /**
-     * True when the node names nothing to test. {@link #build} would turn it into an
-     * always-true predicate, so an empty top-level {@code match} is a route that matches
-     * nothing (reachable only as a fallback) and an empty node anywhere below it is refused.
+     * True for {@code match: []} written as a list, the documented fallback-only route: it
+     * matches nothing and is reachable only as a fallback. Every other empty form
+     * ({@code {}}, {@code { and: [] }}, {@code { or: [] }}) is refused by {@link #validateTree},
+     * since {@link #build} would turn it into an always-true predicate.
      */
-    public boolean isEmpty()
+    public boolean isFallbackOnly()
+    {
+        return writtenAsEmptyList;
+    }
+
+    private boolean isEmpty()
     {
         return predicates.isEmpty()
                 && (and == null || and.isEmpty())
@@ -165,23 +189,26 @@ public final class ConditionDefinition
 
     private void validateTree(final ValidationResult result, final PredicateRegistry registry, final boolean topLevel)
     {
-        // Below the top, an empty node used to build to true: 'not: {}' or '- {}' made the
-        // route a catch-all, and 'or: []' silently dropped out of the tree.
-        if (!topLevel)
-        {
-            if (isEmpty())
-            {
-                result.addError("match", "Empty condition: name at least one predicate, or remove it");
-                return;
-            }
-        }
-        if (and != null && and.isEmpty() && !(topLevel && isEmpty()))
+        // An empty node used to build to true: 'not: {}' or '- {}' made the route a catch-all,
+        // and 'or: []' silently dropped out of the tree. Only a top-level '[]' is allowed, and
+        // the caller handles it before validation.
+        if (and != null && and.isEmpty())
         {
             result.addError("match", "Empty 'and': name at least one predicate, or remove it");
         }
         if (or != null && or.isEmpty())
         {
             result.addError("match", "Empty 'or': name at least one predicate, or remove it");
+        }
+        if (isEmpty())
+        {
+            if (and == null && or == null)
+            {
+                result.addError("match", topLevel
+                        ? "Empty match: name at least one predicate, or write 'match: []' for a fallback-only route"
+                        : "Empty condition: name at least one predicate, or remove it");
+            }
+            return;
         }
 
         // Check flat leaf nodes

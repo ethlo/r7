@@ -49,6 +49,7 @@ routes:
           value: "true"
 
   - id: maintenance-mode
+    match: []
     filters:
       - ReturnResponse:
           status: 503

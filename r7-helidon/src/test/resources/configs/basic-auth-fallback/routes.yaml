@@ -52,6 +52,7 @@ routes:
         route_id: protected-fallback
 
   - id: protected-fallback
+    match: []
     filters:
       - AddRequestHeader:
           name: X-Fallback

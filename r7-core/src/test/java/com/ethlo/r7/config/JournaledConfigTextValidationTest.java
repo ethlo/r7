@@ -26,7 +26,7 @@ class JournaledConfigTextValidationTest
     {
         return new RouteDefinition(id,
                 new UpstreamConfig(null, null, null, List.of(new TargetConfig(targetUrl)), null),
-                null, null, List.of(new FilterDefinition("SetStatus", java.util.Map.of())));
+                ConditionDefinition.create(List.of()), null, List.of(new FilterDefinition("SetStatus", java.util.Map.of())));
     }
 
     @Test

@@ -144,7 +144,7 @@ public final class ConfigurationManager
                     // An empty match is a fallback-only route (docs/config.md): it must stay
                     // false, as build() would turn an empty tree into an always-true predicate.
                     GatewayPredicate predicate = FalsePredicate.INSTANCE;
-                    if (routeDefinition.match() != null && !routeDefinition.match().isEmpty())
+                    if (routeDefinition.match() != null && !routeDefinition.match().isFallbackOnly())
                     {
                         routeDefinition.match().validateTree(validationResult, predicateRegistry);
 

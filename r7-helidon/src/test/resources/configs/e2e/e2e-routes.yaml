@@ -119,6 +119,7 @@ routes:
         route_id: fallback-target-test
 
   - id: fallback-target-test
+    match: []
     filters:
       - AddRequestHeader:
           name: X-Fallback-Route

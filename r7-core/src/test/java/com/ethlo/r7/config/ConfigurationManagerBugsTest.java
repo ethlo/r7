@@ -102,7 +102,10 @@ class ConfigurationManagerBugsTest
     @Test
     void emptyNestedConditionsAreRefused() throws Exception
     {
-        for (final String match : new String[]{"[ {} ]", "[ { not: {} } ]", "[ { or: [] } ]", "[ { Method: { methods: [GET] }, and: [] } ]"})
+        // Only a top-level '[]' is fallback-only: '{ or: [] }' and '{ and: [] }' at the top used
+        // to pass as empty too, and silently turned the route into a fallback-only one.
+        for (final String match : new String[]{"[ {} ]", "[ { not: {} } ]", "[ { or: [] } ]", "[ { Method: { methods: [GET] }, and: [] } ]",
+                "{}", "{ and: [] }", "{ or: [] }", "{ not: {} }", "[ [] ]"})
         {
             final Path file = write("""
                     version: test
@@ -120,6 +123,71 @@ class ConfigurationManagerBugsTest
                     .isInstanceOf(ConfigurationException.class)
                     .hasMessageContaining("Empty");
         }
+    }
+
+    /**
+     * 'and'/'or' written as a mapping became an empty list: the route loaded and never matched.
+     */
+    @Test
+    void logicalOperatorWrittenAsAMappingIsRefused() throws Exception
+    {
+        for (final String match : new String[]{"{ and: { Method: { methods: [GET] } } }", "[ { or: { Method: { methods: [GET] } } } ]"})
+        {
+            final Path file = write("""
+                    version: test
+                    routes:
+                      - id: bad
+                        match: %s
+                        upstream:
+                          targets:
+                            - url: http://localhost:1
+                    """.formatted(match));
+
+            assertThatThrownBy(() -> manager.build(ConfigurationManager.load(file, RoutesDefinition.class)))
+                    .as(match)
+                    .hasMessageContaining("takes a list of conditions");
+        }
+    }
+
+    /**
+     * 'not: [A, B]' was ANDed, NOT(A AND B), and reads just as well as NOT(A OR B).
+     */
+    @Test
+    void notWrittenAsAListIsRefused() throws Exception
+    {
+        final Path file = write("""
+                version: test
+                routes:
+                  - id: bad
+                    match:
+                      - not:
+                          - Method: { methods: [GET] }
+                    upstream:
+                      targets:
+                        - url: http://localhost:1
+                """);
+
+        assertThatThrownBy(() -> manager.build(ConfigurationManager.load(file, RoutesDefinition.class)))
+                .hasMessageContaining("'not' takes one condition");
+    }
+
+    /**
+     * A route with filters and no match loaded and never matched; fallback-only is 'match: []'.
+     */
+    @Test
+    void routeWithoutMatchIsRefused() throws Exception
+    {
+        final Path file = write("""
+                version: test
+                routes:
+                  - id: no-match
+                    filters:
+                      - ReturnResponse: { status: 200 }
+                """);
+
+        assertThatThrownBy(() -> manager.build(ConfigurationManager.load(file, RoutesDefinition.class)))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("match: []");
     }
 
     private Path write(final String yaml) throws Exception
