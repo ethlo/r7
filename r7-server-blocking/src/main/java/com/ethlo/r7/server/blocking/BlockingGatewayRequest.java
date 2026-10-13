@@ -9,6 +9,7 @@ import java.util.Collection;
 import java.util.List;
 
 import com.ethlo.r7.api.Cookie;
+import com.ethlo.r7.api.EntryConsumer;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableCookies;
 import com.ethlo.r7.api.MutableGatewayHeaders;
@@ -206,6 +207,16 @@ public final class BlockingGatewayRequest implements MutableGatewayRequest
                 }
             }
             return out;
+        }
+
+        @Override
+        public int forEach(final EntryConsumer consumer)
+        {
+            for (final String[] pair : pairs)
+            {
+                consumer.accept(pair[0], pair[1]);
+            }
+            return pairs.size();
         }
 
         @Override
