@@ -565,7 +565,7 @@ public final class GatewayPipeline
             journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(ex.upstreamRequest()), ex.upstreamRequest().headers(), null);
             if (ex.upstreamResponded)
             {
-                journal.upstreamResponse(journalConfig.response().level(), requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers());
+                journal.upstreamResponse(journalConfig.response().level(), requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers(), ex.upstreamResponseRelayed);
             }
         }
 

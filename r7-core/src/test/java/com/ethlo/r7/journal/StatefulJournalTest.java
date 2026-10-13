@@ -57,7 +57,7 @@ class StatefulJournalTest
         journal.responseBody("r1", latin1("hello "));
         journal.responseBody("r1", latin1("world"));
         journal.upstreamRequest(requestLevel, "r1", latin1("GET / HTTP/1.1"), headers, null);
-        journal.upstreamResponse(JournalLevel.FULL, "r1", 200, latin1("HTTP/1.1 200 OK"), headers);
+        journal.upstreamResponse(JournalLevel.FULL, "r1", 200, latin1("HTTP/1.1 200 OK"), headers, true);
         journal.clientResponse(JournalLevel.FULL, "r1", 200, latin1("HTTP/1.1 200 OK"), headers, null);
         journal.endExchange("r1", new FastGatewayAttributes(), 1, 2, 200, 0, 0, 0, 11, 0, 0, 0, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
 
@@ -157,7 +157,7 @@ class StatefulJournalTest
             }
 
             @Override
-            public int upstreamResponse(final JournalLevel level, final String reqId, final int status, final ByteBuffer startLine, final GatewayHeaders headers)
+            public int upstreamResponse(final JournalLevel level, final String reqId, final int status, final ByteBuffer startLine, final GatewayHeaders headers, final boolean relayed)
             {
                 events.add("upstreamResponse");
                 return 1;

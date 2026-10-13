@@ -127,7 +127,7 @@ class JournalConcurrentWriteTest
             journal.clientRequest(JournalLevel.FULL, id, startLine.rewind(), headers, client, IpSource.SOCKET);
             journal.upstreamRequest(JournalLevel.FULL, id, startLine.rewind(), headers, headers);
             journal.requestBody(id, requestBody.rewind());
-            journal.upstreamResponse(JournalLevel.FULL, id, 200, responseLine.rewind(), headers);
+            journal.upstreamResponse(JournalLevel.FULL, id, 200, responseLine.rewind(), headers, true);
             journal.responseBody(id, responseBody.rewind());
             journal.clientResponse(JournalLevel.FULL, id, 200, responseLine.rewind(), headers, headers);
             journal.endExchange(id, new FastGatewayAttributes(), 1_000L, 2_000L, 200,

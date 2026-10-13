@@ -58,7 +58,7 @@ class HeaderNameCaseRoundTripTest
             final String id = "case-1";
             journal.clientRequest(JournalLevel.HEADERS, id, ascii("GET / HTTP/1.1"), clientRequest, client, IpSource.SOCKET);
             journal.upstreamRequest(JournalLevel.HEADERS, id, ascii("GET / HTTP/1.1"), upstreamRequest, clientRequest);
-            journal.upstreamResponse(JournalLevel.HEADERS, id, 200, ascii("HTTP/1.1 200 OK"), upstreamResponse);
+            journal.upstreamResponse(JournalLevel.HEADERS, id, 200, ascii("HTTP/1.1 200 OK"), upstreamResponse, true);
             journal.clientResponse(JournalLevel.HEADERS, id, 200, ascii("HTTP/1.1 200 OK"), clientResponse, upstreamResponse);
             journal.endExchange(id, new FastGatewayAttributes(), 1L, 2L, 200,
                     0, 0, 0, 0, 1L, 1L, 2L,

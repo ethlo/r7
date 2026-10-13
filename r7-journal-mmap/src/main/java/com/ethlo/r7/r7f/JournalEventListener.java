@@ -35,7 +35,11 @@ public interface JournalEventListener
 
     void onResponseBody(String reqId, ByteBuffer bodyChunk);
 
-    void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers);
+    /**
+     * @param relayed false for a head r7 refused to relay; the exchange's response body is then
+     *                r7's own answer, not this response's
+     */
+    void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, boolean relayed);
 
     /**
      * @param delta as on {@link #onUpstreamRequest}, here a difference from the upstream response

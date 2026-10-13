@@ -151,7 +151,11 @@ answer as record 3 too would attribute to the upstream a message it never sent, 
 cannot tell a forged record from a real one after the fact; an absent record says exactly what
 happened, and record 2 still shows what was forwarded. A head the upstream did send and r7
 refused to relay (a `101` it cannot tunnel) is record 3, and record 4 is r7's `502`: that head
-is the evidence of why the client got an error.
+is the evidence of why the client got an error. That record 3 carries no `WARC-Payload-Digest`:
+the journaled response body is r7's answer, and the upstream's body was never read, so the
+digest that would otherwise point at record 4 would claim r7's `502` body as the upstream's.
+The journal says which case it is (`UpstreamResponse.relayed`), since a response filter can
+change the status a tailer would otherwise guess from.
 
 **Bodies are stored once because r7 does not modify them.** It is a streaming proxy — payloads
 are not buffered or rewritten — and the journal already commits to that, holding one

@@ -554,7 +554,7 @@ public final class JournalDecoder
                 final JournalLevel level = level(ev.journalLevel());
                 final String startLine = asLatin1(ev.startLineAsByteBuffer());
                 final GatewayHeaders headers = new FbsUpstreamResponseHeaders(ev);
-                listener.onUpstreamResponse(reqId, level, startLine, headers);
+                listener.onUpstreamResponse(reqId, level, startLine, headers, ev.relayed());
             }
 
             case EventPayload.ClientResponse ->
@@ -784,11 +784,11 @@ public final class JournalDecoder
         }
 
         @Override
-        public void onUpstreamResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+        public void onUpstreamResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers, final boolean relayed)
         {
             try
             {
-                delegate.onUpstreamResponse(reqId, level, startLine, headers);
+                delegate.onUpstreamResponse(reqId, level, startLine, headers, relayed);
             }
             catch (final RuntimeException e)
             {

@@ -117,7 +117,7 @@ class ReassemblerHeapBenchmarkTest
                 final String id = "req-" + i;
                 journal.clientRequest(JournalLevel.HEADERS, id, requestLine.rewind(), clientHeaders, client, IpSource.SOCKET);
                 journal.upstreamRequest(JournalLevel.HEADERS, id, requestLine.rewind(), upstreamHeaders, clientHeaders);
-                journal.upstreamResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), responseHeaders);
+                journal.upstreamResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), responseHeaders, true);
                 journal.clientResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), responseHeaders, responseHeaders);
                 // No endExchange: that is what leaves it in flight.
             }

@@ -137,6 +137,7 @@ public class UpstreamFailureJournalTest extends AbstractR7IntegrationTest
         Assertions.assertTrue(exchange.getUpstreamResponseStartLine().contains("502"), exchange.getUpstreamResponseStartLine());
         // Redacted to a fingerprint, as it is not on the safe list; what matters is that it is there.
         Assertions.assertNotNull(exchange.getUpstreamResponseHeaders().getFirst("X-Upstream"));
+        Assertions.assertTrue(exchange.isUpstreamResponseRelayed());
     }
 
     @Test
@@ -154,6 +155,7 @@ public class UpstreamFailureJournalTest extends AbstractR7IntegrationTest
         Assertions.assertNotEquals(-1, exchange.getProxyFirstByteReceivedTs(), "a response head was read");
         Assertions.assertEquals(502, exchange.getStatus());
         Assertions.assertTrue(exchange.getClientResponseStartLine().contains("502"), exchange.getClientResponseStartLine());
+        Assertions.assertFalse(exchange.isUpstreamResponseRelayed(), "the response body journaled is r7's 502, not the upstream's");
     }
 
     private static JournalExchange readBack(final String marker) throws Exception
