@@ -225,7 +225,7 @@ class TemplateRedirectFactoryTest
     {
         assertThat(location("^/(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)$", "/$11/$10/$1\\$1", "/abcdefghijk")).isEqualTo("/k/j/a$1");
         assertThat(location("^/(a)$", "/$10", "/a")).isEqualTo("/a0");
-        assertThat(location("^/(?<name>.*)$", "/n/${name}", "/x?y")).isEqualTo("/n/x%3Fy");
+        assertThat(location("^/(?<name>.*)$", "/n/{name}", "/x?y")).isEqualTo("/n/x%3Fy");
     }
 
     /**
@@ -313,7 +313,7 @@ class TemplateRedirectFactoryTest
     void withoutASourceACaptureReferenceIsRefusedAtLoad()
     {
         assertThat(errors(null, "/x/$1", null)).singleElement().asString().contains("$1 needs a source pattern with that many groups.");
-        assertThat(errors(null, "/x/${name}", null)).singleElement().asString().contains("${name} needs a source pattern with a group of that name.");
+        assertThat(errors(null, "/x/{name}", null)).singleElement().asString().contains("{name} needs a source pattern with that named group");
         assertThat(errors(null, "/?uid={query.refid}", null)).isEmpty();
     }
 
@@ -335,5 +335,38 @@ class TemplateRedirectFactoryTest
         {
             assertThat(errors(null, "/x", bad)).singleElement().asString().contains("status", "301, 302, 303, 307 or 308");
         }
+    }
+
+    @Test
+    void theOldDollarBraceFormIsRefusedWithItsReplacement()
+    {
+        assertThat(errors("^/(?<name>.*)$", "/n/${name}", null)).singleElement().asString().contains("Write a named group as {name}, not $${name}.");
+    }
+
+    @Test
+    void aBraceNamingNoGroupOrNeverClosedIsRefusedAtLoad()
+    {
+        assertThat(errors("^/(?<a>.*)$", "/n/{b}", null)).singleElement().asString().contains("{b} needs a source pattern with that named group");
+        assertThat(errors("^/(.*)$", "/n/{", null)).singleElement().asString().contains("Unterminated {");
+    }
+
+    /**
+     * A literal brace is a character of the result, not URI syntax, and r7 never emits a raw one.
+     */
+    @Test
+    void aLiteralBraceIsPercentEncodedInThePathAndInTheQuery()
+    {
+        assertThat(location("^/a$", "/a\\{b", "/a")).isEqualTo("/a%7Bb");
+        assertThat(location("^/a$", "/a\\{b\\}", "/a")).isEqualTo("/a%7Bb%7D");
+        assertThat(location("^/a$", "/x?v=\\{1\\}", "/a")).isEqualTo("/x?v=%7B1%7D");
+        assertThat(location("^/a$", "/x}", "/a")).isEqualTo("/x%7D");
+        assertThat(errors("^/a$", "/a\\{b", null)).isEmpty();
+    }
+
+    @Test
+    void aNamedGroupInBracesIsEncodedForWhereItLands()
+    {
+        assertThat(location("^/(?<rest>.*)$", "/n/{rest}", "/x?y")).isEqualTo("/n/x%3Fy");
+        assertThat(location("^/(?<rest>.*)$", "/n?r={rest}", "/x&y")).isEqualTo("/n?r=x%26y");
     }
 }

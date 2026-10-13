@@ -522,7 +522,7 @@ $defs:
               description: The regular expression to match against the path.
             replacement:
               type: string
-              description: "The replacement string, supporting capture group references (e.g., $1)."
+              description: "The replacement: $1 for a numbered group, {name} for a named one. \\{ is a literal brace."
           required:
           - regexp
           - replacement
@@ -755,7 +755,7 @@ $defs:
               default: 302
             target:
               type: string
-              description: "The replacement template for the target URL (e.g., /new/$1). Write a named group as $${name}: ${...} alone is environment variable interpolation. {query.NAME} is the value of a query parameter."
+              description: "The template for the target URL (e.g., /new/$1). A numbered group is $1, a named group {name} and the value of a query parameter {query.NAME}. \\{ is a literal brace."
           required:
           - target
           additionalProperties: false

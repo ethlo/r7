@@ -11,10 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * {@code ${...}} is also TemplateRedirect's syntax for a named capture group. Interpolation runs
- * over every scalar first, so a target of {@code /new/${rest}} used to fail validation with a
- * "missing environment variable 'rest'" - or, if a variable of that name existed, redirect to its
- * value. {@code $${...}} is the escape that leaves the literal text for the filter.
+ * {@code $${...}} is the generic escape that leaves the literal text {@code ${...}} for a value
+ * that needs it for its own syntax. Without it, interpolation runs over every scalar first and
+ * fails validation with a "missing environment variable" - or, if a variable of that name
+ * existed, substitutes its value.
  */
 class EnvInterpolatorEscapeTest
 {
