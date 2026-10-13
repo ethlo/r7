@@ -824,7 +824,7 @@ Short-circuits the routing pipeline, halting execution and immediately returning
 
 #### StaticContent
 
-Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), every answer carries `X-Content-Type-Options: nosniff`, and a directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`. Response filters on the route see that status (`304`, `404`, `206`) and have the last word on its headers.
+Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), and static content sets `X-Content-Type-Options: nosniff` on every answer before response filters run. A directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`. Response filters on the route see that status (`304`, `404`, `206`) and have the last word on its headers, including the ability to replace or remove `X-Content-Type-Options`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
