@@ -81,6 +81,11 @@ table UpstreamResponse {
   start_line: [ubyte];
   headers: [Header];
   status: uint16;
+  /// False for a head the upstream sent that r7 refused to relay (a 101 it cannot tunnel),
+  /// answering the client itself: the exchange's ResponseBody is then r7's own answer, not
+  /// this response's, whose body was never read. Absent means true, which is every upstream
+  /// response a writer without this field recorded.
+  relayed: bool = true;
 }
 
 table ClientResponse {

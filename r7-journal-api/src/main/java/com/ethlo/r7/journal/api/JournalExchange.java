@@ -36,6 +36,7 @@ public final class JournalExchange
     private String upstreamResponseStartLine;
     private GatewayHeaders upstreamResponseHeaders;
     private JournalLevel upstreamResponseLevel;
+    private boolean upstreamResponseRelayed = true;
 
     // --- Slice 4: Final Client Egress ---
     private String clientResponseStartLine;
@@ -100,9 +101,15 @@ public final class JournalExchange
 
     public void setUpstreamResponse(String line, JournalLevel level, GatewayHeaders headers)
     {
+        setUpstreamResponse(line, level, headers, true);
+    }
+
+    public void setUpstreamResponse(String line, JournalLevel level, GatewayHeaders headers, boolean relayed)
+    {
         this.upstreamResponseStartLine = line;
         this.upstreamResponseLevel = level;
         this.upstreamResponseHeaders = headers;
+        this.upstreamResponseRelayed = relayed;
     }
 
     public void setClientResponse(String line, JournalLevel level, GatewayHeaders headers)
@@ -233,6 +240,15 @@ public final class JournalExchange
     public JournalLevel getUpstreamResponseLevel()
     {
         return upstreamResponseLevel;
+    }
+
+    /**
+     * False for an upstream head r7 refused to relay: the response body of this exchange is then
+     * r7's own answer, and the upstream response's body is unknown.
+     */
+    public boolean isUpstreamResponseRelayed()
+    {
+        return upstreamResponseRelayed;
     }
 
     public String getClientResponseStartLine()

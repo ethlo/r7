@@ -122,7 +122,7 @@ class HeaderDeltaRoundTripTest
 
                     journal.clientRequest(JournalLevel.HEADERS, id, requestLine.rewind(), clientRequest, client, IpSource.SOCKET);
                     journal.upstreamRequest(JournalLevel.HEADERS, id, requestLine.rewind(), upstreamRequest, clientRequest);
-                    journal.upstreamResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), upstreamResponse);
+                    journal.upstreamResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), upstreamResponse, true);
                     journal.clientResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), clientResponse, upstreamResponse);
                     journal.endExchange(id, new FastGatewayAttributes(), 1L, 2L, 200,
                             0, 0, 0, 0, 1L, 1L, 2L,

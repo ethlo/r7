@@ -421,9 +421,17 @@ public final class GatewayPipeline
      */
     public void onResponseCommit(final ServerExchange ex)
     {
-        if (ex.wasProxied())
+        // Only a head the upstream sent: on a proxy failure r7 commits its own 502, 503 or 504,
+        // which is the client's leg alone. Recorded as the upstream's, it would put words in the
+        // upstream's mouth that an audit then cannot tell from what the upstream said.
+        if (ex.upstreamResponseRelayed)
         {
             ex.upstreamResponse = ex.snapshotResponse();
+        }
+        else if (ex.upstreamResponded)
+        {
+            // A head r7 read and then refused to relay, answering in its place.
+            ex.upstreamResponse = ex.upstreamResponseAsRead();
         }
 
         // Only now, with the upstream's actual status known, can "upgraded" be answered
@@ -555,7 +563,10 @@ public final class GatewayPipeline
             // request and hands that to the delegate, which is the only set a difference is
             // meaningful against — redaction and level downgrades included.
             journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(ex.upstreamRequest()), ex.upstreamRequest().headers(), null);
-            journal.upstreamResponse(journalConfig.response().level(), requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers());
+            if (ex.upstreamResponded)
+            {
+                journal.upstreamResponse(journalConfig.response().level(), requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers(), ex.upstreamResponseRelayed);
+            }
         }
 
         journal.clientResponse(journalConfig.response().level(), requestId, ex.clientResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.clientResponse()), ex.clientResponse().headers(), null);

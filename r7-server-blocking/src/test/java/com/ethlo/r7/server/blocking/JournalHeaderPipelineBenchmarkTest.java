@@ -498,7 +498,7 @@ final class JournalHeaderPipelineBenchmarkTest
             {
                 stateful.upstreamRequest(scenario.level(), requestId, requestLine.rewind(), upstreamRequestHeaders, null);
             }
-            stateful.upstreamResponse(scenario.level(), requestId, 200, responseLine.rewind(), upstreamResponseHeaders);
+            stateful.upstreamResponse(scenario.level(), requestId, 200, responseLine.rewind(), upstreamResponseHeaders, true);
 
             if (scenario.bodyBytes() > 0)
             {

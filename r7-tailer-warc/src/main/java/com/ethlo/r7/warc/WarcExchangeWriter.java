@@ -30,7 +30,8 @@ import com.ethlo.r7.journal.api.JournalExchange;
  * their own: they carry {@code WARC-Truncated: unspecified} plus the
  * {@code WARC-Payload-Digest} of the payload records 1/4 actually store, which together with
  * {@code WARC-Concurrent-To} is enough for a reader to resolve the payload without
- * r7-specific knowledge. This is deliberately not a {@code revisit} record: {@code revisit}
+ * r7-specific knowledge. An upstream response head r7 refused to relay carries no digest:
+ * the stored response body is r7's own answer, not that response's. This is deliberately not a {@code revisit} record: {@code revisit}
  * means "content unchanged since it was archived", which the second hop of one exchange is
  * not, and it would also hide the forwarded request from a reader scanning for
  * {@code WARC-Type: request}.
@@ -248,8 +249,12 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             {
                 targetUris.add(upstreamTargetUri);
             }
+            // The journaled response body is what the client got. For a head r7 refused to relay
+            // that is r7's own answer, so neither its digest nor its checksum says anything about
+            // this response, whose body was never read.
+            final boolean relayed = exchange.isUpstreamResponseRelayed();
             if (addIfJournaled(legs, "response", exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(),
-                    false, null, responseDigest, 0, responseMismatch, null, responseDate))
+                    false, null, relayed ? responseDigest : null, 0, relayed && responseMismatch, null, responseDate))
             {
                 targetUris.add(upstreamTargetUri);
             }
@@ -329,7 +334,8 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         if (!leg.bodyOwner())
         {
             // The upstream leg: byte-identical to, and already stored by, the client leg of the
-            // same direction - see the class javadoc for why this is not a revisit record.
+            // same direction - see the class javadoc for why this is not a revisit record. A
+            // refused upstream head has no digest here: its body is not stored anywhere.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
             final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, leg.payloadDigest());
             addClientAddress(fields, leg.clientAddress());

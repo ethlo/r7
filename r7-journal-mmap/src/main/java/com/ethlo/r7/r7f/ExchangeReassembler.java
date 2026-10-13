@@ -110,9 +110,9 @@ public class ExchangeReassembler implements JournalEventListener
     }
 
     @Override
-    public void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers)
+    public void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, boolean relayed)
     {
-        getOrCreate(reqId).setUpstreamResponse(startLine, level, copyOf(headers));
+        getOrCreate(reqId).setUpstreamResponse(startLine, level, copyOf(headers), relayed);
     }
 
     @Override

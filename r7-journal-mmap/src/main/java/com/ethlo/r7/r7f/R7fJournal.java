@@ -275,7 +275,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public int upstreamResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers)
+    public int upstreamResponse(JournalLevel level, String reqId, int statusCode, ByteBuffer startLine, GatewayHeaders headers, boolean relayed)
     {
         final EntryEncoder enc = encoders.get();
         final FlatBufferBuilder fbb = enc.fbb;
@@ -290,6 +290,7 @@ public final class R7fJournal implements Journal
         UpstreamResponse.addStatus(fbb, statusCode);
         UpstreamResponse.addStartLine(fbb, lineOff);
         UpstreamResponse.addHeaders(fbb, headOff);
+        UpstreamResponse.addRelayed(fbb, relayed);
         return finishAndWrite(enc, EventPayload.UpstreamResponse, UpstreamResponse.endUpstreamResponse(fbb));
     }
 

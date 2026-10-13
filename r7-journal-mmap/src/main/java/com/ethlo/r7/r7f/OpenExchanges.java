@@ -275,11 +275,11 @@ final class OpenExchanges implements JournalEventListener, JournalDecoder.EntryO
     }
 
     @Override
-    public void onUpstreamResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers)
+    public void onUpstreamResponse(final String reqId, final JournalLevel level, final String startLine, final GatewayHeaders headers, final boolean relayed)
     {
         if (accept(reqId))
         {
-            target.onUpstreamResponse(reqId, level, startLine, headers);
+            target.onUpstreamResponse(reqId, level, startLine, headers, relayed);
         }
     }
 

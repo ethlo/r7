@@ -22,7 +22,11 @@ public interface Journal extends AutoCloseable
      */
     int upstreamRequest(JournalLevel level, String reqId, ByteBuffer startLine, GatewayHeaders headers, GatewayHeaders base);
 
-    int upstreamResponse(JournalLevel level, String reqId, int status, ByteBuffer startLine, GatewayHeaders headers);
+    /**
+     * @param relayed false when r7 refused this head and answered the client itself, so the
+     *                exchange's response body is r7's answer and this response's body is unknown
+     */
+    int upstreamResponse(JournalLevel level, String reqId, int status, ByteBuffer startLine, GatewayHeaders headers, boolean relayed);
 
     /**
      * @param base as on {@link #upstreamRequest}, here the upstream response already journaled

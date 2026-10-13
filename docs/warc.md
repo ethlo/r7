@@ -54,6 +54,10 @@ happened:
   since the journal then [records it at `METADATA`](config.md#logging-levels-routesyaml-journal).
 - Records 2 and 3 exist only for an exchange that was proxied. A request that a filter answered
   itself (a rate limit, a redirect) has records 1 and 4.
+- Record 3 exists only when an upstream sent a response head. A proxied request whose upstream
+  refused the connection, timed out or broke the protocol before answering has records 1, 2 and
+  4, and record 4 is r7's own `502`, `503` or `504`. A head r7 refuses to relay, such as a `101`
+  the client never asked for, is still record 3, followed by r7's `502` as record 4.
 - Every record of an exchange names all the others in `WARC-Concurrent-To`, and carries the
   same `WARC-R7-Request-Id`.
 - An incomplete exchange (the gateway stopped before it finished, or it was evicted while being
@@ -79,6 +83,7 @@ record says plainly when it does not hold them:
 | --- | --- | --- |
 | The body is in this record | `request` / `response` | `WARC-Payload-Digest` |
 | Records 2 and 3, always: any body is in record 1 or 4 of the same exchange | `request` / `response` | `WARC-Truncated: unspecified`, and `WARC-Payload-Digest` when there is a body |
+| Record 3 for a head r7 refused to relay: its body was never read, and record 4 is r7's own answer | `response` | `WARC-Truncated: unspecified`, no digest |
 | `warc.bodies: false`: the body was captured, but this output leaves it out | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-Payload-Digest`. The JSON line holds the body when `json.bodies` is `true` |
 | A body crossed the wire, but the journal level was below `FULL` | `request` / `response` | `WARC-Truncated: unspecified`, no digest |
 | The journaled body failed its checksum when read back | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-R7-Checksum-Mismatch: true`, no digest. The damaged bytes are never archived |
@@ -88,7 +93,8 @@ record says plainly when it does not hold them:
 A record without `WARC-Truncated` holds its whole body. Its headers are what the journal level
 kept. Records 2 and 3 never store a body,
 so they carry `WARC-Truncated` even when the message had none. The body of record 2 is in record 1, and
-the body of record 3 is in record 4, found through `WARC-Concurrent-To`. When that record is a
+the body of record 3 is in record 4, found through `WARC-Concurrent-To`, except for a head r7
+refused to relay, whose body is in no record. When that record is a
 `revisit`, its `WARC-Refers-To` leads to the earlier record that holds the bytes; when it too
 carries `WARC-Truncated`, this output does not hold the body.
 

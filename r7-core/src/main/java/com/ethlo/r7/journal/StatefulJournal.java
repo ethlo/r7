@@ -67,6 +67,7 @@ public final class StatefulJournal implements Journal
     private GatewayHeaders upstreamReqHeaders;
     private ByteBuffer upstreamResLine;
     private GatewayHeaders upstreamResHeaders;
+    private boolean upstreamResRelayed;
     private ByteBuffer clientResLine;
     private int clientStatusCode;
     private GatewayHeaders clientResHeaders;
@@ -134,10 +135,11 @@ public final class StatefulJournal implements Journal
     }
 
     @Override
-    public int upstreamResponse(final JournalLevel level, final String reqId, final int upstreamStatusCode, final ByteBuffer startLine, final GatewayHeaders headers)
+    public int upstreamResponse(final JournalLevel level, final String reqId, final int upstreamStatusCode, final ByteBuffer startLine, final GatewayHeaders headers, final boolean relayed)
     {
         this.upstreamResLine = cloneBuffer(startLine);
         this.upstreamResHeaders = headers;
+        this.upstreamResRelayed = relayed;
         this.upstreamStatusCode = upstreamStatusCode;
 
         int written = checkAndFlushRequest();
@@ -335,7 +337,7 @@ public final class StatefulJournal implements Journal
         {
             final GatewayHeaders headers = resLevel == JournalLevel.METADATA ? FastGatewayHeaders.empty() : redactHeaders(upstreamResHeaders, safeResponseHeaders);
             this.upstreamResponseBase = headers;
-            final int written = delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers);
+            final int written = delegate.upstreamResponse(resLevel, requestId, upstreamStatusCode, upstreamResLine, headers, upstreamResRelayed);
             this.bytesWritten += written;
             this.upstreamResFlushed = true;
             this.upstreamResLine = null;

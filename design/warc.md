@@ -120,7 +120,8 @@ Reuse `ValidatableConfig` / `ValidationResult`. Do not invent a mechanism.
   Sequence is the identity; timestamps are decoration. Wall clock still steps.
 - **A body cap**, with `WARC-Truncated: length` when it bites. This is also where the
   data-governance policy lives — a cap is auditable, "we mostly don't log big things" is not.
-- **Record shape: four records per exchange**, linked by `WARC-Concurrent-To`. See below.
+- **Record shape: four records per proxied exchange**, three when no upstream answered, linked
+  by `WARC-Concurrent-To`. See below.
 
 ### Record shape: four records, each body stored once
 
@@ -139,8 +140,22 @@ So four records, in the order they occurred:
 | 3 | `response`  | upstream to gateway   | not stored |
 | 4 | `response`  | gateway to client     | response body |
 
-All four carry `WARC-Concurrent-To` naming the others: the field is explicitly permitted on
-`request` and `response`, and is the one WARC field that may be repeated within a record.
+Every record of an exchange carries `WARC-Concurrent-To` naming the others: the field is
+explicitly permitted on `request` and `response`, and is the one WARC field that may be repeated
+within a record.
+
+**Record 3 exists only when an upstream sent a response head.** When none did - the connect
+was refused, the read timed out, the upstream broke the protocol before answering - the
+exchange has records 1, 2 and 4, and record 4 is r7's own `502`, `503` or `504`. Writing that
+answer as record 3 too would attribute to the upstream a message it never sent, and an archive
+cannot tell a forged record from a real one after the fact; an absent record says exactly what
+happened, and record 2 still shows what was forwarded. A head the upstream did send and r7
+refused to relay (a `101` it cannot tunnel) is record 3, and record 4 is r7's `502`: that head
+is the evidence of why the client got an error. That record 3 carries no `WARC-Payload-Digest`:
+the journaled response body is r7's answer, and the upstream's body was never read, so the
+digest that would otherwise point at record 4 would claim r7's `502` body as the upstream's.
+The journal says which case it is (`UpstreamResponse.relayed`), since a response filter can
+change the status a tailer would otherwise guess from.
 
 **Bodies are stored once because r7 does not modify them.** It is a streaming proxy — payloads
 are not buffered or rewritten — and the journal already commits to that, holding one
