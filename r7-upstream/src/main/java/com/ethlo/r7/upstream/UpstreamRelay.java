@@ -295,10 +295,6 @@ public final class UpstreamRelay
     }
 
     /**
-     * A read of the client's request body failed: the client went away or sent a broken body. Kept
-     * apart from a failed write upstream, which may mean the upstream has already answered.
-     */
-    /**
      * A write to the client failed while relaying the response: the client's doing, not the
      * upstream's.
      */
@@ -310,6 +306,10 @@ public final class UpstreamRelay
         }
     }
 
+    /**
+     * A read of the client's request body failed: the client went away or sent a broken body. Kept
+     * apart from a failed write upstream, which may mean the upstream has already answered.
+     */
     private static final class ClientBodyException extends IOException
     {
         ClientBodyException(final IOException cause)
