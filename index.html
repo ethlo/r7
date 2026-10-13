@@ -1066,7 +1066,9 @@ start instead, and tells you exactly what is wrong:</p>
 <p>Unknown keys, invalid regular expressions, duplicate route ids, fallback loops and missing
 environment variables are all caught at startup. A misspelled option or broken YAML is reported
 with its line and column. Edit <code>routes.yaml</code> while r7 runs and it reloads on its own; an edit
-that does not validate is rejected, and the routes you had keep serving traffic.</p>
+that does not validate is rejected, and the routes you had keep serving traffic. In CI,
+<code>--validate-only</code> runs the same checks and exits <code>1</code> with the same messages, without starting
+anything (<a href="config/#checking-a-configuration-before-it-ships">checking a configuration</a>).</p>
 <p>The <a href="editor/">online config editor</a> checks your routes against the full schema as you type,
 with autocomplete for every filter and predicate.</p>
 <h3 id="routing-you-can-read-top-to-bottom">Routing you can read top to bottom</h3>
