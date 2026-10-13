@@ -23,10 +23,11 @@ public interface ConditionInput
     GatewayResponse response(Leg leg);
 
     /**
-     * @return the exchange's one uniform draw in {@code [0, 1)}, made the first time it is asked
-     * for and kept, so every {@code Sample} of the exchange agrees
+     * @return the exchange's uniform draw in {@code [0, 1)} for that decision, made the first
+     * time it is asked for and kept, so every {@code Sample} of the decision agrees; each
+     * {@link Draw} is drawn independently
      */
-    double sampleDraw();
+    double sampleDraw(Draw draw);
 
     /**
      * Only a client request, as when a route is chosen. Allocates; for callers off the request
@@ -36,7 +37,8 @@ public interface ConditionInput
     {
         return new ConditionInput()
         {
-            private double draw = Double.NaN;
+            private double routing = Double.NaN;
+            private double journal = Double.NaN;
 
             @Override
             public GatewayRequest request(final Leg leg)
@@ -51,13 +53,21 @@ public interface ConditionInput
             }
 
             @Override
-            public double sampleDraw()
+            public double sampleDraw(final Draw draw)
             {
-                if (Double.isNaN(this.draw))
+                if (draw == Draw.ROUTING)
                 {
-                    this.draw = ThreadLocalRandom.current().nextDouble();
+                    if (Double.isNaN(this.routing))
+                    {
+                        this.routing = ThreadLocalRandom.current().nextDouble();
+                    }
+                    return this.routing;
                 }
-                return this.draw;
+                if (Double.isNaN(this.journal))
+                {
+                    this.journal = ThreadLocalRandom.current().nextDouble();
+                }
+                return this.journal;
             }
         };
     }

@@ -365,7 +365,7 @@ One predicate is new for both lists:
 
 | Predicate | Parameters | Matches |
 |---|---|---|
-| `Sample` | `rate`: a fraction, `0 < rate <= 1` | A share of exchanges. Each exchange draws one uniform number the first time a `Sample` is evaluated, and keeps it, from a random source, not from a value a client can choose (such as a request ID); `Sample` matches when the draw is below `rate`. One draw serves every `Sample` in the exchange, so `on_request` and `on_response` agree, and `rate: 0.01` selects a subset of `rate: 0.1`. Allowed everywhere, a route's `match` included (a canary). It has no `leg`. |
+| `Sample` | `rate`: a fraction, `0 < rate <= 1` | A share of exchanges. Each exchange draws one uniform number the first time a `Sample` is evaluated, and keeps it, from a random source, not from a value a client can choose (such as a request ID); `Sample` matches when the draw is below `rate`. Each decision draws its own number: routing one, shared by every route and group `match`, and journaling another, shared by `on_request` and `on_response` so they agree. Within a decision `rate: 0.01` selects a subset of `rate: 0.1`; across them the draws are independent, since on one draw a journal sample beside a `Sample` canary would record exactly the canary's traffic and none of the rest. Allowed everywhere, a route's `match` included (a canary). It has no `leg`. |
 
 New in 1.0, allowed only in `on_response`:
 

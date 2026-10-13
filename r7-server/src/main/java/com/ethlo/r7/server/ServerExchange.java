@@ -20,6 +20,7 @@ import com.ethlo.r7.api.ShortCircuitGatewayResponse;
 import com.ethlo.r7.api.UpstreamOutcome;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.condition.ConditionInput;
+import com.ethlo.r7.condition.Draw;
 import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.filters.StaticContentFactory;
@@ -94,8 +95,9 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
     boolean upstreamFailed;
     boolean upstreamBodyFailed;
     long journalBytes;
-    // The one draw every Sample of this exchange tests against; NaN until the first asks.
-    private double sampleDraw = Double.NaN;
+    // The draws the Samples of this exchange test, one per decision; NaN until the first asks.
+    private double routingDraw = Double.NaN;
+    private double journalDraw = Double.NaN;
 
     protected ServerExchange(final GatewayPipeline pipeline)
     {
@@ -339,13 +341,21 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
     }
 
     @Override
-    public double sampleDraw()
+    public double sampleDraw(final Draw draw)
     {
-        if (Double.isNaN(this.sampleDraw))
+        if (draw == Draw.ROUTING)
         {
-            this.sampleDraw = ThreadLocalRandom.current().nextDouble();
+            if (Double.isNaN(this.routingDraw))
+            {
+                this.routingDraw = ThreadLocalRandom.current().nextDouble();
+            }
+            return this.routingDraw;
         }
-        return this.sampleDraw;
+        if (Double.isNaN(this.journalDraw))
+        {
+            this.journalDraw = ThreadLocalRandom.current().nextDouble();
+        }
+        return this.journalDraw;
     }
 
     // --- For metrics ------------------------------------------------------------------------

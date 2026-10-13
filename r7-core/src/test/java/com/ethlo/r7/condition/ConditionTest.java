@@ -44,7 +44,7 @@ class ConditionTest
             }
 
             @Override
-            public double sampleDraw()
+            public double sampleDraw(final Draw ignored)
             {
                 return draw;
             }
@@ -91,24 +91,40 @@ class ConditionTest
     @Test
     void sampleMatchesWhenTheDrawIsBelowTheRate()
     {
-        final Condition sample = new SampleCondition(0.25);
+        final Condition sample = new SampleCondition(0.25, Draw.ROUTING);
         assertThat(sample.test(input(null, null, 0.1))).isTrue();
         assertThat(sample.test(input(null, null, 0.25))).isFalse();
-        assertThat(new SampleCondition(1.0).test(input(null, null, Math.nextDown(1.0)))).isTrue();
+        assertThat(new SampleCondition(1.0, Draw.ROUTING).test(input(null, null, Math.nextDown(1.0)))).isTrue();
     }
 
     @Test
     void everySampleOfAnExchangeTestsTheSameDraw()
     {
         // Two independent draws would make this true about a quarter of the time.
-        final Condition sample = new SampleCondition(0.5);
+        final Condition sample = new SampleCondition(0.5, Draw.ROUTING);
         final Condition contradiction = new AndCondition(List.of(sample, new NotCondition(sample)));
         for (int i = 0; i < 1000; i++)
         {
             final ConditionInput exchange = ConditionInput.of(mock(GatewayRequest.class));
             assertThat(contradiction.test(exchange)).isFalse();
-            assertThat(exchange.sampleDraw()).isEqualTo(exchange.sampleDraw());
+            assertThat(exchange.sampleDraw(Draw.ROUTING)).isEqualTo(exchange.sampleDraw(Draw.ROUTING));
         }
+    }
+
+    @Test
+    void routingAndJournalingDrawIndependently()
+    {
+        // On one draw, a 50% journal sample beside a 50% canary would record exactly the
+        // canary's exchanges. Independent draws give all four combinations.
+        final Condition canary = new SampleCondition(0.5, Draw.ROUTING);
+        final Condition journaled = new SampleCondition(0.5, Draw.JOURNAL);
+        final java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < 1000; i++)
+        {
+            final ConditionInput exchange = ConditionInput.of(mock(GatewayRequest.class));
+            seen.add(canary.test(exchange) + "/" + journaled.test(exchange));
+        }
+        assertThat(seen).containsExactlyInAnyOrder("true/true", "true/false", "false/true", "false/false");
     }
 
     @Test
