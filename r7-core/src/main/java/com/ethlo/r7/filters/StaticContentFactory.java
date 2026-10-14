@@ -2,7 +2,9 @@ package com.ethlo.r7.filters;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -42,8 +44,9 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
      * @param directories      the directories to serve files from, the first that has a file winning
      * @param followSymlinks   whether to follow symbolic links when resolving files
      * @param serveHiddenFiles whether a path segment starting with '.' may be served
+     * @param fallback         the file, relative to the directories, served for a path none of them has; null for 404
      */
-    public record StaticServeRequest(List<Path> directories, boolean followSymlinks, boolean serveHiddenFiles)
+    public record StaticServeRequest(List<Path> directories, boolean followSymlinks, boolean serveHiddenFiles, String fallback)
     {
         /**
          * Whether {@code relativePath} names a hidden file or directory: any segment starting with
@@ -108,7 +111,12 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
             @Description("Whether to serve files and directories whose name starts with '.' (e.g. .env, .git/). " +
                     "Disabled by default, in which case such a request is answered 404; .well-known/ is always served.")
             @DefaultValue("false")
-            Boolean serveHiddenFiles) implements ValidatableConfig
+            Boolean serveHiddenFiles,
+
+            @Nullable
+            @Description("A file, relative to the directories and looked up in their order, served with 200 for a path " +
+                    "none of them has, instead of 404: index.html for a single-page app whose routes the browser handles.")
+            String fallback) implements ValidatableConfig
     {
         @Override
         public Boolean serveHiddenFiles()
@@ -145,8 +153,77 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
                         validator.invalid("directories", directory.toString(), "Directory " + directory.toAbsolutePath() + " is listed more than once");
                     }
                 }
+                if (this.fallback != null && !result.hasErrors())
+                {
+                    validateFallback(this, validator);
+                }
             });
         }
+    }
+
+    private static void validateFallback(final Config config, final ValidatorUtils validator)
+    {
+        final String file = config.fallback();
+        final Path relative = relativeFile(file);
+        if (relative == null)
+        {
+            validator.invalid("fallback", file, "Must name a file relative to the directories, such as index.html");
+        }
+        else if (!config.serveHiddenFiles() && StaticServeRequest.isHidden(file))
+        {
+            validator.invalid("fallback", file, "Names a hidden file, which this route does not serve");
+        }
+        else if (config.directories().stream().noneMatch(directory -> Files.isRegularFile(directory.resolve(relative))))
+        {
+            validator.invalid("fallback", file, "No directory has " + file);
+        }
+        else if (config.directories().stream().noneMatch(directory -> servable(directory, relative, config.followSymlinks())))
+        {
+            validator.invalid("fallback", file, "Reached only through a symlink, which this route does not follow");
+        }
+    }
+
+    /**
+     * {@code file} as a path under a directory, or null when it is empty, absolute, names a
+     * directory, has an empty or {@code ..} segment, or is no valid path at all.
+     */
+    private static Path relativeFile(final String file)
+    {
+        if (file.isEmpty() || file.endsWith("/") || Arrays.stream(file.split("/")).anyMatch(segment -> segment.isEmpty() || segment.equals("..")))
+        {
+            return null;
+        }
+        try
+        {
+            final Path path = Path.of(file);
+            return path.isAbsolute() || path.getRoot() != null || path.normalize().startsWith("..") ? null : path;
+        }
+        catch (InvalidPathException exc)
+        {
+            return null;
+        }
+    }
+
+    /**
+     * Whether {@code file} is a regular file under {@code directory} that the server would serve,
+     * by the same symlink rule as its lookup.
+     */
+    private static boolean servable(final Path directory, final Path file, final boolean followSymlinks)
+    {
+        final Path resolved = directory.resolve(file);
+        if (!followSymlinks)
+        {
+            Path current = directory;
+            for (final Path segment : file)
+            {
+                current = current.resolve(segment);
+                if (Files.isSymbolicLink(current))
+                {
+                    return false;
+                }
+            }
+        }
+        return Files.isRegularFile(resolved);
     }
 
     private static Path realPath(final Path directory)
@@ -167,7 +244,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
 
         public GF(final Config config)
         {
-            this.request = new StaticServeRequest(List.copyOf(config.directories()), config.followSymlinks(), config.serveHiddenFiles());
+            this.request = new StaticServeRequest(List.copyOf(config.directories()), config.followSymlinks(), config.serveHiddenFiles(), config.fallback());
         }
 
         @Override
