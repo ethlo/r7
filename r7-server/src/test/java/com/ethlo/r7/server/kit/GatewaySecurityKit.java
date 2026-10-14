@@ -80,7 +80,18 @@ public abstract class GatewaySecurityKit
                     upstream:
                       targets:
                         - url: %s
-                """.formatted(this.upstream.url()), StandardCharsets.UTF_8);
+                  - id: kit-rewrite
+                    match:
+                      - PathPrefix:
+                          prefix: /rewrite
+                    filters:
+                      - RewritePath:
+                          regexp: "^/rewrite/files$"
+                          replacement: "/kit/files/{query.name}"
+                    upstream:
+                      targets:
+                        - url: %s
+                """.formatted(this.upstream.url(), this.upstream.url()), StandardCharsets.UTF_8);
         final Path server = this.dir.resolve("server.yaml");
         Files.writeString(server, """
                 server:
@@ -192,6 +203,23 @@ public abstract class GatewaySecurityKit
             final int status = send("GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n");
             assertRefused(status, path);
         }
+    }
+
+    /**
+     * A path a filter builds from request data gets the same check as the client's: the guard at
+     * the door never saw a query value that a rewrite puts in the path.
+     */
+    @Test
+    void aRewrittenPathIsCheckedBeforeItIsForwarded() throws Exception
+    {
+        for (final String name : new String[]{"..%2Fadmin", "..", ".", "a%5Cb", "%252e%252e"})
+        {
+            final String path = "/rewrite/files?name=" + name;
+            final int status = send("GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            assertRefused(status, path);
+        }
+        assertThat(forward("GET /rewrite/files?name=report.pdf HTTP/1.1\r\nHost: localhost\r\n\r\n").requestLine())
+                .isEqualTo("GET /kit/files/report.pdf?name=report.pdf HTTP/1.1");
     }
 
     // ============================================================================================

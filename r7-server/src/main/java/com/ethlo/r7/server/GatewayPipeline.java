@@ -385,6 +385,23 @@ public final class GatewayPipeline
             }
         }
 
+        // The guard at the door checked the client's path; a path a filter set since (a
+        // RewritePath that put a query value in it, a plugin) gets the same check before the
+        // upstream sees it, or ?name=../admin would forward /files/../admin. The same instance
+        // means no filter changed it.
+        final String upstreamPath = ex.liveRequest.path();
+        if (upstreamPath != ex.decodedPath())
+        {
+            final RequestPathGuard.Violation violation = RequestPathGuard.check(upstreamPath);
+            if (violation != null)
+            {
+                logger.debug("Refusing an ambiguous upstream path ({}): {}", violation, upstreamPath);
+                ex.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.BAD_REQUEST, MediaTypes.TEXT_PLAIN_UTF8, ErrorMessages.AMBIGUOUS_PATH.duplicate()));
+                shortCircuit(null, ex, route);
+                return;
+            }
+        }
+
         registerResponseListeners(ex, route);
 
         ex.proxyStartNanos = System.nanoTime();
