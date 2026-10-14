@@ -1577,7 +1577,7 @@
     // whether or not the exchange was journaled.
     function ruleErrorsHtml(count) {
         return count > 0
-            ? `<span class="text-err" title="times this rule could not be evaluated and did not fire, since the configuration was loaded">${count.toLocaleString()} rule errors</span>`
+            ? `<span class="text-err" title="times this rule could not be evaluated and did not fire, since the configuration was loaded">${count.toLocaleString()} rule ${count === 1 ? 'error' : 'errors'}</span>`
             : '';
     }
 
