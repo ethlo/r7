@@ -49,6 +49,8 @@ public class JsonLinesWriter implements ExchangeCompletionListener
      */
     static final String ROUTE_ID_ATTRIBUTE = "gateway.route.id";
     static final String UPSTREAM_TARGET_ATTRIBUTE = "gateway.target";
+    private static final String IDENTITY_ATTRIBUTE_PREFIX = "gateway.identity.";
+    private static final List<String> IDENTITY_FIELDS = List.of("scheme", "issuer", "subject", "username");
 
     private final OutputStream out;
     private final boolean bodies;
@@ -372,6 +374,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         }
         writeString("remote_address", Optional.ofNullable(exchange.remoteAddress()).map(InetAddress::getHostAddress).orElse(null));
         writeString("remote_address_source", Optional.ofNullable(exchange.getRemoteAddressSource()).map(Enum::toString).orElse(null));
+        writeIdentity(attributes);
 
         // wasProxied() reads proxyStartTs, which only the end event sets; without one, an
         // upstream leg having been journaled is the evidence there is.
@@ -441,6 +444,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         final Map<String, List<String>> otherAttributes = new HashMap<>(GatewayUtils.toMap(attributes));
         otherAttributes.remove(ROUTE_ID_ATTRIBUTE);
         otherAttributes.remove(UPSTREAM_TARGET_ATTRIBUTE);
+        IDENTITY_FIELDS.forEach(field -> otherAttributes.remove(IDENTITY_ATTRIBUTE_PREFIX + field));
         writeMap("attributes", otherAttributes);
 
         if (warc != null)
@@ -453,6 +457,25 @@ public class JsonLinesWriter implements ExchangeCompletionListener
             generator.writeEndObject();
         }
 
+        generator.writeEndObject();
+    }
+
+    /**
+     * Who made the request, as the filter that verified them recorded it, lifted out of the
+     * attributes into an object of its own; left out when no filter verified the caller.
+     */
+    private void writeIdentity(final GatewayAttributes attributes) throws IOException
+    {
+        if (attributes == null || attributes.getFirst(IDENTITY_ATTRIBUTE_PREFIX + "subject") == null)
+        {
+            return;
+        }
+        generator.writeName("identity");
+        generator.writeStartObject();
+        for (final String field : IDENTITY_FIELDS)
+        {
+            writeString(field, attributes.getFirst(IDENTITY_ATTRIBUTE_PREFIX + field));
+        }
         generator.writeEndObject();
     }
 

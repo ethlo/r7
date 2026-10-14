@@ -74,6 +74,12 @@
             <version>3.3.0</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>10.9</version>
+            <scope>compile</scope>
+        </dependency>
 
 
         <!-- TEST -->
