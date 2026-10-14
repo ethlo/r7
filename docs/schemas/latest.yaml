@@ -728,7 +728,7 @@ $defs:
               - type: boolean
               - type: string
                 pattern: "^\\$\\{.*\\}$"
-              description: "Whether to follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped 'current' release symlink)."
+              description: Whether to follow symbolic links found under the directories when resolving a file. A listed directory may itself be a symlink (e.g. an atomically swapped 'current' release) without this; enable it only to follow links to files or directories inside them.
               default: false
             serve_hidden_files:
               anyOf:

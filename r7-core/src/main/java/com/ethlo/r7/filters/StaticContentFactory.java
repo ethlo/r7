@@ -1,5 +1,6 @@
 package com.ethlo.r7.filters;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -97,9 +98,9 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
             List<Path> directories,
 
             @Nullable
-            @Description("Whether to follow symbolic links when resolving files under the base directory. " +
-                    "Enable this if the base directory itself, or files/directories within it, are symlinks " +
-                    "(e.g. an atomically swapped 'current' release symlink).")
+            @Description("Whether to follow symbolic links found under the directories when resolving a file. " +
+                    "A listed directory may itself be a symlink (e.g. an atomically swapped 'current' release) " +
+                    "without this; enable it only to follow links to files or directories inside them.")
             @DefaultValue("false")
             Boolean followSymlinks,
 
@@ -139,12 +140,24 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
                     {
                         validator.invalid("directories", String.valueOf(directory), "Directory " + (directory == null ? null : directory.toAbsolutePath()) + " not found");
                     }
-                    else if (!seen.add(directory.toAbsolutePath().normalize()))
+                    else if (!seen.add(realPath(directory)))
                     {
                         validator.invalid("directories", directory.toString(), "Directory " + directory.toAbsolutePath() + " is listed more than once");
                     }
                 }
             });
+        }
+    }
+
+    private static Path realPath(final Path directory)
+    {
+        try
+        {
+            return directory.toRealPath();
+        }
+        catch (IOException exc)
+        {
+            return directory.toAbsolutePath().normalize();
         }
     }
 

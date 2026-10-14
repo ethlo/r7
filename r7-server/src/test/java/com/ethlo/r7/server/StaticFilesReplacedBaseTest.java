@@ -45,6 +45,22 @@ class StaticFilesReplacedBaseTest
     }
 
     @Test
+    void aDeletedDirectoryStillHeldOpenIsSkippedForTheNextOne(@TempDir final Path live) throws IOException
+    {
+        Files.writeString(live.resolve("index.html"), "<h1>live</h1>");
+        final Path site = Files.createTempDirectory("r7-static-replaced-");
+        try (DirectoryStream<Path> held = Files.newDirectoryStream(site))
+        {
+            Files.delete(site);
+            final Path stale = heldOpen(site);
+            assumeTrue(stale != null, "no /proc/self/fd entry for the deleted directory");
+
+            assertThat(serve(List.of(stale, live), "/index.html")).isEqualTo(200);
+            assertThat(serve(List.of(stale, live), "/missing.html")).isEqualTo(404);
+        }
+    }
+
+    @Test
     void aLiveBaseDirectoryIsNotUnlinked(@TempDir final Path site) throws IOException
     {
         Files.writeString(site.resolve("index.html"), "<h1>live</h1>");
@@ -75,6 +91,11 @@ class StaticFilesReplacedBaseTest
     }
 
     private static int serve(final Path base, final String path) throws IOException
+    {
+        return serve(List.of(base), path);
+    }
+
+    private static int serve(final List<Path> directories, final String path) throws IOException
     {
         final int[] status = new int[1];
         final GatewayHeaders headers = TestHeaders.of();
@@ -120,7 +141,7 @@ class StaticFilesReplacedBaseTest
             public void header(final String name, final String value)
             {
             }
-        }, new StaticContentFactory.StaticServeRequest(List.of(base), false, false));
+        }, new StaticContentFactory.StaticServeRequest(directories, false, false));
         return status[0];
     }
 }
