@@ -1,6 +1,6 @@
 version: my-version-42
 
-# Global filters applied to every request
+# Root filters: one instance each for the whole gateway
 filters:
   - SimpleMetrics:
       period: 5m
@@ -16,15 +16,46 @@ filters:
         - GET
         - POST
 
+# Root journal: the base for every route, and rules checked after the route's and group's own
+journal:
+  request:
+    level: METADATA
+  response:
+    level: METADATA
+  on_response:
+    - id: server-errors
+      match:
+        - Status:
+            include: [5xx]
+      response: { level: FULL, truncate_body_at: 64KB }
+
+# Root upstream keys, inherited key by key
+upstream:
+  timeouts:
+    connect: 2s
+    read: 30s
+
+# Requests refused before routing: route misses, ambiguous paths, TRACE
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+
 routes:
-  - id: core-api
+  - group: api
     match:
       - PathPrefix:
-          prefix: /api/v1
-      - Method:
-          include:
-            - GET
-            - POST
+          prefix: /api/v1/
+    filters:
+      # One limit for the group's routes together
+      - RateLimiter:
+          capacity: 100
+          refill_tokens: 10
+          refill_period: 1s
+      - StripPathPrefix:
+          parts: 2
     upstream:
       targets:
         - url: http://api-node-01:8090
@@ -32,21 +63,33 @@ routes:
       health_check:
         path: /health
         interval: 5s
-      timeouts:
-        read: 15s
       fallback:
         route_id: maintenance-mode
     journal:
-      request:
-        level: HEADERS
-      response:
-        level: HEADERS
-    filters:
-      - StripPathPrefix:
-          parts: 2
-      - AddRequestHeader:
-          name: X-Gateway-Routed
-          value: "true"
+      on_request:
+        - id: api-writes
+          match:
+            - not:
+                Method:
+                  include: [GET, HEAD]
+          request: { level: FULL, truncate_body_at: 64KB }
+    routes:
+      - id: orders
+        match:
+          - PathPrefix:
+              prefix: /api/v1/orders/
+        filters:
+          - AddRequestHeader:
+              name: X-Gateway-Routed
+              value: "true"
+      - id: reports
+        match:
+          - PathPrefix:
+              prefix: /api/v1/reports/
+        upstream:
+          timeouts:
+            connect: 2s
+            read: 120s
 
   - id: maintenance-mode
     match: []
@@ -59,9 +102,14 @@ routes:
   - id: static-frontend
     match:
       - PathPrefix:
-          prefix: /app
+          prefix: /app/
     filters:
-      - StripPrefix:
+      - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /var/www/frontend
+          base_directory: /var/www/frontend/
+    journal:
+      request:
+        level: NONE
+      response:
+        level: NONE

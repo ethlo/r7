@@ -11,6 +11,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -96,6 +97,18 @@ class DocsConfigSnippetsTest
         assertThat(server.isObject()).as(snippet + " is not a YAML mapping").isTrue();
         final Path routes = Files.writeString(this.dir.resolve("routes.yaml"), "routes:\n  - " + PLACEHOLDER_ROUTE.indent(4).strip() + "\n");
         start(snippet, routes, serverFile((ObjectNode) server));
+    }
+
+    /**
+     * The editor opens with this file, so it must be a config the gateway accepts.
+     */
+    @Test
+    void editorExampleStartsTheGateway() throws Exception
+    {
+        final String example = Files.readString(DocSnippets.repositoryRoot().resolve("r7-editor/example-config.yaml"))
+                .replace("/var/www/frontend/", Files.createDirectories(this.dir.resolve("frontend")) + "/");
+        final Path routes = Files.writeString(this.dir.resolve("routes.yaml"), example);
+        start(new DocSnippet("r7-editor/example-config.yaml", 1, null, example), routes, serverFile(YAML.createObjectNode()));
     }
 
     /**
