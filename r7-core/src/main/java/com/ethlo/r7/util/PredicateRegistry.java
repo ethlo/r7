@@ -78,7 +78,15 @@ public class PredicateRegistry
         this.responseFactories = responseFactories.stream()
                 .collect(Collectors.toUnmodifiableMap(GatewayResponsePredicateFactory::name, factory -> factory));
 
-        this.requestFactories.forEach((name, factory) -> checkRegistration(name, factory.configClass()));
+        this.requestFactories.forEach((name, factory) ->
+        {
+            checkRegistration(name, factory.configClass());
+            // client is every predicate's default leg, and the only one a route's match has
+            if (!factory.legs().contains(Leg.CLIENT))
+            {
+                throw new IllegalStateException("Predicate '" + name + "' must test the client leg: legs() has to include CLIENT");
+            }
+        });
         this.responseFactories.forEach((name, factory) ->
         {
             checkRegistration(name, factory.configClass());

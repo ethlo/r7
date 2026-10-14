@@ -1996,7 +1996,7 @@ $defs:
       filters:
         type: array
         items:
-          $ref: "#/$defs/filter"
+          $ref: "#/$defs/routeFilter"
         description: "A list of processing steps applied to the request before forwarding, and to the response before returning."
       id:
         type: string
@@ -2283,6 +2283,8 @@ $defs:
     - match
     additionalProperties: false
     description: Defines a single traffic route and its associated behaviors.
+  routeFilter:
+    $ref: "#/$defs/filter"
   unroutedPredicate:
     anyOf:
     - type: object

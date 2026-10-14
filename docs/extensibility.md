@@ -259,7 +259,7 @@ public Set<DeclarationLevel> levels() {
 
 The routes then refuse to load with it anywhere else (`[filters[0]] BlockToken can be declared on a route only, not on the root.`), and the editor flags it there. Left out, a filter may be declared on every level.
 
-A predicate factory does the same for legs. A predicate that only means something on the request as the client sent it overrides `legs()`, as `RemoteAddr` does, and `leg: upstream` is then refused for it and left out of its schema:
+A predicate factory does the same for legs. A predicate that only means something on the request as the client sent it overrides `legs()`, as `RemoteAddr` does, and `leg: upstream` is then refused for it and left out of its schema. The client leg is every predicate's default, so the set must include `CLIENT`:
 
 ```java
 @Override

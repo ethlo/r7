@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +13,7 @@ import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayResponsePredicate;
 import com.ethlo.r7.condition.Condition;
 import com.ethlo.r7.condition.ConditionScope;
+import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.config.YamlConfigSupport;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.spi.GatewayResponsePredicateFactory;
@@ -96,6 +98,41 @@ class PredicateRegistryTest
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("Predicate name '" + reserved + "' is reserved");
         }
+    }
+
+    @Test
+    void aPredicateMustTestTheClientLeg()
+    {
+        final GatewayPredicateFactory<NoParameters> base = request("UpstreamOnly", NoParameters.class);
+        final GatewayPredicateFactory<NoParameters> upstreamOnly = new GatewayPredicateFactory<>()
+        {
+            @Override
+            public String name()
+            {
+                return base.name();
+            }
+
+            @Override
+            public Class<NoParameters> configClass()
+            {
+                return base.configClass();
+            }
+
+            @Override
+            public GatewayPredicate create(final NoParameters config)
+            {
+                return base.create(config);
+            }
+
+            @Override
+            public Set<Leg> legs()
+            {
+                return Set.of(Leg.UPSTREAM);
+            }
+        };
+        assertThatThrownBy(() -> new PredicateRegistry(MAPPER, List.of(upstreamOnly), List.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Predicate 'UpstreamOnly' must test the client leg: legs() has to include CLIENT");
     }
 
     @Test

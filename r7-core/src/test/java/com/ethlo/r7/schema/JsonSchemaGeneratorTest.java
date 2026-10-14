@@ -82,7 +82,8 @@ class JsonSchemaGeneratorTest
     {
         assertThat(SCHEMA.at("/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/rootFilter");
         assertThat(SCHEMA.at("/$defs/group/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/groupFilter");
-        assertThat(SCHEMA.at("/$defs/route/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/filter");
+        assertThat(SCHEMA.at("/$defs/route/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/routeFilter");
+        assertThat(SCHEMA.at("/$defs/routeFilter/$ref").asString()).as("no filter is refused on a route").isEqualTo("#/$defs/filter");
 
         assertThat(SCHEMA.at("/$defs/filter").findValue("CircuitBreaker")).isNotNull();
         for (final String level : List.of("rootFilter", "groupFilter"))

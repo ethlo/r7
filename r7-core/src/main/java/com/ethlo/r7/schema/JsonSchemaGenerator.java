@@ -80,6 +80,7 @@ public final class JsonSchemaGenerator
     {
         final Map<String, SchemaNode> defs = new TreeMap<>();
         defs.put("filter", buildFilterDefinition());
+        defs.put("routeFilter", buildLevelFilterDefinition(DeclarationLevel.ROUTE));
         defs.put("groupFilter", buildLevelFilterDefinition(DeclarationLevel.GROUP));
         defs.put("rootFilter", buildLevelFilterDefinition(DeclarationLevel.ROOT));
         defs.put("predicate", buildPredicateDefinition("predicate", false));
@@ -191,7 +192,7 @@ public final class JsonSchemaGenerator
 
         properties.put("filters", new ArraySchema(
                         "array",
-                        new RefSchema("#/$defs/filter", null, null),
+                        new RefSchema("#/$defs/routeFilter", null, null),
                         "A list of processing steps applied to the request before forwarding, and to the response before returning.",
                         null
                 )
@@ -393,8 +394,8 @@ public final class JsonSchemaGenerator
     }
 
     /**
-     * A route's filters, less those that may not be declared on {@code level}, so the editor flags a
-     * route-only filter at the root or on a group as the gateway would.
+     * Every filter, less those that may not be declared on {@code level}, so the editor flags a
+     * filter where the gateway would refuse it, such as a route-only filter at the root.
      */
     private SchemaNode buildLevelFilterDefinition(final DeclarationLevel level)
     {
