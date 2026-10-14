@@ -11,8 +11,9 @@ routes:
       - PathPrefix:
           prefix: /benchmark
     filters:
-      - RequireRequestHeader:
+      - RequireMatchRequestHeader:
           name: Authorization
+          regexp: "(Bearer|Basic) .+"
           reject_status_code: 401
 
   - id: internal-backend
