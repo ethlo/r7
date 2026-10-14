@@ -27,7 +27,8 @@ import com.ethlo.r7.journal.api.JournalExchange;
  * fields — the one WARC field explicitly permitted to repeat within a record. The gateway
  * journal itself stores exactly one copy of the request body and one copy of the response
  * body, not one per network leg, so records 2 and 3 (the upstream leg) never have bytes of
- * their own: they carry {@code WARC-Truncated: unspecified} plus the
+ * their own: they carry {@code WARC-Truncated: unspecified} ({@code length} when the journal
+ * capped the body at {@code truncate_body_at}) plus the
  * {@code WARC-Payload-Digest} of the payload records 1/4 actually store, which together with
  * {@code WARC-Concurrent-To} is enough for a reader to resolve the payload without
  * r7-specific knowledge. An upstream response head r7 refused to relay carries no digest:

@@ -6,12 +6,12 @@ public record DataSize(long bytes)
 {
     public static DataSize ofMegabytes(long amount)
     {
-        return ofKilobytes(amount * 1024L);
+        return ofKilobytes(Math.multiplyExact(amount, 1024L));
     }
 
     public static DataSize ofKilobytes(long amount)
     {
-        return ofBytes(amount * 1024L);
+        return ofBytes(Math.multiplyExact(amount, 1024L));
     }
 
     public static DataSize ofBytes(long amount)
@@ -21,7 +21,7 @@ public record DataSize(long bytes)
 
     public static DataSize ofGigabytes(long amount)
     {
-        return ofMegabytes(amount * 1024L);
+        return ofMegabytes(Math.multiplyExact(amount, 1024L));
     }
 
     @Override
