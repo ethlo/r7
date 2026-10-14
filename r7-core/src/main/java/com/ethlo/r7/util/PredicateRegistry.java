@@ -53,8 +53,8 @@ public class PredicateRegistry
     public PredicateRegistry(final ObjectMapper mapper)
     {
         this(mapper,
-                ServiceLoader.load(GatewayPredicateFactory.class).stream().<GatewayPredicateFactory<?>>map(ServiceLoader.Provider::get).toList(),
-                ServiceLoader.load(GatewayResponsePredicateFactory.class).stream().<GatewayResponsePredicateFactory<?>>map(ServiceLoader.Provider::get).toList());
+                ServiceLoader.load(GatewayPredicateFactory.class, PluginClassLoader.get()).stream().<GatewayPredicateFactory<?>>map(ServiceLoader.Provider::get).toList(),
+                ServiceLoader.load(GatewayResponsePredicateFactory.class, PluginClassLoader.get()).stream().<GatewayResponsePredicateFactory<?>>map(ServiceLoader.Provider::get).toList());
     }
 
     PredicateRegistry(final ObjectMapper mapper, final List<GatewayPredicateFactory<?>> requestFactories, final List<GatewayResponsePredicateFactory<?>> responseFactories)

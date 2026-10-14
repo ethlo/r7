@@ -311,19 +311,26 @@ com.example.r7.filters.BlockTokenFilterFactory
 
 Once your code is written and registered via the SPI files, compile it into a standard Java JAR file (e.g., `my-custom-r7-extensions-1.0.jar`).
 
-r7 finds extensions on its classpath. The gateway jar starts with `java -jar`, which takes its
-classpath from the jar's manifest alone (`r7.jar` plus the jars in `lib/` beside it) and ignores
-`-cp` and `CLASSPATH`. To add your jar, start the main class instead, with your jar after
-`r7.jar`; `r7.jar`'s manifest still brings in `lib/`:
+r7 finds extensions in its plugins directory: every `.jar` in `plugins/` in the working directory,
+and every `.jar` in a directory one level below it. `R7_PLUGINS_DIR` names another directory. A
+missing directory means no extensions, and a directory that exists but cannot be read stops the
+start.
 
-```bash
-java -cp "r7.jar:plugins/*" com.ethlo.r7.helidon.R7Helidon
+```text
+plugins/
+  my-custom-r7-extensions-1.0.jar     # directly in plugins/
+  auth/auth-plugin-1.2.jar            # or one directory per plugin
+  geo/geo-plugin-2.0.jar
 ```
+
+The jars are loaded in a class loader of their own that sits on top of the gateway's, so the
+extension sees the r7 API and the built-in filters keep working. List a plugin's own dependencies in
+its jar (a shaded jar), since nothing else is added to its classpath.
 
 ### Docker Compose Example
 
-The image puts every jar in `/app/plugins` on the classpath, so mounting your jars there is all it
-takes. The image's AOT cache still applies.
+The image reads `/app/plugins`, so mounting your jars there is all it takes, and the image's AOT
+cache applies as it is.
 
 ```yaml title="docker-compose.yaml"
 services:
@@ -339,4 +346,13 @@ services:
 
 With `docker run`, add `-v "$PWD/plugins:/app/plugins:ro"`.
 
-The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (`HasHeader` and `BlockToken`) will be fully operational alongside the native r7 filters.
+Mount a directory per plugin to take each one from a source of its own, such as an image that holds
+only the plugin's jars:
+
+```yaml title="docker-compose.yaml"
+    volumes:
+      - { type: image, source: ghcr.io/you/auth-plugin:1.2, target: /app/plugins/auth, read_only: true }
+      - { type: image, source: ghcr.io/you/geo-plugin:2.0, target: /app/plugins/geo, read_only: true }
+```
+
+The gateway will boot, the ServiceLoader will scan the plugins directory, and your custom YAML keys (`HasHeader` and `BlockToken`) will be fully operational alongside the native r7 filters.
