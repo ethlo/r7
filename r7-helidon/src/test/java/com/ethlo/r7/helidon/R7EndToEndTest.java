@@ -215,28 +215,15 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     }
 
     @Test
-    public void testListDirectoryDisabledByDefaultForbidsListing() throws Exception
+    public void testDirectoryWithoutWelcomeFileIsForbidden() throws Exception
     {
-        writeContainerOrHostFile("/tmp/static-listing-test/sub/data.txt", "listing-data");
+        writeContainerOrHostFile("/tmp/static-no-welcome-test/sub/data.txt", "data");
 
         given()
                 .when()
-                .get("/static-listing-off/sub/")
+                .get("/static-no-welcome/sub/")
                 .then()
                 .statusCode(403);
-    }
-
-    @Test
-    public void testListDirectoryEnabledRendersListing() throws Exception
-    {
-        writeContainerOrHostFile("/tmp/static-listing-test/sub/data.txt", "listing-data");
-
-        given()
-                .when()
-                .get("/static-listing-on/sub/")
-                .then()
-                .statusCode(200)
-                .body(containsString("data.txt"));
     }
 
     @Test

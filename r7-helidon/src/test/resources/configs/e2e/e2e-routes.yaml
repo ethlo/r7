@@ -43,26 +43,15 @@ routes:
           base_directory: /tmp/static-symlink-test
           follow_symlinks: true
 
-  - id: static-listing-off-test
+  - id: static-no-welcome-test
     match:
       - PathPrefix:
-          prefix: /static-listing-off/
+          prefix: /static-no-welcome/
     filters:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp/static-listing-test
-
-  - id: static-listing-on-test
-    match:
-      - PathPrefix:
-          prefix: /static-listing-on/
-    filters:
-      - StripPathPrefix:
-          parts: 1
-      - StaticContent:
-          base_directory: /tmp/static-listing-test
-          list_directory: true
+          base_directory: /tmp/static-no-welcome-test
 
   - id: query-modify-test
     match:

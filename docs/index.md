@@ -128,7 +128,7 @@ r7 also refuses requests that the gateway and your service would read differentl
 
 ### Batteries included
 
-Most routes need no code. r7 ships with 33 filters and 15 predicates, configured in YAML and
+Most routes need no code. r7 ships with 31 filters and 15 predicates, configured in YAML and
 validated at startup like everything else:
 
 - **Matching:** path, prefix and regex paths, host, method, client address, headers, query

@@ -119,7 +119,7 @@ class StaticFilesReplacedBaseTest
             public void header(final String name, final String value)
             {
             }
-        }, new StaticContentFactory.StaticServeRequest(base, false, false, false));
+        }, new StaticContentFactory.StaticServeRequest(base, false, false));
         return status[0];
     }
 }

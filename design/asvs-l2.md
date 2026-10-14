@@ -176,7 +176,7 @@ Also recorded:
 |---|---|---|---|---|
 | V6.1.1 | 1 | Documented anti-brute-force controls | Met | `docs/config.md` says `BasicAuth` has no lockout, and shows a `RateLimiter` before it and journaling of failed logins with an `on_response` rule on `Status` ([#74](https://github.com/ethlo/r7/pull/74)). It also documents the bcrypt concurrency cap ([#47](https://github.com/ethlo/r7/pull/47)). |
 | V6.1.2 | 2 | Context-specific password blocklist | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
-| V6.1.3 | 2 | All authentication pathways documented | Met | `BasicAuth` is the only authenticator. `RequireAuthorizationHeader` is a presence check and is documented as such. |
+| V6.1.3 | 2 | All authentication pathways documented | Met | `BasicAuth` is the only authenticator. |
 | V6.2.1 | 1 | Password length at least 8 | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.2 | 1 | Users can change passwords | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
 | V6.2.3 | 1 | Password change needs the current password | N/A | `BasicAuth` checks configured bcrypt hashes; there is no user store, registration, password change or recovery. Credential policy belongs to whoever generates the hashes. |
@@ -356,7 +356,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V13.3.2 | 2 | Least privilege for secrets | Operator | Access to the YAML, the environment and mounted secrets is the deployment's. r7 keeps secrets out of its own outputs: `@Sensitive` values are masked in management output and URL credentials redacted in summaries ([#46](https://github.com/ethlo/r7/pull/46)). |
 | V13.4.1 | 1 | No source control metadata served | Operator | `StaticContent` refuses dotfiles, `.git/` included, unless a route sets `serve_hidden_files` ([#50](https://github.com/ethlo/r7/pull/50), `StaticContentHiddenFilesE2ETest`). With it set, keeping `.git/` out of the web root is the operator's job. |
 | V13.4.2 | 2 | Debug modes off | Met | No debug endpoints. Log levels default to INFO/WARN (`default-logback.xml`). |
-| V13.4.3 | 2 | No directory listings | Met | `list_directory` defaults to false. |
+| V13.4.3 | 2 | No directory listings | Met | `StaticContent` has no directory listing; a directory without a welcome file is answered `403`. |
 | V13.4.4 | 2 | TRACE not supported | Met | TRACE is answered `501 Not Implemented` before routing and never reaches an upstream ([#74](https://github.com/ethlo/r7/pull/74), `R7FullSpecMatrixTest`). |
 | V13.4.5 | 2 | Documentation and monitoring endpoints not exposed | Operator | The management port binds to 127.0.0.1 by default ([#46](https://github.com/ethlo/r7/pull/46), `ManagementConfigTest`). The container images set `R7_MANAGEMENT_HOST=0.0.0.0` so a published status port works, which makes restricting that port a deployment duty (see Scope). |
 
@@ -371,7 +371,7 @@ Not applicable: r7 is not an OAuth client, resource server or authorisation serv
 | V14.2.3 | 2 | No sensitive data to untrusted parties | Met | r7 sends data only to configured upstreams and local journals; the dashboard loads no third-party resources. |
 | V14.2.4 | 2 | Controls for sensitive data (retention, logging) | Met | Journal levels per route and direction, header and query parameter allowlists, reaper retention. |
 | V14.3.1 | 1 | Client storage cleared on logout | N/A | No sessions. |
-| V14.3.2 | 2 | Anti-caching headers for sensitive data | Operator | The management port sends `Cache-Control: no-store` ([#46](https://github.com/ethlo/r7/pull/46)). Data-plane responses keep the upstream's caching headers; only the operator knows which carry sensitive data, and can add `Cache-Control: no-store` to them with `SetResponseHeader`. (`RemoveCacheHeaders` acts on the upstream request, not the response.) |
+| V14.3.2 | 2 | Anti-caching headers for sensitive data | Operator | The management port sends `Cache-Control: no-store` ([#46](https://github.com/ethlo/r7/pull/46)). Data-plane responses keep the upstream's caching headers; only the operator knows which carry sensitive data, and can add `Cache-Control: no-store` to them with `SetResponseHeader`. |
 | V14.3.3 | 2 | No sensitive data in browser storage | Met | The dashboard stores nothing. |
 
 ## V15 Secure Coding and Architecture

@@ -2,7 +2,6 @@ package com.ethlo.r7.server;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
@@ -14,7 +13,6 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -169,12 +167,6 @@ public final class StaticFiles
                     serveFile(target, file, method.equals("HEAD"));
                     return;
                 }
-            }
-            if (request.listDirectory())
-            {
-                target.header("Content-Type", "text/html; charset=utf-8");
-                target.answer(200, listing(resolved, path, request.serveHiddenFiles()));
-                return;
             }
             target.answer(403, new byte[0]);
             return;
@@ -378,71 +370,5 @@ public final class StaticFiles
     {
         final int query = target.indexOf('?');
         return query < 0 ? target + "/" : target.substring(0, query) + "/" + target.substring(query);
-    }
-
-    public static byte[] listing(final Path directory, final String path, final boolean showHidden) throws IOException
-    {
-        final List<String> entries = new ArrayList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory))
-        {
-            for (final Path entry : stream)
-            {
-                final String name = entry.getFileName().toString();
-                if (!showHidden && name.startsWith(".") && !name.equals(".well-known"))
-                {
-                    continue;
-                }
-                entries.add(Files.isDirectory(entry) ? name + "/" : name);
-            }
-        }
-        entries.sort(String::compareTo);
-        final StringBuilder html = new StringBuilder(256).append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Index of ")
-                .append(escape(path)).append("</title></head><body><h1>Index of ").append(escape(path)).append("</h1><ul>");
-        if (!path.equals("/"))
-        {
-            html.append("<li><a href=\"../\">../</a></li>");
-        }
-        for (final String entry : entries)
-        {
-            html.append("<li><a href=\"").append(escape(encodeSegment(entry))).append("\">").append(escape(entry)).append("</a></li>");
-        }
-        return html.append("</ul></body></html>").toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static String encodeSegment(final String name)
-    {
-        final StringBuilder sb = new StringBuilder();
-        for (final byte b : name.getBytes(StandardCharsets.UTF_8))
-        {
-            final int c = b & 0xff;
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || "-._~/".indexOf(c) >= 0)
-            {
-                sb.append((char) c);
-            }
-            else
-            {
-                sb.append('%').append(Character.toUpperCase(Character.forDigit(c >> 4, 16))).append(Character.toUpperCase(Character.forDigit(c & 15, 16)));
-            }
-        }
-        return sb.toString();
-    }
-
-    private static String escape(final String text)
-    {
-        final StringBuilder sb = new StringBuilder(text.length());
-        for (int i = 0; i < text.length(); i++)
-        {
-            final char c = text.charAt(i);
-            switch (c)
-            {
-                case '<' -> sb.append("&lt;");
-                case '>' -> sb.append("&gt;");
-                case '&' -> sb.append("&amp;");
-                case '"' -> sb.append("&quot;");
-                case '\'' -> sb.append("&#39;");
-                default -> sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 }

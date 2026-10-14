@@ -51,7 +51,7 @@ public abstract class StaticContentKit
         write("large.bin", "0123456789abcdef".repeat(64 * 1024));
         write(".env", "SECRET=1");
         write(".well-known/security.txt", "Contact: mailto:security@example.com");
-        write("sub/data.txt", "listing-data");
+        write("sub/data.txt", "data");
         write("sub/.hidden", "hidden");
         write("web/index.html", "<h1>welcome</h1>");
         write("page.html", "<p>html</p>");
@@ -65,11 +65,10 @@ public abstract class StaticContentKit
         Files.writeString(routes, """
                 version: static-kit
                 routes:
-                %s%s%s%s%s%s
+                %s%s%s%s%s
                 """.formatted(
                 route("static", this.site, ""),
                 route("static-hidden", this.site, "serve_hidden_files: true"),
-                route("static-listing", this.site, "list_directory: true"),
                 route("static-follow", this.site, "follow_symlinks: true"),
                 route("static-swap", this.dir.resolve("swap/current"), ""),
                 filteredRoute(this.site)), StandardCharsets.UTF_8);
@@ -223,13 +222,10 @@ public abstract class StaticContentKit
     }
 
     @Test
-    void aDirectoryIsServedByItsWelcomeFileElseForbiddenUnlessListed() throws Exception
+    void aDirectoryIsServedByItsWelcomeFileElseForbidden() throws Exception
     {
         assertThat(get("/static/web/").body()).contains("welcome");
         assertThat(get("/static/sub/").statusCode()).isEqualTo(403);
-        final HttpResponse<String> listing = get("/static-listing/sub/");
-        assertThat(listing.statusCode()).isEqualTo(200);
-        assertThat(listing.body()).contains("data.txt").doesNotContain(".hidden");
     }
 
     @Test

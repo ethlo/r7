@@ -690,31 +690,6 @@ $defs:
             description: Overwrites the HTTP status code of the client response.
             body:
               status: $1
-        SimpleMetrics:
-          type: object
-          properties:
-            interval:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-              description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-            period:
-              type: string
-              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
-              errorMessage:
-                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-              description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
-          required:
-          - period
-          - interval
-          additionalProperties: false
-          defaultSnippets:
-          - label: Insert SimpleMetrics
-            description: Configure SimpleMetrics
-            body:
-              period: $1
-              interval: $2
         StaticContent:
           type: object
           properties:
@@ -727,13 +702,6 @@ $defs:
               - type: string
                 pattern: "^\\$\\{.*\\}$"
               description: "Whether to follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped 'current' release symlink)."
-              default: false
-            list_directory:
-              anyOf:
-              - type: boolean
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: "Whether to render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. index.html) is found there. Disabled by default, in which case such a request is rejected with 403 Forbidden."
               default: false
             serve_hidden_files:
               anyOf:
@@ -799,10 +767,6 @@ $defs:
       additionalProperties: true
       minProperties: 1
       maxProperties: 1
-    - type: string
-      enum:
-      - RemoveCacheHeaders
-      - RequireAuthorizationHeader
     - type: string
       description: Custom SPI implementation
   group:
