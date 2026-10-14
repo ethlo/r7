@@ -292,6 +292,22 @@ class JwtAuthFactoryTest
     }
 
     @Test
+    void anUnderscoreSpellingOfAForwardedHeaderIsRemovedToo() throws Exception
+    {
+        final JwtAuthFactory.GF filter = filter(config(null, Map.of("preferred_username", "X-User-Name"), false));
+        final ClientRequestGatewayExchange exchange = exchange("Bearer " + token(claims().build()));
+        filter.onClientRequest(exchange);
+
+        final UpstreamRequestGatewayExchange upstream = upstream(exchange, "X_User_Name", "admin");
+        upstream.upstreamRequest().headers().add("x-user_name", "admin");
+        filter.onUpstreamRequest(upstream);
+
+        assertThat(upstream.upstreamRequest().headers().getFirst("X_User_Name")).isNull();
+        assertThat(upstream.upstreamRequest().headers().getFirst("x-user_name")).isNull();
+        assertThat(upstream.upstreamRequest().headers().getFirst("X-User-Name")).isNull();
+    }
+
+    @Test
     void theClientsOwnValueIsRemovedWhenTheTokenWasRefused()
     {
         final JwtAuthFactory.GF filter = filter(config(null, Map.of("role", "X-User-Role"), false));
@@ -341,6 +357,12 @@ class JwtAuthFactoryTest
                 .singleElement().asString().contains("at least");
         assertThat(errors(config(null, Map.of("sub", "Authorization"), false))).singleElement().asString().contains("forward_credentials");
         assertThat(errors(config(null, Map.of("sub", "X-User", "email", "x-user"), false))).singleElement().asString().contains("another claim");
+        assertThat(errors(config(null, Map.of("sub", "X-User", "email", "x_user"), false))).singleElement().asString().contains("another claim");
+        for (final String hostless : List.of("https:/keys", "https:keys"))
+        {
+            assertThat(errors(new JwtAuthFactory.Config(hostless, ISSUER, AUDIENCE, null, null, null, null, null)))
+                    .singleElement().asString().contains("jwks_url");
+        }
     }
 
     private void assertRefused(final String token)

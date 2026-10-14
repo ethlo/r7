@@ -8,6 +8,7 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import com.ethlo.r7.api.Claims;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
@@ -180,7 +182,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             Integer clockSkewSeconds,
 
             @Nullable
-            @DefaultValue("PT5M")
+            @DefaultValue("5m")
             @Description("How long the fetched keys are cached. Shortly before the cache expires, the next request starts a refresh on a background thread.")
             Duration jwksCacheDuration,
 
@@ -193,7 +195,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
 
             @Nullable
             @Description("Claim name to upstream header name. Each listed claim that is a string is set on the upstream request under that header. "
-                    + "Every listed header is removed from the client's own request first, so a client can never supply one itself.")
+                    + "Every listed header is removed from the client's own request first, in any spelling a backend could read as it (X_User_Id as well as x-user-id), so a client can never supply one itself.")
             Map<String, String> forwardClaimsAsHeaders) implements ValidatableConfig
     {
         private static final String DEFAULT_USERNAME_CLAIM = "preferred_username";
@@ -239,10 +241,15 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             {
                 try
                 {
-                    final String protocol = URI.create(this.jwksUrl).toURL().getProtocol();
+                    final URI uri = URI.create(this.jwksUrl);
+                    final String protocol = uri.toURL().getProtocol();
                     if (!"https".equalsIgnoreCase(protocol) && !"http".equalsIgnoreCase(protocol))
                     {
                         validator.invalid("jwks_url", this.jwksUrl, "Must be an http or https URL");
+                    }
+                    else if (uri.getHost() == null)
+                    {
+                        validator.invalid("jwks_url", this.jwksUrl, "Must contain a valid host");
                     }
                 }
                 catch (final IllegalArgumentException | MalformedURLException e)
@@ -269,12 +276,21 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
                 {
                     validator.invalid(property, header, "Must not be Authorization; forward_credentials decides whether the client's token reaches the upstream");
                 }
-                else if (header != null && !targets.add(header.toLowerCase(Locale.ROOT)))
+                else if (header != null && !targets.add(canonicalHeaderName(header)))
                 {
                     validator.invalid(property, header, "Is the target of another claim already");
                 }
             });
         }
+    }
+
+    /**
+     * A header name as a backend may read it: case-insensitive, and with {@code _} and {@code -}
+     * the same, as CGI-style servers fold both into {@code HTTP_X_USER_ID}.
+     */
+    static String canonicalHeaderName(final String name)
+    {
+        return name.toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     /**
@@ -323,6 +339,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         private final boolean forwardCredentials;
         private final Map<String, String> forwardClaimsAsHeaders;
         private final List<String> managedHeaders;
+        private final Set<String> canonicalManagedHeaders;
 
         GF(final Config config, final ConfigurableJWTProcessor<SecurityContext> jwtProcessor)
         {
@@ -332,6 +349,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             this.forwardCredentials = config.forwardCredentials();
             this.forwardClaimsAsHeaders = Map.copyOf(config.forwardClaimsAsHeaders());
             this.managedHeaders = List.copyOf(new LinkedHashSet<>(this.forwardClaimsAsHeaders.values()));
+            this.canonicalManagedHeaders = this.managedHeaders.stream().map(JwtAuthFactory::canonicalHeaderName).collect(Collectors.toUnmodifiableSet());
         }
 
         @Override
@@ -382,10 +400,20 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            for (final String header : this.managedHeaders)
+            if (this.managedHeaders.isEmpty())
             {
-                exchange.upstreamRequest().headers().remove(header);
+                return;
             }
+            // Every spelling a backend could read as one of these headers, X_User_Id as well as x-user-id.
+            final List<String> clientCopies = new ArrayList<>(0);
+            exchange.upstreamRequest().headers().forEach((name, value) ->
+            {
+                if (this.canonicalManagedHeaders.contains(canonicalHeaderName(name)) && !clientCopies.contains(name))
+                {
+                    clientCopies.add(name);
+                }
+            });
+            clientCopies.forEach(exchange.upstreamRequest().headers()::remove);
             final Claims claims = exchange.getAttachment(CLAIMS_KEY);
             if (claims != null)
             {

@@ -215,7 +215,7 @@ $defs:
             forward_claims_as_headers:
               type: object
               additionalProperties: true
-              description: "Claim name to upstream header name. Each listed claim that is a string is set on the upstream request under that header. Every listed header is removed from the client's own request first, so a client can never supply one itself."
+              description: "Claim name to upstream header name. Each listed claim that is a string is set on the upstream request under that header. Every listed header is removed from the client's own request first, in any spelling a backend could read as it (X_User_Id as well as x-user-id), so a client can never supply one itself."
             forward_credentials:
               anyOf:
               - type: boolean
@@ -232,7 +232,7 @@ $defs:
               errorMessage:
                 pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
               description: "How long the fetched keys are cached. Shortly before the cache expires, the next request starts a refresh on a background thread. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
-              default: PT5M
+              default: 5m
             jwks_url:
               type: string
               description: "The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/acme/protocol/openid-connect/certs'."
