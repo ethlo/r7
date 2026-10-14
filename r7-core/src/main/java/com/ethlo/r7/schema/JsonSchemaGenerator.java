@@ -428,8 +428,12 @@ public final class JsonSchemaGenerator
         }
 
         // r7 takes leg out before a predicate's own parameters bind, so every predicate has it.
-        final SchemaNode leg = new PrimitiveSchema("string", Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,
-                "Which leg of the exchange to test: client (the default) or upstream.", null, null, null);
+        // The upstream leg exists only in on_response, the one place response predicates are offered.
+        final SchemaNode leg = withResponsePredicates
+                ? new PrimitiveSchema("string", Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,
+                "Which leg of the exchange to test: client (the default) or upstream.", null, null, null)
+                : new PrimitiveSchema("string", List.of(Leg.CLIENT.configName()), null, null, null,
+                "Which leg of the exchange to test: only client exists here; upstream only in on_response.", null, null, null);
 
         return buildSpiDefinition(entries, logicalOperators, Map.of(PredicateRegistry.LEG, leg));
     }

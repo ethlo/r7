@@ -74,6 +74,31 @@ class JsonSchemaGeneratorTest
         assertThat(SCHEMA.at("/$defs/route/properties/match/items/$ref").asString()).isEqualTo("#/$defs/predicate");
     }
 
+    /**
+     * The upstream leg exists only in on_response: anywhere else the loader refuses it, so the
+     * editor must not offer it.
+     */
+    @Test
+    void theUpstreamLegIsOfferedOnlyInOnResponse()
+    {
+        assertThat(levels(SCHEMA.at("/$defs/predicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client");
+        assertThat(levels(SCHEMA.at("/$defs/unroutedPredicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client");
+        assertThat(levels(SCHEMA.at("/$defs/responsePredicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client", "upstream");
+    }
+
+    /**
+     * UnroutedReason exists only under unrouted, where its rules take the unrouted predicates.
+     */
+    @Test
+    void unroutedReasonIsOfferedOnlyUnderUnrouted()
+    {
+        assertThat(SCHEMA.at("/$defs/predicate").findValue("UnroutedReason")).isNull();
+        assertThat(SCHEMA.at("/$defs/responsePredicate").findValue("UnroutedReason")).isNull();
+        assertThat(SCHEMA.at("/$defs/unroutedPredicate").findValue("UnroutedReason")).isNotNull();
+        assertThat(SCHEMA.at("/properties/unrouted/properties/journal/properties/on_request/items/properties/match/items/$ref").asString()).isEqualTo("#/$defs/unroutedPredicate");
+        assertThat(SCHEMA.at("/properties/unrouted/properties/journal/properties/on_response").isMissingNode()).isTrue();
+    }
+
     private static List<String> levels(final JsonNode level)
     {
         final List<String> levels = new ArrayList<>();
