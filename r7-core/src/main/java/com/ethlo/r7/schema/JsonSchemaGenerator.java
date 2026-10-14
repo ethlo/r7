@@ -74,7 +74,8 @@ public final class JsonSchemaGenerator
     {
         final Map<String, SchemaNode> defs = new TreeMap<>();
         defs.put("filter", buildFilterDefinition());
-        defs.put("predicate", buildPredicateDefinition());
+        defs.put("predicate", buildPredicateDefinition("predicate", false));
+        defs.put("responsePredicate", buildPredicateDefinition("responsePredicate", true));
         defs.put("route", buildRouteDefinition());
         defs.put("group", buildGroupDefinition());
 
@@ -288,9 +289,9 @@ public final class JsonSchemaGenerator
         final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("request", levelDef, "response", levelDef));
         if (withRules)
         {
-            properties.put("on_request", buildJournalRules(levelDef, levelDef,
+            properties.put("on_request", buildJournalRules(levelDef, levelDef, false,
                     "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."));
-            properties.put("on_response", buildJournalRules(lateRequestDef, levelDef,
+            properties.put("on_response", buildJournalRules(lateRequestDef, levelDef, true,
                     "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."));
         }
 
@@ -320,13 +321,13 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private static SchemaNode buildJournalRules(final SchemaNode requestDef, final SchemaNode responseDef, final String description)
+    private static SchemaNode buildJournalRules(final SchemaNode requestDef, final SchemaNode responseDef, final boolean responseMatch, final String description)
     {
         final Map<String, SchemaNode> properties = new TreeMap<>();
         properties.put("id", new PrimitiveSchema("string", null, null, null, null,
                 "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires.",
                 null, null, null));
-        properties.put("match", new ArraySchema("array", new RefSchema("#/$defs/predicate", null, null),
+        properties.put("match", new ArraySchema("array", new RefSchema(responseMatch ? "#/$defs/responsePredicate" : "#/$defs/predicate", null, null),
                 "Conditions that must all hold for the rule to fire.", null, 1));
         properties.put("request", requestDef);
         properties.put("response", responseDef);
@@ -355,14 +356,21 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private SchemaNode buildPredicateDefinition()
+    /**
+     * @param name              the definition's own name, which its {@code not}, {@code and} and {@code or} nest
+     * @param withResponsePredicates whether the predicates of the response are offered: only
+     *                          an {@code on_response} rule can use them, so everywhere else the editor
+     *                          must not suggest or accept them
+     */
+    private SchemaNode buildPredicateDefinition(final String name, final boolean withResponsePredicates)
     {
+        final String ref = "#/$defs/" + name;
         final Map<String, SchemaNode> logicalOperators = new TreeMap<>();
 
-        logicalOperators.put("not", new RefSchema("#/$defs/predicate", null, null));
+        logicalOperators.put("not", new RefSchema(ref, null, null));
 
         // minItems mirrors the load-time refusal of 'and: []' and 'or: []', so the editor flags them too.
-        final SchemaNode arrayRef = new ArraySchema("array", new RefSchema("#/$defs/predicate", null, null), null, null, 1);
+        final SchemaNode arrayRef = new ArraySchema("array", new RefSchema(ref, null, null), null, null, 1);
         logicalOperators.put("or", arrayRef);
         logicalOperators.put("and", arrayRef);
 
@@ -375,7 +383,10 @@ public final class JsonSchemaGenerator
                 sampleDescription.value(), sample.defaultValue(), sample.defaultSnippets()));
 
         final List<SpiEntry> entries = new ArrayList<>(spiEntries(GatewayPredicateFactory.class, GatewayPredicateFactory::name, GatewayPredicateFactory::configClass));
-        entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
+        if (withResponsePredicates)
+        {
+            entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
+        }
 
         // r7 takes leg out before a predicate's own parameters bind, so every predicate has it.
         final SchemaNode leg = new PrimitiveSchema("string", Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,

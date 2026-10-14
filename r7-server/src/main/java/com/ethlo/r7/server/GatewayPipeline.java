@@ -679,7 +679,9 @@ public final class GatewayPipeline
         final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(ex.clientRequest());
         journal.clientRequest(journal.requestLevel(), requestId, reqStartLine, ex.clientRequest().headers(), ex.clientRequest().remoteAddress(), ((ImmutableGatewayRequest) ex.clientRequest()).ipSource());
 
-        if (!ex.webSocketRequested && journal.requestLevel() == JournalLevel.FULL)
+        // Not gated on the client asking to upgrade: a request with a body is routed as an ordinary
+        // exchange and the relay refuses its 101, and an upgrade r7 tunnels has an empty request body
+        if (journal.requestLevel() == JournalLevel.FULL)
         {
             ex.teeRequestBody(buffer -> journal.requestBody(requestId, buffer));
         }

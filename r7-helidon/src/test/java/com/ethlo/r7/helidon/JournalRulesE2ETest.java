@@ -118,7 +118,7 @@ public class JournalRulesE2ETest extends AbstractR7IntegrationTest
     /**
      * The body as journaled, which is as sent: WireMock gzips, so that is undone here.
      */
-    private static String text(final List<ByteBuffer> fragments) throws IOException
+    static String text(final List<ByteBuffer> fragments) throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (final ByteBuffer fragment : fragments)
@@ -139,7 +139,7 @@ public class JournalRulesE2ETest extends AbstractR7IntegrationTest
         return new String(body, StandardCharsets.UTF_8);
     }
 
-    private static Tail awaitJournaled(final String path) throws Exception
+    static Tail awaitJournaled(final String path) throws Exception
     {
         Tail tail = tail();
         for (int attempt = 0; attempt < 50 && !tail.exchanges.containsKey(path); attempt++)
@@ -151,7 +151,7 @@ public class JournalRulesE2ETest extends AbstractR7IntegrationTest
         return tail;
     }
 
-    private static final class Tail implements ExchangeCompletionListener
+    static final class Tail implements ExchangeCompletionListener
     {
         final Map<String, JournalExchange> exchanges = new ConcurrentHashMap<>();
         final AtomicInteger orphanedEnds = new AtomicInteger();

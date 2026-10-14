@@ -30,7 +30,7 @@ class JsonSchemaGeneratorTest
     @Test
     void aStatusListAcceptsCodesWrittenAsNumbersBesideClasses()
     {
-        final JsonNode items = SCHEMA.at("/$defs/predicate/anyOf").findValue("Status").findValue("include").get("items");
+        final JsonNode items = SCHEMA.at("/$defs/responsePredicate/anyOf").findValue("Status").findValue("include").get("items");
 
         final List<String> types = new ArrayList<>();
         items.get("anyOf").forEach(alternative -> types.add(alternative.get("type").asString()));
@@ -55,6 +55,23 @@ class JsonSchemaGeneratorTest
 
         assertThat(levels(rule.at("/request/properties/level"))).contains("FULL");
         assertThat(levels(rule.at("/response/properties/level"))).contains("FULL");
+    }
+
+    @Test
+    void responsePredicatesAreOfferedOnlyWhereTheyCanBeUsed()
+    {
+        final JsonNode request = SCHEMA.at("/$defs/predicate");
+        final JsonNode response = SCHEMA.at("/$defs/responsePredicate");
+
+        assertThat(request.findValue("Status")).as("Status in a request predicate").isNull();
+        assertThat(request.findValue("HasResponseHeader")).isNull();
+        assertThat(request.findValue("PathPrefix")).isNotNull();
+        assertThat(response.findValue("Status")).isNotNull();
+        assertThat(response.findValue("PathPrefix")).as("a response rule can also test the request").isNotNull();
+
+        assertThat(SCHEMA.at("/properties/journal/properties/on_request/items/properties/match/items/$ref").asString()).isEqualTo("#/$defs/predicate");
+        assertThat(SCHEMA.at("/properties/journal/properties/on_response/items/properties/match/items/$ref").asString()).isEqualTo("#/$defs/responsePredicate");
+        assertThat(SCHEMA.at("/$defs/route/properties/match/items/$ref").asString()).isEqualTo("#/$defs/predicate");
     }
 
     private static List<String> levels(final JsonNode level)
