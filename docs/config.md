@@ -951,7 +951,8 @@ Bodies stream as they pass, which fixes two things at load:
 | --- | --- |
 | `on_response` sets `request: FULL` | `[routes.orders.journal.on_response[0].request] FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.` |
 | `on_response` names `request` while the base or an `on_request` rule can make it `FULL` | `[routes.orders.journal.on_response[0].request] cannot change the request level: journal.on_request[0] can make it FULL, and a request body that was journaled cannot be un-written.` |
-| A rule without `match`, or with `match: []` | `[routes.orders.journal.on_request[0]] match is required` |
+| A rule without `match` | `[routes.orders.journal.on_request[0]] match is required` |
+| A rule with `match: []` | `[routes.orders.journal.on_request[0].match] Empty list: name at least one predicate, or remove it` |
 | A rule naming neither direction | `[routes.orders.journal.on_request[0]] sets no level; name request, response or both` |
 | Two rules with one `id` | `[routes.orders.journal.on_request[1].id] 'debug-traffic' is already the id of journal.on_request[0]` |
 

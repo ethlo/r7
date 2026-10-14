@@ -486,7 +486,8 @@ public final class GatewayPipeline
         if (journal != null)
         {
             journal.onResponse(ex, ex.attributes());
-            if (journal.responseLevel() == JournalLevel.FULL && !ex.webSocketRequested)
+            // A refused upgrade is an ordinary response whose body can be captured: only a 101 tunnel has none
+            if (journal.responseLevel() == JournalLevel.FULL && !ex.webSocketUpgraded)
             {
                 final String requestId = ex.requestId();
                 ex.teeResponseBody(buffer -> journal.responseBody(requestId, buffer));

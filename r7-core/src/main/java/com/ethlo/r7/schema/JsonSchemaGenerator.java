@@ -23,6 +23,7 @@ import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.AcceptsInteger;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -272,23 +273,24 @@ public final class JsonSchemaGenerator
                 null, null, null
         );
 
-        final SchemaNode levelDef = new ObjectSchema(
-                "object",
-                new TreeMap<>(Map.of("level", levelSchema)),
-                null,
-                new BoolProps(false),
-                1, null, null, null,
-                "Journal settings for this direction of the exchange.",
-                null,
-                null
-        );
+        final SchemaNode levelDef = directionSchema(levelSchema);
+
+        // A request body has streamed by the time on_response runs, so FULL cannot be set there
+        final List<String> belowFull = levels.stream().filter(level -> !"FULL".equals(level)).toList();
+        final SchemaNode lateRequestDef = directionSchema(new PrimitiveSchema(
+                "string",
+                belowFull,
+                null, null, null,
+                "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed.",
+                null, null, null
+        ));
 
         final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("request", levelDef, "response", levelDef));
         if (withRules)
         {
-            properties.put("on_request", buildJournalRules(levelDef,
+            properties.put("on_request", buildJournalRules(levelDef, levelDef,
                     "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."));
-            properties.put("on_response", buildJournalRules(levelDef,
+            properties.put("on_response", buildJournalRules(lateRequestDef, levelDef,
                     "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."));
         }
 
@@ -304,7 +306,21 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private static SchemaNode buildJournalRules(final SchemaNode levelDef, final String description)
+    private static SchemaNode directionSchema(final SchemaNode levelSchema)
+    {
+        return new ObjectSchema(
+                "object",
+                new TreeMap<>(Map.of("level", levelSchema)),
+                null,
+                new BoolProps(false),
+                1, null, null, null,
+                "Journal settings for this direction of the exchange.",
+                null,
+                null
+        );
+    }
+
+    private static SchemaNode buildJournalRules(final SchemaNode requestDef, final SchemaNode responseDef, final String description)
     {
         final Map<String, SchemaNode> properties = new TreeMap<>();
         properties.put("id", new PrimitiveSchema("string", null, null, null, null,
@@ -312,8 +328,8 @@ public final class JsonSchemaGenerator
                 null, null, null));
         properties.put("match", new ArraySchema("array", new RefSchema("#/$defs/predicate", null, null),
                 "Conditions that must all hold for the rule to fire.", null, 1));
-        properties.put("request", levelDef);
-        properties.put("response", levelDef);
+        properties.put("request", requestDef);
+        properties.put("response", responseDef);
         final SchemaNode rule = new ObjectSchema(
                 "object",
                 properties,
@@ -480,7 +496,7 @@ public final class JsonSchemaGenerator
             final java.lang.reflect.Type genericType = component.getGenericType();
 
             // Pass genericType into the mapper
-            final SchemaNode propertyNode = mapToSchemaNode(component.getType(), genericType, description, defaultValue, customPattern);
+            final SchemaNode propertyNode = acceptingIntegers(component, mapToSchemaNode(component.getType(), genericType, description, defaultValue, customPattern));
             properties.put(propertyName, propertyNode);
 
             if (isRequired(component))
@@ -499,6 +515,27 @@ public final class JsonSchemaGenerator
     }
 
     // Added genericType to the signature
+    /**
+     * The items of a string list that the loader also takes as integers (a status written as 404
+     * beside 5xx) are the string or an integer in the range, which a plain string items schema
+     * would reject in the editor.
+     */
+    private static SchemaNode acceptingIntegers(final RecordComponent component, final SchemaNode node)
+    {
+        final AcceptsInteger integers = component.getAnnotation(AcceptsInteger.class);
+        if (integers == null || !(node instanceof ArraySchema array))
+        {
+            return node;
+        }
+        final SchemaNode items = new AnyOfSchema(
+                List.of(
+                        new PrimitiveSchema("integer", null, null, null, null, null, null, integers.minimum(), integers.maximum()),
+                        array.items()),
+                null,
+                null);
+        return new ArraySchema(array.type(), items, array.description(), array.defaultValue(), array.minItems());
+    }
+
     private SchemaNode mapToSchemaNode(final Class<?> type, final java.lang.reflect.Type genericType, final String description, final Object defaultValue, final String customPattern)
     {
         final String placeholderRegex = "^\\$\\{.*\\}$";

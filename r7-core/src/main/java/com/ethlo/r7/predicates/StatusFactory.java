@@ -5,6 +5,7 @@ import java.util.Locale;
 
 import com.ethlo.r7.api.GatewayResponse;
 import com.ethlo.r7.api.GatewayResponsePredicate;
+import com.ethlo.r7.doc.AcceptsInteger;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayResponsePredicateFactory;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -40,6 +41,7 @@ public final class StatusFactory implements GatewayResponsePredicateFactory<Stat
 
     public record Config(
             @Description("Status codes (404) and classes (5xx, case-insensitive) that match.")
+            @AcceptsInteger(minimum = LOWEST, maximum = HIGHEST)
             List<String> include) implements ValidatableConfig
     {
         @Override

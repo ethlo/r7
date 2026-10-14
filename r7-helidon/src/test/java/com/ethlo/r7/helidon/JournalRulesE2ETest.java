@@ -91,6 +91,21 @@ public class JournalRulesE2ETest extends AbstractR7IntegrationTest
         assertCaptured(tail.exchanges.get(proxied), upstreamBody);
     }
 
+    /**
+     * An upgrade the upstream refuses is an ordinary response. Only a 101 tunnel has no body to
+     * capture, so the client asking to upgrade must not keep a refusal's body out of the journal.
+     */
+    @Test
+    public void aRefusedUpgradeRaisedToFullAtCommitIsCapturedWhole() throws Exception
+    {
+        final String refused = "/proxied-refused-" + UUID.randomUUID();
+        final String upstreamBody = "upgrade refused " + UUID.randomUUID();
+        UPSTREAM_SERVER.stubFor(get(urlPathEqualTo(refused)).willReturn(aResponse().withStatus(202).withBody(upstreamBody)));
+        given().header("Connection", "Upgrade").header("Upgrade", "websocket").when().get(refused).then().statusCode(202);
+
+        assertCaptured(awaitJournaled(refused).exchanges.get(refused), upstreamBody);
+    }
+
     private static void assertCaptured(final JournalExchange exchange, final String body) throws IOException
     {
         Assertions.assertEquals(JournalLevel.FULL, exchange.getClientResponseLevel());
