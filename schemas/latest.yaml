@@ -811,7 +811,7 @@ $defs:
       filters:
         type: array
         items:
-          $ref: "#/$defs/filter"
+          $ref: "#/$defs/groupFilter"
         description: "Filters for every route of the group: one instance each for the group. They run after the root's and before a route's own on the request."
       group:
         type: string
@@ -1104,6 +1104,18 @@ $defs:
     - routes
     additionalProperties: false
     description: "Routes sharing a match, filters and upstream."
+  groupFilter:
+    allOf:
+    - $ref: "#/$defs/filter"
+    - not:
+        anyOf:
+        - type: object
+          required:
+          - CircuitBreaker
+        - type: string
+          enum:
+          - CircuitBreaker
+      description: CircuitBreaker can not be declared on a group.
   predicate:
     anyOf:
     - type: object
@@ -1844,8 +1856,7 @@ $defs:
               type: string
               enum:
               - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
+              description: "Which leg of the exchange to test: only client, for this predicate."
             source:
               type: string
               description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
@@ -1967,13 +1978,25 @@ $defs:
       maxProperties: 1
     - type: string
       description: Custom SPI implementation
+  rootFilter:
+    allOf:
+    - $ref: "#/$defs/filter"
+    - not:
+        anyOf:
+        - type: object
+          required:
+          - CircuitBreaker
+        - type: string
+          enum:
+          - CircuitBreaker
+      description: CircuitBreaker can not be declared on the root.
   route:
     type: object
     properties:
       filters:
         type: array
         items:
-          $ref: "#/$defs/filter"
+          $ref: "#/$defs/routeFilter"
         description: "A list of processing steps applied to the request before forwarding, and to the response before returning."
       id:
         type: string
@@ -2260,6 +2283,8 @@ $defs:
     - match
     additionalProperties: false
     description: Defines a single traffic route and its associated behaviors.
+  routeFilter:
+    $ref: "#/$defs/filter"
   unroutedPredicate:
     anyOf:
     - type: object
@@ -2657,7 +2682,7 @@ properties:
   filters:
     type: array
     items:
-      $ref: "#/$defs/filter"
+      $ref: "#/$defs/rootFilter"
     description: "Filters for every route: one instance each for the whole gateway. They run before a group's and a route's on the request, and after them on the response."
   journal:
     type: object
