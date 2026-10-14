@@ -723,6 +723,9 @@ $defs:
               items:
                 type: string
               description: "The directories to serve files from, in order: a request is answered by the first one that has the file, or a welcome file for the directory asked for, so a higher directory overrides a lower one file by file. One directory is a list of one."
+            fallback:
+              type: string
+              description: "A file, relative to the directories and looked up in their order, served with 200 for a path none of them has, instead of 404: index.html for a single-page app whose routes the browser handles."
             follow_symlinks:
               anyOf:
               - type: boolean
