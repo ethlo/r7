@@ -239,10 +239,10 @@ public final class ConfigurationManager
         // routes as inheritance leaves them: a fallback named by a group is every route's in it.
         validateUniqueIds(config.routes());
         validateUniqueRuleIds(config, validationResult);
+        refuseSharedCircuitBreakers(config, validationResult);
         final List<Placed> placed = place(config, validationResult);
         validationResult.throwIfInvalid();
         validateCrossRouteReferences(placed);
-        warnSharedCircuitBreakers(config, placed);
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
         // A filter is one instance for everything beneath where it is declared: the root's once,
@@ -383,49 +383,36 @@ public final class ConfigurationManager
     }
 
     /**
-     * A CircuitBreaker at the root or on a group is one breaker for every route beneath it, so
-     * routes with upstreams of their own trip it for each other: one failing upstream opens it for
-     * all of them. Valid, and right when they share one upstream, so only a warning when they do not.
+     * A CircuitBreaker guards one upstream, and a filter at the root or on a group is one instance
+     * for every route beneath it: there, one failing upstream would open it for all of them. A
+     * breaker on each route covers every case, so the breaker is a route's filter only.
      */
-    private static void warnSharedCircuitBreakers(final RoutesDefinition config, final List<Placed> placed)
+    private static void refuseSharedCircuitBreakers(final RoutesDefinition config, final ValidationResult validationResult)
     {
-        if (hasCircuitBreaker(config.filters()) && upstreamSources(placed) > 1)
-        {
-            log.warn("The CircuitBreaker in the root's filters is one breaker for every route, and the routes have upstreams of their own: "
-                    + "one failing upstream opens it for all of them. Declare it on each route, or on a group whose routes share one upstream, for a breaker per upstream.");
-        }
+        refuseCircuitBreaker(config.filters(), validationResult, "filters", "the root");
         for (final RouteEntry entry : config.routes())
         {
-            if (entry instanceof GroupDefinition group && hasCircuitBreaker(group.filters())
-                    && upstreamSources(placed.stream().filter(p -> p.group() == group).toList()) > 1)
+            if (entry instanceof GroupDefinition group)
             {
-                log.warn("The CircuitBreaker in the filters of group '{}' is one breaker for every route in it, and its routes have upstreams of their own: "
-                        + "one failing upstream opens it for all of them. Declare it on each route for a breaker per upstream.", group.group());
+                refuseCircuitBreaker(group.filters(), validationResult.nested("routes").nested(group.group()), "filters", "group '" + group.group() + "'");
             }
         }
     }
 
-    private static boolean hasCircuitBreaker(final List<FilterDefinition> filters)
+    private static void refuseCircuitBreaker(final List<FilterDefinition> filters, final ValidationResult result, final String key, final String where)
     {
-        return filters != null && filters.stream().anyMatch(filter -> "CircuitBreaker".equals(filter.name()));
-    }
-
-    /**
-     * How many upstream declarations the routes take theirs from; a route without an upstream
-     * never reaches the breaker's judgement, so it does not count.
-     */
-    private static long upstreamSources(final List<Placed> routes)
-    {
-        return routes.stream()
-                .filter(p -> p.route().upstream() != null)
-                .map(p -> switch (p.upstreamLevel())
-                {
-                    case ROOT -> "";
-                    case GROUP -> "group:" + p.group().group();
-                    case ROUTE -> "route:" + p.path();
-                })
-                .distinct()
-                .count();
+        if (filters == null)
+        {
+            return;
+        }
+        for (int i = 0; i < filters.size(); i++)
+        {
+            if ("CircuitBreaker".equals(filters.get(i).name()))
+            {
+                result.addError(key + "[" + i + "]", "A CircuitBreaker guards one upstream, so it belongs on a route, not on " + where
+                        + ": declare it in the filters of each route it should protect.");
+            }
+        }
     }
 
     private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final Condition groupMatch,
