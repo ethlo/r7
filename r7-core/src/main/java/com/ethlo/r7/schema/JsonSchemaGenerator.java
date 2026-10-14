@@ -68,6 +68,9 @@ public final class JsonSchemaGenerator
         Files.writeString(Path.of("docs/schemas/latest.yaml"), yaml);
     }
 
+    // HumanUnits' data size grammar: a bare number is bytes, the unit is case-insensitive.
+    private static final String DATA_SIZE = "[0-9]+([bB]|[kKmMgG][bB])?";
+    private static final String DATA_SIZE_HINT = "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}";
     private static final List<String> ALL_LEVELS = List.of("NONE", "HEADERS", "METADATA", "FULL");
 
     public RootSchema generateGatewaySchema()
@@ -316,9 +319,9 @@ public final class JsonSchemaGenerator
         final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("level", levelSchema));
         if (withCap)
         {
-            final String hint = "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}";
+            final String hint = DATA_SIZE_HINT;
             properties.put("truncate_body_at", new PrimitiveSchema(
-                    "string", null, null, "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$",
+                    "string", null, null, "^(?:" + DATA_SIZE + "|\\$\\{.*\\})$",
                     Map.of("pattern", hint),
                     "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (" + hint + ")",
                     null, null, null));
@@ -580,9 +583,9 @@ public final class JsonSchemaGenerator
         }
         else if (type == com.ethlo.r7.config.model.DataSize.class)
         {
-            final String basePattern = customPattern != null ? customPattern : "^[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)$";
+            final String basePattern = customPattern != null ? customPattern : "^" + DATA_SIZE + "$";
             final String patternWithPlaceholder = "^(?:" + basePattern.replace("^", "").replace("$", "") + "|\\$\\{.*\\})$";
-            final String friendlyHint = "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}";
+            final String friendlyHint = DATA_SIZE_HINT;
 
             return new PrimitiveSchema(
                     "string", null, null, patternWithPlaceholder,

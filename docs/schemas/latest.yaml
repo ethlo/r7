@@ -319,10 +319,10 @@ $defs:
           properties:
             max_size:
               type: string
-              pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+              pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
               errorMessage:
-                pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-              description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+              description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
           required:
           - max_size
           additionalProperties: false
@@ -846,10 +846,10 @@ $defs:
                       description: The journaling verbosity level.
                     truncate_body_at:
                       type: string
-                      pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                       errorMessage:
-                        pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
                   additionalProperties: false
                   minProperties: 1
                   description: Journal settings for this direction of the exchange.
@@ -866,10 +866,10 @@ $defs:
                       description: The journaling verbosity level.
                     truncate_body_at:
                       type: string
-                      pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                       errorMessage:
-                        pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
                   additionalProperties: false
                   minProperties: 1
                   description: Journal settings for this direction of the exchange.
@@ -923,10 +923,10 @@ $defs:
                       description: The journaling verbosity level.
                     truncate_body_at:
                       type: string
-                      pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                       errorMessage:
-                        pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
                   additionalProperties: false
                   minProperties: 1
                   description: Journal settings for this direction of the exchange.
@@ -953,10 +953,10 @@ $defs:
                 description: The journaling verbosity level.
               truncate_body_at:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
@@ -973,10 +973,10 @@ $defs:
                 description: The journaling verbosity level.
               truncate_body_at:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
@@ -2023,10 +2023,10 @@ $defs:
                       description: The journaling verbosity level.
                     truncate_body_at:
                       type: string
-                      pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                       errorMessage:
-                        pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
                   additionalProperties: false
                   minProperties: 1
                   description: Journal settings for this direction of the exchange.
@@ -2043,10 +2043,10 @@ $defs:
                       description: The journaling verbosity level.
                     truncate_body_at:
                       type: string
-                      pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                       errorMessage:
-                        pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
                   additionalProperties: false
                   minProperties: 1
                   description: Journal settings for this direction of the exchange.
@@ -2100,10 +2100,10 @@ $defs:
                       description: The journaling verbosity level.
                     truncate_body_at:
                       type: string
-                      pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                       errorMessage:
-                        pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
                   additionalProperties: false
                   minProperties: 1
                   description: Journal settings for this direction of the exchange.
@@ -2130,10 +2130,10 @@ $defs:
                 description: The journaling verbosity level.
               truncate_body_at:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
@@ -2150,10 +2150,10 @@ $defs:
                 description: The journaling verbosity level.
               truncate_body_at:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
@@ -2311,10 +2311,10 @@ properties:
                   description: The journaling verbosity level.
                 truncate_body_at:
                   type: string
-                  pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                  pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                   errorMessage:
-                    pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                    pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
               additionalProperties: false
               minProperties: 1
               description: Journal settings for this direction of the exchange.
@@ -2331,10 +2331,10 @@ properties:
                   description: The journaling verbosity level.
                 truncate_body_at:
                   type: string
-                  pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                  pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                   errorMessage:
-                    pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                    pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
               additionalProperties: false
               minProperties: 1
               description: Journal settings for this direction of the exchange.
@@ -2388,10 +2388,10 @@ properties:
                   description: The journaling verbosity level.
                 truncate_body_at:
                   type: string
-                  pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                  pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                   errorMessage:
-                    pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                    pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
               additionalProperties: false
               minProperties: 1
               description: Journal settings for this direction of the exchange.
@@ -2418,10 +2418,10 @@ properties:
             description: The journaling verbosity level.
           truncate_body_at:
             type: string
-            pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+            pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
             errorMessage:
-              pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-            description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+              pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+            description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
         additionalProperties: false
         minProperties: 1
         description: Journal settings for this direction of the exchange.
@@ -2438,10 +2438,10 @@ properties:
             description: The journaling verbosity level.
           truncate_body_at:
             type: string
-            pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+            pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
             errorMessage:
-              pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-            description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+              pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+            description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
         additionalProperties: false
         minProperties: 1
         description: Journal settings for this direction of the exchange.
@@ -2472,10 +2472,10 @@ properties:
                 description: The journaling verbosity level.
               truncate_body_at:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
@@ -2491,10 +2491,10 @@ properties:
                 description: The journaling verbosity level.
               truncate_body_at:
                 type: string
-                pattern: "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$"
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
                 errorMessage:
-                  pattern: "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...})"
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
