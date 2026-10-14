@@ -32,8 +32,8 @@ public class ModelMapper
 
         final JournalPolicy policy = route.journal();
         final List<JournalDto.Rule> rules = new ArrayList<>();
-        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()))));
-        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()))));
+        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
+        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
         final JournalDto journal = new JournalDto(policy.request(), policy.response(), cap(policy.requestTruncateAt()), cap(policy.responseTruncateAt()), rules);
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()

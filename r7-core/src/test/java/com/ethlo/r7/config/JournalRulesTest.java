@@ -13,14 +13,20 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.io.TempDir;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayResponse;
 import com.ethlo.r7.condition.ConditionInput;
 import com.ethlo.r7.condition.Draw;
 import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.journal.JournalPolicy;
+import com.ethlo.r7.journal.JournalRule;
 import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.journal.QueryParameterNameSet;
 import com.ethlo.r7.journal.StatefulJournal;
@@ -265,6 +271,74 @@ class JournalRulesTest
         assertThat(resolved.rules()).isEmpty();
         assertThat(resolved.errors()).containsExactly("never-under-not");
         assertThat(policy.onResponse().getFirst().errors()).isEqualTo(1);
+    }
+
+    /**
+     * A rule that fails is often one meant to raise the level, so its failure must show even when
+     * the exchange then ends at NONE and leaves no record: it is counted per rule, and logged the
+     * first time after each load only, so a failing rule on a hot route cannot flood the log.
+     */
+    @Test
+    void aFailingRuleIsCountedWithNoRecordAndWarnedOncePerLoad() throws IOException
+    {
+        final String yaml = route("""
+                on_response:
+                  - id: raise-on-trace
+                    match:
+                      - MatchResponseHeader:
+                          name: X-Trace
+                          regexp: "^(\\\\w+)*\\\\1$"
+                    response: { level: FULL }
+                """);
+        final ConditionInput failing = exchange("/r", 200, "x-trace", "a".repeat(30) + "!");
+        final Logger logger = (Logger) LoggerFactory.getLogger(JournalRule.class);
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try
+        {
+            final JournalPolicy policy = this.policy(yaml, "r");
+            assertThat(policy.isSilent()).as("the rule can raise the level").isFalse();
+            for (int i = 0; i < 3; i++)
+            {
+                final Resolved resolved = resolve(policy, failing);
+                assertThat(resolved.request()).isEqualTo(JournalLevel.NONE);
+                assertThat(resolved.response()).as("no record is written").isEqualTo(JournalLevel.NONE);
+            }
+            assertThat(policy.onResponse().getFirst().errors()).isEqualTo(3);
+            assertThat(appender.list).filteredOn(e -> e.getLevel() == Level.WARN).hasSize(1);
+
+            final JournalPolicy reloaded = this.policy(yaml, "r");
+            resolve(reloaded, failing);
+            assertThat(reloaded.onResponse().getFirst().errors()).as("counted from the load").isEqualTo(1);
+            assertThat(appender.list).filteredOn(e -> e.getLevel() == Level.WARN).as("warned again after the load").hasSize(2);
+        }
+        finally
+        {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void aRouteWhoseBaseAndEveryRuleAreNoneIsSilent() throws IOException
+    {
+        assertThat(this.policy(route("""
+                request: { level: NONE }
+                on_response:
+                  - match:
+                      - Status:
+                          include: [5xx]
+                    response: { level: NONE }
+                """), "r").isSilent()).isTrue();
+        assertThat(this.policy(route("""
+                request: { level: NONE }
+                on_request:
+                  - match:
+                      - Method:
+                          include: [POST]
+                    request: { level: METADATA }
+                """), "r").isSilent()).as("a rule can raise it").isFalse();
+        assertThat(this.policy(LEVELS, "orders").isSilent()).isFalse();
     }
 
     @Test

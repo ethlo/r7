@@ -238,6 +238,13 @@ public final class GatewayPipeline
         ex.upstreamResponse = UnproxiedUpstreamResponse.INSTANCE;
         ex.webSocketRequested = "websocket".equalsIgnoreCase(ex.liveRequest.headers().getFirst(UPGRADE));
 
+        // A silent route can record nothing, whatever its rules decide: it skips the journal, and
+        // every later step reads the missing journal as "nothing to write".
+        if (route.journal().isSilent())
+        {
+            ex.journal = null;
+            return;
+        }
         final Journal rawJournal = journalWriter.getJournal(requestId);
         final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, route.journal(), safeRequestHeaders, safeResponseHeaders, safeQueryParameters, fingerprint);
         ex.journal = statefulJournal;
@@ -565,16 +572,21 @@ public final class GatewayPipeline
         // The journal's own levels, not route.journal(): after a fallback the route here is
         // the fallback route, but the journal was opened, and its client request recorded,
         // under the route the request first matched. Resolved by the rules, not the base.
-        final StatefulJournal journal = ex.journal;
-        final JournalLevel requestLevel = journal.requestLevel();
-        final JournalLevel responseLevel = journal.responseLevel();
-        final String requestId = ex.requestId();
-
         if (!ex.wasProxied())
         {
             ex.upstreamRequest = UnproxiedUpstreamRequest.INSTANCE;
             ex.upstreamResponse = UnproxiedUpstreamResponse.INSTANCE;
         }
+
+        final StatefulJournal journal = ex.journal;
+        if (journal == null)
+        {
+            // A silent route: nothing to build, nothing to write.
+            return;
+        }
+        final JournalLevel requestLevel = journal.requestLevel();
+        final JournalLevel responseLevel = journal.responseLevel();
+        final String requestId = ex.requestId();
 
         final String protocol = ex.clientRequest().protocol();
         if (ex.wasProxied())
@@ -669,13 +681,6 @@ public final class GatewayPipeline
      */
     private static void setupJournaling(final StatefulJournal journal, final ServerExchange ex, final String requestId)
     {
-        // Whatever on_response decides later, it cannot record anything a route's policy
-        // never names.
-        if (!journal.policy().mayJournal())
-        {
-            return;
-        }
-
         final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(ex.clientRequest());
         journal.clientRequest(journal.requestLevel(), requestId, reqStartLine, ex.clientRequest().headers(), ex.clientRequest().remoteAddress(), ((ImmutableGatewayRequest) ex.clientRequest()).ipSource());
 
@@ -690,6 +695,10 @@ public final class GatewayPipeline
     private static void attachWebSocketLifecycleTracking(final ServerExchange ex)
     {
         final StatefulJournal journal = ex.journal;
+        if (journal == null)
+        {
+            return;
+        }
         final String requestId = ex.requestId();
         ex.onConnectionClose(() -> {
             // As completeJournal decides: an end record with nothing before it is an orphan.
