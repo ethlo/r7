@@ -2275,6 +2275,414 @@ $defs:
     - match
     additionalProperties: false
     description: Defines a single traffic route and its associated behaviors.
+  unroutedPredicate:
+    anyOf:
+    - type: object
+      properties:
+        Cookie:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the cookie.
+            value:
+              type: string
+              description: The exact value the cookie must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if a request contains a specific cookie with an exact value.
+          defaultSnippets:
+          - label: Insert Cookie
+            description: Matches if a request contains a specific cookie with an exact value.
+            body:
+              name: $1
+              value: $2
+        HasCookie:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the cookie to check for.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified cookie, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasCookie
+            description: "Matches if a request contains the specified cookie, regardless of its value."
+            body:
+              name: $1
+        HasQueryParameter:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the query parameter.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified query parameter, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasQueryParameter
+            description: "Matches if a request contains the specified query parameter, regardless of its value."
+            body:
+              name: $1
+        HasRequestHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasRequestHeader
+            description: "Matches if a request contains the specified header, regardless of its value."
+            body:
+              name: $1
+        Host:
+          type: object
+          properties:
+            hosts:
+              type: array
+              items:
+                type: string
+              description: List of hostnames to match against.
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+          required:
+          - hosts
+          additionalProperties: false
+          description: Matches if the request 'Host' header matches one of the provided hostnames.
+          defaultSnippets:
+          - label: Insert Host
+            description: Matches if the request 'Host' header matches one of the provided hostnames.
+            body:
+              hosts: $1
+        MatchCookie:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the cookie.
+            regexp:
+              type: string
+              description: The regular expression the cookie value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a cookie exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchCookie
+            description: Matches if a cookie exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchPath:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            regexp:
+              type: string
+              description: The regular expression to match against the request path.
+          required:
+          - regexp
+          additionalProperties: false
+          description: Matches the request path against a regular expression.
+          defaultSnippets:
+          - label: Insert MatchPath
+            description: Matches the request path against a regular expression.
+            body:
+              regexp: $1
+        MatchQueryParameter:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the query parameter.
+            regexp:
+              type: string
+              description: The regular expression the parameter value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a query parameter exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchQueryParameter
+            description: Matches if a query parameter exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchRequestHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a request header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchRequestHeader
+            description: Matches if a request header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        Method:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+              description: "List of allowed HTTP methods (e.g., GET, POST)."
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the HTTP method is one of the allowed methods.
+          defaultSnippets:
+          - label: Insert Method
+            description: Matches if the HTTP method is one of the allowed methods.
+            body:
+              include: $1
+        Path:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            path:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The exact path to match.
+          required:
+          - path
+          additionalProperties: false
+          description: Matches if the request path matches exactly the provided path.
+          defaultSnippets:
+          - label: Insert Path
+            description: Matches if the request path matches exactly the provided path.
+            body:
+              path: $1
+        PathPrefix:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            prefix:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The path prefix to match.
+          required:
+          - prefix
+          additionalProperties: false
+          description: Matches if the request path starts with the provided prefix.
+          defaultSnippets:
+          - label: Insert PathPrefix
+            description: Matches if the request path starts with the provided prefix.
+            body:
+              prefix: $1
+        QueryParameter:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The exact value the query parameter must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified query parameter with an exact value.
+          defaultSnippets:
+          - label: Insert QueryParameter
+            description: Matches if the request contains the specified query parameter with an exact value.
+            body:
+              name: $1
+              value: $2
+        RemoteAddr:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            source:
+              type: string
+              description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
+          required:
+          - source
+          additionalProperties: false
+          description: Matches if the remote IP address falls within the specified CIDR range.
+          defaultSnippets:
+          - label: Insert RemoteAddr
+            description: Matches if the remote IP address falls within the specified CIDR range.
+            body:
+              source: $1
+        RequestHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the request header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert RequestHeader
+            description: Matches if the request contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        Sample:
+          type: object
+          properties:
+            rate:
+              anyOf:
+              - type: number
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The share of exchanges to match: greater than 0, at most 1 (0.01 is one in a hundred)."
+          required:
+          - rate
+          additionalProperties: false
+          description: "Matches a share of exchanges, drawn once per exchange from a random source."
+        UnroutedReason:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+                enum:
+                - no_route
+                - trace
+                - ambiguous_path
+                - transfer_encoding
+                - regex_budget
+              description: "The reasons to match: no_route (404), trace (501), ambiguous_path (400), transfer_encoding (400), regex_budget (500)."
+              minItems: 1
+          required:
+          - include
+          additionalProperties: false
+          description: Matches requests refused before routing for one of these reasons. Only under unrouted.
+        and:
+          type: array
+          items:
+            $ref: "#/$defs/unroutedPredicate"
+          minItems: 1
+        not:
+          $ref: "#/$defs/unroutedPredicate"
+        or:
+          type: array
+          items:
+            $ref: "#/$defs/unroutedPredicate"
+          minItems: 1
+      additionalProperties: true
+      minProperties: 1
+      maxProperties: 1
+    - type: string
+      description: Custom SPI implementation
 properties:
   filters:
     type: array
@@ -2460,6 +2868,56 @@ properties:
       journal:
         type: object
         properties:
+          on_request:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/unroutedPredicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked on every refusal. Per direction, the first matching rule naming it wins. A rule that tests the request anywhere in its match is checked only on no_route; one made only of UnroutedReason and Sample is checked on every refusal."
           request:
             type: object
             properties:
@@ -2470,12 +2928,6 @@ properties:
                 - HEADERS
                 - METADATA
                 description: The journaling verbosity level.
-              truncate_body_at:
-                type: string
-                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
-                errorMessage:
-                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
@@ -2489,17 +2941,11 @@ properties:
                 - HEADERS
                 - METADATA
                 description: The journaling verbosity level.
-              truncate_body_at:
-                type: string
-                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
-                errorMessage:
-                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
-                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
             additionalProperties: false
             minProperties: 1
             description: Journal settings for this direction of the exchange.
         additionalProperties: false
-        description: Journal levels for requests refused before any route is chosen. FULL is not allowed.
+        description: Journal levels and on_request rules for requests refused before any route is chosen. Not inherited from the root journal. FULL is not allowed.
     required:
     - journal
     additionalProperties: false

@@ -30,11 +30,7 @@ public class ModelMapper
     {
         final RouteDefinition def = route.routeDefinition();
 
-        final JournalPolicy policy = route.journal();
-        final List<JournalDto.Rule> rules = new ArrayList<>();
-        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
-        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
-        final JournalDto journal = new JournalDto(policy.request(), policy.response(), cap(policy.requestTruncateAt()), cap(policy.responseTruncateAt()), rules);
+        final JournalDto journal = mapJournal(route.journal());
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
                 .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders, safeResponseHeaders)))
@@ -51,6 +47,18 @@ public class ModelMapper
                 filters,
                 PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), upstreamStatus, route.filters().toArray(new GatewayFilter[0]), route::filterLevel)
         );
+    }
+
+    /**
+     * A journal policy as the management view shows it: base levels and caps, then the rules in
+     * the order they are checked.
+     */
+    public static JournalDto mapJournal(final JournalPolicy policy)
+    {
+        final List<JournalDto.Rule> rules = new ArrayList<>();
+        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
+        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
+        return new JournalDto(policy.request(), policy.response(), cap(policy.requestTruncateAt()), cap(policy.responseTruncateAt()), rules);
     }
 
     private static Long cap(final long truncateAt)

@@ -19,6 +19,8 @@ import java.util.function.Function;
 
 import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.condition.SampleConfig;
+import com.ethlo.r7.condition.UnroutedReason;
+import com.ethlo.r7.condition.UnroutedReasonConfig;
 import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.config.model.HttpStatus;
@@ -79,6 +81,7 @@ public final class JsonSchemaGenerator
         defs.put("filter", buildFilterDefinition());
         defs.put("predicate", buildPredicateDefinition("predicate", false));
         defs.put("responsePredicate", buildPredicateDefinition("responsePredicate", true));
+        defs.put("unroutedPredicate", buildPredicateDefinition("unroutedPredicate", false));
         defs.put("route", buildRouteDefinition());
         defs.put("group", buildGroupDefinition());
 
@@ -97,13 +100,13 @@ public final class JsonSchemaGenerator
                 )
         );
         properties.put("upstream", buildUpstreamSchema("Upstream keys every route inherits, each unless its group or the route names it."));
-        properties.put("journal", buildJournalSchema(ALL_LEVELS, true, "Journal levels every route inherits, each unless its group or the route names it, and rules checked after theirs. A route nothing names is journaled at NONE."));
+        properties.put("journal", buildJournalSchema(ALL_LEVELS, false, "Journal levels every route inherits, each unless its group or the route names it, and rules checked after theirs. A route nothing names is journaled at NONE."));
 
         final List<String> belowFull = List.of("NONE", "HEADERS", "METADATA");
         properties.put("unrouted", new ObjectSchema(
                 "object",
-                new TreeMap<>(Map.of("journal", buildJournalSchema(belowFull, false,
-                        "Journal levels for requests refused before any route is chosen. FULL is not allowed."))),
+                new TreeMap<>(Map.of("journal", buildJournalSchema(belowFull, true,
+                        "Journal levels and on_request rules for requests refused before any route is chosen. Not inherited from the root journal. FULL is not allowed."))),
                 List.of("journal"),
                 new BoolProps(false),
                 null, null, null, null,
@@ -192,7 +195,7 @@ public final class JsonSchemaGenerator
         );
 
         properties.put("upstream", buildUpstreamSchema("Where this route forwards requests. Each key not named here is inherited from the route's group, then the root."));
-        properties.put("journal", buildJournalSchema(ALL_LEVELS, true, "The route's journal: each key not named here is inherited from its group, then the root, and its rules are checked before theirs."));
+        properties.put("journal", buildJournalSchema(ALL_LEVELS, false, "The route's journal: each key not named here is inherited from its group, then the root, and its rules are checked before theirs."));
 
         // Neither upstream nor filters is required here: a route may inherit its upstream from
         // its group or the root, which a schema of the route alone cannot see.
@@ -231,7 +234,7 @@ public final class JsonSchemaGenerator
                 null
         ));
         properties.put("upstream", buildUpstreamSchema("Upstream keys the group's routes inherit, each unless the route names it; keys not named here are inherited from the root."));
-        properties.put("journal", buildJournalSchema(ALL_LEVELS, true, "Journal levels the group's routes inherit, each unless the route names it, and rules checked after a route's own and before the root's."));
+        properties.put("journal", buildJournalSchema(ALL_LEVELS, false, "Journal levels the group's routes inherit, each unless the route names it, and rules checked after a route's own and before the root's."));
         properties.put("routes", new ArraySchema(
                 "array",
                 new RefSchema("#/$defs/route", null, null),
@@ -265,9 +268,11 @@ public final class JsonSchemaGenerator
 
     /**
      * @param levels    the levels allowed, as a base level and in a rule
-     * @param withRules whether {@code on_request} and {@code on_response} are accepted
+     * @param unrouted whether this is the {@code unrouted} journal: no body cap, no
+     *                 {@code on_response}, and {@code on_request} rules that may test
+     *                 {@code UnroutedReason}
      */
-    private SchemaNode buildJournalSchema(final List<String> levels, final boolean withRules, final String description)
+    private SchemaNode buildJournalSchema(final List<String> levels, final boolean unrouted, final String description)
     {
         final SchemaNode levelSchema = new PrimitiveSchema(
                 "string",
@@ -277,7 +282,7 @@ public final class JsonSchemaGenerator
                 null, null, null
         );
 
-        final SchemaNode levelDef = directionSchema(levelSchema, true);
+        final SchemaNode levelDef = directionSchema(levelSchema, !unrouted);
 
         // A request body has streamed by the time on_response runs, so FULL cannot be set there
         final List<String> belowFull = levels.stream().filter(level -> !"FULL".equals(level)).toList();
@@ -290,11 +295,16 @@ public final class JsonSchemaGenerator
         ), false);
 
         final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("request", levelDef, "response", levelDef));
-        if (withRules)
+        if (unrouted)
         {
-            properties.put("on_request", buildJournalRules(levelDef, levelDef, false,
+            properties.put("on_request", buildJournalRules(levelDef, levelDef, "#/$defs/unroutedPredicate",
+                    "Rules checked on every refusal. Per direction, the first matching rule naming it wins. A rule that tests the request anywhere in its match is checked only on no_route; one made only of UnroutedReason and Sample is checked on every refusal."));
+        }
+        else
+        {
+            properties.put("on_request", buildJournalRules(levelDef, levelDef, "#/$defs/predicate",
                     "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."));
-            properties.put("on_response", buildJournalRules(lateRequestDef, levelDef, true,
+            properties.put("on_response", buildJournalRules(lateRequestDef, levelDef, "#/$defs/responsePredicate",
                     "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."));
         }
 
@@ -338,13 +348,13 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private static SchemaNode buildJournalRules(final SchemaNode requestDef, final SchemaNode responseDef, final boolean responseMatch, final String description)
+    private static SchemaNode buildJournalRules(final SchemaNode requestDef, final SchemaNode responseDef, final String predicateRef, final String description)
     {
         final Map<String, SchemaNode> properties = new TreeMap<>();
         properties.put("id", new PrimitiveSchema("string", null, null, null, null,
                 "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires.",
                 null, null, null));
-        properties.put("match", new ArraySchema("array", new RefSchema(responseMatch ? "#/$defs/responsePredicate" : "#/$defs/predicate", null, null),
+        properties.put("match", new ArraySchema("array", new RefSchema(predicateRef, null, null),
                 "Conditions that must all hold for the rule to fire.", null, 1));
         properties.put("request", requestDef);
         properties.put("response", responseDef);
@@ -398,6 +408,18 @@ public final class JsonSchemaGenerator
                 sample.type(), sample.properties(), sample.required(), sample.additionalProperties(),
                 sample.minProperties(), sample.maxProperties(), sample.anyOf(), sample.oneOf(),
                 sampleDescription.value(), sample.defaultValue(), sample.defaultSnippets()));
+
+        // UnroutedReason is a node too, and exists only under unrouted.
+        if (name.equals("unroutedPredicate"))
+        {
+            final Description reasonDescription = UnroutedReasonConfig.class.getAnnotation(Description.class);
+            final SchemaNode reasons = new ArraySchema("array",
+                    new PrimitiveSchema("string", UnroutedReason.configNames(), null, null, null, null, null, null, null),
+                    "The reasons to match: no_route (404), trace (501), ambiguous_path (400), transfer_encoding (400), regex_budget (500).", null, 1);
+            logicalOperators.put(PredicateRegistry.UNROUTED_REASON, new ObjectSchema(
+                    "object", new TreeMap<>(Map.of("include", reasons)), List.of("include"), new BoolProps(false),
+                    null, null, null, null, reasonDescription.value(), null, null));
+        }
 
         final List<SpiEntry> entries = new ArrayList<>(spiEntries(GatewayPredicateFactory.class, GatewayPredicateFactory::name, GatewayPredicateFactory::configClass));
         if (withResponsePredicates)

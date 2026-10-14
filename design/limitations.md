@@ -57,10 +57,10 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   can write segment files (`FORMAT.md` §6.1 and §9). Nothing is signed: an archive kept as
   evidence belongs on write-once storage ([`docs/where-r7-fits.md`](../docs/where-r7-fits.md#the-archive-the-warc-files)).
   A signed segment chain was designed and parked as too risky (ethlo/r7#192).
-- **Unrouted refusals are journaled all or none.** `unrouted` takes base levels only, so route
-  misses (404) cannot be left out while other refusals are journaled. `on_request` rules there
-  wait for a reason predicate that keeps a rule written for misses from matching a smuggling
-  attempt ([`plans/config-model.md`](plans/config-model.md), "Unrouted").
+- **Unrouted rules see the request only on a route miss.** Under `unrouted`, a rule that
+  reads the request is checked only on `no_route`; on the other refusals r7 never interpreted
+  the request, so such a rule is skipped. Telling those apart takes `UnroutedReason`, not a
+  request predicate ([`docs/config.md`](../docs/config.md#rules-for-refusals)).
 - **Live tailing needs a shared page cache.** A tailer on another host, or reading a copy of
   the files, falls back to polling. An idle tailer wakes within about 1 ms of a commit, because
   that is where its park is capped ([`history/live-tailing.md`](history/live-tailing.md)).

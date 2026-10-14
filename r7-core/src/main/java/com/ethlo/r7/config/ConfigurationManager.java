@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -24,6 +25,9 @@ import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.condition.AndCondition;
 import com.ethlo.r7.condition.Condition;
 import com.ethlo.r7.condition.ConditionScope;
+import com.ethlo.r7.condition.RequestCondition;
+import com.ethlo.r7.condition.UnroutedReason;
+import com.ethlo.r7.condition.UnroutedReasonCondition;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.journal.JournalPolicy;
 import com.ethlo.r7.journal.JournalRule;
@@ -295,13 +299,15 @@ public final class ConfigurationManager
             }
         }
 
+        final GatewayRoute unrouted = this.createUnroutedRoute(config.unrouted(), validationResult);
+
         // Predicate/filter instantiation (step 3) reports its errors onto the same
         // validationResult rather than throwing, so a poisoned predicate (e.g. an unknown
         // matcher wrapped in 'not:') would otherwise load as whatever fallback the tree built -
         // silently, and possibly inverted to match everything. Fail closed here instead.
         validationResult.throwIfInvalid();
 
-        return new RouteRegistry.Snapshot(config.version(), sourceDigest, routes, table, createUnroutedRoute(config.unrouted()));
+        return new RouteRegistry.Snapshot(config.version(), sourceDigest, routes, table, unrouted);
     }
 
     /**
@@ -548,17 +554,19 @@ public final class ConfigurationManager
      * A route that is never matched and has no filters or upstream: it only carries the journal
      * levels that requests refused before routing are recorded at. It does not inherit the
      * root's journal: refusals are mostly scanner traffic, and levels chosen for real routes
-     * would journal it by accident.
+     * would journal it by accident. Its {@code on_request} rules are checked on every refusal.
      */
-    private GatewayRoute createUnroutedRoute(final UnroutedDefinition unrouted)
+    private GatewayRoute createUnroutedRoute(final UnroutedDefinition unrouted, final ValidationResult validationResult)
     {
-        if (unrouted == null)
+        if (unrouted == null || unrouted.journal() == null)
         {
             return null;
         }
         final JournalDefinition journal = unrouted.journal();
         final RouteDefinition definition = new RouteDefinition(UnroutedDefinition.ROUTE_ID, null, null, journal, List.of());
-        final JournalPolicy policy = JournalPolicy.of(levelOf(journal.request()), levelOf(journal.response()));
+        final JournalPolicy policy = new JournalPolicy(levelOf(journal.request()), levelOf(journal.response()),
+                this.compileRules(journal.onRequest(), "unrouted.journal.on_request", ConditionScope.UNROUTED, validationResult),
+                List.of());
         return new DefaultGatewayRoute(List.of(), Condition.FALSE, List.of(), policy, definition);
     }
 
@@ -603,12 +611,42 @@ public final class ConfigurationManager
             {
                 throw new ConfigurationException(String.format("[%s.match] %s", path, e.getMessage()));
             }
-            compiled.add(new JournalRule(rule.id() != null ? rule.id() : path, path, condition,
+            compiled.add(new JournalRule(rule.id() != null ? rule.id() : path, path, scope == ConditionScope.UNROUTED ? gated(condition) : condition,
                     rule.request() != null ? rule.request().level() : null,
                     rule.response() != null ? rule.response().level() : null,
                     truncateAt(rule.request()), truncateAt(rule.response())));
         }
         return compiled;
+    }
+
+    /**
+     * An {@code unrouted} rule that reads the request anywhere in its tree is checked only on a
+     * route miss: on every other refusal r7 never interpreted the request, so the rule is skipped
+     * as if it did not match. The whole rule is gated, not each leaf, since a leaf that is merely
+     * false would let {@code not} turn it true. A rule of only {@code UnroutedReason} and
+     * {@code Sample} is checked on every refusal.
+     */
+    private static Condition gated(final Condition condition)
+    {
+        return readsRequest(condition)
+                ? new AndCondition(List.of(new UnroutedReasonCondition(EnumSet.of(UnroutedReason.NO_ROUTE)), condition))
+                : condition;
+    }
+
+    private static boolean readsRequest(final Condition condition)
+    {
+        if (condition instanceof RequestCondition)
+        {
+            return true;
+        }
+        for (final Condition child : condition.children())
+        {
+            if (readsRequest(child))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -697,6 +735,10 @@ public final class ConfigurationManager
     {
         final Map<String, String> seen = new HashMap<>();
         collectRuleIds(config.journal(), "journal", seen, validationResult);
+        if (config.unrouted() != null)
+        {
+            collectRuleIds(config.unrouted().journal(), "unrouted.journal", seen, validationResult);
+        }
         for (final RouteEntry entry : config.routes())
         {
             switch (entry)

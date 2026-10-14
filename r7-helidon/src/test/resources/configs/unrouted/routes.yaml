@@ -6,6 +6,22 @@ unrouted:
       level: HEADERS
     response:
       level: METADATA
+    on_request:
+      # Reads the request: checked only on no_route.
+      - id: quiet-misses
+        match:
+          - PathPrefix:
+              prefix: /quiet
+        request:
+          level: NONE
+        response:
+          level: NONE
+      - id: trace-metadata
+        match:
+          - UnroutedReason:
+              include: [trace]
+        request:
+          level: METADATA
 
 routes:
   # Journaled, for the upstream timings.

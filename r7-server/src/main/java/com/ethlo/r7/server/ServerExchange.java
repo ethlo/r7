@@ -22,6 +22,7 @@ import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.condition.ConditionInput;
 import com.ethlo.r7.condition.Draw;
 import com.ethlo.r7.condition.Leg;
+import com.ethlo.r7.condition.UnroutedReason;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.filters.StaticContentFactory;
 import com.ethlo.r7.journal.StatefulJournal;
@@ -98,6 +99,8 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
     // The draws the Samples of this exchange test, one per decision; NaN until the first asks.
     private double routingDraw = Double.NaN;
     private double journalDraw = Double.NaN;
+    // Why the request was refused before routing; null for a routed request.
+    UnroutedReason unroutedReason;
 
     protected ServerExchange(final GatewayPipeline pipeline)
     {
@@ -356,6 +359,12 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
             this.journalDraw = ThreadLocalRandom.current().nextDouble();
         }
         return this.journalDraw;
+    }
+
+    @Override
+    public UnroutedReason unroutedReason()
+    {
+        return this.unroutedReason;
     }
 
     // --- For metrics ------------------------------------------------------------------------

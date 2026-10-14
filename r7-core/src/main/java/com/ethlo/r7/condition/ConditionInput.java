@@ -30,6 +30,14 @@ public interface ConditionInput
     double sampleDraw(Draw draw);
 
     /**
+     * @return why the request was refused before routing, or {@code null} for a routed request
+     */
+    default UnroutedReason unroutedReason()
+    {
+        return null;
+    }
+
+    /**
      * Only a client request, as when a route is chosen. Allocates; for callers off the request
      * path.
      */

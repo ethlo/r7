@@ -353,6 +353,9 @@ public final class ManagementEndpoint
         root.put("route_metrics", routeReadings.stream().map(RouteReading::metrics).toList());
 
         root.put("unrouted_requests", pipeline.unroutedRequests());
+        // The unrouted section's journal, null without one: it does not inherit the root's.
+        final GatewayRoute unrouted = routeRegistry.snapshot().unrouted();
+        root.put("unrouted_journal", unrouted != null ? ModelMapper.mapJournal(((DefaultGatewayRoute) unrouted).journal()) : null);
         root.put("upstream_health", pipeline.upstreamTargetStates());
 
         final List<GatewayRoute> routes = routeRegistry.getRoutes();

@@ -15,6 +15,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,6 +35,7 @@ import com.ethlo.r7.r7f.R7Tailer;
 import com.ethlo.r7.util.Fingerprint;
 
 import io.restassured.RestAssured;
+import io.restassured.path.json.JsonPath;
 
 /**
  * Requests refused before any route is chosen are what scanners and probes send; with an
@@ -147,6 +150,37 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         Assertions.assertEquals("trace", entry.getAttributes().getFirst("gateway.unrouted.reason"));
     }
 
+    /**
+     * A rule that reads the request applies to a route miss, and is skipped on a refusal whose
+     * request r7 never interpreted: the same path under TRACE falls through to the next rule.
+     */
+    @Test
+    public void aRuleReadingTheRequestSilencesMissesButNotOtherRefusals() throws Exception
+    {
+        final String quiet = "/quiet-" + UUID.randomUUID();
+        given().when().get(quiet).then().statusCode(404);
+        final String traced = "/quiet-trace-" + UUID.randomUUID();
+        given().when().request("TRACE", traced).then().statusCode(501);
+
+        final JournalExchange entry = awaitEntry(traced);
+        Assertions.assertEquals(JournalLevel.METADATA, entry.getClientRequestLevel());
+        Assertions.assertEquals("trace-metadata", entry.getAttributes().getFirst("gateway.journal.rule"));
+        Assertions.assertFalse(journaled(quiet), "the silenced miss was journaled");
+    }
+
+    /**
+     * The management view shows the unrouted journal on its own: it inherits nothing from the root.
+     */
+    @Test
+    public void theManagementViewShowsTheUnroutedJournal()
+    {
+        final JsonPath json = managementJsonAfter(Instant.now());
+        Assertions.assertEquals("HEADERS", json.getString("unrouted_journal.request_level"));
+        Assertions.assertEquals("METADATA", json.getString("unrouted_journal.response_level"));
+        Assertions.assertEquals(List.of("quiet-misses", "trace-metadata"), json.getList("unrouted_journal.rules.label"));
+        Assertions.assertEquals("unrouted.journal.on_request[0]", json.getString("unrouted_journal.rules[0].path"));
+    }
+
     @Test
     public void anAmbiguousPathIsJournaledWithItsReason() throws Exception
     {
@@ -185,6 +219,21 @@ public class UnroutedJournalTest extends AbstractR7IntegrationTest
         final JournalExchange entry = awaitEntry(marker);
         Assertions.assertEquals(500, entry.getStatus());
         Assertions.assertEquals("regex_budget", entry.getAttributes().getFirst("gateway.unrouted.reason"));
+    }
+
+    // Read after awaiting an entry sent later, so the tail has caught up past this one.
+    private static boolean journaled(final String marker) throws Exception
+    {
+        final Map<String, JournalExchange> found = new ConcurrentHashMap<>();
+        new R7Tailer(JOURNALS, Files.createTempDirectory("r7-unrouted-test-checkpoints"), exchange ->
+        {
+            final String startLine = exchange.getClientRequestStartLine();
+            if (startLine != null && startLine.contains(marker))
+            {
+                found.put(marker, exchange);
+            }
+        }, JournalIntegrityListener.NOOP, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+        return found.containsKey(marker);
     }
 
     private static JournalExchange awaitEntry(final String marker) throws Exception

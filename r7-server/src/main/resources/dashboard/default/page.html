@@ -1582,8 +1582,8 @@
     }
 
     // The counts change while the configuration panel stays put, so only they are refreshed.
-    function refreshRuleErrors(routeId) {
-        const rules = window.currentConfigs[routeId]?.journal?.rules || [];
+    function refreshRuleErrors(journal) {
+        const rules = journal?.rules || [];
         document.querySelectorAll('[data-rule-errors]').forEach(el => {
             const rule = rules.find(r => `${r.stage}|${r.path}` === el.dataset.ruleErrors);
             const html = ruleErrorsHtml(rule ? rule.rule_errors : 0);
@@ -1788,7 +1788,7 @@
             staticKey: 'route|' + routeId + '|' + configRevision(data),
             afterRender: () => {
                 refreshHealthTags(routeId);
-                refreshRuleErrors(routeId);
+                refreshRuleErrors(window.currentConfigs[routeId]?.journal);
                 const canvas = document.getElementById('detail-canvas');
                 if (canvas && spark) {
                     drawStackedSparkline(canvas, spark, {showYAxis: true, smooth: true, latency: lat?.p99_series_micros});
@@ -1868,7 +1868,23 @@
             </div>
         </div>`;
 
-        return {live, static: '', staticKey: 'system'};
+        // Requests refused before routing are journaled only under an unrouted section, which
+        // does not inherit the root journal.
+        const stat = `
+        <div class="panel-section">
+            <div class="panel-section-title">Unrouted Journaling</div>
+            ${data.unrouted_journal
+            ? `<div class="sub text-dim" style="margin-bottom: 8px;">Requests refused before routing (no route, TRACE, an ambiguous path, a bad Transfer-Encoding, the regex budget). Not inherited from the root journal.</div>
+               ${buildJournalHtml({journal: data.unrouted_journal})}`
+            : '<div class="sub text-dim">No unrouted section: requests refused before routing are not journaled.</div>'}
+        </div>`;
+
+        return {
+            live,
+            static: stat,
+            staticKey: 'system|' + configRevision(data),
+            afterRender: () => refreshRuleErrors(data.unrouted_journal)
+        };
     }
 
     // ==========================================================================

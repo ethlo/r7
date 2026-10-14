@@ -32,6 +32,7 @@ import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StateKey;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.condition.UnroutedReason;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.FallbackConfig;
 import com.ethlo.r7.config.HealthCheckConfig;
@@ -162,7 +163,7 @@ public final class GatewayPipeline
         {
             logger.debug("Rejecting non-canonical Transfer-Encoding: {}", ex.requestHeaders().getAll("Transfer-Encoding"));
             ex.closeConnectionAfterResponse();
-            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate(), "transfer_encoding");
+            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.UNSUPPORTED_TRANSFER_ENCODING.duplicate(), UnroutedReason.TRANSFER_ENCODING);
             return;
         }
 
@@ -172,7 +173,7 @@ public final class GatewayPipeline
         // server compares methods: "trace" must not reach an upstream that reads it as TRACE.
         if ("TRACE".equalsIgnoreCase(ex.method()))
         {
-            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate(), "trace");
+            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.NOT_IMPLEMENTED, ErrorMessages.TRACE_NOT_SUPPORTED.duplicate(), UnroutedReason.TRACE);
             return;
         }
 
@@ -182,7 +183,7 @@ public final class GatewayPipeline
         if (pathViolation != null)
         {
             logger.debug("Rejecting ambiguous request path ({}): {}", pathViolation, ex.decodedPath());
-            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate(), "ambiguous_path");
+            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.BAD_REQUEST, ErrorMessages.AMBIGUOUS_PATH.duplicate(), UnroutedReason.AMBIGUOUS_PATH);
             return;
         }
 
@@ -196,7 +197,7 @@ public final class GatewayPipeline
         {
             // No route was chosen, like the 404 below: journaled only under an unrouted section.
             logger.warn("Route matching refused: {}", e.getMessage());
-            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate(), "regex_budget");
+            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.INTERNAL_SERVER_ERROR, ErrorMessages.REGEX_BUDGET_EXCEEDED.duplicate(), UnroutedReason.REGEX_BUDGET);
             return;
         }
 
@@ -205,7 +206,7 @@ public final class GatewayPipeline
             // Counted here because no route's SimpleMetrics ever sees these: without it, traffic
             // no route matches - a client on a stale path, a scanner - is invisible on the dashboard.
             this.unroutedRequests.increment();
-            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate(), "no_route");
+            refuseBeforeRouting(ex, routing.unrouted(), HttpStatuses.NOT_FOUND, ErrorMessages.NO_ROUTE.duplicate(), UnroutedReason.NO_ROUTE);
             return;
         }
 
@@ -261,7 +262,7 @@ public final class GatewayPipeline
      * {@value #UNROUTED_REASON_KEY}; otherwise it is answered directly and leaves no entry.
      * These are what scanners and probes send, so they are worth an audit trail.
      */
-    private void refuseBeforeRouting(final ServerExchange ex, final GatewayRoute unroutedRoute, final int status, final ByteBuffer body, final String reason)
+    private void refuseBeforeRouting(final ServerExchange ex, final GatewayRoute unroutedRoute, final int status, final ByteBuffer body, final UnroutedReason reason)
     {
         final DefaultGatewayRoute unrouted = (DefaultGatewayRoute) unroutedRoute;
         if (unrouted == null)
@@ -277,8 +278,10 @@ public final class GatewayPipeline
         {
             openLiveRequest(ex);
         }
+        // Before open: the unrouted rules read it when they are checked there.
+        ex.unroutedReason = reason;
         open(ex, unrouted);
-        ex.attributes().set(UNROUTED_REASON_KEY, reason);
+        ex.attributes().set(UNROUTED_REASON_KEY, reason.configName());
         ex.shortCircuit(new ShortCircuitGatewayResponse(status, MediaTypes.TEXT_PLAIN_UTF8, body));
         shortCircuit(null, ex, unrouted);
     }
