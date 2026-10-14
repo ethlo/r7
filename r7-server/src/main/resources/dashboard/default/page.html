@@ -1573,6 +1573,24 @@
             : '<span class="text-dim">NONE</span>', false)}`;
     }
 
+    // A rule's failures since the configuration was loaded, counted on every route it applies to,
+    // whether or not the exchange was journaled.
+    function ruleErrorsHtml(count) {
+        return count > 0
+            ? `<span class="text-err" title="times this rule could not be evaluated and did not fire, since the configuration was loaded">${count.toLocaleString()} rule ${count === 1 ? 'error' : 'errors'}</span>`
+            : '';
+    }
+
+    // The counts change while the configuration panel stays put, so only they are refreshed.
+    function refreshRuleErrors(routeId) {
+        const rules = window.currentConfigs[routeId]?.journal?.rules || [];
+        document.querySelectorAll('[data-rule-errors]').forEach(el => {
+            const rule = rules.find(r => `${r.stage}|${r.path}` === el.dataset.ruleErrors);
+            const html = ruleErrorsHtml(rule ? rule.rule_errors : 0);
+            if (el.innerHTML !== html) el.innerHTML = html;
+        });
+    }
+
     // Health changes while the configuration panels stay put, so only the tags are refreshed.
     function refreshHealthTags(routeId) {
         document.querySelectorAll('[data-health-target]').forEach(el => {
@@ -1608,6 +1626,7 @@
                 <span style="font-size: 0.85em;">${esc(rule.stage)}</span>
                 <span style="font-size: 0.85em;">${esc(rule.label)}</span>
                 <span style="font-size: 0.85em;">${sets.join(', ')}</span>
+                <span style="font-size: 0.85em;" data-rule-errors="${esc(rule.stage)}|${esc(rule.path)}">${ruleErrorsHtml(rule.rule_errors)}</span>
             </div>`;
             });
             html += '</div>';
@@ -1769,6 +1788,7 @@
             staticKey: 'route|' + routeId + '|' + configRevision(data),
             afterRender: () => {
                 refreshHealthTags(routeId);
+                refreshRuleErrors(routeId);
                 const canvas = document.getElementById('detail-canvas');
                 if (canvas && spark) {
                     drawStackedSparkline(canvas, spark, {showYAxis: true, smooth: true, latency: lat?.p99_series_micros});

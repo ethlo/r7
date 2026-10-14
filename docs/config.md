@@ -910,6 +910,8 @@ Header and query parameter values that may be secrets are journaled as fingerpri
 
 A request at `NONE` is still recorded at `METADATA` (start line, client address, timing) when its response is journaled, to anchor the response.
 
+A route whose base levels and every rule it can reach are `NONE` is *silent*, decided when the configuration loads: its exchanges skip the journal entirely, with no rules evaluated and nothing built for it.
+
 #### Body cap (`truncate_body_at`)
 
 A direction also takes `truncate_body_at`, a size (`64KB`, `1MB`). At `FULL` the journal keeps the body's first `truncate_body_at` bytes and records that it stopped; the body itself still streams whole to the upstream or the client, and the exchange is journaled whatever its size. Below `FULL` it has no effect. Without it, whole bodies are journaled; [Journaling: capping bodies](journaling.md#capping-bodies) says when to set it.
@@ -961,7 +963,7 @@ journal:
 * **When they run.** `on_request` is checked once the route is chosen, before its filters, against the request as the client sent it. `on_response` is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use [response predicates](#response-matching) and `leg: upstream`.
 * **Which rule wins.** For each key of each direction (`level`, `truncate_body_at`), the first matching rule that names it wins; a rule naming only `response` leaves the request to the rules after it, and one naming only a direction's `truncate_body_at` leaves its `level` to them. `on_response` overrides what `on_request` resolved. A route's rules are checked first, then its group's, then the root's.
 * **Recorded.** Each rule that fires is journaled in the `gateway.journal.rule` attribute, by its `id`, or its path (`routes.orders.journal.on_response[0]`) when it has none. Ids are unique across the file.
-* **Failures.** A rule whose predicate fails (a regex over its budget) does not fire, under `not` as well, and the exchange carries on: its label is journaled in `gateway.journal.rule_error`, and the first failure is logged once per load.
+* **Failures.** A rule whose predicate fails (a regex over its budget) does not fire, under `not` as well, and the exchange carries on: its label is journaled in `gateway.journal.rule_error`. A failing rule is often one meant to raise the level, so its failures are also counted when the exchange ends at `NONE` and leaves no record: the management view and the dashboard show a `rule_errors` count beside each rule, by its id or path. The first failure of each rule after a load is logged as a warning, with the rule's path and the exception; later ones are only counted.
 
 Bodies stream as they pass, which fixes two things at load:
 

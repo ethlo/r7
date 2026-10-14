@@ -128,7 +128,8 @@ routes:
 What each level records, and how rules resolve the levels, is in
 [Configuration §7](config.md#7-journaling-storage). Each rule that fires is recorded in the
 `gateway.journal.rule` attribute, by its id or its path, and a rule that could not be evaluated
-in `gateway.journal.rule_error`; where and how journals are written on disk is
+in `gateway.journal.rule_error`, and counted in the management view's `rule_errors` whether or
+not the exchange was journaled; where and how journals are written on disk is
 the [`storage` block](config.md#storage-journaling-storage). Requests refused before any route
 matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
 [Unrouted Requests](config.md#unrouted-requests-routesyaml-unrouted).

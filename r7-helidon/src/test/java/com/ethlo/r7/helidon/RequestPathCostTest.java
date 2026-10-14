@@ -69,9 +69,12 @@ class RequestPathCostTest
     // 2026-10-01 (JDK 25.0.4, Helidon 4.5.5): passthrough 20980-21220, journal HEADERS
     // 22036-22664, filtered 22295-22409. About 10% headroom: enough for JIT variation and a CI
     // runner, too little for a new per-request object graph to slip through unnoticed.
-    private static final long PASSTHROUGH_BUDGET = 23_200;
+    // Lowered on 2026-10-14 (JDK 27) when routes that journal nothing became silent and stopped
+    // building journal state per exchange: passthrough 20434-20540 to 19953-19954, filtered
+    // 21591-21700 to 21102-21147, on the same machine; journal HEADERS unchanged.
+    private static final long PASSTHROUGH_BUDGET = 22_700;
     private static final long JOURNAL_HEADERS_BUDGET = 24_800;
-    private static final long FILTERED_BUDGET = 24_600;
+    private static final long FILTERED_BUDGET = 24_100;
 
     @TempDir
     static Path dir;

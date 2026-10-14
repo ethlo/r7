@@ -25,7 +25,7 @@ public final class JournalPolicy
     private final long responseTruncateAt;
     private final JournalRule[] onRequest;
     private final JournalRule[] onResponse;
-    private final boolean mayJournal;
+    private final boolean silent;
 
     public JournalPolicy(final JournalLevel request, final JournalLevel response, final List<JournalRule> onRequest, final List<JournalRule> onResponse)
     {
@@ -50,7 +50,7 @@ public final class JournalPolicy
         {
             any |= isRecorded(rule.request()) || isRecorded(rule.response());
         }
-        this.mayJournal = any;
+        this.silent = !any;
     }
 
     public static JournalPolicy of(final JournalLevel request, final JournalLevel response)
@@ -121,11 +121,13 @@ public final class JournalPolicy
     }
 
     /**
-     * @return false when neither the base levels nor any rule can record anything: such an
-     * exchange needs no request start line kept for completion
+     * @return true when neither the base levels nor any rule the route can reach can record
+     * anything. Decided once, at load: an exchange on a silent route skips the journal entirely,
+     * with no journal state, no start lines and no rules evaluated, since none of them could
+     * change what is written, which is nothing.
      */
-    public boolean mayJournal()
+    public boolean isSilent()
     {
-        return this.mayJournal;
+        return this.silent;
     }
 }
