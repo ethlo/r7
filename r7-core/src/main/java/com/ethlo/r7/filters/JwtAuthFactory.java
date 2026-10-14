@@ -15,6 +15,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import com.ethlo.r7.api.Claims;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
@@ -22,6 +24,7 @@ import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.Identity;
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.StateKey;
+import com.ethlo.r7.api.TextValues;
 import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
 import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.core.GatewayContextKeys;
@@ -69,11 +72,22 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             JWSAlgorithm.PS256, JWSAlgorithm.PS384, JWSAlgorithm.PS512,
             JWSAlgorithm.ES256, JWSAlgorithm.ES384, JWSAlgorithm.ES512);
     static final int MAX_CLOCK_SKEW_SECONDS = 300;
-    static final Duration MIN_JWKS_CACHE_DURATION = Duration.ofSeconds(1);
+    /**
+     * The keys are fetched at most once per 30 s, so a token with an unknown key id cannot make
+     * every request fetch them; a cache shorter than a minute leaves no room for that and a refresh.
+     */
+    static final Duration MIN_JWKS_CACHE_DURATION = Duration.ofMinutes(1);
     private static final String FILTER_NAME = "JwtAuth";
     private static final String SCHEME = "jwt";
     private static final String BEARER_SCHEME = "Bearer ";
     private static final Duration MAX_REFRESH_AHEAD = Duration.ofSeconds(30);
+
+    /**
+     * Runs the background key refreshes of every JwtAuth filter. Virtual threads, so a filter
+     * retired by a reload leaves no thread behind and its key source needs no closing.
+     */
+    private static final ExecutorService REFRESH_EXECUTOR = Executors.newThreadPerTaskExecutor(
+            Thread.ofVirtual().name("r7-jwks-refresh-", 0).factory());
 
     /**
      * The verified claims, kept apart from {@link Identity#KEY}: a later filter may replace the
@@ -124,7 +138,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         final long refreshAheadMillis = Math.max(1, Math.min(MAX_REFRESH_AHEAD.toMillis(), cacheDuration.toMillis() / 2));
         final JWKSource<SecurityContext> jwkSource = JWKSourceBuilder.<SecurityContext>create(jwksUrl)
                 .cache(cacheDuration.toMillis(), Duration.ofSeconds(30).toMillis())
-                .refreshAheadCache(refreshAheadMillis, false)
+                .refreshAheadCache(refreshAheadMillis, null, REFRESH_EXECUTOR, false, null, false)
                 .retrying(true)
                 .build();
         return buildJwtProcessor(config, jwkSource);
@@ -376,8 +390,19 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             if (claims != null)
             {
                 this.forwardClaimsAsHeaders.forEach((claim, header) ->
-                        claims.string(claim).ifPresent(value -> exchange.upstreamRequest().headers().set(header, value)));
+                        claims.string(claim)
+                                .filter(GF::isHeaderValue)
+                                .ifPresent(value -> exchange.upstreamRequest().headers().set(header, value)));
             }
+        }
+
+        /**
+         * A claim that cannot be sent as a header value (a character beyond ISO-8859-1, or a control
+         * character) is not forwarded: the header is left out, as for a token without the claim.
+         */
+        private static boolean isHeaderValue(final String value)
+        {
+            return TextValues.isStorable(value) && TextValues.firstControlCharacterIndex(value) < 0;
         }
 
         private static boolean hasMoreThanOne(final Iterable<String> values)

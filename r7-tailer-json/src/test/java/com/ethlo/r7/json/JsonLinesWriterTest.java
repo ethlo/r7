@@ -388,6 +388,22 @@ class JsonLinesWriterTest
     }
 
     @Test
+    void identityValuesAreDecodedFromUtf8() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-unicode");
+        final FastGatewayAttributes attributes = new FastGatewayAttributes();
+        attributes.add("gateway.identity.scheme", "jwt");
+        attributes.add("gateway.identity.subject", "6f1c2d3e");
+        attributes.add("gateway.identity.username", new String("Łukasz 李".getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1));
+        exchange.setAttributes(attributes);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        assertThat(MAPPER.readTree(linesOf(out).get(0)).path("identity").path("username").asString()).isEqualTo("Łukasz 李");
+    }
+
+    @Test
     void thereIsNoIdentityWhenNoFilterVerifiedTheCaller() throws IOException
     {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();

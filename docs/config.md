@@ -785,9 +785,9 @@ Verifies a `Bearer` JWT against the signing keys at a JWKS endpoint, and short-c
 | `audience` | String | Yes | A value the token's `aud` must contain. |
 | `username_claim` | String | No | The claim journaled as the caller's username. Defaults to `preferred_username`. |
 | `clock_skew_seconds` | Integer | No | Clock skew allowed on `exp` and `nbf`, 0-300. Defaults to `60`. |
-| `jwks_cache_duration` | Duration | No | How long fetched keys are cached, at least `1s`; they are refreshed in the background shortly before they expire. Defaults to `5m`. |
+| `jwks_cache_duration` | Duration | No | How long fetched keys are cached, at least `1m`; they are refreshed in the background shortly before they expire. Defaults to `5m`. |
 | `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
-| `forward_claims_as_headers` | Map | No | Claim name to upstream header name. Each listed string claim is set on the upstream request under that header. Every listed header is removed from the client's own request first, so a client can never supply one itself. |
+| `forward_claims_as_headers` | Map | No | Claim name to upstream header name. Each listed string claim is set on the upstream request under that header; a value that cannot be a header (a character beyond ISO-8859-1, or a control character) is left out. Every listed header is removed from the client's own request first, so a client can never supply one itself. |
 
 ```yaml
 filters:

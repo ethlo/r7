@@ -474,7 +474,9 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         generator.writeStartObject();
         for (final String field : IDENTITY_FIELDS)
         {
-            writeString(field, attributes.getFirst(IDENTITY_ATTRIBUTE_PREFIX + field));
+            // The gateway stores identity values as UTF-8 bytes, one char per byte.
+            final String stored = attributes.getFirst(IDENTITY_ATTRIBUTE_PREFIX + field);
+            writeString(field, stored != null ? new String(stored.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8) : null);
         }
         generator.writeEndObject();
     }

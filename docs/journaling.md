@@ -432,7 +432,7 @@ When an auth filter verified the caller, the line carries who they are, in plain
 ```
 
 The journal is an audit record, and who made a request is the question it exists to answer, so the
-identity is recorded verbatim, like the client address. The credentials themselves stay
+identity is recorded verbatim, like the client address, in any script. The credentials themselves stay
 fingerprinted: the `Authorization` header's value is never written in plain text. If two filters
 on a route set the identity, the last one wins.
 

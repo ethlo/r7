@@ -9,7 +9,7 @@ import com.ethlo.r7.doc.Nullable;
  * {@code exchange.setAttachment(Identity.KEY, identity)} once the credentials have passed, and
  * the gateway journals its scheme, issuer, subject and username in plain text: the journal is an
  * audit record, and who made a request is what it exists to answer. If two filters set it, the
- * last one wins.
+ * last one wins. The values may hold any Unicode; the journal stores them as UTF-8.
  *
  * @param scheme   how the caller was authenticated, such as {@code basic} or {@code jwt}
  * @param issuer   who vouches for the caller, such as a token's {@code iss}; null when the gateway checked the credentials itself

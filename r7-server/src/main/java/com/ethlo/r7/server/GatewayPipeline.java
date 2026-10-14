@@ -2,6 +2,7 @@ package com.ethlo.r7.server;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -678,6 +679,15 @@ public final class GatewayPipeline
         }
     }
 
+    /**
+     * An identity value as its UTF-8 bytes, one char per byte. A username or token claim can hold
+     * any Unicode, but attributes store ISO-8859-1 only; the JSON tailer decodes the bytes back.
+     */
+    private static String asJournalText(final String value)
+    {
+        return new String(value.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1);
+    }
+
     private static void tagExchangeAttributes(final ServerExchange ex)
     {
         ex.attributes().add(ROUTE_ID_KEY, ex.route.id());
@@ -693,15 +703,15 @@ public final class GatewayPipeline
         final Identity identity = ex.getAttachment(Identity.KEY);
         if (identity != null)
         {
-            ex.attributes().set(IDENTITY_SCHEME_KEY, identity.scheme());
+            ex.attributes().set(IDENTITY_SCHEME_KEY, asJournalText(identity.scheme()));
             if (identity.issuer() != null)
             {
-                ex.attributes().set(IDENTITY_ISSUER_KEY, identity.issuer());
+                ex.attributes().set(IDENTITY_ISSUER_KEY, asJournalText(identity.issuer()));
             }
-            ex.attributes().set(IDENTITY_SUBJECT_KEY, identity.subject());
+            ex.attributes().set(IDENTITY_SUBJECT_KEY, asJournalText(identity.subject()));
             if (identity.username() != null)
             {
-                ex.attributes().set(IDENTITY_USERNAME_KEY, identity.username());
+                ex.attributes().set(IDENTITY_USERNAME_KEY, asJournalText(identity.username()));
             }
         }
 

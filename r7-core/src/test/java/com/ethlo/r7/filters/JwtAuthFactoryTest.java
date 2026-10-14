@@ -278,6 +278,20 @@ class JwtAuthFactoryTest
     }
 
     @Test
+    void aClaimThatCannotBeAHeaderValueIsNotForwarded() throws Exception
+    {
+        final JwtAuthFactory.GF filter = filter(config(null, Map.of("name", "X-User-Name", "role", "X-User-Role"), false));
+        final ClientRequestGatewayExchange exchange = exchange("Bearer " + token(claims().claim("name", "Łukasz").claim("role", "admin\r\nX-Admin: 1").build()));
+        filter.onClientRequest(exchange);
+
+        final UpstreamRequestGatewayExchange upstream = upstream(exchange, "X-User-Name", "mallory");
+        filter.onUpstreamRequest(upstream);
+
+        assertThat(upstream.upstreamRequest().headers().getFirst("X-User-Name")).isNull();
+        assertThat(upstream.upstreamRequest().headers().getFirst("X-User-Role")).isNull();
+    }
+
+    @Test
     void theClientsOwnValueIsRemovedWhenTheTokenWasRefused()
     {
         final JwtAuthFactory.GF filter = filter(config(null, Map.of("role", "X-User-Role"), false));
@@ -294,6 +308,15 @@ class JwtAuthFactoryTest
     void aWellFormedConfigValidates()
     {
         assertThat(errors(config(null, Map.of("sub", "X-User-Id"), false))).isEmpty();
+    }
+
+    @Test
+    void theShortestValidCacheDurationBuildsTheKeySource()
+    {
+        final JwtAuthFactory.Config config = new JwtAuthFactory.Config("https://auth.example.com/keys", ISSUER, AUDIENCE, null, null,
+                JwtAuthFactory.MIN_JWKS_CACHE_DURATION, null, null);
+        assertThat(errors(config)).isEmpty();
+        assertThat(new JwtAuthFactory().create(config, null)).isNotNull();
     }
 
     @Test
@@ -314,7 +337,7 @@ class JwtAuthFactoryTest
                 .singleElement().asString().contains("between 0 and 300");
         assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, AUDIENCE, null, -1, null, null, null)))
                 .singleElement().asString().contains("between 0 and 300");
-        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, AUDIENCE, null, null, Duration.ofMillis(500), null, null)))
+        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, AUDIENCE, null, null, Duration.ofSeconds(59), null, null)))
                 .singleElement().asString().contains("at least");
         assertThat(errors(config(null, Map.of("sub", "Authorization"), false))).singleElement().asString().contains("forward_credentials");
         assertThat(errors(config(null, Map.of("sub", "X-User", "email", "x-user"), false))).singleElement().asString().contains("another claim");
