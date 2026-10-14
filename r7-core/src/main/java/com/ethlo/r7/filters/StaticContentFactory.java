@@ -2,6 +2,7 @@ package com.ethlo.r7.filters;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -163,7 +164,8 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
     private static void validateFallback(final Config config, final ValidatorUtils validator)
     {
         final String file = config.fallback();
-        if (file.isEmpty() || file.endsWith("/") || Arrays.stream(file.split("/")).anyMatch(segment -> segment.isEmpty() || segment.equals("..")))
+        final Path relative = relativeFile(file);
+        if (relative == null)
         {
             validator.invalid("fallback", file, "Must name a file relative to the directories, such as index.html");
         }
@@ -171,9 +173,34 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         {
             validator.invalid("fallback", file, "Names a hidden file, which this route does not serve");
         }
-        else if (config.directories().stream().noneMatch(directory -> servable(directory, file, config.followSymlinks())))
+        else if (config.directories().stream().noneMatch(directory -> Files.isRegularFile(directory.resolve(relative))))
         {
-            validator.invalid("fallback", file, "No directory has " + file + (config.followSymlinks() ? "" : " other than through a symlink, which this route does not follow"));
+            validator.invalid("fallback", file, "No directory has " + file);
+        }
+        else if (config.directories().stream().noneMatch(directory -> servable(directory, relative, config.followSymlinks())))
+        {
+            validator.invalid("fallback", file, "Reached only through a symlink, which this route does not follow");
+        }
+    }
+
+    /**
+     * {@code file} as a path under a directory, or null when it is empty, absolute, names a
+     * directory, has an empty or {@code ..} segment, or is no valid path at all.
+     */
+    private static Path relativeFile(final String file)
+    {
+        if (file.isEmpty() || file.endsWith("/") || Arrays.stream(file.split("/")).anyMatch(segment -> segment.isEmpty() || segment.equals("..")))
+        {
+            return null;
+        }
+        try
+        {
+            final Path path = Path.of(file);
+            return path.isAbsolute() || path.getRoot() != null || path.normalize().startsWith("..") ? null : path;
+        }
+        catch (InvalidPathException exc)
+        {
+            return null;
         }
     }
 
@@ -181,13 +208,13 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
      * Whether {@code file} is a regular file under {@code directory} that the server would serve,
      * by the same symlink rule as its lookup.
      */
-    private static boolean servable(final Path directory, final String file, final boolean followSymlinks)
+    private static boolean servable(final Path directory, final Path file, final boolean followSymlinks)
     {
         final Path resolved = directory.resolve(file);
         if (!followSymlinks)
         {
             Path current = directory;
-            for (final Path segment : directory.relativize(resolved))
+            for (final Path segment : file)
             {
                 current = current.resolve(segment);
                 if (Files.isSymbolicLink(current))
