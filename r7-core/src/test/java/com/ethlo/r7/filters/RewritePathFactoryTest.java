@@ -252,65 +252,6 @@ class RewritePathFactoryTest
         assertThat(rewriteQuery("^/old$", "/new/{query.id}", "/old").refusedWith()).isEqualTo(HttpStatuses.BAD_REQUEST);
     }
 
-    /**
-     * An exchange whose client sent /old with the given query, the upstream query starting as a
-     * copy of it, and attachments that persist between filters.
-     */
-    private static UpstreamRequestGatewayExchange exchange(final Params upstreamParams, final String... clientQuery)
-    {
-        final GatewayRequest request = mock(GatewayRequest.class);
-        when(request.path()).thenReturn("/old");
-        when(request.queryParams()).thenReturn(new Params(clientQuery));
-        final MutableGatewayRequest upstream = mock(MutableGatewayRequest.class);
-        when(upstream.queryParams()).thenReturn(upstreamParams);
-        final UpstreamRequestGatewayExchange exchange = mock(UpstreamRequestGatewayExchange.class);
-        when(exchange.clientRequest()).thenReturn(request);
-        when(exchange.upstreamRequest()).thenReturn(upstream);
-        final java.util.Map<Object, Object> attachments = new java.util.HashMap<>();
-        org.mockito.Mockito.doAnswer(call ->
-        {
-            attachments.put(call.getArgument(0), call.getArgument(1));
-            return null;
-        }).when(exchange).setAttachment(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-        when(exchange.getAttachment(org.mockito.ArgumentMatchers.any())).thenAnswer(call -> attachments.get(call.getArgument(0)));
-        return exchange;
-    }
-
-    private static void apply(final String replacement, final UpstreamRequestGatewayExchange exchange)
-    {
-        new RewritePathFactory().create(new RewritePathFactory.Config("^/old$", replacement), null).onUpstreamRequest(exchange);
-    }
-
-    @Test
-    void theLastMatchingRewriteDoesNotInheritAnEarlierOnesQuery()
-    {
-        final Params upstreamParams = new Params("keep", "1");
-        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "keep", "1");
-
-        apply("/a?a=1&keep=2", exchange);
-        apply("/b?b=2", exchange);
-
-        assertThat(upstreamParams.toQueryString()).isEqualTo("keep=1&b=2");
-    }
-
-    /**
-     * A parameter a filter between two rewrites changed is that filter's: the later rewrite puts
-     * back only what the earlier one wrote, and to what it was before it, not to the client's.
-     */
-    @Test
-    void anEarlierRewriteIsUndoneWithoutUndoingOtherFilters()
-    {
-        final Params upstreamParams = new Params("keep", "1", "own", "1");
-        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "keep", "1", "own", "1");
-        upstreamParams.set("keep", "before");
-
-        apply("/a?a=1&keep=2&own=2", exchange);
-        upstreamParams.set("own", "other");
-        apply("/b?b=2", exchange);
-
-        assertThat(upstreamParams.toQueryString()).isEqualTo("own=other&keep=before&b=2");
-    }
-
     @Test
     void anEscapedDelimiterInTheQueryIsText()
     {
@@ -372,38 +313,5 @@ class RewritePathFactoryTest
         final Rewritten out = rewriteQuery("^/old$", "/new?\\==1", "/old");
         assertThat(out.params()).hasSize(1);
         assertThat(out.params().get(0)).containsExactly("=", "1");
-    }
-
-    /**
-     * An earlier rewrite's parameters go back where the client had them, not to the end.
-     */
-    @Test
-    void anEarlierRewriteIsUndoneInTheClientsOrder()
-    {
-        final Params upstreamParams = new Params("a", "1", "b", "2", "a", "3", "c", "4");
-        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "a", "1", "b", "2", "a", "3", "c", "4");
-
-        apply("/x?a=9&c=8", exchange);
-        assertThat(upstreamParams.toQueryString()).isEqualTo("b=2&a=9&c=8");
-        apply("/y?d=5", exchange);
-
-        assertThat(upstreamParams.toQueryString()).isEqualTo("a=1&b=2&a=3&c=4&d=5");
-    }
-
-    /**
-     * When a filter between the rewrites removed the parameter one put back followed, it goes
-     * after the one before that.
-     */
-    @Test
-    void anUndoneParameterFollowsTheNearestParameterStillThere()
-    {
-        final Params upstreamParams = new Params("x", "1", "y", "2", "a", "3", "z", "4");
-        final UpstreamRequestGatewayExchange exchange = exchange(upstreamParams, "x", "1", "y", "2", "a", "3", "z", "4");
-
-        apply("/x?a=9", exchange);
-        upstreamParams.remove("y");
-        apply("/y?d=5", exchange);
-
-        assertThat(upstreamParams.toQueryString()).isEqualTo("x=1&a=3&z=4&d=5");
     }
 }

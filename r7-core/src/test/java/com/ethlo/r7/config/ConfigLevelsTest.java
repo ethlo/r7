@@ -539,6 +539,55 @@ class ConfigLevelsTest
         assertThat(snapshot.version()).isEqualTo("digest");
     }
 
+    /**
+     * A RewritePath that sets the query must be the only RewritePath a route runs, counting the
+     * root's and the group's; rewrites that only change the path may be combined.
+     */
+    @Test
+    void aQuerySettingRewriteMustBeTheRoutesOnlyRewrite() throws IOException
+    {
+        assertThatThrownBy(() -> build("""
+                filters:
+                  - RewritePath:
+                      regexp: "^/a/(.*)$"
+                      replacement: "/$1"
+                routes:
+                  - group: g
+                    routes:
+                      - id: r
+                        match:
+                          - PathPrefix:
+                              prefix: /a
+                        filters:
+                          - RewritePath:
+                              regexp: "^/a/x$"
+                              replacement: "/y?z=1"
+                        upstream:
+                          targets:
+                            - url: http://localhost:1
+                """))
+                .hasMessageContaining("routes.g.routes.r.filters")
+                .hasMessageContaining("A RewritePath that sets the query (a ? in its replacement) must be the only RewritePath on the route");
+
+        assertThat(build("""
+                routes:
+                  - id: r
+                    match:
+                      - PathPrefix:
+                          prefix: /a
+                    filters:
+                      - RewritePath:
+                          regexp: "^/a/(.*)$"
+                          replacement: "/$1"
+                      - RewritePath:
+                          regexp: "^/a/x$"
+                          replacement: "/y"
+                    upstream:
+                      targets:
+                        - url: http://localhost:1
+                """).routes()).hasSize(1);
+    }
+
     private List<String> warnings(final String yaml) throws IOException
     {
         final Logger logger = (Logger) LoggerFactory.getLogger(ConfigurationManager.class);
