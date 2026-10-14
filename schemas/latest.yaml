@@ -690,6 +690,31 @@ $defs:
             description: Overwrites the HTTP status code of the client response.
             body:
               status: $1
+        SimpleMetrics:
+          type: object
+          properties:
+            interval:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+            period:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+          required:
+          - period
+          - interval
+          additionalProperties: false
+          defaultSnippets:
+          - label: Insert SimpleMetrics
+            description: Configure SimpleMetrics
+            body:
+              period: $1
+              interval: $2
         StaticContent:
           type: object
           properties:
@@ -791,6 +816,142 @@ $defs:
       group:
         type: string
         description: "A unique identifier for this group, in one namespace with route ids. Journaled as gateway.route.group for each of its routes."
+      journal:
+        type: object
+        properties:
+          on_request:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/predicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."
+          on_response:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/responsePredicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed."
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                - FULL
+                description: The journaling verbosity level.
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+          response:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                - FULL
+                description: The journaling verbosity level.
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+        additionalProperties: false
+        description: "Journal levels the group's routes inherit, each unless the route names it, and rules checked after a route's own and before the root's."
       match:
         type: array
         items:
@@ -1302,6 +1463,495 @@ $defs:
       maxProperties: 1
     - type: string
       description: Custom SPI implementation
+  responsePredicate:
+    anyOf:
+    - type: object
+      properties:
+        Cookie:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the cookie.
+            value:
+              type: string
+              description: The exact value the cookie must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if a request contains a specific cookie with an exact value.
+          defaultSnippets:
+          - label: Insert Cookie
+            description: Matches if a request contains a specific cookie with an exact value.
+            body:
+              name: $1
+              value: $2
+        HasCookie:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the cookie to check for.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified cookie, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasCookie
+            description: "Matches if a request contains the specified cookie, regardless of its value."
+            body:
+              name: $1
+        HasQueryParameter:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the query parameter.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified query parameter, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasQueryParameter
+            description: "Matches if a request contains the specified query parameter, regardless of its value."
+            body:
+              name: $1
+        HasRequestHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasRequestHeader
+            description: "Matches if a request contains the specified header, regardless of its value."
+            body:
+              name: $1
+        HasResponseHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if the response contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasResponseHeader
+            description: "Matches if the response contains the specified header, regardless of its value."
+            body:
+              name: $1
+        Host:
+          type: object
+          properties:
+            hosts:
+              type: array
+              items:
+                type: string
+              description: List of hostnames to match against.
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+          required:
+          - hosts
+          additionalProperties: false
+          description: Matches if the request 'Host' header matches one of the provided hostnames.
+          defaultSnippets:
+          - label: Insert Host
+            description: Matches if the request 'Host' header matches one of the provided hostnames.
+            body:
+              hosts: $1
+        MatchCookie:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the cookie.
+            regexp:
+              type: string
+              description: The regular expression the cookie value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a cookie exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchCookie
+            description: Matches if a cookie exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchPath:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            regexp:
+              type: string
+              description: The regular expression to match against the request path.
+          required:
+          - regexp
+          additionalProperties: false
+          description: Matches the request path against a regular expression.
+          defaultSnippets:
+          - label: Insert MatchPath
+            description: Matches the request path against a regular expression.
+            body:
+              regexp: $1
+        MatchQueryParameter:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the query parameter.
+            regexp:
+              type: string
+              description: The regular expression the parameter value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a query parameter exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchQueryParameter
+            description: Matches if a query parameter exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchRequestHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a request header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchRequestHeader
+            description: Matches if a request header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchResponseHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a response header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchResponseHeader
+            description: Matches if a response header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        Method:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+              description: "List of allowed HTTP methods (e.g., GET, POST)."
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the HTTP method is one of the allowed methods.
+          defaultSnippets:
+          - label: Insert Method
+            description: Matches if the HTTP method is one of the allowed methods.
+            body:
+              include: $1
+        Path:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            path:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The exact path to match.
+          required:
+          - path
+          additionalProperties: false
+          description: Matches if the request path matches exactly the provided path.
+          defaultSnippets:
+          - label: Insert Path
+            description: Matches if the request path matches exactly the provided path.
+            body:
+              path: $1
+        PathPrefix:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            prefix:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The path prefix to match.
+          required:
+          - prefix
+          additionalProperties: false
+          description: Matches if the request path starts with the provided prefix.
+          defaultSnippets:
+          - label: Insert PathPrefix
+            description: Matches if the request path starts with the provided prefix.
+            body:
+              prefix: $1
+        QueryParameter:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The exact value the query parameter must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified query parameter with an exact value.
+          defaultSnippets:
+          - label: Insert QueryParameter
+            description: Matches if the request contains the specified query parameter with an exact value.
+            body:
+              name: $1
+              value: $2
+        RemoteAddr:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            source:
+              type: string
+              description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
+          required:
+          - source
+          additionalProperties: false
+          description: Matches if the remote IP address falls within the specified CIDR range.
+          defaultSnippets:
+          - label: Insert RemoteAddr
+            description: Matches if the remote IP address falls within the specified CIDR range.
+            body:
+              source: $1
+        RequestHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the request header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert RequestHeader
+            description: Matches if the request contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        ResponseHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+            name:
+              type: string
+              description: The name of the response header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the response contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert ResponseHeader
+            description: Matches if the response contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        Sample:
+          type: object
+          properties:
+            rate:
+              anyOf:
+              - type: number
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The share of exchanges to match: greater than 0, at most 1 (0.01 is one in a hundred)."
+          required:
+          - rate
+          additionalProperties: false
+          description: "Matches a share of exchanges, drawn once per exchange from a random source."
+        Status:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                anyOf:
+                - type: integer
+                  minimum: 100
+                  maximum: 599
+                - type: string
+              description: "Status codes (404) and classes (5xx, case-insensitive) that match."
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which leg of the exchange to test: client (the default) or upstream."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the response status is one of the listed codes or classes.
+          defaultSnippets:
+          - label: Insert Status
+            description: Matches if the response status is one of the listed codes or classes.
+            body:
+              include: $1
+        and:
+          type: array
+          items:
+            $ref: "#/$defs/responsePredicate"
+          minItems: 1
+        not:
+          $ref: "#/$defs/responsePredicate"
+        or:
+          type: array
+          items:
+            $ref: "#/$defs/responsePredicate"
+          minItems: 1
+      additionalProperties: true
+      minProperties: 1
+      maxProperties: 1
+    - type: string
+      description: Custom SPI implementation
   route:
     type: object
     properties:
@@ -1316,6 +1966,109 @@ $defs:
       journal:
         type: object
         properties:
+          on_request:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/predicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."
+          on_response:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/responsePredicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed."
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."
           request:
             type: object
             properties:
@@ -1326,14 +2079,10 @@ $defs:
                 - HEADERS
                 - METADATA
                 - FULL
-                description: The base journaling verbosity level.
-              status_overrides:
-                type: object
-                additionalProperties:
-                  type: string
-                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'FULL', '404': 'NONE'."
+                description: The journaling verbosity level.
             additionalProperties: false
-            description: Journal settings for this specific phase of the exchange.
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
           response:
             type: object
             properties:
@@ -1344,16 +2093,12 @@ $defs:
                 - HEADERS
                 - METADATA
                 - FULL
-                description: The base journaling verbosity level.
-              status_overrides:
-                type: object
-                additionalProperties:
-                  type: string
-                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'FULL', '404': 'NONE'."
+                description: The journaling verbosity level.
             additionalProperties: false
-            description: Journal settings for this specific phase of the exchange.
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
         additionalProperties: false
-        description: Observability and logging configuration for this specific route.
+        description: "The route's journal: each key not named here is inherited from its group, then the root, and its rules are checked before theirs."
       match:
         type: array
         items:
@@ -1476,6 +2221,142 @@ properties:
     items:
       $ref: "#/$defs/filter"
     description: "Filters for every route: one instance each for the whole gateway. They run before a group's and a route's on the request, and after them on the response."
+  journal:
+    type: object
+    properties:
+      on_request:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: string
+              description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+            match:
+              type: array
+              items:
+                $ref: "#/$defs/predicate"
+              description: Conditions that must all hold for the rule to fire.
+              minItems: 1
+            request:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                  description: The journaling verbosity level.
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+            response:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                  description: The journaling verbosity level.
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+          required:
+          - match
+          additionalProperties: false
+          anyOf:
+          - required:
+            - request
+          - required:
+            - response
+          description: "When match holds, the directions named here replace the levels resolved so far."
+        description: "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."
+      on_response:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: string
+              description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+            match:
+              type: array
+              items:
+                $ref: "#/$defs/responsePredicate"
+              description: Conditions that must all hold for the rule to fire.
+              minItems: 1
+            request:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  description: "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed."
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+            response:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                  description: The journaling verbosity level.
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+          required:
+          - match
+          additionalProperties: false
+          anyOf:
+          - required:
+            - request
+          - required:
+            - response
+          description: "When match holds, the directions named here replace the levels resolved so far."
+        description: "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."
+      request:
+        type: object
+        properties:
+          level:
+            type: string
+            enum:
+            - NONE
+            - HEADERS
+            - METADATA
+            - FULL
+            description: The journaling verbosity level.
+        additionalProperties: false
+        minProperties: 1
+        description: Journal settings for this direction of the exchange.
+      response:
+        type: object
+        properties:
+          level:
+            type: string
+            enum:
+            - NONE
+            - HEADERS
+            - METADATA
+            - FULL
+            description: The journaling verbosity level.
+        additionalProperties: false
+        minProperties: 1
+        description: Journal settings for this direction of the exchange.
+    additionalProperties: false
+    description: "Journal levels every route inherits, each unless its group or the route names it, and rules checked after theirs. A route nothing names is journaled at NONE."
   routes:
     type: array
     items:
@@ -1498,18 +2379,10 @@ properties:
                 - NONE
                 - HEADERS
                 - METADATA
-                description: The base journaling verbosity level.
-              status_overrides:
-                type: object
-                additionalProperties:
-                  type: string
-                  enum:
-                  - NONE
-                  - HEADERS
-                  - METADATA
-                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'HEADERS', '404': 'NONE'."
+                description: The journaling verbosity level.
             additionalProperties: false
-            description: Journal settings for this specific phase of the exchange.
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
           response:
             type: object
             properties:
@@ -1519,18 +2392,10 @@ properties:
                 - NONE
                 - HEADERS
                 - METADATA
-                description: The base journaling verbosity level.
-              status_overrides:
-                type: object
-                additionalProperties:
-                  type: string
-                  enum:
-                  - NONE
-                  - HEADERS
-                  - METADATA
-                description: "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': 'HEADERS', '404': 'NONE'."
+                description: The journaling verbosity level.
             additionalProperties: false
-            description: Journal settings for this specific phase of the exchange.
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
         additionalProperties: false
         description: Journal levels for requests refused before any route is chosen. FULL is not allowed.
     required:

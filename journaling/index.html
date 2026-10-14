@@ -1059,8 +1059,8 @@ pretty-printed for reading. Every field is listed under <a href="#the-json-line"
 something deletes them: before sustained use, add the reaper from <a href="#4-retention-the-reaper">Retention</a>. Everything else on this page is reference for tuning this
 setup: the journal levels, redaction, every tailer property, other output layouts and retention.</p>
 <h2 id="1-journal-levels-and-redaction">1. Journal levels and redaction</h2>
-<p>Tailers only see what the gateway actually writes. Set the level per route (and optionally
-override it by response status) in <code>routes.yaml</code>:</p>
+<p>Tailers only see what the gateway actually writes. Set the levels per route, group or the whole
+file, and raise or lower them with rules, in <code>routes.yaml</code>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">routes</span><span class="p">:</span>
 </span><span id="True-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-route</span>
 </span><span id="True-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
@@ -1074,11 +1074,17 @@ override it by response status) in <code>routes.yaml</code>:</p>
 </span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
 </span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
 </span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">   </span><span class="c1"># more detail when things break</span>
+</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">      </span><span class="nt">on_response</span><span class="p">:</span>
+</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failures</span>
+</span><span id="True-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">          </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
+</span><span id="True-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">                </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5xx</span><span class="p p-Indicator">]</span>
+</span><span id="True-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">          </span><span class="nt">response</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">HEADERS</span><span class="w"> </span><span class="p p-Indicator">}</span><span class="w">   </span><span class="c1"># more detail when things break</span>
 </span></code></pre></div>
-<p>What each level records, and which overrides are allowed, is in
-<a href="../config/#7-journaling-storage">Configuration §7</a>; where and how journals are written on disk is
+<p>What each level records, and how rules resolve the levels, is in
+<a href="../config/#7-journaling-storage">Configuration §7</a>. Each rule that fires is recorded in the
+<code>gateway.journal.rule</code> attribute, by its id or its path, and a rule that could not be evaluated
+in <code>gateway.journal.rule_error</code>; where and how journals are written on disk is
 the <a href="../config/#storage-journaling-storage"><code>storage</code> block</a>. Requests refused before any route
 matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
 <a href="../config/#unrouted-requests-routesyaml-unrouted">Unrouted Requests</a>.</p>
@@ -1447,7 +1453,7 @@ object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archi
 <tr>
 <td><code>attributes</code></td>
 <td>object of string arrays</td>
-<td>With an end event, when the gateway recorded attributes other than the route and targets, such as <code>gateway.fallback.id</code>, <code>gateway.unrouted.reason</code>, <code>gateway.shortcircuit.name</code> and <code>gateway.auth.basic.user</code></td>
+<td>With an end event, when the gateway recorded attributes other than the route and targets, such as <code>gateway.fallback.id</code>, <code>gateway.unrouted.reason</code>, <code>gateway.shortcircuit.name</code>, <code>gateway.journal.rule</code> and <code>gateway.auth.basic.user</code></td>
 </tr>
 <tr>
 <td><code>warc</code></td>

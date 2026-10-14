@@ -1130,6 +1130,67 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#response-matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Response Matching
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Response Matching">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#responseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        ResponseHeader
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hasresponseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        HasResponseHeader
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#matchresponseheader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        MatchResponseHeader
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1643,22 +1704,16 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Logging Levels (routes.yaml -&gt; journal)">
-      <ul class="md-nav__list">
+</li>
         
           <li class="md-nav__item">
-  <a href="#status-overrides-status_overrides" class="md-nav__link">
+  <a href="#journal-rules-on_request-on_response" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Status Overrides (<code>status_overrides</code>)
+        Journal Rules (<code>on_request</code>, <code>on_response</code>)
       </span>
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
         
@@ -2113,7 +2168,8 @@
 <li>An entry of <code>routes</code> that is neither a route nor a group: <code>needs 'id' for a route, or 'group' for a group of routes</code>; one with both, a group inside a group, or a route with <code>routes</code> is refused by name too.</li>
 <li>A <code>null</code> that would remove an inherited value (<code>upstream: null</code>, <code>targets: null</code>, <code>filters: null</code>): <code>null cannot remove an inherited upstream; leave the key out to inherit it.</code></li>
 <li><code>global_filters</code>, replaced in 1.0 by <code>filters</code> at the root: <code>global_filters was replaced in 1.0 by filters at the root, with the same meaning: one instance of each filter for the whole gateway. Rename the key.</code></li>
-<li>Malformed journal <code>status_overrides</code> keys (see <a href="#status-overrides-status_overrides">Status Overrides</a>).</li>
+<li><code>status_overrides</code>, replaced in 1.0 by <a href="#journal-rules-on_request-on_response">journal rules</a>: <code>status_overrides was replaced in 1.0 by journal rules: write an on_response rule matching Status, ...</code></li>
+<li>A journal rule that cannot be honoured, such as one that changes a request level that can be <code>FULL</code> after its body has streamed (see <a href="#journal-rules-on_request-on_response">Journal Rules</a>).</li>
 </ul>
 <h3 id="root-groups-and-routes">Root, Groups and Routes</h3>
 <p>Routes that share filters, an upstream or a match say so once. <code>routes.yaml</code> has three levels: the root, groups and routes. <code>filters</code> and <code>upstream</code> are declared at any of them, and a group's <code>match</code> is ANDed in front of each of its routes' own:</p>
@@ -2400,13 +2456,13 @@
 <p>A <code>fallback</code> on a group or at the root is inherited by every route beneath it, the fallback route included if it is there, and a route whose inherited fallback names itself is refused: <code>Route 'spare' inherits fallback.route_id 'spare' from group 'api', which names the route itself.</code> Declare the fallback route outside the group, or the <code>fallback</code> on the routes that use it. A <code>fallback</code> at the root therefore always names a route beneath it, and is always refused.</p>
 <hr />
 <h2 id="5-predicates">5. Predicates</h2>
-<p>Predicates determine whether an incoming request matches a route.</p>
+<p>Predicates decide whether a request matches a route, and whether a <a href="#journal-rules-on_request-on_response">journal rule</a> fires.</p>
 <ul>
 <li><strong>Regex Semantics:</strong> All regex predicates and <code>RequireMatch*</code> filters use standard Java Regex syntax and must match the <strong>whole value</strong>, as if anchored with <code>^</code> and <code>$</code>: <code>user</code> does not match <code>superuser</code>. Use <code>.*user.*</code> to match anywhere in the value. Matching is <strong>case-sensitive</strong> unless the inline flag <code>(?i)</code> is used.</li>
 <li><strong>Repeated Values:</strong> When a query parameter, header or cookie occurs more than once, a value check (<code>QueryParameter</code>, <code>MatchQueryParameter</code>, <code>RequestHeader</code>, <code>MatchRequestHeader</code>, <code>Cookie</code>, <code>MatchCookie</code>, and the <code>RequireMatch*</code> filters) passes only if <strong>every</strong> occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so <code>?role=user&amp;role=admin</code> must not satisfy a check on <code>role</code> that the upstream then reads as <code>admin</code>. A header value that is a comma-separated list on one line is matched as one value. Presence checks (<code>Has*</code>, <code>Require*</code> without a pattern) are unaffected.</li>
 <li><strong>Regex Cost:</strong> Every match of a configured pattern against request data (predicates, <code>RequireMatch*</code>, <code>RewritePath</code>, <code>TemplateRedirect</code>) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around <code>.*</code> (<code>^(.*a){12}$</code>), several <code>.*</code> in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with <code>500</code> instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.</li>
 <li><strong>Exact or Regex:</strong> <code>Path</code>, <code>PathPrefix</code>, <code>Host</code>, <code>RequestHeader</code>, <code>QueryParameter</code> and <code>Cookie</code> compare values literally; their <code>Match*</code> siblings take a regex. A literal value that looks like a regex (<code>/api/.*</code>, <code>^Bearer .+$</code>, <code>[a-f0-9]{32}</code>), or a path or host with Spring Cloud Gateway wildcards or templates (<code>/api/**</code>, <code>/users/{id}</code>, <code>*.example.com</code>), is logged as a warning when the routes load, with its path and line, because it would only match a client that sends those exact characters.</li>
-<li><strong>Legs:</strong> Every predicate takes a <code>leg</code> parameter beside its own: <code>client</code>, the default, tests the request as the client sent it, and <code>upstream</code> the request r7 sends to the upstream. When a route is chosen there is no upstream request yet, so a route's <code>match</code> refuses <code>leg: upstream</code>: <code>[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leave leg out to test the client's.</code></li>
+<li><strong>Legs:</strong> Every predicate takes a <code>leg</code> parameter beside its own: <code>client</code>, the default, tests the request as the client sent it, and <code>upstream</code> the request r7 sends to the upstream. When a route is chosen there is no upstream request yet, so a route's <code>match</code> refuses <code>leg: upstream</code>: <code>[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leg: upstream is allowed only in on_response.</code></li>
 <li><strong>Empty Matches:</strong> An empty match block (<code>match: []</code>) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes. Only that list form is fallback-only: any other empty condition, at the top of a match or inside it (<code>match: {}</code>, <code>match: { or: [] }</code>, <code>match: { and: [] }</code>, <code>- {}</code>, <code>not: {}</code>), is refused at startup.</li>
 </ul>
 <h3 id="logical-meta-predicates">Logical Meta-Predicates</h3>
@@ -2453,7 +2509,7 @@
 </tr>
 </tbody>
 </table>
-<p>Routing makes one draw per exchange, so every <code>Sample</code> in the routes' matches tests the same number: the exchanges <code>Sample: { rate: 0.05 }</code> matches are among those <code>Sample: { rate: 0.1 }</code> matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. <code>Sample</code> tests the exchange, not a request, so it has no <code>leg</code>, and one written is refused: <code>[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.</code></p>
+<p>Routing makes one draw per exchange, so every <code>Sample</code> in the routes' matches tests the same number: the exchanges <code>Sample: { rate: 0.05 }</code> matches are among those <code>Sample: { rate: 0.1 }</code> matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. Journal rules make one draw of their own per exchange, shared by every <code>Sample</code> in them. <code>Sample</code> tests the exchange, not a request, so it has no <code>leg</code>, and one written is refused: <code>[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.</code></p>
 <hr />
 <h3 id="uri-path-matching">URI &amp; Path Matching</h3>
 <h4 id="path">Path</h4>
@@ -2797,6 +2853,100 @@
 <td>String</td>
 <td>Yes</td>
 <td>The IP address or CIDR notation (e.g., <code>192.168.1.5</code> or <code>10.0.0.0/24</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-matching">Response Matching</h3>
+<p>Response predicates test the response, so they are accepted only where one exists: in a journal rule's <a href="#journal-rules-on_request-on_response"><code>on_response</code></a>. In a route's <code>match</code> or in <code>on_request</code> they are refused: <code>[routes.x.match[0].Status] Status tests a response, which does not exist yet when a route is chosen; use it in on_response.</code> With <code>leg: upstream</code> they test the upstream's response; on an exchange no upstream answered, that leg has no response and the predicate does not match.</p>
+<h4 id="status">Status</h4>
+<p>Matches if the response status is one of the listed codes or classes.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include</code></td>
+<td>List</td>
+<td>Yes</td>
+<td>Codes (<code>404</code>) and classes (<code>5xx</code>, case-insensitive), from <code>100</code> to <code>599</code>.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responseheader">ResponseHeader</h4>
+<p>Matches if every occurrence of a response header exactly matches the provided string.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header.</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact value the header must contain.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="hasresponseheader">HasResponseHeader</h4>
+<p>Matches if the response has the header, ignoring its value.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header to check for.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="matchresponseheader">MatchResponseHeader</h4>
+<p>Matches if every occurrence of a response header matches a regular expression, within the regex budget.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>The exact name of the header.</td>
+</tr>
+<tr>
+<td><code>regexp</code></td>
+<td>String</td>
+<td>Yes</td>
+<td>A regex pattern the header value must match.</td>
 </tr>
 </tbody>
 </table>
@@ -3519,13 +3669,16 @@
 </span><span id="True-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">      </span><span class="nt">users</span><span class="p">:</span>
 </span><span id="True-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"alice:${ALICE_HTPASSWD_ENTRY}"</span>
 </span><span id="True-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="nt">request</span><span class="p">:</span>
-</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">401</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span><span class="w">   </span><span class="c1"># every failed login is journaled, even when the route journals nothing else</span>
+</span><span id="True-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="nt">on_response</span><span class="p">:</span>
+</span><span id="True-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failed-logins</span><span class="w">     </span><span class="c1"># every failed login is journaled, even when nothing else is</span>
+</span><span id="True-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
+</span><span id="True-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">            </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">401</span><span class="p p-Indicator">]</span>
+</span><span id="True-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">METADATA</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <p>The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.</p>
 <p>Use a bcrypt cost of at least 10; <code>htpasswd -B</code> defaults to 5, so generate entries with <code>htpasswd -nB -C 12 &lt;user&gt;</code>, which also prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.</p>
-<p><strong>Failed logins are journaled, not logged.</strong> A refused request is answered with <code>401</code> and recorded in the route's journal with its request ID, client address, and time; the <code>status_overrides</code> entry above records it even on a route that otherwise journals nothing.</p>
+<p><strong>Failed logins are journaled, not logged.</strong> A refused request is answered with <code>401</code> and recorded in the journal with its request ID, client address, and time; the <code>failed-logins</code> rule above records it even on a route that otherwise journals nothing, and names itself in <code>gateway.journal.rule</code>.</p>
 <p>A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.</p>
 <h4 id="injectbasicauth">InjectBasicAuth</h4>
 <p>Generates a Base64 encoded Basic Authentication string and injects it into the <code>Authorization</code> header of the upstream request.</p>
@@ -3805,7 +3958,7 @@
 <h3 id="storage-configuration-serveryaml-storage">Storage Configuration (<code>server.yaml -&gt; storage</code>)</h3>
 <p>Where and how journals are written on disk is set in <code>server.yaml</code>; see <a href="#storage-journaling-storage">Storage &amp; Journaling</a>.</p>
 <h3 id="logging-levels-routesyaml-journal">Logging Levels (<code>routes.yaml -&gt; journal</code>)</h3>
-<p>Verbosity can be set generically or overridden conditionally based on HTTP status codes.</p>
+<p>Each direction, <code>request</code> and <code>response</code>, has a level. <code>journal</code> is declared at the root, on a group and on a route; each direction's level is taken from the innermost of them that names it, and a direction nothing names is <code>NONE</code>.</p>
 <table>
 <thead>
 <tr>
@@ -3839,44 +3992,74 @@
 </table>
 <p>Header and query parameter values that may be secrets are journaled as fingerprints, not in plain text; see <a href="../journaling/#redacted-header-and-query-parameter-values">Journaling: redacted values</a>.</p>
 <p>A request at <code>NONE</code> is still recorded at <code>METADATA</code> (start line, client address, timing) when its response is journaled, to anchor the response.</p>
-<h4 id="status-overrides-status_overrides">Status Overrides (<code>status_overrides</code>)</h4>
-<p>Each direction (<code>request</code>, <code>response</code>) takes an optional <code>status_overrides</code> map from a status key to a level, applied when the response status matches:</p>
+<h3 id="journal-rules-on_request-on_response">Journal Rules (<code>on_request</code>, <code>on_response</code>)</h3>
+<p>The levels an exchange deserves depend on what happens to it: a failed login or a <code>5xx</code> is worth more than the thousandth <code>200</code>. Rules raise or lower the levels for the exchanges their <code>match</code> selects:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">request</span><span class="p">:</span>
 </span><span id="True-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">      </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">       </span><span class="c1"># a whole status class</span>
-</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">401,403</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">   </span><span class="c1"># a comma-separated list of codes</span>
-</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">429</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span><span class="w">       </span><span class="c1"># a single code</span>
+</span><span id="True-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">on_request</span><span class="p">:</span>
+</span><span id="True-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">debug-traffic</span>
+</span><span id="True-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">HasRequestHeader</span><span class="p">:</span>
+</span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">            </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Debug</span>
+</span><span id="True-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">HEADERS</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="True-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="nt">on_response</span><span class="p">:</span>
+</span><span id="True-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">server-errors</span>
+</span><span id="True-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
+</span><span id="True-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">            </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5xx</span><span class="p p-Indicator">]</span>
+</span><span id="True-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">FULL</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="True-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">teapots</span>
+</span><span id="True-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
+</span><span id="True-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">            </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">418</span><span class="p p-Indicator">]</span>
+</span><span id="True-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">NONE</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="True-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">NONE</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
+<ul>
+<li><strong>When they run.</strong> <code>on_request</code> is checked once the route is chosen, before its filters, against the request as the client sent it. <code>on_response</code> is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use <a href="#response-matching">response predicates</a> and <code>leg: upstream</code>.</li>
+<li><strong>Which rule wins.</strong> For each direction, the first matching rule that names it wins; a rule naming only <code>response</code> leaves the request to the rules after it. <code>on_response</code> overrides what <code>on_request</code> resolved. A route's rules are checked first, then its group's, then the root's.</li>
+<li><strong>Recorded.</strong> Each rule that fires is journaled in the <code>gateway.journal.rule</code> attribute, by its <code>id</code>, or its path (<code>routes.orders.journal.on_response[0]</code>) when it has none. Ids are unique across the file.</li>
+<li><strong>Failures.</strong> A rule whose predicate fails (a regex over its budget) does not fire, under <code>not</code> as well, and the exchange carries on: its label is journaled in <code>gateway.journal.rule_error</code>, and the first failure is logged once per load.</li>
+</ul>
+<p>Bodies stream as they pass, which fixes two things at load:</p>
 <table>
 <thead>
 <tr>
-<th>Key form</th>
-<th>Example</th>
-<th>Matches</th>
+<th>Rule</th>
+<th>Refused with</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Status class <code>Nxx</code></td>
-<td><code>4xx</code>, <code>5XX</code></td>
-<td>Every code in that class. <code>N</code> is <code>1</code> to <code>5</code>; case-insensitive.</td>
+<td><code>on_response</code> sets <code>request: FULL</code></td>
+<td><code>[routes.orders.journal.on_response[0].request] FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.</code></td>
 </tr>
 <tr>
-<td>Single code</td>
-<td><code>429</code></td>
-<td>That code. Must be three digits, <code>100</code>–<code>599</code>.</td>
+<td><code>on_response</code> names <code>request</code> while the base or an <code>on_request</code> rule can make it <code>FULL</code></td>
+<td><code>[routes.orders.journal.on_response[0].request] cannot change the request level: journal.on_request[0] can make it FULL, and a request body that was journaled cannot be un-written.</code></td>
 </tr>
 <tr>
-<td>Comma-separated list</td>
-<td><code>401,403</code></td>
-<td>Each listed code. Every entry is a single code; classes and ranges are not allowed inside a list.</td>
+<td>A rule without <code>match</code></td>
+<td><code>[routes.orders.journal.on_request[0]] match is required</code></td>
+</tr>
+<tr>
+<td>A rule with <code>match: []</code></td>
+<td><code>[routes.orders.journal.on_request[0].match] Empty list: name at least one predicate, or remove it</code></td>
+</tr>
+<tr>
+<td>A rule naming neither direction</td>
+<td><code>[routes.orders.journal.on_request[0]] sets no level; name request, response or both</code></td>
+</tr>
+<tr>
+<td>Two rules with one <code>id</code></td>
+<td><code>[routes.orders.journal.on_request[1].id] 'debug-traffic' is already the id of journal.on_request[0]</code></td>
 </tr>
 </tbody>
 </table>
-<p>Any other key (a range such as <code>500-599</code>, <code>999</code>, <code>6xx</code>, an empty list entry) is rejected at startup and on hot reload with an error naming the field, e.g. <code>[routes.my-route.journal.response.status_overrides] Invalid status override key '500-599'</code>. Avoid overlapping keys (<code>5xx</code> and <code>503</code>): which one wins for the shared codes follows map order and is not part of the contract.</p>
-<p>An override may not raise a direction to <code>FULL</code> unless its base level is already <code>FULL</code> (bodies are captured as they stream, and a lower base installs no capture), and a <code>FULL</code> request may not be lowered (its body is written before any status exists). Both are refused at startup.</p>
+<p>The response body is captured from its first byte whatever level <code>on_response</code> gives it, since the rules run before it is written.</p>
 <h3 id="unrouted-requests-routesyaml-unrouted">Unrouted Requests (<code>routes.yaml -&gt; unrouted</code>)</h3>
 <p>Some requests are refused before any route is chosen, so no route's journal settings apply to them:</p>
 <table>
@@ -3920,14 +4103,10 @@
 </span><span id="True-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">journal</span><span class="p">:</span>
 </span><span id="True-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">request</span><span class="p">:</span>
 </span><span id="True-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">        </span><span class="nt">404</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span><span class="w">      </span><span class="c1"># route misses: not journaled at all...</span>
-</span><span id="True-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">response</span><span class="p">:</span>
-</span><span id="True-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">      </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">        </span><span class="nt">404</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span><span class="w">      </span><span class="c1"># ...which needs both directions, as overrides apply per direction</span>
+</span><span id="True-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
 </span></code></pre></div>
-<p>Levels and <code>status_overrides</code> work as for a route, except that <code>FULL</code> is refused at startup: a refused request's body is never read, and after a bad <code>Transfer-Encoding</code> its boundaries are not known. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at <code>METADATA</code> to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.</p>
+<p>Levels work as for a route, except that <code>FULL</code> is refused at startup: a refused request's body is never read, and after a bad <code>Transfer-Encoding</code> its boundaries are not known. The root's <code>journal</code> does not apply here. Rules are refused: <code>on_response</code>, because r7's answer to a refused request is fixed by its reason, and <code>on_request</code>, which is not supported under <code>unrouted</code> yet. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at <code>METADATA</code> to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.</p>
 <hr />
 <h2 id="8-complete-example-configuration">8. Complete Example Configuration</h2>
 <p>The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, journaling of unrouted requests, resilient fallback routing, and active health checks.</p>
@@ -3938,103 +4117,100 @@
 </span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SimpleMetrics</span>
 </span><span id="True-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AddCorrelationId</span>
 </span><span id="True-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
-</span><span id="True-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># Journal requests refused before routing, such as ambiguous paths and TRACE,</span>
-</span><span id="True-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="c1"># but not plain route misses (404)</span>
-</span><span id="True-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="nt">unrouted</span><span class="p">:</span>
-</span><span id="True-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">  </span><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="nt">request</span><span class="p">:</span>
-</span><span id="True-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">      </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">        </span><span class="nt">404</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span>
-</span><span id="True-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">    </span><span class="nt">response</span><span class="p">:</span>
-</span><span id="True-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">      </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">        </span><span class="nt">404</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NONE</span>
-</span><span id="True-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a>
-</span><span id="True-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="nt">routes</span><span class="p">:</span>
-</span><span id="True-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">  </span><span class="c1"># Internal health loopback (Short-circuiting proxy)</span>
-</span><span id="True-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internal-health-proxy</span>
-</span><span id="True-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Path</span><span class="p">:</span>
-</span><span id="True-7-26"><a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/_internal/health</span>
-</span><span id="True-7-27"><a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-7-28"><a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RewritePath</span><span class="p">:</span>
-</span><span id="True-7-29"><a id="__codelineno-7-29" name="__codelineno-7-29" href="#__codelineno-7-29"></a><span class="w">          </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">"^/_internal/health$"</span>
-</span><span id="True-7-30"><a id="__codelineno-7-30" name="__codelineno-7-30" href="#__codelineno-7-30"></a><span class="w">          </span><span class="nt">replacement</span><span class="p">:</span><span class="w"> </span><span class="s">"/health"</span>
-</span><span id="True-7-31"><a id="__codelineno-7-31" name="__codelineno-7-31" href="#__codelineno-7-31"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
-</span><span id="True-7-32"><a id="__codelineno-7-32" name="__codelineno-7-32" href="#__codelineno-7-32"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
-</span><span id="True-7-33"><a id="__codelineno-7-33" name="__codelineno-7-33" href="#__codelineno-7-33"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"http://127.0.0.1:18888"</span>
-</span><span id="True-7-34"><a id="__codelineno-7-34" name="__codelineno-7-34" href="#__codelineno-7-34"></a>
-</span><span id="True-7-35"><a id="__codelineno-7-35" name="__codelineno-7-35" href="#__codelineno-7-35"></a><span class="w">  </span><span class="c1"># Static content handoff (Short-circuits upstream phase)</span>
-</span><span id="True-7-36"><a id="__codelineno-7-36" name="__codelineno-7-36" href="#__codelineno-7-36"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">static-web-assets</span>
-</span><span id="True-7-37"><a id="__codelineno-7-37" name="__codelineno-7-37" href="#__codelineno-7-37"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-7-38"><a id="__codelineno-7-38" name="__codelineno-7-38" href="#__codelineno-7-38"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
-</span><span id="True-7-39"><a id="__codelineno-7-39" name="__codelineno-7-39" href="#__codelineno-7-39"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/assets/</span>
-</span><span id="True-7-40"><a id="__codelineno-7-40" name="__codelineno-7-40" href="#__codelineno-7-40"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-7-41"><a id="__codelineno-7-41" name="__codelineno-7-41" href="#__codelineno-7-41"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StripPathPrefix</span><span class="p">:</span>
-</span><span id="True-7-42"><a id="__codelineno-7-42" name="__codelineno-7-42" href="#__codelineno-7-42"></a><span class="w">          </span><span class="nt">parts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="True-7-43"><a id="__codelineno-7-43" name="__codelineno-7-43" href="#__codelineno-7-43"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
-</span><span id="True-7-44"><a id="__codelineno-7-44" name="__codelineno-7-44" href="#__codelineno-7-44"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Content-Type-Options</span>
-</span><span id="True-7-45"><a id="__codelineno-7-45" name="__codelineno-7-45" href="#__codelineno-7-45"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nosniff</span>
-</span><span id="True-7-46"><a id="__codelineno-7-46" name="__codelineno-7-46" href="#__codelineno-7-46"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StaticContent</span><span class="p">:</span>
-</span><span id="True-7-47"><a id="__codelineno-7-47" name="__codelineno-7-47" href="#__codelineno-7-47"></a><span class="w">          </span><span class="nt">base_directory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/var/www/html/</span>
-</span><span id="True-7-48"><a id="__codelineno-7-48" name="__codelineno-7-48" href="#__codelineno-7-48"></a>
-</span><span id="True-7-49"><a id="__codelineno-7-49" name="__codelineno-7-49" href="#__codelineno-7-49"></a><span class="w">  </span><span class="c1"># Complex routing with nested logical predicates</span>
-</span><span id="True-7-50"><a id="__codelineno-7-50" name="__codelineno-7-50" href="#__codelineno-7-50"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">protected-admin-api</span>
-</span><span id="True-7-51"><a id="__codelineno-7-51" name="__codelineno-7-51" href="#__codelineno-7-51"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-7-52"><a id="__codelineno-7-52" name="__codelineno-7-52" href="#__codelineno-7-52"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">and</span><span class="p">:</span>
-</span><span id="True-7-53"><a id="__codelineno-7-53" name="__codelineno-7-53" href="#__codelineno-7-53"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
-</span><span id="True-7-54"><a id="__codelineno-7-54" name="__codelineno-7-54" href="#__codelineno-7-54"></a><span class="w">              </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/api/admin</span>
-</span><span id="True-7-55"><a id="__codelineno-7-55" name="__codelineno-7-55" href="#__codelineno-7-55"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">or</span><span class="p">:</span>
-</span><span id="True-7-56"><a id="__codelineno-7-56" name="__codelineno-7-56" href="#__codelineno-7-56"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RemoteAddr</span><span class="p">:</span>
-</span><span id="True-7-57"><a id="__codelineno-7-57" name="__codelineno-7-57" href="#__codelineno-7-57"></a><span class="w">                  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.0/8</span>
-</span><span id="True-7-58"><a id="__codelineno-7-58" name="__codelineno-7-58" href="#__codelineno-7-58"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">HasRequestHeader</span><span class="p">:</span>
-</span><span id="True-7-59"><a id="__codelineno-7-59" name="__codelineno-7-59" href="#__codelineno-7-59"></a><span class="w">                  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Internal-VPN</span>
-</span><span id="True-7-60"><a id="__codelineno-7-60" name="__codelineno-7-60" href="#__codelineno-7-60"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">not</span><span class="p">:</span>
-</span><span id="True-7-61"><a id="__codelineno-7-61" name="__codelineno-7-61" href="#__codelineno-7-61"></a><span class="w">              </span><span class="nt">MatchQueryParameter</span><span class="p">:</span>
-</span><span id="True-7-62"><a id="__codelineno-7-62" name="__codelineno-7-62" href="#__codelineno-7-62"></a><span class="w">                </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">debug</span>
-</span><span id="True-7-63"><a id="__codelineno-7-63" name="__codelineno-7-63" href="#__codelineno-7-63"></a><span class="w">                </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">"true|1"</span>
-</span><span id="True-7-64"><a id="__codelineno-7-64" name="__codelineno-7-64" href="#__codelineno-7-64"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
-</span><span id="True-7-65"><a id="__codelineno-7-65" name="__codelineno-7-65" href="#__codelineno-7-65"></a><span class="w">      </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ROUND_ROBIN</span>
-</span><span id="True-7-66"><a id="__codelineno-7-66" name="__codelineno-7-66" href="#__codelineno-7-66"></a><span class="w">      </span><span class="nt">health_check</span><span class="p">:</span>
-</span><span id="True-7-67"><a id="__codelineno-7-67" name="__codelineno-7-67" href="#__codelineno-7-67"></a><span class="w">        </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
-</span><span id="True-7-68"><a id="__codelineno-7-68" name="__codelineno-7-68" href="#__codelineno-7-68"></a><span class="w">        </span><span class="nt">rise</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="True-7-69"><a id="__codelineno-7-69" name="__codelineno-7-69" href="#__codelineno-7-69"></a><span class="w">        </span><span class="nt">fall</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="True-7-70"><a id="__codelineno-7-70" name="__codelineno-7-70" href="#__codelineno-7-70"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/system/health</span>
-</span><span id="True-7-71"><a id="__codelineno-7-71" name="__codelineno-7-71" href="#__codelineno-7-71"></a><span class="w">      </span><span class="nt">timeouts</span><span class="p">:</span>
-</span><span id="True-7-72"><a id="__codelineno-7-72" name="__codelineno-7-72" href="#__codelineno-7-72"></a><span class="w">        </span><span class="nt">read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
-</span><span id="True-7-73"><a id="__codelineno-7-73" name="__codelineno-7-73" href="#__codelineno-7-73"></a><span class="w">      </span><span class="nt">fallback</span><span class="p">:</span>
-</span><span id="True-7-74"><a id="__codelineno-7-74" name="__codelineno-7-74" href="#__codelineno-7-74"></a><span class="w">        </span><span class="nt">route_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
-</span><span id="True-7-75"><a id="__codelineno-7-75" name="__codelineno-7-75" href="#__codelineno-7-75"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
-</span><span id="True-7-76"><a id="__codelineno-7-76" name="__codelineno-7-76" href="#__codelineno-7-76"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-1.internal</span>
-</span><span id="True-7-77"><a id="__codelineno-7-77" name="__codelineno-7-77" href="#__codelineno-7-77"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-2.internal</span>
-</span><span id="True-7-78"><a id="__codelineno-7-78" name="__codelineno-7-78" href="#__codelineno-7-78"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-7-79"><a id="__codelineno-7-79" name="__codelineno-7-79" href="#__codelineno-7-79"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
-</span><span id="True-7-80"><a id="__codelineno-7-80" name="__codelineno-7-80" href="#__codelineno-7-80"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
-</span><span id="True-7-81"><a id="__codelineno-7-81" name="__codelineno-7-81" href="#__codelineno-7-81"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-</span><span id="True-7-82"><a id="__codelineno-7-82" name="__codelineno-7-82" href="#__codelineno-7-82"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-</span><span id="True-7-83"><a id="__codelineno-7-83" name="__codelineno-7-83" href="#__codelineno-7-83"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1s</span>
-</span><span id="True-7-84"><a id="__codelineno-7-84" name="__codelineno-7-84" href="#__codelineno-7-84"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
-</span><span id="True-7-85"><a id="__codelineno-7-85" name="__codelineno-7-85" href="#__codelineno-7-85"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-</span><span id="True-7-86"><a id="__codelineno-7-86" name="__codelineno-7-86" href="#__codelineno-7-86"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
-</span><span id="True-7-87"><a id="__codelineno-7-87" name="__codelineno-7-87" href="#__codelineno-7-87"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-7-88"><a id="__codelineno-7-88" name="__codelineno-7-88" href="#__codelineno-7-88"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
-</span><span id="True-7-89"><a id="__codelineno-7-89" name="__codelineno-7-89" href="#__codelineno-7-89"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-7-90"><a id="__codelineno-7-90" name="__codelineno-7-90" href="#__codelineno-7-90"></a><span class="w">        </span><span class="nt">status_overrides</span><span class="p">:</span>
-</span><span id="True-7-91"><a id="__codelineno-7-91" name="__codelineno-7-91" href="#__codelineno-7-91"></a><span class="w">          </span><span class="nt">5xx</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-7-92"><a id="__codelineno-7-92" name="__codelineno-7-92" href="#__codelineno-7-92"></a><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">401,403</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
-</span><span id="True-7-93"><a id="__codelineno-7-93" name="__codelineno-7-93" href="#__codelineno-7-93"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
-</span><span id="True-7-94"><a id="__codelineno-7-94" name="__codelineno-7-94" href="#__codelineno-7-94"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-7-95"><a id="__codelineno-7-95" name="__codelineno-7-95" href="#__codelineno-7-95"></a>
-</span><span id="True-7-96"><a id="__codelineno-7-96" name="__codelineno-7-96" href="#__codelineno-7-96"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
-</span><span id="True-7-97"><a id="__codelineno-7-97" name="__codelineno-7-97" href="#__codelineno-7-97"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w"> </span><span class="c1"># Empty match blocks are never hit naturally; used only via fallback</span>
-</span><span id="True-7-98"><a id="__codelineno-7-98" name="__codelineno-7-98" href="#__codelineno-7-98"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-7-99"><a id="__codelineno-7-99" name="__codelineno-7-99" href="#__codelineno-7-99"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ReturnResponse</span><span class="p">:</span>
-</span><span id="True-7-100"><a id="__codelineno-7-100" name="__codelineno-7-100" href="#__codelineno-7-100"></a><span class="w">          </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">503</span>
-</span><span id="True-7-101"><a id="__codelineno-7-101" name="__codelineno-7-101" href="#__codelineno-7-101"></a><span class="w">          </span><span class="nt">body</span><span class="p">:</span><span class="w"> </span><span class="s">'{"error":</span><span class="nv"> </span><span class="s">"Admin</span><span class="nv"> </span><span class="s">services</span><span class="nv"> </span><span class="s">currently</span><span class="nv"> </span><span class="s">offline"}'</span>
-</span><span id="True-7-102"><a id="__codelineno-7-102" name="__codelineno-7-102" href="#__codelineno-7-102"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
-</span><span id="True-7-103"><a id="__codelineno-7-103" name="__codelineno-7-103" href="#__codelineno-7-103"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Content-Type</span>
-</span><span id="True-7-104"><a id="__codelineno-7-104" name="__codelineno-7-104" href="#__codelineno-7-104"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">application/json</span>
+</span><span id="True-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># Journal requests refused before routing: route misses, ambiguous paths, TRACE</span>
+</span><span id="True-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="nt">unrouted</span><span class="p">:</span>
+</span><span id="True-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HEADERS</span>
+</span><span id="True-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>
+</span><span id="True-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="nt">routes</span><span class="p">:</span>
+</span><span id="True-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">  </span><span class="c1"># Internal health loopback (Short-circuiting proxy)</span>
+</span><span id="True-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internal-health-proxy</span>
+</span><span id="True-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Path</span><span class="p">:</span>
+</span><span id="True-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/_internal/health</span>
+</span><span id="True-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RewritePath</span><span class="p">:</span>
+</span><span id="True-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">          </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">"^/_internal/health$"</span>
+</span><span id="True-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">          </span><span class="nt">replacement</span><span class="p">:</span><span class="w"> </span><span class="s">"/health"</span>
+</span><span id="True-7-26"><a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-7-27"><a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-7-28"><a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"http://127.0.0.1:18888"</span>
+</span><span id="True-7-29"><a id="__codelineno-7-29" name="__codelineno-7-29" href="#__codelineno-7-29"></a>
+</span><span id="True-7-30"><a id="__codelineno-7-30" name="__codelineno-7-30" href="#__codelineno-7-30"></a><span class="w">  </span><span class="c1"># Static content handoff (Short-circuits upstream phase)</span>
+</span><span id="True-7-31"><a id="__codelineno-7-31" name="__codelineno-7-31" href="#__codelineno-7-31"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">static-web-assets</span>
+</span><span id="True-7-32"><a id="__codelineno-7-32" name="__codelineno-7-32" href="#__codelineno-7-32"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-7-33"><a id="__codelineno-7-33" name="__codelineno-7-33" href="#__codelineno-7-33"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
+</span><span id="True-7-34"><a id="__codelineno-7-34" name="__codelineno-7-34" href="#__codelineno-7-34"></a><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/assets/</span>
+</span><span id="True-7-35"><a id="__codelineno-7-35" name="__codelineno-7-35" href="#__codelineno-7-35"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-7-36"><a id="__codelineno-7-36" name="__codelineno-7-36" href="#__codelineno-7-36"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StripPathPrefix</span><span class="p">:</span>
+</span><span id="True-7-37"><a id="__codelineno-7-37" name="__codelineno-7-37" href="#__codelineno-7-37"></a><span class="w">          </span><span class="nt">parts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="True-7-38"><a id="__codelineno-7-38" name="__codelineno-7-38" href="#__codelineno-7-38"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
+</span><span id="True-7-39"><a id="__codelineno-7-39" name="__codelineno-7-39" href="#__codelineno-7-39"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Content-Type-Options</span>
+</span><span id="True-7-40"><a id="__codelineno-7-40" name="__codelineno-7-40" href="#__codelineno-7-40"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nosniff</span>
+</span><span id="True-7-41"><a id="__codelineno-7-41" name="__codelineno-7-41" href="#__codelineno-7-41"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">StaticContent</span><span class="p">:</span>
+</span><span id="True-7-42"><a id="__codelineno-7-42" name="__codelineno-7-42" href="#__codelineno-7-42"></a><span class="w">          </span><span class="nt">base_directory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/var/www/html/</span>
+</span><span id="True-7-43"><a id="__codelineno-7-43" name="__codelineno-7-43" href="#__codelineno-7-43"></a>
+</span><span id="True-7-44"><a id="__codelineno-7-44" name="__codelineno-7-44" href="#__codelineno-7-44"></a><span class="w">  </span><span class="c1"># Complex routing with nested logical predicates</span>
+</span><span id="True-7-45"><a id="__codelineno-7-45" name="__codelineno-7-45" href="#__codelineno-7-45"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">protected-admin-api</span>
+</span><span id="True-7-46"><a id="__codelineno-7-46" name="__codelineno-7-46" href="#__codelineno-7-46"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-7-47"><a id="__codelineno-7-47" name="__codelineno-7-47" href="#__codelineno-7-47"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">and</span><span class="p">:</span>
+</span><span id="True-7-48"><a id="__codelineno-7-48" name="__codelineno-7-48" href="#__codelineno-7-48"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PathPrefix</span><span class="p">:</span>
+</span><span id="True-7-49"><a id="__codelineno-7-49" name="__codelineno-7-49" href="#__codelineno-7-49"></a><span class="w">              </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/api/admin</span>
+</span><span id="True-7-50"><a id="__codelineno-7-50" name="__codelineno-7-50" href="#__codelineno-7-50"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">or</span><span class="p">:</span>
+</span><span id="True-7-51"><a id="__codelineno-7-51" name="__codelineno-7-51" href="#__codelineno-7-51"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RemoteAddr</span><span class="p">:</span>
+</span><span id="True-7-52"><a id="__codelineno-7-52" name="__codelineno-7-52" href="#__codelineno-7-52"></a><span class="w">                  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.0/8</span>
+</span><span id="True-7-53"><a id="__codelineno-7-53" name="__codelineno-7-53" href="#__codelineno-7-53"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">HasRequestHeader</span><span class="p">:</span>
+</span><span id="True-7-54"><a id="__codelineno-7-54" name="__codelineno-7-54" href="#__codelineno-7-54"></a><span class="w">                  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">X-Internal-VPN</span>
+</span><span id="True-7-55"><a id="__codelineno-7-55" name="__codelineno-7-55" href="#__codelineno-7-55"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">not</span><span class="p">:</span>
+</span><span id="True-7-56"><a id="__codelineno-7-56" name="__codelineno-7-56" href="#__codelineno-7-56"></a><span class="w">              </span><span class="nt">MatchQueryParameter</span><span class="p">:</span>
+</span><span id="True-7-57"><a id="__codelineno-7-57" name="__codelineno-7-57" href="#__codelineno-7-57"></a><span class="w">                </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">debug</span>
+</span><span id="True-7-58"><a id="__codelineno-7-58" name="__codelineno-7-58" href="#__codelineno-7-58"></a><span class="w">                </span><span class="nt">regexp</span><span class="p">:</span><span class="w"> </span><span class="s">"true|1"</span>
+</span><span id="True-7-59"><a id="__codelineno-7-59" name="__codelineno-7-59" href="#__codelineno-7-59"></a><span class="w">    </span><span class="nt">upstream</span><span class="p">:</span>
+</span><span id="True-7-60"><a id="__codelineno-7-60" name="__codelineno-7-60" href="#__codelineno-7-60"></a><span class="w">      </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ROUND_ROBIN</span>
+</span><span id="True-7-61"><a id="__codelineno-7-61" name="__codelineno-7-61" href="#__codelineno-7-61"></a><span class="w">      </span><span class="nt">health_check</span><span class="p">:</span>
+</span><span id="True-7-62"><a id="__codelineno-7-62" name="__codelineno-7-62" href="#__codelineno-7-62"></a><span class="w">        </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
+</span><span id="True-7-63"><a id="__codelineno-7-63" name="__codelineno-7-63" href="#__codelineno-7-63"></a><span class="w">        </span><span class="nt">rise</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="True-7-64"><a id="__codelineno-7-64" name="__codelineno-7-64" href="#__codelineno-7-64"></a><span class="w">        </span><span class="nt">fall</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="True-7-65"><a id="__codelineno-7-65" name="__codelineno-7-65" href="#__codelineno-7-65"></a><span class="w">        </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/system/health</span>
+</span><span id="True-7-66"><a id="__codelineno-7-66" name="__codelineno-7-66" href="#__codelineno-7-66"></a><span class="w">      </span><span class="nt">timeouts</span><span class="p">:</span>
+</span><span id="True-7-67"><a id="__codelineno-7-67" name="__codelineno-7-67" href="#__codelineno-7-67"></a><span class="w">        </span><span class="nt">read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+</span><span id="True-7-68"><a id="__codelineno-7-68" name="__codelineno-7-68" href="#__codelineno-7-68"></a><span class="w">      </span><span class="nt">fallback</span><span class="p">:</span>
+</span><span id="True-7-69"><a id="__codelineno-7-69" name="__codelineno-7-69" href="#__codelineno-7-69"></a><span class="w">        </span><span class="nt">route_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
+</span><span id="True-7-70"><a id="__codelineno-7-70" name="__codelineno-7-70" href="#__codelineno-7-70"></a><span class="w">      </span><span class="nt">targets</span><span class="p">:</span>
+</span><span id="True-7-71"><a id="__codelineno-7-71" name="__codelineno-7-71" href="#__codelineno-7-71"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-1.internal</span>
+</span><span id="True-7-72"><a id="__codelineno-7-72" name="__codelineno-7-72" href="#__codelineno-7-72"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-2.internal</span>
+</span><span id="True-7-73"><a id="__codelineno-7-73" name="__codelineno-7-73" href="#__codelineno-7-73"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-7-74"><a id="__codelineno-7-74" name="__codelineno-7-74" href="#__codelineno-7-74"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
+</span><span id="True-7-75"><a id="__codelineno-7-75" name="__codelineno-7-75" href="#__codelineno-7-75"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
+</span><span id="True-7-76"><a id="__codelineno-7-76" name="__codelineno-7-76" href="#__codelineno-7-76"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="True-7-77"><a id="__codelineno-7-77" name="__codelineno-7-77" href="#__codelineno-7-77"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="True-7-78"><a id="__codelineno-7-78" name="__codelineno-7-78" href="#__codelineno-7-78"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1s</span>
+</span><span id="True-7-79"><a id="__codelineno-7-79" name="__codelineno-7-79" href="#__codelineno-7-79"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
+</span><span id="True-7-80"><a id="__codelineno-7-80" name="__codelineno-7-80" href="#__codelineno-7-80"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="True-7-81"><a id="__codelineno-7-81" name="__codelineno-7-81" href="#__codelineno-7-81"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
+</span><span id="True-7-82"><a id="__codelineno-7-82" name="__codelineno-7-82" href="#__codelineno-7-82"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-7-83"><a id="__codelineno-7-83" name="__codelineno-7-83" href="#__codelineno-7-83"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-7-84"><a id="__codelineno-7-84" name="__codelineno-7-84" href="#__codelineno-7-84"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-7-85"><a id="__codelineno-7-85" name="__codelineno-7-85" href="#__codelineno-7-85"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-7-86"><a id="__codelineno-7-86" name="__codelineno-7-86" href="#__codelineno-7-86"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-7-87"><a id="__codelineno-7-87" name="__codelineno-7-87" href="#__codelineno-7-87"></a><span class="w">      </span><span class="nt">on_response</span><span class="p">:</span>
+</span><span id="True-7-88"><a id="__codelineno-7-88" name="__codelineno-7-88" href="#__codelineno-7-88"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-7-89"><a id="__codelineno-7-89" name="__codelineno-7-89" href="#__codelineno-7-89"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
+</span><span id="True-7-90"><a id="__codelineno-7-90" name="__codelineno-7-90" href="#__codelineno-7-90"></a><span class="w">                </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5xx</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">401</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">403</span><span class="p p-Indicator">]</span>
+</span><span id="True-7-91"><a id="__codelineno-7-91" name="__codelineno-7-91" href="#__codelineno-7-91"></a><span class="w">          </span><span class="nt">request</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">HEADERS</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="True-7-92"><a id="__codelineno-7-92" name="__codelineno-7-92" href="#__codelineno-7-92"></a>
+</span><span id="True-7-93"><a id="__codelineno-7-93" name="__codelineno-7-93" href="#__codelineno-7-93"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
+</span><span id="True-7-94"><a id="__codelineno-7-94" name="__codelineno-7-94" href="#__codelineno-7-94"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w"> </span><span class="c1"># Empty match blocks are never hit naturally; used only via fallback</span>
+</span><span id="True-7-95"><a id="__codelineno-7-95" name="__codelineno-7-95" href="#__codelineno-7-95"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-7-96"><a id="__codelineno-7-96" name="__codelineno-7-96" href="#__codelineno-7-96"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ReturnResponse</span><span class="p">:</span>
+</span><span id="True-7-97"><a id="__codelineno-7-97" name="__codelineno-7-97" href="#__codelineno-7-97"></a><span class="w">          </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">503</span>
+</span><span id="True-7-98"><a id="__codelineno-7-98" name="__codelineno-7-98" href="#__codelineno-7-98"></a><span class="w">          </span><span class="nt">body</span><span class="p">:</span><span class="w"> </span><span class="s">'{"error":</span><span class="nv"> </span><span class="s">"Admin</span><span class="nv"> </span><span class="s">services</span><span class="nv"> </span><span class="s">currently</span><span class="nv"> </span><span class="s">offline"}'</span>
+</span><span id="True-7-99"><a id="__codelineno-7-99" name="__codelineno-7-99" href="#__codelineno-7-99"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
+</span><span id="True-7-100"><a id="__codelineno-7-100" name="__codelineno-7-100" href="#__codelineno-7-100"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Content-Type</span>
+</span><span id="True-7-101"><a id="__codelineno-7-101" name="__codelineno-7-101" href="#__codelineno-7-101"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">application/json</span>
 </span></code></pre></div>
 <hr />
 <h2 id="9-server-configuration">9. Server Configuration</h2>
