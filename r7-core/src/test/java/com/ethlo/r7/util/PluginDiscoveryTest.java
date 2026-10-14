@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -114,18 +115,18 @@ class PluginDiscoveryTest
     void aFilterInAPluginJarIsFound() throws IOException
     {
         service(this.dir.resolve("auth").resolve("auth.jar"), FILTER_SPI, DiscoveredFilter.class);
-        final ClassLoader loader = PluginClassLoader.create(this.dir, getClass().getClassLoader());
+        final List<ClassLoader> loaders = PluginLoader.create(this.dir, getClass().getClassLoader());
 
-        assertThat(new FilterRegistry(loader).get("DiscoveredFilter")).isInstanceOf(DiscoveredFilter.class);
+        assertThat(new FilterRegistry(loaders).get("DiscoveredFilter")).isInstanceOf(DiscoveredFilter.class);
     }
 
     @Test
     void aFilterTheJarsDoNotHaveIsUnknown() throws IOException
     {
         service(this.dir.resolve("auth").resolve("auth.jar"), FILTER_SPI, DiscoveredFilter.class);
-        final ClassLoader loader = PluginClassLoader.create(this.dir, getClass().getClassLoader());
+        final List<ClassLoader> loaders = PluginLoader.create(this.dir, getClass().getClassLoader());
 
-        assertThatThrownBy(() -> new FilterRegistry(loader).get("Absent"))
+        assertThatThrownBy(() -> new FilterRegistry(loaders).get("Absent"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessageContaining("Unknown filter: 'Absent'");
     }
@@ -135,9 +136,9 @@ class PluginDiscoveryTest
     {
         service(this.dir.resolve("geo.jar"), PREDICATE_SPI, DiscoveredPredicate.class);
         service(this.dir.resolve("geo").resolve("geo-response.jar"), RESPONSE_PREDICATE_SPI, DiscoveredResponsePredicate.class);
-        final ClassLoader loader = PluginClassLoader.create(this.dir, getClass().getClassLoader());
+        final List<ClassLoader> loaders = PluginLoader.create(this.dir, getClass().getClassLoader());
 
-        final PredicateRegistry registry = new PredicateRegistry(new ObjectMapper(), loader);
+        final PredicateRegistry registry = new PredicateRegistry(new ObjectMapper(), loaders);
 
         assertThat(registry.exists("DiscoveredPredicate")).isTrue();
         assertThat(registry.exists("DiscoveredResponsePredicate")).isTrue();
@@ -146,10 +147,10 @@ class PluginDiscoveryTest
     @Test
     void withoutPluginJarsNeitherIsFound()
     {
-        final ClassLoader loader = PluginClassLoader.create(this.dir, getClass().getClassLoader());
+        final List<ClassLoader> loaders = PluginLoader.create(this.dir, getClass().getClassLoader());
 
-        assertThat(new PredicateRegistry(new ObjectMapper(), loader).exists("DiscoveredPredicate")).isFalse();
-        assertThatThrownBy(() -> new FilterRegistry(loader).get("DiscoveredFilter")).isInstanceOf(ConfigurationException.class);
+        assertThat(new PredicateRegistry(new ObjectMapper(), loaders).exists("DiscoveredPredicate")).isFalse();
+        assertThatThrownBy(() -> new FilterRegistry(loaders).get("DiscoveredFilter")).isInstanceOf(ConfigurationException.class);
     }
 
     private static void service(final Path file, final String spi, final Class<?> implementation) throws IOException

@@ -311,21 +311,23 @@ com.example.r7.filters.BlockTokenFilterFactory
 
 Once your code is written and registered via the SPI files, compile it into a standard Java JAR file (e.g., `my-custom-r7-extensions-1.0.jar`).
 
-r7 finds extensions in its plugins directory: every `.jar` in `plugins/` in the working directory,
-and every `.jar` in a directory one level below it. `R7_PLUGINS_DIR` names another directory. A
-missing directory means no extensions, and a directory that exists but cannot be read stops the
-start.
+r7 finds extensions in its plugins directory: `plugins/` in the working directory, or the directory
+`R7_PLUGINS_DIR` names. A plugin is a directory in it, holding the plugin's jar and the libraries
+the plugin brings. Jars directly in `plugins/` count as one more plugin. A missing directory means
+no extensions, and one that exists but cannot be read stops the start.
 
 ```text
 plugins/
-  my-custom-r7-extensions-1.0.jar     # directly in plugins/
-  auth/auth-plugin-1.2.jar            # or one directory per plugin
+  auth/auth-plugin-1.2.jar            # one directory per plugin
+  auth/some-library-4.0.jar           # a library only the auth plugin uses
   geo/geo-plugin-2.0.jar
+  my-custom-r7-extensions-1.0.jar     # jars directly in plugins/ share a plugin
 ```
 
-The jars are loaded in a class loader of their own that sits on top of the gateway's, so the
-extension sees the r7 API and the built-in filters keep working. A plugin's own dependencies go in
-the same directory as its jar and are on its classpath; there is no need to build an uber-jar.
+Each plugin runs in a class loader of its own. Two plugins can carry different versions of the same
+library and cannot see each other's classes, and there is no need to build an uber-jar. The loader
+is parent-first: the r7 API and the gateway's own libraries are the gateway's, so a plugin cannot
+replace them.
 
 ### Docker Compose Example
 
