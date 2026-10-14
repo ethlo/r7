@@ -38,7 +38,7 @@ class DocsConfigSnippetsTest
      * Directories the snippets name that a filter requires to exist on the host, as a real
      * deployment has them. Each is swapped for an empty directory the test creates.
      */
-    private static final Set<String> HOST_DIRECTORIES = Set.of("/var/www/html/");
+    private static final Set<String> HOST_DIRECTORIES = Set.of("/var/www/html/", "/srv/site/assets/", "/srv/common/assets/");
 
     private static final String PLACEHOLDER_ROUTE = """
             id: docs-example

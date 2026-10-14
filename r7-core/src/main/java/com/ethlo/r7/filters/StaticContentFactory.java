@@ -2,7 +2,10 @@ package com.ethlo.r7.filters;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import com.ethlo.r7.api.ShortInfo;
 import com.ethlo.r7.api.StateKey;
@@ -22,7 +25,7 @@ import com.google.auto.service.AutoService;
 
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-@Description("Serves static files from a local directory.")
+@Description("Serves static files from local directories, the first that has a file answering.")
 public final class StaticContentFactory implements GatewayFilterFactory<StaticContentFactory.Config>
 {
     /**
@@ -35,11 +38,11 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
     private static final String FILTER_NAME = "StaticContent";
 
     /**
-     * @param baseDirectory  the directory to serve files from
-     * @param followSymlinks whether to follow symbolic links when resolving files
+     * @param directories      the directories to serve files from, the first that has a file winning
+     * @param followSymlinks   whether to follow symbolic links when resolving files
      * @param serveHiddenFiles whether a path segment starting with '.' may be served
      */
-    public record StaticServeRequest(Path baseDirectory, boolean followSymlinks, boolean serveHiddenFiles)
+    public record StaticServeRequest(List<Path> directories, boolean followSymlinks, boolean serveHiddenFiles)
     {
         /**
          * Whether {@code relativePath} names a hidden file or directory: any segment starting with
@@ -88,8 +91,10 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
     }
 
     public record Config(
-            @Description("The absolute path to the directory containing static files.")
-            Path baseDirectory,
+            @Description("The directories to serve files from, in order: a request is answered by the first one that " +
+                    "has the file, or a welcome file for the directory asked for, so a higher directory overrides a lower " +
+                    "one file by file. One directory is a list of one.")
+            List<Path> directories,
 
             @Nullable
             @Description("Whether to follow symbolic links when resolving files under the base directory. " +
@@ -120,24 +125,36 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result);
-            validator.required("base_directory", baseDirectory)
-                    .ifValid(() ->
+            validator.required("directories", this.directories).ifValid(() ->
+            {
+                if (this.directories.isEmpty())
+                {
+                    validator.invalid("directories", "[]", "List at least one directory");
+                    return;
+                }
+                final Set<Path> seen = new HashSet<>();
+                for (final Path directory : this.directories)
+                {
+                    if (directory == null || !Files.isDirectory(directory))
                     {
-                        if (!Files.isDirectory(baseDirectory()))
-                        {
-                            validator.invalid("base_directory", this.baseDirectory().toString(), "Directory " + baseDirectory().toAbsolutePath() + " not found");
-                        }
-                    });
+                        validator.invalid("directories", String.valueOf(directory), "Directory " + (directory == null ? null : directory.toAbsolutePath()) + " not found");
+                    }
+                    else if (!seen.add(directory.toAbsolutePath().normalize()))
+                    {
+                        validator.invalid("directories", directory.toString(), "Directory " + directory.toAbsolutePath() + " is listed more than once");
+                    }
+                }
+            });
         }
     }
 
     private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
     {
-        private final Config config;
+        private final StaticServeRequest request;
 
         public GF(final Config config)
         {
-            this.config = config;
+            this.request = new StaticServeRequest(List.copyOf(config.directories()), config.followSymlinks(), config.serveHiddenFiles());
         }
 
         @Override
@@ -155,8 +172,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
         @Override
         public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
         {
-            exchange.setAttachment(STATIC_SERVE_REQUEST_KEY,
-                    new StaticServeRequest(this.config.baseDirectory(), this.config.followSymlinks(), this.config.serveHiddenFiles()));
+            exchange.setAttachment(STATIC_SERVE_REQUEST_KEY, this.request);
             exchange.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.OK, null, null));
         }
     }

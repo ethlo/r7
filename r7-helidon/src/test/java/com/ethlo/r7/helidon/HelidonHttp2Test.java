@@ -68,7 +68,7 @@ class HelidonHttp2Test
                       - StripPathPrefix:
                           parts: 1
                       - StaticContent:
-                          base_directory: %s
+                          directories: [%s]
                   - id: proxied
                     match:
                       - PathPrefix:

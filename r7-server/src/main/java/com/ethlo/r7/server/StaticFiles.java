@@ -31,14 +31,17 @@ import com.ethlo.r7.filters.StaticContentFactory;
  * <ul>
  *   <li>a path segment starting with '.' is answered 404, as if absent, unless the route opts in;
  *   {@code .well-known/} is always served;</li>
- *   <li>the base directory may itself be a symbolic link (an atomically swapped release), but a
- *   link under it is followed only with {@code follow_symlinks};</li>
- *   <li>a base directory that is momentarily missing is a clean 404, not an error;</li>
- *   <li>a base directory that was deleted while a mount still holds it (a bind mount of the
- *   directory itself, which then was replaced) is a 503 and a warning in the log, not an empty
- *   site answering 403 and 404;</li>
- *   <li>a directory is served by its welcome file, else listed when the route allows it, else
- *   403; one addressed without its trailing slash is redirected to it;</li>
+ *   <li>the directories are checked in order, and the first that has the file, or a welcome file
+ *   for the directory asked for, answers: a higher one hides a lower one file by file;</li>
+ *   <li>a directory may itself be a symbolic link (an atomically swapped release), but a link
+ *   under it is followed only with {@code follow_symlinks};</li>
+ *   <li>a directory that is momentarily missing is skipped; when all are, the answer is a clean
+ *   404, not an error;</li>
+ *   <li>a directory that was deleted while a mount still holds it (a bind mount of the directory
+ *   itself, which then was replaced) is skipped with a warning in the log, and the answer is a 503
+ *   when no other directory exists;</li>
+ *   <li>a directory is served by its welcome file, else 403; one addressed without its trailing
+ *   slash is redirected to it;</li>
  *   <li>every answer carries {@code X-Content-Type-Options: nosniff}: the type is guessed from
  *   the extension, and a browser must not second-guess it.</li>
  * </ul>
@@ -124,60 +127,93 @@ public final class StaticFiles
             return;
         }
 
-        final Path base = request.baseDirectory();
-        if (!Files.isDirectory(base))
+        // The first directory that can answer wins: a file, a welcome file, or the redirect a
+        // directory without its slash gets. Each is checked as one directory used to be.
+        boolean present = false;
+        boolean unlinked = false;
+        boolean directory = false;
+        for (final Path base : request.directories())
         {
-            // Momentarily missing, e.g. mid atomic swap: a clean 404, never a hang or a 500.
-            target.answer(404, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
-            return;
-        }
-        if (isUnlinked(base))
-        {
-            // The path still opens, but on a directory that no longer exists: a mount holds the
-            // one that was replaced. Nothing here will ever be served again, so say so.
-            if (warnedUnlinked.add(base))
+            if (!Files.isDirectory(base))
             {
-                logger.warn("Static content directory {} was deleted, but a mount still holds it (a bind mount of the directory itself, "
-                        + "replaced on the host). Mount its parent directory instead, or restart to see the new one.", base);
+                // Momentarily missing, e.g. mid atomic swap: skipped, never masking the rest.
+                continue;
             }
-            target.answer(503, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
-            return;
-        }
-
-        final Path resolved = resolve(base, relative, request.followSymlinks());
-        if (resolved == null || !Files.exists(resolved))
-        {
-            target.answer(404, new byte[0]);
-            return;
-        }
-
-        if (Files.isDirectory(resolved))
-        {
-            if (!relative.isEmpty() && !relative.endsWith("/"))
+            if (isUnlinked(base))
             {
-                target.header("Location", withTrailingSlash(target.clientTarget()));
-                target.answer(302, new byte[0]);
+                // The path still opens, but on a directory that no longer exists: a mount holds the
+                // one that was replaced. Nothing here will ever be served again, so say so.
+                if (warnedUnlinked.add(base))
+                {
+                    logger.warn("Static content directory {} was deleted, but a mount still holds it (a bind mount of the directory itself, "
+                            + "replaced on the host). Mount its parent directory instead, or restart to see the new one.", base);
+                }
+                unlinked = true;
+                continue;
+            }
+            present = true;
+
+            final Path resolved = resolve(base, relative, request.followSymlinks());
+            if (resolved == null)
+            {
+                continue;
+            }
+            if (Files.isRegularFile(resolved))
+            {
+                logger.debug("Static '{}' served from {}", relative, base);
+                serveFile(target, resolved, method.equals("HEAD"));
                 return;
             }
-            for (final String welcome : WELCOME_FILES)
+            if (Files.isDirectory(resolved))
             {
-                final Path file = resolved.resolve(welcome);
-                if (Files.isRegularFile(file) && (request.followSymlinks() || !Files.isSymbolicLink(file)))
+                if (!relative.isEmpty() && !relative.endsWith("/"))
                 {
-                    serveFile(target, file, method.equals("HEAD"));
+                    target.header("Location", withTrailingSlash(target.clientTarget()));
+                    target.answer(302, new byte[0]);
                     return;
                 }
+                final Path welcome = welcomeFile(resolved, request.followSymlinks());
+                if (welcome != null)
+                {
+                    logger.debug("Static '{}' served from {}", relative, base);
+                    serveFile(target, welcome, method.equals("HEAD"));
+                    return;
+                }
+                directory = true;
             }
-            target.answer(403, new byte[0]);
-            return;
+            // Anything else (a device node, a dangling link) is absent here: the next directory.
         }
 
-        if (!Files.isRegularFile(resolved))
+        if (directory)
+        {
+            target.answer(403, new byte[0]);
+        }
+        else if (!present && unlinked)
+        {
+            target.answer(503, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
+        }
+        else if (!present)
+        {
+            // Every directory momentarily missing: a clean 404, never a hang or a 500.
+            target.answer(404, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
+        }
+        else
         {
             target.answer(404, new byte[0]);
-            return;
         }
-        serveFile(target, resolved, method.equals("HEAD"));
+    }
+
+    private static Path welcomeFile(final Path directory, final boolean followSymlinks)
+    {
+        for (final String welcome : WELCOME_FILES)
+        {
+            final Path file = directory.resolve(welcome);
+            if (Files.isRegularFile(file) && (followSymlinks || !Files.isSymbolicLink(file)))
+            {
+                return file;
+            }
+        }
+        return null;
     }
 
     /**

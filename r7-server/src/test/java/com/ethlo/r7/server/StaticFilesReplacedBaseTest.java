@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -119,7 +120,7 @@ class StaticFilesReplacedBaseTest
             public void header(final String name, final String value)
             {
             }
-        }, new StaticContentFactory.StaticServeRequest(base, false, false));
+        }, new StaticContentFactory.StaticServeRequest(List.of(base), false, false));
         return status[0];
     }
 }

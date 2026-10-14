@@ -64,4 +64,4 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp
+          directories: [/tmp]

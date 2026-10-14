@@ -10,7 +10,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp
+          directories: [/tmp]
 
   - id: static-swap-test
     match:
@@ -20,7 +20,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp/static-swap-test/current
+          directories: [/tmp/static-swap-test/current]
 
   - id: static-symlink-blocked-test
     match:
@@ -30,7 +30,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp/static-symlink-test
+          directories: [/tmp/static-symlink-test]
 
   - id: static-symlink-followed-test
     match:
@@ -40,7 +40,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp/static-symlink-test
+          directories: [/tmp/static-symlink-test]
           follow_symlinks: true
 
   - id: static-no-welcome-test
@@ -51,7 +51,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp/static-no-welcome-test
+          directories: [/tmp/static-no-welcome-test]
 
   - id: query-modify-test
     match:
