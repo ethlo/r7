@@ -133,6 +133,12 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
     protected abstract String decodedPath();
 
     /**
+     * The request path as the client sent it, still encoded: the same instance the upstream
+     * request's {@code uri()} starts as, so a different one means a filter changed the target.
+     */
+    protected abstract String rawPath();
+
+    /**
      * When the server started reading this request, on the {@link System#nanoTime()} clock.
      */
     protected abstract long requestStartNanos();

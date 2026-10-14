@@ -609,6 +609,8 @@ Transforms the upstream request path using regular expressions. Every match of `
 
 Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Needless encoding of ordinary characters is normalised (`%41` is sent as `A`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
 
+A rewritten path gets the same check as the client's path: one with a `.` or `..` segment, a backslash or leftover percent-encoding is answered with `400` and never forwarded. With `replacement: /files/{query.name}`, `?name=../admin` is refused rather than sent as `/files/../admin`.
+
 #### Templates
 
 `RewritePath` `replacement` and `TemplateRedirect` `target` share one syntax:
