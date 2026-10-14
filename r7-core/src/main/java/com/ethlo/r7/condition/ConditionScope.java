@@ -9,7 +9,19 @@ public enum ConditionScope
      * A route's or group's {@code match}: the route is being chosen, and only the client's
      * request exists.
      */
-    ROUTE_MATCH("when a route is chosen", false, false, Draw.ROUTING);
+    ROUTE_MATCH("when a route is chosen", false, false, Draw.ROUTING),
+
+    /**
+     * A journal {@code on_request} rule: the route is chosen and its filters have not run, so
+     * only the client's request exists.
+     */
+    ON_REQUEST("when on_request rules are checked", false, false, Draw.JOURNAL),
+
+    /**
+     * A journal {@code on_response} rule: the response head is final, after the response
+     * filters, so both legs exist as far as the exchange got.
+     */
+    ON_RESPONSE("when on_response rules are checked", true, true, Draw.JOURNAL);
 
     private final String when;
     private final boolean upstreamLeg;

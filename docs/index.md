@@ -72,15 +72,18 @@ That is the whole setup. When you need to tune ports, limits or journal storage,
 Most gateways log a line per request: method, path, status, timing. When a client disputes what
 it sent, or an incident review needs the actual payload, that line is not enough, and getting
 more means a mirror, a tap or a script you maintain. r7 records the exchange itself: just the
-essentials, the headers too, or the full bodies. You choose per route, and the detail goes up on
-its own when something fails:
+essentials, the headers too, or the full bodies. You choose per route, and a rule raises the
+detail for the exchanges that fail:
 
 ```yaml
 journal:
   response:
     level: METADATA
-    status_overrides:
-      5xx: HEADERS   # keep the headers whenever the upstream fails
+  on_response:
+    - match:
+        - Status:
+            include: [5xx]
+      response: { level: FULL }   # keep the whole response whenever one fails
 ```
 
 Entries are written to memory-mapped files on local disk; nothing goes over the network while

@@ -1,8 +1,6 @@
 package com.ethlo.r7.journal;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
@@ -14,13 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
-import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
-import com.ethlo.r7.api.GatewayResponse;
 import com.ethlo.r7.api.IpSource;
-import com.ethlo.r7.config.JournalDirectionConfig;
-import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -44,8 +38,8 @@ class StatefulJournalTest
     {
         final List<String> events = new ArrayList<>();
         final StatefulJournal journal = new StatefulJournal(recording(events),
-                new RouteJournalConfig(new JournalDirectionConfig(requestLevel, null), new JournalDirectionConfig(JournalLevel.FULL, null)),
-                exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
+                JournalPolicy.of(requestLevel, JournalLevel.FULL),
+                JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
                 QueryParameterNameSet.NONE, TestFingerprints.FINGERPRINT);
 
         final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
@@ -81,8 +75,8 @@ class StatefulJournalTest
         final List<String> lines = new ArrayList<>();
         final Fingerprint fingerprint = TestFingerprints.FINGERPRINT;
         final StatefulJournal journal = new StatefulJournal(recording(new ArrayList<>(), lines),
-                new RouteJournalConfig(new JournalDirectionConfig(level, null), new JournalDirectionConfig(level, null)),
-                exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
+                JournalPolicy.of(level, level),
+                JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
                 QueryParameterNameSet.of(List.of("page"), false), fingerprint);
 
         final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
@@ -100,23 +94,14 @@ class StatefulJournalTest
     {
         final List<String> lines = new ArrayList<>();
         final StatefulJournal journal = new StatefulJournal(recording(new ArrayList<>(), lines),
-                new RouteJournalConfig(new JournalDirectionConfig(JournalLevel.METADATA, null), new JournalDirectionConfig(JournalLevel.METADATA, null)),
-                exchangeWithStatus(200), JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
+                JournalPolicy.of(JournalLevel.METADATA, JournalLevel.METADATA),
+                JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS,
                 QueryParameterNameSet.NONE, TestFingerprints.FINGERPRINT);
 
         journal.clientRequest(JournalLevel.METADATA, "r1", latin1("GET /items HTTP/1.1"), new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
         journal.endExchange("r1", new FastGatewayAttributes(), 1, 2, 200, 0, 0, 0, 0, 0, 0, 0, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
 
         assertThat(lines).containsExactly("GET /items HTTP/1.1");
-    }
-
-    private static CompletedGatewayExchange exchangeWithStatus(final int status)
-    {
-        final GatewayResponse response = mock(GatewayResponse.class);
-        when(response.status()).thenReturn(status);
-        final CompletedGatewayExchange exchange = mock(CompletedGatewayExchange.class);
-        when(exchange.clientResponse()).thenReturn(response);
-        return exchange;
     }
 
     private static ByteBuffer latin1(final String s)

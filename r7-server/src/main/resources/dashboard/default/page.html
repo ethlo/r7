@@ -1591,27 +1591,30 @@
                 }).join('') + `</div>`;
         };
 
-        const buildOverrides = (overrides) => {
-            if (!overrides || Object.keys(overrides).length === 0) return '';
-            let ovHtml = '<div style="margin-top: 6px; padding-left: 8px; border-left: 2px solid rgba(128,128,128,0.2);">';
-            Object.entries(overrides).forEach(([codes, lvl]) => {
-                ovHtml += `<div class="sub text-dim" style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
-                <span style="font-size: 0.85em; width: 45px;">${esc(codes)}</span>
-                ${jBadge(lvl)}
-                <span style="font-size: 0.85em;">${esc(lvl)}</span>
+        const buildRules = (rules) => {
+            if (!rules || rules.length === 0) return '';
+            let html = '<div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RULES:</div>';
+            html += '<div style="padding-left: 8px; border-left: 2px solid rgba(128,128,128,0.2);">';
+            rules.forEach(rule => {
+                const sets = [];
+                if (rule.request) sets.push(`request ${jBadge(rule.request)} ${esc(rule.request)}`);
+                if (rule.response) sets.push(`response ${jBadge(rule.response)} ${esc(rule.response)}`);
+                html += `<div class="sub text-dim" style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;" title="${esc(rule.path)}">
+                <span style="font-size: 0.85em;">${esc(rule.stage)}</span>
+                <span style="font-size: 0.85em;">${esc(rule.label)}</span>
+                <span style="font-size: 0.85em;">${sets.join(', ')}</span>
             </div>`;
             });
-            ovHtml += '</div>';
-            return ovHtml;
+            html += '</div>';
+            return html;
         };
 
         return `
             <div class="panel-subtitle" style="margin-bottom: 4px;">REQUEST:</div>
             ${buildPills(config.journal?.request_level || 'NONE')}
-            ${buildOverrides(config.journal?.request_overrides)}
             <div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RESPONSE:</div>
             ${buildPills(config.journal?.response_level || 'NONE')}
-            ${buildOverrides(config.journal?.response_overrides)}`;
+            ${buildRules(config.journal?.rules)}`;
     }
 
     function routeView(routeId) {

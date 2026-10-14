@@ -4,11 +4,11 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32C;
 
-import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayAttributes;
 import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.IpSource;
-import com.ethlo.r7.config.RouteJournalConfig;
+import com.ethlo.r7.api.MutableGatewayAttributes;
+import com.ethlo.r7.condition.ConditionInput;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.Journal;
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -17,9 +17,19 @@ import com.ethlo.r7.util.Fingerprint;
 
 public final class StatefulJournal implements Journal
 {
+    /**
+     * Each rule that fired: decided at least one level, as the first matching rule naming it.
+     * Its id, else its path.
+     */
+    public static final String RULE_KEY = "gateway.journal.rule";
+
+    /**
+     * Each rule whose condition threw, and so did not fire. Its id, else its path.
+     */
+    public static final String RULE_ERROR_KEY = "gateway.journal.rule_error";
+
     private final Journal delegate;
-    private final RouteJournalConfig config;
-    private final CompletedGatewayExchange exchange;
+    private final JournalPolicy policy;
     private final HeaderNameSet safeRequestHeaders;
     private final HeaderNameSet safeResponseHeaders;
     private final QueryParameterNameSet safeQueryParameters;
@@ -54,7 +64,13 @@ public final class StatefulJournal implements Journal
     private GatewayHeaders clientRequestBase;
     private GatewayHeaders upstreamResponseBase;
 
-    private JournalLevel level;
+    /**
+     * Resolved so far: the base levels, then {@code on_request}, then {@code on_response}.
+     * The request level never changes to or from FULL after {@code on_request}: validation
+     * refuses an {@code on_response} rule that could.
+     */
+    private JournalLevel requestLevel;
+    private JournalLevel responseLevel;
     private String requestId;
     private boolean clientReqFlushed = false;
     private boolean upstreamReqFlushed = false;
@@ -78,11 +94,92 @@ public final class StatefulJournal implements Journal
     private IpSource remoteAddressSource;
 
     /**
-     * The journal levels this exchange is recorded with, fixed when the journal was opened.
+     * The policy of the route this exchange first matched, fixed when the journal was opened: a
+     * fallback does not change it.
      */
-    public RouteJournalConfig routeJournalConfig()
+    public JournalPolicy policy()
     {
-        return this.config;
+        return this.policy;
+    }
+
+    public JournalLevel requestLevel()
+    {
+        return this.requestLevel;
+    }
+
+    public JournalLevel responseLevel()
+    {
+        return this.responseLevel;
+    }
+
+    /**
+     * Applies the {@code on_request} rules over the base levels. Once the route is chosen, before
+     * its filters run and before the request body streams.
+     */
+    public void onRequest(final ConditionInput input, final MutableGatewayAttributes attributes)
+    {
+        this.apply(this.policy.onRequestRules(), input, attributes);
+    }
+
+    /**
+     * Applies the {@code on_response} rules over what {@code on_request} resolved. Once the
+     * response head is final, before it is written.
+     */
+    public void onResponse(final ConditionInput input, final MutableGatewayAttributes attributes)
+    {
+        this.apply(this.policy.onResponseRules(), input, attributes);
+    }
+
+    /**
+     * Per key, the first matching rule naming it wins. A rule is only evaluated while it could
+     * still decide a key, so evaluation stops once both are decided.
+     */
+    private void apply(final JournalRule[] rules, final ConditionInput input, final MutableGatewayAttributes attributes)
+    {
+        boolean requestDecided = false;
+        boolean responseDecided = false;
+        for (final JournalRule rule : rules)
+        {
+            final boolean decidesRequest = !requestDecided && rule.request() != null;
+            final boolean decidesResponse = !responseDecided && rule.response() != null;
+            if (!decidesRequest && !decidesResponse)
+            {
+                continue;
+            }
+            final int outcome = rule.evaluate(input);
+            if (outcome == JournalRule.FAILED)
+            {
+                attributes.add(RULE_ERROR_KEY, rule.label());
+            }
+            if (outcome != JournalRule.MATCHED)
+            {
+                continue;
+            }
+            if (decidesRequest)
+            {
+                this.requestLevel = rule.request();
+                requestDecided = true;
+            }
+            if (decidesResponse)
+            {
+                this.responseLevel = rule.response();
+                responseDecided = true;
+            }
+            attributes.add(RULE_KEY, rule.label());
+            if (requestDecided && responseDecided)
+            {
+                return;
+            }
+        }
+    }
+
+    /**
+     * Whether the exchange gets an end record: decided on the resolved levels, the same ones
+     * the request and response records are written at, so an end record never stands alone.
+     */
+    public boolean isAtLeastMetadata()
+    {
+        return this.requestLevel != JournalLevel.NONE || this.responseLevel != JournalLevel.NONE;
     }
 
     /**
@@ -91,7 +188,7 @@ public final class StatefulJournal implements Journal
      * @param fingerprint         how values of headers and query parameters not on the safe
      *                            lists are written
      */
-    public StatefulJournal(final Journal delegate, final RouteJournalConfig config, final CompletedGatewayExchange exchange,
+    public StatefulJournal(final Journal delegate, final JournalPolicy policy,
                             final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders,
                             final QueryParameterNameSet safeQueryParameters, final Fingerprint fingerprint)
     {
@@ -99,8 +196,9 @@ public final class StatefulJournal implements Journal
         this.safeQueryParameters = safeQueryParameters;
         this.fingerprints = new FingerprintMemo(fingerprint);
         this.delegate = delegate;
-        this.config = config;
-        this.exchange = exchange;
+        this.policy = policy;
+        this.requestLevel = policy.request();
+        this.responseLevel = policy.response();
         this.safeRequestHeaders = safeRequestHeaders;
         this.safeResponseHeaders = safeResponseHeaders;
     }
@@ -114,7 +212,7 @@ public final class StatefulJournal implements Journal
         this.remoteAddress = remoteAddress;
         this.remoteAddressSource = ipSource;
 
-        if (config.request().level() == JournalLevel.FULL)
+        if (this.requestLevel == JournalLevel.FULL)
         {
             return checkAndFlushRequest();
         }
@@ -127,7 +225,7 @@ public final class StatefulJournal implements Journal
         this.upstreamReqLine = redactRequestLine(startLine);
         this.upstreamReqHeaders = headers;
 
-        if (config.request().level() == JournalLevel.FULL)
+        if (this.requestLevel == JournalLevel.FULL)
         {
             return checkAndFlushRequest();
         }
@@ -160,20 +258,16 @@ public final class StatefulJournal implements Journal
     @Override
     public int requestBody(final String reqId, final ByteBuffer data)
     {
-        if (config.request().level() == JournalLevel.FULL)
+        if (this.requestLevel == JournalLevel.FULL)
         {
             // Anchor the body before writing it: a body entry the reader cannot attach to a
             // request is discarded as an orphan, and its recorded checksum is then compared
             // against a body that was thrown away — a mismatch on a record that is exactly
             // what this writer intended.
             //
-            // This resolves the level rather than forcing FULL. Forcing it would override an
-            // operator's status-based downgrade and journal headers they asked not to keep,
-            // and no reported mismatch is worth that. RouteJournalConfig rejects the
-            // configuration that would make the two disagree — a request-side override below
-            // FULL when the base is FULL — so by the time we are here, resolving cannot
-            // return anything lower. If that validation is ever relaxed, this degrades to the
-            // orphaned-body problem rather than to disclosure.
+            // A FULL request level is final once on_request has run: validation refuses an
+            // on_response rule that names the request whenever it can be FULL, since a
+            // journaled body cannot be un-written.
             final int anchored = checkAndFlushRequest();
 
             if (requestChecksum == null)
@@ -191,15 +285,15 @@ public final class StatefulJournal implements Journal
     @Override
     public int responseBody(final String reqId, final ByteBuffer data)
     {
-        if (config.response().resolve(exchange.clientResponse().status()) == JournalLevel.FULL)
+        if (this.responseLevel == JournalLevel.FULL)
         {
             // Anchor the body, for the same reason requestBody does. Below FULL the client
             // request is held back until the exchange completes, but the response body is teed
             // into the journal while it is being sent — before completion. Unanchored, every
             // fragment of a "request HEADERS, response FULL" route reached the reader ahead of
             // any event for its request id, was discarded as an orphan, and the end event then
-            // reported a checksum mismatch against a body nobody kept. The status is known by
-            // the time a response body is written, so the level resolved here is the final one.
+            // reported a checksum mismatch against a body nobody kept. A response body is teed
+            // only after on_response has run, so the levels here are final.
             final int anchored = checkAndFlushRequest();
 
             if (responseChecksum == null)
@@ -254,12 +348,8 @@ public final class StatefulJournal implements Journal
             return 0;
         }
 
-        final int status = exchange.clientResponse().status();
-        final JournalLevel reqLevel = config.request().resolve(status);
-        final JournalLevel resLevel = config.response().resolve(status);
-
-        JournalLevel effectiveLevel = reqLevel;
-        if (effectiveLevel == JournalLevel.NONE && resLevel != JournalLevel.NONE)
+        JournalLevel effectiveLevel = this.requestLevel;
+        if (effectiveLevel == JournalLevel.NONE && this.responseLevel != JournalLevel.NONE)
         {
             effectiveLevel = JournalLevel.METADATA;
         }
@@ -305,8 +395,7 @@ public final class StatefulJournal implements Journal
 
     private int checkAndFlushResponse()
     {
-        final int status = exchange.clientResponse().status();
-        final JournalLevel resLevel = config.response().resolve(status);
+        final JournalLevel resLevel = this.responseLevel;
         if (resLevel == JournalLevel.NONE)
         {
             return 0;

@@ -1,7 +1,5 @@
 package com.ethlo.r7.config;
 
-import java.util.Map;
-
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.validation.ValidatableConfig;
@@ -34,24 +32,27 @@ public record UnroutedDefinition(
             return;
         }
         final ValidationResult journalResult = result.nested("journal");
-        // Override keys are parsed like a route's; malformed ones are refused, not thrown.
         this.journal.validate(journalResult);
         validateDirection(journalResult.nested("request"), this.journal.request());
         validateDirection(journalResult.nested("response"), this.journal.response());
+        if (!this.journal.onResponse().isEmpty())
+        {
+            journalResult.addError("on_response", "r7's answer to a refused request is fixed by its reason; there is nothing left to decide.");
+        }
+        // Not yet: a rule here must be gated by the refusal's reason (UnroutedReason), so that a
+        // condition written for route misses cannot also match, or under 'not' be turned on by,
+        // a smuggling attempt whose request r7 never interpreted.
+        if (!this.journal.onRequest().isEmpty())
+        {
+            journalResult.addError("on_request", "rules are not supported under unrouted yet; set the base levels only.");
+        }
     }
 
     private static void validateDirection(final ValidationResult result, final JournalDirectionDefinition direction)
     {
-        if (direction.level() == JournalLevel.FULL)
+        if (direction != null && direction.level() == JournalLevel.FULL)
         {
             result.addError("level", "FULL is not allowed for unrouted requests; use NONE, METADATA or HEADERS");
-        }
-        for (final Map.Entry<String, JournalLevel> entry : direction.statusOverrides().entrySet())
-        {
-            if (entry.getValue() == JournalLevel.FULL)
-            {
-                result.addError("status_overrides", "FULL is not allowed for unrouted requests (" + entry.getKey() + "); use NONE, METADATA or HEADERS");
-            }
         }
     }
 }

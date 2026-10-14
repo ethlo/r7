@@ -1,0 +1,54 @@
+version: journal-rules-test
+
+journal:
+  request:
+    level: HEADERS
+  response:
+    level: METADATA
+  on_response:
+    # Both directions to NONE: the 404 must leave no entry at all.
+    - id: drop-misses
+      match:
+        - Status:
+            include: [404]
+      request: { level: NONE }
+      response: { level: NONE }
+    # Raised at commit: the body is captured from its first byte.
+    - id: keep-bodies
+      match:
+        - Status:
+            include: [201, 202]
+      response: { level: FULL }
+
+routes:
+  - id: missing
+    match:
+      - PathPrefix:
+          prefix: /missed
+    filters:
+      - ReturnResponse:
+          status: 404
+          body: missed
+  - id: traced
+    match:
+      - PathPrefix:
+          prefix: /traced
+    filters:
+      - ReturnResponse:
+          status: 200
+          body: traced
+  - id: answered
+    match:
+      - PathPrefix:
+          prefix: /answered
+    filters:
+      - ReturnResponse:
+          status: 201
+          body: answered by r7
+  - id: proxied
+    match:
+      - PathPrefix:
+          prefix: /proxied
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

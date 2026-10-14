@@ -100,8 +100,8 @@ setup: the journal levels, redaction, every tailer property, other output layout
 
 ## 1. Journal levels and redaction
 
-Tailers only see what the gateway actually writes. Set the level per route (and optionally
-override it by response status) in `routes.yaml`:
+Tailers only see what the gateway actually writes. Set the levels per route, group or the whole
+file, and raise or lower them with rules, in `routes.yaml`:
 
 ```yaml
 routes:
@@ -117,12 +117,18 @@ routes:
         level: METADATA
       response:
         level: METADATA
-        status_overrides:
-          5xx: HEADERS   # more detail when things break
+      on_response:
+        - id: failures
+          match:
+            - Status:
+                include: [5xx]
+          response: { level: HEADERS }   # more detail when things break
 ```
 
-What each level records, and which overrides are allowed, is in
-[Configuration §7](config.md#7-journaling-storage); where and how journals are written on disk is
+What each level records, and how rules resolve the levels, is in
+[Configuration §7](config.md#7-journaling-storage). Each rule that fires is recorded in the
+`gateway.journal.rule` attribute, by its id or its path, and a rule that could not be evaluated
+in `gateway.journal.rule_error`; where and how journals are written on disk is
 the [`storage` block](config.md#storage-journaling-storage). Requests refused before any route
 matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
 [Unrouted Requests](config.md#unrouted-requests-routesyaml-unrouted).
@@ -353,7 +359,7 @@ Fields of the exchange:
 | `upstream_request` | object | When the request was proxied: the request to the upstream |
 | `upstream_response` | object | When the request was proxied: the upstream's response, and the round trip's timing. When no upstream sent a response head (a refused connect, a timeout or a protocol error before one), it holds only the timing, at level `NONE`: r7's own `502`, `503` or `504` is recorded in `client_response`, never as the upstream's |
 | `client_response` | object | Always: the response to the client |
-| `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name` and `gateway.auth.basic.user` |
+| `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name`, `gateway.journal.rule` and `gateway.auth.basic.user` |
 | `warc` | object | When a WARC file holds the exchange |
 | `warc.file` | string | The sealed WARC file's name |
 | `warc.offset` | number | Byte offset of the exchange's first record in that file |

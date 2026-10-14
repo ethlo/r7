@@ -152,7 +152,7 @@ public class PredicateRegistry
         }
         if (responseFactory != null && !scope.allowsResponses())
         {
-            result.addError(name, name + " tests a response, which does not exist yet " + scope.when() + ".");
+            result.addError(name, name + " tests a response, which does not exist yet " + scope.when() + "; use it in on_response.");
             return Condition.FALSE;
         }
 
@@ -202,7 +202,7 @@ public class PredicateRegistry
         }
         if (leg == Leg.UPSTREAM && !scope.allowsUpstreamLeg())
         {
-            result.addError(name + "." + LEG, "The upstream leg does not exist yet " + scope.when() + "; leave leg out to test the client's.");
+            result.addError(name + "." + LEG, "The upstream leg does not exist yet " + scope.when() + "; leg: upstream is allowed only in on_response.");
             return null;
         }
         return leg;

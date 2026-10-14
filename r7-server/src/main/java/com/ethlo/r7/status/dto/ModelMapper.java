@@ -18,6 +18,7 @@ import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.config.UpstreamConfig;
+import com.ethlo.r7.journal.JournalPolicy;
 import com.ethlo.r7.status.PipelineVisualizer;
 import com.ethlo.r7.status.RouteMetricsBucket;
 
@@ -29,12 +30,11 @@ public class ModelMapper
     {
         final RouteDefinition def = route.routeDefinition();
 
-        final JournalDto journal = new JournalDto(
-                def.journal().request().level(),
-                def.journal().request().statusOverrides(),
-                def.journal().response().level(),
-                def.journal().response().statusOverrides()
-        );
+        final JournalPolicy policy = route.journal();
+        final List<JournalDto.Rule> rules = new ArrayList<>();
+        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response())));
+        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response())));
+        final JournalDto journal = new JournalDto(policy.request(), policy.response(), rules);
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
                 .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders, safeResponseHeaders)))

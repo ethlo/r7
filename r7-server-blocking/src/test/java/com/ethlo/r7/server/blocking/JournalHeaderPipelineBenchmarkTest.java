@@ -26,8 +26,7 @@ import com.ethlo.r7.api.GatewayRouteInfo;
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.api.MutableGatewayAttributes;
 import com.ethlo.r7.api.StateKey;
-import com.ethlo.r7.config.JournalDirectionConfig;
-import com.ethlo.r7.config.RouteJournalConfig;
+import com.ethlo.r7.journal.JournalPolicy;
 import com.ethlo.r7.journal.JournalSecurity;
 import com.ethlo.r7.journal.QueryParameterNameSet;
 import com.ethlo.r7.journal.StatefulJournal;
@@ -414,7 +413,7 @@ final class JournalHeaderPipelineBenchmarkTest
     private static final class Fixture
     {
         private final Scenario scenario;
-        private final RouteJournalConfig config;
+        private final JournalPolicy config;
         private final CompletedGatewayExchange exchange;
         private final InetAddress clientAddress;
 
@@ -433,8 +432,7 @@ final class JournalHeaderPipelineBenchmarkTest
         private Fixture(final Scenario scenario)
         {
             this.scenario = scenario;
-            final JournalDirectionConfig direction = new JournalDirectionConfig(scenario.level(), null);
-            this.config = new RouteJournalConfig(direction, direction);
+            this.config = JournalPolicy.of(scenario.level(), scenario.level());
             this.exchange = new StubExchange();
 
             try
@@ -483,7 +481,7 @@ final class JournalHeaderPipelineBenchmarkTest
         {
             // Per exchange in production, and its flush-state flags make that load-bearing.
             final String requestId = requestIds[iteration & (REQUEST_ID_POOL - 1)];
-            final StatefulJournal stateful = new StatefulJournal(writer.getJournal(requestId), config, exchange,
+            final StatefulJournal stateful = new StatefulJournal(writer.getJournal(requestId), config,
                     JournalSecurity.SAFE_REQUEST_HEADERS, JournalSecurity.SAFE_RESPONSE_HEADERS, QueryParameterNameSet.NONE, FINGERPRINT);
 
             stateful.clientRequest(scenario.level(), requestId, requestLine.rewind(),

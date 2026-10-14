@@ -23,6 +23,7 @@ import com.ethlo.r7.config.ConfigurationManager;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.AcceptsInteger;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -67,11 +68,14 @@ public final class JsonSchemaGenerator
         Files.writeString(Path.of("docs/schemas/latest.yaml"), yaml);
     }
 
+    private static final List<String> ALL_LEVELS = List.of("NONE", "HEADERS", "METADATA", "FULL");
+
     public RootSchema generateGatewaySchema()
     {
         final Map<String, SchemaNode> defs = new TreeMap<>();
         defs.put("filter", buildFilterDefinition());
-        defs.put("predicate", buildPredicateDefinition());
+        defs.put("predicate", buildPredicateDefinition("predicate", false));
+        defs.put("responsePredicate", buildPredicateDefinition("responsePredicate", true));
         defs.put("route", buildRouteDefinition());
         defs.put("group", buildGroupDefinition());
 
@@ -90,11 +94,12 @@ public final class JsonSchemaGenerator
                 )
         );
         properties.put("upstream", buildUpstreamSchema("Upstream keys every route inherits, each unless its group or the route names it."));
+        properties.put("journal", buildJournalSchema(ALL_LEVELS, true, "Journal levels every route inherits, each unless its group or the route names it, and rules checked after theirs. A route nothing names is journaled at NONE."));
 
         final List<String> belowFull = List.of("NONE", "HEADERS", "METADATA");
         properties.put("unrouted", new ObjectSchema(
                 "object",
-                new TreeMap<>(Map.of("journal", buildJournalSchema(belowFull, belowFull,
+                new TreeMap<>(Map.of("journal", buildJournalSchema(belowFull, false,
                         "Journal levels for requests refused before any route is chosen. FULL is not allowed."))),
                 List.of("journal"),
                 new BoolProps(false),
@@ -184,7 +189,7 @@ public final class JsonSchemaGenerator
         );
 
         properties.put("upstream", buildUpstreamSchema("Where this route forwards requests. Each key not named here is inherited from the route's group, then the root."));
-        properties.put("journal", buildJournalSchema(List.of("NONE", "HEADERS", "METADATA", "FULL"), null, "Observability and logging configuration for this specific route."));
+        properties.put("journal", buildJournalSchema(ALL_LEVELS, true, "The route's journal: each key not named here is inherited from its group, then the root, and its rules are checked before theirs."));
 
         // Neither upstream nor filters is required here: a route may inherit its upstream from
         // its group or the root, which a schema of the route alone cannot see.
@@ -223,6 +228,7 @@ public final class JsonSchemaGenerator
                 null
         ));
         properties.put("upstream", buildUpstreamSchema("Upstream keys the group's routes inherit, each unless the route names it; keys not named here are inherited from the root."));
+        properties.put("journal", buildJournalSchema(ALL_LEVELS, true, "Journal levels the group's routes inherit, each unless the route names it, and rules checked after a route's own and before the root's."));
         properties.put("routes", new ArraySchema(
                 "array",
                 new RefSchema("#/$defs/route", null, null),
@@ -255,47 +261,43 @@ public final class JsonSchemaGenerator
     }
 
     /**
-     * @param levels         the levels allowed as a base level
-     * @param overrideLevels the levels allowed as an override value, or {@code null} for any string
+     * @param levels    the levels allowed, as a base level and in a rule
+     * @param withRules whether {@code on_request} and {@code on_response} are accepted
      */
-    private SchemaNode buildJournalSchema(final List<String> levels, final List<String> overrideLevels, final String description)
+    private SchemaNode buildJournalSchema(final List<String> levels, final boolean withRules, final String description)
     {
         final SchemaNode levelSchema = new PrimitiveSchema(
                 "string",
                 levels,
                 null, null, null,
-                "The base journaling verbosity level.",
+                "The journaling verbosity level.",
                 null, null, null
         );
 
-        final SchemaNode overridesSchema = new ObjectSchema(
-                "object", null, null,
-                new SchemaProps(new PrimitiveSchema("string", overrideLevels, null, null, null, null, null, null, null)),
-                null, null, null, null,
-                "Overrides for the journal level by response status. Keys are a status class ('1xx' to '5xx'), a single code 100-599 ('404'), or a comma-separated list of codes ('401,403'); e.g. '5xx': '" + (levels.contains("FULL") ? "FULL" : "HEADERS") + "', '404': 'NONE'.",
-                null,
-                null
-        );
+        final SchemaNode levelDef = directionSchema(levelSchema);
 
-        final Map<String, SchemaNode> levelDefProps = new TreeMap<>(Map.of(
-                "level", levelSchema,
-                "status_overrides", overridesSchema
+        // A request body has streamed by the time on_response runs, so FULL cannot be set there
+        final List<String> belowFull = levels.stream().filter(level -> !"FULL".equals(level)).toList();
+        final SchemaNode lateRequestDef = directionSchema(new PrimitiveSchema(
+                "string",
+                belowFull,
+                null, null, null,
+                "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed.",
+                null, null, null
         ));
 
-        final SchemaNode levelDef = new ObjectSchema(
-                "object",
-                levelDefProps,
-                null,
-                new BoolProps(false),
-                null, null, null, null,
-                "Journal settings for this specific phase of the exchange.",
-                null,
-                null
-        );
+        final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("request", levelDef, "response", levelDef));
+        if (withRules)
+        {
+            properties.put("on_request", buildJournalRules(levelDef, levelDef, false,
+                    "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."));
+            properties.put("on_response", buildJournalRules(lateRequestDef, levelDef, true,
+                    "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."));
+        }
 
         return new ObjectSchema(
                 "object",
-                new TreeMap<>(Map.of("request", levelDef, "response", levelDef)),
+                properties,
                 null,
                 new BoolProps(false),
                 null, null, null, null,
@@ -303,6 +305,46 @@ public final class JsonSchemaGenerator
                 null,
                 null
         );
+    }
+
+    private static SchemaNode directionSchema(final SchemaNode levelSchema)
+    {
+        return new ObjectSchema(
+                "object",
+                new TreeMap<>(Map.of("level", levelSchema)),
+                null,
+                new BoolProps(false),
+                1, null, null, null,
+                "Journal settings for this direction of the exchange.",
+                null,
+                null
+        );
+    }
+
+    private static SchemaNode buildJournalRules(final SchemaNode requestDef, final SchemaNode responseDef, final boolean responseMatch, final String description)
+    {
+        final Map<String, SchemaNode> properties = new TreeMap<>();
+        properties.put("id", new PrimitiveSchema("string", null, null, null, null,
+                "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires.",
+                null, null, null));
+        properties.put("match", new ArraySchema("array", new RefSchema(responseMatch ? "#/$defs/responsePredicate" : "#/$defs/predicate", null, null),
+                "Conditions that must all hold for the rule to fire.", null, 1));
+        properties.put("request", requestDef);
+        properties.put("response", responseDef);
+        final SchemaNode rule = new ObjectSchema(
+                "object",
+                properties,
+                List.of("match"),
+                new BoolProps(false),
+                null, null,
+                List.of(new ObjectSchema(null, null, List.of("request"), null, null, null, null, null, null, null, null),
+                        new ObjectSchema(null, null, List.of("response"), null, null, null, null, null, null, null, null)),
+                null,
+                "When match holds, the directions named here replace the levels resolved so far.",
+                null,
+                null
+        );
+        return new ArraySchema("array", rule, description, null);
     }
 
     private SchemaNode buildFilterDefinition()
@@ -314,14 +356,21 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private SchemaNode buildPredicateDefinition()
+    /**
+     * @param name              the definition's own name, which its {@code not}, {@code and} and {@code or} nest
+     * @param withResponsePredicates whether the predicates of the response are offered: only
+     *                          an {@code on_response} rule can use them, so everywhere else the editor
+     *                          must not suggest or accept them
+     */
+    private SchemaNode buildPredicateDefinition(final String name, final boolean withResponsePredicates)
     {
+        final String ref = "#/$defs/" + name;
         final Map<String, SchemaNode> logicalOperators = new TreeMap<>();
 
-        logicalOperators.put("not", new RefSchema("#/$defs/predicate", null, null));
+        logicalOperators.put("not", new RefSchema(ref, null, null));
 
         // minItems mirrors the load-time refusal of 'and: []' and 'or: []', so the editor flags them too.
-        final SchemaNode arrayRef = new ArraySchema("array", new RefSchema("#/$defs/predicate", null, null), null, null, 1);
+        final SchemaNode arrayRef = new ArraySchema("array", new RefSchema(ref, null, null), null, null, 1);
         logicalOperators.put("or", arrayRef);
         logicalOperators.put("and", arrayRef);
 
@@ -334,7 +383,10 @@ public final class JsonSchemaGenerator
                 sampleDescription.value(), sample.defaultValue(), sample.defaultSnippets()));
 
         final List<SpiEntry> entries = new ArrayList<>(spiEntries(GatewayPredicateFactory.class, GatewayPredicateFactory::name, GatewayPredicateFactory::configClass));
-        entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
+        if (withResponsePredicates)
+        {
+            entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
+        }
 
         // r7 takes leg out before a predicate's own parameters bind, so every predicate has it.
         final SchemaNode leg = new PrimitiveSchema("string", Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,
@@ -455,7 +507,7 @@ public final class JsonSchemaGenerator
             final java.lang.reflect.Type genericType = component.getGenericType();
 
             // Pass genericType into the mapper
-            final SchemaNode propertyNode = mapToSchemaNode(component.getType(), genericType, description, defaultValue, customPattern);
+            final SchemaNode propertyNode = acceptingIntegers(component, mapToSchemaNode(component.getType(), genericType, description, defaultValue, customPattern));
             properties.put(propertyName, propertyNode);
 
             if (isRequired(component))
@@ -474,6 +526,27 @@ public final class JsonSchemaGenerator
     }
 
     // Added genericType to the signature
+    /**
+     * The items of a string list that the loader also takes as integers (a status written as 404
+     * beside 5xx) are the string or an integer in the range, which a plain string items schema
+     * would reject in the editor.
+     */
+    private static SchemaNode acceptingIntegers(final RecordComponent component, final SchemaNode node)
+    {
+        final AcceptsInteger integers = component.getAnnotation(AcceptsInteger.class);
+        if (integers == null || !(node instanceof ArraySchema array))
+        {
+            return node;
+        }
+        final SchemaNode items = new AnyOfSchema(
+                List.of(
+                        new PrimitiveSchema("integer", null, null, null, null, null, null, integers.minimum(), integers.maximum()),
+                        array.items()),
+                null,
+                null);
+        return new ArraySchema(array.type(), items, array.description(), array.defaultValue(), array.minItems());
+    }
+
     private SchemaNode mapToSchemaNode(final Class<?> type, final java.lang.reflect.Type genericType, final String description, final Object defaultValue, final String customPattern)
     {
         final String placeholderRegex = "^\\$\\{.*\\}$";

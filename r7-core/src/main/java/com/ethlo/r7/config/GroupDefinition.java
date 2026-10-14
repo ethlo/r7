@@ -8,8 +8,9 @@ import com.ethlo.r7.validation.ValidationResult;
 
 /**
  * Routes sharing a match, filters and upstream. A group is flattened at load: each of its routes
- * gets the group's match ANDed before its own, the group's filter instances before its own, and
- * each upstream key the route does not name itself.
+ * gets the group's match ANDed before its own, the group's filter instances before its own, each
+ * upstream key and journal level the route does not name itself, and the group's journal rules
+ * after its own.
  *
  * @param match optional: a group without one places no condition of its own
  */
@@ -18,6 +19,7 @@ public record GroupDefinition(
         @Nullable ConditionDefinition match,
         @Nullable List<FilterDefinition> filters,
         @Nullable UpstreamConfig upstream,
+        @Nullable JournalDefinition journal,
         List<RouteDefinition> routes
 ) implements RouteEntry
 {
@@ -42,6 +44,10 @@ public record GroupDefinition(
         if (this.upstream != null)
         {
             this.upstream.validate(result.nested("upstream"));
+        }
+        if (this.journal != null)
+        {
+            this.journal.validate(result.nested("journal"));
         }
 
         if (this.routes == null || this.routes.isEmpty())

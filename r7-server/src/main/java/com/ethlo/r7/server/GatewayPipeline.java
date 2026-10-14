@@ -35,7 +35,6 @@ import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.config.DefaultGatewayRoute;
 import com.ethlo.r7.config.FallbackConfig;
 import com.ethlo.r7.config.HealthCheckConfig;
-import com.ethlo.r7.config.RouteJournalConfig;
 import com.ethlo.r7.config.RouteRegistry;
 import com.ethlo.r7.config.UnroutedDefinition;
 import com.ethlo.r7.config.UpstreamConfig;
@@ -237,14 +236,15 @@ public final class GatewayPipeline
         ex.attributes = new FastGatewayAttributes();
         ex.upstreamRequest = ex.liveRequest;
         ex.upstreamResponse = UnproxiedUpstreamResponse.INSTANCE;
-        final RouteJournalConfig journalConfig = route.journal();
-
         ex.webSocketRequested = "websocket".equalsIgnoreCase(ex.liveRequest.headers().getFirst(UPGRADE));
 
         final Journal rawJournal = journalWriter.getJournal(requestId);
-        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, journalConfig, ex, safeRequestHeaders, safeResponseHeaders, safeQueryParameters, fingerprint);
+        final StatefulJournal statefulJournal = new StatefulJournal(rawJournal, route.journal(), safeRequestHeaders, safeResponseHeaders, safeQueryParameters, fingerprint);
         ex.journal = statefulJournal;
-        setupJournaling(statefulJournal, ex, journalConfig, requestId);
+        // Before any filter: the rules see the request as the client sent it, and the request
+        // level they resolve decides whether its body is captured as it streams.
+        statefulJournal.onRequest(ex, ex.attributes());
+        setupJournaling(statefulJournal, ex, requestId);
     }
 
     /**
@@ -478,6 +478,21 @@ public final class GatewayPipeline
                 headers.set(X_CONTENT_TYPE_OPTIONS, NOSNIFF);
             }
         }
+
+        // The head is final, and no body byte has been written: the last point the response
+        // level can still decide whether the body is captured from its first byte. The rules
+        // are the journal's, so after a fallback they are the route first matched.
+        final StatefulJournal journal = ex.journal;
+        if (journal != null)
+        {
+            journal.onResponse(ex, ex.attributes());
+            // A refused upgrade is an ordinary response whose body can be captured: only a 101 tunnel has none
+            if (journal.responseLevel() == JournalLevel.FULL && !ex.webSocketUpgraded)
+            {
+                final String requestId = ex.requestId();
+                ex.teeResponseBody(buffer -> journal.responseBody(requestId, buffer));
+            }
+        }
     }
 
     private static void shortCircuit(final GatewayFilter reasonFilter, final ServerExchange ex, final DefaultGatewayRoute route)
@@ -547,11 +562,12 @@ public final class GatewayPipeline
      */
     public void completeJournal(final ServerExchange ex)
     {
-        // The journal's own config, not route.journal(): after a fallback the route here is
+        // The journal's own levels, not route.journal(): after a fallback the route here is
         // the fallback route, but the journal was opened, and its client request recorded,
-        // under the route the request first matched.
+        // under the route the request first matched. Resolved by the rules, not the base.
         final StatefulJournal journal = ex.journal;
-        final RouteJournalConfig journalConfig = journal.routeJournalConfig();
+        final JournalLevel requestLevel = journal.requestLevel();
+        final JournalLevel responseLevel = journal.responseLevel();
         final String requestId = ex.requestId();
 
         if (!ex.wasProxied())
@@ -566,14 +582,14 @@ public final class GatewayPipeline
             // No base passed: StatefulJournal tracks what it actually journaled for the client
             // request and hands that to the delegate, which is the only set a difference is
             // meaningful against — redaction and level downgrades included.
-            journal.upstreamRequest(journalConfig.request().level(), requestId, StartLineBuilder.buildRequestLine(ex.upstreamRequest()), ex.upstreamRequest().headers(), null);
+            journal.upstreamRequest(requestLevel, requestId, StartLineBuilder.buildRequestLine(ex.upstreamRequest()), ex.upstreamRequest().headers(), null);
             if (ex.upstreamResponded)
             {
-                journal.upstreamResponse(journalConfig.response().level(), requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers(), ex.upstreamResponseRelayed);
+                journal.upstreamResponse(responseLevel, requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers(), ex.upstreamResponseRelayed);
             }
         }
 
-        journal.clientResponse(journalConfig.response().level(), requestId, ex.clientResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.clientResponse()), ex.clientResponse().headers(), null);
+        journal.clientResponse(responseLevel, requestId, ex.clientResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.clientResponse()), ex.clientResponse().headers(), null);
 
         // The actual outcome, not the client's ask: a request that asked to upgrade and was
         // refused is an ordinary completed exchange and must be journaled here like any other,
@@ -584,7 +600,7 @@ public final class GatewayPipeline
             return;
         }
 
-        if (journalConfig.isAtLeastMetadata(ex.clientResponse().status()))
+        if (journal.isAtLeastMetadata())
         {
             final long requestEndTs = ClockSource.now();
             final long nanoNow = System.nanoTime();
@@ -646,44 +662,41 @@ public final class GatewayPipeline
         }
     }
 
-    private static void setupJournaling(final Journal journal, final ServerExchange ex, final RouteJournalConfig journalConfig, final String requestId)
+    /**
+     * Keeps the client request for the journal, and captures its body if the request level is
+     * {@code FULL}. The response body capture is decided at commit, once {@code on_response}
+     * has run.
+     */
+    private static void setupJournaling(final StatefulJournal journal, final ServerExchange ex, final String requestId)
     {
-        if (journalConfig == null)
-        {
-            return;
-        }
-
-        final boolean hasRequestLogging = journalConfig.request().level() != JournalLevel.NONE || journalConfig.request().statusOverrides() != null;
-        final boolean hasResponseLogging = journalConfig.response().level() != JournalLevel.NONE || journalConfig.response().statusOverrides() != null;
-
-        if (!hasRequestLogging && !hasResponseLogging)
+        // Whatever on_response decides later, it cannot record anything a route's policy
+        // never names.
+        if (!journal.policy().mayJournal())
         {
             return;
         }
 
         final ByteBuffer reqStartLine = StartLineBuilder.buildRequestLine(ex.clientRequest());
-        journal.clientRequest(journalConfig.request().level(), requestId, reqStartLine, ex.clientRequest().headers(), ex.clientRequest().remoteAddress(), ((ImmutableGatewayRequest) ex.clientRequest()).ipSource());
+        journal.clientRequest(journal.requestLevel(), requestId, reqStartLine, ex.clientRequest().headers(), ex.clientRequest().remoteAddress(), ((ImmutableGatewayRequest) ex.clientRequest()).ipSource());
 
-        if (ex.webSocketRequested)
-        {
-            return;
-        }
-
-        if (journalConfig.request().level() == JournalLevel.FULL)
+        // Not gated on the client asking to upgrade: a request with a body is routed as an ordinary
+        // exchange and the relay refuses its 101, and an upgrade r7 tunnels has an empty request body
+        if (journal.requestLevel() == JournalLevel.FULL)
         {
             ex.teeRequestBody(buffer -> journal.requestBody(requestId, buffer));
-        }
-        if (journalConfig.response().level() == JournalLevel.FULL)
-        {
-            ex.teeResponseBody(buffer -> journal.responseBody(requestId, buffer));
         }
     }
 
     private static void attachWebSocketLifecycleTracking(final ServerExchange ex)
     {
-        final Journal journal = ex.journal;
+        final StatefulJournal journal = ex.journal;
         final String requestId = ex.requestId();
         ex.onConnectionClose(() -> {
+            // As completeJournal decides: an end record with nothing before it is an orphan.
+            if (!journal.isAtLeastMetadata())
+            {
+                return;
+            }
             final long requestEndTs = ClockSource.now();
             final long nanoNow = System.nanoTime();
             final long requestStartTs = ServerExchange.toEpochNanos(ex.requestStartNanos(), requestEndTs, nanoNow);
