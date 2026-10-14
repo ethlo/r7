@@ -42,6 +42,8 @@ import com.ethlo.r7.filters.StaticContentFactory;
  *   when no other directory exists;</li>
  *   <li>a directory is served by its welcome file, else 403; one addressed without its trailing
  *   slash is redirected to it;</li>
+ *   <li>a path no directory has is 404, or the route's fallback file (a single-page app's
+ *   index.html) with 200;</li>
  *   <li>every answer carries {@code X-Content-Type-Options: nosniff}: the type is guessed from
  *   the extension, and a browser must not second-guess it.</li>
  * </ul>
@@ -197,10 +199,32 @@ public final class StaticFiles
             // Every directory momentarily missing: a clean 404, never a hang or a 500.
             target.answer(404, UNAVAILABLE.getBytes(StandardCharsets.UTF_8));
         }
+        else if (request.fallback() != null)
+        {
+            serveFallback(target, request, method.equals("HEAD"));
+        }
         else
         {
             target.answer(404, new byte[0]);
         }
+    }
+
+    /**
+     * A path no directory has, answered with the fallback file from the first directory that
+     * has it: a single-page app's index.html, whose routes the browser then handles.
+     */
+    private static void serveFallback(final Target target, final StaticContentFactory.StaticServeRequest request, final boolean headOnly) throws IOException
+    {
+        for (final Path base : request.directories())
+        {
+            final Path file = Files.isDirectory(base) && !isUnlinked(base) ? resolve(base, request.fallback(), request.followSymlinks()) : null;
+            if (file != null && Files.isRegularFile(file))
+            {
+                serveFile(target, file, headOnly);
+                return;
+            }
+        }
+        target.answer(404, new byte[0]);
     }
 
     private static Path welcomeFile(final Path directory, final boolean followSymlinks)

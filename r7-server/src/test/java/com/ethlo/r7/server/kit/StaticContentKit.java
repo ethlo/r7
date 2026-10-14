@@ -70,14 +70,15 @@ public abstract class StaticContentKit
         Files.writeString(routes, """
                 version: static-kit
                 routes:
-                %s%s%s%s%s%s
+                %s%s%s%s%s%s%s
                 """.formatted(
                 route("static", this.site, ""),
                 route("static-hidden", this.site, "serve_hidden_files: true"),
                 route("static-follow", this.site, "follow_symlinks: true"),
                 route("static-swap", this.dir.resolve("swap/current"), ""),
                 filteredRoute(this.site),
-                route("static-layers", this.dir.resolve("layer-gone").toAbsolutePath() + ", " + override.toAbsolutePath() + ", " + this.site.toAbsolutePath(), "")),
+                route("static-layers", this.dir.resolve("layer-gone").toAbsolutePath() + ", " + override.toAbsolutePath() + ", " + this.site.toAbsolutePath(), ""),
+                route("static-app", this.site.resolve("web"), "fallback: index.html")),
                 StandardCharsets.UTF_8);
         final Path server = this.dir.resolve("server.yaml");
         Files.writeString(server, """
@@ -271,6 +272,21 @@ public abstract class StaticContentKit
         // A directory gone at runtime is skipped.
         Files.delete(this.dir.resolve("layer-gone"));
         assertThat(get("/static-layers/test.txt").body()).isEqualTo("override");
+    }
+
+    /**
+     * A single-page app: a path no directory has gets the fallback file with 200, so the
+     * browser's router takes it; files, hidden files and directories answer as without it.
+     */
+    @Test
+    void aPathNoDirectoryHasGetsTheFallbackFile() throws Exception
+    {
+        final HttpResponse<String> route = get("/static-app/orders/42");
+        assertThat(route.statusCode()).isEqualTo(200);
+        assertThat(route.body()).contains("welcome");
+        assertThat(route.headers().firstValue("Content-Type")).get().asString().startsWith("text/html");
+        assertThat(get("/static-app/index.html").statusCode()).isEqualTo(200);
+        assertThat(get("/static-app/.env").statusCode()).isEqualTo(404);
     }
 
     @Test
