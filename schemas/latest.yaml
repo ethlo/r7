@@ -199,6 +199,60 @@ $defs:
             body:
               username: $1
               password: $2
+        JwtAuth:
+          type: object
+          properties:
+            audience:
+              type: string
+              description: "A value the token's 'aud' must contain. Required: an identity provider signs the tokens of all its clients with the same keys, so without it a token issued to any of them would pass."
+            clock_skew_seconds:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Clock skew allowed on 'exp' and 'nbf', in seconds. At most 300: beyond that it stops allowing for unsynchronised clocks and silently extends every token's lifetime."
+              default: 60
+            forward_claims_as_headers:
+              type: object
+              additionalProperties: true
+              description: "Claim name to upstream header name. Each listed claim that is a string is set on the upstream request under that header. Every listed header is removed from the client's own request first, in any spelling a backend could read as it (X_User_Id as well as x-user-id), so a client can never supply one itself."
+            forward_credentials:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether the client's own Authorization header is passed on to the upstream after the token has been verified. Off by default: the token is the gateway's to check, and forwarding it hands every client's credential to the upstream. A header set by another filter, such as InjectBasicAuth, is never removed."
+              default: false
+            issuer:
+              type: string
+              description: The 'iss' a token must carry. A token from any other issuer is refused.
+            jwks_cache_duration:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "How long the fetched keys are cached. Shortly before the cache expires, the next request starts a refresh on a background thread. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+              default: 5m
+            jwks_url:
+              type: string
+              description: "The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/acme/protocol/openid-connect/certs'."
+            username_claim:
+              type: string
+              description: "The claim that holds the caller's readable name, journaled beside the subject. 'sub' is often an opaque id, such as a UUID in Keycloak."
+              default: preferred_username
+          required:
+          - jwks_url
+          - issuer
+          - audience
+          additionalProperties: false
+          description: "Rejects requests that do not present a valid Bearer JWT, verified against a JWKS endpoint."
+          defaultSnippets:
+          - label: Insert JwtAuth
+            description: "Rejects requests that do not present a valid Bearer JWT, verified against a JWKS endpoint."
+            body:
+              jwks_url: $1
+              issuer: $2
+              audience: $3
         RateLimiter:
           type: object
           properties:
