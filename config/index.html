@@ -1363,17 +1363,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#removecacheheaders" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        RemoveCacheHeaders
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1512,17 +1501,6 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         RequireMatchCookie
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#requireauthorizationheader" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        RequireAuthorizationHeader
       </span>
     </span>
   </a>
@@ -3337,9 +3315,6 @@
 </tr>
 </tbody>
 </table>
-<h4 id="removecacheheaders">RemoveCacheHeaders</h4>
-<p>Deletes cache validation headers (<code>If-Modified-Since</code>, <code>If-None-Match</code>) and injects strict no-cache directives (<code>Cache-Control: no-cache</code>, <code>Pragma: no-cache</code>) upstream.
-<em>This filter requires no configuration parameters.</em></p>
 <hr />
 <h3 id="mutation-path-routing">Mutation: Path &amp; Routing</h3>
 <h4 id="strippathprefix">StripPathPrefix</h4>
@@ -3648,9 +3623,6 @@
 </tr>
 </tbody>
 </table>
-<h4 id="requireauthorizationheader">RequireAuthorizationHeader</h4>
-<p>Validates that incoming requests contain an <code>Authorization</code> header starting with either <code>Bearer</code> or <code>Basic</code>. Short-circuits requests with a <code>401 Unauthorized</code> status if the header is missing or invalid.
-<em>This filter requires no configuration parameters.</em></p>
 <h4 id="basicauth">BasicAuth</h4>
 <p>Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with <code>401 Unauthorized</code> and a <code>WWW-Authenticate</code> challenge when they are missing or wrong. On success the authenticated username is recorded in the <code>gateway.auth.basic.user</code> attribute for journaling, as a <a href="../journaling/#redacted-header-and-query-parameter-values">fingerprint</a>, not in plain text.</p>
 <table>
@@ -3928,7 +3900,7 @@
 </tbody>
 </table>
 <h4 id="staticcontent">StaticContent</h4>
-<p>Short-circuits the pipeline to serve static files directly from the disk. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), and static content sets <code>X-Content-Type-Options: nosniff</code> on every answer before response filters run. A directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> and an <code>ETag</code>, answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>. Response filters on the route see that status (<code>304</code>, <code>404</code>, <code>206</code>) and have the last word on its headers, including the ability to replace or remove <code>X-Content-Type-Options</code>.</p>
+<p>Short-circuits the pipeline to serve static files directly from the disk. <strong>Security:</strong> Path traversal attempts (<code>../</code>) are automatically rejected. Only <code>GET</code> and <code>HEAD</code> are served (anything else is <code>405</code>), and static content sets <code>X-Content-Type-Options: nosniff</code> on every answer before response filters run. A directory is served by its welcome file (<code>index.html</code>, <code>index.htm</code>, <code>default.html</code> or <code>default.htm</code>) and is otherwise answered <code>403 Forbidden</code>; there are no directory listings. A directory addressed without its trailing slash is redirected to the path the client sent plus <code>/</code>, whatever filters such as <code>StripPathPrefix</code> did to the path. Files carry <code>Last-Modified</code> and an <code>ETag</code>, answer conditional requests with <code>304</code>, and serve a single byte <code>Range</code>. Response filters on the route see that status (<code>304</code>, <code>404</code>, <code>206</code>) and have the last word on its headers, including the ability to replace or remove <code>X-Content-Type-Options</code>.</p>
 <table>
 <thead>
 <tr>
@@ -3952,16 +3924,10 @@
 <td>Follow symbolic links found under the base directory. The base directory itself may be a symlink either way (e.g. an atomically swapped <code>current</code> release symlink); this is only needed for links inside it.</td>
 </tr>
 <tr>
-<td><code>list_directory</code></td>
-<td>Boolean</td>
-<td>No (default <code>false</code>)</td>
-<td>Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. <code>index.html</code>) is found there. When disabled, such a request is rejected with <code>403 Forbidden</code>.</td>
-</tr>
-<tr>
 <td><code>serve_hidden_files</code></td>
 <td>Boolean</td>
 <td>No (default <code>false</code>)</td>
-<td>Serve files and directories whose name starts with <code>.</code> (e.g. <code>.env</code>, <code>.git/</code>, <code>.htpasswd</code>). When disabled, such a request is answered <code>404 Not Found</code>, and a directory listing, if enabled, leaves their names out; <code>.well-known/</code> is always served.</td>
+<td>Serve files and directories whose name starts with <code>.</code> (e.g. <code>.env</code>, <code>.git/</code>, <code>.htpasswd</code>). When disabled, such a request is answered <code>404 Not Found</code>; <code>.well-known/</code> is always served.</td>
 </tr>
 </tbody>
 </table>
@@ -4256,34 +4222,33 @@
 </span><span id="True-9-71"><a id="__codelineno-9-71" name="__codelineno-9-71" href="#__codelineno-9-71"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-1.internal</span>
 </span><span id="True-9-72"><a id="__codelineno-9-72" name="__codelineno-9-72" href="#__codelineno-9-72"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://admin-2.internal</span>
 </span><span id="True-9-73"><a id="__codelineno-9-73" name="__codelineno-9-73" href="#__codelineno-9-73"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-9-74"><a id="__codelineno-9-74" name="__codelineno-9-74" href="#__codelineno-9-74"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequireAuthorizationHeader</span>
-</span><span id="True-9-75"><a id="__codelineno-9-75" name="__codelineno-9-75" href="#__codelineno-9-75"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
-</span><span id="True-9-76"><a id="__codelineno-9-76" name="__codelineno-9-76" href="#__codelineno-9-76"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-</span><span id="True-9-77"><a id="__codelineno-9-77" name="__codelineno-9-77" href="#__codelineno-9-77"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
-</span><span id="True-9-78"><a id="__codelineno-9-78" name="__codelineno-9-78" href="#__codelineno-9-78"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1s</span>
-</span><span id="True-9-79"><a id="__codelineno-9-79" name="__codelineno-9-79" href="#__codelineno-9-79"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
-</span><span id="True-9-80"><a id="__codelineno-9-80" name="__codelineno-9-80" href="#__codelineno-9-80"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
-</span><span id="True-9-81"><a id="__codelineno-9-81" name="__codelineno-9-81" href="#__codelineno-9-81"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
-</span><span id="True-9-82"><a id="__codelineno-9-82" name="__codelineno-9-82" href="#__codelineno-9-82"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
-</span><span id="True-9-83"><a id="__codelineno-9-83" name="__codelineno-9-83" href="#__codelineno-9-83"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
-</span><span id="True-9-84"><a id="__codelineno-9-84" name="__codelineno-9-84" href="#__codelineno-9-84"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-9-85"><a id="__codelineno-9-85" name="__codelineno-9-85" href="#__codelineno-9-85"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
-</span><span id="True-9-86"><a id="__codelineno-9-86" name="__codelineno-9-86" href="#__codelineno-9-86"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
-</span><span id="True-9-87"><a id="__codelineno-9-87" name="__codelineno-9-87" href="#__codelineno-9-87"></a><span class="w">      </span><span class="nt">on_response</span><span class="p">:</span>
-</span><span id="True-9-88"><a id="__codelineno-9-88" name="__codelineno-9-88" href="#__codelineno-9-88"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">match</span><span class="p">:</span>
-</span><span id="True-9-89"><a id="__codelineno-9-89" name="__codelineno-9-89" href="#__codelineno-9-89"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
-</span><span id="True-9-90"><a id="__codelineno-9-90" name="__codelineno-9-90" href="#__codelineno-9-90"></a><span class="w">                </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5xx</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">401</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">403</span><span class="p p-Indicator">]</span>
-</span><span id="True-9-91"><a id="__codelineno-9-91" name="__codelineno-9-91" href="#__codelineno-9-91"></a><span class="w">          </span><span class="nt">request</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">HEADERS</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="True-9-92"><a id="__codelineno-9-92" name="__codelineno-9-92" href="#__codelineno-9-92"></a>
-</span><span id="True-9-93"><a id="__codelineno-9-93" name="__codelineno-9-93" href="#__codelineno-9-93"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
-</span><span id="True-9-94"><a id="__codelineno-9-94" name="__codelineno-9-94" href="#__codelineno-9-94"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w"> </span><span class="c1"># Empty match blocks are never hit naturally; used only via fallback</span>
-</span><span id="True-9-95"><a id="__codelineno-9-95" name="__codelineno-9-95" href="#__codelineno-9-95"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
-</span><span id="True-9-96"><a id="__codelineno-9-96" name="__codelineno-9-96" href="#__codelineno-9-96"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ReturnResponse</span><span class="p">:</span>
-</span><span id="True-9-97"><a id="__codelineno-9-97" name="__codelineno-9-97" href="#__codelineno-9-97"></a><span class="w">          </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">503</span>
-</span><span id="True-9-98"><a id="__codelineno-9-98" name="__codelineno-9-98" href="#__codelineno-9-98"></a><span class="w">          </span><span class="nt">body</span><span class="p">:</span><span class="w"> </span><span class="s">'{"error":</span><span class="nv"> </span><span class="s">"Admin</span><span class="nv"> </span><span class="s">services</span><span class="nv"> </span><span class="s">currently</span><span class="nv"> </span><span class="s">offline"}'</span>
-</span><span id="True-9-99"><a id="__codelineno-9-99" name="__codelineno-9-99" href="#__codelineno-9-99"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
-</span><span id="True-9-100"><a id="__codelineno-9-100" name="__codelineno-9-100" href="#__codelineno-9-100"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Content-Type</span>
-</span><span id="True-9-101"><a id="__codelineno-9-101" name="__codelineno-9-101" href="#__codelineno-9-101"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">application/json</span>
+</span><span id="True-9-74"><a id="__codelineno-9-74" name="__codelineno-9-74" href="#__codelineno-9-74"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">RateLimiter</span><span class="p">:</span>
+</span><span id="True-9-75"><a id="__codelineno-9-75" name="__codelineno-9-75" href="#__codelineno-9-75"></a><span class="w">          </span><span class="nt">capacity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="True-9-76"><a id="__codelineno-9-76" name="__codelineno-9-76" href="#__codelineno-9-76"></a><span class="w">          </span><span class="nt">refill_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="True-9-77"><a id="__codelineno-9-77" name="__codelineno-9-77" href="#__codelineno-9-77"></a><span class="w">          </span><span class="nt">refill_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1s</span>
+</span><span id="True-9-78"><a id="__codelineno-9-78" name="__codelineno-9-78" href="#__codelineno-9-78"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CircuitBreaker</span><span class="p">:</span>
+</span><span id="True-9-79"><a id="__codelineno-9-79" name="__codelineno-9-79" href="#__codelineno-9-79"></a><span class="w">          </span><span class="nt">failure_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="True-9-80"><a id="__codelineno-9-80" name="__codelineno-9-80" href="#__codelineno-9-80"></a><span class="w">          </span><span class="nt">cooldown_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
+</span><span id="True-9-81"><a id="__codelineno-9-81" name="__codelineno-9-81" href="#__codelineno-9-81"></a><span class="w">    </span><span class="nt">journal</span><span class="p">:</span>
+</span><span id="True-9-82"><a id="__codelineno-9-82" name="__codelineno-9-82" href="#__codelineno-9-82"></a><span class="w">      </span><span class="nt">request</span><span class="p">:</span>
+</span><span id="True-9-83"><a id="__codelineno-9-83" name="__codelineno-9-83" href="#__codelineno-9-83"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-9-84"><a id="__codelineno-9-84" name="__codelineno-9-84" href="#__codelineno-9-84"></a><span class="w">      </span><span class="nt">response</span><span class="p">:</span>
+</span><span id="True-9-85"><a id="__codelineno-9-85" name="__codelineno-9-85" href="#__codelineno-9-85"></a><span class="w">        </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">METADATA</span>
+</span><span id="True-9-86"><a id="__codelineno-9-86" name="__codelineno-9-86" href="#__codelineno-9-86"></a><span class="w">      </span><span class="nt">on_response</span><span class="p">:</span>
+</span><span id="True-9-87"><a id="__codelineno-9-87" name="__codelineno-9-87" href="#__codelineno-9-87"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">match</span><span class="p">:</span>
+</span><span id="True-9-88"><a id="__codelineno-9-88" name="__codelineno-9-88" href="#__codelineno-9-88"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Status</span><span class="p">:</span>
+</span><span id="True-9-89"><a id="__codelineno-9-89" name="__codelineno-9-89" href="#__codelineno-9-89"></a><span class="w">                </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">5xx</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">401</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">403</span><span class="p p-Indicator">]</span>
+</span><span id="True-9-90"><a id="__codelineno-9-90" name="__codelineno-9-90" href="#__codelineno-9-90"></a><span class="w">          </span><span class="nt">request</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> level</span><span class="p">:</span><span class="w"> </span><span class="nv">HEADERS</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="True-9-91"><a id="__codelineno-9-91" name="__codelineno-9-91" href="#__codelineno-9-91"></a>
+</span><span id="True-9-92"><a id="__codelineno-9-92" name="__codelineno-9-92" href="#__codelineno-9-92"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fallback-stub</span>
+</span><span id="True-9-93"><a id="__codelineno-9-93" name="__codelineno-9-93" href="#__codelineno-9-93"></a><span class="w">    </span><span class="nt">match</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w"> </span><span class="c1"># Empty match blocks are never hit naturally; used only via fallback</span>
+</span><span id="True-9-94"><a id="__codelineno-9-94" name="__codelineno-9-94" href="#__codelineno-9-94"></a><span class="w">    </span><span class="nt">filters</span><span class="p">:</span>
+</span><span id="True-9-95"><a id="__codelineno-9-95" name="__codelineno-9-95" href="#__codelineno-9-95"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">ReturnResponse</span><span class="p">:</span>
+</span><span id="True-9-96"><a id="__codelineno-9-96" name="__codelineno-9-96" href="#__codelineno-9-96"></a><span class="w">          </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">503</span>
+</span><span id="True-9-97"><a id="__codelineno-9-97" name="__codelineno-9-97" href="#__codelineno-9-97"></a><span class="w">          </span><span class="nt">body</span><span class="p">:</span><span class="w"> </span><span class="s">'{"error":</span><span class="nv"> </span><span class="s">"Admin</span><span class="nv"> </span><span class="s">services</span><span class="nv"> </span><span class="s">currently</span><span class="nv"> </span><span class="s">offline"}'</span>
+</span><span id="True-9-98"><a id="__codelineno-9-98" name="__codelineno-9-98" href="#__codelineno-9-98"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SetResponseHeader</span><span class="p">:</span>
+</span><span id="True-9-99"><a id="__codelineno-9-99" name="__codelineno-9-99" href="#__codelineno-9-99"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Content-Type</span>
+</span><span id="True-9-100"><a id="__codelineno-9-100" name="__codelineno-9-100" href="#__codelineno-9-100"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">application/json</span>
 </span></code></pre></div>
 <hr />
 <h2 id="9-server-configuration">9. Server Configuration</h2>

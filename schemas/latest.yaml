@@ -728,13 +728,6 @@ $defs:
                 pattern: "^\\$\\{.*\\}$"
               description: "Whether to follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped 'current' release symlink)."
               default: false
-            list_directory:
-              anyOf:
-              - type: boolean
-              - type: string
-                pattern: "^\\$\\{.*\\}$"
-              description: "Whether to render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. index.html) is found there. Disabled by default, in which case such a request is rejected with 403 Forbidden."
-              default: false
             serve_hidden_files:
               anyOf:
               - type: boolean
@@ -799,10 +792,6 @@ $defs:
       additionalProperties: true
       minProperties: 1
       maxProperties: 1
-    - type: string
-      enum:
-      - RemoveCacheHeaders
-      - RequireAuthorizationHeader
     - type: string
       description: Custom SPI implementation
   group:
