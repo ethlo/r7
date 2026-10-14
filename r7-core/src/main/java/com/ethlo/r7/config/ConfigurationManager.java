@@ -249,8 +249,8 @@ public final class ConfigurationManager
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
         // A filter is one instance for everything beneath where it is declared: the root's once,
         // a group's once, and the same instances are then put in front of every route below. A
-        // RateLimiter or CircuitBreaker declared there must see every request against one shared
-        // bucket/state, not a fresh instance - and its private cache - per route it is wired onto.
+        // RateLimiter declared there must see every request against one shared set of buckets,
+        // not a fresh instance - and its private cache - per route it is wired onto.
         final List<GatewayFilter> rootFilters = new ArrayList<>();
         for (final FilterDefinition filterDef : config.filters())
         {
