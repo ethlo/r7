@@ -6,17 +6,20 @@ import com.ethlo.r7.journal.api.JournalLevel;
 
 /**
  * A route's journal policy: its base levels as inherited, and every rule that applies to it, in
- * the order checked.
+ * the order checked. A body cap is {@code null} when none applies.
  */
-public record JournalDto(JournalLevel requestLevel, JournalLevel responseLevel, List<Rule> rules)
+public record JournalDto(JournalLevel requestLevel, JournalLevel responseLevel, Long requestTruncateBodyAt, Long responseTruncateBodyAt, List<Rule> rules)
 {
     /**
-     * @param stage    {@code on_request} or {@code on_response}
-     * @param label    the rule's id, else its path
-     * @param request  the request level it sets, or {@code null}
-     * @param response the response level it sets, or {@code null}
+     * @param stage                  {@code on_request} or {@code on_response}
+     * @param label                  the rule's id, else its path
+     * @param request                the request level it sets, or {@code null}
+     * @param response               the response level it sets, or {@code null}
+     * @param requestTruncateBodyAt  the request body cap in bytes it sets, or {@code null}
+     * @param responseTruncateBodyAt the response body cap in bytes it sets, or {@code null}
      */
-    public record Rule(String stage, String label, String path, JournalLevel request, JournalLevel response)
+    public record Rule(String stage, String label, String path, JournalLevel request, JournalLevel response,
+                       Long requestTruncateBodyAt, Long responseTruncateBodyAt)
     {
     }
 }

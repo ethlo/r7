@@ -133,7 +133,7 @@ class JournalConcurrentWriteTest
             journal.endExchange(id, new FastGatewayAttributes(), 1_000L, 2_000L, 200,
                     64, requestBody.capacity(), 32, responseBody.capacity(),
                     1_100L, 1_500L, 1_900L,
-                    BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
         }
     }
 

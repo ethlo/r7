@@ -158,7 +158,7 @@ public class ExchangeReassembler implements JournalEventListener
                       int status,
                       long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                       long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
-                      final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+                      final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated)
     {
         // A refused delivery is retried whole, so an exchange held for redelivery answers
         // first: it is this exchange, fully assembled, and the copy in the map (if a later
@@ -191,6 +191,7 @@ public class ExchangeReassembler implements JournalEventListener
         exchange.setAttributes(copyOf(attributes));
         exchange.setStatus(status);
         exchange.setJournalChecksums(requestChecksum, responseChecksum);
+        exchange.setBodyTruncated(requestBodyTruncated, responseBodyTruncated);
 
         try
         {

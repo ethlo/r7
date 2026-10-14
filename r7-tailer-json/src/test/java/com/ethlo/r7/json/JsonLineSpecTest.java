@@ -87,6 +87,8 @@ class JsonLineSpecTest
         exchange.setStatus(201);
         // Neither matches the body read back, so observed_checksum is written too.
         exchange.setJournalChecksums(BodyChecksum.ofUnsigned32(7), BodyChecksum.ofUnsigned32(8));
+        // Both bodies capped, so body_truncated is written on both client legs.
+        exchange.setBodyTruncated(true, true);
 
         final FastGatewayAttributes attributes = new FastGatewayAttributes();
         attributes.add(JsonLinesWriter.ROUTE_ID_ATTRIBUTE, "items");

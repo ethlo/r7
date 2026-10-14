@@ -1,0 +1,15 @@
+version: journal-truncate-test
+
+# Bodies capped at 16 bytes in the journal; the traffic streams whole.
+journal:
+  request: { level: FULL, truncate_body_at: 16B }
+  response: { level: FULL, truncate_body_at: 16B }
+
+routes:
+  - id: capped
+    match:
+      - PathPrefix:
+          prefix: /capped
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

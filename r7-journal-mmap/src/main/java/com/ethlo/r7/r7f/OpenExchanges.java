@@ -298,13 +298,13 @@ final class OpenExchanges implements JournalEventListener, JournalDecoder.EntryO
                       final int status,
                       final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes,
                       final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs,
-                      final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+                      final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated)
     {
         if (accept(reqId))
         {
             target.onEnd(reqId, attributes, clientStartTs, clientEndTs, status,
                     requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes,
-                    proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, requestChecksum, responseChecksum);
+                    proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, requestChecksum, responseChecksum, requestBodyTruncated, responseBodyTruncated);
         }
     }
 }

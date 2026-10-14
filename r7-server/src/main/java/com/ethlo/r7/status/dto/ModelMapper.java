@@ -32,9 +32,9 @@ public class ModelMapper
 
         final JournalPolicy policy = route.journal();
         final List<JournalDto.Rule> rules = new ArrayList<>();
-        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response())));
-        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response())));
-        final JournalDto journal = new JournalDto(policy.request(), policy.response(), rules);
+        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()))));
+        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()))));
+        final JournalDto journal = new JournalDto(policy.request(), policy.response(), cap(policy.requestTruncateAt()), cap(policy.responseTruncateAt()), rules);
 
         final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
                 .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders, safeResponseHeaders)))
@@ -51,6 +51,11 @@ public class ModelMapper
                 filters,
                 PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), upstreamStatus, route.filters().toArray(new GatewayFilter[0]), route::filterLevel)
         );
+    }
+
+    private static Long cap(final long truncateAt)
+    {
+        return truncateAt == JournalPolicy.NO_CAP ? null : truncateAt;
     }
 
     private static UpstreamDto toUpstream(final UpstreamConfig upstream)

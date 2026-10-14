@@ -48,6 +48,8 @@ public final class JournalExchange
     private GatewayAttributes attributes;
     private BodyChecksum journaledRequestChecksum = BodyChecksum.NOT_RECORDED;
     private BodyChecksum journaledResponseChecksum = BodyChecksum.NOT_RECORDED;
+    private boolean requestBodyTruncated;
+    private boolean responseBodyTruncated;
     private long clientStartTs;
     private long clientEndTs;
     private long proxyStartTs;
@@ -190,6 +192,34 @@ public final class JournalExchange
     {
         this.journaledRequestChecksum = requestChecksum;
         this.journaledResponseChecksum = responseChecksum;
+    }
+
+    /**
+     * @param requestBodyTruncated  the journal kept only the first {@code truncate_body_at}
+     *                              bytes of the request body
+     * @param responseBodyTruncated as above, for the response body
+     */
+    public void setBodyTruncated(final boolean requestBodyTruncated, final boolean responseBodyTruncated)
+    {
+        this.requestBodyTruncated = requestBodyTruncated;
+        this.responseBodyTruncated = responseBodyTruncated;
+    }
+
+    /**
+     * True when the request body fragments are only its first {@code truncate_body_at} bytes:
+     * the body was longer, and the rest was not journaled.
+     */
+    public boolean isRequestBodyTruncated()
+    {
+        return requestBodyTruncated;
+    }
+
+    /**
+     * True when the response body fragments are only its first {@code truncate_body_at} bytes.
+     */
+    public boolean isResponseBodyTruncated()
+    {
+        return responseBodyTruncated;
     }
 
     public String getRequestId()

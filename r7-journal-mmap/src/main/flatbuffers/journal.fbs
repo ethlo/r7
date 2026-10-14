@@ -129,6 +129,13 @@ table EndExchange {
   response_header_bytes: long;
   response_body_bytes: long;
   attributes: [Header];
+  /// True when the journal kept only the first truncate_body_at bytes of that body: the body
+  /// was longer, and the rest streamed to the upstream or the client without being journaled.
+  /// The checksum covers the journaled prefix. Absent means false. Appended, so readers built
+  /// before these fields ignore them; a tailer cannot tell a capped body from an exchange that
+  /// ended early by comparing byte counts, so the writer states it.
+  request_body_truncated: bool;
+  response_body_truncated: bool;
 }
 
 union EventPayload {

@@ -27,14 +27,14 @@ class UnroutedDefinitionTest
     private static JournalDefinition levels(final JournalLevel request, final JournalLevel response)
     {
         return new JournalDefinition(
-                request != null ? new JournalDirectionDefinition(request) : null,
-                response != null ? new JournalDirectionDefinition(response) : null,
+                request != null ? new JournalDirectionDefinition(request, null) : null,
+                response != null ? new JournalDirectionDefinition(response, null) : null,
                 null, null);
     }
 
     private static JournalRuleDefinition rule()
     {
-        return new JournalRuleDefinition(null, null, new JournalDirectionDefinition(JournalLevel.HEADERS), null);
+        return new JournalRuleDefinition(null, null, new JournalDirectionDefinition(JournalLevel.HEADERS, null), null);
     }
 
     @Test

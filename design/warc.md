@@ -118,8 +118,10 @@ Reuse `ValidatableConfig` / `ValidationResult`. Do not invent a mechanism.
   production is worse than a refusal at boot.
 - **Naming mirrors the journal**: shard, sequence, created, time bounds appended on seal.
   Sequence is the identity; timestamps are decoration. Wall clock still steps.
-- **A body cap**, with `WARC-Truncated: length` when it bites. This is also where the
-  data-governance policy lives — a cap is auditable, "we mostly don't log big things" is not.
+- **A body cap**, with `WARC-Truncated: length` when it bites. The cap is the gateway's
+  `truncate_body_at`, set per direction in the route's journal policy, so it is auditable in
+  the config — "we mostly don't log big things" is not. The gateway flags a capped body in
+  `EndExchange` and the record holds the prefix it journaled; the tailer only reports it.
 - **Record shape: four records per proxied exchange**, three when no upstream answered, linked
   by `WARC-Concurrent-To`. See below.
 

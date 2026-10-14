@@ -274,7 +274,7 @@ public final class JsonSchemaGenerator
                 null, null, null
         );
 
-        final SchemaNode levelDef = directionSchema(levelSchema);
+        final SchemaNode levelDef = directionSchema(levelSchema, true);
 
         // A request body has streamed by the time on_response runs, so FULL cannot be set there
         final List<String> belowFull = levels.stream().filter(level -> !"FULL".equals(level)).toList();
@@ -284,7 +284,7 @@ public final class JsonSchemaGenerator
                 null, null, null,
                 "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed.",
                 null, null, null
-        ));
+        ), false);
 
         final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("request", levelDef, "response", levelDef));
         if (withRules)
@@ -307,11 +307,25 @@ public final class JsonSchemaGenerator
         );
     }
 
-    private static SchemaNode directionSchema(final SchemaNode levelSchema)
+    /**
+     * @param withCap whether {@code truncate_body_at} is accepted: not for the request in
+     *                {@code on_response}, whose body has already streamed
+     */
+    private static SchemaNode directionSchema(final SchemaNode levelSchema, final boolean withCap)
     {
+        final Map<String, SchemaNode> properties = new TreeMap<>(Map.of("level", levelSchema));
+        if (withCap)
+        {
+            final String hint = "Format: <number><unit> (e.g., 10KB, 200MB) or a placeholder ${...}";
+            properties.put("truncate_body_at", new PrimitiveSchema(
+                    "string", null, null, "^(?:[0-9]+\\s*(B|KB|MB|GB|TB|b|kb|mb|gb|tb)|\\$\\{.*\\})$",
+                    Map.of("pattern", hint),
+                    "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (" + hint + ")",
+                    null, null, null));
+        }
         return new ObjectSchema(
                 "object",
-                new TreeMap<>(Map.of("level", levelSchema)),
+                properties,
                 null,
                 new BoolProps(false),
                 1, null, null, null,

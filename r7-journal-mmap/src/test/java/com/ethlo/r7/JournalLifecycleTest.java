@@ -85,7 +85,7 @@ class JournalLifecycleTest
                     clientStart, clientEnd, 201,
                     111L, requestBody.length, 222L, responseBody.length,
                     proxyStart, proxyFirstByte, proxyEnd,
-                    crc32c(requestBody), crc32c(responseBody));
+                    crc32c(requestBody), crc32c(responseBody), false, false);
         }
 
         final CollectingSink sink = tail();
@@ -146,7 +146,7 @@ class JournalLifecycleTest
             // One direction recorded, one not — the whole point of the type, in one record.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 204, 0L, requestBody.length, 0L, 0L, 0L, 0L, 0L,
-                    crc32c(requestBody), BodyChecksum.NOT_RECORDED);
+                    crc32c(requestBody), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final CollectingSink sink = tail();
@@ -523,7 +523,7 @@ class JournalLifecycleTest
                 1_700_000_000_000L, 1_700_000_000_123L, status,
                 0L, 0L, 0L, 0L,
                 0L, 0L, 0L,
-                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
     }
 
     private List<Path> sealedSegments() throws IOException

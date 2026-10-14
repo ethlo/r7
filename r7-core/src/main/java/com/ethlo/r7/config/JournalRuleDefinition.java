@@ -15,9 +15,9 @@ public record JournalRuleDefinition(
         @Nullable String id,
         @Description("Predicates, as for a route's match: a list is AND, and/or/not nest.")
         ConditionDefinition match,
-        @Description("The request keys to use when the rule matches.")
+        @Description("The request keys to use when the rule matches: level, truncate_body_at, or both.")
         @Nullable JournalDirectionDefinition request,
-        @Description("The response keys to use when the rule matches.")
+        @Description("The response keys to use when the rule matches: level, truncate_body_at, or both.")
         @Nullable JournalDirectionDefinition response
 )
 {
@@ -52,6 +52,10 @@ public record JournalRuleDefinition(
             if (onResponse && this.request.level() == JournalLevel.FULL)
             {
                 result.addError("request", "FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.");
+            }
+            if (onResponse && this.request.truncateBodyAt() != null)
+            {
+                result.nested("request").addError("truncate_body_at", "the request body has already streamed; set it in on_request or as the base.");
             }
         }
         if (this.response != null)

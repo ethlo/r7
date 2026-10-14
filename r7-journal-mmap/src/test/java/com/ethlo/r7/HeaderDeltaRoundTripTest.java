@@ -126,7 +126,7 @@ class HeaderDeltaRoundTripTest
                     journal.clientResponse(JournalLevel.HEADERS, id, 200, responseLine.rewind(), clientResponse, upstreamResponse);
                     journal.endExchange(id, new FastGatewayAttributes(), 1L, 2L, 200,
                             0, 0, 0, 0, 1L, 1L, 2L,
-                            BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                            BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
                 }
             }
 

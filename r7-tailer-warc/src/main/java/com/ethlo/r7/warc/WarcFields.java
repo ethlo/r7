@@ -71,6 +71,26 @@ final class WarcFields
     }
 
     /**
+     * A {@code request} or {@code response} record holding only the first
+     * {@code truncate_body_at} bytes of its body: the journal stopped there by configuration,
+     * and the rest crossed the wire without being kept. {@code WARC-Truncated: length} is the
+     * WARC 1.1 reason for a record cut short at a configured size, and the payload digest is of
+     * the prefix the record holds.
+     */
+    static List<Map.Entry<String, String>> truncated(final String msgType, final String warcDate, final String targetUri,
+                                                      final List<String> concurrentToIds, final String requestId,
+                                                      final String payloadDigest)
+    {
+        final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
+        fields.add(entry("WARC-Truncated", "length"));
+        if (payloadDigest != null)
+        {
+            fields.add(entry("WARC-Payload-Digest", payloadDigest));
+        }
+        return fields;
+    }
+
+    /**
      * A {@code request} or {@code response} record for a leg whose payload is not stored here
      * because it is byte-identical to, and already stored in, another record of the same
      * four-record group — see {@code design/warc.md}: the gateway journal itself only ever

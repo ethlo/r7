@@ -133,6 +133,32 @@ the [`storage` block](config.md#storage-journaling-storage). Requests refused be
 matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
 [Unrouted Requests](config.md#unrouted-requests-routesyaml-unrouted).
 
+### Capping bodies
+
+At `FULL` the journal keeps every body whole unless told otherwise. Request bodies are bounded
+by `limits.max_entity_size`; response bodies by nothing, so a route that serves a 2 GB download
+writes 2 GB to the journal, and a tailer holds every fragment of an exchange in its heap until
+the exchange ends. `truncate_body_at` on a direction keeps the body's first bytes instead; the
+traffic itself streams whole:
+
+```yaml
+journal:
+  request:  { level: METADATA, truncate_body_at: 64KB }
+  response: { level: METADATA, truncate_body_at: 64KB }
+  on_response:
+    - id: failures
+      match:
+        - Status:
+            include: [5xx]
+      response: { level: FULL }      # the first 64KB of each failure's body
+```
+
+A capped body is marked in the record: the end record carries a truncation flag per direction,
+the body's checksum covers the prefix that was kept, the JSON line adds `body_truncated: true` to
+the leg, and the WARC record says `WARC-Truncated: length` with the digest of the prefix. A body
+exactly `truncate_body_at` long is kept whole and not flagged. How the cap is inherited and
+which rules may set it is in [Configuration §7](config.md#body-cap-truncate_body_at).
+
 Route ids and upstream target URLs are recorded in every exchange's journal attributes
 (`gateway.route.id`, `gateway.target`; the JSON line has them as `route_id` and
 `upstream_request.targets`), and the journal stores ISO-8859-1 text only. A route declared in
@@ -379,9 +405,10 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `targets` | array of strings | `upstream_request` | With an end event: the upstream URLs tried, in order. When the last one answered, its response is the one in `upstream_response`; when none did, `upstream_response` has no status line and `client_response` holds r7's own `502`, `503` or `504` |
 | `headers` | object of string arrays | all | At `HEADERS` and `FULL`, when there are any |
 | `header_bytes` | number | client legs | With an end event: bytes of the head on the wire |
-| `body_bytes` | number | client legs | With an end event: bytes of the body |
+| `body_bytes` | number | client legs | With an end event: bytes of the body on the wire, whether or not it was capped |
+| `body_truncated` | boolean | client legs | Only when the journal kept just the body's first [`truncate_body_at`](#capping-bodies) bytes: `body` and `checksum` cover that prefix |
 | `body` | string | client legs | With `bodies: true`, at `FULL`, when there is a body and no WARC record stores it: base64 |
-| `checksum` | string | client legs | At `FULL`, when there is a body: the CRC32C the gateway recorded, as `crc32c:` and eight hex digits |
+| `checksum` | string | client legs | At `FULL`, when there is a body: the CRC32C the gateway recorded over the bytes it journaled, as `crc32c:` and eight hex digits |
 | `observed_checksum` | string | client legs | Only when the body read back does not match `checksum` |
 | `start` | timestamp | `upstream_response` | With an end event: when the request to the upstream started |
 | `first_byte` | timestamp | `upstream_response` | With an end event, when the upstream answered: when its response head had been read |

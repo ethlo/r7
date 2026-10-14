@@ -507,7 +507,7 @@ final class JournalHeaderPipelineBenchmarkTest
             stateful.endExchange(requestId, attributes, 1_000L, 2_000L, 200,
                     512, scenario.bodyBytes(), 128, scenario.bodyBytes(),
                     1_100L, 1_500L, 1_900L,
-                    BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
 
             return stateful.getBytesWritten();
         }

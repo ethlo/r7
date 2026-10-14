@@ -28,6 +28,15 @@ public final class StatefulJournal implements Journal
      */
     public static final String RULE_ERROR_KEY = "gateway.journal.rule_error";
 
+    /**
+     * The direction keys a rule may decide, as bits: each is resolved on its own.
+     */
+    private static final int REQUEST_LEVEL = 1;
+    private static final int RESPONSE_LEVEL = 2;
+    private static final int REQUEST_CAP = 4;
+    private static final int RESPONSE_CAP = 8;
+    private static final int ALL_KEYS = REQUEST_LEVEL | RESPONSE_LEVEL | REQUEST_CAP | RESPONSE_CAP;
+
     private final Journal delegate;
     private final JournalPolicy policy;
     private final HeaderNameSet safeRequestHeaders;
@@ -71,6 +80,20 @@ public final class StatefulJournal implements Journal
      */
     private JournalLevel requestLevel;
     private JournalLevel responseLevel;
+    /**
+     * The body caps resolved the same way, in bytes, or {@link JournalPolicy#NO_CAP}. Only the
+     * body the journal keeps is capped: the traffic streams whole whatever these say.
+     */
+    private long requestTruncateAt;
+    private long responseTruncateAt;
+    private long requestBodyJournaled;
+    private long responseBodyJournaled;
+    /**
+     * Set once a byte past the cap was offered, not when the cap is reached: a body exactly
+     * at the cap was journaled whole.
+     */
+    private boolean requestBodyTruncated;
+    private boolean responseBodyTruncated;
     private String requestId;
     private boolean clientReqFlushed = false;
     private boolean upstreamReqFlushed = false;
@@ -113,6 +136,22 @@ public final class StatefulJournal implements Journal
     }
 
     /**
+     * @return the request body cap resolved so far, in bytes, or {@link JournalPolicy#NO_CAP}
+     */
+    public long requestTruncateAt()
+    {
+        return this.requestTruncateAt;
+    }
+
+    /**
+     * @return the response body cap resolved so far, in bytes, or {@link JournalPolicy#NO_CAP}
+     */
+    public long responseTruncateAt()
+    {
+        return this.responseTruncateAt;
+    }
+
+    /**
      * Applies the {@code on_request} rules over the base levels. Once the route is chosen, before
      * its filters run and before the request body streams.
      */
@@ -131,18 +170,18 @@ public final class StatefulJournal implements Journal
     }
 
     /**
-     * Per key, the first matching rule naming it wins. A rule is only evaluated while it could
-     * still decide a key, so evaluation stops once both are decided.
+     * Per key, the first matching rule naming it wins. The four keys (each direction's level
+     * and body cap) are resolved independently, so a rule that names only one never hides an
+     * outer rule's other. A rule is only evaluated while it could still decide a key, so
+     * evaluation stops once all are decided.
      */
     private void apply(final JournalRule[] rules, final ConditionInput input, final MutableGatewayAttributes attributes)
     {
-        boolean requestDecided = false;
-        boolean responseDecided = false;
+        int decided = 0;
         for (final JournalRule rule : rules)
         {
-            final boolean decidesRequest = !requestDecided && rule.request() != null;
-            final boolean decidesResponse = !responseDecided && rule.response() != null;
-            if (!decidesRequest && !decidesResponse)
+            final int decides = keysOf(rule) & ~decided;
+            if (decides == 0)
             {
                 continue;
             }
@@ -155,22 +194,51 @@ public final class StatefulJournal implements Journal
             {
                 continue;
             }
-            if (decidesRequest)
+            if ((decides & REQUEST_LEVEL) != 0)
             {
                 this.requestLevel = rule.request();
-                requestDecided = true;
             }
-            if (decidesResponse)
+            if ((decides & RESPONSE_LEVEL) != 0)
             {
                 this.responseLevel = rule.response();
-                responseDecided = true;
             }
+            if ((decides & REQUEST_CAP) != 0)
+            {
+                this.requestTruncateAt = rule.requestTruncateAt();
+            }
+            if ((decides & RESPONSE_CAP) != 0)
+            {
+                this.responseTruncateAt = rule.responseTruncateAt();
+            }
+            decided |= decides;
             attributes.add(RULE_KEY, rule.label());
-            if (requestDecided && responseDecided)
+            if (decided == ALL_KEYS)
             {
                 return;
             }
         }
+    }
+
+    private static int keysOf(final JournalRule rule)
+    {
+        int keys = 0;
+        if (rule.request() != null)
+        {
+            keys |= REQUEST_LEVEL;
+        }
+        if (rule.response() != null)
+        {
+            keys |= RESPONSE_LEVEL;
+        }
+        if (rule.requestTruncateAt() != JournalPolicy.NO_CAP)
+        {
+            keys |= REQUEST_CAP;
+        }
+        if (rule.responseTruncateAt() != JournalPolicy.NO_CAP)
+        {
+            keys |= RESPONSE_CAP;
+        }
+        return keys;
     }
 
     /**
@@ -199,6 +267,8 @@ public final class StatefulJournal implements Journal
         this.policy = policy;
         this.requestLevel = policy.request();
         this.responseLevel = policy.response();
+        this.requestTruncateAt = policy.requestTruncateAt();
+        this.responseTruncateAt = policy.responseTruncateAt();
         this.safeRequestHeaders = safeRequestHeaders;
         this.safeResponseHeaders = safeResponseHeaders;
     }
@@ -267,15 +337,27 @@ public final class StatefulJournal implements Journal
             //
             // A FULL request level is final once on_request has run: validation refuses an
             // on_response rule that names the request whenever it can be FULL, since a
-            // journaled body cannot be un-written.
+            // journaled body cannot be un-written. So is the request cap: on_response may not
+            // name it.
             final int anchored = checkAndFlushRequest();
 
+            final ByteBuffer kept = capped(data, this.requestTruncateAt, this.requestBodyJournaled);
+            if (kept == null)
+            {
+                this.requestBodyTruncated = true;
+                return anchored;
+            }
+            if (kept != data)
+            {
+                this.requestBodyTruncated = true;
+            }
             if (requestChecksum == null)
             {
                 requestChecksum = new CRC32C();
             }
-            requestChecksum.update(data.duplicate());
-            final int bodyBytes = delegate.requestBody(reqId, data);
+            requestChecksum.update(kept.duplicate());
+            this.requestBodyJournaled += kept.remaining();
+            final int bodyBytes = delegate.requestBody(reqId, kept);
             this.bytesWritten += bodyBytes;
             return anchored + bodyBytes;
         }
@@ -293,15 +375,26 @@ public final class StatefulJournal implements Journal
             // fragment of a "request HEADERS, response FULL" route reached the reader ahead of
             // any event for its request id, was discarded as an orphan, and the end event then
             // reported a checksum mismatch against a body nobody kept. A response body is teed
-            // only after on_response has run, so the levels here are final.
+            // only after on_response has run, so the levels and the cap here are final.
             final int anchored = checkAndFlushRequest();
 
+            final ByteBuffer kept = capped(data, this.responseTruncateAt, this.responseBodyJournaled);
+            if (kept == null)
+            {
+                this.responseBodyTruncated = true;
+                return anchored;
+            }
+            if (kept != data)
+            {
+                this.responseBodyTruncated = true;
+            }
             if (responseChecksum == null)
             {
                 responseChecksum = new CRC32C();
             }
-            responseChecksum.update(data.duplicate());
-            final int written = delegate.responseBody(reqId, data);
+            responseChecksum.update(kept.duplicate());
+            this.responseBodyJournaled += kept.remaining();
+            final int written = delegate.responseBody(reqId, kept);
             this.bytesWritten += written;
             return anchored + written;
         }
@@ -309,7 +402,31 @@ public final class StatefulJournal implements Journal
     }
 
     /**
-     * The two checksum arguments are deliberately <em>not</em> forwarded.
+     * The part of a body fragment the journal keeps under a cap: the fragment itself when it fits
+     * whole, a view of its head when the cap falls inside it, or {@code null} when the cap was
+     * already reached and the fragment has a byte to drop. The caller's buffer is not moved: it
+     * is the one being sent on.
+     */
+    private static ByteBuffer capped(final ByteBuffer data, final long truncateAt, final long journaled)
+    {
+        if (truncateAt == JournalPolicy.NO_CAP || journaled + data.remaining() <= truncateAt)
+        {
+            return data;
+        }
+        final long room = truncateAt - journaled;
+        if (room <= 0)
+        {
+            return data.hasRemaining() ? null : data;
+        }
+        final ByteBuffer head = data.duplicate();
+        head.limit(head.position() + (int) room);
+        return head;
+    }
+
+    /**
+     * The two checksum arguments, and the two truncation flags, are deliberately <em>not</em>
+     * forwarded: this class decides which body bytes the journal keeps, so it alone knows
+     * whether it stopped short.
      * <p>
      * This class decides what actually reaches the delegate — it gates every body fragment
      * on the effective journal level — so it is the only layer that can state a checksum
@@ -325,12 +442,12 @@ public final class StatefulJournal implements Journal
      * reader needs to decide whether to verify at all.
      */
     @Override
-    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum ignoredRequestChecksum, final BodyChecksum ignoredResponseChecksum)
+    public int endExchange(final String reqId, final GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, final int statusCode, final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum ignoredRequestChecksum, final BodyChecksum ignoredResponseChecksum, final boolean ignoredRequestBodyTruncated, final boolean ignoredResponseBodyTruncated)
     {
         int written = checkAndFlushRequest();
         written += checkAndFlushResponse();
 
-        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, BodyChecksum.of(requestChecksum), BodyChecksum.of(responseChecksum));
+        final int endBytes = delegate.endExchange(reqId, attributes, requestStartTs, requestEndTs, statusCode, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, BodyChecksum.of(requestChecksum), BodyChecksum.of(responseChecksum), this.requestBodyTruncated, this.responseBodyTruncated);
         this.bytesWritten += endBytes;
         return written + endBytes;
     }

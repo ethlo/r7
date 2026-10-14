@@ -205,10 +205,12 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
      *                          {@code payloadDigest} is {@code null}
      * @param warcDate          when capture of this leg's message began; see
      *                          {@link WarcFields#captureDate}
+     * @param truncated         the journal kept only the first {@code truncate_body_at} bytes
+     *                          of this leg's body, which are {@code body}
      */
     private record Leg(String msgType, String startLine, GatewayHeaders headers, boolean bodyOwner,
                        List<ByteBuffer> body, String payloadDigest, long bodyBytesReported,
-                       boolean checksumMismatch, InetAddress clientAddress, String warcDate)
+                       boolean checksumMismatch, InetAddress clientAddress, String warcDate, boolean truncated)
     {
     }
 
@@ -238,14 +240,14 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         final List<String> targetUris = new ArrayList<>(4);
         if (addIfJournaled(legs, "request", clientStartLine, exchange.getClientRequestHeaders(),
                 true, exchange.getRequestBodyFragments(), requestDigest, exchange.getRequestBodyBytes(), requestMismatch, exchange.remoteAddress(),
-                clientRequestDate))
+                clientRequestDate, exchange.isRequestBodyTruncated()))
         {
             targetUris.add(clientTargetUri);
         }
         if (exchange.wasProxied())
         {
             if (addIfJournaled(legs, "request", upstreamStartLine, exchange.getUpstreamRequestHeaders(),
-                    false, null, requestDigest, 0, requestMismatch, null, upstreamRequestDate))
+                    false, null, requestDigest, 0, requestMismatch, null, upstreamRequestDate, false))
             {
                 targetUris.add(upstreamTargetUri);
             }
@@ -254,14 +256,14 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // this response, whose body was never read.
             final boolean relayed = exchange.isUpstreamResponseRelayed();
             if (addIfJournaled(legs, "response", exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(),
-                    false, null, relayed ? responseDigest : null, 0, relayed && responseMismatch, null, responseDate))
+                    false, null, relayed ? responseDigest : null, 0, relayed && responseMismatch, null, responseDate, false))
             {
                 targetUris.add(upstreamTargetUri);
             }
         }
         if (addIfJournaled(legs, "response", exchange.getClientResponseStartLine(), exchange.getClientResponseHeaders(),
                 true, exchange.getResponseBodyFragments(), responseDigest, exchange.getResponseBodyBytes(), responseMismatch, exchange.remoteAddress(),
-                responseDate))
+                responseDate, exchange.isResponseBodyTruncated()))
         {
             targetUris.add(clientTargetUri);
         }
@@ -305,11 +307,11 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
     private static boolean addIfJournaled(final List<Leg> legs, final String msgType, final String startLine, final GatewayHeaders headers,
                                            final boolean bodyOwner, final List<ByteBuffer> body, final String payloadDigest,
                                            final long bodyBytesReported, final boolean checksumMismatch, final InetAddress clientAddress,
-                                           final String warcDate)
+                                           final String warcDate, final boolean truncated)
     {
         if (startLine != null)
         {
-            legs.add(new Leg(msgType, startLine, headers, bodyOwner, body, payloadDigest, bodyBytesReported, checksumMismatch, clientAddress, warcDate));
+            legs.add(new Leg(msgType, startLine, headers, bodyOwner, body, payloadDigest, bodyBytesReported, checksumMismatch, clientAddress, warcDate, truncated));
             return true;
         }
         return false;
@@ -361,6 +363,18 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // without storing it. No dedup either way, since nothing is stored to point at.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
             final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest);
+            addClientAddress(fields, leg.clientAddress());
+            return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
+        }
+
+        if (leg.truncated())
+        {
+            // The journal kept the body's first truncate_body_at bytes. The record holds that
+            // prefix and its digest, and says it stopped short. Kept out of dedup both ways: a
+            // prefix is not the payload, so it must neither stand in for an earlier full record
+            // nor be pointed at by a later one.
+            final byte[] block = HttpMessageBlock.withBody(leg.startLine(), leg.headers(), leg.body());
+            final List<Map.Entry<String, String>> fields = WarcFields.truncated(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest);
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }

@@ -264,6 +264,6 @@ class TailerRestartTest
     {
         journal.endExchange(reqId, new FastGatewayAttributes(),
                 1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
     }
 }

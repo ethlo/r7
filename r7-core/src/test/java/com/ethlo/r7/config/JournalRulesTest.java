@@ -71,10 +71,15 @@ class JournalRulesTest
 
     private static ConditionInput exchange(final String path, final int status, final String header, final String value)
     {
+        return exchange(path, status, header, value, "GET");
+    }
+
+    private static ConditionInput exchange(final String path, final int status, final String header, final String value, final String method)
+    {
         final GatewayRequest request = mock(GatewayRequest.class);
         when(request.path()).thenReturn(path);
         when(request.uri()).thenReturn(path);
-        when(request.method()).thenReturn("GET");
+        when(request.method()).thenReturn(method);
         final GatewayResponse response = mock(GatewayResponse.class);
         when(response.status()).thenReturn(status);
         final MutableFastGatewayHeaders headers = new MutableFastGatewayHeaders();
@@ -107,6 +112,16 @@ class JournalRulesTest
 
     private record Resolved(JournalLevel request, JournalLevel response, List<String> rules, List<String> errors)
     {
+    }
+
+    private static StatefulJournal resolveJournal(final JournalPolicy policy, final ConditionInput input)
+    {
+        final StatefulJournal journal = new StatefulJournal(mock(Journal.class), policy, JournalSecurity.SAFE_REQUEST_HEADERS,
+                JournalSecurity.SAFE_RESPONSE_HEADERS, QueryParameterNameSet.NONE, TestFingerprints.FINGERPRINT);
+        final FastGatewayAttributes attributes = new FastGatewayAttributes();
+        journal.onRequest(input, attributes);
+        journal.onResponse(input, attributes);
+        return journal;
     }
 
     private static Resolved resolve(final JournalPolicy policy, final ConditionInput input)
@@ -299,6 +314,108 @@ class JournalRulesTest
                 """)))
                 .hasMessageContaining("routes.r.journal.on_request[0]")
                 .hasMessageContaining("match is required");
+    }
+
+    private static final String CAPS = """
+            version: rules
+            journal:
+              request:
+                level: METADATA
+                truncate_body_at: 64KB
+              response:
+                level: METADATA
+                truncate_body_at: 64KB
+              on_request:
+                - id: writes
+                  match:
+                    - not:
+                        Method:
+                          include: [GET]
+                  request: { level: FULL }
+            routes:
+              - id: uploads
+                match:
+                  - PathPrefix:
+                      prefix: /uploads
+                upstream:
+                  targets:
+                    - url: http://localhost:1
+                journal:
+                  response:
+                    truncate_body_at: 8KB
+                  on_request:
+                    - id: small-debug
+                      match:
+                        - Path:
+                            path: /uploads/debug
+                      request: { truncate_body_at: 1KB }
+            """;
+
+    @Test
+    void truncateBodyAtIsInheritedPerKeyApartFromTheLevel() throws IOException
+    {
+        final JournalPolicy policy = this.policy(CAPS, "uploads");
+        assertThat(policy.request()).isEqualTo(JournalLevel.METADATA);
+        assertThat(policy.requestTruncateAt()).isEqualTo(64 * 1024);
+        assertThat(policy.response()).as("the route names only the cap and keeps the inherited level").isEqualTo(JournalLevel.METADATA);
+        assertThat(policy.responseTruncateAt()).isEqualTo(8 * 1024);
+    }
+
+    @Test
+    void aRuleNamingOnlyTheCapLeavesTheLevelToTheNextRule() throws IOException
+    {
+        final StatefulJournal journal = resolveJournal(this.policy(CAPS, "uploads"), exchange("/uploads/debug", 200, null, null, "POST"));
+        assertThat(journal.requestLevel()).as("from the root's rule").isEqualTo(JournalLevel.FULL);
+        assertThat(journal.requestTruncateAt()).as("from the route's rule").isEqualTo(1024);
+        assertThat(journal.responseTruncateAt()).isEqualTo(8 * 1024);
+    }
+
+    @Test
+    void aBaseCapIsTheDefaultForAFullThatARuleSets() throws IOException
+    {
+        final StatefulJournal journal = resolveJournal(this.policy(CAPS, "uploads"), exchange("/uploads/1", 200, null, null, "POST"));
+        assertThat(journal.requestLevel()).isEqualTo(JournalLevel.FULL);
+        assertThat(journal.requestTruncateAt()).isEqualTo(64 * 1024);
+    }
+
+    @Test
+    void requestTruncateBodyAtIsRefusedInOnResponse()
+    {
+        assertThatThrownBy(() -> this.build(route("""
+                on_response:
+                  - match:
+                      - Status:
+                          include: [5xx]
+                    request: { truncate_body_at: 8KB }
+                """)))
+                .hasMessageContaining("routes.r.journal.on_response[0].request.truncate_body_at")
+                .hasMessageContaining("the request body has already streamed");
+    }
+
+    @Test
+    void responseTruncateBodyAtIsAllowedInOnResponse() throws IOException
+    {
+        final JournalPolicy policy = this.policy(route("""
+                response: { level: METADATA }
+                on_response:
+                  - match:
+                      - Status:
+                          include: [5xx]
+                    response: { level: FULL, truncate_body_at: 4KB }
+                """), "r");
+        final StatefulJournal journal = resolveJournal(policy, exchange("/r", 503, null, null));
+        assertThat(journal.responseLevel()).isEqualTo(JournalLevel.FULL);
+        assertThat(journal.responseTruncateAt()).isEqualTo(4 * 1024);
+    }
+
+    @Test
+    void aTruncateBodyAtOfZeroIsRefused()
+    {
+        assertThatThrownBy(() -> this.build(route("""
+                response: { level: FULL, truncate_body_at: 0B }
+                """)))
+                .hasMessageContaining("truncate_body_at")
+                .hasMessageContaining("must be a positive data size");
     }
 
     @Test
