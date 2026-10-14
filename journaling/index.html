@@ -1471,7 +1471,7 @@ object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archi
 <tr>
 <td><code>upstream_request</code></td>
 <td>object</td>
-<td>When the request was proxied: the request to the upstream</td>
+<td>When the request was proxied: the request head r7 built for the last target tried, with the target's path, <code>Host</code>, the <code>X-Forwarded-*</code> headers and framing r7 set. When no connection to that target could be made, it is the head r7 would have sent, and <code>upstream_response</code> has no status line</td>
 </tr>
 <tr>
 <td><code>upstream_response</code></td>
@@ -1561,7 +1561,7 @@ object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archi
 <td><code>reason</code></td>
 <td>string</td>
 <td>responses</td>
-<td>When the status line has a reason phrase</td>
+<td>When the status has a registered reason phrase. r7 writes the phrase registered for the code, not the one the upstream sent, and none for an unregistered code</td>
 </tr>
 <tr>
 <td><code>targets</code></td>
