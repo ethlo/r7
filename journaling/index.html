@@ -1095,7 +1095,8 @@ file, and raise or lower them with rules, in <code>routes.yaml</code>:</p>
 <p>What each level records, and how rules resolve the levels, is in
 <a href="../config/#7-journaling-storage">Configuration §7</a>. Each rule that fires is recorded in the
 <code>gateway.journal.rule</code> attribute, by its id or its path, and a rule that could not be evaluated
-in <code>gateway.journal.rule_error</code>; where and how journals are written on disk is
+in <code>gateway.journal.rule_error</code>, and counted in the management view's <code>rule_errors</code> whether or
+not the exchange was journaled; where and how journals are written on disk is
 the <a href="../config/#storage-journaling-storage"><code>storage</code> block</a>. Requests refused before any route
 matches (no route, ambiguous path, TRACE and similar) are journaled only when configured, see
 <a href="../config/#unrouted-requests-routesyaml-unrouted">Unrouted Requests</a>.</p>
