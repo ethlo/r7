@@ -228,6 +228,12 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     }
 
     @Override
+    protected String rawPath()
+    {
+        return this.rawPath;
+    }
+
+    @Override
     protected long requestStartNanos()
     {
         return this.startNanos;

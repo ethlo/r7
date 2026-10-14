@@ -30,6 +30,7 @@ import com.ethlo.r7.condition.RequestCondition;
 import com.ethlo.r7.condition.UnroutedReason;
 import com.ethlo.r7.condition.UnroutedReasonCondition;
 import com.ethlo.r7.config.model.HttpStatus;
+import com.ethlo.r7.filters.RewritePathFactory;
 import com.ethlo.r7.journal.JournalPolicy;
 import com.ethlo.r7.journal.JournalRule;
 import com.ethlo.r7.journal.api.JournalLevel;
@@ -446,6 +447,8 @@ public final class ConfigurationManager
             }
         }
 
+        checkQueryRewrites(filters, routeResult);
+
         final CompiledJournal routeJournal = this.compileJournal(routeDefinition.journal(), placed.path() + ".journal", validationResult);
         final JournalPolicy journalConfig = policy(routeJournal, groupJournal, rootJournal, reported, validationResult);
 
@@ -464,6 +467,23 @@ public final class ConfigurationManager
         final DefaultGatewayRoute route = new DefaultGatewayRoute(urls, effective, filters, rootFilters.size(), groupFilters.size(),
                 placed.group() != null ? placed.group().group() : null, placed.upstreamLevel(), journalConfig, routeDefinition);
         return new BuiltRoute(route, match);
+    }
+
+    /**
+     * Every RewritePath tests the path the client sent, so with two on a route the last match
+     * wins. A rewrite that sets the query would leave its parameters behind for a later one to
+     * inherit, so it must be the only RewritePath the route runs, root and group ones included.
+     */
+    private static void checkQueryRewrites(final List<GatewayFilter> filters, final ValidationResult routeResult)
+    {
+        final List<RewritePathFactory.GF> rewrites = filters.stream()
+                .filter(RewritePathFactory.GF.class::isInstance)
+                .map(RewritePathFactory.GF.class::cast)
+                .toList();
+        if (rewrites.size() > 1 && rewrites.stream().anyMatch(RewritePathFactory.GF::setsQuery))
+        {
+            routeResult.addError("filters", "A RewritePath that sets the query (a ? in its replacement) must be the only RewritePath on the route, counting the root's and the group's: give each rewrite a route of its own.");
+        }
     }
 
     private Condition buildMatch(final ConditionDefinition match, final ValidationResult result, final String path)
