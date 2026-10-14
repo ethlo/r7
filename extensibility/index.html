@@ -1269,15 +1269,23 @@ Create the file: <code>src/main/resources/META-INF/services/com.ethlo.r7.spi.Gat
 <hr />
 <h2 id="4-packaging-and-deployment">4. Packaging and Deployment</h2>
 <p>Once your code is written and registered via the SPI files, compile it into a standard Java JAR file (e.g., <code>my-custom-r7-extensions-1.0.jar</code>).</p>
-<p>r7 finds extensions on its classpath. The gateway jar starts with <code>java -jar</code>, which takes its
-classpath from the jar's manifest alone (<code>r7.jar</code> plus the jars in <code>lib/</code> beside it) and ignores
-<code>-cp</code> and <code>CLASSPATH</code>. To add your jar, start the main class instead, with your jar after
-<code>r7.jar</code>; <code>r7.jar</code>'s manifest still brings in <code>lib/</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>java<span class="w"> </span>-cp<span class="w"> </span><span class="s2">"r7.jar:plugins/*"</span><span class="w"> </span>com.ethlo.r7.helidon.R7Helidon
+<p>r7 finds extensions in its plugins directory: <code>plugins/</code> in the working directory, or the directory
+<code>R7_PLUGINS_DIR</code> names. A plugin is a directory in it, holding the plugin's jar and the libraries
+the plugin brings. Jars directly in <code>plugins/</code> count as one more plugin. A missing directory means
+no extensions, and one that exists but cannot be read stops the start.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="True-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>plugins/
+</span><span id="True-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>  auth/auth-plugin-1.2.jar            # one directory per plugin
+</span><span id="True-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>  auth/some-library-4.0.jar           # a library only the auth plugin uses
+</span><span id="True-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>  geo/geo-plugin-2.0.jar
+</span><span id="True-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  my-custom-r7-extensions-1.0.jar     # jars directly in plugins/ share a plugin
 </span></code></pre></div>
+<p>Each plugin runs in a class loader of its own. Two plugins can carry different versions of the same
+library and cannot see each other's classes, and there is no need to build an uber-jar. The loader
+is parent-first: the r7 API and the gateway's own libraries are the gateway's, so a plugin cannot
+replace them.</p>
 <h3 id="docker-compose-example">Docker Compose Example</h3>
-<p>The image puts every jar in <code>/app/plugins</code> on the classpath, so mounting your jars there is all it
-takes. The image's AOT cache still applies.</p>
+<p>The image reads <code>/app/plugins</code>, so mounting your jars there is all it takes, and the image's AOT
+cache applies as it is.</p>
 <div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">services</span><span class="p">:</span>
 </span><span id="True-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">r7-api</span><span class="p">:</span>
 </span><span id="True-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/ethlo/r7-gateway:main</span>
@@ -1289,7 +1297,13 @@ takes. The image's AOT cache still applies.</p>
 </span><span id="True-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./plugins:/app/plugins:ro</span><span class="w">   </span><span class="c1"># your extension jars</span>
 </span></code></pre></div>
 <p>With <code>docker run</code>, add <code>-v "$PWD/plugins:/app/plugins:ro"</code>.</p>
-<p>The gateway will boot, the ServiceLoader will scan the classpath, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
+<p>Mount a directory per plugin to take each one from a source of its own, such as an image that holds
+only the plugin's jars:</p>
+<div class="language-yaml highlight"><span class="filename">docker-compose.yaml</span><pre><span></span><code><span id="True-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="True-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> type</span><span class="p">:</span><span class="w"> </span><span class="nv">image</span><span class="p p-Indicator">,</span><span class="nt"> source</span><span class="p">:</span><span class="w"> </span><span class="nv">ghcr.io/you/auth-plugin</span><span class="p p-Indicator">:</span><span class="nv">1.2</span><span class="p p-Indicator">,</span><span class="nt"> target</span><span class="p">:</span><span class="w"> </span><span class="nv">/app/plugins/auth</span><span class="p p-Indicator">,</span><span class="nt"> read_only</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="True-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> type</span><span class="p">:</span><span class="w"> </span><span class="nv">image</span><span class="p p-Indicator">,</span><span class="nt"> source</span><span class="p">:</span><span class="w"> </span><span class="nv">ghcr.io/you/geo-plugin</span><span class="p p-Indicator">:</span><span class="nv">2.0</span><span class="p p-Indicator">,</span><span class="nt"> target</span><span class="p">:</span><span class="w"> </span><span class="nv">/app/plugins/geo</span><span class="p p-Indicator">,</span><span class="nt"> read_only</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span></code></pre></div>
+<p>The gateway will boot, the ServiceLoader will scan the plugins directory, and your custom YAML keys (<code>HasHeader</code> and <code>BlockToken</code>) will be fully operational alongside the native r7 filters.</p>
 
 
 

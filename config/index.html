@@ -4055,7 +4055,7 @@
 <p>An invalid one prints the errors startup would, prefixed with the file, on stderr and exits <code>1</code>:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>routes.yaml: [routes.api] id is not unique
 </span></code></pre></div>
-<p>Any other argument exits <code>2</code>. Extension jars on the classpath (<code>/app/plugins</code> in the image) are loaded as at startup, so mount them for the check too, or their filters are reported as unknown. The check reads the environment as startup does: every <code>${VAR}</code> without a default must be set, and so must <code>R7_FINGERPRINT_KEY</code> when there is no <code>server.yaml</code>. A CI job without production secrets sets placeholders; the check verifies their form, not their value.</p>
+<p>Any other argument exits <code>2</code>. Extension jars in the plugins directory (<code>plugins/</code> in the working directory, <code>R7_PLUGINS_DIR</code> to change it, <code>/app/plugins</code> in the image) are loaded as at startup, so mount them for the check too, or their filters are reported as unknown. The check reads the environment as startup does: every <code>${VAR}</code> without a default must be set, and so must <code>R7_FINGERPRINT_KEY</code> when there is no <code>server.yaml</code>. A CI job without production secrets sets placeholders; the check verifies their form, not their value.</p>
 <h3 id="server-configuration-server">Server Configuration (<code>server</code>)</h3>
 <p>Defines the gateway's listening interface and port, and how many connections it holds.</p>
 <table>
