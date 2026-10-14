@@ -52,7 +52,7 @@ routes:
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
-  # Rules see the request as the client sent it; only leg: upstream sees what the filters made of it.
+  # Rules see the request as the client sent it, never what the filters made of it.
   - id: rewritten
     match:
       - PathPrefix:
@@ -85,18 +85,11 @@ routes:
             - PathPrefix:
                 prefix: /upstream/
           response: { level: FULL }
-        - id: forwarded
+        - id: client-request
           match:
             - PathPrefix:
                 prefix: /rewritten/
             - not:
                 HasRequestHeader:
                   name: x-stage
-            - PathPrefix:
-                prefix: /upstream/
-                leg: upstream
-            - RequestHeader:
-                name: x-stage
-                value: rewritten
-                leg: upstream
           response: { level: HEADERS }

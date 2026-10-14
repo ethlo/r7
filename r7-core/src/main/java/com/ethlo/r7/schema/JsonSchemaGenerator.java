@@ -386,11 +386,7 @@ public final class JsonSchemaGenerator
             final Description descAnnotation = factory.getClass().getAnnotation(Description.class);
             entries.add(new SpiEntry(factory.name(), factory.configClass(), descAnnotation != null ? descAnnotation.value() : null));
         });
-        return buildSpiDefinition(
-                entries,
-                Map.of(),
-                Map.of()
-        );
+        return buildSpiDefinition(entries, Map.of());
     }
 
     /**
@@ -458,31 +454,18 @@ public final class JsonSchemaGenerator
                     null, null, null, null, reasonDescription.value(), null, null));
         }
 
-        final SchemaNode clientLeg = new PrimitiveSchema("string", List.of(Leg.CLIENT.configName()), null, null, null,
-                "Which leg of the exchange to test: only client, for this predicate.", null, null, null);
-        final List<SpiEntry> entries = new ArrayList<>();
-        ServiceLoader.load(GatewayPredicateFactory.class).forEach(factory ->
-        {
-            final Description descAnnotation = factory.getClass().getAnnotation(Description.class);
-            final Map<String, SchemaNode> common = withResponsePredicates && !factory.legs().contains(Leg.UPSTREAM)
-                    ? Map.of(PredicateRegistry.LEG, clientLeg)
-                    : null;
-            entries.add(new SpiEntry(factory.name(), factory.configClass(), descAnnotation != null ? descAnnotation.value() : null, common));
-        });
+        final List<SpiEntry> entries = new ArrayList<>(spiEntries(GatewayPredicateFactory.class, GatewayPredicateFactory::name, GatewayPredicateFactory::configClass));
         if (withResponsePredicates)
         {
-            entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
+            // r7 takes leg out before a response predicate's own parameters bind, so every one has it.
+            final Map<String, SchemaNode> leg = Map.of(PredicateRegistry.LEG, new PrimitiveSchema("string",
+                    Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,
+                    "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent.", null, null, null));
+            spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass)
+                    .forEach(entry -> entries.add(new SpiEntry(entry.name(), entry.configClass(), entry.description(), leg)));
         }
 
-        // r7 takes leg out before a predicate's own parameters bind, so every predicate has it.
-        // The upstream leg exists only in on_response, the one place response predicates are offered.
-        final SchemaNode leg = withResponsePredicates
-                ? new PrimitiveSchema("string", Arrays.stream(Leg.values()).map(Leg::configName).toList(), null, null, null,
-                "Which leg of the exchange to test: client (the default) or upstream.", null, null, null)
-                : new PrimitiveSchema("string", List.of(Leg.CLIENT.configName()), null, null, null,
-                "Which leg of the exchange to test: only client exists here; upstream only in on_response.", null, null, null);
-
-        return buildSpiDefinition(entries, logicalOperators, Map.of(PredicateRegistry.LEG, leg));
+        return buildSpiDefinition(entries, logicalOperators);
     }
 
     /**
@@ -507,13 +490,9 @@ public final class JsonSchemaGenerator
         return entries;
     }
 
-    /**
-     * @param commonParameters parameters r7 itself accepts on every entry, beside the entry's own
-     */
     private SchemaNode buildSpiDefinition(
             final List<SpiEntry> entries,
-            final Map<String, SchemaNode> extraProperties,
-            final Map<String, SchemaNode> commonParameters)
+            final Map<String, SchemaNode> extraProperties)
     {
         final Map<String, SchemaNode> properties = new TreeMap<>(extraProperties);
         final List<String> parameterlessComponents = new ArrayList<>();
@@ -522,7 +501,7 @@ public final class JsonSchemaGenerator
             final String name = entry.name();
             final Class<?> configClass = entry.configClass();
             final String description = entry.description();
-            final Map<String, SchemaNode> common = entry.commonParameters() != null ? entry.commonParameters() : commonParameters;
+            final Map<String, SchemaNode> common = entry.commonParameters() != null ? entry.commonParameters() : Map.<String, SchemaNode>of();
 
             if (configClass != null && configClass.isRecord())
             {

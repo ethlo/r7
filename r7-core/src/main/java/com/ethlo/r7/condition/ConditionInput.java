@@ -11,10 +11,9 @@ import com.ethlo.r7.api.GatewayResponse;
 public interface ConditionInput
 {
     /**
-     * @return the request on that leg, or {@code null} while the leg has none: the upstream
-     * request exists once r7 hands it to the upstream
+     * @return the request as the client sent it, before any filter
      */
-    GatewayRequest request(Leg leg);
+    GatewayRequest request();
 
     /**
      * @return the response on that leg, or {@code null} while the leg has none: the upstream
@@ -49,9 +48,9 @@ public interface ConditionInput
             private double journal = Double.NaN;
 
             @Override
-            public GatewayRequest request(final Leg leg)
+            public GatewayRequest request()
             {
-                return leg == Leg.CLIENT ? clientRequest : null;
+                return clientRequest;
             }
 
             @Override

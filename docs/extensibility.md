@@ -133,7 +133,7 @@ match:
 
 r7 may test a predicate more than once per exchange, and when routes share a group, once for all of them. A predicate therefore has no side effects and gives the same answer for the same request every time: no counters, no random draws, no calls out. Sampling is `Sample`'s, a node r7 evaluates over the exchange (see [Sample](config.md#sample)).
 
-r7 handles `leg` for every predicate: it takes the parameter out before the configuration binds, and hands the predicate the request of that leg, or answers `false` without asking when the leg has no request yet. A config record with a component named `leg` is refused when the gateway starts, as is a predicate named `and`, `or`, `not` or `Sample`.
+A request predicate is always handed the request as the client sent it. A config record with a component named `leg` is refused when the gateway starts, since r7 reserves it for response predicates, as is a predicate named `and`, `or`, `not` or `Sample`.
 
 ### Response predicates
 
@@ -258,15 +258,6 @@ public Set<DeclarationLevel> levels() {
 ```
 
 The routes then refuse to load with it anywhere else (`[filters[0]] BlockToken can be declared on a route only, not on the root.`). Left out, a filter may be declared on every level.
-
-A predicate factory does the same for legs. A predicate that only means something on the request as the client sent it overrides `legs()`, as `RemoteAddr` does, and `leg: upstream` is then refused for it when the routes load. The client leg is every predicate's default, so the set must include `CLIENT`:
-
-```java
-@Override
-public Set<Leg> legs() {
-    return Set.of(Leg.CLIENT);
-}
-```
 
 ### Reporting a filter's status
 

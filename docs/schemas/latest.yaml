@@ -1123,11 +1123,6 @@ $defs:
         Cookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the cookie.
@@ -1148,11 +1143,6 @@ $defs:
         HasCookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the cookie to check for.
@@ -1168,11 +1158,6 @@ $defs:
         HasQueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the query parameter.
@@ -1188,11 +1173,6 @@ $defs:
         HasRequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the header.
@@ -1213,11 +1193,6 @@ $defs:
               items:
                 type: string
               description: List of hostnames to match against.
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
           required:
           - hosts
           additionalProperties: false
@@ -1230,11 +1205,6 @@ $defs:
         MatchCookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the cookie.
@@ -1255,11 +1225,6 @@ $defs:
         MatchPath:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             regexp:
               type: string
               description: The regular expression to match against the request path.
@@ -1275,11 +1240,6 @@ $defs:
         MatchQueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the query parameter.
@@ -1300,11 +1260,6 @@ $defs:
         MatchRequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the header.
@@ -1330,11 +1285,6 @@ $defs:
               items:
                 type: string
               description: "List of allowed HTTP methods (e.g., GET, POST)."
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
           required:
           - include
           additionalProperties: false
@@ -1347,11 +1297,6 @@ $defs:
         Path:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             path:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -1370,11 +1315,6 @@ $defs:
         PathPrefix:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             prefix:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -1393,11 +1333,6 @@ $defs:
         QueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the query parameter.
@@ -1418,11 +1353,6 @@ $defs:
         RemoteAddr:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             source:
               type: string
               description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
@@ -1438,11 +1368,6 @@ $defs:
         RequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the request header.
@@ -1497,12 +1422,6 @@ $defs:
         Cookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the cookie.
@@ -1523,12 +1442,6 @@ $defs:
         HasCookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the cookie to check for.
@@ -1544,12 +1457,6 @@ $defs:
         HasQueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the query parameter.
@@ -1565,12 +1472,6 @@ $defs:
         HasRequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the header.
@@ -1591,7 +1492,7 @@ $defs:
               enum:
               - client
               - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
             name:
               type: string
               description: The name of the header.
@@ -1612,12 +1513,6 @@ $defs:
               items:
                 type: string
               description: List of hostnames to match against.
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
           required:
           - hosts
           additionalProperties: false
@@ -1630,12 +1525,6 @@ $defs:
         MatchCookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the cookie.
@@ -1656,12 +1545,6 @@ $defs:
         MatchPath:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             regexp:
               type: string
               description: The regular expression to match against the request path.
@@ -1677,12 +1560,6 @@ $defs:
         MatchQueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the query parameter.
@@ -1703,12 +1580,6 @@ $defs:
         MatchRequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the header.
@@ -1734,7 +1605,7 @@ $defs:
               enum:
               - client
               - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
             name:
               type: string
               description: The name of the header.
@@ -1760,12 +1631,6 @@ $defs:
               items:
                 type: string
               description: "List of allowed HTTP methods (e.g., GET, POST)."
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
           required:
           - include
           additionalProperties: false
@@ -1778,12 +1643,6 @@ $defs:
         Path:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             path:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -1802,12 +1661,6 @@ $defs:
         PathPrefix:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             prefix:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -1826,12 +1679,6 @@ $defs:
         QueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the query parameter.
@@ -1852,11 +1699,6 @@ $defs:
         RemoteAddr:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client, for this predicate."
             source:
               type: string
               description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
@@ -1872,12 +1714,6 @@ $defs:
         RequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
             name:
               type: string
               description: The name of the request header.
@@ -1903,7 +1739,7 @@ $defs:
               enum:
               - client
               - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
             name:
               type: string
               description: The name of the response header.
@@ -1951,7 +1787,7 @@ $defs:
               enum:
               - client
               - upstream
-              description: "Which leg of the exchange to test: client (the default) or upstream."
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
           required:
           - include
           additionalProperties: false
@@ -2292,11 +2128,6 @@ $defs:
         Cookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the cookie.
@@ -2317,11 +2148,6 @@ $defs:
         HasCookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the cookie to check for.
@@ -2337,11 +2163,6 @@ $defs:
         HasQueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the query parameter.
@@ -2357,11 +2178,6 @@ $defs:
         HasRequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the header.
@@ -2382,11 +2198,6 @@ $defs:
               items:
                 type: string
               description: List of hostnames to match against.
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
           required:
           - hosts
           additionalProperties: false
@@ -2399,11 +2210,6 @@ $defs:
         MatchCookie:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the cookie.
@@ -2424,11 +2230,6 @@ $defs:
         MatchPath:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             regexp:
               type: string
               description: The regular expression to match against the request path.
@@ -2444,11 +2245,6 @@ $defs:
         MatchQueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the query parameter.
@@ -2469,11 +2265,6 @@ $defs:
         MatchRequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the header.
@@ -2499,11 +2290,6 @@ $defs:
               items:
                 type: string
               description: "List of allowed HTTP methods (e.g., GET, POST)."
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
           required:
           - include
           additionalProperties: false
@@ -2516,11 +2302,6 @@ $defs:
         Path:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             path:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -2539,11 +2320,6 @@ $defs:
         PathPrefix:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             prefix:
               type: string
               pattern: "^(?:/.*|\\$\\{.*\\})$"
@@ -2562,11 +2338,6 @@ $defs:
         QueryParameter:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the query parameter.
@@ -2587,11 +2358,6 @@ $defs:
         RemoteAddr:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             source:
               type: string
               description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
@@ -2607,11 +2373,6 @@ $defs:
         RequestHeader:
           type: object
           properties:
-            leg:
-              type: string
-              enum:
-              - client
-              description: "Which leg of the exchange to test: only client exists here; upstream only in on_response."
             name:
               type: string
               description: The name of the request header.

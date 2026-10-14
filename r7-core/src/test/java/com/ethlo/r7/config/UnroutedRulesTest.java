@@ -80,9 +80,9 @@ class UnroutedRulesTest
         return new ConditionInput()
         {
             @Override
-            public GatewayRequest request(final Leg leg)
+            public GatewayRequest request()
             {
-                return leg == Leg.CLIENT ? request : null;
+                return request;
             }
 
             @Override

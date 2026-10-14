@@ -97,9 +97,9 @@ class JournalRulesTest
         return new ConditionInput()
         {
             @Override
-            public GatewayRequest request(final Leg leg)
+            public GatewayRequest request()
             {
-                return leg == Leg.CLIENT ? request : null;
+                return request;
             }
 
             @Override
@@ -356,8 +356,17 @@ class JournalRulesTest
     }
 
     @Test
-    void remoteAddrTestsOnlyTheClientLeg() throws IOException
+    void aResponsePredicateTakesAKnownLegAndARequestPredicateNone()
     {
+        assertThatThrownBy(() -> this.build(route("""
+                on_response:
+                  - match:
+                      - Status:
+                          include: [500]
+                          leg: sideways
+                    response: { level: FULL }
+                """)))
+                .hasMessageContaining("[routes.r.journal.on_response[0].match[0].Status.leg] Must be client or upstream, received 'sideways'");
         assertThatThrownBy(() -> this.build(route("""
                 on_response:
                   - match:
@@ -366,15 +375,7 @@ class JournalRulesTest
                           leg: upstream
                     response: { level: FULL }
                 """)))
-                .hasMessageContaining("[routes.r.journal.on_response[0].match[0].RemoteAddr.leg] RemoteAddr tests only the client leg.");
-        this.build(route("""
-                on_response:
-                  - match:
-                      - RemoteAddr:
-                          source: 10.0.0.0/8
-                          leg: client
-                    response: { level: FULL }
-                """));
+                .hasMessageContaining("[routes.r.journal.on_response[0].match[0].RemoteAddr.leg] RemoteAddr tests the request as the client sent it and has no leg; leg applies to response predicates.");
     }
 
     @Test

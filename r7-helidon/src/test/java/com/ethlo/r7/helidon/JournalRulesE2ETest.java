@@ -108,11 +108,10 @@ public class JournalRulesE2ETest extends AbstractR7IntegrationTest
 
     /**
      * A rule's request predicates see the request as the client sent it, in on_request and in
-     * on_response alike, so a RewritePath or a SetRequestHeader never changes what a rule matches;
-     * with leg: upstream they see the request as forwarded.
+     * on_response alike, so a RewritePath or a SetRequestHeader never changes what a rule matches.
      */
     @Test
-    public void rulePredicatesSeeTheClientRequestAndLegUpstreamTheForwardedOne() throws Exception
+    public void rulePredicatesSeeTheClientRequest() throws Exception
     {
         final String id = UUID.randomUUID().toString();
         UPSTREAM_SERVER.stubFor(get(urlPathEqualTo("/upstream/" + id)).willReturn(aResponse().withStatus(200).withBody("ok")));
@@ -124,7 +123,7 @@ public class JournalRulesE2ETest extends AbstractR7IntegrationTest
         Assertions.assertEquals(JournalLevel.HEADERS, exchange.getClientResponseLevel());
         final List<String> rules = new ArrayList<>();
         exchange.getAttributes().getAll("gateway.journal.rule").forEach(rules::add);
-        Assertions.assertEquals(List.of("client-path", "forwarded"), rules.stream().sorted().toList());
+        Assertions.assertEquals(List.of("client-path", "client-request"), rules.stream().sorted().toList());
     }
 
     private static void assertCaptured(final JournalExchange exchange, final String body) throws IOException

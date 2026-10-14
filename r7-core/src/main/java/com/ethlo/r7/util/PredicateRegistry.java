@@ -78,15 +78,7 @@ public class PredicateRegistry
         this.responseFactories = responseFactories.stream()
                 .collect(Collectors.toUnmodifiableMap(GatewayResponsePredicateFactory::name, factory -> factory));
 
-        this.requestFactories.forEach((name, factory) ->
-        {
-            checkRegistration(name, factory.configClass());
-            // client is every predicate's default leg, and the only one a route's match has
-            if (!factory.legs().contains(Leg.CLIENT))
-            {
-                throw new IllegalStateException("Predicate '" + name + "' must test the client leg: legs() has to include CLIENT");
-            }
-        });
+        this.requestFactories.forEach((name, factory) -> checkRegistration(name, factory.configClass()));
         this.responseFactories.forEach((name, factory) ->
         {
             checkRegistration(name, factory.configClass());
@@ -111,7 +103,7 @@ public class PredicateRegistry
             {
                 if (component.getName().equals(LEG))
                 {
-                    throw new IllegalStateException("Predicate '" + name + "' has a parameter named '" + LEG + "', which is reserved: every predicate takes it");
+                    throw new IllegalStateException("Predicate '" + name + "' has a parameter named '" + LEG + "', which is reserved for the response predicates' leg");
                 }
             }
         }
@@ -194,25 +186,24 @@ public class PredicateRegistry
             return Condition.FALSE;
         }
 
-        final Leg resolvedLeg = this.leg(name, leg, scope, result);
+        if (requestFactory != null)
+        {
+            if (leg != null)
+            {
+                result.addError(name + "." + LEG, name + " tests the request as the client sent it and has no leg; leg applies to response predicates.");
+                return Condition.FALSE;
+            }
+            @SuppressWarnings("unchecked") final GatewayPredicateFactory<ValidatableConfig> factory = (GatewayPredicateFactory<ValidatableConfig>) requestFactory;
+            final ValidatableConfig config = this.bind(name, yamlValue, factory.configClass(), result);
+            return config != null ? created(name, () -> new RequestCondition(factory.create(config)), result) : Condition.FALSE;
+        }
+        final Leg resolvedLeg = leg(name, leg, result);
         if (resolvedLeg == null)
         {
             return Condition.FALSE;
         }
-        if (requestFactory != null && !requestFactory.legs().contains(resolvedLeg))
-        {
-            result.addError(name + "." + LEG, name + " tests only the " + Leg.CLIENT.configName() + " leg.");
-            return Condition.FALSE;
-        }
-        final Object parameters = withoutLeg(yamlValue);
-        if (requestFactory != null)
-        {
-            @SuppressWarnings("unchecked") final GatewayPredicateFactory<ValidatableConfig> factory = (GatewayPredicateFactory<ValidatableConfig>) requestFactory;
-            final ValidatableConfig config = this.bind(name, parameters, factory.configClass(), result);
-            return config != null ? created(name, () -> new RequestCondition(factory.create(config), resolvedLeg), result) : Condition.FALSE;
-        }
         @SuppressWarnings("unchecked") final GatewayResponsePredicateFactory<ValidatableConfig> factory = (GatewayResponsePredicateFactory<ValidatableConfig>) responseFactory;
-        final ValidatableConfig config = this.bind(name, parameters, factory.configClass(), result);
+        final ValidatableConfig config = this.bind(name, withoutLeg(yamlValue), factory.configClass(), result);
         return config != null ? created(name, () -> new ResponseCondition(factory.create(config), resolvedLeg), result) : Condition.FALSE;
     }
 
@@ -231,7 +222,7 @@ public class PredicateRegistry
         }
     }
 
-    private Leg leg(final String name, final Object value, final ConditionScope scope, final ValidationResult result)
+    private static Leg leg(final String name, final Object value, final ValidationResult result)
     {
         if (value == null)
         {
@@ -241,11 +232,6 @@ public class PredicateRegistry
         if (leg == null)
         {
             result.addError(name + "." + LEG, "Must be client or upstream, received '" + value + "'");
-            return null;
-        }
-        if (leg == Leg.UPSTREAM && !scope.allowsUpstreamLeg())
-        {
-            result.addError(name + "." + LEG, "The upstream leg does not exist yet " + scope.when() + "; leg: upstream is allowed only in on_response.");
             return null;
         }
         return leg;

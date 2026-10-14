@@ -49,40 +49,19 @@ class PredicateLegAndSampleTest
     }
 
     @Test
-    void theClientLegIsTheDefaultAndMayBeNamed() throws Exception
+    void aRequestPredicateHasNoLeg()
     {
-        final RouteRegistry.Snapshot snapshot = build("""
-                - PathPrefix:
-                    prefix: /api
-                    leg: client
-                """);
-        assertThat(snapshot.findRoute(request("/api/1"))).extracting(GatewayRoute::id).isEqualTo("x");
-        assertThat(snapshot.findRoute(request("/other"))).isNull();
-    }
-
-    @Test
-    void theUpstreamLegIsRefusedWhenARouteIsChosen()
-    {
-        assertThatThrownBy(() -> build("""
-                - PathPrefix:
-                    prefix: /api
-                    leg: upstream
-                """))
-                .isInstanceOf(ConfigurationException.class)
-                .hasMessageContaining("[routes.x.match[0].PathPrefix.leg] The upstream leg does not exist yet when a route is chosen; leg: upstream is allowed only in on_response.");
-    }
-
-    @Test
-    void anUnknownLegIsRefused()
-    {
-        assertThatThrownBy(() -> build("""
-                - not:
-                    PathPrefix:
-                      prefix: /api
-                      leg: sideways
-                """))
-                .isInstanceOf(ConfigurationException.class)
-                .hasMessageContaining("[routes.x.match[0].not.PathPrefix.leg] Must be client or upstream, received 'sideways'");
+        for (final String leg : new String[]{"client", "upstream"})
+        {
+            assertThatThrownBy(() -> build("""
+                    - not:
+                        PathPrefix:
+                          prefix: /api
+                          leg: %s
+                    """.formatted(leg)))
+                    .isInstanceOf(ConfigurationException.class)
+                    .hasMessageContaining("[routes.x.match[0].not.PathPrefix.leg] PathPrefix tests the request as the client sent it and has no leg; leg applies to response predicates.");
+        }
     }
 
     @Test

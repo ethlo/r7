@@ -25,7 +25,6 @@ import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.condition.Condition;
 import com.ethlo.r7.condition.ConditionInput;
-import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.condition.RequestCondition;
 import com.ethlo.r7.spi.EngineContext;
 
@@ -64,7 +63,7 @@ class ConfigLevelsTest
     {
         final GatewayPredicate predicate = mock(GatewayPredicate.class);
         when(predicate.test(org.mockito.ArgumentMatchers.any())).thenAnswer(i -> test.test(i.getArgument(0)));
-        return new RequestCondition(predicate, Leg.CLIENT);
+        return new RequestCondition(predicate);
     }
 
     private static final String GROUPED = """
