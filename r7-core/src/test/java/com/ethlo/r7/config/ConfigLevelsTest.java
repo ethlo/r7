@@ -559,7 +559,7 @@ class ConfigLevelsTest
                       targets:
                         - url: http://localhost:1
                 """.formatted(BREAKER.indent(2))))
-                .hasMessageContaining("[filters[0]] A CircuitBreaker guards one upstream, so it belongs on a route, not on the root");
+                .hasMessageContaining("[filters[0]] CircuitBreaker can be declared on a route only, not on the root.");
 
         assertThatThrownBy(() -> build("""
                 routes:
@@ -575,7 +575,7 @@ class ConfigLevelsTest
                           - PathPrefix:
                               prefix: /a
                 """.formatted(BREAKER.indent(6).stripLeading())))
-                .hasMessageContaining("[routes.g.filters[0]] A CircuitBreaker guards one upstream, so it belongs on a route, not on group 'g'");
+                .hasMessageContaining("[routes.g.filters[0]] CircuitBreaker can be declared on a route only, not on a group.");
 
         assertThat(build("""
                 routes:

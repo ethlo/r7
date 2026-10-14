@@ -356,6 +356,28 @@ class JournalRulesTest
     }
 
     @Test
+    void remoteAddrTestsOnlyTheClientLeg() throws IOException
+    {
+        assertThatThrownBy(() -> this.build(route("""
+                on_response:
+                  - match:
+                      - RemoteAddr:
+                          source: 10.0.0.0/8
+                          leg: upstream
+                    response: { level: FULL }
+                """)))
+                .hasMessageContaining("[routes.r.journal.on_response[0].match[0].RemoteAddr.leg] RemoteAddr tests only the client leg.");
+        this.build(route("""
+                on_response:
+                  - match:
+                      - RemoteAddr:
+                          source: 10.0.0.0/8
+                          leg: client
+                    response: { level: FULL }
+                """));
+    }
+
+    @Test
     void aRuleSettingNoLevelIsRefused()
     {
         assertThatThrownBy(() -> this.build(route("""

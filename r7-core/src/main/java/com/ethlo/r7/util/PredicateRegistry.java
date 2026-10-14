@@ -191,6 +191,11 @@ public class PredicateRegistry
         {
             return Condition.FALSE;
         }
+        if (requestFactory != null && !requestFactory.legs().contains(resolvedLeg))
+        {
+            result.addError(name + "." + LEG, name + " tests only the " + Leg.CLIENT.configName() + " leg.");
+            return Condition.FALSE;
+        }
         final Object parameters = withoutLeg(yamlValue);
         if (requestFactory != null)
         {

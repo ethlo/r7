@@ -246,6 +246,28 @@ filters:
 
 ```
 
+### Where a filter may be declared
+
+A filter declared in the root's or a group's `filters` is one instance for every route beneath it. When that is wrong for your filter, because its state belongs to one upstream as a `CircuitBreaker`'s does, override `levels()` on the factory:
+
+```java
+@Override
+public Set<DeclarationLevel> levels() {
+    return Set.of(DeclarationLevel.ROUTE);
+}
+```
+
+The routes then refuse to load with it anywhere else (`[filters[0]] BlockToken can be declared on a route only, not on the root.`), and the editor flags it there. Left out, a filter may be declared on every level.
+
+A predicate factory does the same for legs. A predicate that only means something on the request as the client sent it overrides `legs()`, as `RemoteAddr` does, and `leg: upstream` is then refused for it and left out of its schema:
+
+```java
+@Override
+public Set<Leg> legs() {
+    return Set.of(Leg.CLIENT);
+}
+```
+
 ### Reporting a filter's status
 
 A filter that keeps state an operator should see, such as a breaker that trips or a quota that runs out, can implement `StatusReporting`. Its status then shows on the dashboard, in the management JSON and as the `r7_component_health` and `r7_component_value` metrics (see [Management Configuration](config.md#management-configuration-management)).
