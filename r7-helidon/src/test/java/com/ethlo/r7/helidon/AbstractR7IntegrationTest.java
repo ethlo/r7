@@ -138,7 +138,7 @@ public abstract class AbstractR7IntegrationTest
                         Transferable.of(STATIC_SWAP_TEST_INITIAL_CONTENT),
                         "/tmp/static-swap-test/current/content.txt"
                 )
-                // Base directories for the follow_symlinks/list_directory option tests; their
+                // Base directories for the follow_symlinks and welcome-file tests; their
                 // content is populated after the gateway is up, but the directories themselves
                 // must exist for StaticContent's startup validation to pass.
                 .withCopyToContainer(
@@ -147,7 +147,7 @@ public abstract class AbstractR7IntegrationTest
                 )
                 .withCopyToContainer(
                         Transferable.of(new byte[0]),
-                        "/tmp/static-listing-test/.keep"
+                        "/tmp/static-no-welcome-test/.keep"
                 )
                 .withEnv("WIREMOCK_PORT", String.valueOf(UPSTREAM_SERVER.port()))
                 // exposeHostPorts above makes WireMock reachable from the container by this name;
@@ -203,11 +203,11 @@ public abstract class AbstractR7IntegrationTest
         Files.createDirectories(staticSwapCurrent);
         Files.writeString(staticSwapCurrent.resolve("content.txt"), STATIC_SWAP_TEST_INITIAL_CONTENT, StandardOpenOption.CREATE);
 
-        // Base directories for the follow_symlinks/list_directory option tests; their content is
+        // Base directories for the follow_symlinks and welcome-file tests; their content is
         // populated after the gateway is up, but the directories themselves must exist for
         // StaticContent's startup validation to pass.
         Files.createDirectories(Paths.get("/tmp/static-symlink-test"));
-        Files.createDirectories(Paths.get("/tmp/static-listing-test"));
+        Files.createDirectories(Paths.get("/tmp/static-no-welcome-test"));
 
         IN_PROCESS_SERVER = new R7Helidon(IN_PROCESS_CONFIG_FILE, IN_PROCESS_SERVER_FILE);
     }

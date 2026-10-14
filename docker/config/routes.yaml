@@ -11,7 +11,10 @@ routes:
       - PathPrefix:
           prefix: /benchmark
     filters:
-      - RequireAuthorizationHeader
+      - RequireMatchRequestHeader:
+          name: Authorization
+          regexp: "(Bearer|Basic) .+"
+          reject_status_code: 401
 
   - id: internal-backend
     match:
@@ -36,7 +39,6 @@ routes:
           name: X-Powered-By
           value: Ethlo R7
       - AddCorrelationId
-      - RequireAuthorizationHeader
     journal:
       on_response:
         - match:

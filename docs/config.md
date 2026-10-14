@@ -583,11 +583,6 @@ Automatically injects the gateway's internal request ID into both the upstream r
 | --- | --- | --- | --- |
 | `trust_incoming` | Boolean | No | If `true`, an `X-Correlation-Id` already present on the incoming request is kept (and echoed back to the client) instead of being replaced with r7's own request ID. Defaults to `false`. Only enable this behind a trusted edge that itself controls or strips the header before it reaches r7. |
 
-#### RemoveCacheHeaders
-
-Deletes cache validation headers (`If-Modified-Since`, `If-None-Match`) and injects strict no-cache directives (`Cache-Control: no-cache`, `Pragma: no-cache`) upstream.
-*This filter requires no configuration parameters.*
-
 ---
 
 ### Mutation: Path & Routing
@@ -728,11 +723,6 @@ Validates a cookie is present and its value matches a specified regular expressi
 | `regexp` | String | Yes | The regex pattern the cookie value must match. |
 | `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
 
-#### RequireAuthorizationHeader
-
-Validates that incoming requests contain an `Authorization` header starting with either `Bearer ` or `Basic `. Short-circuits requests with a `401 Unauthorized` status if the header is missing or invalid.
-*This filter requires no configuration parameters.*
-
 #### BasicAuth
 
 Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the authenticated username is recorded in the `gateway.auth.basic.user` attribute for journaling, as a [fingerprint](journaling.md#redacted-header-and-query-parameter-values), not in plain text.
@@ -868,14 +858,13 @@ Short-circuits the routing pipeline, halting execution and immediately returning
 
 #### StaticContent
 
-Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), and static content sets `X-Content-Type-Options: nosniff` on every answer before response filters run. A directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`. Response filters on the route see that status (`304`, `404`, `206`) and have the last word on its headers, including the ability to replace or remove `X-Content-Type-Options`.
+Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), and static content sets `X-Content-Type-Options: nosniff` on every answer before response filters run. A directory is served by its welcome file (`index.html`, `index.htm`, `default.html` or `default.htm`) and is otherwise answered `403 Forbidden`; there are no directory listings. A directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`. Response filters on the route see that status (`304`, `404`, `206`) and have the last word on its headers, including the ability to replace or remove `X-Content-Type-Options`.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `base_directory` | String | Yes | The absolute physical path on the disk (e.g., `/var/www/html/`) containing the static assets. |
 | `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links found under the base directory. The base directory itself may be a symlink either way (e.g. an atomically swapped `current` release symlink); this is only needed for links inside it. |
-| `list_directory` | Boolean | No (default `false`) | Render an HTML directory listing when a request resolves to a directory and no welcome file (e.g. `index.html`) is found there. When disabled, such a request is rejected with `403 Forbidden`. |
-| `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`, and a directory listing, if enabled, leaves their names out; `.well-known/` is always served. |
+| `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`; `.well-known/` is always served. |
 
 In a container, bind-mount the parent of `base_directory`, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 answers `503` and logs a warning until it restarts. With the parent mounted, a replaced directory, or a swapped `current` symlink, is picked up on the next request.
 
@@ -1114,7 +1103,6 @@ routes:
         - url: https://admin-1.internal
         - url: https://admin-2.internal
     filters:
-      - RequireAuthorizationHeader
       - RateLimiter:
           capacity: 100
           refill_tokens: 10
