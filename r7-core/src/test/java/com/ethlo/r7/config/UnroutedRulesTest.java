@@ -274,6 +274,17 @@ class UnroutedRulesTest
     }
 
     @Test
+    void anEmptyRuleIsReportedNotThrown()
+    {
+        assertThatThrownBy(() -> this.unrouted("""
+                on_request:
+                  -
+                """))
+                .isInstanceOf(ConfigurationException.class)
+                .hasMessageContaining("unrouted.journal.on_request[0]");
+    }
+
+    @Test
     void onResponseIsRefused()
     {
         assertThatThrownBy(() -> this.unrouted("""

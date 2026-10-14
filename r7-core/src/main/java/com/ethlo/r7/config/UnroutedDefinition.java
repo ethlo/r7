@@ -42,6 +42,11 @@ public record UnroutedDefinition(
         for (int i = 0; i < this.journal.onRequest().size(); i++)
         {
             final JournalRuleDefinition rule = this.journal.onRequest().get(i);
+            if (rule == null)
+            {
+                // Already reported as empty by the journal's own validation.
+                continue;
+            }
             final ValidationResult ruleResult = journalResult.nested("on_request[" + i + "]");
             validateDirection(ruleResult.nested("request"), rule.request());
             validateDirection(ruleResult.nested("response"), rule.response());
