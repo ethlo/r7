@@ -1113,6 +1113,11 @@ record says plainly when it does not hold them:</p>
 <td><code>WARC-Truncated: unspecified</code>, <code>WARC-R7-Checksum-Mismatch: true</code>, no digest. The damaged bytes are never archived</td>
 </tr>
 <tr>
+<td>Records 1 and 4: the journal kept only the body's first <a href="../journaling/#capping-bodies"><code>truncate_body_at</code></a> bytes</td>
+<td><code>request</code> / <code>response</code></td>
+<td><code>WARC-Truncated: length</code>, and <code>WARC-Payload-Digest</code> of the prefix the record holds. Never a <code>revisit</code>, and never the target of one: a prefix is not the payload. Records 2 and 3, and a body left out by <code>warc.bodies: false</code>, also carry <code>length</code> in place of <code>unspecified</code>, since their digest is of the same prefix</td>
+</tr>
+<tr>
 <td>The same body is already stored by an earlier exchange</td>
 <td><code>revisit</code></td>
 <td>The WARC 1.1 <code>identical-payload-digest</code> profile: <code>WARC-Refers-To</code>, <code>WARC-Refers-To-Target-URI</code>, <code>WARC-Refers-To-Date</code>, <code>WARC-Truncated: length</code></td>
@@ -1129,8 +1134,10 @@ kept. Records 2 and 3 never store a body,
 so they carry <code>WARC-Truncated</code> even when the message had none. The body of record 2 is in record 1, and
 the body of record 3 is in record 4, found through <code>WARC-Concurrent-To</code>, except for a head r7
 refused to relay, whose body is in no record. When that record is a
-<code>revisit</code>, its <code>WARC-Refers-To</code> leads to the earlier record that holds the bytes; when it too
-carries <code>WARC-Truncated</code>, this output does not hold the body.</p>
+<code>revisit</code>, its <code>WARC-Refers-To</code> leads to the earlier record that holds the bytes; when it
+carries <code>WARC-Truncated: unspecified</code>, this output does not hold the body, and
+<code>WARC-Truncated: length</code> on a <code>request</code> or <code>response</code> record means it holds the body's first
+bytes only.</p>
 <p>Deduplication across exchanges remembers the last <code>dedup_cache_entries</code> digests per tailer
 process. A body seen again after that, or after a restart, is stored again in full; a <code>revisit</code>
 always points at an earlier record written by the same tailer.</p>
