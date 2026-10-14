@@ -366,7 +366,7 @@ class JsonLinesWriterTest
         headers.add("accept", "application/json");
         exchange.setClientRequest("GET /items HTTP/1.1", JournalLevel.HEADERS, headers, InetAddress.getLoopbackAddress(), IpSource.SOCKET);
         final FastGatewayAttributes attributes = new FastGatewayAttributes();
-        attributes.add("gateway.auth.basic.user", "fp:b9ZtS0R2qzY");
+        attributes.add("gateway.fallback.id", "spare");
         exchange.setAttributes(attributes);
 
         new JsonLinesWriter(out).onComplete(exchange);
@@ -376,7 +376,59 @@ class JsonLinesWriterTest
         assertThat(requestHeaders.path("host").isArray()).isTrue();
         assertThat(requestHeaders.path("host").get(0).asString()).isEqualTo("api.example.com");
         assertThat(requestHeaders.path("accept")).hasSize(2);
-        assertThat(node.path("attributes").path("gateway.auth.basic.user").isArray()).isTrue();
+        assertThat(node.path("attributes").path("gateway.fallback.id").isArray()).isTrue();
+    }
+
+    /**
+     * The verified caller is an object of its own, in plain text, and leaves {@code attributes};
+     * a field the filter did not record is left out.
+     */
+    @Test
+    void theIdentityIsAnObjectOfItsOwn() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-identity");
+        final FastGatewayAttributes attributes = new FastGatewayAttributes();
+        attributes.add("gateway.identity.scheme", "jwt");
+        attributes.add("gateway.identity.issuer", "https://auth.example.com/realms/acme");
+        attributes.add("gateway.identity.subject", "6f1c2d3e");
+        attributes.add("gateway.identity.username", "alice");
+        attributes.add("gateway.fallback.id", "spare");
+        exchange.setAttributes(attributes);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        final JsonNode node = MAPPER.readTree(linesOf(out).get(0));
+        assertThat(node.path("identity").path("scheme").asString()).isEqualTo("jwt");
+        assertThat(node.path("identity").path("issuer").asString()).isEqualTo("https://auth.example.com/realms/acme");
+        assertThat(node.path("identity").path("subject").asString()).isEqualTo("6f1c2d3e");
+        assertThat(node.path("identity").path("username").asString()).isEqualTo("alice");
+        assertThat(node.path("attributes").propertyNames()).containsExactly("gateway.fallback.id");
+    }
+
+    @Test
+    void identityValuesAreDecodedFromUtf8() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-unicode");
+        final FastGatewayAttributes attributes = new FastGatewayAttributes();
+        attributes.add("gateway.identity.scheme", "jwt");
+        attributes.add("gateway.identity.subject", "6f1c2d3e");
+        attributes.add("gateway.identity.username", new String("Łukasz 李".getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1));
+        exchange.setAttributes(attributes);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        assertThat(MAPPER.readTree(linesOf(out).get(0)).path("identity").path("username").asString()).isEqualTo("Łukasz 李");
+    }
+
+    @Test
+    void thereIsNoIdentityWhenNoFilterVerifiedTheCaller() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        new JsonLinesWriter(out).onComplete(completeExchange("req-anonymous"));
+
+        assertThat(MAPPER.readTree(linesOf(out).get(0)).has("identity")).isFalse();
     }
 
     /**

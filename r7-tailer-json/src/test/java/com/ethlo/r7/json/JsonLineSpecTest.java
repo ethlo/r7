@@ -94,6 +94,10 @@ class JsonLineSpecTest
         attributes.add(JsonLinesWriter.ROUTE_ID_ATTRIBUTE, "items");
         attributes.add(JsonLinesWriter.UPSTREAM_TARGET_ATTRIBUTE, "http://backend:8080");
         attributes.add("gateway.fallback.id", "items-fallback");
+        attributes.add("gateway.identity.scheme", "jwt");
+        attributes.add("gateway.identity.issuer", "https://auth.example.com/realms/acme");
+        attributes.add("gateway.identity.subject", "6f1c2b8e");
+        attributes.add("gateway.identity.username", "alice");
         exchange.setAttributes(attributes);
         return exchange;
     }

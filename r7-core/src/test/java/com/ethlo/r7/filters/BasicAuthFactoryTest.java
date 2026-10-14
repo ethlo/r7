@@ -2,6 +2,7 @@ package com.ethlo.r7.filters;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,7 +18,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
+import com.ethlo.r7.api.Claims;
 import com.ethlo.r7.api.ClientRequestGatewayExchange;
+import com.ethlo.r7.api.Identity;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.MutableGatewayAttributes;
@@ -62,7 +65,7 @@ class BasicAuthFactoryTest
         filter(ALICE, BOB).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, TestFingerprints.FINGERPRINT.fingerprint("alice"));
+        verify(exchange).setAttachment(Identity.KEY, new Identity("basic", null, "alice", "alice", Claims.NONE));
     }
 
     /**
@@ -77,7 +80,7 @@ class BasicAuthFactoryTest
         filter(ALICE, CAROL).onClientRequest(exchange);
 
         verify(exchange, never()).shortCircuit(any());
-        verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, TestFingerprints.FINGERPRINT.fingerprint("carol"));
+        verify(exchange).setAttachment(Identity.KEY, new Identity("basic", null, "carol", "carol", Claims.NONE));
     }
 
     /**
@@ -92,7 +95,7 @@ class BasicAuthFactoryTest
         filter(ALICE, CAROL).onClientRequest(exchange);
 
         verify(exchange).shortCircuit(any());
-        verify(exchange.attributes(), never()).set(any(String.class), any(String.class));
+        verify(exchange, never()).setAttachment(eq(Identity.KEY), any());
     }
 
     /**
@@ -197,7 +200,7 @@ class BasicAuthFactoryTest
             final ClientRequestGatewayExchange exchange = exchange("Basic " + encode("alice:secret"));
             filter.onClientRequest(exchange);
             verify(exchange, never()).shortCircuit(any());
-            verify(exchange.attributes()).set(BasicAuthFactory.AUTHENTICATED_USER_KEY, TestFingerprints.FINGERPRINT.fingerprint("alice"));
+            verify(exchange).setAttachment(Identity.KEY, new Identity("basic", null, "alice", "alice", Claims.NONE));
         }
     }
 
@@ -271,7 +274,7 @@ class BasicAuthFactoryTest
         filter(ALICE, BOB).onClientRequest(exchange);
 
         assertThat(captureRejection(exchange).status()).isEqualTo(HttpStatuses.UNAUTHORIZED);
-        verify(exchange.attributes(), never()).set(any(), any(String.class));
+        verify(exchange, never()).setAttachment(eq(Identity.KEY), any());
     }
 
     private ShortCircuitGatewayResponse captureRejection(final ClientRequestGatewayExchange exchange)
@@ -324,7 +327,7 @@ class BasicAuthFactoryTest
 
         factory.create(new BasicAuthFactory.Config(List.of(ALICE), null, true), CONTEXT).onClientRequest(exchange);
 
-        verify(exchange, never()).setAttachment(any(), any());
+        verify(exchange, never()).setAttachment(eq(GatewayContextKeys.CLIENT_AUTHORIZATION_CONSUMED), any());
     }
 
     @Test

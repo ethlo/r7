@@ -205,8 +205,7 @@ Redaction applies to the journal only; it never changes what a client or upstrea
 
 **Fingerprints.** A fingerprint is `fp:` followed by 11 base64url characters, for example
 `fp:R5XU2m_VAik`: the first 64 bits of HMAC-SHA-256 of the value, keyed with
-`storage.journal_security.fingerprint_key`. The `gateway.auth.basic.user` attribute uses the same
-key and form.
+`storage.journal_security.fingerprint_key`.
 
 The same value always gives the same fingerprint under the same key, so you can see that two
 requests, two replicas, or records from before and after a restart carried the same value. Without
@@ -382,11 +381,16 @@ Fields of the exchange:
 | `duration` | number | With an end event: `end` minus `start`, in seconds |
 | `remote_address` | string | When known: the client address |
 | `remote_address_source` | string | With `remote_address`: `SOCKET`, `X_FORWARDED_FOR`, `X_REAL_IP` or `UNKNOWN` |
+| `identity` | object | When an auth filter verified the caller: who they are, in plain text; see [The caller's identity](#the-callers-identity) |
+| `identity.scheme` | string | `basic` for [`BasicAuth`](config.md#basicauth), `jwt` for [`JwtAuth`](config.md#jwtauth), or the scheme a plugin sets |
+| `identity.issuer` | string | When the scheme has one: a token's `iss`. In Keycloak, the realm is its last path segment |
+| `identity.subject` | string | The `BasicAuth` username, or a token's `sub` |
+| `identity.username` | string | When known: the `BasicAuth` username, or the token's `username_claim` |
 | `client_request` | object | Always: the request from the client |
 | `upstream_request` | object | When the request was proxied: the request head r7 built for the last target tried, with the target's path, `Host`, the `X-Forwarded-*` headers and framing r7 set. When no connection to that target could be made, it is the head r7 would have sent, and `upstream_response` has no status line |
 | `upstream_response` | object | When the request was proxied: the upstream's response, and the round trip's timing. When no upstream sent a response head (a refused connect, a timeout or a protocol error before one), it holds only the timing, at level `NONE`: r7's own `502`, `503` or `504` is recorded in `client_response`, never as the upstream's |
 | `client_response` | object | Always: the response to the client |
-| `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name`, `gateway.journal.rule` and `gateway.auth.basic.user` |
+| `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name` and `gateway.journal.rule` |
 | `warc` | object | When a WARC file holds the exchange |
 | `warc.file` | string | The sealed WARC file's name |
 | `warc.offset` | number | Byte offset of the exchange's first record in that file |
@@ -417,6 +421,20 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `duration` | number | `upstream_response` | With `end`: `end` minus `start`, in seconds |
 
 A consumer should ignore fields it does not know.
+
+#### The caller's identity
+
+When an auth filter verified the caller, the line carries who they are, in plain text:
+
+```json
+"identity": {"scheme": "jwt", "issuer": "https://auth.example.com/realms/acme",
+             "subject": "6f1c2b8e-4d3a-4f0e-9a51-2c7d8e9f0a1b", "username": "alice"}
+```
+
+The journal is an audit record, and who made a request is the question it exists to answer, so the
+identity is recorded verbatim, like the client address, in any script. The credentials themselves stay
+fingerprinted: the `Authorization` header's value is never written in plain text. If two filters
+on a route set the identity, the last one wins.
 
 ### Other layouts
 

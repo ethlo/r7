@@ -2,6 +2,7 @@ package com.ethlo.r7.server;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -24,6 +25,7 @@ import com.ethlo.r7.UnproxiedUpstreamResponse;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.ClientResponseGatewayFilter;
 import com.ethlo.r7.api.CompletedGatewayFilter;
+import com.ethlo.r7.api.Identity;
 import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.FallbackAwareGatewayFilter;
@@ -86,6 +88,10 @@ public final class GatewayPipeline
     public static final String UNROUTED_REASON_KEY = "gateway.unrouted.reason";
     static final String UPSTREAM_TARGET_KEY = "gateway.target";
     static final String SHORT_CIRCUIT_FILTER_KEY = "gateway.shortcircuit.name";
+    static final String IDENTITY_SCHEME_KEY = "gateway.identity.scheme";
+    static final String IDENTITY_ISSUER_KEY = "gateway.identity.issuer";
+    static final String IDENTITY_SUBJECT_KEY = "gateway.identity.subject";
+    static final String IDENTITY_USERNAME_KEY = "gateway.identity.username";
     private static final String NOSNIFF = "nosniff";
     private static final String X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options";
     private static final String CONTENT_TYPE = "Content-Type";
@@ -681,6 +687,15 @@ public final class GatewayPipeline
         }
     }
 
+    /**
+     * An identity value as its UTF-8 bytes, one char per byte. A username or token claim can hold
+     * any Unicode, but attributes store ISO-8859-1 only; the JSON tailer decodes the bytes back.
+     */
+    private static String asJournalText(final String value)
+    {
+        return new String(value.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1);
+    }
+
     private static void tagExchangeAttributes(final ServerExchange ex)
     {
         ex.attributes().add(ROUTE_ID_KEY, ex.route.id());
@@ -690,6 +705,23 @@ public final class GatewayPipeline
         }
         Optional.ofNullable(ex.reasonFilter).map(GatewayFilter::name).ifPresent(name ->
                 ex.attributes().add(SHORT_CIRCUIT_FILTER_KEY, name));
+
+        // Recorded in plain text, by whichever filter verified the caller last: the journal is an
+        // audit record, and who made the request is what it exists to answer.
+        final Identity identity = ex.getAttachment(Identity.KEY);
+        if (identity != null)
+        {
+            ex.attributes().set(IDENTITY_SCHEME_KEY, asJournalText(identity.scheme()));
+            if (identity.issuer() != null)
+            {
+                ex.attributes().set(IDENTITY_ISSUER_KEY, asJournalText(identity.issuer()));
+            }
+            ex.attributes().set(IDENTITY_SUBJECT_KEY, asJournalText(identity.subject()));
+            if (identity.username() != null)
+            {
+                ex.attributes().set(IDENTITY_USERNAME_KEY, asJournalText(identity.username()));
+            }
+        }
 
         if (ex.wasProxied())
         {

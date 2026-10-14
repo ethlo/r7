@@ -723,7 +723,7 @@ Validates a cookie is present and its value matches a specified regular expressi
 
 #### BasicAuth
 
-Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the authenticated username is recorded in the `gateway.auth.basic.user` attribute for journaling, as a [fingerprint](journaling.md#redacted-header-and-query-parameter-values), not in plain text.
+Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the caller's [identity](journaling.md#the-callers-identity) is journaled in plain text, with scheme `basic` and the username as subject.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -773,6 +773,36 @@ Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so generate entri
 **Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the journal with its request ID, client address, and time; the `failed-logins` rule above records it even on a route that otherwise journals nothing, and names itself in `gateway.journal.rule`.
 
 A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
+
+#### JwtAuth
+
+Verifies a `Bearer` JWT against the signing keys at a JWKS endpoint, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate: Bearer` challenge when the token is missing or invalid. On success the caller's [identity](journaling.md#the-callers-identity) is journaled in plain text: the issuer, the subject (`sub`) and the username.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `jwks_url` | String | Yes | The JWKS endpoint the signing keys are fetched from, `http` or `https`. |
+| `issuer` | String | Yes | The `iss` a token must carry. |
+| `audience` | String | Yes | A value the token's `aud` must contain. |
+| `username_claim` | String | No | The claim journaled as the caller's username. Defaults to `preferred_username`. |
+| `clock_skew_seconds` | Integer | No | Clock skew allowed on `exp` and `nbf`, 0-300. Defaults to `60`. |
+| `jwks_cache_duration` | Duration | No | How long fetched keys are cached, at least `1m`; they are refreshed in the background shortly before they expire. Defaults to `5m`. |
+| `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
+| `forward_claims_as_headers` | Map | No | Claim name to upstream header name. Each listed string claim is set on the upstream request under that header; a value that cannot be a header (a character beyond ISO-8859-1, or a control character) is left out. Every listed header is removed from the client's own request first, in any spelling a backend could read as it (`X_User_Id` as well as `x-user-id`), so a client can never supply one itself. |
+
+```yaml
+filters:
+  - JwtAuth:
+      jwks_url: "https://auth.example.com/realms/acme/protocol/openid-connect/certs"
+      issuer: "https://auth.example.com/realms/acme"
+      audience: "billing"
+      forward_claims_as_headers:
+        sub: X-User-Id
+        preferred_username: X-User-Name
+```
+
+A token must be signed with an asymmetric algorithm (RS, PS or ES, 256 to 512 bits), carry `exp` and `sub`, and have the type `JWT`, `at+jwt` or none. `issuer` and `audience` are required because an identity provider signs the tokens of all its clients with the same keys: without an audience, a token issued to any client of the realm would pass. Keycloak adds the client to `aud` only through an audience mapper on the client scope.
+
+A `401` never says why the token was refused. A request carrying more than one `Authorization` value is refused with `401`. When the keys cannot be fetched, the request is answered with `503 Service Unavailable` and `Retry-After: 5`, so an identity provider outage is not mistaken for bad credentials.
 
 #### InjectBasicAuth
 
