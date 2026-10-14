@@ -141,7 +141,7 @@ class StaticFilesReplacedBaseTest
             public void header(final String name, final String value)
             {
             }
-        }, new StaticContentFactory.StaticServeRequest(directories, false, false));
+        }, new StaticContentFactory.StaticServeRequest(directories, false, false, null));
         return status[0];
     }
 }
