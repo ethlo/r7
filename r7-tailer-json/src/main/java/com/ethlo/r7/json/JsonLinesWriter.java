@@ -324,10 +324,10 @@ public class JsonLinesWriter implements ExchangeCompletionListener
      *   "route_id": "...",
      *   "start": "...", "end": "...", "duration": 0.012345,
      *   "remote_address": "...", "remote_address_source": "SOCKET",
-     *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body, checksum},
+     *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body_truncated, body, checksum},
      *   "upstream_request":  {level, method, path, query, protocol, targets, headers},
      *   "upstream_response": {level, protocol, status, reason, headers, start, first_byte, end, duration},
-     *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body, checksum},
+     *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body_truncated, body, checksum},
      *   "attributes": {...},
      *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies when it stores them
      * }
@@ -386,6 +386,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         writeRequestLine(exchange.getClientRequestStartLine());
         writeMap("headers", GatewayUtils.toMap(exchange.getClientRequestHeaders()));
         writeSizes(hasEndEvent, exchange.getRequestHeaderBytes(), exchange.getRequestBodyBytes());
+        writeTruncated(exchange.isRequestBodyTruncated());
         if (writeBodies)
         {
             writeBody(exchange.getRequestBodyFragments());
@@ -429,6 +430,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         writeResponseLine(exchange.getClientResponseStartLine(), hasEndEvent ? exchange.getStatus() : null);
         writeMap("headers", GatewayUtils.toMap(exchange.getClientResponseHeaders()));
         writeSizes(hasEndEvent, exchange.getResponseHeaderBytes(), exchange.getResponseBodyBytes());
+        writeTruncated(exchange.isResponseBodyTruncated());
         if (writeBodies)
         {
             writeBody(exchange.getResponseBodyFragments());
@@ -481,6 +483,19 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         {
             generator.writeNumberProperty("header_bytes", headerBytes);
             generator.writeNumberProperty("body_bytes", bodyBytes);
+        }
+    }
+
+    /**
+     * Only when the journal kept just the first {@code truncate_body_at} bytes of the body: the
+     * {@code body} and {@code checksum} then cover that prefix, and {@code body_bytes} is what
+     * crossed the wire.
+     */
+    private void writeTruncated(final boolean truncated)
+    {
+        if (truncated)
+        {
+            generator.writeBooleanProperty("body_truncated", true);
         }
     }
 

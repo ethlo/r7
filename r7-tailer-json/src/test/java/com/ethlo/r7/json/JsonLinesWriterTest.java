@@ -193,6 +193,29 @@ class JsonLinesWriterTest
     }
 
     /**
+     * A leg whose body the journal capped says so; one that was journaled whole carries no flag.
+     */
+    @Test
+    void aCappedBodyIsFlaggedOnItsLeg() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JsonLinesWriter writer = new JsonLinesWriter(out);
+        final JournalExchange exchange = completeExchange("req-capped");
+        exchange.setClientResponse("HTTP/1.1 200 OK", JournalLevel.FULL, new MutableFastGatewayHeaders());
+        exchange.appendRequestBody(ByteBuffer.wrap("whole".getBytes(StandardCharsets.UTF_8)));
+        exchange.appendResponseBody(ByteBuffer.wrap("first".getBytes(StandardCharsets.UTF_8)));
+        exchange.setTraffic(10L, 5L, 10L, 5000L);
+        exchange.setBodyTruncated(false, true);
+
+        writer.onComplete(exchange);
+
+        final JsonNode line = MAPPER.readTree(linesOf(out).get(0));
+        assertThat(line.path("client_request").has("body_truncated")).isFalse();
+        assertThat(line.path("client_response").path("body_truncated").asBoolean()).isTrue();
+        assertThat(line.path("client_response").path("body_bytes").asLong()).as("what crossed the wire").isEqualTo(5000);
+    }
+
+    /**
      * One object per leg, and nothing another field already says: no proxied flag (the
      * upstream objects are there or not), no error flag, no totals, no separate content type.
      */

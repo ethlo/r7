@@ -47,7 +47,7 @@ public interface Journal extends AutoCloseable
      *                         "none" and thereby claimed a 32&nbsp;KB body hashes to zero.
      * @param responseChecksum as above, for the response body
      */
-    int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum);
+    int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated);
 
     /**
      * The failure that stopped this journal accepting entries, or null while it accepts them.

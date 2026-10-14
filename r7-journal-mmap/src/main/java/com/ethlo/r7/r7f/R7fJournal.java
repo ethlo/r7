@@ -361,7 +361,7 @@ public final class R7fJournal implements Journal
     }
 
     @Override
-    public int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+    public int endExchange(String reqId, GatewayAttributes attributes, final long requestStartTs, final long requestEndTs, int statusCode, long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes, final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs, final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated)
     {
         final EntryEncoder enc = encoders.get();
         final FlatBufferBuilder fbb = enc.fbb;
@@ -387,6 +387,8 @@ public final class R7fJournal implements Journal
         // JournalDecoder; nothing in between ever sees the number.
         EndExchange.addRequestCrc32c(fbb, stored(requestChecksum));
         EndExchange.addResponseCrc32c(fbb, stored(responseChecksum));
+        EndExchange.addRequestBodyTruncated(fbb, requestBodyTruncated);
+        EndExchange.addResponseBodyTruncated(fbb, responseBodyTruncated);
         return finishAndWrite(enc, EventPayload.EndExchange, EndExchange.endEndExchange(fbb));
     }
 

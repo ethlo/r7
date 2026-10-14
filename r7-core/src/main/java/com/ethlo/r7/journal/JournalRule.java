@@ -27,6 +27,8 @@ public final class JournalRule
     private final Condition condition;
     private final JournalLevel request;
     private final JournalLevel response;
+    private final long requestTruncateAt;
+    private final long responseTruncateAt;
     private final LongAdder errors = new LongAdder();
     private final AtomicBoolean warned = new AtomicBoolean();
 
@@ -38,11 +40,24 @@ public final class JournalRule
      */
     public JournalRule(final String label, final String path, final Condition condition, final JournalLevel request, final JournalLevel response)
     {
+        this(label, path, condition, request, response, JournalPolicy.NO_CAP, JournalPolicy.NO_CAP);
+    }
+
+    /**
+     * @param requestTruncateAt  the request body cap in bytes the rule sets, or
+     *                           {@link JournalPolicy#NO_CAP} when it names none
+     * @param responseTruncateAt as above, for the response body
+     */
+    public JournalRule(final String label, final String path, final Condition condition, final JournalLevel request, final JournalLevel response,
+                       final long requestTruncateAt, final long responseTruncateAt)
+    {
         this.label = label;
         this.path = path;
         this.condition = condition;
         this.request = request;
         this.response = response;
+        this.requestTruncateAt = requestTruncateAt;
+        this.responseTruncateAt = responseTruncateAt;
     }
 
     public String label()
@@ -68,6 +83,22 @@ public final class JournalRule
     public JournalLevel response()
     {
         return this.response;
+    }
+
+    /**
+     * @return the request body cap in bytes the rule sets, or {@link JournalPolicy#NO_CAP}
+     */
+    public long requestTruncateAt()
+    {
+        return this.requestTruncateAt;
+    }
+
+    /**
+     * @return the response body cap in bytes the rule sets, or {@link JournalPolicy#NO_CAP}
+     */
+    public long responseTruncateAt()
+    {
+        return this.responseTruncateAt;
     }
 
     /**

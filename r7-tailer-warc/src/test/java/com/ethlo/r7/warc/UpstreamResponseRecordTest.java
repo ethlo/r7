@@ -28,8 +28,10 @@ import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.github.luben.zstd.ZstdInputStream;
 
 /**
- * Record 3 claims, through its payload digest, that the upstream sent the body record 4 stores.
- * That holds for a relayed response and is false for a head r7 refused and answered itself.
+ * What the response records claim about the body. Record 3 claims, through its payload digest,
+ * that the upstream sent the body record 4 stores. That holds for a relayed response and is false
+ * for a head r7 refused and answered itself. Record 4 says when it holds only the first
+ * {@code truncate_body_at} bytes.
  */
 class UpstreamResponseRecordTest
 {
@@ -75,6 +77,69 @@ class UpstreamResponseRecordTest
         assertThat(responses.get(0)).doesNotContain("WARC-R7-Checksum-Mismatch").doesNotContain("WARC-Payload-Digest");
     }
 
+    /**
+     * A capped body is stored as the prefix the journal kept, marked {@code WARC-Truncated:
+     * length} with the digest of that prefix; a body exactly at the cap is an ordinary record.
+     */
+    @Test
+    void aCappedBodyIsMarkedTruncatedByLengthWithThePrefixDigest() throws IOException
+    {
+        final JournalExchange capped = exchange("HTTP/1.1 200 OK", true, "HTTP/1.1 200 OK", "first bytes");
+        capped.setTraffic(0L, 0L, 0L, 100_000L);
+        capped.setBodyTruncated(false, true);
+
+        final List<String> responses = responseRecords(capped);
+        final String client = responses.get(1);
+        assertThat(client).contains("WARC-Truncated: length\r\n").contains("first bytes");
+        assertThat(field(client, "WARC-Payload-Digest")).isEqualTo(PayloadDigest.of(List.of(ByteBuffer.wrap("first bytes".getBytes(StandardCharsets.UTF_8)))));
+        // The upstream record names the same prefix digest, so it says why too.
+        assertThat(responses.get(0)).contains("WARC-Truncated: length\r\n");
+        assertThat(field(responses.get(0), "WARC-Payload-Digest")).isEqualTo(field(client, "WARC-Payload-Digest"));
+    }
+
+    /**
+     * With bodies left out of the archive, the record still says the body was capped: its digest
+     * is of the prefix, not of the whole payload.
+     */
+    @Test
+    void aCappedBodyLeftOutOfTheArchiveIsStillMarkedByLength() throws IOException
+    {
+        final JournalExchange capped = exchange("HTTP/1.1 200 OK", true, "HTTP/1.1 200 OK", "first bytes");
+        capped.setTraffic(0L, 0L, 0L, 100_000L);
+        capped.setBodyTruncated(false, true);
+
+        final List<String> responses = responseRecords(capped, false, writer -> {});
+        assertThat(responses).allSatisfy(r -> assertThat(r).contains("WARC-Truncated: length\r\n").doesNotContain("first bytes"));
+    }
+
+    @Test
+    void anUncappedBodyIsNotMarkedTruncated() throws IOException
+    {
+        final String client = responseRecords(exchange("HTTP/1.1 200 OK", true, "HTTP/1.1 200 OK", "whole body")).get(1);
+        assertThat(client).doesNotContain("WARC-Truncated").contains("whole body");
+    }
+
+    /**
+     * A prefix is not the payload: a later exchange whose whole body happens to equal it must
+     * not be written as a revisit of the capped record.
+     */
+    @Test
+    void aCappedBodyIsNotADedupTarget() throws IOException
+    {
+        final JournalExchange capped = exchange("HTTP/1.1 200 OK", true, "HTTP/1.1 200 OK", "same");
+        capped.setBodyTruncated(false, true);
+        final JournalExchange whole = exchange("HTTP/1.1 200 OK", true, "HTTP/1.1 200 OK", "same");
+
+        try (WarcFileWriter files = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, 3_600_000L, 3, false))
+        {
+            final WarcExchangeWriter writer = new WarcExchangeWriter(files, new PayloadDedupIndex(100));
+            writer.onComplete(capped);
+            writer.onComplete(whole);
+        }
+        final String warc = decompress(Files.readAllBytes(only(".warc.zst")));
+        assertThat(warc).doesNotContain("WARC-Type: revisit");
+    }
+
     private List<String> responseRecords(final JournalExchange exchange) throws IOException
     {
         return responseRecords(exchange, writer -> {});
@@ -82,9 +147,14 @@ class UpstreamResponseRecordTest
 
     private List<String> responseRecords(final JournalExchange exchange, final Consumer<WarcExchangeWriter> beforeComplete) throws IOException
     {
+        return responseRecords(exchange, true, beforeComplete);
+    }
+
+    private List<String> responseRecords(final JournalExchange exchange, final boolean bodies, final Consumer<WarcExchangeWriter> beforeComplete) throws IOException
+    {
         try (WarcFileWriter files = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, 3_600_000L, 3, false))
         {
-            final WarcExchangeWriter writer = new WarcExchangeWriter(files, new PayloadDedupIndex(100));
+            final WarcExchangeWriter writer = new WarcExchangeWriter(files, new PayloadDedupIndex(100), bodies);
             beforeComplete.accept(writer);
             writer.onComplete(exchange);
         }

@@ -601,7 +601,8 @@ public final class JournalDecoder
                 // on the distinction is carried by the type rather than by a value a caller
                 // has to remember not to compare against.
                 listener.onEnd(reqId, attributes, clientStartTs, clientEndTs, httpStatus, requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes, proxyStartTs, proxyFirstByteReceivedTs, proxyEnd,
-                        storedChecksum(end.requestCrc32c()), storedChecksum(end.responseCrc32c()));
+                        storedChecksum(end.requestCrc32c()), storedChecksum(end.responseCrc32c()),
+                        end.requestBodyTruncated(), end.responseBodyTruncated());
             }
 
             default -> throw new CorruptEntryException("Unknown event type: " + journalEvent.eventType());
@@ -815,13 +816,13 @@ public final class JournalDecoder
                           final int status,
                           final long requestHeaderBytes, final long requestBodyBytes, final long responseHeaderBytes, final long responseBodyBytes,
                           final long proxyStartTs, final long proxyFirstByteReceivedTs, final long proxyEndTs,
-                          final BodyChecksum requestChecksum, final BodyChecksum responseChecksum)
+                          final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated)
         {
             try
             {
                 delegate.onEnd(reqId, attributes, clientStartTs, clientEndTs, status,
                         requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes,
-                        proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, requestChecksum, responseChecksum);
+                        proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs, requestChecksum, responseChecksum, requestBodyTruncated, responseBodyTruncated);
             }
             catch (final RuntimeException e)
             {

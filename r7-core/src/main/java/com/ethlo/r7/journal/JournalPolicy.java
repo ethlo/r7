@@ -11,18 +11,38 @@ import com.ethlo.r7.journal.api.JournalLevel;
  */
 public final class JournalPolicy
 {
+    /**
+     * No {@code truncate_body_at}: as a base, whole bodies are journaled; on a rule, the rule
+     * does not name the key.
+     */
+    public static final long NO_CAP = -1;
+
     public static final JournalPolicy NONE = new JournalPolicy(JournalLevel.NONE, JournalLevel.NONE, List.of(), List.of());
 
     private final JournalLevel request;
     private final JournalLevel response;
+    private final long requestTruncateAt;
+    private final long responseTruncateAt;
     private final JournalRule[] onRequest;
     private final JournalRule[] onResponse;
     private final boolean mayJournal;
 
     public JournalPolicy(final JournalLevel request, final JournalLevel response, final List<JournalRule> onRequest, final List<JournalRule> onResponse)
     {
+        this(request, response, NO_CAP, NO_CAP, onRequest, onResponse);
+    }
+
+    /**
+     * @param requestTruncateAt  the base request body cap in bytes, or {@link #NO_CAP}
+     * @param responseTruncateAt the base response body cap in bytes, or {@link #NO_CAP}
+     */
+    public JournalPolicy(final JournalLevel request, final JournalLevel response, final long requestTruncateAt, final long responseTruncateAt,
+                         final List<JournalRule> onRequest, final List<JournalRule> onResponse)
+    {
         this.request = request;
         this.response = response;
+        this.requestTruncateAt = requestTruncateAt;
+        this.responseTruncateAt = responseTruncateAt;
         this.onRequest = onRequest.toArray(new JournalRule[0]);
         this.onResponse = onResponse.toArray(new JournalRule[0]);
         boolean any = request != JournalLevel.NONE || response != JournalLevel.NONE;
@@ -51,6 +71,22 @@ public final class JournalPolicy
     public JournalLevel response()
     {
         return this.response;
+    }
+
+    /**
+     * @return the base request body cap in bytes, or {@link #NO_CAP}
+     */
+    public long requestTruncateAt()
+    {
+        return this.requestTruncateAt;
+    }
+
+    /**
+     * @return the base response body cap in bytes, or {@link #NO_CAP}
+     */
+    public long responseTruncateAt()
+    {
+        return this.responseTruncateAt;
     }
 
     JournalRule[] onRequestRules()

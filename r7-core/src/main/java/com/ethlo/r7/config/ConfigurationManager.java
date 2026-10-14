@@ -605,14 +605,15 @@ public final class ConfigurationManager
             }
             compiled.add(new JournalRule(rule.id() != null ? rule.id() : path, path, condition,
                     rule.request() != null ? rule.request().level() : null,
-                    rule.response() != null ? rule.response().level() : null));
+                    rule.response() != null ? rule.response().level() : null,
+                    truncateAt(rule.request()), truncateAt(rule.response())));
         }
         return compiled;
     }
 
     /**
-     * A route's journal policy: each base level from the innermost level naming it, else
-     * {@code NONE}; the rules of every level, the route's checked first, then its group's, then
+     * A route's journal policy: each base key ({@code level}, {@code truncate_body_at}) from the
+     * innermost level naming it, else its default; the rules of every level, the route's checked first, then its group's, then
      * the root's.
      * <p>
      * Refuses an {@code on_response} rule naming the request while the request can be
@@ -625,6 +626,8 @@ public final class ConfigurationManager
         JournalLevel request = null;
         String requestFrom = null;
         JournalLevel response = null;
+        long requestTruncateAt = JournalPolicy.NO_CAP;
+        long responseTruncateAt = JournalPolicy.NO_CAP;
         final List<JournalRule> onRequest = new ArrayList<>();
         final List<JournalRule> onResponse = new ArrayList<>();
         for (final CompiledJournal level : new CompiledJournal[]{route, group, root})
@@ -642,6 +645,14 @@ public final class ConfigurationManager
             if (response == null && definition.response() != null && definition.response().level() != null)
             {
                 response = definition.response().level();
+            }
+            if (requestTruncateAt == JournalPolicy.NO_CAP)
+            {
+                requestTruncateAt = truncateAt(definition.request());
+            }
+            if (responseTruncateAt == JournalPolicy.NO_CAP)
+            {
+                responseTruncateAt = truncateAt(definition.response());
             }
             onRequest.addAll(level.onRequest());
             onResponse.addAll(level.onResponse());
@@ -667,7 +678,16 @@ public final class ConfigurationManager
             }
         }
 
-        return new JournalPolicy(request != null ? request : JournalLevel.NONE, response != null ? response : JournalLevel.NONE, onRequest, onResponse);
+        return new JournalPolicy(request != null ? request : JournalLevel.NONE, response != null ? response : JournalLevel.NONE,
+                requestTruncateAt, responseTruncateAt, onRequest, onResponse);
+    }
+
+    /**
+     * The body cap a direction names, each key inherited on its own like {@code level}.
+     */
+    private static long truncateAt(final JournalDirectionDefinition direction)
+    {
+        return direction != null && direction.truncateBodyAt() != null ? direction.truncateBodyAt().bytes() : JournalPolicy.NO_CAP;
     }
 
     /**

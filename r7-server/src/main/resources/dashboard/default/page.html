@@ -1591,6 +1591,9 @@
                 }).join('') + `</div>`;
         };
 
+        const buildCap = (bytes) => bytes == null ? ''
+            : `<div class="sub text-dim" style="margin-top: 4px;">body capped at ${esc(formatBytes(bytes))} at FULL</div>`;
+
         const buildRules = (rules) => {
             if (!rules || rules.length === 0) return '';
             let html = '<div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RULES:</div>';
@@ -1598,7 +1601,9 @@
             rules.forEach(rule => {
                 const sets = [];
                 if (rule.request) sets.push(`request ${jBadge(rule.request)} ${esc(rule.request)}`);
+                if (rule.request_truncate_body_at != null) sets.push(`request body capped at ${esc(formatBytes(rule.request_truncate_body_at))}`);
                 if (rule.response) sets.push(`response ${jBadge(rule.response)} ${esc(rule.response)}`);
+                if (rule.response_truncate_body_at != null) sets.push(`response body capped at ${esc(formatBytes(rule.response_truncate_body_at))}`);
                 html += `<div class="sub text-dim" style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;" title="${esc(rule.path)}">
                 <span style="font-size: 0.85em;">${esc(rule.stage)}</span>
                 <span style="font-size: 0.85em;">${esc(rule.label)}</span>
@@ -1612,8 +1617,10 @@
         return `
             <div class="panel-subtitle" style="margin-bottom: 4px;">REQUEST:</div>
             ${buildPills(config.journal?.request_level || 'NONE')}
+            ${buildCap(config.journal?.request_truncate_body_at)}
             <div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RESPONSE:</div>
             ${buildPills(config.journal?.response_level || 'NONE')}
+            ${buildCap(config.journal?.response_truncate_body_at)}
             ${buildRules(config.journal?.rules)}`;
     }
 

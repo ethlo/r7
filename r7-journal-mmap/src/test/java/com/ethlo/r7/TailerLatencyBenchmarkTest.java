@@ -100,7 +100,7 @@ class TailerLatencyBenchmarkTest
                 committedAt.put(reqId, System.nanoTime());
                 journal.endExchange(reqId, new FastGatewayAttributes(),
                         1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
                 if (gapMicros > 0)
                 {
                     LockSupport.parkNanos(gapMicros * 1_000L);

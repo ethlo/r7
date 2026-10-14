@@ -611,16 +611,16 @@ public final class GatewayPipeline
             final long proxyFirstBytesTs = ServerExchange.toEpochNanos(ex.upstreamHeadNanos, requestEndTs, nanoNow);
             final long proxyEndTs = ServerExchange.toEpochNanos(ex.upstreamEndNanos, requestEndTs, nanoNow);
 
-            // Body checksums are supplied by StatefulJournal, which is the only layer
-            // that knows which fragments actually reached the journal — it gates them on
-            // the effective level. Anything computed here would describe the bytes on the
+            // Body checksums and truncation flags are supplied by StatefulJournal, which is
+            // the only layer that knows which fragments actually reached the journal — it
+            // gates them on the effective level and the body cap. Anything computed here would describe the bytes on the
             // wire instead, and would not match what a reader reads back.
             final BodyChecksum requestBodyChecksum = BodyChecksum.NOT_RECORDED;
             final BodyChecksum responseBodyChecksum = BodyChecksum.NOT_RECORDED;
             final TrafficMetrics trafficMetrics = ex.trafficMetrics();
 
             tagExchangeAttributes(ex);
-            journal.endExchange(requestId, ex.attributes(), requestStartTs, requestEndTs, ex.clientResponse().status(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyChecksum, responseBodyChecksum);
+            journal.endExchange(requestId, ex.attributes(), requestStartTs, requestEndTs, ex.clientResponse().status(), trafficMetrics.requestHeaderBytes(), trafficMetrics.requestBodyBytes(), trafficMetrics.responseHeaderBytes(), trafficMetrics.responseBodyBytes(), proxyStartTs, proxyFirstBytesTs, proxyEndTs, requestBodyChecksum, responseBodyChecksum, false, false);
             ex.journalBytes = journal.getBytesWritten();
         }
     }
@@ -727,7 +727,9 @@ public final class GatewayPipeline
                     // Websocket exchanges return before the body taps are installed,
                     // so no body is ever journaled for them.
                     BodyChecksum.NOT_RECORDED,
-                    BodyChecksum.NOT_RECORDED
+                    BodyChecksum.NOT_RECORDED,
+                    false,
+                    false
             );
         });
     }

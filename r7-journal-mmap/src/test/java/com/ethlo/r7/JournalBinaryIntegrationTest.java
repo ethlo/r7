@@ -108,7 +108,7 @@ class JournalBinaryIntegrationTest
                     final long requestEndTs = proxyEndTs + 60_000L;
                     // No response body was journaled, so there is nothing to claim about one.
                     journal.endExchange(reqId, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, 223, 17, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs,
-                            BodyChecksum.of(requestCrc), BodyChecksum.NOT_RECORDED);
+                            BodyChecksum.of(requestCrc), BodyChecksum.NOT_RECORDED, false, false);
                 }
                 return null;
             });
@@ -196,7 +196,7 @@ class JournalBinaryIntegrationTest
             final long proxyEndTs = proxyFirstByteReceivedTs + 260_000_000;
             final long requestEndTs = proxyEndTs + 60_000L;
             journal.endExchange(id, new FastGatewayAttributes(), requestStartTs, requestEndTs, statusCode, 100, 123, 321, 2, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs,
-                    crc32c(requestBody), crc32c(responseBody));
+                    crc32c(requestBody), crc32c(responseBody), false, false);
         }
 
         try

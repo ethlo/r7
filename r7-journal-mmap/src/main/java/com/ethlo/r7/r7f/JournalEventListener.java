@@ -51,5 +51,5 @@ public interface JournalEventListener
                int status,
                long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
                long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
-               final BodyChecksum requestChecksum, final BodyChecksum responseChecksum);
+               final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated);
 }

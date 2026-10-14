@@ -62,7 +62,7 @@ class HeaderNameCaseRoundTripTest
             journal.clientResponse(JournalLevel.HEADERS, id, 200, ascii("HTTP/1.1 200 OK"), clientResponse, upstreamResponse);
             journal.endExchange(id, new FastGatewayAttributes(), 1L, 2L, 200,
                     0, 0, 0, 0, 1L, 1L, 2L,
-                    BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final AtomicReference<JournalExchange> read = new AtomicReference<>();

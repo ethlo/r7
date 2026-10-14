@@ -904,11 +904,29 @@ Each direction, `request` and `response`, has a level. `journal` is declared at 
 | `NONE` | None | Disables logging completely for the route/status. |
 | `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
 | `HEADERS` | Metadata + Headers | Captures both request and response headers. |
-| `FULL` | Headers + Bodies | Captures bodies in full, streamed into the journal as they pass. The journal sets no size cap; request bodies are bounded by `limits.max_entity_size`. |
+| `FULL` | Headers + Bodies | Captures bodies as they stream: whole, or their first `truncate_body_at` bytes (below). |
 
 Header and query parameter values that may be secrets are journaled as fingerprints, not in plain text; see [Journaling: redacted values](journaling.md#redacted-header-and-query-parameter-values).
 
 A request at `NONE` is still recorded at `METADATA` (start line, client address, timing) when its response is journaled, to anchor the response.
+
+#### Body cap (`truncate_body_at`)
+
+A direction also takes `truncate_body_at`, a size (`64KB`, `1MB`). At `FULL` the journal keeps the body's first `truncate_body_at` bytes and records that it stopped; the body itself still streams whole to the upstream or the client, and the exchange is journaled whatever its size. Below `FULL` it has no effect. Without it, whole bodies are journaled; [Journaling: capping bodies](journaling.md#capping-bodies) says when to set it.
+
+```yaml
+journal:
+  request:  { level: METADATA, truncate_body_at: 64KB }
+  response: { level: METADATA, truncate_body_at: 64KB }
+  on_request:
+    - id: writes
+      match:
+        - not:
+            Method: { include: [GET] }
+      request: { level: FULL }               # captured up to 64KB
+```
+
+`level` and `truncate_body_at` are inherited separately: `response: { truncate_body_at: 8KB }` on a route replaces the cap and keeps the inherited level, and a cap set at the root is the default for every `FULL` beneath it, including one a rule sets. A rule that names `truncate_body_at` replaces it, with a larger or a smaller size.
 
 ### Journal Rules (`on_request`, `on_response`)
 
@@ -941,7 +959,7 @@ journal:
 ```
 
 * **When they run.** `on_request` is checked once the route is chosen, before its filters, against the request as the client sent it. `on_response` is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use [response predicates](#response-matching) and `leg: upstream`.
-* **Which rule wins.** For each direction, the first matching rule that names it wins; a rule naming only `response` leaves the request to the rules after it. `on_response` overrides what `on_request` resolved. A route's rules are checked first, then its group's, then the root's.
+* **Which rule wins.** For each key of each direction (`level`, `truncate_body_at`), the first matching rule that names it wins; a rule naming only `response` leaves the request to the rules after it, and one naming only a direction's `truncate_body_at` leaves its `level` to them. `on_response` overrides what `on_request` resolved. A route's rules are checked first, then its group's, then the root's.
 * **Recorded.** Each rule that fires is journaled in the `gateway.journal.rule` attribute, by its `id`, or its path (`routes.orders.journal.on_response[0]`) when it has none. Ids are unique across the file.
 * **Failures.** A rule whose predicate fails (a regex over its budget) does not fire, under `not` as well, and the exchange carries on: its label is journaled in `gateway.journal.rule_error`, and the first failure is logged once per load.
 
@@ -951,12 +969,13 @@ Bodies stream as they pass, which fixes two things at load:
 | --- | --- |
 | `on_response` sets `request: FULL` | `[routes.orders.journal.on_response[0].request] FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.` |
 | `on_response` names `request` while the base or an `on_request` rule can make it `FULL` | `[routes.orders.journal.on_response[0].request] cannot change the request level: journal.on_request[0] can make it FULL, and a request body that was journaled cannot be un-written.` |
+| `on_response` names `request.truncate_body_at` | `[routes.orders.journal.on_response[0].request.truncate_body_at] the request body has already streamed; set it in on_request or as the base.` |
 | A rule without `match` | `[routes.orders.journal.on_request[0]] match is required` |
 | A rule with `match: []` | `[routes.orders.journal.on_request[0].match] Empty list: name at least one predicate, or remove it` |
 | A rule naming neither direction | `[routes.orders.journal.on_request[0]] sets no level; name request, response or both` |
 | Two rules with one `id` | `[routes.orders.journal.on_request[1].id] 'debug-traffic' is already the id of journal.on_request[0]` |
 
-The response body is captured from its first byte whatever level `on_response` gives it, since the rules run before it is written.
+The response body is captured from its first byte whatever level and cap `on_response` gives it, since the rules run before it is written.
 
 ### Unrouted Requests (`routes.yaml -> unrouted`)
 

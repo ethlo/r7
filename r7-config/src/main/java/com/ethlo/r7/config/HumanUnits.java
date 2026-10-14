@@ -61,15 +61,22 @@ public final class HumanUnits
             throw new ConfigurationException("Invalid data size format: '" + text + "'. Supported formats: 1024, 8kb, 200mb, 1gb");
         }
 
-        final long amount = Long.parseLong(matcher.group(1));
         final String unit = matcher.group(2) != null ? matcher.group(2).toLowerCase() : "b";
-        return switch (unit)
+        try
         {
-            case "b" -> DataSize.ofBytes(amount);
-            case "kb" -> DataSize.ofKilobytes(amount);
-            case "mb" -> DataSize.ofMegabytes(amount);
-            case "gb" -> DataSize.ofGigabytes(amount);
-            default -> throw new ConfigurationException("Unknown data size unit in '" + text + "'");
-        };
+            final long amount = Long.parseLong(matcher.group(1));
+            return switch (unit)
+            {
+                case "b" -> DataSize.ofBytes(amount);
+                case "kb" -> DataSize.ofKilobytes(amount);
+                case "mb" -> DataSize.ofMegabytes(amount);
+                case "gb" -> DataSize.ofGigabytes(amount);
+                default -> throw new ConfigurationException("Unknown data size unit in '" + text + "'");
+            };
+        }
+        catch (final ArithmeticException | NumberFormatException e)
+        {
+            throw new ConfigurationException("Data size too large: '" + text + "'");
+        }
     }
 }

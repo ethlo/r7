@@ -57,7 +57,7 @@ class UpstreamResponseRelayedRoundTripTest
         journal.clientResponse(JournalLevel.HEADERS, id, clientStatus, ascii("HTTP/1.1 " + clientStatus + " X"), headers, headers);
         journal.endExchange(id, new FastGatewayAttributes(), 1L, 2L, clientStatus,
                 0, 0, 0, 0, 1L, 1L, 2L,
-                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
     }
 
     private static ByteBuffer ascii(final String s)

@@ -71,6 +71,26 @@ final class WarcFields
     }
 
     /**
+     * A {@code request} or {@code response} record holding only the first
+     * {@code truncate_body_at} bytes of its body: the journal stopped there by configuration,
+     * and the rest crossed the wire without being kept. {@code WARC-Truncated: length} is the
+     * WARC 1.1 reason for a record cut short at a configured size, and the payload digest is of
+     * the prefix the record holds.
+     */
+    static List<Map.Entry<String, String>> truncated(final String msgType, final String warcDate, final String targetUri,
+                                                      final List<String> concurrentToIds, final String requestId,
+                                                      final String payloadDigest)
+    {
+        final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
+        fields.add(entry("WARC-Truncated", "length"));
+        if (payloadDigest != null)
+        {
+            fields.add(entry("WARC-Payload-Digest", payloadDigest));
+        }
+        return fields;
+    }
+
+    /**
      * A {@code request} or {@code response} record for a leg whose payload is not stored here
      * because it is byte-identical to, and already stored in, another record of the same
      * four-record group — see {@code design/warc.md}: the gateway journal itself only ever
@@ -88,13 +108,17 @@ final class WarcFields
      * payload was captured but is not in this archive (the tailer's JSON line holds it when that
      * output is on and writes bodies; otherwise nothing does), so the record states that there
      * was one, and which by its digest, without storing it.
+     * <p>
+     * When the journal capped the body ({@code truncate_body_at}), the reason is
+     * {@code length} instead, as on the record holding the prefix: the digest is of the prefix,
+     * not of the whole payload.
      */
     static List<Map.Entry<String, String>> notStoredElsewhere(final String msgType, final String warcDate, final String targetUri,
                                                                final List<String> concurrentToIds, final String requestId,
-                                                               final String payloadDigest)
+                                                               final String payloadDigest, final boolean capped)
     {
         final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
-        fields.add(entry("WARC-Truncated", "unspecified"));
+        fields.add(entry("WARC-Truncated", capped ? "length" : "unspecified"));
         if (payloadDigest != null)
         {
             fields.add(entry("WARC-Payload-Digest", payloadDigest));

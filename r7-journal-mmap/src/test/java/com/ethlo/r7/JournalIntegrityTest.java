@@ -208,7 +208,7 @@ class JournalIntegrityTest
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final CollectingSink sink = tail();
@@ -412,7 +412,7 @@ class JournalIntegrityTest
                         new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
                 journal.endExchange(reqId, new FastGatewayAttributes(),
                         1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
             }
         }
 
@@ -478,7 +478,7 @@ class JournalIntegrityTest
             // No requestBody entry at all, but the end event says a body was seen.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, 4096L, 0L, 0L, 0L, 0L, 0L,
-                    BodyChecksum.ofUnsigned32(0x12345678), BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x12345678), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final CollectingSink sink = tail();
@@ -506,7 +506,7 @@ class JournalIntegrityTest
             // checksum happens to be zero.
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, 128L, 0L, 0L, 0L, 0L, 0L,
-                    BodyChecksum.ofUnsigned32(0), BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final CollectingSink sink = tail();
@@ -607,7 +607,7 @@ class JournalIntegrityTest
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                    BodyChecksum.ofUnsigned32(0xFFFFFFFFL), BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0xFFFFFFFFL), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final CollectingSink sink = tail();
@@ -825,7 +825,7 @@ class JournalIntegrityTest
                     // Zero request-body bytes, contradicting the body that was just written.
                     0L, 0L, 0L, 0L,
                     0L, 0L, 0L,
-                    BodyChecksum.ofUnsigned32(0x0BADC0DEL), BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x0BADC0DEL), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final CollectingSink sink = tail();
@@ -1354,7 +1354,7 @@ class JournalIntegrityTest
 
         assertThatThrownBy(() -> reassembler.onEnd("req-held", new FastGatewayAttributes(),
                 1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED))
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false))
                 .as("the consumer refuses, which is what stalls the segment")
                 .isInstanceOf(IllegalStateException.class);
 
@@ -1369,7 +1369,7 @@ class JournalIntegrityTest
         sink.acceptEverything();
         reassembler.onEnd("req-held", new FastGatewayAttributes(),
                 1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
 
         assertThat(sink.orphanedEnds).as("sink: %s", sink).isEmpty();
         assertThat(sink.delivered).containsExactly("req-held");
@@ -1528,7 +1528,7 @@ class JournalIntegrityTest
                 .containsExactly("req-swept:TIMED_OUT");
 
         reassembler.onEnd("req-swept", new FastGatewayAttributes(), 1L, 2L, 200,
-                0L, 0L, 0L, 0L, 0L, 0L, 0L, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
 
         assertThat(sink.orphanedEnds)
                 .as("the event after the eviction must be tracked, not applied to a detached "
@@ -1565,7 +1565,7 @@ class JournalIntegrityTest
             journal.requestBody(reqId, ByteBuffer.wrap(body));
             journal.endExchange(reqId, new FastGatewayAttributes(),
                     1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
-                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED);
+                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED, false, false);
         }
 
         final RefusingSink sink = RefusingSink.refusingTheNextMismatchReport();
@@ -1958,7 +1958,7 @@ class JournalIntegrityTest
     {
         journal.endExchange(reqId, new FastGatewayAttributes(),
                 1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
     }
 
     /* ---------- journal writing ---------- */
@@ -1976,7 +1976,7 @@ class JournalIntegrityTest
                 journal.requestBody(reqId, ByteBuffer.wrap(("body-" + i).getBytes(StandardCharsets.ISO_8859_1)));
                 journal.endExchange(reqId, new FastGatewayAttributes(),
                         1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
-                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED);
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
             }
         }
     }
