@@ -3,7 +3,7 @@
 The tailer's WARC output is standard [WARC 1.1](https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/),
 so any WARC reader can open it. This page is the contract for what r7 puts in those files on top
 of the standard: which records an exchange becomes, the `WARC-R7-*` fields, and the rules a
-reader can rely on. It describes profile version **1**, which every file states in its
+reader can rely on. Every file states the profile version it follows in its
 `warcinfo` record. How to run the tailer and configure the output is in
 [Journaling](journaling.md#3-the-tailer).
 
@@ -143,18 +143,3 @@ The r7 fields. A reader that does not know them can ignore them, as WARC require
   output archived carries `warc: {file, offset, length}`, the sealed file name and the byte range of the exchange's
   records. Decompress from `offset` to read them. A line without `warc` is an exchange this
   output left out: incomplete, or without a body under `exchanges: with_body`. See [The JSON line](journaling.md#the-json-line).
-
-## Compatibility
-
-Within a profile version, new optional fields may be added; a reader must ignore fields it does
-not know. Removing or renaming a field, or changing what one means, takes a new version.
-
-Files written before profile 1 have no `r7-profile` line and name two fields
-`WARC-X-R7-Sequence` and `WARC-X-R7-Group-End`. Two guarantees on this page do not hold for them:
-
-- Their `WARC-Date`, and so their CDXJ timestamps, are when the tailer wrote the record, not
-  when r7 captured the message.
-- The oldest have no group-end markers at all. A file like that left open by a crash is
-  recovered to its last complete record, which can end partway through an exchange.
-
-Their records otherwise follow this page.
