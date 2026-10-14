@@ -1,8 +1,11 @@
 package com.ethlo.r7.predicates;
 
+import java.util.Set;
+
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.condition.Leg;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.util.CidrRange;
@@ -22,6 +25,16 @@ public final class RemoteAddrFactory implements GatewayPredicateFactory<RemoteAd
     public String name()
     {
         return PREDICATE_NAME;
+    }
+
+    /**
+     * The request r7 forwards still carries the client's address, not r7's, so on the upstream
+     * leg this would test the client while appearing to test the hop to the upstream.
+     */
+    @Override
+    public Set<Leg> legs()
+    {
+        return Set.of(Leg.CLIENT);
     }
 
     @Override

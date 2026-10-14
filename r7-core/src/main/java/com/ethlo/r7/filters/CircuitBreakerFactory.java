@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -26,6 +27,7 @@ import com.ethlo.r7.api.StatusReporting;
 import com.ethlo.r7.api.UpstreamOutcome;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
+import com.ethlo.r7.spi.DeclarationLevel;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.ShortCircuitGatewayResponse;
@@ -50,6 +52,16 @@ public final class CircuitBreakerFactory implements GatewayFilterFactory<Circuit
     public String name()
     {
         return FILTER_NAME;
+    }
+
+    /**
+     * A breaker guards one upstream; at the root or on a group it would be one breaker for every
+     * route beneath, and one failing upstream would open it for all of them.
+     */
+    @Override
+    public Set<DeclarationLevel> levels()
+    {
+        return Set.of(DeclarationLevel.ROUTE);
     }
 
     @Override

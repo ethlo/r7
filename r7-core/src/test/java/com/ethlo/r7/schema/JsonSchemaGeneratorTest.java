@@ -75,6 +75,27 @@ class JsonSchemaGeneratorTest
     }
 
     /**
+     * A route-only filter is flagged at the root and on a group, as the loader refuses it there.
+     */
+    @Test
+    void aRouteOnlyFilterIsRefusedAboveRoutes()
+    {
+        assertThat(SCHEMA.at("/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/rootFilter");
+        assertThat(SCHEMA.at("/$defs/group/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/groupFilter");
+        assertThat(SCHEMA.at("/$defs/route/properties/filters/items/$ref").asString()).isEqualTo("#/$defs/routeFilter");
+        assertThat(SCHEMA.at("/$defs/routeFilter/$ref").asString()).as("no filter is refused on a route").isEqualTo("#/$defs/filter");
+
+        assertThat(SCHEMA.at("/$defs/filter").findValue("CircuitBreaker")).isNotNull();
+        for (final String level : List.of("rootFilter", "groupFilter"))
+        {
+            assertThat(SCHEMA.at("/$defs/" + level + "/allOf/0/$ref").asString()).isEqualTo("#/$defs/filter");
+            final JsonNode refused = SCHEMA.at("/$defs/" + level + "/allOf/1/not/anyOf");
+            assertThat(refused.get(0).get("required").get(0).asString()).as(level).isEqualTo("CircuitBreaker");
+            assertThat(refused.toString()).as(level).doesNotContain("RateLimiter");
+        }
+    }
+
+    /**
      * The upstream leg exists only in on_response: anywhere else the loader refuses it, so the
      * editor must not offer it.
      */
@@ -84,6 +105,7 @@ class JsonSchemaGeneratorTest
         assertThat(levels(SCHEMA.at("/$defs/predicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client");
         assertThat(levels(SCHEMA.at("/$defs/unroutedPredicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client");
         assertThat(levels(SCHEMA.at("/$defs/responsePredicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client", "upstream");
+        assertThat(levels(SCHEMA.at("/$defs/responsePredicate").findValue("RemoteAddr").at("/properties/leg"))).as("a client-only predicate").containsExactly("client");
     }
 
     /**

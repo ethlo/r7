@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.ethlo.r7.api.GatewayFilter;
 import com.ethlo.r7.api.GatewayRoute;
@@ -33,6 +34,7 @@ import com.ethlo.r7.filters.RewritePathFactory;
 import com.ethlo.r7.journal.JournalPolicy;
 import com.ethlo.r7.journal.JournalRule;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.spi.DeclarationLevel;
 import com.ethlo.r7.spi.EngineContext;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -240,16 +242,16 @@ public final class ConfigurationManager
         // routes as inheritance leaves them: a fallback named by a group is every route's in it.
         validateUniqueIds(config.routes());
         validateUniqueRuleIds(config, validationResult);
+        checkDeclarationLevels(config, validationResult);
         final List<Placed> placed = place(config, validationResult);
         validationResult.throwIfInvalid();
         validateCrossRouteReferences(placed);
-        warnSharedCircuitBreakers(config, placed);
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
         // A filter is one instance for everything beneath where it is declared: the root's once,
         // a group's once, and the same instances are then put in front of every route below. A
-        // RateLimiter or CircuitBreaker declared there must see every request against one shared
-        // bucket/state, not a fresh instance - and its private cache - per route it is wired onto.
+        // RateLimiter declared there must see every request against one shared set of buckets,
+        // not a fresh instance - and its private cache - per route it is wired onto.
         final List<GatewayFilter> rootFilters = new ArrayList<>();
         for (final FilterDefinition filterDef : config.filters())
         {
@@ -384,49 +386,48 @@ public final class ConfigurationManager
     }
 
     /**
-     * A CircuitBreaker at the root or on a group is one breaker for every route beneath it, so
-     * routes with upstreams of their own trip it for each other: one failing upstream opens it for
-     * all of them. Valid, and right when they share one upstream, so only a warning when they do not.
+     * A filter is one instance for everything beneath the level it is declared on, which is wrong
+     * for one whose state belongs to a single upstream: its factory names the levels it may be
+     * declared on, and the routes refuse to load with it anywhere else.
      */
-    private static void warnSharedCircuitBreakers(final RoutesDefinition config, final List<Placed> placed)
+    private void checkDeclarationLevels(final RoutesDefinition config, final ValidationResult validationResult)
     {
-        if (hasCircuitBreaker(config.filters()) && upstreamSources(placed) > 1)
-        {
-            log.warn("The CircuitBreaker in the root's filters is one breaker for every route, and the routes have upstreams of their own: "
-                    + "one failing upstream opens it for all of them. Declare it on each route, or on a group whose routes share one upstream, for a breaker per upstream.");
-        }
+        checkDeclarationLevel(config.filters(), DeclarationLevel.ROOT, validationResult);
         for (final RouteEntry entry : config.routes())
         {
-            if (entry instanceof GroupDefinition group && hasCircuitBreaker(group.filters())
-                    && upstreamSources(placed.stream().filter(p -> p.group() == group).toList()) > 1)
+            switch (entry)
             {
-                log.warn("The CircuitBreaker in the filters of group '{}' is one breaker for every route in it, and its routes have upstreams of their own: "
-                        + "one failing upstream opens it for all of them. Declare it on each route for a breaker per upstream.", group.group());
+                case GroupDefinition group ->
+                {
+                    final ValidationResult groupResult = validationResult.nested("routes").nested(group.group());
+                    checkDeclarationLevel(group.filters(), DeclarationLevel.GROUP, groupResult);
+                    for (final RouteDefinition route : group.routes())
+                    {
+                        checkDeclarationLevel(route.filters(), DeclarationLevel.ROUTE, groupResult.nested("routes").nested(route.id()));
+                    }
+                }
+                case RouteDefinition route -> checkDeclarationLevel(route.filters(), DeclarationLevel.ROUTE, validationResult.nested("routes").nested(route.id()));
             }
         }
     }
 
-    private static boolean hasCircuitBreaker(final List<FilterDefinition> filters)
+    private void checkDeclarationLevel(final List<FilterDefinition> filters, final DeclarationLevel level, final ValidationResult result)
     {
-        return filters != null && filters.stream().anyMatch(filter -> "CircuitBreaker".equals(filter.name()));
-    }
-
-    /**
-     * How many upstream declarations the routes take theirs from; a route without an upstream
-     * never reaches the breaker's judgement, so it does not count.
-     */
-    private static long upstreamSources(final List<Placed> routes)
-    {
-        return routes.stream()
-                .filter(p -> p.route().upstream() != null)
-                .map(p -> switch (p.upstreamLevel())
-                {
-                    case ROOT -> "";
-                    case GROUP -> "group:" + p.group().group();
-                    case ROUTE -> "route:" + p.path();
-                })
-                .distinct()
-                .count();
+        if (filters == null)
+        {
+            return;
+        }
+        for (int i = 0; i < filters.size(); i++)
+        {
+            final FilterDefinition filter = filters.get(i);
+            final GatewayFilterFactory<?> factory = filterRegistry.get(filter.name());
+            final Set<DeclarationLevel> levels = factory.levels();
+            if (!levels.contains(level))
+            {
+                final String allowed = levels.stream().sorted().map(DeclarationLevel::label).collect(Collectors.joining(" or "));
+                result.addError("filters[" + i + "]", filter.name() + " can be declared on " + allowed + " only, not on " + level.label() + ".");
+            }
+        }
     }
 
     private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final Condition groupMatch,

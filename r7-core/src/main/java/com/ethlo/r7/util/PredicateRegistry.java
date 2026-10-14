@@ -78,7 +78,15 @@ public class PredicateRegistry
         this.responseFactories = responseFactories.stream()
                 .collect(Collectors.toUnmodifiableMap(GatewayResponsePredicateFactory::name, factory -> factory));
 
-        this.requestFactories.forEach((name, factory) -> checkRegistration(name, factory.configClass()));
+        this.requestFactories.forEach((name, factory) ->
+        {
+            checkRegistration(name, factory.configClass());
+            // client is every predicate's default leg, and the only one a route's match has
+            if (!factory.legs().contains(Leg.CLIENT))
+            {
+                throw new IllegalStateException("Predicate '" + name + "' must test the client leg: legs() has to include CLIENT");
+            }
+        });
         this.responseFactories.forEach((name, factory) ->
         {
             checkRegistration(name, factory.configClass());
@@ -189,6 +197,11 @@ public class PredicateRegistry
         final Leg resolvedLeg = this.leg(name, leg, scope, result);
         if (resolvedLeg == null)
         {
+            return Condition.FALSE;
+        }
+        if (requestFactory != null && !requestFactory.legs().contains(resolvedLeg))
+        {
+            result.addError(name + "." + LEG, name + " tests only the " + Leg.CLIENT.configName() + " leg.");
             return Condition.FALSE;
         }
         final Object parameters = withoutLeg(yamlValue);

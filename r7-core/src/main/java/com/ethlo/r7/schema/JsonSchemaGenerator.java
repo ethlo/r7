@@ -28,6 +28,7 @@ import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.AcceptsInteger;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.FormatPattern;
+import com.ethlo.r7.spi.DeclarationLevel;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.spi.GatewayResponsePredicateFactory;
@@ -79,6 +80,9 @@ public final class JsonSchemaGenerator
     {
         final Map<String, SchemaNode> defs = new TreeMap<>();
         defs.put("filter", buildFilterDefinition());
+        defs.put("routeFilter", buildLevelFilterDefinition(DeclarationLevel.ROUTE));
+        defs.put("groupFilter", buildLevelFilterDefinition(DeclarationLevel.GROUP));
+        defs.put("rootFilter", buildLevelFilterDefinition(DeclarationLevel.ROOT));
         defs.put("predicate", buildPredicateDefinition("predicate", false));
         defs.put("responsePredicate", buildPredicateDefinition("responsePredicate", true));
         defs.put("unroutedPredicate", buildPredicateDefinition("unroutedPredicate", false));
@@ -94,7 +98,7 @@ public final class JsonSchemaGenerator
         ));
         properties.put("filters", new ArraySchema(
                         "array",
-                        new RefSchema("#/$defs/filter", null, null),
+                        new RefSchema("#/$defs/rootFilter", null, null),
                         "Filters for every route: one instance each for the whole gateway. They run before a group's and a route's on the request, and after them on the response.",
                         null
                 )
@@ -188,7 +192,7 @@ public final class JsonSchemaGenerator
 
         properties.put("filters", new ArraySchema(
                         "array",
-                        new RefSchema("#/$defs/filter", null, null),
+                        new RefSchema("#/$defs/routeFilter", null, null),
                         "A list of processing steps applied to the request before forwarding, and to the response before returning.",
                         null
                 )
@@ -229,7 +233,7 @@ public final class JsonSchemaGenerator
         ));
         properties.put("filters", new ArraySchema(
                 "array",
-                new RefSchema("#/$defs/filter", null, null),
+                new RefSchema("#/$defs/groupFilter", null, null),
                 "Filters for every route of the group: one instance each for the group. They run after the root's and before a route's own on the request.",
                 null
         ));
@@ -376,11 +380,44 @@ public final class JsonSchemaGenerator
 
     private SchemaNode buildFilterDefinition()
     {
+        final List<SpiEntry> entries = new ArrayList<>();
+        ServiceLoader.load(GatewayFilterFactory.class).forEach(factory ->
+        {
+            final Description descAnnotation = factory.getClass().getAnnotation(Description.class);
+            entries.add(new SpiEntry(factory.name(), factory.configClass(), descAnnotation != null ? descAnnotation.value() : null));
+        });
         return buildSpiDefinition(
-                spiEntries(GatewayFilterFactory.class, GatewayFilterFactory::name, GatewayFilterFactory::configClass),
+                entries,
                 Map.of(),
                 Map.of()
         );
+    }
+
+    /**
+     * Every filter, less those that may not be declared on {@code level}, so the editor flags a
+     * filter where the gateway would refuse it, such as a route-only filter at the root.
+     */
+    private SchemaNode buildLevelFilterDefinition(final DeclarationLevel level)
+    {
+        final List<String> refused = new ArrayList<>();
+        ServiceLoader.load(GatewayFilterFactory.class).forEach(factory ->
+        {
+            if (!factory.levels().contains(level))
+            {
+                refused.add(factory.name());
+            }
+        });
+        final RefSchema filter = new RefSchema("#/$defs/filter", null, null);
+        if (refused.isEmpty())
+        {
+            return filter;
+        }
+        Collections.sort(refused);
+        final List<SchemaNode> refusedForms = new ArrayList<>();
+        refused.forEach(name -> refusedForms.add(new ObjectSchema("object", null, List.of(name), null, null, null, null, null, null, null, null)));
+        refusedForms.add(new PrimitiveSchema("string", refused, null, null, null, null, null, null, null));
+        return new AllOfSchema(List.of(filter, new NotSchema(new AnyOfSchema(refusedForms, null, null),
+                String.join(", ", refused) + " can not be declared on " + level.label() + ".")), null);
     }
 
     /**
@@ -421,7 +458,17 @@ public final class JsonSchemaGenerator
                     null, null, null, null, reasonDescription.value(), null, null));
         }
 
-        final List<SpiEntry> entries = new ArrayList<>(spiEntries(GatewayPredicateFactory.class, GatewayPredicateFactory::name, GatewayPredicateFactory::configClass));
+        final SchemaNode clientLeg = new PrimitiveSchema("string", List.of(Leg.CLIENT.configName()), null, null, null,
+                "Which leg of the exchange to test: only client, for this predicate.", null, null, null);
+        final List<SpiEntry> entries = new ArrayList<>();
+        ServiceLoader.load(GatewayPredicateFactory.class).forEach(factory ->
+        {
+            final Description descAnnotation = factory.getClass().getAnnotation(Description.class);
+            final Map<String, SchemaNode> common = withResponsePredicates && !factory.legs().contains(Leg.UPSTREAM)
+                    ? Map.of(PredicateRegistry.LEG, clientLeg)
+                    : null;
+            entries.add(new SpiEntry(factory.name(), factory.configClass(), descAnnotation != null ? descAnnotation.value() : null, common));
+        });
         if (withResponsePredicates)
         {
             entries.addAll(spiEntries(GatewayResponsePredicateFactory.class, GatewayResponsePredicateFactory::name, GatewayResponsePredicateFactory::configClass));
@@ -438,8 +485,16 @@ public final class JsonSchemaGenerator
         return buildSpiDefinition(entries, logicalOperators, Map.of(PredicateRegistry.LEG, leg));
     }
 
-    private record SpiEntry(String name, Class<?> configClass, String description)
+    /**
+     * @param commonParameters the entry's own set of the parameters r7 accepts on every entry, or
+     *                         {@code null} for the definition's
+     */
+    private record SpiEntry(String name, Class<?> configClass, String description, Map<String, SchemaNode> commonParameters)
     {
+        SpiEntry(final String name, final Class<?> configClass, final String description)
+        {
+            this(name, configClass, description, null);
+        }
     }
 
     private static <T> List<SpiEntry> spiEntries(final Class<T> spiClass, final Function<T, String> nameExtractor, final Function<T, Class<?>> configExtractor)
@@ -467,15 +522,16 @@ public final class JsonSchemaGenerator
             final String name = entry.name();
             final Class<?> configClass = entry.configClass();
             final String description = entry.description();
+            final Map<String, SchemaNode> common = entry.commonParameters() != null ? entry.commonParameters() : commonParameters;
 
             if (configClass != null && configClass.isRecord())
             {
                 if (configClass.getRecordComponents().length == 0)
                 {
                     parameterlessComponents.add(name);
-                    if (!commonParameters.isEmpty())
+                    if (!common.isEmpty())
                     {
-                        properties.put(name, new ObjectSchema("object", new TreeMap<>(commonParameters), null, new BoolProps(false),
+                        properties.put(name, new ObjectSchema("object", new TreeMap<>(common), null, new BoolProps(false),
                                 null, null, null, null, description, null, null));
                     }
                 }
@@ -498,7 +554,7 @@ public final class JsonSchemaGenerator
                         }
 
                         final Map<String, SchemaNode> parameters = new TreeMap<>(os.properties());
-                        parameters.putAll(commonParameters);
+                        parameters.putAll(common);
                         properties.put(name, new ObjectSchema(
                                         os.type(), parameters, os.required(), os.additionalProperties(),
                                         os.minProperties(), os.maxProperties(), os.anyOf(), os.oneOf(),
@@ -786,7 +842,7 @@ public final class JsonSchemaGenerator
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public sealed interface SchemaNode permits AnyOfSchema, ArraySchema, ObjectSchema, OneOfSchema, PrimitiveSchema, RefSchema, RootSchema
+    public sealed interface SchemaNode permits AllOfSchema, AnyOfSchema, ArraySchema, NotSchema, ObjectSchema, OneOfSchema, PrimitiveSchema, RefSchema, RootSchema
     {
     }
 
@@ -902,6 +958,22 @@ public final class JsonSchemaGenerator
             List<SchemaNode> anyOf,
             String description,
             @JsonProperty("default") Object defaultValue
+    ) implements SchemaNode
+    {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record AllOfSchema(
+            List<SchemaNode> allOf,
+            String description
+    ) implements SchemaNode
+    {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record NotSchema(
+            SchemaNode not,
+            String description
     ) implements SchemaNode
     {
     }
