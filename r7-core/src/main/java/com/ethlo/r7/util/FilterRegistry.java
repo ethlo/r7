@@ -16,8 +16,13 @@ public final class FilterRegistry
 
     public FilterRegistry()
     {
+        this(PluginClassLoader.get());
+    }
+
+    FilterRegistry(final ClassLoader classLoader)
+    {
         // Load all factories from the classpath and the plugins directory exactly once
-        ServiceLoader<GatewayFilterFactory> loader = ServiceLoader.load(GatewayFilterFactory.class, PluginClassLoader.get());
+        ServiceLoader<GatewayFilterFactory> loader = ServiceLoader.load(GatewayFilterFactory.class, classLoader);
 
         this.factories = loader.stream()
                 .map(ServiceLoader.Provider::get)

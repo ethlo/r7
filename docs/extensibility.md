@@ -324,8 +324,8 @@ plugins/
 ```
 
 The jars are loaded in a class loader of their own that sits on top of the gateway's, so the
-extension sees the r7 API and the built-in filters keep working. List a plugin's own dependencies in
-its jar (a shaded jar), since nothing else is added to its classpath.
+extension sees the r7 API and the built-in filters keep working. A plugin's own dependencies go in
+the same directory as its jar and are on its classpath; there is no need to build an uber-jar.
 
 ### Docker Compose Example
 

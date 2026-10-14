@@ -1071,7 +1071,7 @@ An invalid one prints the errors startup would, prefixed with the file, on stder
 routes.yaml: [routes.api] id is not unique
 ```
 
-Any other argument exits `2`. Extension jars on the classpath (`/app/plugins` in the image) are loaded as at startup, so mount them for the check too, or their filters are reported as unknown. The check reads the environment as startup does: every `${VAR}` without a default must be set, and so must `R7_FINGERPRINT_KEY` when there is no `server.yaml`. A CI job without production secrets sets placeholders; the check verifies their form, not their value.
+Any other argument exits `2`. Extension jars in the plugins directory (`plugins/` in the working directory, `R7_PLUGINS_DIR` to change it, `/app/plugins` in the image) are loaded as at startup, so mount them for the check too, or their filters are reported as unknown. The check reads the environment as startup does: every `${VAR}` without a default must be set, and so must `R7_FINGERPRINT_KEY` when there is no `server.yaml`. A CI job without production secrets sets placeholders; the check verifies their form, not their value.
 
 ### Server Configuration (`server`)
 

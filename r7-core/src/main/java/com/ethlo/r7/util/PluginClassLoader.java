@@ -68,13 +68,15 @@ public final class PluginClassLoader
 
     private static List<Path> findJars(final Path dir)
     {
-        if (!Files.isDirectory(dir))
+        // Only a path proven absent means no extensions. isDirectory is false for a path it could not
+        // inspect as well, and a plugins directory the gateway is not allowed into must stop the start.
+        if (Files.notExists(dir))
         {
             return List.of();
         }
 
-        // A directory that exists but cannot be read must stop the start: the gateway running without
-        // the extensions its routes name would fail every request that uses one, and say little why.
+        // A path that exists but is not a readable directory must stop the start: the gateway running
+        // without the extensions its routes name would fail every request that uses one, and say little why.
         final List<Path> jars = new ArrayList<>();
         try (final DirectoryStream<Path> entries = Files.newDirectoryStream(dir))
         {
