@@ -47,6 +47,7 @@ public final class HttpStatuses
             case 101 -> "Switching Protocols";
             case 102 -> "Processing";
             case 103 -> "Early Hints";
+            case 104 -> "Upload Resumption Supported";
             case OK -> "OK";
             case CREATED -> "Created";
             case ACCEPTED -> "Accepted";
@@ -102,6 +103,7 @@ public final class HttpStatuses
             case 506 -> "Variant Also Negotiates";
             case 507 -> "Insufficient Storage";
             case 508 -> "Loop Detected";
+            case 510 -> "Not Extended";
             case 511 -> "Network Authentication Required";
             default -> "";
         };

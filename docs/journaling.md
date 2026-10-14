@@ -383,7 +383,7 @@ Fields of the exchange:
 | `remote_address` | string | When known: the client address |
 | `remote_address_source` | string | With `remote_address`: `SOCKET`, `X_FORWARDED_FOR`, `X_REAL_IP` or `UNKNOWN` |
 | `client_request` | object | Always: the request from the client |
-| `upstream_request` | object | When the request was proxied: the request as written to the last target tried, with the target's path, `Host`, the `X-Forwarded-*` headers and framing r7 set |
+| `upstream_request` | object | When the request was proxied: the request head r7 built for the last target tried, with the target's path, `Host`, the `X-Forwarded-*` headers and framing r7 set. When no connection to that target could be made, it is the head r7 would have sent, and `upstream_response` has no status line |
 | `upstream_response` | object | When the request was proxied: the upstream's response, and the round trip's timing. When no upstream sent a response head (a refused connect, a timeout or a protocol error before one), it holds only the timing, at level `NONE`: r7's own `502`, `503` or `504` is recorded in `client_response`, never as the upstream's |
 | `client_response` | object | Always: the response to the client |
 | `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name`, `gateway.journal.rule` and `gateway.auth.basic.user` |
