@@ -126,8 +126,11 @@ refusal.
 
 The management API shows each route's effective configuration: its match with the group's ANDed
 in, its filters in run order with the level each was declared on, its upstream, and its journal
-policy with the rules in the order they are checked. Where an inner rule names a key an outer
-rule also names, the outer rule is shown as **may be overridden** for that key. The view never
+policy with the rules in the order they are checked. A rule is shown as **may be overridden**
+for a key by every rule that takes precedence for that key when it matches: the rules checked
+before it in its stage that name the key (an inner level's, or an earlier one at its own level),
+and, for an `on_request` rule, every `on_response` rule naming the key, since `on_response`
+decides last. The view never
 says an outer rule is overridden outright: whether one condition covers another is not decidable
 for third-party predicates, and an audit view must not state what it cannot prove. The journal
 answers it per exchange.
