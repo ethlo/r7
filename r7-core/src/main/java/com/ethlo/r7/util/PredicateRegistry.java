@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
@@ -52,9 +51,14 @@ public class PredicateRegistry
 
     public PredicateRegistry(final ObjectMapper mapper)
     {
+        this(mapper, PluginLoader.loaders());
+    }
+
+    PredicateRegistry(final ObjectMapper mapper, final List<ClassLoader> loaders)
+    {
         this(mapper,
-                ServiceLoader.load(GatewayPredicateFactory.class).stream().<GatewayPredicateFactory<?>>map(ServiceLoader.Provider::get).toList(),
-                ServiceLoader.load(GatewayResponsePredicateFactory.class).stream().<GatewayResponsePredicateFactory<?>>map(ServiceLoader.Provider::get).toList());
+                PluginLoader.load(GatewayPredicateFactory.class, loaders).stream().<GatewayPredicateFactory<?>>map(factory -> factory).toList(),
+                PluginLoader.load(GatewayResponsePredicateFactory.class, loaders).stream().<GatewayResponsePredicateFactory<?>>map(factory -> factory).toList());
     }
 
     PredicateRegistry(final ObjectMapper mapper, final List<GatewayPredicateFactory<?>> requestFactories, final List<GatewayResponsePredicateFactory<?>> responseFactories)

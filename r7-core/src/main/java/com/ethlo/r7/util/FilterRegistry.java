@@ -4,7 +4,6 @@ import static com.ethlo.r7.util.Levenshtein.findClosestMatch;
 
 import java.util.List;
 import java.util.Map;
-import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 
 import com.ethlo.r7.config.ConfigurationException;
@@ -16,11 +15,13 @@ public final class FilterRegistry
 
     public FilterRegistry()
     {
-        // Load all factories from the classpath and modules exactly once
-        ServiceLoader<GatewayFilterFactory> loader = ServiceLoader.load(GatewayFilterFactory.class);
+        this(PluginLoader.loaders());
+    }
 
-        this.factories = loader.stream()
-                .map(ServiceLoader.Provider::get)
+    FilterRegistry(final List<ClassLoader> loaders)
+    {
+        // Load all factories from the gateway and the plugins exactly once
+        this.factories = PluginLoader.load(GatewayFilterFactory.class, loaders).stream()
                 .collect(Collectors.toUnmodifiableMap(
                         GatewayFilterFactory::name,
                         factory -> factory,
