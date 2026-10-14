@@ -11,8 +11,6 @@ import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayFilter;
 import com.ethlo.r7.api.GatewayExchange;
 import com.ethlo.r7.api.ShortInfo;
-import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
-import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
 import com.ethlo.r7.server.ServerExchange;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -61,7 +59,7 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
         }
     }
 
-    public static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
+    public static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, CompletedGatewayFilter, ShortInfo
     {
         private final MetricsRegistry metricsRegistry;
         private final Config config;
@@ -98,12 +96,6 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
         }
 
         @Override
-        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
-        {
-            this.bucketFor(exchange).incrementUpstreamRequests();
-        }
-
-        @Override
         public void onClientResponse(final ClientResponseGatewayExchange exchange)
         {
             final ServerExchange serverExchange = (ServerExchange) exchange;
@@ -137,6 +129,14 @@ public final class SimpleMetricsFactory implements GatewayFilterFactory<SimpleMe
 
             final int clientStatus = exchange.clientResponse() != null ? exchange.clientResponse().status() : 0;
             bucket.recordClientStatus(clientStatus);
+
+            // Counted here, not when the upstream phase starts: this filter usually sits at the
+            // root, ahead of every route's upstream-phase filters, and a route answered by one
+            // of them (StaticContent, ReturnResponse, a refusal) never reaches an upstream.
+            if (serverExchange.wasProxied())
+            {
+                bucket.incrementUpstreamRequests();
+            }
 
             if (serverExchange.hasUpstreamResponse())
             {

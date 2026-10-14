@@ -135,6 +135,53 @@ public class R7EndToEndTest extends AbstractR7IntegrationTest
     }
 
     @Test
+    public void testOnlyProxiedRequestsAreCountedAsProxied() throws Exception
+    {
+        // SimpleMetrics sits at the root, ahead of StaticContent in the upstream phase, so
+        // counting on entry to that phase called every static file proxied.
+        given().when().get("/static/test.txt").then().statusCode(200);
+        given().when().get("/").then().statusCode(200);
+
+        // Telemetry reaches the snapshot on a background 2s tick; wait until both requests show.
+        long staticTotal = -1;
+        long staticProxied = -1;
+        long passthroughProxied = -1;
+        final long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline)
+        {
+            final JsonPath status = JsonPath.from(given()
+                    .accept("application/json")
+                    .baseUri("http://localhost")
+                    .port(R7_GATEWAY == null ? 18888 : R7_GATEWAY.getMappedPort(18888))
+                    .when()
+                    .get("/")
+                    .then()
+                    .statusCode(200)
+                    .extract()
+                    .asString());
+
+            staticTotal = longAt(status, "static-test", "total");
+            staticProxied = longAt(status, "static-test", "upstream");
+            passthroughProxied = longAt(status, "e2e-passthrough", "upstream");
+            if (staticTotal >= 1 && passthroughProxied >= 1)
+            {
+                break;
+            }
+            Thread.sleep(250);
+        }
+
+        Assertions.assertTrue(staticTotal >= 1, "Expected the static request in a telemetry snapshot, total was " + staticTotal);
+        Assertions.assertEquals(0, staticProxied, "A file served by StaticContent was counted as proxied");
+        Assertions.assertTrue(passthroughProxied >= 1, "Expected the proxied request to be counted, was " + passthroughProxied);
+    }
+
+    private static long longAt(final JsonPath status, final String routeId, final String field)
+    {
+        final Object value = status.get("route_metrics.find { it.id == '" + routeId + "' }.request_statistics." + field);
+        return value == null ? -1 : ((Number) value).longValue();
+    }
+
+    @Test
     public void testFollowSymlinksDisabledByDefaultBlocksNestedSymlinks() throws Exception
     {
         // symlinkAtomic needs host filesystem access, unavailable against the distroless
