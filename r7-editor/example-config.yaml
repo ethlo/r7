@@ -107,7 +107,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /var/www/frontend/
+          directories: [/var/www/frontend/]
     journal:
       request:
         level: NONE

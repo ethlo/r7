@@ -9,7 +9,7 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp
+          directories: [/tmp]
 
   - id: static-hidden-allowed
     match:
@@ -19,5 +19,5 @@ routes:
       - StripPathPrefix:
           parts: 1
       - StaticContent:
-          base_directory: /tmp
+          directories: [/tmp]
           serve_hidden_files: true

@@ -718,15 +718,17 @@ $defs:
         StaticContent:
           type: object
           properties:
-            base_directory:
-              type: string
-              description: The absolute path to the directory containing static files.
+            directories:
+              type: array
+              items:
+                type: string
+              description: "The directories to serve files from, in order: a request is answered by the first one that has the file, or a welcome file for the directory asked for, so a higher directory overrides a lower one file by file. One directory is a list of one."
             follow_symlinks:
               anyOf:
               - type: boolean
               - type: string
                 pattern: "^\\$\\{.*\\}$"
-              description: "Whether to follow symbolic links when resolving files under the base directory. Enable this if the base directory itself, or files/directories within it, are symlinks (e.g. an atomically swapped 'current' release symlink)."
+              description: Whether to follow symbolic links found under the directories when resolving a file. A listed directory may itself be a symlink (e.g. an atomically swapped 'current' release) without this; enable it only to follow links to files or directories inside them.
               default: false
             serve_hidden_files:
               anyOf:
@@ -736,14 +738,14 @@ $defs:
               description: "Whether to serve files and directories whose name starts with '.' (e.g. .env, .git/). Disabled by default, in which case such a request is answered 404; .well-known/ is always served."
               default: false
           required:
-          - base_directory
+          - directories
           additionalProperties: false
-          description: Serves static files from a local directory.
+          description: "Serves static files from local directories, the first that has a file answering."
           defaultSnippets:
           - label: Insert StaticContent
-            description: Serves static files from a local directory.
+            description: "Serves static files from local directories, the first that has a file answering."
             body:
-              base_directory: $1
+              directories: $1
         StripPathPrefix:
           type: object
           properties:

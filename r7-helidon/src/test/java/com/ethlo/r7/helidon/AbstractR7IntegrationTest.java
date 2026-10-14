@@ -132,8 +132,8 @@ public abstract class AbstractR7IntegrationTest
                         Transferable.of(STATIC_CONTENT_SERVED_SUCCESSFULLY),
                         "/tmp/test.txt"
                 )
-                // Seed the directory-replacement test fixture; StaticContent validates that its
-                // base_directory exists at config load time, so it must already be present here.
+                // Seed the directory-replacement test fixture; StaticContent validates that
+                // each directory must exist at config load time, so it must already be present here.
                 .withCopyToContainer(
                         Transferable.of(STATIC_SWAP_TEST_INITIAL_CONTENT),
                         "/tmp/static-swap-test/current/content.txt"
@@ -197,8 +197,8 @@ public abstract class AbstractR7IntegrationTest
 
         Files.writeString(Paths.get("/tmp/test.txt"), STATIC_CONTENT_SERVED_SUCCESSFULLY, StandardOpenOption.CREATE);
 
-        // Seed the directory-replacement test fixture; StaticContent validates that its
-        // base_directory exists at config load time, so it must already be present here.
+        // Seed the directory-replacement test fixture; StaticContent validates that
+        // each directory must exist at config load time, so it must already be present here.
         final Path staticSwapCurrent = Paths.get("/tmp/static-swap-test/current");
         Files.createDirectories(staticSwapCurrent);
         Files.writeString(staticSwapCurrent.resolve("content.txt"), STATIC_SWAP_TEST_INITIAL_CONTENT, StandardOpenOption.CREATE);

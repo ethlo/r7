@@ -59,19 +59,26 @@ public abstract class StaticContentKit
         Files.writeString(outside.resolve("content.txt"), "symlinked-content");
         Files.createSymbolicLink(this.site.resolve("linked"), outside);
         Files.createDirectories(this.dir.resolve("swap/current"));
+        Files.createDirectories(this.dir.resolve("layer-gone"));
+        final Path override = Files.createDirectories(this.dir.resolve("override"));
+        Files.writeString(override.resolve("test.txt"), "override");
+        Files.createDirectories(override.resolve("web"));
+        Files.createDirectories(override.resolve("empty"));
 
         this.gatewayPort = freePort();
         final Path routes = this.dir.resolve("routes.yaml");
         Files.writeString(routes, """
                 version: static-kit
                 routes:
-                %s%s%s%s%s
+                %s%s%s%s%s%s
                 """.formatted(
                 route("static", this.site, ""),
                 route("static-hidden", this.site, "serve_hidden_files: true"),
                 route("static-follow", this.site, "follow_symlinks: true"),
                 route("static-swap", this.dir.resolve("swap/current"), ""),
-                filteredRoute(this.site)), StandardCharsets.UTF_8);
+                filteredRoute(this.site),
+                route("static-layers", this.dir.resolve("layer-gone").toAbsolutePath() + ", " + override.toAbsolutePath() + ", " + this.site.toAbsolutePath(), "")),
+                StandardCharsets.UTF_8);
         final Path server = this.dir.resolve("server.yaml");
         Files.writeString(server, """
                 server:
@@ -88,6 +95,11 @@ public abstract class StaticContentKit
 
     private static String route(final String prefix, final Path base, final String option)
     {
+        return route(prefix, base.toAbsolutePath().toString(), option);
+    }
+
+    private static String route(final String prefix, final String directories, final String option)
+    {
         return """
                   - id: %s
                     match:
@@ -97,9 +109,9 @@ public abstract class StaticContentKit
                       - StripPathPrefix:
                           parts: 1
                       - StaticContent:
-                          base_directory: %s
+                          directories: [%s]
                           %s
-                """.formatted(prefix, prefix, base.toAbsolutePath(), option);
+                """.formatted(prefix, prefix, directories, option);
     }
 
     /**
@@ -122,7 +134,7 @@ public abstract class StaticContentKit
                       - StripPathPrefix:
                           parts: 1
                       - StaticContent:
-                          base_directory: %s
+                          directories: [%s]
                 """.formatted(base.toAbsolutePath());
     }
 
@@ -234,6 +246,31 @@ public abstract class StaticContentKit
         final HttpResponse<String> response = get("/static/web");
         assertThat(response.statusCode()).isBetween(301, 308);
         assertThat(response.headers().firstValue("Location")).get().asString().endsWith("/static/web/");
+    }
+
+    /**
+     * Several directories: the first that can answer wins, file by file, and one that goes
+     * missing is skipped rather than masking the rest.
+     */
+    @Test
+    void theFirstDirectoryThatCanAnswerWins() throws Exception
+    {
+        // A file in a higher directory hides the lower one's.
+        assertThat(get("/static-layers/test.txt").body()).isEqualTo("override");
+        // Its neighbours still come from below.
+        assertThat(get("/static-layers/page.html").body()).isEqualTo("<p>html</p>");
+        assertThat(get("/static-layers/sub/data.txt").body()).isEqualTo("data");
+        // A directory without a welcome file does not hide one that has it.
+        assertThat(get("/static-layers/web/").body()).contains("welcome");
+        // No welcome file anywhere: 403; nothing anywhere: 404.
+        assertThat(get("/static-layers/empty/").statusCode()).isEqualTo(403);
+        assertThat(get("/static-layers/no-such-file.txt").statusCode()).isEqualTo(404);
+        // The hidden-file rule holds whichever directory has the file.
+        assertThat(get("/static-layers/.env").statusCode()).isEqualTo(404);
+
+        // A directory gone at runtime is skipped.
+        Files.delete(this.dir.resolve("layer-gone"));
+        assertThat(get("/static-layers/test.txt").body()).isEqualTo("override");
     }
 
     @Test

@@ -860,11 +860,28 @@ Short-circuits the pipeline to serve static files directly from the disk. **Secu
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `base_directory` | String | Yes | The absolute physical path on the disk (e.g., `/var/www/html/`) containing the static assets. |
-| `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links found under the base directory. The base directory itself may be a symlink either way (e.g. an atomically swapped `current` release symlink); this is only needed for links inside it. |
+| `directories` | List of Strings | Yes | The directories to serve from, in order (e.g. `[/var/www/html/]`). Each must exist when the routes load. |
+| `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links found under a directory. The directory itself may be a symlink either way (e.g. an atomically swapped `current` release symlink); this is only needed for links inside it. |
 | `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`; `.well-known/` is always served. |
 
-In a container, bind-mount the parent of `base_directory`, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 answers `503` and logs a warning until it restarts. With the parent mounted, a replaced directory, or a swapped `current` symlink, is picked up on the next request.
+With several directories, each request is answered by the first one that can: the first holding the file, or, for a directory asked for with its trailing slash, the first holding a welcome file in it. A higher directory overrides a lower one file by file, so a deployment can override a few files of a shared set without copying the rest:
+
+```yaml
+routes:
+  - id: assets
+    match:
+      - PathPrefix:
+          prefix: /assets/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          directories: [/srv/site/assets/, /srv/common/assets/]
+```
+
+Nothing is merged: a file is served whole from one directory. A directory that is missing at runtime, mid swap or on an unmounted volume, is skipped; when all are, the answer is `404`. To serve several folders, give each its own route.
+
+In a container, bind-mount the parent of each directory, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 logs a warning and skips it until it restarts, and answers `503` when no other directory is left. With the parent mounted, a replaced directory, or a swapped `current` symlink, is picked up on the next request.
 
 #### SetStatus
 
@@ -1069,7 +1086,7 @@ routes:
           name: X-Content-Type-Options
           value: nosniff
       - StaticContent:
-          base_directory: /var/www/html/
+          directories: [/var/www/html/]
 
   # Complex routing with nested logical predicates
   - id: protected-admin-api
