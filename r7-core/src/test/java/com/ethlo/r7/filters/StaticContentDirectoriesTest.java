@@ -49,6 +49,8 @@ class StaticContentDirectoriesTest
         assertThat(errors(List.of(a, this.dir.resolve("missing")))).singleElement().asString().contains("not found");
         assertThat(errors(List.of())).singleElement().asString().contains("List at least one directory");
         assertThat(errors(List.of(a, a.resolve(".")))).singleElement().asString().contains("is listed more than once");
+        final Path current = Files.createSymbolicLink(this.dir.resolve("current"), a);
+        assertThat(errors(List.of(current, a))).singleElement().asString().contains("is listed more than once");
     }
 
     @Test
