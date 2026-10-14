@@ -1,6 +1,7 @@
 package com.ethlo.r7.status.dto;
 
 import java.util.List;
+import java.util.Map;
 
 import com.ethlo.r7.journal.api.JournalLevel;
 
@@ -20,9 +21,17 @@ public record JournalDto(JournalLevel requestLevel, JournalLevel responseLevel, 
      * @param ruleErrors             how often its condition could not be evaluated since the
      *                               configuration was loaded, on every route it applies to,
      *                               whether or not a record was written
+     * @param mayBeOverriddenBy      per key it names ({@code request}, {@code response},
+     *                               {@code request.truncate_body_at},
+     *                               {@code response.truncate_body_at}), the labels of the rules
+     *                               that take precedence for that key when they match: earlier
+     *                               rules of its stage, and for {@code on_request} every
+     *                               {@code on_response} rule. Never a claim that the rule is
+     *                               overridden, only that it may be
      */
     public record Rule(String stage, String label, String path, JournalLevel request, JournalLevel response,
-                       Long requestTruncateBodyAt, Long responseTruncateBodyAt, long ruleErrors)
+                       Long requestTruncateBodyAt, Long responseTruncateBodyAt, long ruleErrors,
+                       Map<String, List<String>> mayBeOverriddenBy)
     {
     }
 }

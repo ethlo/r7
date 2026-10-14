@@ -1,8 +1,14 @@
 # The 1.0 config model: root, groups, routes, journal rules
 
-State: **spec, for review before implementation.** This is the shape of `routes.yaml` for 1.0.
-After 1.0 it can only be extended, never changed, so anything that cannot be added later without
-breaking a config is settled here.
+> **History.** Merged as a spec in #227 (2026-10-13) and built in slices through #248 (2026-10-14). The design in
+> force is [`../config-model.md`](../config-model.md); the user-facing contract is
+> [`docs/config.md`](../../docs/config.md). Read this for the reasoning, the Spring Cloud Gateway
+> translation that drove it, and the order it was built in. Since it was written, the management
+> view's "may be overridden" marks list every rule checked earlier that names the same key, not
+> only inner levels' rules, and the dashboard already said "root" for root filters.
+
+This was the spec for the shape of `routes.yaml` for 1.0. After 1.0 it can only be extended,
+never changed, so anything that cannot be added later without breaking a config was settled here.
 
 ## Problem
 
@@ -790,7 +796,8 @@ One branch and pull request per slice, each green on `./mvnw clean install` with
 - Tests: inheritance per key; explicit `null` refused; filter instances shared per level;
   fallback across and within groups, with phase order across both groups; journal evaluation order across the three levels, with
   route, group and root rules matching at once for different directions; rule predicates
-  matching the client's request after `RewritePath` and header filters changed it; upstreams
+  matching the request as the client sent it after `RewritePath` and header filters changed the
+  forwarded one, and `leg: upstream` matching the forwarded one; upstreams
   shared only when every key is; `unrouted` rules with a request predicate checked only on `no_route` (including under `not`), rules of only `UnroutedReason`/`Sample` on every refusal, `UnroutedReason` refused outside `unrouted`, `on_response` refused; empty `match: []` never matching and nested empty conditions refused; `leg` on built-in and third-party
   predicates, false on unproxied exchanges; upstream request predicates matching and response predicates false after a refused connect and after a read timeout (no upstream response journaled); root filters not running on any refusal; a rule whose `MatchResponseHeader` exceeds its budget not firing, under `not` too, with the response delivered and `gateway.journal.rule_error` set; a failing rule on an exchange that resolves to `NONE` counted in `rule_errors` with no record written, and warned once per rule per load; upstream response predicates matching the head when the body then times out; a group `CircuitBreaker`, and a root one covering both routes, counting exactly one failure when its route falls back to a route answering `200`; a breaker counting a `200` whose body times out as a failure; a breaker counting neither when the client disconnects while the upstream body is still streaming, and leaving the consecutive-failure count unchanged (the outcome set explicitly, not left to fall out of the body not completing); a breaker with `slow_call` counting a `200` whose head arrives after it as a failure, a client that disconnects before the head once `slow_call` has passed as a failure, and one that disconnects before `slow_call` as neither; a `slow_call` above `read` firing for a head sent in pieces, each gap shorter than `read`; a `TemplateRedirect` without `source` refused at load for `{name}` and for `$1`, and accepted with only `{query.*}`; a breaker counting neither for a `ReturnResponse` `503` nor success for an upstream `503` a response filter turned into `200`; the mixed-leg rule through a status-changing filter; one `Sample` draw per exchange; `truncate_body_at`
   inherited into rules, the truncation flag in the record and in both tailer outputs, unset for a body exactly at the cap and set one byte over; rule ids

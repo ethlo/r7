@@ -1612,6 +1612,15 @@
         const buildCap = (bytes) => bytes == null ? ''
             : `<div class="sub text-dim" style="margin-top: 4px;">body capped at ${esc(formatBytes(bytes))} at FULL</div>`;
 
+        // Rules that take precedence for a key when they match. Only "may": whether one condition
+        // covers another cannot be decided, and the journal says per exchange which rule fired.
+        const buildMayBeOverridden = (byKey) => {
+            const entries = Object.entries(byKey || {});
+            if (entries.length === 0) return '';
+            const text = entries.map(([key, labels]) => `${esc(key)} by ${labels.map(esc).join(', ')}`).join('; ');
+            return `<span style="font-size: 0.85em;" title="rules checked before this one that name the same key: when they match, they decide it">may be overridden for ${text}</span>`;
+        };
+
         const buildRules = (rules) => {
             if (!rules || rules.length === 0) return '';
             let html = '<div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RULES:</div>';
@@ -1627,6 +1636,7 @@
                 <span style="font-size: 0.85em;">${esc(rule.label)}</span>
                 <span style="font-size: 0.85em;">${sets.join(', ')}</span>
                 <span style="font-size: 0.85em;" data-rule-errors="${esc(rule.stage)}|${esc(rule.path)}">${ruleErrorsHtml(rule.rule_errors)}</span>
+                ${buildMayBeOverridden(rule.may_be_overridden_by)}
             </div>`;
             });
             html += '</div>';

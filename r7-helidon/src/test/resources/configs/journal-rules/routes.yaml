@@ -52,3 +52,51 @@ routes:
     upstream:
       targets:
         - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+  # Rules see the request as the client sent it; only leg: upstream sees what the filters made of it.
+  - id: rewritten
+    match:
+      - PathPrefix:
+          prefix: /rewritten/
+    filters:
+      - RewritePath:
+          regexp: /rewritten/(.*)
+          replacement: /upstream/$1
+      - SetRequestHeader:
+          name: x-stage
+          value: rewritten
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+    journal:
+      request: { level: METADATA }
+      on_request:
+        - id: client-path
+          match:
+            - PathPrefix:
+                prefix: /rewritten/
+            - not:
+                HasRequestHeader:
+                  name: x-stage
+          request: { level: HEADERS }
+      on_response:
+        # Checked first: it would win if the client leg saw the rewritten path.
+        - id: rewritten-path-on-client-leg
+          match:
+            - PathPrefix:
+                prefix: /upstream/
+          response: { level: FULL }
+        - id: forwarded
+          match:
+            - PathPrefix:
+                prefix: /rewritten/
+            - not:
+                HasRequestHeader:
+                  name: x-stage
+            - PathPrefix:
+                prefix: /upstream/
+                leg: upstream
+            - RequestHeader:
+                name: x-stage
+                value: rewritten
+                leg: upstream
+          response: { level: HEADERS }

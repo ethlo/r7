@@ -21,6 +21,7 @@ normative file format is [`r7-journal-mmap/FORMAT.md`](../r7-journal-mmap/FORMAT
 | Document | What it covers |
 |---|---|
 | [`limitations.md`](limitations.md) | What r7 does not do, or does at a known cost |
+| [`config-model.md`](config-model.md) | The shape of `routes.yaml`: levels and inheritance, journal rules, predicate legs |
 | [`upstream.md`](upstream.md) | The upstream client every server uses, and the rules it keeps |
 | [`journal-invariants.md`](journal-invariants.md) | The journal's four invariants and the tests that enforce each |
 | [`warc.md`](warc.md) | The WARC sidecar: why WARC, the record shape, and what it must carry over |
@@ -43,6 +44,7 @@ See [`plans/README.md`](plans/README.md).
 | [`history/journal-batch-compression.md`](history/journal-batch-compression.md) | Moving zstd off the request thread: staged batches and a writer thread per shard |
 | [`history/live-tailing.md`](history/live-tailing.md) | Microsecond tailing: the control file and the tailer's wait |
 | [`history/tailer-plugins.md`](history/tailer-plugins.md) | The one-reader, several-outputs proposal behind `r7-tailer` |
+| [`history/config-model.md`](history/config-model.md) | The 1.0 config model spec, its Spring Cloud Gateway translation and build order |
 
 ## Writing a design document
 

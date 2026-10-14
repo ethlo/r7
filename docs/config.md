@@ -204,7 +204,7 @@ The monitor starts when the routes are loaded, not with a route's first request,
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | Maximum time to wait for a response after sending the request. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
+| `read` | Duration | `30s` | The longest wait for any one read from the upstream: the response head, or the next bytes of its body. A slow body that keeps sending bytes is not cut off by it; the exchange as a whole is bounded by the proxy's `max_request_time`. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
 | `connect` | Duration | `5s` | Maximum time to wait for a connection to a target, including the TLS handshake for `https` targets. A target that does not answer in time counts as unreachable, and nothing has been sent to it, so the request can go to another target. Connecting never runs past the proxy's `max_request_time`: once that is used up the request is answered `504`. At least `1ms` and at most `24d`. |
 
 ### Fallback (`fallback`)
@@ -960,7 +960,7 @@ journal:
       response: { level: NONE }
 ```
 
-* **When they run.** `on_request` is checked once the route is chosen, before its filters, against the request as the client sent it. `on_response` is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use [response predicates](#response-matching) and `leg: upstream`.
+* **When they run.** `on_request` is checked once the route is chosen, before its filters, against the request as the client sent it. `on_response` is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use [response predicates](#response-matching) and `leg: upstream`. In both lists a request predicate tests the request as the client sent it, so a `RewritePath` or `SetRequestHeader` never changes what a rule matches; with `leg: upstream`, allowed in `on_response`, it tests the request as forwarded.
 * **Which rule wins.** For each key of each direction (`level`, `truncate_body_at`), the first matching rule that names it wins; a rule naming only `response` leaves the request to the rules after it, and one naming only a direction's `truncate_body_at` leaves its `level` to them. `on_response` overrides what `on_request` resolved. A route's rules are checked first, then its group's, then the root's.
 * **Recorded.** Each rule that fires is journaled in the `gateway.journal.rule` attribute, by its `id`, or its path (`routes.orders.journal.on_response[0]`) when it has none. Ids are unique across the file.
 * **Failures.** A rule whose predicate fails (a regex over its budget) does not fire, under `not` as well, and the exchange carries on: its label is journaled in `gateway.journal.rule_error`. A failing rule is often one meant to raise the level, so its failures are also counted when the exchange ends at `NONE` and leaves no record: the management view and the dashboard show a `rule_errors` count beside each rule, by its id or path. The first failure of each rule after a load is logged as a warning, with the rule's path and the exception; later ones are only counted.

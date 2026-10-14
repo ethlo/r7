@@ -9,6 +9,7 @@ import com.ethlo.r7.util.SensitiveConfig;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import com.ethlo.r7.config.RouteDefinition;
 import com.ethlo.r7.config.TimeoutConfig;
 import com.ethlo.r7.config.UpstreamConfig;
 import com.ethlo.r7.journal.JournalPolicy;
+import com.ethlo.r7.journal.JournalRule;
 import com.ethlo.r7.status.PipelineVisualizer;
 import com.ethlo.r7.status.RouteMetricsBucket;
 
@@ -51,14 +53,70 @@ public class ModelMapper
 
     /**
      * A journal policy as the management view shows it: base levels and caps, then the rules in
-     * the order they are checked.
+     * the order they are checked. For each key a rule names, the rules checked before it that name
+     * the same key are listed as possibly overriding it, and for an {@code on_request} rule every
+     * {@code on_response} rule naming it too, since {@code on_response} decides last. Only
+     * "possibly": whether one condition covers another cannot be decided for opaque predicates.
      */
     public static JournalDto mapJournal(final JournalPolicy policy)
     {
         final List<JournalDto.Rule> rules = new ArrayList<>();
-        policy.onRequest().forEach(r -> rules.add(new JournalDto.Rule("on_request", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
-        policy.onResponse().forEach(r -> rules.add(new JournalDto.Rule("on_response", r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors())));
+        final List<JournalRule> onRequest = policy.onRequest();
+        final List<JournalRule> onResponse = policy.onResponse();
+        for (int i = 0; i < onRequest.size(); i++)
+        {
+            final List<JournalRule> before = new ArrayList<>(onRequest.subList(0, i));
+            before.addAll(onResponse);
+            rules.add(rule("on_request", onRequest.get(i), before));
+        }
+        for (int i = 0; i < onResponse.size(); i++)
+        {
+            rules.add(rule("on_response", onResponse.get(i), onResponse.subList(0, i)));
+        }
         return new JournalDto(policy.request(), policy.response(), cap(policy.requestTruncateAt()), cap(policy.responseTruncateAt()), rules);
+    }
+
+    private static JournalDto.Rule rule(final String stage, final JournalRule r, final List<JournalRule> precedence)
+    {
+        final Map<String, List<String>> mayBeOverriddenBy = new LinkedHashMap<>();
+        for (final RuleKey key : RuleKey.values())
+        {
+            if (key.names(r))
+            {
+                final List<String> by = precedence.stream().filter(key::names).map(JournalRule::label).toList();
+                if (!by.isEmpty())
+                {
+                    mayBeOverriddenBy.put(key.label, by);
+                }
+            }
+        }
+        return new JournalDto.Rule(stage, r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors(), mayBeOverriddenBy);
+    }
+
+    private enum RuleKey
+    {
+        REQUEST("request"),
+        REQUEST_TRUNCATE_BODY_AT("request.truncate_body_at"),
+        RESPONSE("response"),
+        RESPONSE_TRUNCATE_BODY_AT("response.truncate_body_at");
+
+        private final String label;
+
+        RuleKey(final String label)
+        {
+            this.label = label;
+        }
+
+        boolean names(final JournalRule rule)
+        {
+            return switch (this)
+            {
+                case REQUEST -> rule.request() != null;
+                case REQUEST_TRUNCATE_BODY_AT -> rule.requestTruncateAt() != JournalPolicy.NO_CAP;
+                case RESPONSE -> rule.response() != null;
+                case RESPONSE_TRUNCATE_BODY_AT -> rule.responseTruncateAt() != JournalPolicy.NO_CAP;
+            };
+        }
     }
 
     private static Long cap(final long truncateAt)
