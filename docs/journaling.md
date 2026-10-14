@@ -416,8 +416,7 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `end` | timestamp | `upstream_response` | With an end event, when the upstream's response was read to its end; not for a failed relay or a WebSocket tunnel |
 | `duration` | number | `upstream_response` | With `end`: `end` minus `start`, in seconds |
 
-A new field may be added in a later version; a consumer should ignore fields it does not know.
-Removing or changing a field is a breaking change.
+A consumer should ignore fields it does not know.
 
 ### Other layouts
 
