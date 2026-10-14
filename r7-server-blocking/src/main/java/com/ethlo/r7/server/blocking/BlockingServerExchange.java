@@ -94,6 +94,8 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
     // The upstream's response head as read, kept for upstreamResponseAsRead().
     private int upstreamHeadStatus;
     private List<String> upstreamHeadHeaders;
+    // The request head as last written to a target, kept for the journal's upstream request.
+    private byte[] upstreamRequestHead;
     private final AtomicBoolean connectionClosed = new AtomicBoolean();
 
     private long requestBodyBytes;
@@ -283,6 +285,48 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
             headers.addFromWire(this.upstreamHeadHeaders.get(i), this.upstreamHeadHeaders.get(i + 1));
         }
         return new ImmutableGatewayResponse(this.protocol, headers, this.upstreamHeadStatus, false);
+    }
+
+    @Override
+    protected ByteBuffer upstreamRequestLineAsSent()
+    {
+        final byte[] head = this.upstreamRequestHead;
+        return head == null ? null : ByteBuffer.wrap(head, 0, lineEnd(head, 0));
+    }
+
+    @Override
+    protected GatewayHeaders upstreamRequestHeadersAsSent()
+    {
+        final byte[] head = this.upstreamRequestHead;
+        if (head == null)
+        {
+            return null;
+        }
+        // The relay wrote every header as "name: value" on a line of its own, after the request
+        // line and up to the empty line that ends the head.
+        final WireHeaders headers = new WireHeaders();
+        int start = lineEnd(head, 0) + 2;
+        for (int end = lineEnd(head, start); end > start; start = end + 2, end = lineEnd(head, start))
+        {
+            int colon = start;
+            while (head[colon] != ':')
+            {
+                colon++;
+            }
+            headers.addFromWire(new String(head, start, colon - start, StandardCharsets.ISO_8859_1),
+                    new String(head, colon + 2, end - colon - 2, StandardCharsets.ISO_8859_1));
+        }
+        return headers;
+    }
+
+    private static int lineEnd(final byte[] head, final int from)
+    {
+        int i = from;
+        while (head[i] != '\r')
+        {
+            i++;
+        }
+        return i;
     }
 
     private static MutableGatewayHeaders copyOf(final GatewayHeaders headers)
@@ -700,6 +744,12 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
             return null;
         }
         return responseBody();
+    }
+
+    @Override
+    public void onUpstreamRequestHead(final byte[] head)
+    {
+        this.upstreamRequestHead = head;
     }
 
     @Override

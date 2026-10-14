@@ -28,6 +28,7 @@ import com.ethlo.r7.api.ComponentStatus;
 import com.ethlo.r7.api.GatewayErrorHandler;
 import com.ethlo.r7.api.FallbackAwareGatewayFilter;
 import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.GatewayRoute;
 import com.ethlo.r7.api.MutableGatewayHeaders;
 import com.ethlo.r7.api.StateKey;
@@ -617,7 +618,14 @@ public final class GatewayPipeline
             // No base passed: StatefulJournal tracks what it actually journaled for the client
             // request and hands that to the delegate, which is the only set a difference is
             // meaningful against — redaction and level downgrades included.
-            journal.upstreamRequest(requestLevel, requestId, StartLineBuilder.buildRequestLine(ex.upstreamRequest()), ex.upstreamRequest().headers(), null);
+            // What the upstream was sent: the relay sets Host, X-Forwarded-* and framing as it
+            // writes the head, after the pipeline is done with the request. Only a request that
+            // never reached the relay (no target was up) falls back to the pipeline's view.
+            final ByteBuffer sentLine = ex.upstreamRequestLineAsSent();
+            final GatewayHeaders sentHeaders = sentLine != null && requestLevel.compareTo(JournalLevel.HEADERS) >= 0 ? ex.upstreamRequestHeadersAsSent() : null;
+            journal.upstreamRequest(requestLevel, requestId,
+                    sentLine != null ? sentLine : StartLineBuilder.buildRequestLine(ex.upstreamRequest()),
+                    sentHeaders != null ? sentHeaders : ex.upstreamRequest().headers(), null);
             if (ex.upstreamResponded)
             {
                 journal.upstreamResponse(responseLevel, requestId, ex.upstreamResponse().status(), StartLineBuilder.buildResponseLine(protocol, ex.upstreamResponse()), ex.upstreamResponse().headers(), ex.upstreamResponseRelayed);

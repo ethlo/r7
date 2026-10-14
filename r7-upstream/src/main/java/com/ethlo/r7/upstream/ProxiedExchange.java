@@ -113,6 +113,19 @@ public interface ProxiedExchange
     }
 
     /**
+     * Called with the request head as it is written to a target - request line, Host,
+     * X-Forwarded-*, framing - before it is sent, and again if the relay moves on to another
+     * target. For the journal's upstream request, which must be what the upstream was sent, not
+     * what the pipeline handed the relay.
+     *
+     * @param head the head's bytes, ISO-8859-1, ending in an empty line; read-only, and kept by
+     *             reference
+     */
+    default void onUpstreamRequestHead(final byte[] head)
+    {
+    }
+
+    /**
      * Called once the upstream's final response head has been read, before any of it reaches the
      * client, and before the relay decides whether it can relay it: a 101 r7 refuses to tunnel is
      * still a head the upstream sent. For the journal's upstream timing and its upstream response.

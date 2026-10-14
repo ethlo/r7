@@ -99,6 +99,7 @@ public final class UpstreamRelay
         {
             throw new ProxyFailure(400, "Bad request", null);
         }
+        exchange.onUpstreamRequestHead(head);
         try
         {
             target.acquireSlot(deadline);

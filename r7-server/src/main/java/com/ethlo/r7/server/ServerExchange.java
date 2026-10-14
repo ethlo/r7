@@ -9,6 +9,7 @@ import com.ethlo.r7.api.ClientRequestGatewayExchange;
 import com.ethlo.r7.api.ClientResponseGatewayExchange;
 import com.ethlo.r7.api.CompletedGatewayExchange;
 import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.api.GatewayHeaders;
 import com.ethlo.r7.api.GatewayRequest;
 import com.ethlo.r7.api.GatewayResponse;
 import com.ethlo.r7.api.GatewayRouteInfo;
@@ -184,6 +185,18 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
      * when r7's own answer commits after {@link #upstreamResponseHeadRead()}.
      */
     protected abstract GatewayResponse upstreamResponseAsRead();
+
+    /**
+     * The request line the relay last wrote to a target, or null when it wrote none; called when
+     * the exchange is journaled.
+     */
+    protected abstract ByteBuffer upstreamRequestLineAsSent();
+
+    /**
+     * The headers the relay last wrote to a target, Host, X-Forwarded-* and framing included, or
+     * null when it wrote none; called when the exchange is journaled with headers.
+     */
+    protected abstract GatewayHeaders upstreamRequestHeadersAsSent();
 
     // --- Answering, teeing, proxying ---------------------------------------------------------
 
