@@ -96,16 +96,17 @@ class JsonSchemaGeneratorTest
     }
 
     /**
-     * The upstream leg exists only in on_response: anywhere else the loader refuses it, so the
-     * editor must not offer it.
+     * Only a response predicate has a leg: a request predicate tests the request as the client
+     * sent it, and the loader refuses a leg on one.
      */
     @Test
-    void theUpstreamLegIsOfferedOnlyInOnResponse()
+    void onlyResponsePredicatesOfferALeg()
     {
-        assertThat(levels(SCHEMA.at("/$defs/predicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client");
-        assertThat(levels(SCHEMA.at("/$defs/unroutedPredicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client");
-        assertThat(levels(SCHEMA.at("/$defs/responsePredicate").findValue("PathPrefix").at("/properties/leg"))).containsExactly("client", "upstream");
-        assertThat(levels(SCHEMA.at("/$defs/responsePredicate").findValue("RemoteAddr").at("/properties/leg"))).as("a client-only predicate").containsExactly("client");
+        for (final String definition : List.of("predicate", "unroutedPredicate", "responsePredicate"))
+        {
+            assertThat(SCHEMA.at("/$defs/" + definition).findValue("PathPrefix").at("/properties/leg").isMissingNode()).as(definition).isTrue();
+        }
+        assertThat(levels(SCHEMA.at("/$defs/responsePredicate").findValue("Status").at("/properties/leg"))).containsExactly("client", "upstream");
     }
 
     /**

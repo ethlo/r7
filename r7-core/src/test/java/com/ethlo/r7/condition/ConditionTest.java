@@ -26,15 +26,15 @@ class ConditionTest
         return predicate;
     }
 
-    private static ConditionInput input(final GatewayRequest upstreamRequest, final GatewayResponse upstreamResponse, final double draw)
+    private static ConditionInput input(final GatewayResponse upstreamResponse, final double draw)
     {
         final GatewayRequest client = mock(GatewayRequest.class);
         return new ConditionInput()
         {
             @Override
-            public GatewayRequest request(final Leg leg)
+            public GatewayRequest request()
             {
-                return leg == Leg.CLIENT ? client : upstreamRequest;
+                return client;
             }
 
             @Override
@@ -52,36 +52,26 @@ class ConditionTest
     }
 
     @Test
-    void anUpstreamLegPredicateIsFalseOnAnUnproxiedExchangeAndNotInvertsThat()
-    {
-        final GatewayPredicate predicate = always();
-        final Condition upstream = new RequestCondition(predicate, Leg.UPSTREAM);
-        final ConditionInput unproxied = input(null, null, 0.5);
-
-        assertThat(upstream.test(unproxied)).isFalse();
-        assertThat(new NotCondition(upstream).test(unproxied)).isTrue();
-        verify(predicate, never()).test(any());
-
-        assertThat(upstream.test(input(mock(GatewayRequest.class), null, 0.5))).isTrue();
-    }
-
-    @Test
-    void anUpstreamResponsePredicateIsFalseUntilAHeadIsRead()
+    void anUpstreamResponsePredicateIsFalseUntilAHeadIsReadAndNotInvertsThat()
     {
         final GatewayResponsePredicate predicate = mock(GatewayResponsePredicate.class);
         when(predicate.test(any())).thenReturn(true);
         final Condition upstream = new ResponseCondition(predicate, Leg.UPSTREAM);
+        final ConditionInput unanswered = input(null, 0.5);
 
-        assertThat(upstream.test(input(mock(GatewayRequest.class), null, 0.5))).isFalse();
-        assertThat(upstream.test(input(mock(GatewayRequest.class), mock(GatewayResponse.class), 0.5))).isTrue();
+        assertThat(upstream.test(unanswered)).isFalse();
+        assertThat(new NotCondition(upstream).test(unanswered)).isTrue();
+        verify(predicate, never()).test(any());
+
+        assertThat(upstream.test(input(mock(GatewayResponse.class), 0.5))).isTrue();
     }
 
     @Test
     void andAndOrStopAtTheFirstAnswer()
     {
         final GatewayPredicate untouched = always();
-        final Condition last = new RequestCondition(untouched, Leg.CLIENT);
-        final ConditionInput input = input(null, null, 0.5);
+        final Condition last = new RequestCondition(untouched);
+        final ConditionInput input = input(null, 0.5);
 
         assertThat(new AndCondition(List.of(Condition.FALSE, last)).test(input)).isFalse();
         assertThat(new OrCondition(List.of(Condition.TRUE, last)).test(input)).isTrue();
@@ -92,9 +82,9 @@ class ConditionTest
     void sampleMatchesWhenTheDrawIsBelowTheRate()
     {
         final Condition sample = new SampleCondition(0.25, Draw.ROUTING);
-        assertThat(sample.test(input(null, null, 0.1))).isTrue();
-        assertThat(sample.test(input(null, null, 0.25))).isFalse();
-        assertThat(new SampleCondition(1.0, Draw.ROUTING).test(input(null, null, Math.nextDown(1.0)))).isTrue();
+        assertThat(sample.test(input(null, 0.1))).isTrue();
+        assertThat(sample.test(input(null, 0.25))).isFalse();
+        assertThat(new SampleCondition(1.0, Draw.ROUTING).test(input(null, Math.nextDown(1.0)))).isTrue();
     }
 
     @Test
@@ -130,8 +120,9 @@ class ConditionTest
     @Test
     void theSummaryNamesALegOtherThanTheClients()
     {
-        final GatewayPredicate predicate = always();
-        assertThat(new RequestCondition(predicate, Leg.CLIENT).summary()).isEqualTo("Always");
-        assertThat(new RequestCondition(predicate, Leg.UPSTREAM).summary()).isEqualTo("Always (leg: upstream)");
+        final GatewayResponsePredicate predicate = mock(GatewayResponsePredicate.class);
+        when(predicate.summary()).thenReturn("Always");
+        assertThat(new ResponseCondition(predicate, Leg.CLIENT).summary()).isEqualTo("Always");
+        assertThat(new ResponseCondition(predicate, Leg.UPSTREAM).summary()).isEqualTo("Always (leg: upstream)");
     }
 }

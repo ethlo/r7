@@ -90,24 +90,26 @@ entirely, which `RequestPathCostTest` gates.
 
 ## Predicates and legs
 
-Every predicate tests one leg, chosen by `leg`:
+A request predicate tests the request as the client sent it, before any filter, in a route's
+`match` and in both rule lists, so a `RewritePath` or `SetRequestHeader` never changes what a rule
+matches, and adding a `Status` condition to a rule does not change what its `Path` means. It has
+no `leg`.
 
-| `leg` | Request predicates see | Response predicates see |
-|---|---|---|
-| `client` (default) | the request as the client sent it, before any filter | the response as the client receives it |
-| `upstream` (`on_response` only) | the request as forwarded, after the upstream-phase filters | the response as the upstream sent it |
+A response predicate tests one leg, chosen by `leg`: `client` (the default), the response as the
+client receives it, or `upstream`, the response as the upstream sent it. They differ when r7
+answers itself (its own `502`/`504`) or a filter changes the response. On an exchange no upstream
+answered, an upstream-leg predicate is false.
 
-A rule's request predicates see the client's request in both `on_request` and `on_response`, so a
-`RewritePath` or `SetRequestHeader` never changes what a rule matches, and adding a `Status`
-condition to a rule does not change what its `Path` means. A rule that needs the rewritten
-request says `leg: upstream`. On an exchange that was never proxied, an upstream-leg predicate is
-false.
+The request side had a `leg` too until beta.2: `leg: upstream` tested the request as forwarded.
+It was dropped: a rule on the route already pins down its traffic, the journal records the
+forwarded request, and it needed a per-predicate opt-out (`RemoteAddr` would test the client's
+address on the upstream leg).
 
 Predicates are pure: no side effects, the same answer however often they run. r7 evaluates them
 in routing, in both rule lists and under `unrouted`, and skips them when a condition
 short-circuits. `Sample` draws once per exchange per decision (routing, journaling), so it keeps
-that contract within an exchange. `leg` is handled by the condition builder; no predicate
-implements it.
+that contract within an exchange. `leg` is handled by the condition builder; no response
+predicate implements it.
 
 ## Unrouted
 
@@ -147,7 +149,7 @@ answers it per exchange.
 | `upstream` replaced as a whole | A route needing another timeout would repeat its targets. |
 | Status as a predicate in one `when:` list | Mixing request and response rules in one ordered list breaks "first match wins": a request rule captures the body, then a status rule matches first. |
 | `on_upstream_response` / `on_client_response` stages | A stage exists where a level must be fixed before bytes stream, and there are two such points. Which message a rule tests is the predicate's `leg`, not the stage. |
-| `UpstreamStatus`, `UpstreamResponseHeader`, … | A copy of every predicate per leg; one `leg` parameter does it. |
+| `UpstreamStatus`, `UpstreamResponseHeader`, … | A copy of every response predicate per leg; one `leg` parameter does it. |
 | `phase:` instead of `leg:` | A phase in r7 is *when* something runs; a leg is *which message*, the journal's own term. |
 | A `Journal` filter | Filters run after the levels are fixed, and journaling would depend on filter order. |
 | "Most detailed level wins" | Rules could not lower a level (health checks to `NONE`). |

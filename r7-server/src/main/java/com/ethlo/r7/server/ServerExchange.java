@@ -328,15 +328,11 @@ public abstract class ServerExchange implements ConditionInput, ClientRequestGat
     // --- What conditions test ---------------------------------------------------------------
 
     @Override
-    public GatewayRequest request(final Leg leg)
+    public GatewayRequest request()
     {
-        if (leg == Leg.CLIENT)
-        {
-            // Before open() the snapshot is not taken yet; when a route is chosen the live
-            // request is still the client's, unchanged.
-            return this.clientRequest != null ? this.clientRequest : this.liveRequest;
-        }
-        return this.proxyStartNanos != NOT_RECORDED ? this.upstreamRequest : null;
+        // Before open() the snapshot is not taken yet; when a route is chosen the live
+        // request is still the client's, unchanged.
+        return this.clientRequest != null ? this.clientRequest : this.liveRequest;
     }
 
     @Override
