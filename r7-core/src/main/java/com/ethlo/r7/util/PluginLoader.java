@@ -97,7 +97,7 @@ public final class PluginLoader
             {
                 urls.add(jar.toUri().toURL());
             }
-            catch (MalformedURLException e)
+            catch (final MalformedURLException e)
             {
                 throw new ConfigurationException("Cannot load extension jar " + jar + ": " + e.getMessage());
             }
@@ -149,7 +149,7 @@ public final class PluginLoader
                 plugins.put(".", flat);
             }
         }
-        catch (IOException e)
+        catch (final IOException e)
         {
             throw new ConfigurationException("Cannot read the extension directory " + dir + ": " + e.getMessage());
         }
