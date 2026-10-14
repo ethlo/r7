@@ -217,7 +217,7 @@ public final class StaticFiles
     {
         for (final Path base : request.directories())
         {
-            final Path file = Files.isDirectory(base) ? resolve(base, request.fallback(), request.followSymlinks()) : null;
+            final Path file = Files.isDirectory(base) && !isUnlinked(base) ? resolve(base, request.fallback(), request.followSymlinks()) : null;
             if (file != null && Files.isRegularFile(file))
             {
                 serveFile(target, file, headOnly);

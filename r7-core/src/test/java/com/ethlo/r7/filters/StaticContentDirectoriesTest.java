@@ -61,10 +61,13 @@ class StaticContentDirectoriesTest
         Files.writeString(b.resolve("index.html"), "app");
         Files.writeString(b.resolve(".env"), "x");
         assertThat(errors(List.of(a, b), "index.html")).isEmpty();
-        assertThat(errors(List.of(a, b), "/index.html")).isEmpty();
+        assertThat(errors(List.of(a, b), "/index.html")).singleElement().asString().contains("Must name a file relative to the directories");
         assertThat(errors(List.of(a), "index.html")).singleElement().asString().contains("No directory has index.html");
-        assertThat(errors(List.of(a, b), "../index.html")).singleElement().asString().contains("Must name a file under the directories");
-        assertThat(errors(List.of(a, b), "app/")).singleElement().asString().contains("Must name a file under the directories");
+        assertThat(errors(List.of(a, b), "../index.html")).singleElement().asString().contains("Must name a file relative to the directories");
+        assertThat(errors(List.of(a, b), "app/")).singleElement().asString().contains("Must name a file relative to the directories");
         assertThat(errors(List.of(a, b), ".env")).singleElement().asString().contains("hidden file");
+        final Path c = Files.createDirectories(this.dir.resolve("c"));
+        Files.createSymbolicLink(c.resolve("index.html"), b.resolve("index.html"));
+        assertThat(errors(List.of(c), "index.html")).singleElement().asString().contains("through a symlink");
     }
 }

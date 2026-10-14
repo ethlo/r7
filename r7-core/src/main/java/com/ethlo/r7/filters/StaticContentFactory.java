@@ -162,19 +162,41 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
 
     private static void validateFallback(final Config config, final ValidatorUtils validator)
     {
-        final String file = config.fallback().startsWith("/") ? config.fallback().substring(1) : config.fallback();
+        final String file = config.fallback();
         if (file.isEmpty() || file.endsWith("/") || Arrays.stream(file.split("/")).anyMatch(segment -> segment.isEmpty() || segment.equals("..")))
         {
-            validator.invalid("fallback", config.fallback(), "Must name a file under the directories, such as index.html");
+            validator.invalid("fallback", file, "Must name a file relative to the directories, such as index.html");
         }
         else if (!config.serveHiddenFiles() && StaticServeRequest.isHidden(file))
         {
-            validator.invalid("fallback", config.fallback(), "Names a hidden file, which this route does not serve");
+            validator.invalid("fallback", file, "Names a hidden file, which this route does not serve");
         }
-        else if (config.directories().stream().noneMatch(directory -> Files.isRegularFile(directory.resolve(file))))
+        else if (config.directories().stream().noneMatch(directory -> servable(directory, file, config.followSymlinks())))
         {
-            validator.invalid("fallback", config.fallback(), "No directory has " + file);
+            validator.invalid("fallback", file, "No directory has " + file + (config.followSymlinks() ? "" : " other than through a symlink, which this route does not follow"));
         }
+    }
+
+    /**
+     * Whether {@code file} is a regular file under {@code directory} that the server would serve,
+     * by the same symlink rule as its lookup.
+     */
+    private static boolean servable(final Path directory, final String file, final boolean followSymlinks)
+    {
+        final Path resolved = directory.resolve(file);
+        if (!followSymlinks)
+        {
+            Path current = directory;
+            for (final Path segment : directory.relativize(resolved))
+            {
+                current = current.resolve(segment);
+                if (Files.isSymbolicLink(current))
+                {
+                    return false;
+                }
+            }
+        }
+        return Files.isRegularFile(resolved);
     }
 
     private static Path realPath(final Path directory)
@@ -195,8 +217,7 @@ public final class StaticContentFactory implements GatewayFilterFactory<StaticCo
 
         public GF(final Config config)
         {
-            this.request = new StaticServeRequest(List.copyOf(config.directories()), config.followSymlinks(), config.serveHiddenFiles(),
-                    config.fallback() == null || !config.fallback().startsWith("/") ? config.fallback() : config.fallback().substring(1));
+            this.request = new StaticServeRequest(List.copyOf(config.directories()), config.followSymlinks(), config.serveHiddenFiles(), config.fallback());
         }
 
         @Override

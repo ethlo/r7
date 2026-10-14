@@ -863,7 +863,7 @@ Short-circuits the pipeline to serve static files directly from the disk. **Secu
 | `directories` | List of Strings | Yes | The directories to serve from, in order (e.g. `[/var/www/html/]`). Each must exist when the routes load. |
 | `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links found under a directory. The directory itself may be a symlink either way (e.g. an atomically swapped `current` release symlink); this is only needed for links inside it. |
 | `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`; `.well-known/` is always served. |
-| `fallback` | String | No | A file under the directories, such as `index.html`, served with `200` for a path none of them has, instead of `404`. It is looked up in the directories' order and must exist in one when the routes load. |
+| `fallback` | String | No | A file path relative to the directories, such as `index.html` (no leading `/`), served with `200` for a path none of them has, instead of `404`. It is looked up in the directories' order and must exist in one when the routes load. |
 
 With several directories, each request is answered by the first one that can: the first holding the file, or, for a directory asked for with its trailing slash, the first holding a welcome file in it. A higher directory overrides a lower one file by file, so a deployment can override a few files of a shared set without copying the rest:
 
