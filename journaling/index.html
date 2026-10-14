@@ -1637,8 +1637,7 @@ object per line, UTF-8. A proxied <code>GET</code> with headers journaled, archi
 </tr>
 </tbody>
 </table>
-<p>A new field may be added in a later version; a consumer should ignore fields it does not know.
-Removing or changing a field is a breaking change.</p>
+<p>A consumer should ignore fields it does not know.</p>
 <h3 id="other-layouts">Other layouts</h3>
 <p>Each of these is a <code>tailer.yaml</code> and replaces the defaults only where it says.</p>
 <p>Every exchange in the WARC archive, with a CDXJ index, so every complete exchange's JSON line has a <code>warc</code> pointer:</p>
