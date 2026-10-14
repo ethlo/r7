@@ -217,6 +217,7 @@ public abstract class GatewaySecurityKit
             final String path = "/rewrite/files?name=" + name;
             final int status = send("GET " + path + " HTTP/1.1\r\nHost: localhost\r\n\r\n");
             assertRefused(status, path);
+            assertThat(status).as("%s is the pipeline's own refusal", path).isEqualTo(400);
         }
         assertThat(forward("GET /rewrite/files?name=report.pdf HTTP/1.1\r\nHost: localhost\r\n\r\n").requestLine())
                 .isEqualTo("GET /kit/files/report.pdf?name=report.pdf HTTP/1.1");

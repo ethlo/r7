@@ -385,17 +385,20 @@ public final class GatewayPipeline
             }
         }
 
-        // The guard at the door checked the client's path; a path a filter set since (a
-        // RewritePath that put a query value in it, a plugin) gets the same check before the
-        // upstream sees it, or ?name=../admin would forward /files/../admin. The same instance
-        // means no filter changed it.
-        final String upstreamPath = ex.liveRequest.path();
-        if (upstreamPath != ex.decodedPath())
+        // The guard at the door checked the client's path; a target a filter set since (a
+        // RewritePath that put a query value in the path, a plugin calling path() or uri()) gets
+        // the same check before the upstream sees it, or ?name=../admin would forward
+        // /files/../admin. Checked on the URI that is sent, decoded as the client's was; the same
+        // instance as the client's raw path means no filter changed it.
+        final String upstreamUri = ex.liveRequest.uri();
+        if (upstreamUri != ex.rawPath())
         {
-            final RequestPathGuard.Violation violation = RequestPathGuard.check(upstreamPath);
+            final int queryStart = upstreamUri.indexOf('?');
+            final String forwardedPath = RequestPaths.decode(queryStart < 0 ? upstreamUri : upstreamUri.substring(0, queryStart));
+            final RequestPathGuard.Violation violation = RequestPathGuard.check(forwardedPath);
             if (violation != null)
             {
-                logger.debug("Refusing an ambiguous upstream path ({}): {}", violation, upstreamPath);
+                logger.debug("Refusing an ambiguous upstream path ({}): {}", violation, upstreamUri);
                 ex.shortCircuit(new ShortCircuitGatewayResponse(HttpStatuses.BAD_REQUEST, MediaTypes.TEXT_PLAIN_UTF8, ErrorMessages.AMBIGUOUS_PATH.duplicate()));
                 shortCircuit(null, ex, route);
                 return;
