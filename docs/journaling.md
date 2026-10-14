@@ -383,7 +383,7 @@ Fields of the exchange:
 | `remote_address` | string | When known: the client address |
 | `remote_address_source` | string | With `remote_address`: `SOCKET`, `X_FORWARDED_FOR`, `X_REAL_IP` or `UNKNOWN` |
 | `client_request` | object | Always: the request from the client |
-| `upstream_request` | object | When the request was proxied: the request to the upstream |
+| `upstream_request` | object | When the request was proxied: the request head r7 built for the last target tried, with the target's path, `Host`, the `X-Forwarded-*` headers and framing r7 set. When no connection to that target could be made, it is the head r7 would have sent, and `upstream_response` has no status line |
 | `upstream_response` | object | When the request was proxied: the upstream's response, and the round trip's timing. When no upstream sent a response head (a refused connect, a timeout or a protocol error before one), it holds only the timing, at level `NONE`: r7's own `502`, `503` or `504` is recorded in `client_response`, never as the upstream's |
 | `client_response` | object | Always: the response to the client |
 | `attributes` | object of string arrays | With an end event, when the gateway recorded attributes other than the route and targets, such as `gateway.fallback.id`, `gateway.unrouted.reason`, `gateway.shortcircuit.name`, `gateway.journal.rule` and `gateway.auth.basic.user` |
@@ -402,7 +402,7 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `query` | string | requests | When the request line has a query string |
 | `protocol` | string | all | When the start line was journaled |
 | `status` | number | responses | `client_response`: with an end event, at every level. `upstream_response`: when the status line was journaled |
-| `reason` | string | responses | When the status line has a reason phrase |
+| `reason` | string | responses | When the status has a registered reason phrase. r7 writes the phrase registered for the code, not the one the upstream sent, and none for an unregistered code |
 | `targets` | array of strings | `upstream_request` | With an end event: the upstream URLs tried, in order. When the last one answered, its response is the one in `upstream_response`; when none did, `upstream_response` has no status line and `client_response` holds r7's own `502`, `503` or `504` |
 | `headers` | object of string arrays | all | At `HEADERS` and `FULL`, when there are any |
 | `header_bytes` | number | client legs | With an end event: bytes of the head on the wire |

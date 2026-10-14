@@ -563,7 +563,8 @@ public class JsonLinesWriter implements ExchangeCompletionListener
                 protocol = line.substring(0, firstSpace);
                 final int secondSpace = line.indexOf(' ', firstSpace + 1);
                 code = secondSpace < 0 ? line.substring(firstSpace + 1) : line.substring(firstSpace + 1, secondSpace);
-                reason = secondSpace < 0 ? null : line.substring(secondSpace + 1);
+                // "HTTP/1.1 599 " has an empty reason phrase, which is no reason phrase.
+                reason = secondSpace < 0 || secondSpace == line.length() - 1 ? null : line.substring(secondSpace + 1);
             }
         }
 

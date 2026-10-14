@@ -283,6 +283,25 @@ class JsonLinesWriterTest
     }
 
     /**
+     * The gateway writes a status line for a code without a registered reason phrase as
+     * {@code HTTP/1.1 599 }: an empty phrase is no phrase, not a reason of "".
+     */
+    @Test
+    void anEmptyReasonPhraseIsLeftOut() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final JournalExchange exchange = completeExchange("req-unregistered-status");
+        exchange.setClientResponse("HTTP/1.1 599 ", JournalLevel.HEADERS, new MutableFastGatewayHeaders());
+        exchange.setStatus(599);
+
+        new JsonLinesWriter(out).onComplete(exchange);
+
+        final JsonNode response = MAPPER.readTree(linesOf(out).get(0)).path("client_response");
+        assertThat(response.path("status").asInt()).isEqualTo(599);
+        assertThat(response.has("reason")).isFalse();
+    }
+
+    /**
      * An upstream time the gateway did not record is -1 in the journal: no response head from an
      * upstream that failed, no end for a failed relay or a tunnel. Written, it would be a 1969
      * timestamp and a negative duration.
