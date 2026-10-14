@@ -78,6 +78,21 @@ public final class JournalSecurity
                     "max-forwards",
                     "upgrade-insecure-requests",
                     "early-data",
+                    "if-range",
+                    "content-encoding",
+                    "content-language",
+                    // A CORS preflight names a method and header names, never their values.
+                    "access-control-request-method",
+                    "access-control-request-headers",
+                    // Speculative loading hints: "prefetch" and similar, nothing else.
+                    "sec-purpose",
+                    "purpose",
+                    // WebSocket handshake mechanics: a version number and extension parameters.
+                    // Sec-WebSocket-Protocol is not here: some APIs carry a bearer token in it
+                    // (Kubernetes' base64url.bearer.authorization.k8s.io.<token>). The key is a
+                    // random nonce, of no use in plain text.
+                    "sec-websocket-version",
+                    "sec-websocket-extensions",
                     // x-requested-with is not on this list: frameworks conventionally set it
                     // to "XMLHttpRequest", but it is not a fixed-vocabulary header and
                     // client-side script can set it to anything. Opt in via
@@ -130,7 +145,23 @@ public final class JournalSecurity
                     "x-permitted-cross-domain-policies",
                     "cross-origin-opener-policy",
                     "cross-origin-embedder-policy",
-                    "cross-origin-resource-policy"
+                    "cross-origin-resource-policy",
+                    // Caching and protocol metadata the response carries for every client alike.
+                    "cache-control",
+                    "pragma",
+                    "alt-svc",
+                    "accept-patch",
+                    "accept-post",
+                    "timing-allow-origin",
+                    "origin-agent-cluster",
+                    "permissions-policy",
+                    "x-dns-prefetch-control",
+                    "x-download-options",
+                    "sec-websocket-version",
+                    "sec-websocket-extensions"
+                    // content-security-policy is not on this list: its nonce-... sources are
+                    // per-response secrets and report-uri endpoints can embed keys. Location is
+                    // not either: a redirect can carry an OAuth code or a signed URL.
                     // server-timing and x-runtime are deliberately not on this list:
                     // Server-Timing allows server-defined metric names plus arbitrary quoted
                     // descriptions, and X-Runtime's value is unconstrained. Since redaction

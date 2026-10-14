@@ -102,7 +102,10 @@ class JournalSecurityTest
                 "sec-fetch-dest", "sec-fetch-user",
                 "sec-ch-ua-arch", "sec-ch-ua-bitness", "sec-ch-ua-full-version", "sec-ch-ua-full-version-list",
                 "sec-ch-ua-model", "sec-ch-ua-platform-version", "sec-ch-ua-wow64",
-                "sec-ch-prefers-color-scheme", "sec-ch-prefers-reduced-motion", "save-data");
+                "sec-ch-prefers-color-scheme", "sec-ch-prefers-reduced-motion", "save-data",
+                "if-range", "content-encoding", "content-language",
+                "access-control-request-method", "access-control-request-headers",
+                "sec-purpose", "purpose", "sec-websocket-version", "sec-websocket-extensions");
     }
 
     /**
@@ -127,7 +130,25 @@ class JournalSecurityTest
                 "transfer-encoding", "priority",
                 "content-range", "accept-ranges", "last-modified", "allow",
                 "referrer-policy", "x-xss-protection", "x-permitted-cross-domain-policies",
-                "cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy");
+                "cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy",
+                "cache-control", "pragma", "alt-svc", "accept-patch", "accept-post", "timing-allow-origin",
+                "origin-agent-cluster", "permissions-policy", "x-dns-prefetch-control", "x-download-options",
+                "sec-websocket-version", "sec-websocket-extensions");
+    }
+
+    /**
+     * Each of these can carry a credential: a bearer token in Sec-WebSocket-Protocol, a CSP
+     * nonce or keyed report endpoint, an OAuth code or signed URL in a redirect, a token in a
+     * Referer's query. They stay fingerprinted by default.
+     */
+    @Test
+    void headersThatCanCarryCredentialsAreNotSafeByDefault()
+    {
+        assertThat(JournalSecurity.SAFE_REQUEST_HEADERS.contains("sec-websocket-protocol")).isFalse();
+        assertThat(JournalSecurity.SAFE_REQUEST_HEADERS.contains("referer")).isFalse();
+        assertThat(JournalSecurity.SAFE_RESPONSE_HEADERS.contains("sec-websocket-protocol")).isFalse();
+        assertThat(JournalSecurity.SAFE_RESPONSE_HEADERS.contains("content-security-policy")).isFalse();
+        assertThat(JournalSecurity.SAFE_RESPONSE_HEADERS.contains("location")).isFalse();
     }
 
     /**
