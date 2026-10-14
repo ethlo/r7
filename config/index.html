@@ -3388,6 +3388,7 @@
 </tbody>
 </table>
 <p>Both filters work on the <strong>decoded</strong> path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (<code>/api/a%3Fb</code> stripped by one part reaches the upstream as <code>/a%3Fb</code>, never as <code>/a?b</code>). Needless encoding of ordinary characters is normalised (<code>%41</code> is sent as <code>A</code>). Write a <code>replacement</code> in decoded form too: a literal <code>%20</code> in it is sent as <code>%2520</code>.</p>
+<p>A rewritten path gets the same check as the client's path: one with a <code>.</code> or <code>..</code> segment, a backslash or leftover percent-encoding is answered with <code>400</code> and never forwarded. With <code>replacement: /files/{query.name}</code>, <code>?name=../admin</code> is refused rather than sent as <code>/files/../admin</code>.</p>
 <h4 id="templates">Templates</h4>
 <p><code>RewritePath</code> <code>replacement</code> and <code>TemplateRedirect</code> <code>target</code> share one syntax:</p>
 <table>
