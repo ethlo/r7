@@ -243,6 +243,7 @@ public final class ConfigurationManager
         final List<Placed> placed = place(config, validationResult);
         validationResult.throwIfInvalid();
         validateCrossRouteReferences(placed);
+        warnSharedCircuitBreakers(config, placed);
 
         // 3. Transformation Pass: Only now, when we know the map is sane, do we instantiate.
         // A filter is one instance for everything beneath where it is declared: the root's once,
@@ -380,6 +381,52 @@ public final class ConfigurationManager
                 : namedOnGroup ? DefaultGatewayRoute.Level.GROUP
                 : effective != null ? DefaultGatewayRoute.Level.ROOT : DefaultGatewayRoute.Level.ROUTE;
         return new Placed(route.withUpstream(effective), route, group, path, upstreamLevel);
+    }
+
+    /**
+     * A CircuitBreaker at the root or on a group is one breaker for every route beneath it, so
+     * routes with upstreams of their own trip it for each other: one failing upstream opens it for
+     * all of them. Valid, and right when they share one upstream, so only a warning when they do not.
+     */
+    private static void warnSharedCircuitBreakers(final RoutesDefinition config, final List<Placed> placed)
+    {
+        if (hasCircuitBreaker(config.filters()) && upstreamSources(placed) > 1)
+        {
+            log.warn("The CircuitBreaker in the root's filters is one breaker for every route, and the routes have upstreams of their own: "
+                    + "one failing upstream opens it for all of them. Declare it on each route, or on a group whose routes share one upstream, for a breaker per upstream.");
+        }
+        for (final RouteEntry entry : config.routes())
+        {
+            if (entry instanceof GroupDefinition group && hasCircuitBreaker(group.filters())
+                    && upstreamSources(placed.stream().filter(p -> p.group() == group).toList()) > 1)
+            {
+                log.warn("The CircuitBreaker in the filters of group '{}' is one breaker for every route in it, and its routes have upstreams of their own: "
+                        + "one failing upstream opens it for all of them. Declare it on each route for a breaker per upstream.", group.group());
+            }
+        }
+    }
+
+    private static boolean hasCircuitBreaker(final List<FilterDefinition> filters)
+    {
+        return filters != null && filters.stream().anyMatch(filter -> "CircuitBreaker".equals(filter.name()));
+    }
+
+    /**
+     * How many upstream declarations the routes take theirs from; a route without an upstream
+     * never reaches the breaker's judgement, so it does not count.
+     */
+    private static long upstreamSources(final List<Placed> routes)
+    {
+        return routes.stream()
+                .filter(p -> p.route().upstream() != null)
+                .map(p -> switch (p.upstreamLevel())
+                {
+                    case ROOT -> "";
+                    case GROUP -> "group:" + p.group().group();
+                    case ROUTE -> "route:" + p.path();
+                })
+                .distinct()
+                .count();
     }
 
     private BuiltRoute buildRoute(final Placed placed, final List<GatewayFilter> rootFilters, final List<GatewayFilter> groupFilters, final Condition groupMatch,

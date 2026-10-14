@@ -17,8 +17,13 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.io.TempDir;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.ethlo.r7.api.ClientRequestGatewayFilter;
 import com.ethlo.r7.api.GatewayPredicate;
 import com.ethlo.r7.api.GatewayRequest;
@@ -581,5 +586,99 @@ class ConfigLevelsTest
                       targets:
                         - url: http://localhost:1
                 """).routes()).hasSize(1);
+    }
+
+    private List<String> warnings(final String yaml) throws IOException
+    {
+        final Logger logger = (Logger) LoggerFactory.getLogger(ConfigurationManager.class);
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try
+        {
+            build(yaml);
+        }
+        finally
+        {
+            logger.detachAppender(appender);
+        }
+        return appender.list.stream().filter(e -> e.getLevel() == Level.WARN).map(ILoggingEvent::getFormattedMessage).toList();
+    }
+
+    private static final String BREAKER = """
+            - CircuitBreaker:
+                failure_threshold: 5
+                cooldown_period: 30s
+            """;
+
+    /**
+     * A breaker above route level is one breaker for every route beneath it: a warning when those
+     * routes have upstreams of their own, none when they share one.
+     */
+    @Test
+    void aBreakerSharedByRoutesWithUpstreamsOfTheirOwnIsWarnedAbout() throws IOException
+    {
+        assertThat(warnings("""
+                filters:
+                %s
+                routes:
+                  - id: a
+                    match:
+                      - PathPrefix:
+                          prefix: /a
+                    upstream:
+                      targets:
+                        - url: http://localhost:1
+                  - id: b
+                    match:
+                      - PathPrefix:
+                          prefix: /b
+                    upstream:
+                      targets:
+                        - url: http://localhost:2
+                """.formatted(BREAKER.indent(2)))).singleElement().asString()
+                .contains("The CircuitBreaker in the root's filters is one breaker for every route");
+
+        assertThat(warnings("""
+                routes:
+                  - group: g
+                    filters:
+                    %s
+                    upstream:
+                      targets:
+                        - url: http://localhost:1
+                    routes:
+                      - id: a
+                        match:
+                          - PathPrefix:
+                              prefix: /a
+                      - id: b
+                        match:
+                          - PathPrefix:
+                              prefix: /b
+                """.formatted(BREAKER.indent(6).stripLeading()))).isEmpty();
+
+        assertThat(warnings("""
+                routes:
+                  - group: g
+                    filters:
+                    %s
+                    routes:
+                      - id: a
+                        match:
+                          - PathPrefix:
+                              prefix: /a
+                        upstream:
+                          targets:
+                            - url: http://localhost:1
+                      - id: b
+                        match:
+                          - PathPrefix:
+                              prefix: /b
+                        upstream:
+                          targets:
+                            - url: http://localhost:2
+                """.formatted(BREAKER.indent(6).stripLeading()))).singleElement().asString()
+                .contains("The CircuitBreaker in the filters of group 'g'");
     }
 }
