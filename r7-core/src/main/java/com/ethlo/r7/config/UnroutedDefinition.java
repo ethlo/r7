@@ -12,7 +12,7 @@ import com.ethlo.r7.validation.ValidationResult;
  * scanners and probes send.
  */
 public record UnroutedDefinition(
-        @Description("Journal levels for requests refused before routing. FULL is not allowed: a refused request's body is never read, and after a bad Transfer-Encoding its boundaries are not known.")
+        @Description("Journal levels and on_request rules for requests refused before routing. FULL is not allowed: a refused request's body is never read, and after a bad Transfer-Encoding its boundaries are not known.")
         JournalDefinition journal
 ) implements ValidatableConfig
 {
@@ -37,14 +37,19 @@ public record UnroutedDefinition(
         validateDirection(journalResult.nested("response"), this.journal.response());
         if (!this.journal.onResponse().isEmpty())
         {
-            journalResult.addError("on_response", "r7's answer to a refused request is fixed by its reason; there is nothing left to decide.");
+            journalResult.addError("on_response", "r7's answer to a refused request is fixed by its reason; use on_request.");
         }
-        // Not yet: a rule here must be gated by the refusal's reason (UnroutedReason), so that a
-        // condition written for route misses cannot also match, or under 'not' be turned on by,
-        // a smuggling attempt whose request r7 never interpreted.
-        if (!this.journal.onRequest().isEmpty())
+        for (int i = 0; i < this.journal.onRequest().size(); i++)
         {
-            journalResult.addError("on_request", "rules are not supported under unrouted yet; set the base levels only.");
+            final JournalRuleDefinition rule = this.journal.onRequest().get(i);
+            if (rule == null)
+            {
+                // Already reported as empty by the journal's own validation.
+                continue;
+            }
+            final ValidationResult ruleResult = journalResult.nested("on_request[" + i + "]");
+            validateDirection(ruleResult.nested("request"), rule.request());
+            validateDirection(ruleResult.nested("response"), rule.response());
         }
     }
 
@@ -53,6 +58,10 @@ public record UnroutedDefinition(
         if (direction != null && direction.level() == JournalLevel.FULL)
         {
             result.addError("level", "FULL is not allowed for unrouted requests; use NONE, METADATA or HEADERS");
+        }
+        if (direction != null && direction.truncateBodyAt() != null)
+        {
+            result.addError("truncate_body_at", "applies only at FULL, which unrouted requests are never journaled at.");
         }
     }
 }

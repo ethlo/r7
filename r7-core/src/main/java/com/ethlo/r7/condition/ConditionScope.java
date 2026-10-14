@@ -21,7 +21,14 @@ public enum ConditionScope
      * A journal {@code on_response} rule: the response head is final, after the response
      * filters, so both legs exist as far as the exchange got.
      */
-    ON_RESPONSE("when on_response rules are checked", true, true, Draw.JOURNAL);
+    ON_RESPONSE("when on_response rules are checked", true, true, Draw.JOURNAL),
+
+    /**
+     * An {@code unrouted} journal {@code on_request} rule: the request was refused before
+     * routing, so only the client's request exists, and on every refusal but a route miss r7
+     * never interpreted it.
+     */
+    UNROUTED("when unrouted rules are checked", false, false, Draw.JOURNAL);
 
     private final String when;
     private final boolean upstreamLeg;

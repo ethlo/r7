@@ -7,13 +7,15 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.validation.ValidationResult;
 
 /**
  * A refused request's body is never read, and after a bad Transfer-Encoding its boundaries are
- * unknown: FULL is refused at load, anything below it is accepted. Rules are refused: the answer
- * to a refused request is fixed by its reason, and on_request waits for that reason to gate it.
+ * unknown: FULL is refused at load, anything below it is accepted; a body cap is refused. The
+ * answer to a refused request is fixed by its reason, so on_response is refused; on_request is
+ * accepted.
  */
 class UnroutedDefinitionTest
 {
@@ -59,10 +61,18 @@ class UnroutedDefinitionTest
     }
 
     @Test
-    void onRequestIsRefusedForNow()
+    void onRequestRulesBelowFullAreAccepted()
     {
-        assertThat(validate(new JournalDefinition(null, null, List.of(rule()), null)).getErrors())
-                .anySatisfy(e -> assertThat(e).contains("on_request").contains("not supported under unrouted yet"));
+        final JournalRuleDefinition rule = new JournalRuleDefinition(null, ConditionDefinition.create(List.of(Map.of("UnroutedReason", Map.of("include", List.of("trace"))))),
+                new JournalDirectionDefinition(JournalLevel.HEADERS, null), null);
+        assertThat(validate(new JournalDefinition(null, null, List.of(rule), null)).getErrors()).isEmpty();
+    }
+
+    @Test
+    void aBodyCapIsRefused()
+    {
+        assertThat(validate(new JournalDefinition(new JournalDirectionDefinition(JournalLevel.HEADERS, DataSize.ofKilobytes(64)), null, null, null)).getErrors())
+                .singleElement().asString().contains("truncate_body_at").contains("only at FULL");
     }
 
     @Test

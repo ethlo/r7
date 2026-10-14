@@ -353,17 +353,23 @@ public final class ManagementEndpoint
         root.put("route_metrics", routeReadings.stream().map(RouteReading::metrics).toList());
 
         root.put("unrouted_requests", pipeline.unroutedRequests());
+        // One routing generation for every configuration field: a reload between reads would
+        // pair one generation's routes with another's revision.
+        final RouteRegistry.Snapshot routing = routeRegistry.snapshot();
+        // The unrouted section's journal, null without one: it does not inherit the root's.
+        final GatewayRoute unrouted = routing.unrouted();
+        root.put("unrouted_journal", unrouted != null ? ModelMapper.mapJournal(((DefaultGatewayRoute) unrouted).journal()) : null);
         root.put("upstream_health", pipeline.upstreamTargetStates());
 
-        final List<GatewayRoute> routes = routeRegistry.getRoutes();
+        final List<GatewayRoute> routes = routing.routes();
         final List<RouteConfigDto> routeConfigs = new ArrayList<>(routes.size());
         for (int i = 0; i < routes.size(); i++)
         {
             final GatewayRoute route = routes.get(i);
             routeConfigs.add(ModelMapper.mapRouteConfig((DefaultGatewayRoute) route, i + 1, pipeline.upstreamStatus(route), this.safeRequestHeaders, this.safeResponseHeaders));
         }
-        root.put("route_version", routeRegistry.getConfigVersion());
-        root.put("route_source_digest", routeRegistry.getSourceDigest());
+        root.put("route_version", routing.version());
+        root.put("route_source_digest", routing.sourceDigest());
         final HotReloadService.Status routeSource = hotReloadService.status();
         root.put("route_source", routeSource);
         root.put("route_configs", routeConfigs);

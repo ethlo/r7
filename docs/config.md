@@ -1002,7 +1002,35 @@ unrouted:
       level: METADATA
 ```
 
-Levels work as for a route, except that `FULL` is refused at startup: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. The root's `journal` does not apply here. Rules are refused: `on_response`, because r7's answer to a refused request is fixed by its reason, and `on_request`, which is not supported under `unrouted` yet. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+Levels work as for a route, except that `FULL` is refused at startup, and so is `truncate_body_at`: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. The root's `journal` does not apply here: refusals are mostly scanner traffic, and levels chosen for real routes would journal it by accident. The dashboard's system view shows the unrouted journal on its own. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+
+#### Rules for refusals
+
+`on_request` rules work as for a route and are checked on every refusal. One predicate exists only here: `UnroutedReason` matches the refusal's reason, from the table above. Like `Sample`, it has no `leg`, and anywhere else it is refused at startup.
+
+```yaml
+unrouted:
+  journal:
+    request:  { level: HEADERS }         # every refusal
+    response: { level: METADATA }
+    on_request:
+      - id: api-misses                   # first match wins: shields these from the next rule
+        match:                           # reads the request: checked on no_route only
+          - Host: { hosts: [api.example.com] }
+        request:  { level: HEADERS }
+        response: { level: METADATA }
+      - id: skip-other-misses
+        match:
+          - UnroutedReason: { include: [no_route] }
+        request:  { level: NONE }
+        response: { level: NONE }
+```
+
+A `404` on `api.example.com` journals its request headers, so a client calling a removed route can be found. Other misses, mostly scanners, are not journaled. `TRACE`, `/%2e%2e/` and smuggling attempts are journaled at `HEADERS`.
+
+A rule that contains any other predicate, anywhere in its `match`, reads the request, and is **checked only on `no_route`**. On the other four refusals it is skipped, as if it did not match. A miss is the one refusal whose request passed every guard routing relies on: an unambiguous path, valid framing, an allowed method. The other four happen before r7 interprets the request. The whole rule is skipped, not each predicate: otherwise `not: { Host: ... }`, written for misses, would also match a smuggling attempt and could set it to `NONE`. A rule made only of `UnroutedReason` and `Sample` is checked on every refusal.
+
+`on_response` is refused: r7's answer to a refused request is fixed by its reason, so there is nothing left to decide.
 
 ---
 

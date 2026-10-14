@@ -90,7 +90,7 @@ class PredicateRegistryTest
     @Test
     void aPredicateMayNotTakeANameTheConditionTreeUses()
     {
-        for (final String reserved : List.of("and", "or", "not", "Sample"))
+        for (final String reserved : List.of("and", "or", "not", "Sample", "UnroutedReason"))
         {
             assertThatThrownBy(() -> new PredicateRegistry(MAPPER, List.of(request(reserved, NoParameters.class)), List.of()))
                     .isInstanceOf(IllegalStateException.class)

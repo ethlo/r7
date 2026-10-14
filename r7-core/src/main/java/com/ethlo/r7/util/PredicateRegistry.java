@@ -19,6 +19,9 @@ import com.ethlo.r7.condition.RequestCondition;
 import com.ethlo.r7.condition.ResponseCondition;
 import com.ethlo.r7.condition.SampleCondition;
 import com.ethlo.r7.condition.SampleConfig;
+import com.ethlo.r7.condition.UnroutedReason;
+import com.ethlo.r7.condition.UnroutedReasonCondition;
+import com.ethlo.r7.condition.UnroutedReasonConfig;
 import com.ethlo.r7.config.ConfigurationException;
 import com.ethlo.r7.spi.GatewayPredicateFactory;
 import com.ethlo.r7.spi.GatewayResponsePredicateFactory;
@@ -43,7 +46,13 @@ public class PredicateRegistry
      */
     public static final String SAMPLE = "Sample";
 
-    private static final Set<String> RESERVED_NAMES = Set.of("and", "or", "not", SAMPLE);
+    /**
+     * Not a predicate but a node of the condition tree, evaluated over why a request was refused
+     * before routing: only under {@code unrouted}.
+     */
+    public static final String UNROUTED_REASON = "UnroutedReason";
+
+    private static final Set<String> RESERVED_NAMES = Set.of("and", "or", "not", SAMPLE, UNROUTED_REASON);
 
     private final Map<String, GatewayPredicateFactory<?>> requestFactories;
     private final Map<String, GatewayResponsePredicateFactory<?>> responseFactories;
@@ -102,7 +111,7 @@ public class PredicateRegistry
 
     public boolean exists(final String name)
     {
-        return SAMPLE.equals(name) || this.requestFactories.containsKey(name) || this.responseFactories.containsKey(name);
+        return SAMPLE.equals(name) || UNROUTED_REASON.equals(name) || this.requestFactories.containsKey(name) || this.responseFactories.containsKey(name);
     }
 
     /**
@@ -113,6 +122,10 @@ public class PredicateRegistry
         if (SAMPLE.equals(name))
         {
             return Optional.of(SampleConfig.class);
+        }
+        if (UNROUTED_REASON.equals(name))
+        {
+            return Optional.of(UnroutedReasonConfig.class);
         }
         final GatewayPredicateFactory<?> request = this.requestFactories.get(name);
         if (request != null)
@@ -141,6 +154,23 @@ public class PredicateRegistry
             }
             final SampleConfig config = this.bind(name, yamlValue, SampleConfig.class, result);
             return config != null ? new SampleCondition(config.rate(), scope.draw()) : Condition.FALSE;
+        }
+        if (UNROUTED_REASON.equals(name))
+        {
+            if (scope != ConditionScope.UNROUTED)
+            {
+                result.addError(name, "UnroutedReason applies only under unrouted.");
+                return Condition.FALSE;
+            }
+            if (leg != null)
+            {
+                result.addError(name + "." + LEG, "UnroutedReason reads why the request was refused and has no leg.");
+                return Condition.FALSE;
+            }
+            final UnroutedReasonConfig config = this.bind(name, yamlValue, UnroutedReasonConfig.class, result);
+            return config != null
+                    ? new UnroutedReasonCondition(config.include().stream().map(UnroutedReason::fromConfig).collect(Collectors.toSet()))
+                    : Condition.FALSE;
         }
 
         final GatewayPredicateFactory<?> requestFactory = this.requestFactories.get(name);
@@ -254,6 +284,7 @@ public class PredicateRegistry
         this.requestFactories.keySet().forEach(n -> all.put(n, n));
         this.responseFactories.keySet().forEach(n -> all.put(n, n));
         all.put(SAMPLE, SAMPLE);
+        all.put(UNROUTED_REASON, UNROUTED_REASON);
         final List<String> available = List.copyOf(all.keySet());
         final String closestMatch = findClosestMatch(name, available);
         final String suggestion = closestMatch != null ? " Did you mean '" + closestMatch + "'?" : "";
