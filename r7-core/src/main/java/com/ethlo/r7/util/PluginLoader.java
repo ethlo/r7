@@ -37,6 +37,8 @@ public final class PluginLoader
     public static final String DIR_ENV = "R7_PLUGINS_DIR";
     private static final Logger log = LoggerFactory.getLogger(PluginLoader.class);
 
+    private static List<ClassLoader> loaders;
+
     private PluginLoader()
     {
     }
@@ -45,9 +47,17 @@ public final class PluginLoader
      * Every class loader to look for extensions in, made once: the gateway's own, which holds the
      * built-in factories, then one for each plugin.
      */
-    public static List<ClassLoader> loaders()
+    public static synchronized List<ClassLoader> loaders()
     {
-        return Holder.LOADERS;
+        // Not a static initializer: a failure there reaches the caller as an ExceptionInInitializerError
+        // the --validate-only check does not catch, instead of the ConfigurationException naming the path
+        if (loaders == null)
+        {
+            loaders = create(
+                    Path.of(System.getenv().getOrDefault(DIR_ENV, "plugins")).toAbsolutePath(),
+                    PluginLoader.class.getClassLoader());
+        }
+        return loaders;
     }
 
     /**
@@ -166,12 +176,5 @@ public final class PluginLoader
     private static boolean isJar(final Path path)
     {
         return Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar");
-    }
-
-    private static final class Holder
-    {
-        private static final List<ClassLoader> LOADERS = create(
-                Path.of(System.getenv().getOrDefault(DIR_ENV, "plugins")).toAbsolutePath(),
-                PluginLoader.class.getClassLoader());
     }
 }
