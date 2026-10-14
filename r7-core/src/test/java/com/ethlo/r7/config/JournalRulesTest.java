@@ -579,7 +579,7 @@ class JournalRulesTest
     }
 
     @Test
-    void statusOverridesNamesItsReplacement()
+    void statusOverridesIsAnUnknownOption()
     {
         assertThatThrownBy(() -> this.build(route("""
                 response:
@@ -587,12 +587,11 @@ class JournalRulesTest
                   status_overrides:
                     5xx: FULL
                 """)))
-                .hasMessageContaining("routes.r.journal.response.status_overrides")
-                .hasMessageContaining("on_response rule matching Status");
+                .hasMessageContaining("Unknown configuration option: 'status_overrides'");
     }
 
     @Test
-    void statusOverridesUnderUnroutedNamesItsReplacement()
+    void statusOverridesUnderUnroutedIsAnUnknownOption()
     {
         assertThatThrownBy(() -> this.build("""
                 version: rules
@@ -611,6 +610,6 @@ class JournalRulesTest
                       targets:
                         - url: http://localhost:1
                 """))
-                .hasMessageContaining("unrouted.journal.request.status_overrides");
+                .hasMessageContaining("Unknown configuration option: 'status_overrides'");
     }
 }

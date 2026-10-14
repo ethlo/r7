@@ -294,7 +294,7 @@ class ConfigLevelsTest
     }
 
     @Test
-    void globalFiltersIsRefusedWithWhatToWriteInstead()
+    void globalFiltersIsAnUnknownOption()
     {
         assertThatThrownBy(() -> build("""
                 global_filters:
@@ -308,8 +308,7 @@ class ConfigLevelsTest
                       targets:
                         - url: http://localhost:1
                 """))
-                .hasMessageContaining("global_filters")
-                .hasMessageContaining(RoutesTreeCheck.GLOBAL_FILTERS_REMOVED);
+                .hasMessageContaining("Unknown configuration option: 'global_filters'");
     }
 
     @Test
