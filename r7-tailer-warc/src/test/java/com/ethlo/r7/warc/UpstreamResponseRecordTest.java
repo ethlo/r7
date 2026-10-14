@@ -88,9 +88,28 @@ class UpstreamResponseRecordTest
         capped.setTraffic(0L, 0L, 0L, 100_000L);
         capped.setBodyTruncated(false, true);
 
-        final String client = responseRecords(capped).get(1);
+        final List<String> responses = responseRecords(capped);
+        final String client = responses.get(1);
         assertThat(client).contains("WARC-Truncated: length\r\n").contains("first bytes");
         assertThat(field(client, "WARC-Payload-Digest")).isEqualTo(PayloadDigest.of(List.of(ByteBuffer.wrap("first bytes".getBytes(StandardCharsets.UTF_8)))));
+        // The upstream record names the same prefix digest, so it says why too.
+        assertThat(responses.get(0)).contains("WARC-Truncated: length\r\n");
+        assertThat(field(responses.get(0), "WARC-Payload-Digest")).isEqualTo(field(client, "WARC-Payload-Digest"));
+    }
+
+    /**
+     * With bodies left out of the archive, the record still says the body was capped: its digest
+     * is of the prefix, not of the whole payload.
+     */
+    @Test
+    void aCappedBodyLeftOutOfTheArchiveIsStillMarkedByLength() throws IOException
+    {
+        final JournalExchange capped = exchange("HTTP/1.1 200 OK", true, "HTTP/1.1 200 OK", "first bytes");
+        capped.setTraffic(0L, 0L, 0L, 100_000L);
+        capped.setBodyTruncated(false, true);
+
+        final List<String> responses = responseRecords(capped, false, writer -> {});
+        assertThat(responses).allSatisfy(r -> assertThat(r).contains("WARC-Truncated: length\r\n").doesNotContain("first bytes"));
     }
 
     @Test
@@ -128,9 +147,14 @@ class UpstreamResponseRecordTest
 
     private List<String> responseRecords(final JournalExchange exchange, final Consumer<WarcExchangeWriter> beforeComplete) throws IOException
     {
+        return responseRecords(exchange, true, beforeComplete);
+    }
+
+    private List<String> responseRecords(final JournalExchange exchange, final boolean bodies, final Consumer<WarcExchangeWriter> beforeComplete) throws IOException
+    {
         try (WarcFileWriter files = new WarcFileWriter(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, 3_600_000L, 3, false))
         {
-            final WarcExchangeWriter writer = new WarcExchangeWriter(files, new PayloadDedupIndex(100));
+            final WarcExchangeWriter writer = new WarcExchangeWriter(files, new PayloadDedupIndex(100), bodies);
             beforeComplete.accept(writer);
             writer.onComplete(exchange);
         }

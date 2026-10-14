@@ -87,7 +87,7 @@ record says plainly when it does not hold them:
 | `warc.bodies: false`: the body was captured, but this output leaves it out | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-Payload-Digest`. The JSON line holds the body when `json.bodies` is `true` |
 | A body crossed the wire, but the journal level was below `FULL` | `request` / `response` | `WARC-Truncated: unspecified`, no digest |
 | The journaled body failed its checksum when read back | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-R7-Checksum-Mismatch: true`, no digest. The damaged bytes are never archived |
-| Records 1 and 4: the journal kept only the body's first [`truncate_body_at`](journaling.md#capping-bodies) bytes | `request` / `response` | `WARC-Truncated: length`, and `WARC-Payload-Digest` of the prefix the record holds. Never a `revisit`, and never the target of one: a prefix is not the payload |
+| Records 1 and 4: the journal kept only the body's first [`truncate_body_at`](journaling.md#capping-bodies) bytes | `request` / `response` | `WARC-Truncated: length`, and `WARC-Payload-Digest` of the prefix the record holds. Never a `revisit`, and never the target of one: a prefix is not the payload. Records 2 and 3, and a body left out by `warc.bodies: false`, also carry `length` in place of `unspecified`, since their digest is of the same prefix |
 | The same body is already stored by an earlier exchange | `revisit` | The WARC 1.1 `identical-payload-digest` profile: `WARC-Refers-To`, `WARC-Refers-To-Target-URI`, `WARC-Refers-To-Date`, `WARC-Truncated: length` |
 | Records 1 and 4: no body | `request` / `response` | No digest, no `WARC-Truncated` |
 

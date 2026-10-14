@@ -108,13 +108,17 @@ final class WarcFields
      * payload was captured but is not in this archive (the tailer's JSON line holds it when that
      * output is on and writes bodies; otherwise nothing does), so the record states that there
      * was one, and which by its digest, without storing it.
+     * <p>
+     * When the journal capped the body ({@code truncate_body_at}), the reason is
+     * {@code length} instead, as on the record holding the prefix: the digest is of the prefix,
+     * not of the whole payload.
      */
     static List<Map.Entry<String, String>> notStoredElsewhere(final String msgType, final String warcDate, final String targetUri,
                                                                final List<String> concurrentToIds, final String requestId,
-                                                               final String payloadDigest)
+                                                               final String payloadDigest, final boolean capped)
     {
         final List<Map.Entry<String, String>> fields = header(msgType, warcDate, targetUri, concurrentToIds, requestId);
-        fields.add(entry("WARC-Truncated", "unspecified"));
+        fields.add(entry("WARC-Truncated", capped ? "length" : "unspecified"));
         if (payloadDigest != null)
         {
             fields.add(entry("WARC-Payload-Digest", payloadDigest));

@@ -247,7 +247,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
         if (exchange.wasProxied())
         {
             if (addIfJournaled(legs, "request", upstreamStartLine, exchange.getUpstreamRequestHeaders(),
-                    false, null, requestDigest, 0, requestMismatch, null, upstreamRequestDate, false))
+                    false, null, requestDigest, 0, requestMismatch, null, upstreamRequestDate, exchange.isRequestBodyTruncated()))
             {
                 targetUris.add(upstreamTargetUri);
             }
@@ -256,7 +256,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // this response, whose body was never read.
             final boolean relayed = exchange.isUpstreamResponseRelayed();
             if (addIfJournaled(legs, "response", exchange.getUpstreamResponseStartLine(), exchange.getUpstreamResponseHeaders(),
-                    false, null, relayed ? responseDigest : null, 0, relayed && responseMismatch, null, responseDate, false))
+                    false, null, relayed ? responseDigest : null, 0, relayed && responseMismatch, null, responseDate, relayed && exchange.isResponseBodyTruncated()))
             {
                 targetUris.add(upstreamTargetUri);
             }
@@ -339,7 +339,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // same direction - see the class javadoc for why this is not a revisit record. A
             // refused upstream head has no digest here: its body is not stored anywhere.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, leg.payloadDigest());
+            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, leg.payloadDigest(), leg.truncated());
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
@@ -362,7 +362,7 @@ public final class WarcExchangeWriter implements ExchangeCompletionListener
             // Bodies are left out by configuration: the record says there was one, and which,
             // without storing it. No dedup either way, since nothing is stored to point at.
             final byte[] block = HttpMessageBlock.headersOnly(leg.startLine(), leg.headers());
-            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest);
+            final List<Map.Entry<String, String>> fields = WarcFields.notStoredElsewhere(leg.msgType(), leg.warcDate(), targetUri, concurrentToIds, requestId, payloadDigest, leg.truncated());
             addClientAddress(fields, leg.clientAddress());
             return new WarcFileWriter.PendingRecord(ownRecordId, leg.msgType(), fields, block);
         }
