@@ -3928,6 +3928,12 @@
 <td>No (default <code>false</code>)</td>
 <td>Serve files and directories whose name starts with <code>.</code> (e.g. <code>.env</code>, <code>.git/</code>, <code>.htpasswd</code>). When disabled, such a request is answered <code>404 Not Found</code>; <code>.well-known/</code> is always served.</td>
 </tr>
+<tr>
+<td><code>fallback</code></td>
+<td>String</td>
+<td>No</td>
+<td>A file path relative to the directories, such as <code>index.html</code> (no leading <code>/</code>), served with <code>200</code> for a path none of them has, instead of <code>404</code>. It is looked up in the directories' order and must exist in one when the routes load.</td>
+</tr>
 </tbody>
 </table>
 <p>With several directories, each request is answered by the first one that can: the first holding the file, or, for a directory asked for with its trailing slash, the first holding a welcome file in it. A higher directory overrides a lower one file by file, so a deployment can override a few files of a shared set without copying the rest:</p>
@@ -3943,6 +3949,7 @@
 </span><span id="True-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">          </span><span class="nt">directories</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">/srv/site/assets/</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">/srv/common/assets/</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <p>Nothing is merged: a file is served whole from one directory. A directory that is missing at runtime, mid swap or on an unmounted volume, is skipped; when all are, the answer is <code>404</code>. To serve several folders, give each its own route.</p>
+<p>A single-page app handles its routes in the browser, so a path such as <code>/orders/42</code> has no file behind it. With <code>fallback: index.html</code> such a path gets the app's <code>index.html</code> with <code>200</code>, as nginx's <code>try_files $uri /index.html</code> does. Every path no directory has gets it, a missing <code>app.js</code> included; hidden files are still <code>404</code>, and a directory without a welcome file is still <code>403</code>.</p>
 <p>In a container, bind-mount the parent of each directory, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 logs a warning and skips it until it restarts, and answers <code>503</code> when no other directory is left. With the parent mounted, a replaced directory, or a swapped <code>current</code> symlink, is picked up on the next request.</p>
 <h4 id="setstatus">SetStatus</h4>
 <p>Overrides the HTTP response status code returned to the client, regardless of the upstream target's actual response.</p>
