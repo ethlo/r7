@@ -514,11 +514,12 @@ public final class UpstreamRelay
 
     private static void relayExactly(final HttpUpstream.LineReader in, final OutputStream out, final ProxiedExchange exchange, final long length) throws IOException
     {
-        final byte[] buffer = new byte[8192];
+        // Written from the reader's own buffer: a copy buffer per response was an 8 KB
+        // allocation and a copy for every body.
         long remaining = length;
         while (remaining > 0)
         {
-            final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+            final int n = in.next((int) Math.min(Integer.MAX_VALUE, remaining));
             if (n == -1)
             {
                 if (length == Long.MAX_VALUE)
@@ -527,14 +528,13 @@ public final class UpstreamRelay
                 }
                 throw new IOException("Upstream closed the connection " + remaining + " bytes short of its Content-Length");
             }
-            writeResponseBody(out, exchange, buffer, n);
+            writeResponseBody(out, exchange, in.buffer(), in.start(), n);
             remaining -= n;
         }
     }
 
     private static void relayChunked(final HttpUpstream.LineReader in, final OutputStream out, final ProxiedExchange exchange, final UpstreamOptions options) throws IOException
     {
-        final byte[] buffer = new byte[8192];
         while (true)
         {
             final String sizeLine = in.readLine(Http1.MAX_CHUNK_LINE);
@@ -551,12 +551,12 @@ public final class UpstreamRelay
             long remaining = size;
             while (remaining > 0)
             {
-                final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                final int n = in.next((int) Math.min(Integer.MAX_VALUE, remaining));
                 if (n == -1)
                 {
                     throw new UpstreamProtocolException("Upstream closed the connection inside a chunk");
                 }
-                writeResponseBody(out, exchange, buffer, n);
+                writeResponseBody(out, exchange, in.buffer(), in.start(), n);
                 remaining -= n;
             }
             // Exactly CRLF after the data: anything else means the chunk was longer than its
@@ -595,12 +595,12 @@ public final class UpstreamRelay
         }
     }
 
-    private static void writeResponseBody(final OutputStream out, final ProxiedExchange exchange, final byte[] buffer, final int n) throws IOException
+    private static void writeResponseBody(final OutputStream out, final ProxiedExchange exchange, final byte[] buffer, final int offset, final int n) throws IOException
     {
-        exchange.onResponseBody(buffer, 0, n);
+        exchange.onResponseBody(buffer, offset, n);
         try
         {
-            out.write(buffer, 0, n);
+            out.write(buffer, offset, n);
         }
         catch (final IOException e)
         {
