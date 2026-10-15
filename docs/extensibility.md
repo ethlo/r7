@@ -342,6 +342,10 @@ library and cannot see each other's classes, and there is no need to build an ub
 is parent-first: the r7 API and the gateway's own libraries are the gateway's, so a plugin cannot
 replace them.
 
+A plugin is code the gateway runs with all of its own rights: it sees every request, every
+header and the journal. Treat the plugins directory like the gateway's own binaries: owned by
+another user than the one the gateway runs as, and read-only to it, as the `:ro` mounts below are.
+
 ### Docker Compose Example
 
 The image reads `/app/plugins`, so mounting your jars there is all it takes, and the image's AOT
@@ -350,7 +354,7 @@ cache applies as it is.
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-gateway:main
+    image: ghcr.io/ethlo/r7-gateway:1.0.0-beta.2
     container_name: ethlo-r7-gateway
     ports:
       - "9999:8888"
