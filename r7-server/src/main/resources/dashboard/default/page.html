@@ -1692,8 +1692,10 @@
             }).join('');
         };
 
+        const measured = isMeasured(config);
         const live = `
         ${panelHeader('ROUTE', `<span class="route-order">#${config.order}</span>${esc(routeId)}`)}
+        ${measured ? '' : `<div class="panel-section" style="column-span: all;"><div class="sub text-warn">${NOT_MEASURED} Until it is, the figures below do not change.</div></div>`}
 
         <div class="group-heading">PERFORMANCE · LAST ${wl}</div>
 
@@ -1825,6 +1827,17 @@
         },
         performance_telemetry: {average_latency: "PT0S"}
     };
+
+    // Without SimpleMetrics in its chain (root, group or route) a route's figures stand still:
+    // zeros, or whatever was counted before it was removed. Either would read as "no traffic".
+    const NOT_MEASURED = 'Not measured: add the SimpleMetrics filter to this route, its group or the root filters.';
+
+    function isMeasured(config) {
+        for (let node = config.filter_nodes; node; node = node.child) {
+            if (node.name === 'SimpleMetrics') return true;
+        }
+        return false;
+    }
 
     // ==========================================================================
     // System (socket-level) view
@@ -1964,6 +1977,7 @@
         }
         const sysWin = windowStats(sysSparkline);
         const unrouted = data.unrouted_requests || 0;
+        const anyMeasured = data.route_configs.some(isMeasured);
 
         let html = '';
 
@@ -1979,7 +1993,7 @@
             <td class="col-active">
                 <canvas id="canvas___SYSTEM__" width="200" height="60" style="margin-top: 8px;"></canvas>
             </td>
-            <td class="col-totals">
+            ${anyMeasured ? `<td class="col-totals">
                 ${mRow('SUM', formatCompact(totals.total), true, '', formatCompact(Math.round(sysRpsTotal)) + PER_SEC)}
                 ${mRow('2xx', formatCompact(totals.st_2xx), false, t2xxStyle, formatCompact(Math.round(sys2xxRps)) + PER_SEC)}
                 ${mRow('4xx', formatCompact(totals.err_4xx), false, t4xxStyle, formatCompact(Math.round(sys4xxRps)) + PER_SEC)}
@@ -1989,13 +2003,14 @@
                 ${mRow('SUM', formatBytes(totals.in_t, uTotal), true, '', formatBytes(totals.out_t, uTotal))}
                 ${mRow('HDR', formatBytes(totals.in_h, uTotal), false, '', formatBytes(totals.out_h, uTotal))}
                 ${mRow('BDY', formatBytes(totals.in_b, uTotal), false, '', formatBytes(totals.out_b, uTotal))}
-            </td>
+            </td>` : `<td class="col-totals" colspan="2"><div class="sub text-dim" style="padding: 4px;">No route has the SimpleMetrics filter, so there are no route figures to add up. Open this row for the raw socket traffic.</div></td>`}
             <td class="col-journal">
-                ${mRow('SIZE', formatBytes(totals.journal, uTotal), true)}
+                ${mRow('SIZE', anyMeasured ? formatBytes(totals.journal, uTotal) : '--', true)}
             </td>
         </tr>`;
 
         data.route_configs.forEach((config, index) => {
+            const measured = isMeasured(config);
             const r = window.currentMetrics[config.id] || ZERO_METRICS;
 
             const t = r.traffic_flow;
@@ -2043,7 +2058,7 @@
             <td class="col-active">
                <canvas id="canvas_${index}" width="200" height="60" style="margin-top: 8px;"></canvas>
             </td>
-            <td class="col-totals">
+            ${measured ? `<td class="col-totals">
                 ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)) + PER_SEC)}
                 ${mRow('2xx', formatCompact(st2xx), false, t2xxStyle, formatCompact(Math.round(r2xxRps)) + PER_SEC)}
                 ${mRow('4xx', formatCompact(err4xx), false, err4xx > 0 ? 'text-4xx' : '', formatCompact(Math.round(r4xxRps)) + PER_SEC)}
@@ -2053,9 +2068,9 @@
                 ${mRow('SUM', formatBytes(t.ingress.total_bytes, uRoute), true, '', formatBytes(t.egress.total_bytes, uRoute))}
                 ${mRow('HDR', formatBytes(t.ingress.header_bytes, uRoute), false, '', formatBytes(t.egress.header_bytes, uRoute))}
                 ${mRow('BDY', formatBytes(t.ingress.body_bytes, uRoute), false, '', formatBytes(t.egress.body_bytes, uRoute))}
-            </td>
+            </td>` : `<td class="col-totals" colspan="2"><div class="sub text-dim" style="padding: 4px;">${NOT_MEASURED}</div></td>`}
             <td class="col-journal">
-                ${mRow('SIZE', formatBytes(t.journal_storage_bytes, uRoute), true)}
+                ${mRow('SIZE', measured ? formatBytes(t.journal_storage_bytes, uRoute) : '--', true)}
                 ${mRow('REQUEST', jBadge(config.journal?.request_level), false)}
                 ${mRow('RESPONSE', jBadge(config.journal?.response_level), false)}
             </td>
