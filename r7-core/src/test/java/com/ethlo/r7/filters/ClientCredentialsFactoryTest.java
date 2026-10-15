@@ -17,6 +17,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -95,8 +96,15 @@ class ClientCredentialsFactoryTest
         }
     }
 
-    record Answer(int status, String body)
+    /**
+     * @param bodyGate when set, the head is sent at once and the body only once it opens
+     */
+    record Answer(int status, String body, CountDownLatch bodyGate)
     {
+        Answer(final int status, final String body)
+        {
+            this(status, body, null);
+        }
     }
 
     @BeforeAll
@@ -136,9 +144,25 @@ class ClientCredentialsFactoryTest
         final Answer answer = this.responder.apply(request);
         final byte[] body = answer.body().getBytes(UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(answer.status(), body.length);
-        exchange.getResponseBody().write(body);
-        exchange.close();
+        if (answer.bodyGate() != null)
+        {
+            exchange.sendResponseHeaders(answer.status(), 0);
+            exchange.getResponseBody().flush();
+            await(answer.bodyGate());
+        }
+        else
+        {
+            exchange.sendResponseHeaders(answer.status(), body.length);
+        }
+        try
+        {
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        }
+        catch (final IOException e)
+        {
+            // The client gave up on a stalled body, as it should.
+        }
     }
 
     @Test
@@ -267,6 +291,41 @@ class ClientCredentialsFactoryTest
             this.responder = request -> new Answer(400, "{\"error\":\"" + error + "\"}");
             assertUnavailable(exchange(basic("legacy-erp", "s3cret")), filter(config(null)));
         }
+    }
+
+    @Test
+    void a401IsRefusedWithoutReadingItsBody()
+    {
+        this.responder = request -> new Answer(401, "x".repeat(ClientCredentialsFactory.MAX_RESPONSE_BYTES * 2));
+        final ClientRequestGatewayExchange exchange = exchange(basic("legacy-erp", "wrong"));
+
+        filter(config(null)).onClientRequest(exchange);
+
+        assertUnauthorized(exchange);
+    }
+
+    @Test
+    void anOversizedTokenResponseIs503()
+    {
+        this.responder = request -> new Answer(200, "{\"pad\":\"" + "x".repeat(ClientCredentialsFactory.MAX_RESPONSE_BYTES) + "\"}");
+
+        assertUnavailable(exchange(basic("legacy-erp", "s3cret")), filter(config(null)));
+    }
+
+    @Test
+    void aStalledBodyIs503WithinTheDeadline()
+    {
+        final CountDownLatch never = new CountDownLatch(1);
+        this.responder = request -> new Answer(200, "{}", never);
+        final ClientCredentialsFactory.Config config = config(null);
+        final ClientCredentialsFactory.GF filter = new ClientCredentialsFactory.GF(config,
+                JwtVerification.processor(keys, config.issuer(), config.audience(), 60), Duration.ofMillis(300));
+
+        final long started = System.nanoTime();
+        assertUnavailable(exchange(basic("legacy-erp", "s3cret")), filter);
+        never.countDown();
+
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(5));
     }
 
     @Test
@@ -402,8 +461,7 @@ class ClientCredentialsFactoryTest
             await(release);
             return tokenFor("legacy-erp", 300);
         };
-        final ClientCredentialsFactory.GF filter = filter(new ClientCredentialsFactory.Config(
-                tokenUrl(), "https://auth.example.com/keys", ISSUER, AUDIENCE, null, null, 1));
+        final ClientCredentialsFactory.GF filter = capOfOne();
 
         try (var threads = Executors.newVirtualThreadPerTaskExecutor())
         {
@@ -421,6 +479,39 @@ class ClientCredentialsFactoryTest
     }
 
     @Test
+    void theCapCoversTheWholeExchangeNotJustTheResponseHead() throws Exception
+    {
+        final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch firstArrived = new CountDownLatch(1);
+        this.responder = request ->
+        {
+            firstArrived.countDown();
+            final Answer token = tokenFor("legacy-erp", 300);
+            return new Answer(token.status(), token.body(), release);
+        };
+        final ClientCredentialsFactory.GF filter = capOfOne();
+
+        try (var threads = Executors.newVirtualThreadPerTaskExecutor())
+        {
+            final ClientRequestGatewayExchange first = exchange(basic("legacy-erp", "s3cret"));
+            final Future<?> firstDone = threads.submit(() -> filter.onClientRequest(first));
+            assertThat(firstArrived.await(5, TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(100);
+
+            assertUnavailable(exchange(basic("another-line", "s3cret")), filter);
+
+            release.countDown();
+            firstDone.get(10, TimeUnit.SECONDS);
+            verify(first, never()).shortCircuit(any());
+        }
+    }
+
+    private ClientCredentialsFactory.GF capOfOne()
+    {
+        return filter(new ClientCredentialsFactory.Config(tokenUrl(), "https://auth.example.com/keys", ISSUER, AUDIENCE, null, null, 1));
+    }
+
+    @Test
     void requiredSettingsAreNamed()
     {
         assertThat(errors(new ClientCredentialsFactory.Config(null, null, null, null, null, null, null)))
@@ -435,8 +526,12 @@ class ClientCredentialsFactoryTest
     {
         assertThat(errors(withTokenUrl("http://auth.example.com/token"))).singleElement().asString().contains("https");
         assertThat(errors(withTokenUrl("ftp://auth.example.com/token"))).singleElement().asString().contains("http or https");
-        assertThat(errors(withTokenUrl("https://gateway:secret@auth.example.com/token"))).singleElement().asString()
-                .contains("credentials").doesNotContain("secret");
+        for (final String withCredentials : List.of("https://gateway:secret@auth.example.com/token",
+                "http://gateway:secret@auth.example.com/token", "https://gateway:secret@auth example.com/token"))
+        {
+            assertThat(errors(withTokenUrl(withCredentials))).as(withCredentials)
+                    .singleElement().asString().contains("'@'").doesNotContain("secret");
+        }
         assertThat(errors(new ClientCredentialsFactory.Config(tokenUrl(), "https://auth.example.com/keys", ISSUER, AUDIENCE, "a  b", null, null)))
                 .singleElement().asString().contains("scope");
         assertThat(errors(new ClientCredentialsFactory.Config(tokenUrl(), "https://auth.example.com/keys", ISSUER, AUDIENCE, "a\"b", null, null)))

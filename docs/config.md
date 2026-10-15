@@ -810,7 +810,7 @@ Legacy clients often speak only Basic authentication, while the services behind 
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `token_url` | String | Yes | The token endpoint. `https`, or `http` on a loopback host only: the client's secret is sent to it. |
+| `token_url` | String | Yes | The token endpoint. `https`, or `http` on a loopback host only, and without credentials in it: the client's secret is sent to it. |
 | `jwks_url` | String | Yes | The JWKS endpoint the returned token is verified against, `http` or `https`. |
 | `issuer` | String | Yes | The `iss` the returned token must carry. |
 | `audience` | String | Yes | A value the returned token's `aud` must contain. |
@@ -836,7 +836,7 @@ filters:
 
 **What the upstream receives.** The returned token is verified by the same rules as [`JwtAuth`](#jwtauth) (asymmetric signature, `exp`, `sub`, `issuer`, `audience`) before it is used, so a token issued for another audience never reaches an upstream. The caller's [identity](journaling.md#the-callers-identity) is journaled with scheme `client_credentials`, the token's issuer and subject, and as username its `client_id` claim (Keycloak's), else `azp`, else the Basic client id.
 
-**Answers.** Credentials the identity provider refuses (`401`, or `400` with `invalid_client`, `unauthorized_client` or `invalid_grant`) are answered with `401` and a Basic challenge. Anything else that is not a token (an unreachable endpoint, any other status or error, a token that fails verification) is answered with `503` and `Retry-After: 1`: the client's credentials were not the problem. The first such failure after a load is logged as a warning with its reason. A request carrying more than one `Authorization` value is refused with `401`.
+**Answers.** Credentials the identity provider refuses (`401`, or `400` with `invalid_client`, `unauthorized_client` or `invalid_grant`) are answered with `401` and a Basic challenge. Anything else that is not a token (an unreachable endpoint, keys that cannot be fetched, a response not complete within 7 seconds or larger than 64 KB, any other status or error, a token that fails verification) is answered with `503` and `Retry-After: 1`: the client's credentials were not the problem. The first such failure after a load is logged as a warning with its reason. A request carrying more than one `Authorization` value is refused with `401`.
 
 **Caching.** A token is reused for the same credentials until 30 seconds before it expires, so the identity provider sees one exchange per client per token lifetime. The cache is keyed by an HMAC of the credentials under a random key that exists only in memory and is replaced on every reload, so a heap dump yields no secret to guess offline. Failed exchanges are never cached, and concurrent requests with the same credentials share one exchange. A client disabled at the identity provider keeps its cached token until that token expires: keep access token lifetimes short (Keycloak's default is 5 minutes).
 

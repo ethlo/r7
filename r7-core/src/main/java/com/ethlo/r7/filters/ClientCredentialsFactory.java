@@ -2,8 +2,6 @@ package com.ethlo.r7.filters;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -229,10 +227,14 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
             validator.notBlank("jwks_url", this.jwksUrl);
             validator.notBlank("issuer", this.issuer);
             validator.notBlank("audience", this.audience);
-            JwtVerification.validateUrl(validator, "token_url", this.tokenUrl, true);
-            if (this.tokenUrl != null && hasUserInfo(this.tokenUrl))
+            // Checked first and alone: every other check quotes the URL in its message.
+            if (this.tokenUrl != null && this.tokenUrl.indexOf('@') >= 0)
             {
-                validator.invalid("token_url", "<redacted>", "Must not contain credentials: the client's own are sent to it");
+                validator.invalid("token_url", "<redacted>", "Must not contain '@': credentials in the URL would be shown in diagnostics, and the client's own are sent to it");
+            }
+            else
+            {
+                JwtVerification.validateUrl(validator, "token_url", this.tokenUrl, true);
             }
             JwtVerification.validateUrl(validator, "jwks_url", this.jwksUrl, false);
             if (this.scope != null && !SCOPE.matcher(this.scope).matches())
@@ -244,19 +246,6 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
             {
                 validator.invalid("max_concurrent_exchanges", this.maxConcurrentExchanges, "Must be between 1 and " + MAX_MAX_CONCURRENT_EXCHANGES);
             }
-        }
-    }
-
-    private static boolean hasUserInfo(final String url)
-    {
-        try
-        {
-            return URI.create(url).getRawUserInfo() != null;
-        }
-        catch (final IllegalArgumentException e)
-        {
-            // Not a URL at all, which validateUrl reports.
-            return false;
         }
     }
 
@@ -320,9 +309,16 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
         private final SecretKeySpec cacheKeySecret;
         private final AsyncCache<String, Outcome> tokens;
         private final AtomicBoolean warned = new AtomicBoolean();
+        private final Duration responseTimeout;
 
         GF(final Config config, final ConfigurableJWTProcessor<SecurityContext> jwtProcessor)
         {
+            this(config, jwtProcessor, RESPONSE_TIMEOUT);
+        }
+
+        GF(final Config config, final ConfigurableJWTProcessor<SecurityContext> jwtProcessor, final Duration responseTimeout)
+        {
+            this.responseTimeout = responseTimeout;
             this.tokenUrl = URI.create(config.tokenUrl());
             this.scopeParameter = config.scope() != null ? "&scope=" + URLEncoder.encode(config.scope(), UTF_8) : "";
             this.challenge = BasicAuthFactory.basicChallenge(config.realm());
@@ -482,37 +478,47 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
                 throw new Refused("malformed credentials");
             }
 
-            final HttpResponse<InputStream> response = this.post(clientId, clientSecret);
-            final Map<String, Object> body = this.readBody(response);
-            final int status = response.statusCode();
-            if (status == HttpStatuses.UNAUTHORIZED)
+            // The permit is held until the token is verified: the exchange is not over when the
+            // response head arrives, and a cap that let go then would not bound the work.
+            this.acquirePermit();
+            try
             {
-                throw new Refused("refused by the token endpoint");
-            }
-            if (status == HttpStatuses.BAD_REQUEST)
-            {
-                // RFC 6749 §5.2: these say the credentials are wrong or not allowed this grant.
-                // Any other error (invalid_scope, invalid_request, unsupported_grant_type) is a
-                // configuration problem the client cannot fix, so it is not answered with 401.
-                final Object error = body != null ? body.get("error") : null;
-                if ("invalid_client".equals(error) || "unauthorized_client".equals(error) || "invalid_grant".equals(error))
+                final HttpResponse<byte[]> response = this.post(clientId, clientSecret);
+                final int status = response.statusCode();
+                if (status == HttpStatuses.UNAUTHORIZED)
                 {
                     throw new Refused("refused by the token endpoint");
                 }
-                throw this.unexpected("the token endpoint answered 400 with error '" + error + "'");
+                final Map<String, Object> body = parse(response.body());
+                if (status == HttpStatuses.BAD_REQUEST)
+                {
+                    // RFC 6749 §5.2: these say the credentials are wrong or not allowed this grant.
+                    // Any other error (invalid_scope, invalid_request, unsupported_grant_type) is a
+                    // configuration problem the client cannot fix, so it is not answered with 401.
+                    final Object error = body != null ? body.get("error") : null;
+                    if ("invalid_client".equals(error) || "unauthorized_client".equals(error) || "invalid_grant".equals(error))
+                    {
+                        throw new Refused("refused by the token endpoint");
+                    }
+                    throw this.unexpected("the token endpoint answered 400 with error '" + error + "'");
+                }
+                if (status != HttpStatuses.OK)
+                {
+                    throw this.unexpected("the token endpoint answered " + status);
+                }
+                if (body == null)
+                {
+                    throw this.unexpected("the token endpoint answered 200 without a JSON object");
+                }
+                return this.verify(body, clientId);
             }
-            if (status != HttpStatuses.OK)
+            finally
             {
-                throw this.unexpected("the token endpoint answered " + status);
+                this.exchangePermits.release();
             }
-            if (body == null)
-            {
-                throw this.unexpected("the token endpoint answered 200 without a JSON object");
-            }
-            return this.verify(body, clientId);
         }
 
-        private HttpResponse<InputStream> post(final String clientId, final String clientSecret) throws Unavailable
+        private void acquirePermit() throws Unavailable
         {
             try
             {
@@ -526,58 +532,64 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
                 Thread.currentThread().interrupt();
                 throw new Unavailable("interrupted");
             }
+        }
 
+        /**
+         * Sends the token request and reads the whole response within {@link #responseTimeout}:
+         * the request timeout alone ends at the response head, and an endpoint that then stalls
+         * its body would hold the request forever. A 401 body is discarded unread, since the
+         * status is the whole answer, and any other body is read up to {@link #MAX_RESPONSE_BYTES}.
+         */
+        private HttpResponse<byte[]> post(final String clientId, final String clientSecret) throws Unavailable
+        {
+            // RFC 6749 §2.3.1: id and secret are form-urlencoded before they are joined, which a
+            // legacy client does not do, so they are decoded and encoded again here.
+            final String basic = Base64.getEncoder().encodeToString(
+                    (URLEncoder.encode(clientId, UTF_8) + ":" + URLEncoder.encode(clientSecret, UTF_8)).getBytes(UTF_8));
+            final HttpRequest request = HttpRequest.newBuilder(this.tokenUrl)
+                    .timeout(this.responseTimeout)
+                    .header(HttpHeaders.AUTHORIZATION, BASIC_SCHEME + basic)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_X_WWW_FORM_URLENCODED)
+                    .header(HttpHeaders.ACCEPT, MediaTypes.APPLICATION_JSON)
+                    .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials" + this.scopeParameter))
+                    .build();
+            final HttpResponse.BodyHandler<byte[]> handler = info -> info.statusCode() == HttpStatuses.UNAUTHORIZED
+                    ? HttpResponse.BodySubscribers.replacing(new byte[0])
+                    : HttpResponse.BodySubscribers.limiting(HttpResponse.BodySubscribers.ofByteArray(), MAX_RESPONSE_BYTES);
+            final CompletableFuture<HttpResponse<byte[]>> response = HTTP_CLIENT.sendAsync(request, handler);
             try
             {
-                // RFC 6749 §2.3.1: id and secret are form-urlencoded before they are joined, which
-                // a legacy client does not do, so they are decoded and encoded again here.
-                final String basic = Base64.getEncoder().encodeToString(
-                        (URLEncoder.encode(clientId, UTF_8) + ":" + URLEncoder.encode(clientSecret, UTF_8)).getBytes(UTF_8));
-                final HttpRequest request = HttpRequest.newBuilder(this.tokenUrl)
-                        .timeout(RESPONSE_TIMEOUT)
-                        .header(HttpHeaders.AUTHORIZATION, BASIC_SCHEME + basic)
-                        .header(HttpHeaders.CONTENT_TYPE, MediaTypes.APPLICATION_X_WWW_FORM_URLENCODED)
-                        .header(HttpHeaders.ACCEPT, MediaTypes.APPLICATION_JSON)
-                        .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials" + this.scopeParameter))
-                        .build();
-                return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                return response.get(CONNECT_TIMEOUT.plus(this.responseTimeout).toMillis(), TimeUnit.MILLISECONDS);
             }
-            catch (final IOException e)
+            catch (final ExecutionException e)
             {
-                throw this.unexpected("the token endpoint could not be reached: " + e);
+                throw this.unexpected("the token endpoint could not be reached or its response not read: " + e.getCause());
+            }
+            catch (final TimeoutException e)
+            {
+                response.cancel(true);
+                throw this.unexpected("the token endpoint did not answer in full within " + CONNECT_TIMEOUT.plus(this.responseTimeout));
             }
             catch (final InterruptedException e)
             {
+                response.cancel(true);
                 Thread.currentThread().interrupt();
                 throw new Unavailable("interrupted");
-            }
-            finally
-            {
-                this.exchangePermits.release();
             }
         }
 
         /**
          * @return the JSON object in the body, or null when the body is not one
          */
-        private Map<String, Object> readBody(final HttpResponse<InputStream> response) throws Unavailable
+        private static Map<String, Object> parse(final byte[] body)
         {
-            try (InputStream in = response.body())
+            try
             {
-                final byte[] bytes = in.readNBytes(MAX_RESPONSE_BYTES + 1);
-                if (bytes.length > MAX_RESPONSE_BYTES)
-                {
-                    throw this.unexpected("the token endpoint's response is larger than " + MAX_RESPONSE_BYTES + " bytes");
-                }
-                return JSONObjectUtils.parse(new String(bytes, UTF_8));
+                return JSONObjectUtils.parse(new String(body, UTF_8));
             }
             catch (final ParseException e)
             {
                 return null;
-            }
-            catch (final IOException e)
-            {
-                throw this.unexpected("the token endpoint's response could not be read: " + e);
             }
         }
 
@@ -599,7 +611,7 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
             }
             catch (final KeySourceException e)
             {
-                throw new Unavailable("the signing keys could not be fetched");
+                throw this.unexpected("the signing keys could not be fetched from jwks_url: " + e.getMessage());
             }
             catch (final ParseException | BadJOSEException | JOSEException e)
             {
