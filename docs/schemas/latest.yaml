@@ -137,6 +137,50 @@ $defs:
             body:
               failure_threshold: $1
               cooldown_period: $2
+        ClientCredentials:
+          type: object
+          properties:
+            audience:
+              type: string
+              description: A value the returned token's 'aud' must contain.
+            issuer:
+              type: string
+              description: The 'iss' the returned token must carry.
+            jwks_url:
+              type: string
+              description: The JWKS endpoint the returned token is verified against.
+            max_concurrent_exchanges:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "How many exchanges this filter runs at once. A request that cannot start one within 250 ms is answered with 503, so a flood of wrong secrets is shed by the gateway rather than passed on to the identity provider."
+              default: 16
+            realm:
+              type: string
+              description: The authentication realm presented to the client in the Basic challenge.
+              default: Secure Area
+            scope:
+              type: string
+              description: "The scope requested with each exchange, as space-separated scope names. Without it, the identity provider grants the client's default scopes."
+            token_url:
+              type: string
+              description: "The OAuth token endpoint the credentials are exchanged at, such as 'https://auth.example.com/realms/acme/protocol/openid-connect/token'. Must be https, except on a loopback host: the client's secret is sent to it."
+          required:
+          - token_url
+          - jwks_url
+          - issuer
+          - audience
+          additionalProperties: false
+          description: "Exchanges the client's Basic credentials, as an OAuth client id and secret, for an access token at a token endpoint, and sends the upstream that token instead."
+          defaultSnippets:
+          - label: Insert ClientCredentials
+            description: "Exchanges the client's Basic credentials, as an OAuth client id and secret, for an access token at a token endpoint, and sends the upstream that token instead."
+            body:
+              token_url: $1
+              jwks_url: $2
+              issuer: $3
+              audience: $4
         Cors:
           type: object
           properties:

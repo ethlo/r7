@@ -382,10 +382,10 @@ Fields of the exchange:
 | `remote_address` | string | When known: the client address |
 | `remote_address_source` | string | With `remote_address`: `SOCKET`, `X_FORWARDED_FOR`, `X_REAL_IP` or `UNKNOWN` |
 | `identity` | object | When an auth filter verified the caller: who they are, in plain text; see [The caller's identity](#the-callers-identity) |
-| `identity.scheme` | string | `basic` for [`BasicAuth`](config.md#basicauth), `jwt` for [`JwtAuth`](config.md#jwtauth), or the scheme a plugin sets |
+| `identity.scheme` | string | `basic` for [`BasicAuth`](config.md#basicauth), `jwt` for [`JwtAuth`](config.md#jwtauth), `client_credentials` for [`ClientCredentials`](config.md#clientcredentials), or the scheme a plugin sets |
 | `identity.issuer` | string | When the scheme has one: a token's `iss`. In Keycloak, the realm is its last path segment |
 | `identity.subject` | string | The `BasicAuth` username, or a token's `sub` |
-| `identity.username` | string | When known: the `BasicAuth` username, or the token's `username_claim` |
+| `identity.username` | string | When known: the `BasicAuth` username, the token's `username_claim`, or the `ClientCredentials` client id |
 | `client_request` | object | Always: the request from the client |
 | `upstream_request` | object | When the request was proxied: the request head r7 built for the last target tried, with the target's path, `Host`, the `X-Forwarded-*` headers and framing r7 set. When no connection to that target could be made, it is the head r7 would have sent, and `upstream_response` has no status line |
 | `upstream_response` | object | When the request was proxied: the upstream's response, and the round trip's timing. When no upstream sent a response head (a refused connect, a timeout or a protocol error before one), it holds only the timing, at level `NONE`: r7's own `502`, `503` or `504` is recorded in `client_response`, never as the upstream's |
