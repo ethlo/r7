@@ -38,10 +38,11 @@ a request.
 
 `max_request_time` already had a cheaper mechanism: one sweeper thread for every upstream,
 walking the exchanges in flight every 250 ms. The read timeout now uses it too. `LineReader`
-notes when its socket read started (a `volatile long`, set and cleared around the read; the
+notes when its socket read started (an `AtomicLong`, set and cleared around the read; the
 upstream is only ever read through it, the tunnel excepted, which has no read timeout), and the
-sweeper closes a connection whose read has waited past `read_timeout`, after marking it so the
-read reports a `SocketTimeoutException("Read timed out")`. Everything downstream of that
+sweeper closes a connection whose read has waited past `read_timeout`, after claiming it with a
+compare-and-set so the read reports a `SocketTimeoutException("Read timed out")` even if its
+bytes arrive first. Everything downstream of that
 exception, retry on a reused connection and the 504 included, is unchanged. The price is
 precision: a read now ends up to 250 ms past its timeout, the same as `max_request_time`.
 
