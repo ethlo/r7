@@ -2443,7 +2443,7 @@
 <td><code>read</code></td>
 <td>Duration</td>
 <td><code>30s</code></td>
-<td>The longest wait for any one read from the upstream: the response head, or the next bytes of its body. A slow body that keeps sending bytes is not cut off by it; the exchange as a whole is bounded by the proxy's <code>max_request_time</code>. At least <code>1ms</code> and at most <code>24d</code> (2147483647 ms, the proxy client's int millisecond limit).</td>
+<td>The longest wait for any one read from the upstream: the response head, or the next bytes of its body. A slow body that keeps sending bytes is not cut off by it; the exchange as a whole is bounded by the proxy's <code>max_request_time</code>. A wait is checked every 250 ms, so it ends at most 250 ms past <code>read</code>. At least <code>1ms</code> and at most <code>24d</code> (2147483647 ms, the proxy client's int millisecond limit).</td>
 </tr>
 <tr>
 <td><code>connect</code></td>
