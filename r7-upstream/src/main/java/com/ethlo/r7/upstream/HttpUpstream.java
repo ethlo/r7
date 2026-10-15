@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -102,12 +103,13 @@ public final class HttpUpstream implements UpstreamHandle
                     final long now = System.nanoTime();
                     for (final Connection c : IN_FLIGHT)
                     {
-                        if (c.reader.blockedLongerThan(now, c.readTimeoutNanos))
+                        if (c.reader.claimTimeout(now, c.readTimeoutNanos))
                         {
                             // A socket read past read_timeout. Not SO_TIMEOUT: on a virtual thread
                             // that arms and cancels a timer for every read that waits, which cost
-                            // about a fifth of the gateway's CPU per request.
-                            c.reader.timeOut();
+                            // about a fifth of the gateway's CPU per request. The claim makes
+                            // that read fail even if its bytes arrive first, so a connection
+                            // closed here is never one that went back to the pool.
                             c.close();
                             IN_FLIGHT.remove(c);
                         }
@@ -445,45 +447,51 @@ public final class HttpUpstream implements UpstreamHandle
         }
 
         /**
-         * When the read now waiting on the socket started; 0 when none is.
+         * {@link #blockedSince} once the sweeper has claimed the waiting read as timed out.
          */
-        private volatile long blockedSince;
+        private static final long TIMED_OUT = Long.MIN_VALUE;
         /**
-         * Set by the sweeper before it closes the socket under a read past read_timeout.
+         * When the read now waiting on the socket started; 0 when none is; {@link #TIMED_OUT}
+         * once the sweeper has claimed it. Each read has its own start, so a claim can only take
+         * the read it saw, never a later one.
          */
-        private volatile boolean timedOut;
+        private final AtomicLong blockedSince = new AtomicLong();
 
-        boolean blockedLongerThan(final long now, final long nanos)
+        /**
+         * Claims the read waiting on the socket as timed out, if it has waited longer than
+         * {@code nanos}. The read then fails with a {@link SocketTimeoutException} however it
+         * ends, so the caller may close the socket under it.
+         */
+        boolean claimTimeout(final long now, final long nanos)
         {
-            final long since = blockedSince;
-            return since != 0 && now - since > nanos;
-        }
-
-        void timeOut()
-        {
-            timedOut = true;
+            final long since = blockedSince.get();
+            return since != 0 && since != TIMED_OUT && now - since > nanos && blockedSince.compareAndSet(since, TIMED_OUT);
         }
 
         private int socketRead(final byte[] target, final int offset, final int length) throws IOException
         {
             final long now = System.nanoTime();
-            blockedSince = now == 0 ? 1 : now;
+            blockedSince.set(now == 0 || now == TIMED_OUT ? 1 : now);
+            final int n;
             try
             {
-                return in.read(target, offset, length);
+                n = in.read(target, offset, length);
             }
             catch (final IOException e)
             {
-                if (timedOut)
+                if (blockedSince.getAndSet(0) == TIMED_OUT)
                 {
                     throw new SocketTimeoutException("Read timed out");
                 }
                 throw e;
             }
-            finally
+            if (blockedSince.getAndSet(0) == TIMED_OUT)
             {
-                blockedSince = 0;
+                // The bytes came, but after the sweeper claimed the read: it is closing the
+                // socket, so this connection must not be used again.
+                throw new SocketTimeoutException("Read timed out");
             }
+            return n;
         }
 
         private boolean fill() throws IOException

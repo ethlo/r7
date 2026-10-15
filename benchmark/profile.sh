@@ -129,6 +129,8 @@ print(" ".join(r))' "$1"; }
 
 OUT="${OUT:-$HERE/results/profile-$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT/config" "$OUT/journals"
+# Absolute: docker reads a relative -v source as a volume name, and the gateway runs in config/.
+OUT="$(cd "$OUT" && pwd)"
 
 # ------------------------------------------------------------------------------- processes
 
@@ -245,7 +247,7 @@ profile_syscalls() {
   local secs=7
   # -f follows every thread; counts only. strace slows the gateway a lot, which is fine:
   # this is about how many syscalls a request makes, not how long they take.
-  timeout $((secs + 3)) strace -c -f -p "$GW_PID" -o "$OUT/syscalls.txt" 2>/dev/null &
+  timeout $((secs + 3)) strace -c -f -p "$GW_PID" -o "$OUT/syscalls.txt" 2> "$OUT/strace.err" &
   local tracer=$!
   sleep 1
   local raw="$OUT/syscalls.wrk.txt"
@@ -253,6 +255,8 @@ profile_syscalls() {
   wait "$tracer" || true
   # strace writes its table while it detaches from every thread, after timeout has returned.
   for _ in $(seq 1 20); do grep -q ' total$' "$OUT/syscalls.txt" 2>/dev/null && break; sleep 0.5; done
+  grep -q ' total$' "$OUT/syscalls.txt" 2>/dev/null \
+    || die "strace produced no table ($(head -c 300 "$OUT/strace.err")); attaching needs root or kernel.yama.ptrace_scope=0"
   python3 "$HERE/lib/profile_summary.py" syscalls "$OUT/syscalls.txt" "$(grep -oE '^ *[0-9]+ requests' "$raw" | grep -oE '[0-9]+')"
 }
 
