@@ -9,8 +9,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,17 +18,17 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,7 +129,6 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
     private static final String DEFAULT_REALM = "Secure Area";
     private static final int CLOCK_SKEW_SECONDS = 60;
     private static final Duration JWKS_CACHE_DURATION = Duration.ofMinutes(5);
-    private static final String HMAC_ALGORITHM = "HmacSHA256";
 
     /**
      * A JWS in compact form: three base64url parts. Anything else could not be sent on as a header
@@ -306,7 +305,6 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
         private final String challenge;
         private final ConfigurableJWTProcessor<SecurityContext> jwtProcessor;
         private final Semaphore exchangePermits;
-        private final SecretKeySpec cacheKeySecret;
         private final AsyncCache<String, Outcome> tokens;
         private final AtomicBoolean warned = new AtomicBoolean();
         private final Duration responseTimeout;
@@ -324,12 +322,6 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
             this.challenge = BasicAuthFactory.basicChallenge(config.realm());
             this.jwtProcessor = jwtProcessor;
             this.exchangePermits = new Semaphore(config.maxConcurrentExchanges());
-
-            // A random key held only in memory, new with every load: with a plain digest, a heap
-            // dump would let a short secret be guessed offline at hashing speed.
-            final byte[] secret = new byte[32];
-            new SecureRandom().nextBytes(secret);
-            this.cacheKeySecret = new SecretKeySpec(secret, HMAC_ALGORITHM);
 
             this.tokens = Caffeine.newBuilder()
                     .maximumSize(MAX_CACHED_TOKENS)
@@ -400,7 +392,7 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
                 throw new Refused("no credentials");
             }
 
-            final String key = this.cacheKey(credentials);
+            final String key = cacheKey(credentials);
             final CompletableFuture<Outcome> mine = new CompletableFuture<>();
             final boolean[] leader = {false};
             final CompletableFuture<Outcome> shared = this.tokens.get(key, (ignored, executor) ->
@@ -554,7 +546,7 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
                     .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials" + this.scopeParameter))
                     .build();
             final HttpResponse.BodyHandler<byte[]> handler = info -> info.statusCode() == HttpStatuses.UNAUTHORIZED
-                    ? HttpResponse.BodySubscribers.replacing(new byte[0])
+                    ? new Unread()
                     : HttpResponse.BodySubscribers.limiting(HttpResponse.BodySubscribers.ofByteArray(), MAX_RESPONSE_BYTES);
             final CompletableFuture<HttpResponse<byte[]>> response = HTTP_CLIENT.sendAsync(request, handler);
             try
@@ -621,9 +613,8 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
             }
 
             final Claims claims = new JwtVerification.JwtClaims(verified);
-            final String username = claims.string("client_id")
-                    .or(() -> claims.string("azp"))
-                    .filter(name -> !name.isBlank())
+            final String username = claims.string("client_id").filter(name -> !name.isBlank())
+                    .or(() -> claims.string("azp").filter(name -> !name.isBlank()))
                     .orElse(clientId);
             final Identity identity = new Identity(IDENTITY_SCHEME, verified.getIssuer(), verified.getSubject(), username, claims);
             return new Token(accessToken, identity, verified.getExpirationTime().toInstant().minus(EXPIRY_MARGIN));
@@ -646,17 +637,20 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
             return new Unavailable(reason);
         }
 
-        private String cacheKey(final String credentials)
+        /**
+         * The cache is keyed by a digest so that it does not hold the credentials themselves. It
+         * does hold the tokens they were exchanged for, so a heap dump of the gateway is as
+         * sensitive as the credentials.
+         */
+        private static String cacheKey(final String credentials)
         {
             try
             {
-                final Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-                mac.init(this.cacheKeySecret);
-                return HexFormat.of().formatHex(mac.doFinal(credentials.getBytes(UTF_8)));
+                return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(credentials.getBytes(UTF_8)));
             }
-            catch (final GeneralSecurityException e)
+            catch (final NoSuchAlgorithmException e)
             {
-                throw new IllegalStateException("HmacSHA256 is required by every Java platform", e);
+                throw new IllegalStateException("SHA-256 is required by every Java platform", e);
             }
         }
 
@@ -686,6 +680,43 @@ public final class ClientCredentialsFactory implements GatewayFilterFactory<Clie
         public String summary()
         {
             return FILTER_NAME + ": " + this.tokenUrl;
+        }
+    }
+
+    /**
+     * The body of a 401, which is never read: the status is the whole answer. The subscription is
+     * cancelled as soon as it starts, which closes the connection, so a body that stalls or breaks
+     * cannot turn a refusal into a 503.
+     */
+    private static final class Unread implements HttpResponse.BodySubscriber<byte[]>
+    {
+        private static final CompletableFuture<byte[]> EMPTY = CompletableFuture.completedFuture(new byte[0]);
+
+        @Override
+        public CompletionStage<byte[]> getBody()
+        {
+            return EMPTY;
+        }
+
+        @Override
+        public void onSubscribe(final Flow.Subscription subscription)
+        {
+            subscription.cancel();
+        }
+
+        @Override
+        public void onNext(final List<ByteBuffer> item)
+        {
+        }
+
+        @Override
+        public void onError(final Throwable throwable)
+        {
+        }
+
+        @Override
+        public void onComplete()
+        {
         }
     }
 

@@ -211,6 +211,11 @@ class ClientCredentialsFactoryTest
         filter(config(null)).onClientRequest(viaAzp);
         assertThat(viaAzp.getAttachment(Identity.KEY).username()).isEqualTo("erp-azp");
 
+        this.responder = request -> answer(claims().claim("client_id", " ").claim("azp", "erp-azp").build());
+        final ClientRequestGatewayExchange blankClientId = exchange(basic("legacy-erp", "s3cret"));
+        filter(config(null)).onClientRequest(blankClientId);
+        assertThat(blankClientId.getAttachment(Identity.KEY).username()).isEqualTo("erp-azp");
+
         this.responder = request -> answer(claims().build());
         final ClientRequestGatewayExchange viaBasic = exchange(basic("legacy-erp", "s3cret"));
         filter(config(null)).onClientRequest(viaBasic);
@@ -300,6 +305,22 @@ class ClientCredentialsFactoryTest
         final ClientRequestGatewayExchange exchange = exchange(basic("legacy-erp", "wrong"));
 
         filter(config(null)).onClientRequest(exchange);
+
+        assertUnauthorized(exchange);
+    }
+
+    @Test
+    void a401WithAStalledBodyIsStill401()
+    {
+        final CountDownLatch never = new CountDownLatch(1);
+        this.responder = request -> new Answer(401, "{\"error\":\"invalid_client\"}", never);
+        final ClientCredentialsFactory.Config config = config(null);
+        final ClientCredentialsFactory.GF filter = new ClientCredentialsFactory.GF(config,
+                JwtVerification.processor(keys, config.issuer(), config.audience(), 60), Duration.ofMillis(300));
+        final ClientRequestGatewayExchange exchange = exchange(basic("legacy-erp", "wrong"));
+
+        filter.onClientRequest(exchange);
+        never.countDown();
 
         assertUnauthorized(exchange);
     }
