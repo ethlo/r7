@@ -45,6 +45,7 @@ See [`plans/README.md`](plans/README.md).
 | [`history/live-tailing.md`](history/live-tailing.md) | Microsecond tailing: the control file and the tailer's wait |
 | [`history/tailer-plugins.md`](history/tailer-plugins.md) | The one-reader, several-outputs proposal behind `r7-tailer` |
 | [`history/config-model.md`](history/config-model.md) | The 1.0 config model spec, its Spring Cloud Gateway translation and build order |
+| [`history/get-path-profile.md`](history/get-path-profile.md) | Profiling the non-journalled GET: timers per upstream read, poller modes, Helidon's share |
 
 ## Writing a design document
 
