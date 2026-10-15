@@ -804,6 +804,44 @@ A token must be signed with an asymmetric algorithm (RS, PS or ES, 256 to 512 bi
 
 A `401` never says why the token was refused. A request carrying more than one `Authorization` value is refused with `401`. When the keys cannot be fetched, the request is answered with `503 Service Unavailable` and `Retry-After: 5`, so an identity provider outage is not mistaken for bad credentials.
 
+#### ClientCredentials
+
+Legacy clients often speak only Basic authentication, while the services behind the gateway accept only the identity provider's JWTs. `ClientCredentials` bridges the two: it takes the client's Basic pair as an OAuth client id and secret, exchanges it for an access token at the identity provider's token endpoint (the client credentials grant, RFC 6749 §4.4), and sends the upstream `Authorization: Bearer <token>` in place of the client's credentials. The upstream trusts one issuer, whichever way a caller came in.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `token_url` | String | Yes | The token endpoint. `https`, or `http` on a loopback host only: the client's secret is sent to it. |
+| `jwks_url` | String | Yes | The JWKS endpoint the returned token is verified against, `http` or `https`. |
+| `issuer` | String | Yes | The `iss` the returned token must carry. |
+| `audience` | String | Yes | A value the returned token's `aud` must contain. |
+| `scope` | String | No | Space-separated scopes requested with each exchange. Without it, the identity provider grants the client's default scopes. |
+| `realm` | String | No | The realm in the `WWW-Authenticate: Basic` challenge. Defaults to `Secure Area`. |
+| `max_concurrent_exchanges` | Integer | No | Exchanges this filter runs at once, 1-1024. A request that cannot start one within 250 ms is answered with `503` and `Retry-After: 1`. Defaults to `16`. |
+
+```yaml
+filters:
+  - RateLimiter:
+      capacity: 20
+      refill_tokens: 5
+      refill_period: 1m
+  - ClientCredentials:
+      token_url: "https://auth.example.com/realms/acme/protocol/openid-connect/token"
+      jwks_url: "https://auth.example.com/realms/acme/protocol/openid-connect/certs"
+      issuer: "https://auth.example.com/realms/acme"
+      audience: "billing"
+      scope: "billing.read"
+```
+
+**Where the credentials are checked.** The token endpoint and the issuer are fixed per filter: a client never chooses where its credentials are checked. A gateway serving several tenants gives each tenant its own route, selected by host or path, with its own `ClientCredentials`. r7 sends the id and secret form-encoded, as RFC 6749 §2.3.1 requires (`client_secret_basic`), and asks for nothing else. The password grant is not supported: OAuth 2.1 removes it.
+
+**What the upstream receives.** The returned token is verified by the same rules as [`JwtAuth`](#jwtauth) (asymmetric signature, `exp`, `sub`, `issuer`, `audience`) before it is used, so a token issued for another audience never reaches an upstream. The caller's [identity](journaling.md#the-callers-identity) is journaled with scheme `client_credentials`, the token's issuer and subject, and as username its `client_id` claim (Keycloak's), else `azp`, else the Basic client id.
+
+**Answers.** Credentials the identity provider refuses (`401`, or `400` with `invalid_client`, `unauthorized_client` or `invalid_grant`) are answered with `401` and a Basic challenge. Anything else that is not a token (an unreachable endpoint, any other status or error, a token that fails verification) is answered with `503` and `Retry-After: 1`: the client's credentials were not the problem. The first such failure after a load is logged as a warning with its reason. A request carrying more than one `Authorization` value is refused with `401`.
+
+**Caching.** A token is reused for the same credentials until 30 seconds before it expires, so the identity provider sees one exchange per client per token lifetime. The cache is keyed by an HMAC of the credentials under a random key that exists only in memory and is replaced on every reload, so a heap dump yields no secret to guess offline. Failed exchanges are never cached, and concurrent requests with the same credentials share one exchange. A client disabled at the identity provider keeps its cached token until that token expires: keep access token lifetimes short (Keycloak's default is 5 minutes).
+
+**Legacy clients.** Give each installation a confidential client of its own at the identity provider, with only the scopes it needs, so one leaked secret is one client to disable. Put a `RateLimiter` before `ClientCredentials`, as in the example: every wrong secret is an exchange the identity provider must hash, and identity providers lock out clients that fail too often, so an attacker who can reach the route can otherwise lock out a working installation. Prefer a temporary lockout for these clients at the identity provider.
+
 #### InjectBasicAuth
 
 Generates a Base64 encoded Basic Authentication string and injects it into the `Authorization` header of the upstream request.
