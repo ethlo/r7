@@ -202,7 +202,7 @@ The monitor starts when the routes are loaded, not with a route's first request,
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `read` | Duration | `30s` | The longest wait for any one read from the upstream: the response head, or the next bytes of its body. A slow body that keeps sending bytes is not cut off by it; the exchange as a whole is bounded by the proxy's `max_request_time`. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
+| `read` | Duration | `30s` | The longest wait for any one read from the upstream: the response head, or the next bytes of its body. A slow body that keeps sending bytes is not cut off by it; the exchange as a whole is bounded by the proxy's `max_request_time`. A wait is checked every 250 ms, so it ends at most 250 ms past `read`. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
 | `connect` | Duration | `5s` | Maximum time to wait for a connection to a target, including the TLS handshake for `https` targets. A target that does not answer in time counts as unreachable, and nothing has been sent to it, so the request can go to another target. Connecting never runs past the proxy's `max_request_time`: once that is used up the request is answered `504`. At least `1ms` and at most `24d`. |
 
 ### Fallback (`fallback`)

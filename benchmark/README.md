@@ -94,6 +94,12 @@ raw/              unmodified wrk/wrk2 output, including warmups
 gateway-*.log     gateway stdout/stderr per journal level
 ```
 
+`profile.sh` answers why rather than how fast: one pinned gateway JVM under a fixed load, its
+CPU per request, and optionally a CPU profile with kernel stacks, an allocation profile,
+syscall counts and the JIT's inlining decisions and code sizes (`--profile
+cpu,alloc,syscalls,jit`). Its header comment explains the method;
+`design/history/get-path-profile.md` is what it found the first time.
+
 ## What it measures
 
 | Scenario | What it isolates |

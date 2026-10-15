@@ -36,6 +36,9 @@ final class HelidonGatewayExchange extends BlockingServerExchange
                 req.prologue().uriPath().rawPath(), req.prologue().query().rawValue(), headersOf(req.headers()));
         this.req = req;
         this.res = res;
+        // A proxy relays the upstream's encoding as it is. Left on, Helidon parses Accept-Encoding
+        // for every response and adds Vary: Accept-Encoding the upstream never sent.
+        res.automaticContentEncoding(false);
     }
 
     /**
@@ -53,6 +56,13 @@ final class HelidonGatewayExchange extends BlockingServerExchange
         for (final Header header : wire)
         {
             final String name = header.name();
+            // Nearly every header has one value: get() gives it without the list allValues()
+            // builds for every header it is asked about.
+            if (header.valueCount() == 1)
+            {
+                headers.addFromWire(name, header.get());
+                continue;
+            }
             for (final String value : header.allValues())
             {
                 headers.addFromWire(name, value);

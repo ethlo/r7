@@ -11,6 +11,7 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -80,6 +81,27 @@ class HttpUpstreamClientTest
             final long start = System.nanoTime();
             assertThatThrownBy(() -> relay(upstream)).isInstanceOfSatisfying(ProxyFailure.class, f -> assertThat(f.status()).isEqualTo(504));
             assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(3));
+        }
+    }
+
+    @Test
+    void aReadPastTheReadTimeoutIsEndedWith504() throws Exception
+    {
+        // The read timeout is enforced by the deadline sweeper, not by SO_TIMEOUT; max_request_time
+        // is far away, so only the read timeout can end this.
+        try (Upstream silent = Upstream.silent())
+        {
+            final UpstreamOptions defaults = UpstreamOptions.defaults();
+            final HttpUpstream upstream = new HttpUpstream(new UpstreamOptions(Duration.ofMillis(500), defaults.connectTimeout(), defaults.idleTtl(),
+                    defaults.maxHeadBytes(), defaults.maxHeaderCount(), 10, 10, Duration.ofMinutes(1), null));
+            upstream.onTargetUp(URI.create(silent.url()));
+            final long start = System.nanoTime();
+            assertThatThrownBy(() -> relay(upstream)).isInstanceOfSatisfying(ProxyFailure.class, f ->
+            {
+                assertThat(f.status()).isEqualTo(504);
+                assertThat(f.getCause()).isInstanceOf(SocketTimeoutException.class).hasMessage("Read timed out");
+            });
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isBetween(Duration.ofMillis(500), Duration.ofSeconds(3));
         }
     }
 

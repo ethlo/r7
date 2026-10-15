@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -102,7 +103,17 @@ public final class HttpUpstream implements UpstreamHandle
                     final long now = System.nanoTime();
                     for (final Connection c : IN_FLIGHT)
                     {
-                        if (now - c.deadline > 0)
+                        if (c.reader.claimTimeout(now, c.readTimeoutNanos))
+                        {
+                            // A socket read past read_timeout. Not SO_TIMEOUT: on a virtual thread
+                            // that arms and cancels a timer for every read that waits, which cost
+                            // about a fifth of the gateway's CPU per request. The claim makes
+                            // that read fail even if its bytes arrive first, so a connection
+                            // closed here is never one that went back to the pool.
+                            c.close();
+                            IN_FLIGHT.remove(c);
+                        }
+                        else if (now - c.deadline > 0)
                         {
                             // A read waits no longer than its timeout, but a write to an upstream
                             // that stopped reading has no timeout at all: closing the socket is
@@ -207,6 +218,11 @@ public final class HttpUpstream implements UpstreamHandle
         final String hostHeader;
         final boolean secure;
         private final ConcurrentLinkedDeque<Connection> idle = new ConcurrentLinkedDeque<>();
+        /**
+         * How many connections {@link #idle} holds, give or take the ones in passage: the deque's
+         * own size() walks every node.
+         */
+        private final AtomicInteger idleCount = new AtomicInteger();
         private final Semaphore slots = new Semaphore(options.maxConnectionsPerTarget());
         private final AtomicInteger waiting = new AtomicInteger();
 
@@ -280,6 +296,7 @@ public final class HttpUpstream implements UpstreamHandle
             Connection c;
             while ((c = idle.pollFirst()) != null)
             {
+                idleCount.decrementAndGet();
                 if (!c.socket.isClosed() && now - c.idleSince < ttl)
                 {
                     c.reused = true;
@@ -311,8 +328,7 @@ public final class HttpUpstream implements UpstreamHandle
                 socket.connect(new InetSocketAddress(host, port), timeoutMillis);
                 if (!secure)
                 {
-                    socket.setSoTimeout(readTimeoutMillis);
-                    return new Connection(socket);
+                    return new Connection(socket, readTimeoutMillis);
                 }
                 // The handshake gets what the TCP connect left of the connect timeout, then reads
                 // are bounded by the read timeout.
@@ -328,8 +344,8 @@ public final class HttpUpstream implements UpstreamHandle
                 parameters.setEndpointIdentificationAlgorithm("HTTPS");
                 tls.setSSLParameters(parameters);
                 tls.startHandshake();
-                tls.setSoTimeout(readTimeoutMillis);
-                return new Connection(tls);
+                tls.setSoTimeout(0);
+                return new Connection(tls, readTimeoutMillis);
             }
             catch (final IOException e)
             {
@@ -340,9 +356,10 @@ public final class HttpUpstream implements UpstreamHandle
 
         void release(final Connection c)
         {
-            if (idle.size() < MAX_IDLE_PER_TARGET && up.contains(this))
+            if (idleCount.get() < MAX_IDLE_PER_TARGET && up.contains(this))
             {
                 c.idleSince = System.nanoTime();
+                idleCount.incrementAndGet();
                 idle.addFirst(c);
             }
             else
@@ -356,6 +373,7 @@ public final class HttpUpstream implements UpstreamHandle
             Connection c;
             while ((c = idle.pollFirst()) != null)
             {
+                idleCount.decrementAndGet();
                 c.close();
             }
         }
@@ -380,9 +398,15 @@ public final class HttpUpstream implements UpstreamHandle
          */
         volatile boolean expired;
 
-        Connection(final Socket socket) throws IOException
+        /**
+         * read_timeout, enforced by the deadline sweeper rather than by SO_TIMEOUT.
+         */
+        final long readTimeoutNanos;
+
+        Connection(final Socket socket, final int readTimeoutMillis) throws IOException
         {
             this.socket = socket;
+            this.readTimeoutNanos = readTimeoutMillis == 0 ? Long.MAX_VALUE : TimeUnit.MILLISECONDS.toNanos(readTimeoutMillis);
             this.reader = new LineReader(socket.getInputStream());
             this.out = new BufferedOutputStream(socket.getOutputStream(), 8192);
         }
@@ -412,15 +436,67 @@ public final class HttpUpstream implements UpstreamHandle
         private final byte[] buffer = new byte[8192];
         private int pos;
         private int limit;
+        /**
+         * Where the bytes {@link #next} last handed out begin.
+         */
+        private int start;
 
         LineReader(final InputStream in)
         {
             this.in = in;
         }
 
+        /**
+         * {@link #blockedSince} once the sweeper has claimed the waiting read as timed out.
+         */
+        private static final long TIMED_OUT = Long.MIN_VALUE;
+        /**
+         * When the read now waiting on the socket started; 0 when none is; {@link #TIMED_OUT}
+         * once the sweeper has claimed it. Each read has its own start, so a claim can only take
+         * the read it saw, never a later one.
+         */
+        private final AtomicLong blockedSince = new AtomicLong();
+
+        /**
+         * Claims the read waiting on the socket as timed out, if it has waited longer than
+         * {@code nanos}. The read then fails with a {@link SocketTimeoutException} however it
+         * ends, so the caller may close the socket under it.
+         */
+        boolean claimTimeout(final long now, final long nanos)
+        {
+            final long since = blockedSince.get();
+            return since != 0 && since != TIMED_OUT && now - since > nanos && blockedSince.compareAndSet(since, TIMED_OUT);
+        }
+
+        private int socketRead(final byte[] target, final int offset, final int length) throws IOException
+        {
+            final long now = System.nanoTime();
+            blockedSince.set(now == 0 || now == TIMED_OUT ? 1 : now);
+            final int n;
+            try
+            {
+                n = in.read(target, offset, length);
+            }
+            catch (final IOException e)
+            {
+                if (blockedSince.getAndSet(0) == TIMED_OUT)
+                {
+                    throw new SocketTimeoutException("Read timed out");
+                }
+                throw e;
+            }
+            if (blockedSince.getAndSet(0) == TIMED_OUT)
+            {
+                // The bytes came, but after the sweeper claimed the read: it is closing the
+                // socket, so this connection must not be used again.
+                throw new SocketTimeoutException("Read timed out");
+            }
+            return n;
+        }
+
         private boolean fill() throws IOException
         {
-            final int n = in.read(buffer, 0, buffer.length);
+            final int n = socketRead(buffer, 0, buffer.length);
             if (n <= 0)
             {
                 return false;
@@ -499,6 +575,33 @@ public final class HttpUpstream implements UpstreamHandle
             }
         }
 
+        /**
+         * Up to {@code max} bytes without copying them: they are in {@link #buffer()} from
+         * {@link #start()}, valid until the next call. Reads from the socket into this reader's own
+         * buffer when it is empty. -1 at end of stream.
+         */
+        int next(final int max) throws IOException
+        {
+            if (pos == limit && !fill())
+            {
+                return -1;
+            }
+            final int n = Math.min(max, limit - pos);
+            start = pos;
+            pos += n;
+            return n;
+        }
+
+        byte[] buffer()
+        {
+            return buffer;
+        }
+
+        int start()
+        {
+            return start;
+        }
+
         int read(final byte[] target, final int offset, final int length) throws IOException
         {
             if (pos < limit)
@@ -508,7 +611,7 @@ public final class HttpUpstream implements UpstreamHandle
                 pos += n;
                 return n;
             }
-            return in.read(target, offset, length);
+            return socketRead(target, offset, length);
         }
     }
 }
