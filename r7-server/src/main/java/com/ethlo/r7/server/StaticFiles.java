@@ -2,6 +2,7 @@ package com.ethlo.r7.server;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
@@ -40,6 +41,8 @@ import com.ethlo.r7.filters.StaticContentFactory;
  *   <li>a directory that was deleted while a mount still holds it (a bind mount of the directory
  *   itself, which then was replaced) is skipped with a warning in the log, and the answer is a 503
  *   when no other directory exists;</li>
+ *   <li>a file or directory the gateway's user may not read is 403, with a warning in the log
+ *   once per directory; the directories below are not tried, as they would serve another file;</li>
  *   <li>a directory is served by its welcome file, else 403; one addressed without its trailing
  *   slash is redirected to it;</li>
  *   <li>a path no directory has is 404, or the route's fallback file (a single-page app's
@@ -55,6 +58,7 @@ public final class StaticFiles
     private static final String NOSNIFF = "nosniff";
     private static final String UNAVAILABLE = "Static content directory unavailable";
     private static final Set<Path> warnedUnlinked = ConcurrentHashMap.newKeySet();
+    private static final Set<Path> warnedDenied = ConcurrentHashMap.newKeySet();
     private static final List<String> WELCOME_FILES = List.of("index.html", "index.htm", "default.html", "default.htm");
     private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC);
 
@@ -129,6 +133,27 @@ public final class StaticFiles
             return;
         }
 
+        try
+        {
+            serve(target, request, method, relative);
+        }
+        catch (final AccessDeniedException e)
+        {
+            // Files.isRegularFile and friends say false when the gateway may not look, which
+            // made a folder it cannot enter look empty (403) and its files absent (404). The
+            // usual cause is a bind mount owned by another uid than the one the image runs as.
+            final Path base = e.getFile() != null ? baseOf(request, Path.of(e.getFile())) : request.directories().getFirst();
+            if (warnedDenied.add(base))
+            {
+                logger.warn("Static content under {} is not readable by the user r7 runs as ({}): {}. "
+                        + "Make it readable to that user, e.g. chmod -R a+rX, or run the container as the owner.", base, System.getProperty("user.name"), e.getFile());
+            }
+            target.answer(403, new byte[0]);
+        }
+    }
+
+    private static void serve(final Target target, final StaticContentFactory.StaticServeRequest request, final String method, final String relative) throws IOException
+    {
         // The first directory that can answer wins: a file, a welcome file, or the redirect a
         // directory without its slash gets. Each is checked as one directory used to be.
         boolean present = false;
@@ -136,7 +161,7 @@ public final class StaticFiles
         boolean directory = false;
         for (final Path base : request.directories())
         {
-            if (!Files.isDirectory(base))
+            if (!isDirectory(base))
             {
                 // Momentarily missing, e.g. mid atomic swap: skipped, never masking the rest.
                 continue;
@@ -160,13 +185,18 @@ public final class StaticFiles
             {
                 continue;
             }
-            if (Files.isRegularFile(resolved))
+            final BasicFileAttributes attributes = attributes(resolved);
+            if (attributes == null)
+            {
+                continue;
+            }
+            if (attributes.isRegularFile())
             {
                 logger.debug("Static '{}' served from {}", relative, base);
                 serveFile(target, resolved, method.equals("HEAD"));
                 return;
             }
-            if (Files.isDirectory(resolved))
+            if (attributes.isDirectory())
             {
                 if (!relative.isEmpty() && !relative.endsWith("/"))
                 {
@@ -188,6 +218,7 @@ public final class StaticFiles
 
         if (directory)
         {
+            logger.debug("Static '{}' is a directory without a welcome file in {}", relative, request.directories());
             target.answer(403, new byte[0]);
         }
         else if (!present && unlinked)
@@ -217,8 +248,9 @@ public final class StaticFiles
     {
         for (final Path base : request.directories())
         {
-            final Path file = Files.isDirectory(base) && !isUnlinked(base) ? resolve(base, request.fallback(), request.followSymlinks()) : null;
-            if (file != null && Files.isRegularFile(file))
+            final Path file = isDirectory(base) && !isUnlinked(base) ? resolve(base, request.fallback(), request.followSymlinks()) : null;
+            final BasicFileAttributes attributes = file != null ? attributes(file) : null;
+            if (attributes != null && attributes.isRegularFile())
             {
                 serveFile(target, file, headOnly);
                 return;
@@ -227,17 +259,62 @@ public final class StaticFiles
         target.answer(404, new byte[0]);
     }
 
-    private static Path welcomeFile(final Path directory, final boolean followSymlinks)
+    private static Path welcomeFile(final Path directory, final boolean followSymlinks) throws AccessDeniedException
     {
         for (final String welcome : WELCOME_FILES)
         {
             final Path file = directory.resolve(welcome);
-            if (Files.isRegularFile(file) && (followSymlinks || !Files.isSymbolicLink(file)))
+            final BasicFileAttributes attributes = attributes(file);
+            if (attributes != null && attributes.isRegularFile() && (followSymlinks || !Files.isSymbolicLink(file)))
             {
                 return file;
             }
         }
         return null;
+    }
+
+    /**
+     * The attributes of {@code path}, following links, or null when there is nothing there.
+     * Unlike {@link Files#isRegularFile}, a path the gateway may not look at is not taken for
+     * absent: that is thrown.
+     */
+    private static BasicFileAttributes attributes(final Path path) throws AccessDeniedException
+    {
+        try
+        {
+            return Files.readAttributes(path, BasicFileAttributes.class);
+        }
+        catch (final AccessDeniedException e)
+        {
+            throw e;
+        }
+        catch (final IOException | UnsupportedOperationException e)
+        {
+            return null;
+        }
+    }
+
+    private static boolean isDirectory(final Path path) throws AccessDeniedException
+    {
+        final BasicFileAttributes attributes = attributes(path);
+        return attributes != null && attributes.isDirectory();
+    }
+
+    /**
+     * The configured directory {@code file} lies under, for one warning per directory rather
+     * than one per path a client makes up; the file itself when none holds it.
+     */
+    private static Path baseOf(final StaticContentFactory.StaticServeRequest request, final Path file)
+    {
+        final Path absolute = file.toAbsolutePath().normalize();
+        for (final Path base : request.directories())
+        {
+            if (absolute.startsWith(base.toAbsolutePath().normalize()))
+            {
+                return base;
+            }
+        }
+        return absolute;
     }
 
     /**
@@ -294,6 +371,12 @@ public final class StaticFiles
 
     private static void serveFile(final Target target, final Path file, final boolean headOnly) throws IOException
     {
+        if (!Files.isReadable(file))
+        {
+            // Checked before anything is answered, HEAD included: a 200 head with no file behind it
+            // is a response cut off half way.
+            throw new AccessDeniedException(file.toString());
+        }
         final BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         final long size = Files.size(file);
         final Instant modified = attributes.lastModifiedTime().toInstant().truncatedTo(ChronoUnit.SECONDS);
