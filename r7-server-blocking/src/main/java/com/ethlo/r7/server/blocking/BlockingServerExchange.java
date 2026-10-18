@@ -439,31 +439,36 @@ public abstract class BlockingServerExchange extends ServerExchange implements T
         @Override
         public void answerFile(final int status, final Path file, final long offset, final long length, final boolean headOnly) throws IOException
         {
-            clientResponse().status(status);
-            clientResponse().headers().set("Content-Length", Long.toString(length));
-            commit();
-            writeHead();
-            if (headOnly)
+            // Opened before the head goes out: a file that cannot be opened is still a clean
+            // answer, not a 200 cut off after its head.
+            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ))
             {
-                sendNoBody();
-                return;
-            }
-            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ); OutputStream out = responseBody())
-            {
-                channel.position(offset);
-                final InputStream in = Channels.newInputStream(channel);
-                final byte[] buffer = new byte[64 * 1024];
-                long remaining = length;
-                while (remaining > 0)
+                clientResponse().status(status);
+                clientResponse().headers().set("Content-Length", Long.toString(length));
+                commit();
+                writeHead();
+                if (headOnly)
                 {
-                    final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
-                    if (n == -1)
+                    sendNoBody();
+                    return;
+                }
+                try (OutputStream out = responseBody())
+                {
+                    channel.position(offset);
+                    final InputStream in = Channels.newInputStream(channel);
+                    final byte[] buffer = new byte[64 * 1024];
+                    long remaining = length;
+                    while (remaining > 0)
                     {
-                        throw new IOException("File " + file + " shrank while it was being served");
+                        final int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                        if (n == -1)
+                        {
+                            throw new IOException("File " + file + " shrank while it was being served");
+                        }
+                        onResponseBody(buffer, 0, n);
+                        out.write(buffer, 0, n);
+                        remaining -= n;
                     }
-                    onResponseBody(buffer, 0, n);
-                    out.write(buffer, 0, n);
-                    remaining -= n;
                 }
             }
         }

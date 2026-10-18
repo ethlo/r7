@@ -1,6 +1,7 @@
 package com.ethlo.r7.server.kit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -11,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.Comparator;
 
@@ -272,6 +274,39 @@ public abstract class StaticContentKit
         // A directory gone at runtime is skipped.
         Files.delete(this.dir.resolve("layer-gone"));
         assertThat(get("/static-layers/test.txt").body()).isEqualTo("override");
+    }
+
+    /**
+     * A file or folder the gateway's user may not read, such as a bind mount owned by another
+     * uid: 403, never a folder that looks empty, a file that looks absent or a 200 cut off after
+     * its head; and never the lower directory's copy in its place.
+     */
+    @Test
+    void anUnreadableFileOrFolderIsForbidden() throws Exception
+    {
+        final Path override = this.dir.resolve("override");
+        final Path locked = Files.writeString(override.resolve("page.html"), "<p>locked</p>");
+        final Path closed = Files.createDirectories(override.resolve("sub"));
+        Files.writeString(closed.resolve("index.html"), "<h1>closed</h1>");
+        try
+        {
+            Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("-w-------"));
+            Files.setPosixFilePermissions(closed, PosixFilePermissions.fromString("-w-------"));
+            assumeTrue(!Files.isReadable(locked), "running as a user that reads anything, e.g. root");
+
+            assertThat(get("/static-layers/page.html").statusCode()).isEqualTo(403);
+            assertThat(send(request("/static-layers/page.html").HEAD()).statusCode()).isEqualTo(403);
+            assertThat(get("/static-layers/sub/").statusCode()).isEqualTo(403);
+            assertThat(get("/static-layers/sub").statusCode()).isEqualTo(403);
+            assertThat(get("/static-layers/sub/data.txt").statusCode()).isEqualTo(403);
+        }
+        finally
+        {
+            Files.setPosixFilePermissions(closed, PosixFilePermissions.fromString("rwx------"));
+            Files.delete(closed.resolve("index.html"));
+            Files.delete(closed);
+            Files.delete(locked);
+        }
     }
 
     /**
