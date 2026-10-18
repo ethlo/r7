@@ -297,6 +297,7 @@ public abstract class StaticContentKit
             assertThat(get("/static-layers/page.html").statusCode()).isEqualTo(403);
             assertThat(send(request("/static-layers/page.html").HEAD()).statusCode()).isEqualTo(403);
             assertThat(get("/static-layers/sub/").statusCode()).isEqualTo(403);
+            assertThat(get("/static-layers/sub").statusCode()).isEqualTo(403);
             assertThat(get("/static-layers/sub/data.txt").statusCode()).isEqualTo(403);
         }
         finally

@@ -198,6 +198,12 @@ public final class StaticFiles
             }
             if (attributes.isDirectory())
             {
+                if (!Files.isExecutable(resolved))
+                {
+                    // Its own attributes read fine without search permission: say so before a
+                    // redirect sends the client to a 403.
+                    throw new AccessDeniedException(resolved.toString());
+                }
                 if (!relative.isEmpty() && !relative.endsWith("/"))
                 {
                     target.header("Location", withTrailingSlash(target.clientTarget()));
