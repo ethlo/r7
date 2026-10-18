@@ -264,8 +264,13 @@ public final class StaticFiles
         for (final String welcome : WELCOME_FILES)
         {
             final Path file = directory.resolve(welcome);
+            if (!followSymlinks && Files.isSymbolicLink(file))
+            {
+                // Skipped before its target is looked at: a link that may not be followed is absent.
+                continue;
+            }
             final BasicFileAttributes attributes = attributes(file);
-            if (attributes != null && attributes.isRegularFile() && (followSymlinks || !Files.isSymbolicLink(file)))
+            if (attributes != null && attributes.isRegularFile())
             {
                 return file;
             }
