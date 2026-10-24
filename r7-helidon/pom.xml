@@ -19,7 +19,7 @@
         <!-- Helidon pairs its releases with Java's: 27 is the line for Java 27, and the only one
              with per-carrier I/O pollers (design/history/upstream-client.md). The images run
              Java 27, so the gateway host is built for it; the rest of r7 stays on 25. -->
-        <helidon.version>27.0.0</helidon.version>
+        <helidon.version>27.0.1</helidon.version>
         <maven.compiler.release>27</maven.compiler.release>
     </properties>
     <build>
@@ -169,7 +169,7 @@
         <dependency>
             <groupId>io.rest-assured</groupId>
             <artifactId>rest-assured</artifactId>
-            <version>6.0.1</version>
+            <version>6.2.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
