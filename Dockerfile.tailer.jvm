@@ -11,8 +11,8 @@ RUN mkdir -p /journals /checkpoints /warc /json && chown 65532:65532 /journals /
 # The Java 27 runtime: Temurin's JRE on distroless's Java base (the libraries its javaNN images
 # add to the base image), which is how distroless builds those images. Distroless publishes them
 # for LTS releases only, so the image is assembled here.
-FROM eclipse-temurin:27-jre@sha256:387922dd341a11a06f39375e6b13f3cb865e09aa409789cd4f7a5a6577cd2290 AS jre
-FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:380a3d6a0f019235e129b19243f40c197d3713fd2ee992f6faece270a400df65 AS runtime
+FROM eclipse-temurin:27-jre@sha256:d6bfa738df69e8dec9061b3e26f2ae564d92ad169faa36086dcfa33f0a901d35 AS jre
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:ae09524a2342c1bc69db0fd34a1b9537d98db7638aaaa85939657187a9e6a7b1 AS runtime
 COPY --from=jre /opt/java/openjdk /opt/java/openjdk
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
