@@ -1202,7 +1202,7 @@ java -jar r7-helidon-1.0-SNAPSHOT.jar --validate-only
 ```bash
 docker run --rm --env-file .env \
   -v "$PWD/routes.yaml:/app/config/routes.yaml:ro" \
-  ghcr.io/ethlo/r7-gateway:main --validate-only
+  ghcr.io/ethlo/r7-gateway:1.0.0-beta.2 --validate-only
 ```
 
 A valid configuration prints one line on stdout and exits `0`:

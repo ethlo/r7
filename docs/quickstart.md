@@ -23,7 +23,7 @@ Create `docker-compose.yaml`:
 ```yaml title="docker-compose.yaml"
 services:
   r7:
-    image: ghcr.io/ethlo/r7-gateway:main
+    image: ghcr.io/ethlo/r7-gateway:1.0.0-beta.2
     ports:
       - "9999:8888"              # the gateway
       - "127.0.0.1:19999:18888"  # the dashboard, on this machine only (see below)
@@ -38,7 +38,7 @@ services:
 
   # Reads the journals and prints one JSON line per exchange; bodies go to WARC files.
   r7-tailer:
-    image: ghcr.io/ethlo/r7-tailer:main
+    image: ghcr.io/ethlo/r7-tailer:1.0.0-beta.2
     volumes:
       - r7-journals:/journals:ro
       - r7-warc:/warc:rw
