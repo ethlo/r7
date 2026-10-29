@@ -145,29 +145,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
                 }
             }
 
-            this.validateRealm(validator);
-        }
-
-        /**
-         * The realm is echoed into a quoted-string in the {@code WWW-Authenticate} header of every
-         * 401. A control character there would split the response, and one above ISO-8859-1 cannot
-         * be encoded in a header at all, so both are refused once at startup rather than on every
-         * rejected request. Quote and backslash are permitted because the challenge escapes them.
-         */
-        private void validateRealm(final ValidatorUtils validator)
-        {
-            final String effective = this.realm();
-            for (int i = 0; i < effective.length(); i++)
-            {
-                final char character = effective.charAt(i);
-                if (character > TextValues.MAX_STORABLE || character == 0x7F || (character < 0x20 && character != '\t'))
-                {
-                    validator.invalid("realm", effective, String.format(
-                            "character U+%04X at index %d cannot appear in an HTTP challenge; "
-                                    + "use printable ISO-8859-1 text", (int) character, i));
-                    return;
-                }
-            }
+            validateRealm(validator, this.realm());
         }
 
         /**
@@ -183,6 +161,60 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             }
             return Map.copyOf(credentials);
         }
+    }
+
+    /**
+     * The realm is echoed into a quoted-string in the {@code WWW-Authenticate} header of every
+     * 401. A control character there would split the response, and one above ISO-8859-1 cannot
+     * be encoded in a header at all, so both are refused once at startup rather than on every
+     * rejected request. Quote and backslash are permitted because the challenge escapes them.
+     */
+    static void validateRealm(final ValidatorUtils validator, final String effective)
+    {
+        for (int i = 0; i < effective.length(); i++)
+        {
+            final char character = effective.charAt(i);
+            if (character > TextValues.MAX_STORABLE || character == 0x7F || (character < 0x20 && character != '\t'))
+            {
+                validator.invalid("realm", effective, String.format(
+                        "character U+%04X at index %d cannot appear in an HTTP challenge; "
+                                + "use printable ISO-8859-1 text", (int) character, i));
+                return;
+            }
+        }
+    }
+
+    /**
+     * @return the {@code WWW-Authenticate} value that asks for Basic credentials in {@code realm}
+     */
+    static String basicChallenge(final String realm)
+    {
+        return "Basic realm=\"" + escapeQuotedString(realm) + "\"";
+    }
+
+    /**
+     * Escapes a value for an RFC 9110 quoted-string. Backslashes must be doubled <em>before</em>
+     * quotes are escaped: doing it the other way round would re-escape the backslashes this
+     * inserts. Leaving backslashes alone is worse than cosmetic - a realm ending in one would
+     * escape the closing quote, so the remainder of the header would be parsed as further
+     * auth-params.
+     */
+    static String escapeQuotedString(final String value)
+    {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    static boolean hasMoreThanOne(final Iterable<String> values)
+    {
+        int count = 0;
+        for (final String ignored : values)
+        {
+            if (++count > 1)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -233,7 +265,7 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
         GF(final Config config)
         {
             this.realm = config.realm();
-            this.challenge = "Basic realm=\"" + escapeQuotedString(this.realm) + "\"";
+            this.challenge = basicChallenge(this.realm);
             this.credentials = config.credentials();
             this.verifiedCredentials = Caffeine.newBuilder()
                     .maximumSize(MAX_CACHE_ENTRIES)
@@ -241,18 +273,6 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
                     .build();
             this.dummyHash = buildDummyHash(this.credentials.values());
             this.forwardCredentials = config.forwardCredentials();
-        }
-
-        /**
-         * Escapes a value for an RFC 9110 quoted-string. Backslashes must be doubled <em>before</em>
-         * quotes are escaped: doing it the other way round would re-escape the backslashes this
-         * inserts. Leaving backslashes alone is worse than cosmetic - a realm ending in one would
-         * escape the closing quote, so the remainder of the header would be parsed as further
-         * auth-params.
-         */
-        private static String escapeQuotedString(final String value)
-        {
-            return value.replace("\\", "\\\\").replace("\"", "\\\"");
         }
 
         /**
@@ -407,19 +427,6 @@ public final class BasicAuthFactory implements GatewayFilterFactory<BasicAuthFac
             {
                 throw new IllegalStateException("SHA-256 is required by every Java platform", exception);
             }
-        }
-
-        private static boolean hasMoreThanOne(final Iterable<String> values)
-        {
-            int count = 0;
-            for (final String ignored : values)
-            {
-                if (++count > 1)
-                {
-                    return true;
-                }
-            }
-            return false;
         }
 
         private void rejectBusy(final ClientRequestGatewayExchange exchange)
