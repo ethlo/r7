@@ -17,7 +17,7 @@
     <name>r7-servlet</name>
     <url>https://github.com/ethlo/r7</url>
     <properties>
-        <tomcat.version>11.0.26</tomcat.version>
+        <tomcat.version>11.0.27</tomcat.version>
     </properties>
     <dependencies>
         <dependency>
