@@ -35,6 +35,11 @@ theme:
     - announce.dismiss
   logo: assets/r7.svg
   favicon: assets/r7.svg
+  font:
+    text: Inter Tight
+    code: JetBrains Mono
+
+copyright: 'An <a href="https://ethlo.com">ethlo</a> project'
 
 extra_css:
   - stylesheets/custom.css
