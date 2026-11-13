@@ -21,6 +21,9 @@ line here. A PR that adds one adds it here. Work to lift one belongs in
   trusted ([`asvs-l2.md`](asvs-l2.md), V12.3.4 and V13.2.1).
 - **No lockout in `BasicAuth`.** Put a `RateLimiter` in front of it on any route that untrusted
   clients can reach (`docs/config.md`, "Password guessing").
+- **`ClientCredentials` does not see revocation.** A token stays in its cache until 30 s before
+  it expires, so a client disabled at the identity provider keeps access until then. Short access
+  token lifetimes at the identity provider bound the window.
 - **The journal fingerprints sensitive values and never removes them.** A header or query
   parameter value outside the safe lists is replaced by a keyed HMAC fingerprint
   (`fingerprint_key`). The name and the fact that a value was there stay in the record.

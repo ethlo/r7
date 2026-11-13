@@ -2,9 +2,6 @@ package com.ethlo.r7.filters;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URL;
 import java.nio.ByteBuffer;
 import java.text.ParseException;
 import java.time.Duration;
@@ -16,8 +13,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import com.ethlo.r7.api.Claims;
@@ -45,34 +40,22 @@ import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
 import com.google.auto.service.AutoService;
 import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JOSEObjectType;
-import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.BadJOSEException;
-import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
-import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
-import com.nimbusds.jwt.proc.DefaultJWTClaimsVerifier;
-import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 
 /**
  * Verifies a {@code Bearer} JWT against a JWKS endpoint and sets the caller's {@link Identity}.
- * Only asymmetric algorithms are accepted: a JWKS is public, so an HMAC key in it is one anybody
- * could sign with.
+ * The rules a token must pass are {@link JwtVerification}'s.
  */
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
 @Description("Rejects requests that do not present a valid Bearer JWT, verified against a JWKS endpoint.")
 public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory.Config>
 {
-    static final Set<JWSAlgorithm> ALLOWED_ALGORITHMS = Set.of(
-            JWSAlgorithm.RS256, JWSAlgorithm.RS384, JWSAlgorithm.RS512,
-            JWSAlgorithm.PS256, JWSAlgorithm.PS384, JWSAlgorithm.PS512,
-            JWSAlgorithm.ES256, JWSAlgorithm.ES384, JWSAlgorithm.ES512);
     static final int MAX_CLOCK_SKEW_SECONDS = 300;
     /**
      * The keys are fetched at most once per 30 s, so a token with an unknown key id cannot make
@@ -82,27 +65,12 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
     private static final String FILTER_NAME = "JwtAuth";
     private static final String SCHEME = "jwt";
     private static final String BEARER_SCHEME = "Bearer ";
-    private static final Duration MAX_REFRESH_AHEAD = Duration.ofSeconds(30);
-
-    /**
-     * Runs the background key refreshes of every JwtAuth filter. Virtual threads, so a filter
-     * retired by a reload leaves no thread behind and its key source needs no closing.
-     */
-    private static final ExecutorService REFRESH_EXECUTOR = Executors.newThreadPerTaskExecutor(
-            Thread.ofVirtual().name("r7-jwks-refresh-", 0).factory());
 
     /**
      * The verified claims, kept apart from {@link Identity#KEY}: a later filter may replace the
      * identity, but the headers this filter forwards come from the token it verified.
      */
     private static final StateKey<Claims> CLAIMS_KEY = new StateKey<>("gateway.auth.jwt.claims");
-
-    /**
-     * A plain JWT, or an OAuth access token typed as one by RFC 9068; an ID token or any other
-     * typed JWT is refused.
-     */
-    private static final DefaultJOSEObjectTypeVerifier<SecurityContext> TYPE_VERIFIER = new DefaultJOSEObjectTypeVerifier<>(
-            JOSEObjectType.JWT, new JOSEObjectType("at+jwt"), new JOSEObjectType("application/at+jwt"), null);
 
     @Override
     public String name()
@@ -119,46 +87,13 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
     @Override
     public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config, buildJwtProcessor(config));
-    }
-
-    private static ConfigurableJWTProcessor<SecurityContext> buildJwtProcessor(final Config config)
-    {
-        final URL jwksUrl;
-        try
-        {
-            jwksUrl = URI.create(config.jwksUrl()).toURL();
-        }
-        catch (final IllegalArgumentException | MalformedURLException e)
-        {
-            throw new IllegalStateException("Invalid jwks_url: " + config.jwksUrl(), e);
-        }
-
-        // Shortly before the cache expires, the next request starts a refresh on a background
-        // thread and is itself still answered from the cached keys.
-        final Duration cacheDuration = config.jwksCacheDuration();
-        final long refreshAheadMillis = Math.max(1, Math.min(MAX_REFRESH_AHEAD.toMillis(), cacheDuration.toMillis() / 2));
-        final JWKSource<SecurityContext> jwkSource = JWKSourceBuilder.<SecurityContext>create(jwksUrl)
-                .cache(cacheDuration.toMillis(), Duration.ofSeconds(30).toMillis())
-                .refreshAheadCache(refreshAheadMillis, null, REFRESH_EXECUTOR, false, null, false)
-                .retrying(true)
-                .build();
-        return buildJwtProcessor(config, jwkSource);
+        return new GF(config, JwtVerification.processor(config.jwksUrl(), config.jwksCacheDuration(),
+                config.issuer(), config.audience(), config.clockSkewSeconds()));
     }
 
     static ConfigurableJWTProcessor<SecurityContext> buildJwtProcessor(final Config config, final JWKSource<SecurityContext> jwkSource)
     {
-        final DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
-        processor.setJWSTypeVerifier(TYPE_VERIFIER);
-        processor.setJWSKeySelector(new JWSVerificationKeySelector<>(ALLOWED_ALGORITHMS, jwkSource));
-        final DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier = new DefaultJWTClaimsVerifier<>(
-                Set.of(config.audience()),
-                new JWTClaimsSet.Builder().issuer(config.issuer()).build(),
-                Set.of("exp", "sub"),
-                null);
-        claimsVerifier.setMaxClockSkew(config.clockSkewSeconds());
-        processor.setJWTClaimsSetVerifier(claimsVerifier);
-        return processor;
+        return JwtVerification.processor(jwkSource, config.issuer(), config.audience(), config.clockSkewSeconds());
     }
 
     public record Config(
@@ -237,26 +172,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             validator.notBlank("jwks_url", this.jwksUrl);
             validator.notBlank("issuer", this.issuer);
             validator.notBlank("audience", this.audience);
-            if (this.jwksUrl != null && !this.jwksUrl.isBlank())
-            {
-                try
-                {
-                    final URI uri = URI.create(this.jwksUrl);
-                    final String protocol = uri.toURL().getProtocol();
-                    if (!"https".equalsIgnoreCase(protocol) && !"http".equalsIgnoreCase(protocol))
-                    {
-                        validator.invalid("jwks_url", this.jwksUrl, "Must be an http or https URL");
-                    }
-                    else if (uri.getHost() == null)
-                    {
-                        validator.invalid("jwks_url", this.jwksUrl, "Must contain a valid host");
-                    }
-                }
-                catch (final IllegalArgumentException | MalformedURLException e)
-                {
-                    validator.invalid("jwks_url", this.jwksUrl, "Not a valid URL: " + e.getMessage());
-                }
-            }
+            JwtVerification.validateUrl(validator, "jwks_url", this.jwksUrl, false);
             if (this.clockSkewSeconds != null && (this.clockSkewSeconds < 0 || this.clockSkewSeconds > MAX_CLOCK_SKEW_SECONDS))
             {
                 validator.invalid("clock_skew_seconds", this.clockSkewSeconds, "Must be between 0 and " + MAX_CLOCK_SKEW_SECONDS);
@@ -291,39 +207,6 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
     static String canonicalHeaderName(final String name)
     {
         return name.toLowerCase(Locale.ROOT).replace('_', '-');
-    }
-
-    /**
-     * The verified token's claims, as r7-api reads them: strings and arrays of strings only.
-     */
-    record JwtClaims(JWTClaimsSet claims) implements Claims
-    {
-        @Override
-        public Optional<String> string(final String name)
-        {
-            return this.claims.getClaim(name) instanceof String value ? Optional.of(value) : Optional.empty();
-        }
-
-        @Override
-        public List<String> strings(final String name)
-        {
-            final Object value = this.claims.getClaim(name);
-            if (value instanceof String single)
-            {
-                return List.of(single);
-            }
-            if (value instanceof List<?> list && list.stream().allMatch(String.class::isInstance))
-            {
-                return list.stream().map(String.class::cast).toList();
-            }
-            return List.of();
-        }
-
-        @Override
-        public boolean has(final String name)
-        {
-            return this.claims.getClaim(name) != null;
-        }
     }
 
     static final class GF implements ClientRequestGatewayFilter, UpstreamRequestGatewayFilter, ShortInfo
@@ -382,7 +265,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
                 return;
             }
 
-            final Claims claims = new JwtClaims(verified);
+            final Claims claims = new JwtVerification.JwtClaims(verified);
             exchange.setAttachment(CLAIMS_KEY, claims);
             exchange.setAttachment(Identity.KEY, new Identity(SCHEME, verified.getIssuer(), verified.getSubject(),
                     claims.string(this.usernameClaim).filter(name -> !name.isBlank()).orElse(null), claims));
