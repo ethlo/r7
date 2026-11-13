@@ -45,7 +45,7 @@ route above):
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-gateway:main
+    image: ghcr.io/ethlo/r7-gateway:1.0.0-beta.2
     ports:
       - "8888:8888"
     environment:
@@ -56,7 +56,7 @@ services:
       - r7-journals:/journals:rw
 
   r7-tailer:
-    image: ghcr.io/ethlo/r7-tailer:main
+    image: ghcr.io/ethlo/r7-tailer:1.0.0-beta.2
     volumes:
       - r7-journals:/journals:ro
       - r7-warc:/warc:rw
@@ -247,7 +247,7 @@ Gateway and tailer share the `journal_dir` volume: the gateway writes, the taile
 
 ## 3. The tailer
 
-**Image:** `ghcr.io/ethlo/r7-tailer:main`
+**Image:** `ghcr.io/ethlo/r7-tailer:1.0.0-beta.2`
 
 The tailer reads the journals once and writes each exchange to one or both of two outputs:
 
@@ -468,7 +468,7 @@ json:
 
 ## 4. Retention: The Reaper
 
-**Image:** `ghcr.io/ethlo/r7-reaper:main`
+**Image:** `ghcr.io/ethlo/r7-reaper:1.0.0-beta.2`
 
 The tailer is read-only by design (see §2's warning) — something else has to delete a
 sealed segment once it is no longer needed, or `journal_dir` grows without bound. That something
@@ -533,12 +533,12 @@ checkpoint file, can only keep a segment longer: anything short of "done" leaves
 ```yaml title="docker-compose.yaml"
 services:
   r7-api:
-    image: ghcr.io/ethlo/r7-gateway:main
+    image: ghcr.io/ethlo/r7-gateway:1.0.0-beta.2
     volumes:
       - r7-journals:/journals:rw
 
   r7-tailer:
-    image: ghcr.io/ethlo/r7-tailer:main
+    image: ghcr.io/ethlo/r7-tailer:1.0.0-beta.2
     volumes:
       - ./config/tailer.yaml:/app/config/tailer.yaml:ro
       - r7-journals:/journals:ro                # reads only; retention is the reaper's job
@@ -546,7 +546,7 @@ services:
       - r7-tailer-checkpoints:/checkpoints:rw   # its own progress
 
   r7-reaper:
-    image: ghcr.io/ethlo/r7-reaper:main
+    image: ghcr.io/ethlo/r7-reaper:1.0.0-beta.2
     volumes:
       - ./config/reaper.yaml:/app/config/reaper.yaml:ro
       - r7-journals:/journals:rw                         # the only container that deletes from it
