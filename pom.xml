@@ -33,9 +33,9 @@
              targets 27 for Helidon 27 and its per-carrier I/O pollers. -->
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jackson.version>3.2.3</jackson.version>
+        <jackson.version>3.3.0</jackson.version>
         <!-- One version for every module: 1.5.34+ carries the fixes for CVE-2026-9828 and CVE-2026-10532 -->
-        <logback.version>1.6.5</logback.version>
+        <logback.version>1.6.6</logback.version>
     </properties>
     <build>
         <plugins>
@@ -82,7 +82,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.6.0</version>
+                <version>3.6.1</version>
                 <configuration>
                     <systemPropertyVariables>
                         <!-- The gateway does not start without a fingerprint key, and neither do
