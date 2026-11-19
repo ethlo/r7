@@ -1,7 +1,9 @@
 package com.ethlo.r7.tailer.app;
 
 import java.nio.ByteBuffer;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +23,11 @@ import com.ethlo.r7.warc.WarcExchangeWriter;
  * otherwise every retry would archive the exchange once more. The WARC records are committed
  * (the dedup index learns their payloads) only once the JSON line is written too.
  * <p>
+ * <b>Unless the line may have got out.</b> Standard output can deliver a whole line and still
+ * report a failure. Taking the records back then would let later records overwrite the bytes a
+ * delivered line's {@code warc} pointer names, so they are kept and committed instead, and the
+ * retry of the same exchange points at them rather than archiving it again.
+ * <p>
  * Incomplete and abandoned exchanges go to the JSON output only, with their bodies: a WARC file
  * holds complete exchanges.
  */
@@ -31,6 +38,26 @@ final class ExchangeFanOut implements ExchangeCompletionListener
     private final WarcExchangeWriter warc;
     private final WarcOutputConfig.Exchanges warcExchanges;
     private final JsonLinesWriter json;
+
+    /**
+     * The most exchanges whose records are kept for a retry at once. The reader moves on to other
+     * shards after a refused entry, so retries of several exchanges interleave; one per shard
+     * is the usual need. Past this, the oldest is forgotten and its retry archives it again.
+     */
+    static final int MAX_KEPT = 1024;
+
+    /**
+     * The records of exchanges whose line may have got out, by request ID, kept until a line of
+     * theirs is written.
+     */
+    private final Map<String, WarcExchangeWriter.Written> kept = new LinkedHashMap<>(16, 0.75f, false)
+    {
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<String, WarcExchangeWriter.Written> eldest)
+        {
+            return size() > MAX_KEPT;
+        }
+    };
 
     /**
      * @param warc null when WARC output is off
@@ -50,8 +77,14 @@ final class ExchangeFanOut implements ExchangeCompletionListener
     @Override
     public void onComplete(final JournalExchange exchange)
     {
-        WarcExchangeWriter.Written written = null;
-        if (warc != null)
+        WarcExchangeWriter.Written written = kept.get(exchange.getRequestId());
+        final boolean reused = written != null;
+        if (reused)
+        {
+            // The records hold this exchange already; only the retry's checksum state is left.
+            warc.skip(exchange);
+        }
+        else if (warc != null)
         {
             if (archived(exchange))
             {
@@ -70,16 +103,31 @@ final class ExchangeFanOut implements ExchangeCompletionListener
                         ? new JsonLinesWriter.WarcPointer(written.location().file(), written.location().offset(), written.location().length())
                         : null, warc != null && warc.storesBodies());
             }
+            catch (final JsonLinesWriter.LineMayHaveGotOutException e)
+            {
+                if (written != null && !reused)
+                {
+                    written.commit();
+                    kept.put(exchange.getRequestId(), written);
+                }
+                throw e;
+            }
             catch (final RuntimeException e)
             {
-                if (written != null)
+                // Records reused from an earlier attempt were committed then, and are not the
+                // file's last write to take back.
+                if (written != null && !reused)
                 {
                     discard(exchange, written, e);
                 }
                 throw e;
             }
         }
-        if (written != null)
+        if (reused)
+        {
+            kept.remove(exchange.getRequestId());
+        }
+        else if (written != null)
         {
             written.commit();
         }
