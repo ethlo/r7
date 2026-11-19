@@ -11,28 +11,4 @@
     <packaging>jar</packaging>
     <name>r7-api</name>
     <url>http://maven.apache.org</url>
-
-    <licenses>
-        <license>
-            <name>Apache-2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-
-    <build>
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-            </resource>
-            <!-- Ship the Apache 2.0 text inside the jar, which is distributed without the source tree. -->
-            <resource>
-                <directory>${project.basedir}</directory>
-                <targetPath>META-INF</targetPath>
-                <includes>
-                    <include>LICENSE</include>
-                </includes>
-            </resource>
-        </resources>
-    </build>
 </project>

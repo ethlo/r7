@@ -37,9 +37,17 @@
         <!-- One version for every module: 1.5.34+ carries the fixes for CVE-2026-9828 and CVE-2026-10532 -->
         <logback.version>1.6.5</logback.version>
     </properties>
+
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <build>
-        <!-- Ship the BSL text inside every jar, which images distribute without the source tree.
-             r7-api overrides this with its own Apache 2.0 licence. -->
+        <!-- Ship the licence text inside every jar, which images distribute without the source tree. -->
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
