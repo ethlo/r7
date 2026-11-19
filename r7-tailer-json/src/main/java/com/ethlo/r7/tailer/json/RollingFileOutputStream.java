@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 
+import com.ethlo.r7.json.JsonLinesWriter;
 import com.ethlo.r7.tailer.files.SealedFileWriter;
 
 /**
@@ -21,7 +22,7 @@ import com.ethlo.r7.tailer.files.SealedFileWriter;
  * After a crash, a file left {@code .open} is cut back to its last complete line (a torn last
  * line belongs to a record the tailer had not checkpointed, and will write again) and sealed.
  */
-public final class RollingFileOutputStream extends OutputStream
+public final class RollingFileOutputStream extends OutputStream implements JsonLinesWriter.AtomicLines
 {
     static final long MIN_ROLLOVER_SIZE = SealedFileWriter.MIN_ROLLOVER_SIZE;
 

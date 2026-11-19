@@ -126,7 +126,10 @@ header and timing, so the WARC headers were paid for twice.
   they are.
 - **Sealing is `SealedFileWriter`, unchanged.** `.bodies.zst.open`, fsync, rename on roll;
   recovery cuts to the last frame that decodes. Per exchange, the bodies are appended first and
-  then the line; a failed line cuts the bodies back. A reader may read `.open` at a delivered
+  then the line. A failed line cuts the bodies back only when the JSON output is atomic per line
+  (`output: file`, `JsonLinesWriter.AtomicLines`); standard output can deliver a line and then
+  fail, and cutting back would let later bodies overwrite what that line points at, so there the
+  bodies stay and a retry may store a second copy. A reader may read `.open` at a delivered
   pointer, since a frame a line points at is never rewritten.
 - **No retention in the tailer yet.** Deleting old body files is left to the deployment for
   now.

@@ -129,6 +129,14 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         generator.writeRawValue(BigDecimal.valueOf(nanos, 9).setScale(6, RoundingMode.HALF_UP).toPlainString());
     }
 
+    /**
+     * An output that writes each flushed line whole or not at all: when its flush fails, nothing
+     * of the line got out. Only then are a failed line's bodies taken back.
+     */
+    public interface AtomicLines
+    {
+    }
+
     @Override
     public void onComplete(JournalExchange exchange)
     {
@@ -192,11 +200,27 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         try
         {
             writeExchangeObject(exchange, reason, warc, storeBodies && bodyFiles == null, stored);
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            // Nothing reached the output yet.
+            if (stored != null)
+            {
+                discard(exchange, stored, e);
+            }
+            throw e;
+        }
+        try
+        {
             flushRecord();
         }
         catch (final IOException | RuntimeException e)
         {
-            if (stored != null)
+            // Taken back only when the output guarantees the line did not get out. Standard
+            // output can deliver a whole line and fail after it; taking its bodies back would let
+            // later bodies overwrite bytes a delivered line points at. Kept, they are at worst an
+            // extra copy: the retry stores the bodies afresh, as they were never committed.
+            if (stored != null && out instanceof AtomicLines)
             {
                 discard(exchange, stored, e);
             }
