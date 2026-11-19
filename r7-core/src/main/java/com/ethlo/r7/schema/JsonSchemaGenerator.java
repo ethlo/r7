@@ -27,6 +27,7 @@ import com.ethlo.r7.config.model.HttpStatus;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.AcceptsInteger;
 import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.RequiredOneOf;
 import com.ethlo.r7.doc.FormatPattern;
 import com.ethlo.r7.spi.DeclarationLevel;
 import com.ethlo.r7.spi.GatewayFilterFactory;
@@ -521,11 +522,17 @@ public final class JsonSchemaGenerator
                     if (config instanceof ObjectSchema os)
                     {
                         List<Snippet> snippets = null;
-                        if (os.required() != null && !os.required().isEmpty())
+                        // One complete form: the first alternative's fields, then the always-required ones.
+                        final List<String> snippetFields = new ArrayList<>(firstAlternative(configClass));
+                        if (os.required() != null)
+                        {
+                            snippetFields.addAll(os.required());
+                        }
+                        if (!snippetFields.isEmpty())
                         {
                             Map<String, Object> snippetBody = new LinkedHashMap<>();
                             int tabStop = 1;
-                            for (String req : os.required())
+                            for (String req : snippetFields)
                             {
                                 snippetBody.put(req, "$" + (tabStop++));
                             }
@@ -599,8 +606,44 @@ public final class JsonSchemaGenerator
                 properties,
                 requiredFields.isEmpty() ? null : requiredFields,
                 new BoolProps(false),
-                null, null, null, null, null, null, null
+                null, null, null, alternatives(recordClass), null, null, null
         );
+    }
+
+    /**
+     * A {@link RequiredOneOf} config as a {@code oneOf} of the field sets it takes. Each set
+     * requires its own fields and forbids every field of the others, so a config with none of
+     * them, or with fields of two, fails as it does at startup.
+     */
+    private static List<SchemaNode> alternatives(final Class<?> recordClass)
+    {
+        final RequiredOneOf oneOf = recordClass.getAnnotation(RequiredOneOf.class);
+        if (oneOf == null)
+        {
+            return null;
+        }
+        final List<SchemaNode> alternatives = new ArrayList<>();
+        for (final RequiredOneOf.Fields fields : oneOf.value())
+        {
+            final List<SchemaNode> others = Arrays.stream(oneOf.value())
+                    .filter(other -> other != fields)
+                    .flatMap(other -> Arrays.stream(other.value()))
+                    .<SchemaNode>map(field -> requiring(List.of(field)))
+                    .toList();
+            alternatives.add(new AllOfSchema(List.of(requiring(List.of(fields.value())), new NotSchema(new AnyOfSchema(others, null, null), null)), null));
+        }
+        return alternatives;
+    }
+
+    private static SchemaNode requiring(final List<String> fields)
+    {
+        return new ObjectSchema(null, null, fields, null, null, null, null, null, null, null, null);
+    }
+
+    private static List<String> firstAlternative(final Class<?> recordClass)
+    {
+        final RequiredOneOf oneOf = recordClass.getAnnotation(RequiredOneOf.class);
+        return oneOf != null && oneOf.value().length > 0 ? List.of(oneOf.value()[0].value()) : List.of();
     }
 
     // Added genericType to the signature

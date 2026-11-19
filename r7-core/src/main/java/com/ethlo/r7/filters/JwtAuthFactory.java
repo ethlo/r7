@@ -35,6 +35,7 @@ import com.ethlo.r7.core.GatewayContextKeys;
 import com.ethlo.r7.doc.DefaultValue;
 import com.ethlo.r7.doc.Description;
 import com.ethlo.r7.doc.Nullable;
+import com.ethlo.r7.doc.RequiredOneOf;
 import com.ethlo.r7.spi.FilterCreationContext;
 import com.ethlo.r7.spi.GatewayFilterFactory;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
@@ -182,6 +183,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         return processor;
     }
 
+    @RequiredOneOf({@RequiredOneOf.Fields({"jwks_url", "issuer"}), @RequiredOneOf.Fields("issuers")})
     public record Config(
             @Nullable
             @Description("The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/tenant-a/protocol/openid-connect/certs'. Set with 'issuer', for a single issuer; 'issuers' replaces both.")

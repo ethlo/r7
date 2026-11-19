@@ -28,6 +28,30 @@ class JsonSchemaGeneratorTest
     }
 
     @Test
+    void jwtAuthRequiresEitherTheSingleIssuerOrTheIssuerListAndItsSnippetIsComplete()
+    {
+        final JsonNode jwtAuth = SCHEMA.at("/$defs/filter").findValue("JwtAuth");
+
+        final List<List<String>> alternatives = new ArrayList<>();
+        final List<List<String>> forbidden = new ArrayList<>();
+        jwtAuth.get("oneOf").forEach(alternative ->
+        {
+            final List<String> fields = new ArrayList<>();
+            alternative.at("/allOf/0/required").forEach(field -> fields.add(field.asString()));
+            alternatives.add(fields);
+            final List<String> others = new ArrayList<>();
+            alternative.at("/allOf/1/not/anyOf").forEach(other -> others.add(other.at("/required/0").asString()));
+            forbidden.add(others);
+        });
+        assertThat(alternatives).containsExactly(List.of("jwks_url", "issuer"), List.of("issuers"));
+        assertThat(forbidden).containsExactly(List.of("issuers"), List.of("jwks_url", "issuer"));
+
+        final List<String> snippetFields = new ArrayList<>();
+        jwtAuth.at("/defaultSnippets/0/body").propertyNames().forEach(snippetFields::add);
+        assertThat(snippetFields).containsExactly("jwks_url", "issuer", "audience");
+    }
+
+    @Test
     void aStatusListAcceptsCodesWrittenAsNumbersBesideClasses()
     {
         final JsonNode items = SCHEMA.at("/$defs/responsePredicate/anyOf").findValue("Status").findValue("include").get("items");

@@ -258,12 +258,32 @@ $defs:
           required:
           - audience
           additionalProperties: false
+          oneOf:
+          - allOf:
+            - required:
+              - jwks_url
+              - issuer
+            - not:
+                anyOf:
+                - required:
+                  - issuers
+          - allOf:
+            - required:
+              - issuers
+            - not:
+                anyOf:
+                - required:
+                  - jwks_url
+                - required:
+                  - issuer
           description: "Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint."
           defaultSnippets:
           - label: Insert JwtAuth
             description: "Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint."
             body:
-              audience: $1
+              jwks_url: $1
+              issuer: $2
+              audience: $3
         RateLimiter:
           type: object
           properties:
