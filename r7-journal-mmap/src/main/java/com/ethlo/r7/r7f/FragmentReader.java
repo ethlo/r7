@@ -5,8 +5,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.zip.CRC32C;
 
-import com.github.luben.zstd.ZstdDecompressCtx;
-
 /**
  * Reads format-version-2 entries out of a segment: the one place the fragment framing is
  * interpreted, shared by the decoder and by recovery so that the two cannot disagree about
@@ -21,9 +19,10 @@ import com.github.luben.zstd.ZstdDecompressCtx;
  * ({@link #resync}). It has no way to look for a magic anywhere else, so payload bytes are
  * never read as framing.
  * <p>
- * Not thread-safe, and holds a reassembly buffer that is reused for every split entry: an
- * entry read from it is valid until the next {@link #read}. Listeners copy what they keep, as
- * they already must for the mapped segment.
+ * Not thread-safe. Split entries and batches are read into the {@link DecodeScratch} buffers,
+ * which are reused by every read and every reader sharing them: an entry is valid until the
+ * next {@link #read}. Listeners copy what they keep, as they already must for the mapped
+ * segment.
  */
 final class FragmentReader
 {
@@ -46,11 +45,9 @@ final class FragmentReader
     private final short codec;
     private final CRC32C crc = new CRC32C();
 
-    // zstd state (FORMAT.md 4.4), created on the first batch
-    private ZstdDecompressCtx zstd;
+    // The zstd context and the buffers, which outlive this reader (see DecodeScratch)
+    private final DecodeScratch scratch;
     private ByteBuffer inflated;
-
-    private ByteBuffer assembly;
 
     private long entryStart;
     private long entryEnd;
@@ -71,13 +68,10 @@ final class FragmentReader
      * @param limit     the offset no read may reach: Data End for a sealed segment, the file
      *                  size for an active one
      * @param blockSize from the segment's preamble, already validated
+     * @param codec     from the segment's preamble
+     * @param scratch   the caller's, reused across readers and closed by the caller
      */
-    FragmentReader(final ByteBuffer file, final long limit, final int blockSize)
-    {
-        this(file, limit, blockSize, R7fConstants.CODEC_NONE);
-    }
-
-    FragmentReader(final ByteBuffer file, final long limit, final int blockSize, final short codec)
+    FragmentReader(final ByteBuffer file, final long limit, final int blockSize, final short codec, final DecodeScratch scratch)
     {
         if (!R7fFraming.isValidBlockSize(blockSize))
         {
@@ -88,6 +82,7 @@ final class FragmentReader
         this.limit = Math.min(limit, file.capacity());
         this.blockSize = blockSize;
         this.codec = codec;
+        this.scratch = scratch;
     }
 
     /**
@@ -234,10 +229,10 @@ final class FragmentReader
             damaged("inconsistent batch header (plainLength=" + plainLength + ", entryCount=" + count + ")");
             return -1;
         }
-        ensureInflated(plainLength);
+        inflated = scratch.inflated(plainLength, 2 * blockSize);
         try
         {
-            final int produced = zstd.decompressDirectByteBuffer(inflated, 0, plainLength, content,
+            final int produced = scratch.zstd().decompressDirectByteBuffer(inflated, 0, plainLength, content,
                     base + R7fConstants.BATCH_HEADER_SIZE, (int) (length - R7fConstants.BATCH_HEADER_SIZE));
             if (produced == plainLength)
             {
@@ -315,18 +310,6 @@ final class FragmentReader
         rawSlice = rawLen > 0 ? content.slice(fbStart + fbLen, rawLen) : null;
         recordCursor = fbStart + fbLen + rawLen;
         recordRemaining--;
-    }
-
-    private void ensureInflated(final int capacity)
-    {
-        if (zstd == null)
-        {
-            zstd = new ZstdDecompressCtx();
-        }
-        if (inflated == null || inflated.capacity() < capacity)
-        {
-            inflated = ByteBuffer.allocateDirect(Math.max(capacity, 2 * blockSize)).order(ByteOrder.BIG_ENDIAN);
-        }
     }
 
     /**
@@ -459,13 +442,8 @@ final class FragmentReader
      */
     private ByteBuffer assemble(final long start, final long firstLength, final long contentLength)
     {
-        if (assembly == null || assembly.capacity() < contentLength)
-        {
-            final int capacity = (int) Math.max(contentLength, 2L * blockSize);
-            // Direct when compressed: zstd-jni decompresses from direct buffers only
-            assembly = (codec == R7fConstants.CODEC_NONE ? ByteBuffer.allocate(capacity) : ByteBuffer.allocateDirect(capacity))
-                    .order(ByteOrder.BIG_ENDIAN);
-        }
+        // Direct when compressed: zstd-jni decompresses from direct buffers only
+        final ByteBuffer assembly = scratch.assembly((int) contentLength, 2 * blockSize, codec != R7fConstants.CODEC_NONE);
         assembly.clear();
         final int perBlock = R7fFraming.continuationCapacity(blockSize);
 

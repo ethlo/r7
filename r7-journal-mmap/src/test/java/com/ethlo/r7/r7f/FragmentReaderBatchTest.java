@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.CRC32C;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.github.luben.zstd.Zstd;
@@ -20,6 +21,14 @@ import com.github.luben.zstd.Zstd;
 class FragmentReaderBatchTest
 {
     private static final int BLOCK = R7fConstants.DEFAULT_BLOCK_SIZE;
+
+    private final DecodeScratch scratch = new DecodeScratch();
+
+    @AfterEach
+    void closeScratch()
+    {
+        scratch.close();
+    }
 
     @Test
     void aBatchYieldsItsEntriesInOrder()
@@ -73,7 +82,7 @@ class FragmentReaderBatchTest
         assertDamaged(batch(1, entry), "inconsistent lengths");
     }
 
-    private static void assertDamaged(final byte[] content, final String problem)
+    private void assertDamaged(final byte[] content, final String problem)
     {
         final FragmentReader reader = reader(content);
         assertThat(reader.read(R7fConstants.PREAMBLE_SIZE)).isEqualTo(FragmentReader.Status.DAMAGED);
@@ -106,7 +115,7 @@ class FragmentReaderBatchTest
     }
 
     /** A segment holding one FULL fragment with {@code content} at the first entry boundary. */
-    private static FragmentReader reader(final byte[] content)
+    private FragmentReader reader(final byte[] content)
     {
         final ByteBuffer file = ByteBuffer.allocateDirect(2 * BLOCK).order(ByteOrder.BIG_ENDIAN);
         final int at = R7fConstants.PREAMBLE_SIZE;
@@ -118,6 +127,6 @@ class FragmentReaderBatchTest
         crc.update(file.duplicate().limit(at + R7fConstants.FRAGMENT_HEADER_SIZE + content.length).position(at + R7fConstants.FRAGMENT_HEADER_SIZE));
         file.putInt(at + R7fConstants.FRAGMENT_OFF_CRC, (int) crc.getValue());
         file.putInt(at, R7fConstants.FRAGMENT_MAGIC);
-        return new FragmentReader(file, file.capacity(), BLOCK, R7fConstants.CODEC_ZSTD_BATCH);
+        return new FragmentReader(file, file.capacity(), BLOCK, R7fConstants.CODEC_ZSTD_BATCH, scratch);
     }
 }

@@ -139,7 +139,12 @@ public final class JournalDecoder
                                      boolean activeSegment,
                                      EntryObserver entryObserver)
     {
-        return decode(buffer, listener, expectedSequence, sourceName, integrity, activeSegment, entryObserver, Integer.MAX_VALUE);
+        // A one-off read: its decompression context is freed before returning. A caller that
+        // decodes over and over (the tailer, on every commit signal) keeps a scratch of its own.
+        try (DecodeScratch scratch = new DecodeScratch())
+        {
+            return decode(buffer, listener, expectedSequence, sourceName, integrity, activeSegment, entryObserver, Integer.MAX_VALUE, scratch);
+        }
     }
 
     /**
@@ -150,6 +155,9 @@ public final class JournalDecoder
      * For replaying up to a checkpoint. A checkpoint inside a batch is the batch's offset and
      * the next sequence to deliver, so an offset alone would either stop short of the batch's
      * delivered entries or run past its undelivered ones.
+     *
+     * @param scratch the caller's, reused across calls and closed by the caller; entries
+     *                delivered from it are valid only during their listener call
      */
     static DecodeStats decode(ByteBuffer buffer,
                               JournalEventListener listener,
@@ -158,7 +166,8 @@ public final class JournalDecoder
                               JournalIntegrityListener integrity,
                               boolean activeSegment,
                               EntryObserver entryObserver,
-                              int untilSequence)
+                              int untilSequence,
+                              DecodeScratch scratch)
     {
         // Skip preamble
         if (buffer.position() == 0)
@@ -175,7 +184,7 @@ public final class JournalDecoder
                     + blockSize + " bytes; it is not a version " + R7fConstants.CURRENT_VERSION + " segment");
         }
         final short codec = buffer.duplicate().order(ByteOrder.BIG_ENDIAN).getShort(R7fConstants.PREAMBLE_OFF_CODEC);
-        final FragmentReader reader = new FragmentReader(buffer, buffer.limit(), blockSize, codec);
+        final FragmentReader reader = new FragmentReader(buffer, buffer.limit(), blockSize, codec, scratch);
         final int limit = buffer.limit();
 
         // Everything the consumer throws comes back wrapped, so that a consumer failure and
