@@ -129,7 +129,7 @@ header and timing, so the WARC headers were paid for twice.
   then the line. A failed line cuts the bodies back only when the JSON output is atomic per line
   (`output: file`, `JsonLinesWriter.AtomicLines`); standard output can deliver a line and then
   fail, and cutting back would let later bodies overwrite what that line points at, so there the
-  bodies stay and a retry may store a second copy. A reader may read `.open` at a delivered
+  bodies stay, are remembered, and the retry points at them. A reader may read `.open` at a delivered
   pointer, since a frame a line points at is never rewritten.
 - **No retention in the tailer yet.** Deleting old body files is left to the deployment for
   now.

@@ -218,11 +218,20 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         {
             // Taken back only when the output guarantees the line did not get out. Standard
             // output can deliver a whole line and fail after it; taking its bodies back would let
-            // later bodies overwrite bytes a delivered line points at. Kept, they are at worst an
-            // extra copy: the retry stores the bodies afresh, as they were never committed.
-            if (stored != null && out instanceof AtomicLines)
+            // later bodies overwrite bytes a delivered line points at. So they are kept, and
+            // committed: they are complete frames that are never rewritten, and the retry (or a
+            // stdout that stays broken, retried over and over) points at them instead of storing
+            // the bodies again.
+            if (stored != null)
             {
-                discard(exchange, stored, e);
+                if (out instanceof AtomicLines)
+                {
+                    discard(exchange, stored, e);
+                }
+                else
+                {
+                    bodyFiles.commit(stored);
+                }
             }
             throw e;
         }

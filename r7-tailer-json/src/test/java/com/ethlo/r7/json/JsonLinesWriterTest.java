@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,6 +33,7 @@ import com.ethlo.r7.tailer.files.SealedFileWriter;
 import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdInputStream;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -239,7 +241,8 @@ class JsonLinesWriterTest
 
     /**
      * Standard output can deliver a whole line and fail after it. The bodies that line points at
-     * stay where they are: the retry stores a second copy rather than overwrite them.
+     * stay where they are, and the retry points at the same copy: a stdout that stays broken does
+     * not grow the body files.
      */
     @Test
     void aLineThatMayHaveGotOutKeepsItsBodies() throws IOException
@@ -267,8 +270,29 @@ class JsonLinesWriterTest
         final JsonNode retried = MAPPER.readTree(lines.get(2)).path("client_response").path("body_ref");
         assertThat(readBody(delivered)).isEqualTo("payload");
         assertThat(readBody(abandonedRef)).isEqualTo("upload");
-        assertThat(readBody(retried)).isEqualTo("payload");
-        assertThat(retried.path("offset").asLong()).isGreaterThan(abandonedRef.path("offset").asLong());
+        assertThat(retried).isEqualTo(delivered);
+    }
+
+    @Test
+    void aStdoutThatStaysBrokenDoesNotGrowTheBodyFiles() throws IOException
+    {
+        final PrintStream broken = new PrintStream(new AlwaysFailingOutputStream(), true, StandardCharsets.UTF_8);
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(broken, bodyFiles);
+            final JournalExchange exchange = completeExchange("req-1");
+            exchange.appendResponseBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                assertThatThrownBy(() -> writer.onComplete(exchange)).isInstanceOf(RuntimeException.class);
+            }
+        }
+        try (Stream<Path> files = Files.list(bodyDir))
+        {
+            final Path file = files.findFirst().orElseThrow();
+            final byte[] once = Zstd.compress("payload".getBytes(StandardCharsets.UTF_8), 3);
+            assertThat(Files.size(file)).as("one frame, not one per attempt").isLessThan(2L * once.length);
+        }
     }
 
     private String readBody(final JsonNode ref) throws IOException

@@ -339,8 +339,8 @@ ClickHouse: the line carries every header and timing, so the body is all that is
   pointer never leads out of the file written in the same period.
 - **One exchange, one unit.** The bodies are appended before the line is written. If the line
   fails with `output: file`, they are taken back before the retry. Standard output can deliver a
-  whole line and still report a failure, so there the bodies stay, and a retry may store a
-  second copy; a line never points at bytes that were overwritten.
+  whole line and still report a failure, so there the bodies stay and the retry points at them;
+  a line never points at bytes that were overwritten.
 - **Files are sealed like the other outputs.** A file is written as `.bodies.zst.open`, then
   fsync'd and renamed on roll by size or age. A line names the file by its sealed name while it
   may still be open, for up to `max_file_age`; a reader that does not find the file may read
