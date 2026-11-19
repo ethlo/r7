@@ -41,7 +41,7 @@ so a shipper that reads `*.jsonl` never sees a file still being written.
 
 Two settings matter in every shipper. It must keep its read position on persistent storage, or a
 restart reads the retained files again and loads every exchange twice. And its line-size limit
-must hold a whole exchange: with `json.bodies: true`, the request and the response body can both
+must hold a whole exchange: with `json.bodies: inline`, the request and the response body can both
 be in one line, base64-encoded, so set the limit from the largest pair of bodies together plus a
 third, plus the headers. Shippers split or drop a
 longer line, and a split line is no longer JSON.

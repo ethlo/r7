@@ -262,12 +262,13 @@ The tailer reads the journals once and writes each exchange to one or both of tw
 
 With both on, a body is stored once, in the WARC file: the JSON line carries a `warc` pointer to
 the exchange's records instead of the bodies. A body the WARC output does not store (one of an
-incomplete exchange, or any body with `warc.bodies: false`) goes into the JSON line when `json.bodies` is `true`. With both
-`bodies` settings `false`, no body is stored anywhere; the records and lines still say there was
-one, and which, by its size and checksums.
+incomplete exchange, or any body with `warc.bodies: false`) goes where `json.bodies` says:
+nowhere (`none`), into the line (`inline`), or into [body files](#body-files) the line points at
+(`files`). With `warc.bodies: false` and `json.bodies: none`, no body is stored anywhere; the
+records and lines still say there was one, and which, by its size and checksums.
 
-If writing the JSON line fails, the exchange's WARC records are taken back before the tailer
-retries it, so a retry never archives an exchange twice.
+If writing the JSON line fails, the exchange's WARC records and stored bodies are taken back
+before the tailer retries it, so a retry never stores an exchange twice.
 
 **Configuration:** like the gateway, the tailer reads a YAML file: `tailer.yaml` in the working
 directory by default (`/app/config` in the image), or the path in the `TAILER_CONFIG`
@@ -299,7 +300,7 @@ At least one output must be enabled.
 | `zstd_level`          | `9`      | Zstandard compression level (1-22), applied per record |
 | `dedup_cache_entries` | `100000` | How many payload digests are remembered for deduplicating identical payloads across exchanges |
 | `cdxj_index`          | `false`  | Also write a sorted [CDXJ](https://specs.webrecorder.net/cdxj/0.1.0/) index next to each file; see below |
-| `bodies`              | `true`   | Store captured bodies in the records. `false` writes the headers with `WARC-Truncated: unspecified` and the body's `WARC-Payload-Digest`, and leaves the body to the JSON line when that output is on with `bodies: true`; otherwise the body is not stored |
+| `bodies`              | `true`   | Store captured bodies in the records. `false` writes the headers with `WARC-Truncated: unspecified` and the body's `WARC-Payload-Digest`, and leaves the body to the JSON output's `bodies` setting; with `none` the body is not stored |
 
 [The WARC profile](warc.md) specifies what an exchange becomes in the files: the records, the
 `WARC-R7-*` fields and the rules a reader can rely on.
@@ -318,7 +319,50 @@ shaped this way.
 | `file_prefix`       | `r7`     | With `output: file`: filename prefix |
 | `max_file_size`     | `256mb`  | With `output: file`: roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
 | `max_file_age`      | `15m`    | With `output: file`: roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
-| `bodies`            | `false`  | Write captured bodies into a line when no WARC record stores them, base64 encoded. Off, payloads stay out of the log; `body_bytes` and the checksums still show there was a body |
+| `bodies`            | `none`   | Where a captured body goes when no WARC record stores it. `none`: nowhere, payloads stay out of the log, and `body_bytes` and the checksums still show there was a body. `inline`: into the line, base64 encoded. `files`: into [body files](#body-files), with a `body_ref` on the line |
+| `body_files`        |          | With `bodies: files`: where the bodies go; see below |
+
+#### Body files
+
+With `json.bodies: files`, each body is compressed on its own as one Zstandard frame, and the
+frames are appended to rotating `<file_prefix>-<millis>-<uuid>.bodies.zst` files. The file holds
+nothing but bodies; the JSON line is the index, with a `body_ref` per client leg naming the file,
+the frame's offset and its length. Read `length` bytes at `offset` and decompress them with
+`zstd -d` to get the body back, then compare it with the leg's `checksum`. `zstd -d` on a whole
+file gives every body in it, back to back.
+
+This is the compact way to keep bodies when the JSON lines already go to a store such as
+ClickHouse: the line carries every header and timing, so the body is all that is left to keep.
+
+- **A body is stored once per file.** A body whose SHA-256 matches one already in the current
+  file is not written again; the line points at the earlier copy. A new file starts afresh, so a
+  pointer never leads out of the file written in the same period.
+- **One exchange, one unit.** The bodies are appended before the line is written. If the line
+  fails with `output: file`, they are taken back before the retry. Standard output can deliver a
+  whole line and still report a failure, so there the bodies stay and the retry points at them;
+  a line never points at bytes that were overwritten.
+- **Files are sealed like the other outputs.** A file is written as `.bodies.zst.open`, then
+  fsync'd and renamed on roll by size or age. A line names the file by its sealed name while it
+  may still be open, for up to `max_file_age`; a reader that does not find the file may read
+  `<name>.open` at the same offset, since a frame a delivered line points at is never rewritten.
+  After a crash the open file is cut back to its last whole frame and sealed on the next start.
+- **It does not combine with a WARC output that stores bodies.** The WARC records would hold every
+  body, so `json.bodies: files` with `warc.enabled: true` and `warc.bodies: true` is refused at
+  startup. WARC with `bodies: false` (headers only) and body files is a valid pair.
+
+The tailer does not delete body files. Remove old ones with a scheduled job or the lifecycle rule
+of the bucket they are shipped to, and expire the JSON rows that point into them at the same age.
+
+**`json.body_files`**
+
+| Field                 | Default   | Meaning |
+|-----------------------|-----------|---------|
+| `output_dir`          | `/bodies` | Directory the files are written to |
+| `file_prefix`         | `r7`      | Filename prefix |
+| `max_file_size`       | `1gb`     | Roll to a new file once the current one reaches this size (at least `64kb`). Supports `b`, `kb`, `mb`, `gb` |
+| `max_file_age`        | `15m`     | Roll to a new file once the current one is this old, even with little traffic. Supports `ms`, `s`, `m`, `h`, `d` |
+| `zstd_level`          | `3`       | Zstandard compression level (1-22), applied per body. For one body at a time a higher level gains little |
+| `dedup_cache_entries` | `100000`  | How many body digests of the current file are remembered for storing a repeated body once |
 
 ### The JSON line
 
@@ -412,7 +456,11 @@ Fields of the four leg objects (`client_request`, `upstream_request`, `upstream_
 | `header_bytes` | number | client legs | With an end event: bytes of the head on the wire |
 | `body_bytes` | number | client legs | With an end event: bytes of the body on the wire, whether or not it was capped |
 | `body_truncated` | boolean | client legs | Only when the journal kept just the body's first [`truncate_body_at`](#capping-bodies) bytes: `body` and `checksum` cover that prefix |
-| `body` | string | client legs | With `bodies: true`, at `FULL`, when there is a body and no WARC record stores it: base64 |
+| `body` | string | client legs | With `bodies: inline`, at `FULL`, when there is a body and no WARC record stores it: base64 |
+| `body_ref` | object | client legs | With `bodies: files`, at `FULL`, when there is a body and no WARC record stores it: where its [body file](#body-files) holds it |
+| `body_ref.file` | string | client legs | The sealed body file's name |
+| `body_ref.offset` | number | client legs | Byte offset of the body's Zstandard frame in that file |
+| `body_ref.length` | number | client legs | Compressed length of the frame: read `length` bytes at `offset` and decompress them with `zstd -d` |
 | `checksum` | string | client legs | At `FULL`, when there is a body: the CRC32C the gateway recorded over the bytes it journaled, as `crc32c:` and eight hex digits |
 | `observed_checksum` | string | client legs | Only when the body read back does not match `checksum` |
 | `start` | timestamp | `upstream_response` | With an end event: when the request to the upstream started |
@@ -463,7 +511,19 @@ JSON lines alone, bodies included:
 warc:
   enabled: false
 json:
-  bodies: true
+  bodies: inline
+```
+
+JSON lines to a loader, with the bodies in body files and no WARC archive:
+
+```yaml title="tailer.yaml"
+warc:
+  enabled: false
+json:
+  output: file
+  bodies: files
+  body_files:
+    output_dir: /bodies
 ```
 
 ## 4. Retention: The Reaper

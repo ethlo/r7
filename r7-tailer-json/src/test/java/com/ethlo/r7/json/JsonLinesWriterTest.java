@@ -3,19 +3,25 @@ package com.ethlo.r7.json;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.BodyChecksum;
@@ -23,8 +29,12 @@ import com.ethlo.r7.journal.api.ExchangeCompletionListener.BodyKind;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.tailer.files.SealedFileWriter;
+import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.github.luben.zstd.Zstd;
+import com.github.luben.zstd.ZstdInputStream;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -37,6 +47,9 @@ import tools.jackson.databind.json.JsonMapper;
 class JsonLinesWriterTest
 {
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
+
+    @TempDir
+    Path bodyDir;
 
     /**
      * A write failure while a JSON object was only half written used to leave the shared
@@ -171,6 +184,129 @@ class JsonLinesWriterTest
         final JsonNode inline = MAPPER.readTree(lines.get(1));
         assertThat(inline.has("warc")).isFalse();
         assertThat(inline.path("client_request").path("body").isString()).isTrue();
+    }
+
+    /**
+     * With body files, a line carries a pointer per client leg instead of the body, and a
+     * repeated body points at its first copy.
+     */
+    @Test
+    void withBodyFilesALinePointsAtItsBodies() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(out, bodyFiles);
+            final JournalExchange first = completeExchange("req-1");
+            first.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+            writer.onComplete(first);
+            final JournalExchange second = completeExchange("req-2");
+            second.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+            writer.onComplete(second);
+        }
+
+        final List<String> lines = linesOf(out);
+        final JsonNode first = MAPPER.readTree(lines.get(0)).path("client_request");
+        assertThat(first.has("body")).isFalse();
+        assertThat(first.path("body_ref").path("file").asString()).endsWith(".bodies.zst");
+        assertThat(first.path("body_ref").path("offset").asLong()).isZero();
+        assertThat(first.path("body_ref").path("length").asLong()).isPositive();
+        assertThat(MAPPER.readTree(lines.get(0)).path("client_response").has("body_ref")).as("no response body").isFalse();
+        assertThat(MAPPER.readTree(lines.get(1)).path("client_request").path("body_ref")).isEqualTo(first.path("body_ref"));
+        assertThat(Files.size(bodyDir.resolve(first.path("body_ref").path("file").asString())))
+                .isEqualTo(first.path("body_ref").path("length").asLong());
+    }
+
+    /**
+     * A line that an atomic output refused takes its bodies back, so the retry stores them once.
+     */
+    @Test
+    void aFailedLineTakesItsBodiesBack() throws IOException
+    {
+        final ByteArrayOutputStream real = new ByteArrayOutputStream();
+        final JsonNode ref;
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(new AtomicFlakyOutputStream(real), bodyFiles);
+            final JournalExchange exchange = completeExchange("req-1");
+            exchange.appendResponseBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+
+            assertThatThrownBy(() -> writer.onComplete(exchange)).isInstanceOf(RuntimeException.class);
+            writer.onComplete(exchange);
+            ref = MAPPER.readTree(linesOf(real).getFirst()).path("client_response").path("body_ref");
+        }
+        assertThat(ref.path("offset").asLong()).isZero();
+        assertThat(Files.size(bodyDir.resolve(ref.path("file").asString()))).isEqualTo(ref.path("length").asLong());
+    }
+
+    /**
+     * Standard output can deliver a whole line and fail after it. The bodies that line points at
+     * stay where they are, and the retry points at the same copy: a stdout that stays broken does
+     * not grow the body files.
+     */
+    @Test
+    void aLineThatMayHaveGotOutKeepsItsBodies() throws IOException
+    {
+        final ByteArrayOutputStream real = new ByteArrayOutputStream();
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(new FailingFlushOutputStream(real, 2), bodyFiles);
+            final JournalExchange exchange = completeExchange("req-1");
+            exchange.appendResponseBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+
+            assertThatThrownBy(() -> writer.onComplete(exchange)).isInstanceOf(RuntimeException.class);
+            // Abandoned exchanges are not retried; theirs are kept as well.
+            final JournalExchange abandoned = new JournalExchange("req-abandoned");
+            abandoned.setClientRequest("POST /x HTTP/1.1", JournalLevel.FULL, new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            abandoned.appendRequestBody(ByteBuffer.wrap("upload".getBytes(StandardCharsets.UTF_8)));
+            writer.onAbandoned(abandoned, IncompleteReason.TIMED_OUT);
+            writer.onComplete(exchange);
+        }
+
+        final List<String> lines = linesOf(real);
+        assertThat(lines).hasSize(3);
+        final JsonNode delivered = MAPPER.readTree(lines.get(0)).path("client_response").path("body_ref");
+        final JsonNode abandonedRef = MAPPER.readTree(lines.get(1)).path("client_request").path("body_ref");
+        final JsonNode retried = MAPPER.readTree(lines.get(2)).path("client_response").path("body_ref");
+        assertThat(readBody(delivered)).isEqualTo("payload");
+        assertThat(readBody(abandonedRef)).isEqualTo("upload");
+        assertThat(retried).isEqualTo(delivered);
+    }
+
+    @Test
+    void aStdoutThatStaysBrokenDoesNotGrowTheBodyFiles() throws IOException
+    {
+        final PrintStream broken = new PrintStream(new AlwaysFailingOutputStream(), true, StandardCharsets.UTF_8);
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(broken, bodyFiles);
+            final JournalExchange exchange = completeExchange("req-1");
+            exchange.appendResponseBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                assertThatThrownBy(() -> writer.onComplete(exchange)).isInstanceOf(RuntimeException.class);
+            }
+        }
+        try (Stream<Path> files = Files.list(bodyDir))
+        {
+            final Path file = files.findFirst().orElseThrow();
+            final byte[] once = Zstd.compress("payload".getBytes(StandardCharsets.UTF_8), 3);
+            assertThat(Files.size(file)).as("one frame, not one per attempt").isLessThan(2L * once.length);
+        }
+    }
+
+    private String readBody(final JsonNode ref) throws IOException
+    {
+        final byte[] file = Files.readAllBytes(bodyDir.resolve(ref.path("file").asString()));
+        try (InputStream in = new ZstdInputStream(new ByteArrayInputStream(file, (int) ref.path("offset").asLong(), (int) ref.path("length").asLong())))
+        {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private BodyFiles bodyFiles() throws IOException
+    {
+        return new BodyFiles(bodyDir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, 3_600_000L, 3, 16);
     }
 
     /**
@@ -549,6 +685,66 @@ class JsonLinesWriterTest
     /**
      * Always throws - what {@link PrintStream} sits on top of and swallows.
      */
+    /**
+     * Refuses the first line whole, as a {@link JsonLinesWriter.AtomicLines} output promises.
+     */
+    private static final class AtomicFlakyOutputStream extends FilterOutputStream implements JsonLinesWriter.AtomicLines
+    {
+        private boolean failed;
+
+        AtomicFlakyOutputStream(final OutputStream out)
+        {
+            super(out);
+        }
+
+        @Override
+        public void write(final byte[] b, final int off, final int len) throws IOException
+        {
+            if (!failed)
+            {
+                failed = true;
+                throw new IOException("refused whole (test double)");
+            }
+            out.write(b, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException
+        {
+            // a refused line has nothing to flush
+            out.flush();
+        }
+    }
+
+    /**
+     * Passes every byte through, and fails the first {@code failures} flushes after them.
+     */
+    private static final class FailingFlushOutputStream extends FilterOutputStream
+    {
+        private int failures;
+
+        FailingFlushOutputStream(final OutputStream out, final int failures)
+        {
+            super(out);
+            this.failures = failures;
+        }
+
+        @Override
+        public void write(final byte[] b, final int off, final int len) throws IOException
+        {
+            out.write(b, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException
+        {
+            if (failures-- > 0)
+            {
+                throw new IOException("failed after delivery (test double)");
+            }
+        }
+    }
+
     private static final class AlwaysFailingOutputStream extends OutputStream
     {
         @Override

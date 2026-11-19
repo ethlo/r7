@@ -76,5 +76,10 @@ public record TailerAppConfig(
         {
             result.addError("json.enabled", "at least one of warc and json must be enabled, or the tailer writes nothing");
         }
+        if (this.json().enabled() && this.json().bodies() == JsonOutputConfig.Bodies.FILES && this.warc().enabled() && this.warc().bodies())
+        {
+            // A body is stored once: the WARC records would hold every body, and the body files none.
+            result.addError("json.bodies", "files cannot be combined with a WARC output that stores bodies; set warc.bodies: false or warc.enabled: false");
+        }
     }
 }

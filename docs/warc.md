@@ -84,7 +84,7 @@ record says plainly when it does not hold them:
 | The body is in this record | `request` / `response` | `WARC-Payload-Digest` |
 | Records 2 and 3, always: any body is in record 1 or 4 of the same exchange | `request` / `response` | `WARC-Truncated: unspecified`, and `WARC-Payload-Digest` when there is a body |
 | Record 3 for a head r7 refused to relay: its body was never read, and record 4 is r7's own answer | `response` | `WARC-Truncated: unspecified`, no digest |
-| `warc.bodies: false`: the body was captured, but this output leaves it out | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-Payload-Digest`. The JSON line holds the body when `json.bodies` is `true` |
+| `warc.bodies: false`: the body was captured, but this output leaves it out | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-Payload-Digest`. The JSON line holds the body, or points at it in a body file, as `json.bodies` says |
 | A body crossed the wire, but the journal level was below `FULL` | `request` / `response` | `WARC-Truncated: unspecified`, no digest |
 | The journaled body failed its checksum when read back | `request` / `response` | `WARC-Truncated: unspecified`, `WARC-R7-Checksum-Mismatch: true`, no digest. The damaged bytes are never archived |
 | Records 1 and 4: the journal kept only the body's first [`truncate_body_at`](journaling.md#capping-bodies) bytes | `request` / `response` | `WARC-Truncated: length`, and `WARC-Payload-Digest` of the prefix the record holds. Never a `revisit`, and never the target of one: a prefix is not the payload. Records 2 and 3, and a body left out by `warc.bodies: false`, also carry `length` in place of `unspecified`, since their digest is of the same prefix |
