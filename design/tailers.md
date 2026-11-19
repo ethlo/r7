@@ -83,6 +83,13 @@ everything the reader does was done twice.
   (`WarcFileWriter.discard`) before the exception reaches the reader, which offers the exchange
   again; otherwise every retry would archive it once more. The dedup index learns an exchange's
   payloads only once both are written, so a `revisit` never points at records taken back.
+- **Unless the line may have got out.** Standard output can deliver a whole line and then fail;
+  cutting back would let later records overwrite what that line's `warc` pointer names. Only an
+  output that writes a line whole or not at all (`JsonLinesWriter.AtomicLines`, the rolling
+  JSON files) gets the cut-back. Otherwise the writer throws `LineMayHaveGotOutException`, the
+  records are committed and kept, and the retry of the same exchange reuses them instead of
+  archiving it again, so a stdout that stays broken does not grow the archive. Body files
+  follow the same rule.
 - **A crash between the two** leaves the WARC records without their line. The exchange was not
   checkpointed, so it is written again in full on the next start: the archive can hold it
   twice, which is the at-least-once delivery every output already has across a crash.

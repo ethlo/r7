@@ -137,6 +137,20 @@ public class JsonLinesWriter implements ExchangeCompletionListener
     {
     }
 
+    /**
+     * Writing a line failed on an output that is not {@link AtomicLines}, after the line was
+     * handed to it: it may have got out whole. Whatever the line points at must stay where it is,
+     * since taking it back would let later writes overwrite bytes a delivered line names. The
+     * exchange is still offered again, as for any failure.
+     */
+    public static final class LineMayHaveGotOutException extends RuntimeException
+    {
+        LineMayHaveGotOutException(final String requestId, final Exception cause)
+        {
+            super("Failed to confirm the JSON line of exchange " + requestId + " was delivered", cause);
+        }
+    }
+
     @Override
     public void onComplete(JournalExchange exchange)
     {
@@ -222,18 +236,19 @@ public class JsonLinesWriter implements ExchangeCompletionListener
             // committed: they are complete frames that are never rewritten, and the retry (or a
             // stdout that stays broken, retried over and over) points at them instead of storing
             // the bodies again.
-            if (stored != null)
+            if (out instanceof AtomicLines)
             {
-                if (out instanceof AtomicLines)
+                if (stored != null)
                 {
                     discard(exchange, stored, e);
                 }
-                else
-                {
-                    bodyFiles.commit(stored);
-                }
+                throw e;
             }
-            throw e;
+            if (stored != null)
+            {
+                bodyFiles.commit(stored);
+            }
+            throw new LineMayHaveGotOutException(exchange.getRequestId(), e);
         }
         if (stored != null)
         {

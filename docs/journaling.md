@@ -268,7 +268,10 @@ nowhere (`none`), into the line (`inline`), or into [body files](#body-files) th
 records and lines still say there was one, and which, by its size and checksums.
 
 If writing the JSON line fails, the exchange's WARC records and stored bodies are taken back
-before the tailer retries it, so a retry never stores an exchange twice.
+before the tailer retries it, so a retry never stores an exchange twice. Standard output is the
+exception: it can deliver a whole line and still report a failure, so there they are kept, and the
+retry points at the same records and bodies. Either way, a line never points at bytes that were
+overwritten.
 
 **Configuration:** like the gateway, the tailer reads a YAML file: `tailer.yaml` in the working
 directory by default (`/app/config` in the image), or the path in the `TAILER_CONFIG`

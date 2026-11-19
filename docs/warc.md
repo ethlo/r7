@@ -134,7 +134,9 @@ The r7 fields. A reader that does not know them can ignore them, as WARC require
 - **Groups are whole.** A sealed file never ends partway through an exchange, and an exchange
   is never split across files.
 - **A failed write is taken back.** If the tailer fails partway through an exchange, it takes
-  the records back before trying again, so a retry never leaves a second copy.
+  the records back before trying again, so a retry never leaves a second copy. When the JSON
+  line goes to standard output and may have got out before the failure, the records stay, and
+  the retry points at them.
 - **A crash can archive an exchange twice.** An exchange is checkpointed only once both outputs
   have it. A crash after its WARC records are written but before the checkpoint replays it on
   the next start, and it is written again: delivery across a crash is at least once. A reader
