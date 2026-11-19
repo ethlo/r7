@@ -38,6 +38,20 @@
         <logback.version>1.6.5</logback.version>
     </properties>
     <build>
+        <!-- Ship the BSL text inside every jar, which images distribute without the source tree.
+             r7-api overrides this with its own Apache 2.0 licence. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${maven.multiModuleProjectDirectory}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
