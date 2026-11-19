@@ -167,6 +167,14 @@ public final class R7Tailer
      * Rewriting it was a third of an idle tick.
      */
     private Map<String, Checkpoint> savedCheckpoints = Map.of();
+
+    /**
+     * One decompression context and its buffers for every segment this tailer reads, for its
+     * whole life. Decoding runs on every commit signal, thousands of times a second under load,
+     * and a context made per decode was never freed (see {@link DecodeScratch}). Guarded by
+     * {@link #lock}; closed by {@link #shutdown()}.
+     */
+    private final DecodeScratch scratch = new DecodeScratch();
     private Map<Integer, OpenExchanges.Resume> savedResumePoints = Map.of();
 
     /**
@@ -262,7 +270,14 @@ public final class R7Tailer
     {
         synchronized (lock)
         {
-            saveCheckpoints();
+            try
+            {
+                saveCheckpoints();
+            }
+            finally
+            {
+                scratch.close();
+            }
         }
     }
 
@@ -737,7 +752,9 @@ public final class R7Tailer
                     path.getFileName().toString(),
                     integrity,
                     isActive,
-                    open);
+                    open,
+                    Integer.MAX_VALUE,
+                    scratch);
 
             totalBytesRead += before - processingBuffer.remaining();
             totalMissingEntries += stats.missingEntries();
@@ -969,7 +986,7 @@ public final class R7Tailer
             open.enterSegment(meta.shardId(), meta.segmentSequence());
             // Treated as active so that reaching the bound is not reported as a truncation.
             JournalDecoder.decode(buffer, open, fromSequence, path.getFileName().toString(),
-                    JournalIntegrityListener.NOOP, true, open, bySequence ? read.nextSequence() : Integer.MAX_VALUE);
+                    JournalIntegrityListener.NOOP, true, open, bySequence ? read.nextSequence() : Integer.MAX_VALUE, scratch);
         }
         catch (final IOException | RuntimeException e)
         {

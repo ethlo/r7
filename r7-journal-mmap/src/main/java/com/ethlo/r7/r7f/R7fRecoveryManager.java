@@ -416,8 +416,19 @@ public final class R7fRecoveryManager
     private static ScanResult scan(final MemorySegment segment, final long size, final int blockSize,
                                    final Path file, final JournalIntegrityListener integrity)
     {
+        // Closed here: zstd-jni frees a decompression context only when told to
+        try (DecodeScratch scratch = new DecodeScratch())
+        {
+            return scan(segment, size, blockSize, file, integrity, scratch);
+        }
+    }
+
+    private static ScanResult scan(final MemorySegment segment, final long size, final int blockSize,
+                                   final Path file, final JournalIntegrityListener integrity,
+                                   final DecodeScratch scratch)
+    {
         final FragmentReader reader = new FragmentReader(segment.asByteBuffer(), size, blockSize,
-                segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC));
+                segment.get(SHORT_BE, R7fConstants.PREAMBLE_OFF_CODEC), scratch);
 
         long position = R7fConstants.PREAMBLE_SIZE;
         long lastValidPosition = R7fConstants.PREAMBLE_SIZE;
