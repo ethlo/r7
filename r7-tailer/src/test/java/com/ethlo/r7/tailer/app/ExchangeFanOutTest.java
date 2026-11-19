@@ -131,6 +131,35 @@ class ExchangeFanOutTest
     }
 
     /**
+     * The reader moves on to other shards after a refused entry, so retries interleave: each
+     * exchange keeps its own records until its line is written.
+     */
+    @Test
+    void interleavedRetriesEachKeepTheirRecords() throws IOException
+    {
+        final ByteArrayOutputStream json = new ByteArrayOutputStream();
+        try (WarcFileWriter files = warcFiles())
+        {
+            final ExchangeFanOut fanOut = fanOut(files, WarcOutputConfig.Exchanges.ALL, new DeliverThenFail(json, 4));
+            final JournalExchange a = exchange("req-a", "body a");
+            final JournalExchange b = exchange("req-b", "body b");
+            for (int round = 0; round < 2; round++)
+            {
+                assertThatThrownBy(() -> fanOut.onComplete(a)).isInstanceOf(JsonLinesWriter.LineMayHaveGotOutException.class);
+                assertThatThrownBy(() -> fanOut.onComplete(b)).isInstanceOf(JsonLinesWriter.LineMayHaveGotOutException.class);
+            }
+            fanOut.onComplete(a);
+            fanOut.onComplete(b);
+        }
+
+        final List<String> lines = lines(json);
+        assertThat(lines).hasSize(6);
+        assertThat(MAPPER.readTree(lines.get(4)).path("warc")).isEqualTo(MAPPER.readTree(lines.get(0)).path("warc"));
+        assertThat(MAPPER.readTree(lines.get(5)).path("warc")).isEqualTo(MAPPER.readTree(lines.get(1)).path("warc"));
+        assertThat(count(warcText(), "WARC-Type: response")).as("each exchange archived once").isEqualTo(2);
+    }
+
+    /**
      * With {@code exchanges: with_body}, only exchanges with a captured body get WARC records;
      * the others are in the JSON output alone, with no pointer.
      */

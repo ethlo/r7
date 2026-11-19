@@ -1,7 +1,9 @@
 package com.ethlo.r7.tailer.app;
 
 import java.nio.ByteBuffer;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,10 +40,24 @@ final class ExchangeFanOut implements ExchangeCompletionListener
     private final JsonLinesWriter json;
 
     /**
-     * The records of the last exchange whose line may have got out, kept for its retry.
+     * The most exchanges whose records are kept for a retry at once. The reader moves on to other
+     * shards after a refused entry, so retries of several exchanges interleave; one per shard
+     * is the usual need. Past this, the oldest is forgotten and its retry archives it again.
      */
-    private String keptRequestId;
-    private WarcExchangeWriter.Written kept;
+    static final int MAX_KEPT = 1024;
+
+    /**
+     * The records of exchanges whose line may have got out, by request ID, kept until a line of
+     * theirs is written.
+     */
+    private final Map<String, WarcExchangeWriter.Written> kept = new LinkedHashMap<>(16, 0.75f, false)
+    {
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<String, WarcExchangeWriter.Written> eldest)
+        {
+            return size() > MAX_KEPT;
+        }
+    };
 
     /**
      * @param warc null when WARC output is off
@@ -61,15 +77,14 @@ final class ExchangeFanOut implements ExchangeCompletionListener
     @Override
     public void onComplete(final JournalExchange exchange)
     {
-        WarcExchangeWriter.Written written = null;
-        final boolean reused = kept != null && exchange.getRequestId().equals(keptRequestId);
+        WarcExchangeWriter.Written written = kept.get(exchange.getRequestId());
+        final boolean reused = written != null;
         if (reused)
         {
-            written = kept;
+            // The records hold this exchange already; only the retry's checksum state is left.
+            warc.skip(exchange);
         }
-        kept = null;
-        keptRequestId = null;
-        if (warc != null && !reused)
+        else if (warc != null)
         {
             if (archived(exchange))
             {
@@ -90,11 +105,10 @@ final class ExchangeFanOut implements ExchangeCompletionListener
             }
             catch (final JsonLinesWriter.LineMayHaveGotOutException e)
             {
-                if (written != null)
+                if (written != null && !reused)
                 {
                     written.commit();
-                    kept = written;
-                    keptRequestId = exchange.getRequestId();
+                    kept.put(exchange.getRequestId(), written);
                 }
                 throw e;
             }
@@ -109,7 +123,11 @@ final class ExchangeFanOut implements ExchangeCompletionListener
                 throw e;
             }
         }
-        if (written != null)
+        if (reused)
+        {
+            kept.remove(exchange.getRequestId());
+        }
+        else if (written != null)
         {
             written.commit();
         }
