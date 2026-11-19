@@ -1,26 +1,9 @@
-# r7 License Summary
+# Licensing
 
-r7 is licensed under the **Business Source License (BSL) 1.1**, which converts to the open-source **Apache License 2.0** after 3 years.
+r7 is open source under the **[Apache License 2.0](https://github.com/ethlo/r7/blob/main/LICENSE)**, every module included.
 
-This summary is provided for convenience only and is not part of the legal license. Please refer to the full [LICENSE.md](https://github.com/ethlo/r7/blob/main/LICENSE.md) for binding terms.
+You can use, modify and redistribute r7, in production, at any company size, for any purpose, including commercial products and hosted services. Extensions you write against `r7-api` are yours to license as you like.
 
-## Community Use
+## The r7 name
 
-Free for:
-
-* Individuals
-* Hobby projects
-* Startups
-* Internal company use under $25M annual revenue or equivalent annual operating budget
-* **Commercial Service Restriction:**
-  Offering r7 as a commercial hosted service, SaaS, PaaS, or IaaS to third parties is not permitted under Community Use if it provides r7-like gateway functionality as a managed service. This always requires a commercial license, regardless of revenue.
-
-## Enterprise Use
-
-Organizations above $25M annual revenue require a commercial license for production use of r7.
-
-If your organization exceeds this threshold, or if you plan to build a managed gateway service on top of r7, please visit [r7.ethlo.com](https://r7.ethlo.com) for commercial licensing details.
-
-## Future Open Source
-
-Each release of r7 will convert to the **Apache License 2.0** exactly 3 years after its publication date.
+The licence covers the code, not the name. You can say your product is built on r7 or works with r7. If you ship a modified fork, give it its own name, so nobody mistakes it for r7 itself.
