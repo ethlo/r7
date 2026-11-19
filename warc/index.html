@@ -1089,7 +1089,7 @@ record says plainly when it does not hold them:</p>
 <tr>
 <td><code>warc.bodies: false</code>: the body was captured, but this output leaves it out</td>
 <td><code>request</code> / <code>response</code></td>
-<td><code>WARC-Truncated: unspecified</code>, <code>WARC-Payload-Digest</code>. The JSON line holds the body when <code>json.bodies</code> is <code>true</code></td>
+<td><code>WARC-Truncated: unspecified</code>, <code>WARC-Payload-Digest</code>. The JSON line holds the body, or points at it in a body file, as <code>json.bodies</code> says</td>
 </tr>
 <tr>
 <td>A body crossed the wire, but the journal level was below <code>FULL</code></td>
