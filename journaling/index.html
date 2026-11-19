@@ -1238,7 +1238,10 @@ nowhere (<code>none</code>), into the line (<code>inline</code>), or into <a hre
 (<code>files</code>). With <code>warc.bodies: false</code> and <code>json.bodies: none</code>, no body is stored anywhere; the
 records and lines still say there was one, and which, by its size and checksums.</p>
 <p>If writing the JSON line fails, the exchange's WARC records and stored bodies are taken back
-before the tailer retries it, so a retry never stores an exchange twice.</p>
+before the tailer retries it, so a retry never stores an exchange twice. Standard output is the
+exception: it can deliver a whole line and still report a failure, so there they are kept, and the
+retry points at the same records and bodies. Either way, a line never points at bytes that were
+overwritten.</p>
 <p><strong>Configuration:</strong> like the gateway, the tailer reads a YAML file: <code>tailer.yaml</code> in the working
 directory by default (<code>/app/config</code> in the image), or the path in the <code>TAILER_CONFIG</code>
 environment variable. It supports the same <code>${VAR:default}</code> interpolation as

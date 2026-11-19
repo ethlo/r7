@@ -1203,7 +1203,9 @@ always points at an earlier record written by the same tailer.</p>
 <li><strong>Groups are whole.</strong> A sealed file never ends partway through an exchange, and an exchange
   is never split across files.</li>
 <li><strong>A failed write is taken back.</strong> If the tailer fails partway through an exchange, it takes
-  the records back before trying again, so a retry never leaves a second copy.</li>
+  the records back before trying again, so a retry never leaves a second copy. When the JSON
+  line goes to standard output and may have got out before the failure, the records stay, and
+  the retry points at them.</li>
 <li><strong>A crash can archive an exchange twice.</strong> An exchange is checkpointed only once both outputs
   have it. A crash after its WARC records are written but before the checkpoint replays it on
   the next start, and it is written again: delivery across a crash is at least once. A reader
