@@ -10,12 +10,12 @@ Anyone can use r7 in production, at any company size: run it in front of your ow
 
 ## Competing offerings
 
-The one thing the licence does not allow is using r7 in a **Competing Offering**: a product or service offered to third parties whose main value is gateway, reverse-proxy or traffic-journaling functionality like r7's. That covers:
+The one thing the licence does not allow is **production use** of r7 in a **Competing Offering**: a product or service offered to third parties whose main value is gateway, reverse-proxy or traffic-journaling functionality like r7's. That covers:
 
 * a hosted or managed service that lets third parties route or record their own traffic through r7
-* distributing r7, or a fork of it, as a gateway product
+* offering r7, or a fork of it, as a gateway product
 
-If you want to do either, [contact the licensor](https://r7.ethlo.com) about a commercial licence.
+Copying, modifying and redistributing the source, and non-production use such as development and testing, are always allowed. To run r7 in production as part of a Competing Offering, [contact the licensor](https://r7.ethlo.com) about a commercial licence.
 
 ## Extension API
 
