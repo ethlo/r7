@@ -1,6 +1,5 @@
 package com.ethlo.r7.tailer.json;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -383,9 +382,8 @@ public final class BodyFiles implements AutoCloseable
 
     private static boolean decodes(final ByteBuffer frame)
     {
-        final byte[] compressed = new byte[frame.remaining()];
-        frame.get(compressed);
-        try (InputStream in = new ZstdInputStream(new ByteArrayInputStream(compressed)))
+        // Streamed from the mapping: a frame can be about as large as its body.
+        try (InputStream in = new ZstdInputStream(new ByteBufferInputStream(frame)))
         {
             final byte[] sink = new byte[8192];
             while (in.read(sink) != -1)
@@ -397,6 +395,34 @@ public final class BodyFiles implements AutoCloseable
         catch (final IOException | RuntimeException e)
         {
             return false;
+        }
+    }
+
+    private static final class ByteBufferInputStream extends InputStream
+    {
+        private final ByteBuffer buffer;
+
+        ByteBufferInputStream(final ByteBuffer buffer)
+        {
+            this.buffer = buffer;
+        }
+
+        @Override
+        public int read()
+        {
+            return buffer.hasRemaining() ? buffer.get() & 0xFF : -1;
+        }
+
+        @Override
+        public int read(final byte[] b, final int off, final int len)
+        {
+            if (!buffer.hasRemaining())
+            {
+                return -1;
+            }
+            final int n = Math.min(len, buffer.remaining());
+            buffer.get(b, off, n);
+            return n;
         }
     }
 

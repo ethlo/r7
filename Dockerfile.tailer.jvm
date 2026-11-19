@@ -6,7 +6,7 @@
 # volumes writable by the nonroot user below instead of root:root. Bind-mounted host
 # directories are not affected by this - their ownership is the operator's responsibility.
 FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
-RUN mkdir -p /journals /checkpoints /warc /json && chown 65532:65532 /journals /checkpoints /warc /json
+RUN mkdir -p /journals /checkpoints /warc /json /bodies && chown 65532:65532 /journals /checkpoints /warc /json /bodies
 
 # The Java 27 runtime: Temurin's JRE on distroless's Java base (the libraries its javaNN images
 # add to the base image), which is how distroless builds those images. Distroless publishes them
@@ -26,12 +26,14 @@ COPY --from=dirs --chown=65532:65532 /journals /journals
 COPY --from=dirs --chown=65532:65532 /checkpoints /checkpoints
 COPY --from=dirs --chown=65532:65532 /warc /warc
 COPY --from=dirs --chown=65532:65532 /json /json
+COPY --from=dirs --chown=65532:65532 /bodies /bodies
 
 # /journals:    the gateway's journals, the volume it shares with the gateway; mount it read-only.
 # /checkpoints: the tailer's own progress, read (read-only) by the reaper.
-# /warc, /json: the default output directories, for WARC files and for JSON lines written to
-#               files. Settings are in tailer.yaml (docs/journaling.md).
-VOLUME ["/journals", "/checkpoints", "/warc", "/json"]
+# /warc, /json, /bodies: the default output directories, for WARC files, JSON lines written to
+#               files and body files (json.bodies: files). Settings are in tailer.yaml
+#               (docs/journaling.md).
+VOLUME ["/journals", "/checkpoints", "/warc", "/json", "/bodies"]
 
 USER 65532:65532
 
