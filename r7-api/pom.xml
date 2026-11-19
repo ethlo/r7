@@ -11,4 +11,12 @@
     <packaging>jar</packaging>
     <name>r7-api</name>
     <url>http://maven.apache.org</url>
+
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
 </project>

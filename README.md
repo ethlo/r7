@@ -61,6 +61,6 @@ r7 does not terminate TLS, and has no scripting language: see
 - [Quickstart](https://r7.ethlo.com/quickstart/)
 - [Configuration reference](https://r7.ethlo.com/config/)
 - [Journaling](https://r7.ethlo.com/journaling/)
-- [Licensing](https://r7.ethlo.com/licensing/): BSL 1.1, free for organisations under $25M revenue, converting to Apache 2.0 after three years
+- [Licensing](https://r7.ethlo.com/licensing/): BSL 1.1, free for production use by anyone except competing gateway offerings, converting to Apache 2.0 after three years; the extension API is Apache 2.0
 
 r7 is pre-release. Built on Java 27 and Helidon Níma.
