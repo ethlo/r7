@@ -776,12 +776,13 @@ A failed verification is never cached and always costs a full bcrypt, whether th
 
 #### JwtAuth
 
-Verifies a `Bearer` JWT against the signing keys at a JWKS endpoint, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate: Bearer` challenge when the token is missing or invalid. On success the caller's [identity](journaling.md#the-callers-identity) is journaled in plain text: the issuer, the subject (`sub`) and the username.
+Verifies a `Bearer` JWT against the signing keys of its issuer, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate: Bearer` challenge when the token is missing or invalid. On success the caller's [identity](journaling.md#the-callers-identity) is journaled in plain text: the issuer, the subject (`sub`) and the username.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `jwks_url` | String | Yes | The JWKS endpoint the signing keys are fetched from, `http` or `https`. |
-| `issuer` | String | Yes | The `iss` a token must carry. |
+| `issuer` | String | One of `issuer` or `issuers` | The `iss` a token must carry, for a single issuer. |
+| `jwks_url` | String | With `issuer` | The JWKS endpoint the issuer's signing keys are fetched from, `http` or `https`. |
+| `issuers` | List | One of `issuer` or `issuers` | The issuers whose tokens are accepted, each with its own keys, in place of `issuer` and `jwks_url`. Each entry has an `issuer` and an optional `jwks_url`; see [several issuers](#several-issuers). |
 | `audience` | String | Yes | A value the token's `aud` must contain. |
 | `username_claim` | String | No | The claim journaled as the caller's username. Defaults to `preferred_username`. |
 | `clock_skew_seconds` | Integer | No | Clock skew allowed on `exp` and `nbf`, 0-300. Defaults to `60`. |
@@ -792,17 +793,42 @@ Verifies a `Bearer` JWT against the signing keys at a JWKS endpoint, and short-c
 ```yaml
 filters:
   - JwtAuth:
-      jwks_url: "https://auth.example.com/realms/acme/protocol/openid-connect/certs"
-      issuer: "https://auth.example.com/realms/acme"
+      jwks_url: "https://auth.example.com/realms/tenant-a/protocol/openid-connect/certs"
+      issuer: "https://auth.example.com/realms/tenant-a"
       audience: "billing"
       forward_claims_as_headers:
         sub: X-User-Id
         preferred_username: X-User-Name
 ```
 
-A token must be signed with an asymmetric algorithm (RS, PS or ES, 256 to 512 bits), carry `exp` and `sub`, and have the type `JWT`, `at+jwt` or none. `issuer` and `audience` are required because an identity provider signs the tokens of all its clients with the same keys: without an audience, a token issued to any client of the realm would pass. Keycloak adds the client to `aud` only through an audience mapper on the client scope.
+A token must be signed with an asymmetric algorithm (RS, PS or ES, 256 to 512 bits), carry `exp` and `sub`, and have the type `JWT`, `at+jwt` or none. The issuer and `audience` are required because an identity provider signs the tokens of all its clients with the same keys: without an audience, a token issued to any client of the realm would pass. Keycloak adds the client to `aud` only through an audience mapper on the client scope.
 
 A `401` never says why the token was refused. A request carrying more than one `Authorization` value is refused with `401`. When the keys cannot be fetched, the request is answered with `503 Service Unavailable` and `Retry-After: 5`, so an identity provider outage is not mistaken for bad credentials.
+
+##### Several issuers
+
+One route can accept tokens from several issuers, such as one Keycloak with a realm per tenant, where each realm signs with its own keys and has its own `iss`. List every issuer to trust:
+
+```yaml
+filters:
+  - JwtAuth:
+      issuers:
+        - issuer: "https://auth.example.com/realms/tenant-a"
+        - issuer: "https://auth.example.com/realms/tenant-b"
+        - issuer: "https://login.example.org/oauth2"
+          jwks_url: "https://login.example.org/oauth2/keys"
+      audience: "billing"
+      forward_claims_as_headers:
+        iss: X-User-Issuer
+        sub: X-User-Id
+```
+
+* **Only listed issuers are trusted.** A token's `iss` must equal one of them exactly, and it is checked before any key is looked up: a token from any other issuer is refused with `401` and causes no network call. There is no prefix or wildcard form on purpose. Every realm of a Keycloak can mint tokens with any username and audience, so trusting the host would trust a test realm, or one an administrator created by mistake, as much as the tenants'.
+* **Each issuer has its own keys.** A token is verified only with the keys of the issuer it names, so one issuer's key can never vouch for another's token. An entry without `jwks_url` fetches its keys from the issuer followed by `/protocol/openid-connect/certs`, where Keycloak publishes a realm's keys; any other identity provider takes `jwks_url`.
+* **Each issuer's keys are cached on their own**, for `jwks_cache_duration` and refreshed in the background. When one issuer's keys cannot be fetched, only that issuer's tokens get `503`; the others are unaffected.
+* **Key upstream users on the issuer and the subject.** `sub` is unique only within its issuer, and a username even less so: two tenants can both have an `alice`. Forward `iss` beside `sub`, as above, so the upstream never mistakes one tenant's user for another's. The journal records the issuer with every identity.
+
+`issuers` replaces `issuer` and `jwks_url`; setting both forms is refused. So are an empty list, an issuer listed twice, a malformed `jwks_url`, and an entry without `jwks_url` whose issuer is not an `http` or `https` URL to derive it from.
 
 #### InjectBasicAuth
 

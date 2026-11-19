@@ -10,6 +10,7 @@ import java.text.ParseException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.ethlo.r7.api.Claims;
@@ -55,18 +57,21 @@ import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
 import com.nimbusds.jwt.proc.DefaultJWTClaimsVerifier;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 
 /**
- * Verifies a {@code Bearer} JWT against a JWKS endpoint and sets the caller's {@link Identity}.
- * Only asymmetric algorithms are accepted: a JWKS is public, so an HMAC key in it is one anybody
- * could sign with.
+ * Verifies a {@code Bearer} JWT against the JWKS endpoint of its issuer and sets the caller's
+ * {@link Identity}. Only the configured issuers are trusted, each with keys of its own: a token's
+ * {@code iss} picks the keys it is verified with, and a token from any other issuer is refused
+ * before a key is looked up. Only asymmetric algorithms are accepted: a JWKS is public, so an HMAC
+ * key in it is one anybody could sign with.
  */
 @SuppressWarnings("rawtypes")
 @AutoService(GatewayFilterFactory.class)
-@Description("Rejects requests that do not present a valid Bearer JWT, verified against a JWKS endpoint.")
+@Description("Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint.")
 public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory.Config>
 {
     static final Set<JWSAlgorithm> ALLOWED_ALGORITHMS = Set.of(
@@ -83,6 +88,10 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
     private static final String SCHEME = "jwt";
     private static final String BEARER_SCHEME = "Bearer ";
     private static final Duration MAX_REFRESH_AHEAD = Duration.ofSeconds(30);
+    /**
+     * Where Keycloak publishes a realm's keys, relative to the realm's issuer.
+     */
+    static final String DEFAULT_JWKS_PATH = "/protocol/openid-connect/certs";
 
     /**
      * Runs the background key refreshes of every JwtAuth filter. Virtual threads, so a filter
@@ -119,41 +128,53 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
     @Override
     public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
     {
-        return new GF(config, buildJwtProcessor(config));
+        return new GF(config, buildJwtProcessors(config, issuer -> remoteKeySource(issuer, config.jwksCacheDuration())));
     }
 
-    private static ConfigurableJWTProcessor<SecurityContext> buildJwtProcessor(final Config config)
+    /**
+     * One processor per trusted issuer, each with its own keys and requiring its own issuer, so a
+     * key of one issuer can never verify a token that names another.
+     */
+    static Map<String, ConfigurableJWTProcessor<SecurityContext>> buildJwtProcessors(final Config config, final Function<TrustedIssuer, JWKSource<SecurityContext>> keySources)
+    {
+        final Map<String, ConfigurableJWTProcessor<SecurityContext>> processors = new LinkedHashMap<>();
+        for (final TrustedIssuer issuer : config.trustedIssuers())
+        {
+            processors.put(issuer.issuer(), buildJwtProcessor(config, issuer.issuer(), keySources.apply(issuer)));
+        }
+        return processors;
+    }
+
+    private static JWKSource<SecurityContext> remoteKeySource(final TrustedIssuer issuer, final Duration cacheDuration)
     {
         final URL jwksUrl;
         try
         {
-            jwksUrl = URI.create(config.jwksUrl()).toURL();
+            jwksUrl = URI.create(issuer.jwksUrl()).toURL();
         }
         catch (final IllegalArgumentException | MalformedURLException e)
         {
-            throw new IllegalStateException("Invalid jwks_url: " + config.jwksUrl(), e);
+            throw new IllegalStateException("Invalid jwks_url: " + issuer.jwksUrl(), e);
         }
 
         // Shortly before the cache expires, the next request starts a refresh on a background
         // thread and is itself still answered from the cached keys.
-        final Duration cacheDuration = config.jwksCacheDuration();
         final long refreshAheadMillis = Math.max(1, Math.min(MAX_REFRESH_AHEAD.toMillis(), cacheDuration.toMillis() / 2));
-        final JWKSource<SecurityContext> jwkSource = JWKSourceBuilder.<SecurityContext>create(jwksUrl)
+        return JWKSourceBuilder.<SecurityContext>create(jwksUrl)
                 .cache(cacheDuration.toMillis(), Duration.ofSeconds(30).toMillis())
                 .refreshAheadCache(refreshAheadMillis, null, REFRESH_EXECUTOR, false, null, false)
                 .retrying(true)
                 .build();
-        return buildJwtProcessor(config, jwkSource);
     }
 
-    static ConfigurableJWTProcessor<SecurityContext> buildJwtProcessor(final Config config, final JWKSource<SecurityContext> jwkSource)
+    private static ConfigurableJWTProcessor<SecurityContext> buildJwtProcessor(final Config config, final String issuer, final JWKSource<SecurityContext> jwkSource)
     {
         final DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
         processor.setJWSTypeVerifier(TYPE_VERIFIER);
         processor.setJWSKeySelector(new JWSVerificationKeySelector<>(ALLOWED_ALGORITHMS, jwkSource));
         final DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier = new DefaultJWTClaimsVerifier<>(
                 Set.of(config.audience()),
-                new JWTClaimsSet.Builder().issuer(config.issuer()).build(),
+                new JWTClaimsSet.Builder().issuer(issuer).build(),
                 Set.of("exp", "sub"),
                 null);
         claimsVerifier.setMaxClockSkew(config.clockSkewSeconds());
@@ -162,11 +183,18 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
     }
 
     public record Config(
-            @Description("The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/acme/protocol/openid-connect/certs'.")
+            @Nullable
+            @Description("The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/tenant-a/protocol/openid-connect/certs'. Set with 'issuer', for a single issuer; 'issuers' replaces both.")
             String jwksUrl,
 
-            @Description("The 'iss' a token must carry. A token from any other issuer is refused.")
+            @Nullable
+            @Description("The 'iss' a token must carry, for a single issuer. A token from any other issuer is refused. 'issuers' replaces it and 'jwks_url'.")
             String issuer,
+
+            @Nullable
+            @Description("The issuers whose tokens are accepted, each with its own keys, in place of 'issuer' and 'jwks_url'. "
+                    + "A token's 'iss' must equal one of them exactly; a token from any other issuer is refused before any keys are fetched.")
+            List<TrustedIssuer> issuers,
 
             @Description("A value the token's 'aud' must contain. Required: an identity provider signs the tokens of all its clients with the same keys, so without it a token issued to any of them would pass.")
             String audience,
@@ -199,6 +227,15 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
             Map<String, String> forwardClaimsAsHeaders) implements ValidatableConfig
     {
         private static final String DEFAULT_USERNAME_CLAIM = "preferred_username";
+
+        /**
+         * The issuers to trust, each with the JWKS URL its keys come from: the {@code issuers}
+         * list, or the single {@code issuer} with {@code jwks_url}.
+         */
+        public List<TrustedIssuer> trustedIssuers()
+        {
+            return this.issuers != null ? this.issuers : List.of(new TrustedIssuer(this.issuer, this.jwksUrl));
+        }
 
         @Override
         public String usernameClaim()
@@ -234,29 +271,20 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         public void validate(final ValidationResult result)
         {
             final ValidatorUtils validator = new ValidatorUtils(result);
-            validator.notBlank("jwks_url", this.jwksUrl);
-            validator.notBlank("issuer", this.issuer);
-            validator.notBlank("audience", this.audience);
-            if (this.jwksUrl != null && !this.jwksUrl.isBlank())
+            if (this.issuers == null)
             {
-                try
+                validator.notBlank("jwks_url", this.jwksUrl);
+                validator.notBlank("issuer", this.issuer);
+                if (this.jwksUrl != null && !this.jwksUrl.isBlank())
                 {
-                    final URI uri = URI.create(this.jwksUrl);
-                    final String protocol = uri.toURL().getProtocol();
-                    if (!"https".equalsIgnoreCase(protocol) && !"http".equalsIgnoreCase(protocol))
-                    {
-                        validator.invalid("jwks_url", this.jwksUrl, "Must be an http or https URL");
-                    }
-                    else if (uri.getHost() == null)
-                    {
-                        validator.invalid("jwks_url", this.jwksUrl, "Must contain a valid host");
-                    }
-                }
-                catch (final IllegalArgumentException | MalformedURLException e)
-                {
-                    validator.invalid("jwks_url", this.jwksUrl, "Not a valid URL: " + e.getMessage());
+                    validateHttpUrl(validator, "jwks_url", this.jwksUrl);
                 }
             }
+            else
+            {
+                this.validateIssuers(validator);
+            }
+            validator.notBlank("audience", this.audience);
             if (this.clockSkewSeconds != null && (this.clockSkewSeconds < 0 || this.clockSkewSeconds > MAX_CLOCK_SKEW_SECONDS))
             {
                 validator.invalid("clock_skew_seconds", this.clockSkewSeconds, "Must be between 0 and " + MAX_CLOCK_SKEW_SECONDS);
@@ -281,6 +309,115 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
                     validator.invalid(property, header, "Is the target of another claim already");
                 }
             });
+        }
+
+        private void validateIssuers(final ValidatorUtils validator)
+        {
+            if (this.issuer != null || this.jwksUrl != null)
+            {
+                validator.results().addError("issuers", "'issuers' replaces 'issuer' and 'jwks_url': set either the list or those two, not both");
+            }
+            validator.notEmpty("issuers", this.issuers);
+            final Set<String> seen = new HashSet<>();
+            for (int index = 0; index < this.issuers.size(); index++)
+            {
+                final TrustedIssuer entry = this.issuers.get(index);
+                final String property = "issuers[" + index + "]";
+                if (entry == null)
+                {
+                    validator.results().addError(property, "'" + property + "' is empty; each entry needs an 'issuer'");
+                    continue;
+                }
+                validator.notBlank(property + ".issuer", entry.issuer);
+                if (entry.issuer == null || entry.issuer.isBlank())
+                {
+                    continue;
+                }
+                if (!seen.add(entry.issuer))
+                {
+                    validator.invalid(property + ".issuer", entry.issuer, "Is listed already");
+                }
+                if (entry.jwksUrl != null)
+                {
+                    validator.notBlank(property + ".jwks_url", entry.jwksUrl);
+                    if (!entry.jwksUrl.isBlank())
+                    {
+                        validateHttpUrl(validator, property + ".jwks_url", entry.jwksUrl);
+                    }
+                }
+                else if (!isDerivableIssuer(entry.issuer))
+                {
+                    validator.invalid(property + ".issuer", entry.issuer,
+                            "Must be an http or https URL with a host and no query or fragment for jwks_url to be derived from it; otherwise set jwks_url");
+                }
+            }
+        }
+
+        private static boolean isDerivableIssuer(final String issuer)
+        {
+            try
+            {
+                final URI uri = URI.create(issuer);
+                final String scheme = uri.getScheme();
+                return ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))
+                        && uri.getHost() != null && uri.getRawQuery() == null && uri.getRawFragment() == null;
+            }
+            catch (final IllegalArgumentException e)
+            {
+                return false;
+            }
+        }
+
+        /**
+         * Whether the value is an absolute http or https URL with a host; reports it under the
+         * property when it is not.
+         */
+        private static boolean validateHttpUrl(final ValidatorUtils validator, final String property, final String value)
+        {
+            try
+            {
+                final URI uri = URI.create(value);
+                final String protocol = uri.toURL().getProtocol();
+                if (!"https".equalsIgnoreCase(protocol) && !"http".equalsIgnoreCase(protocol))
+                {
+                    validator.invalid(property, value, "Must be an http or https URL");
+                    return false;
+                }
+                if (uri.getHost() == null)
+                {
+                    validator.invalid(property, value, "Must contain a valid host");
+                    return false;
+                }
+                return true;
+            }
+            catch (final IllegalArgumentException | MalformedURLException e)
+            {
+                validator.invalid(property, value, "Not a valid URL: " + e.getMessage());
+                return false;
+            }
+        }
+    }
+
+    /**
+     * An issuer whose tokens are accepted, and where its signing keys are published.
+     */
+    public record TrustedIssuer(
+            @Description("The 'iss' the issuer's tokens carry, such as 'https://auth.example.com/realms/tenant-a'. Matched exactly.")
+            String issuer,
+
+            @Nullable
+            @Description("The JWKS endpoint the issuer's signing keys are fetched from. Defaults to the issuer followed by '/protocol/openid-connect/certs', where Keycloak publishes a realm's keys.")
+            String jwksUrl)
+    {
+        @Override
+        public String jwksUrl()
+        {
+            if (this.jwksUrl != null || this.issuer == null)
+            {
+                return this.jwksUrl;
+            }
+            final String base = this.issuer.endsWith("/") ? this.issuer.substring(0, this.issuer.length() - 1) : this.issuer;
+            return base + DEFAULT_JWKS_PATH;
         }
     }
 
@@ -333,18 +470,22 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         private static final String CHALLENGE = "Bearer";
         private static final String CHALLENGE_INVALID_TOKEN = "Bearer error=\"invalid_token\"";
 
-        private final ConfigurableJWTProcessor<SecurityContext> jwtProcessor;
-        private final String jwksUrl;
+        /**
+         * Keyed by the exact issuer; a token whose {@code iss} is not a key here is refused.
+         */
+        private final Map<String, ConfigurableJWTProcessor<SecurityContext>> jwtProcessors;
+        private final String summary;
         private final String usernameClaim;
         private final boolean forwardCredentials;
         private final Map<String, String> forwardClaimsAsHeaders;
         private final List<String> managedHeaders;
         private final Set<String> canonicalManagedHeaders;
 
-        GF(final Config config, final ConfigurableJWTProcessor<SecurityContext> jwtProcessor)
+        GF(final Config config, final Map<String, ConfigurableJWTProcessor<SecurityContext>> jwtProcessors)
         {
-            this.jwtProcessor = jwtProcessor;
-            this.jwksUrl = config.jwksUrl();
+            this.jwtProcessors = Map.copyOf(jwtProcessors);
+            final List<TrustedIssuer> trusted = config.trustedIssuers();
+            this.summary = FILTER_NAME + ": " + (trusted.size() == 1 ? trusted.getFirst().jwksUrl() : trusted.size() + " issuers");
             this.usernameClaim = config.usernameClaim();
             this.forwardCredentials = config.forwardCredentials();
             this.forwardClaimsAsHeaders = Map.copyOf(config.forwardClaimsAsHeaders());
@@ -363,19 +504,42 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
                 return;
             }
 
+            final SignedJWT token;
+            final ConfigurableJWTProcessor<SecurityContext> processor;
+            try
+            {
+                token = SignedJWT.parse(authorization.substring(BEARER_SCHEME.length()).trim());
+                // Unverified, and only used to pick the keys: the processor checks the signature
+                // and requires this same issuer. An unknown issuer is refused here, so no token
+                // can make the gateway fetch keys from anywhere but the configured endpoints.
+                final String issuer = token.getJWTClaimsSet().getIssuer();
+                processor = issuer != null ? this.jwtProcessors.get(issuer) : null;
+            }
+            catch (final ParseException e)
+            {
+                this.rejectUnauthorized(exchange, CHALLENGE_INVALID_TOKEN);
+                return;
+            }
+            if (processor == null)
+            {
+                this.rejectUnauthorized(exchange, CHALLENGE_INVALID_TOKEN);
+                return;
+            }
+
             final JWTClaimsSet verified;
             try
             {
-                verified = this.jwtProcessor.process(authorization.substring(BEARER_SCHEME.length()).trim(), null);
+                verified = processor.process(token, null);
             }
             catch (final KeySourceException e)
             {
                 // The gateway's problem, not the client's: a 401 would tell every holder of a good
-                // token to throw it away and sign in again, right through the outage.
+                // token to throw it away and sign in again, right through the outage. Only this
+                // issuer's tokens are affected; every other issuer has keys of its own.
                 this.rejectUnavailable(exchange);
                 return;
             }
-            catch (final ParseException | BadJOSEException | JOSEException e)
+            catch (final BadJOSEException | JOSEException e)
             {
                 // No reason given: which check failed is what someone probing with forged tokens wants to learn.
                 this.rejectUnauthorized(exchange, CHALLENGE_INVALID_TOKEN);
@@ -471,7 +635,7 @@ public final class JwtAuthFactory implements GatewayFilterFactory<JwtAuthFactory
         @Override
         public String summary()
         {
-            return FILTER_NAME + ": " + this.jwksUrl;
+            return this.summary;
         }
     }
 }

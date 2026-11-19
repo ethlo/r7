@@ -225,7 +225,22 @@ $defs:
               default: false
             issuer:
               type: string
-              description: The 'iss' a token must carry. A token from any other issuer is refused.
+              description: "The 'iss' a token must carry, for a single issuer. A token from any other issuer is refused. 'issuers' replaces it and 'jwks_url'."
+            issuers:
+              type: array
+              items:
+                type: object
+                properties:
+                  issuer:
+                    type: string
+                    description: "The 'iss' the issuer's tokens carry, such as 'https://auth.example.com/realms/tenant-a'. Matched exactly."
+                  jwks_url:
+                    type: string
+                    description: "The JWKS endpoint the issuer's signing keys are fetched from. Defaults to the issuer followed by '/protocol/openid-connect/certs', where Keycloak publishes a realm's keys."
+                required:
+                - issuer
+                additionalProperties: false
+              description: "The issuers whose tokens are accepted, each with its own keys, in place of 'issuer' and 'jwks_url'. A token's 'iss' must equal one of them exactly; a token from any other issuer is refused before any keys are fetched."
             jwks_cache_duration:
               type: string
               pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
@@ -235,24 +250,20 @@ $defs:
               default: 5m
             jwks_url:
               type: string
-              description: "The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/acme/protocol/openid-connect/certs'."
+              description: "The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/tenant-a/protocol/openid-connect/certs'. Set with 'issuer', for a single issuer; 'issuers' replaces both."
             username_claim:
               type: string
               description: "The claim that holds the caller's readable name, journaled beside the subject. 'sub' is often an opaque id, such as a UUID in Keycloak."
               default: preferred_username
           required:
-          - jwks_url
-          - issuer
           - audience
           additionalProperties: false
-          description: "Rejects requests that do not present a valid Bearer JWT, verified against a JWKS endpoint."
+          description: "Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint."
           defaultSnippets:
           - label: Insert JwtAuth
-            description: "Rejects requests that do not present a valid Bearer JWT, verified against a JWKS endpoint."
+            description: "Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint."
             body:
-              jwks_url: $1
-              issuer: $2
-              audience: $3
+              audience: $1
         RateLimiter:
           type: object
           properties:
