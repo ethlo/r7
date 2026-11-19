@@ -11,11 +11,14 @@ import java.io.PrintStream;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.BodyChecksum;
@@ -23,6 +26,8 @@ import com.ethlo.r7.journal.api.ExchangeCompletionListener.BodyKind;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.tailer.files.SealedFileWriter;
+import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import tools.jackson.databind.JsonNode;
@@ -37,6 +42,9 @@ import tools.jackson.databind.json.JsonMapper;
 class JsonLinesWriterTest
 {
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
+
+    @TempDir
+    Path bodyDir;
 
     /**
      * A write failure while a JSON object was only half written used to leave the shared
@@ -171,6 +179,64 @@ class JsonLinesWriterTest
         final JsonNode inline = MAPPER.readTree(lines.get(1));
         assertThat(inline.has("warc")).isFalse();
         assertThat(inline.path("client_request").path("body").isString()).isTrue();
+    }
+
+    /**
+     * With body files, a line carries a pointer per client leg instead of the body, and a
+     * repeated body points at its first copy.
+     */
+    @Test
+    void withBodyFilesALinePointsAtItsBodies() throws IOException
+    {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(out, bodyFiles);
+            final JournalExchange first = completeExchange("req-1");
+            first.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+            writer.onComplete(first);
+            final JournalExchange second = completeExchange("req-2");
+            second.appendRequestBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+            writer.onComplete(second);
+        }
+
+        final List<String> lines = linesOf(out);
+        final JsonNode first = MAPPER.readTree(lines.get(0)).path("client_request");
+        assertThat(first.has("body")).isFalse();
+        assertThat(first.path("body_ref").path("file").asString()).endsWith(".bodies.zst");
+        assertThat(first.path("body_ref").path("offset").asLong()).isZero();
+        assertThat(first.path("body_ref").path("length").asLong()).isPositive();
+        assertThat(MAPPER.readTree(lines.get(0)).path("client_response").has("body_ref")).as("no response body").isFalse();
+        assertThat(MAPPER.readTree(lines.get(1)).path("client_request").path("body_ref")).isEqualTo(first.path("body_ref"));
+        assertThat(Files.size(bodyDir.resolve(first.path("body_ref").path("file").asString())))
+                .isEqualTo(first.path("body_ref").path("length").asLong());
+    }
+
+    /**
+     * A line that fails takes its bodies back, so the retry stores them once.
+     */
+    @Test
+    void aFailedLineTakesItsBodiesBack() throws IOException
+    {
+        final ByteArrayOutputStream real = new ByteArrayOutputStream();
+        final JsonNode ref;
+        try (BodyFiles bodyFiles = bodyFiles())
+        {
+            final JsonLinesWriter writer = new JsonLinesWriter(new FlakyOutputStream(real, 1), bodyFiles);
+            final JournalExchange exchange = completeExchange("req-1");
+            exchange.appendResponseBody(ByteBuffer.wrap("payload".getBytes(StandardCharsets.UTF_8)));
+
+            assertThatThrownBy(() -> writer.onComplete(exchange)).isInstanceOf(RuntimeException.class);
+            writer.onComplete(exchange);
+            ref = MAPPER.readTree(linesOf(real).getFirst()).path("client_response").path("body_ref");
+        }
+        assertThat(ref.path("offset").asLong()).isZero();
+        assertThat(Files.size(bodyDir.resolve(ref.path("file").asString()))).isEqualTo(ref.path("length").asLong());
+    }
+
+    private BodyFiles bodyFiles() throws IOException
+    {
+        return new BodyFiles(bodyDir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, 3_600_000L, 3, 16);
     }
 
     /**

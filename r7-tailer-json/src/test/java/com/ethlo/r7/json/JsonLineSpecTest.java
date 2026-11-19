@@ -17,12 +17,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.ethlo.r7.api.IpSource;
 import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.tailer.files.SealedFileWriter;
+import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import tools.jackson.databind.JsonNode;
@@ -50,6 +53,9 @@ class JsonLineSpecTest
      */
     private static final Set<String> MAPS = Set.of("headers", "attributes");
 
+    @TempDir
+    Path dir;
+
     @Test
     void theWriterWritesExactlyTheDocumentedFields() throws IOException
     {
@@ -60,6 +66,12 @@ class JsonLineSpecTest
         writer.writeComplete(proxied("req-archived"), new JsonLinesWriter.WarcPointer("r7-1-abc.warc.zst", 512, 300));
         // Not archived, ended without a status: bodies, a checksum mismatch and incomplete.
         writer.onIncompleteEnd(proxied("req-inline"), IncompleteReason.NO_STATUS);
+
+        // Bodies in body files: a body_ref on each client leg.
+        try (BodyFiles bodyFiles = new BodyFiles(dir, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, 3_600_000L, 3, 16))
+        {
+            new JsonLinesWriter(out, bodyFiles).onComplete(proxied("req-body-files"));
+        }
 
         final Set<String> written = new TreeSet<>();
         for (final String line : out.toString(StandardCharsets.UTF_8).strip().split("\n"))

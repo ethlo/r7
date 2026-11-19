@@ -27,6 +27,7 @@ import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
 import com.ethlo.r7.json.JsonLinesWriter;
 import com.ethlo.r7.tailer.files.SealedFileWriter;
+import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.util.FastGatewayAttributes;
 import com.ethlo.r7.util.MutableFastGatewayHeaders;
 import com.ethlo.r7.warc.PayloadDedupIndex;
@@ -158,6 +159,32 @@ class ExchangeFanOutTest
         assertThat(line.path("client_response").has("body")).isFalse();
         assertThat(line.path("client_response").path("body_bytes").asLong()).isEqualTo(6);
         assertThat(warcText()).doesNotContain("a body").contains("WARC-Payload-Digest:");
+    }
+
+    /**
+     * Headers-only WARC beside body files: the line points at both, and the body is in the body
+     * file only.
+     */
+    @Test
+    void headersOnlyWarcBesideBodyFiles() throws IOException
+    {
+        final ByteArrayOutputStream json = new ByteArrayOutputStream();
+        final Path bodies = Files.createDirectory(dir.resolve("bodies"));
+        try (WarcFileWriter files = warcFiles(); BodyFiles bodyFiles = new BodyFiles(bodies, "r7", SealedFileWriter.MIN_ROLLOVER_SIZE, HOUR, 3, 16))
+        {
+            fanOut(files, false, new JsonLinesWriter(json, bodyFiles)).onComplete(exchange("req-1", "a body"));
+        }
+
+        final JsonNode line = MAPPER.readTree(lines(json).getFirst());
+        assertThat(line.has("warc")).isTrue();
+        assertThat(line.path("client_response").has("body")).isFalse();
+        final JsonNode ref = line.path("client_response").path("body_ref");
+        final byte[] file = Files.readAllBytes(bodies.resolve(ref.path("file").asString()));
+        try (ZstdInputStream in = new ZstdInputStream(new ByteArrayInputStream(file, (int) ref.path("offset").asLong(), (int) ref.path("length").asLong())))
+        {
+            assertThat(new String(in.readAllBytes(), StandardCharsets.UTF_8)).isEqualTo("a body");
+        }
+        assertThat(warcText()).doesNotContain("a body");
     }
 
     @Test

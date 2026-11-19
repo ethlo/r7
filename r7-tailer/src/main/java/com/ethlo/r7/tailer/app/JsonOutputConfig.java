@@ -1,18 +1,20 @@
 package com.ethlo.r7.tailer.app;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Optional;
 
 import com.ethlo.r7.config.model.DataSize;
 import com.ethlo.r7.tailer.files.RollingFilesConfig;
 import com.ethlo.r7.validation.ValidatableConfig;
 import com.ethlo.r7.validation.ValidationResult;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * The {@code json} block of {@code tailer.yaml}: one JSON object per exchange, one per line, to
  * standard output or to files rolled on size or age. The file settings apply only to
- * {@code output: file}.
+ * {@code output: file}; {@code body_files} applies only to {@code bodies: files}.
  */
 public record JsonOutputConfig(
         Boolean enabled,
@@ -21,7 +23,8 @@ public record JsonOutputConfig(
         String filePrefix,
         DataSize maxFileSize,
         Duration maxFileAge,
-        Boolean bodies
+        Bodies bodies,
+        BodyFilesConfig bodyFiles
 ) implements RollingFilesConfig, ValidatableConfig
 {
     public enum Output
@@ -41,9 +44,58 @@ public record JsonOutputConfig(
         FILE
     }
 
+    /**
+     * Where a captured body goes when no WARC record stores it.
+     */
+    public enum Bodies
+    {
+        /**
+         * Nowhere: payloads stay out of the log, and the sizes and checksums still show there
+         * was a body.
+         */
+        @JsonProperty("none")
+        NONE,
+
+        /**
+         * Into the line, base64 encoded.
+         */
+        @JsonProperty("inline")
+        INLINE,
+
+        /**
+         * Into body files ({@code body_files}), one Zstandard frame per body; the line points at
+         * each with a {@code body_ref}.
+         */
+        @JsonProperty("files")
+        FILES;
+
+        /**
+         * Also reads the booleans this setting used to take, to refuse them with what replaced
+         * them rather than a type error.
+         */
+        @JsonCreator
+        static Bodies of(final String value)
+        {
+            for (final Bodies bodies : values())
+            {
+                if (bodies.name().toLowerCase(Locale.ROOT).equals(value))
+                {
+                    return bodies;
+                }
+            }
+            final String hint = switch (value)
+            {
+                case "true" -> "; 'true' is now 'inline'";
+                case "false" -> "; 'false' is now 'none'";
+                default -> "";
+            };
+            throw new IllegalArgumentException("must be none, inline or files, but was '" + value + "'" + hint);
+        }
+    }
+
     public static JsonOutputConfig standard()
     {
-        return new JsonOutputConfig(null, null, null, null, null, null, null);
+        return new JsonOutputConfig(null, null, null, null, null, null, null, null);
     }
 
     public Boolean enabled()
@@ -81,12 +133,17 @@ public record JsonOutputConfig(
     }
 
     /**
-     * Whether a line carries the captured bodies when no WARC file holds them. Off for a log
-     * that should never hold payloads, such as a rerun over journals that captured them.
+     * Where the captured bodies no WARC file holds go. None by default, for a log that should
+     * never hold payloads.
      */
-    public Boolean bodies()
+    public Bodies bodies()
     {
-        return Optional.ofNullable(this.bodies).orElse(false);
+        return Optional.ofNullable(this.bodies).orElse(Bodies.NONE);
+    }
+
+    public BodyFilesConfig bodyFiles()
+    {
+        return Optional.ofNullable(this.bodyFiles).orElseGet(BodyFilesConfig::standard);
     }
 
     @Override
@@ -98,5 +155,10 @@ public record JsonOutputConfig(
             result.addError("output", "output_dir, file_prefix, max_file_size and max_file_age apply only to output: file");
         }
         this.validateRollover(result);
+        if (this.bodyFiles != null && this.bodies() != Bodies.FILES)
+        {
+            result.addError("body_files", "applies only to bodies: files");
+        }
+        this.bodyFiles().validate(result.nested("body_files"));
     }
 }

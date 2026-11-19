@@ -24,6 +24,7 @@ import com.ethlo.r7.journal.api.BodyChecksum;
 import com.ethlo.r7.journal.api.ExchangeCompletionListener;
 import com.ethlo.r7.journal.api.JournalExchange;
 import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.time.ClockSource;
 import com.ethlo.r7.util.GatewayUtils;
 import com.ethlo.time.ITU;
@@ -54,6 +55,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
 
     private final OutputStream out;
     private final boolean bodies;
+    private final BodyFiles bodyFiles;
 
     /**
      * Scratch buffer the generator writes into, never {@link #out} directly.
@@ -88,8 +90,23 @@ public class JsonLinesWriter implements ExchangeCompletionListener
      */
     public JsonLinesWriter(final OutputStream out, final boolean bodies)
     {
+        this(out, bodies, null);
+    }
+
+    /**
+     * Stores the captured bodies no WARC file holds in {@code bodyFiles}, and has each line point
+     * at them with a {@code body_ref} per client leg instead of carrying them.
+     */
+    public JsonLinesWriter(final OutputStream out, final BodyFiles bodyFiles)
+    {
+        this(out, true, bodyFiles);
+    }
+
+    private JsonLinesWriter(final OutputStream out, final boolean bodies, final BodyFiles bodyFiles)
+    {
         this.out = out;
         this.bodies = bodies;
+        this.bodyFiles = bodyFiles;
         final JsonMapper mapper = JsonMapper.builder()
                 .disable(StreamWriteFeature.AUTO_CLOSE_TARGET)
                 .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, false) // Ensure numbers stay as numbers
@@ -151,12 +168,58 @@ public class JsonLinesWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, null, warc, bodies && (warc == null || !bodiesInWarc));
-            flushRecord();
+            writeLine(exchange, null, warc, bodies && (warc == null || !bodiesInWarc));
         }
         catch (IOException e)
         {
             throw new RuntimeException("Failed to write JSON line", e);
+        }
+    }
+
+    /**
+     * Writes one line, storing its bodies first when they go to body files. If the line then
+     * fails, the bodies are taken back before the failure is rethrown, so the retry stores them
+     * once; they are remembered for deduplication only once the line is written.
+     *
+     * @param storeBodies whether this line's bodies are stored, in the line or in body files
+     */
+    private void writeLine(final JournalExchange exchange, final IncompleteReason reason, final WarcPointer warc,
+                           final boolean storeBodies) throws IOException
+    {
+        final BodyFiles.Written stored = storeBodies && bodyFiles != null
+                ? bodyFiles.write(exchange.getRequestBodyFragments(), exchange.getResponseBodyFragments())
+                : null;
+        try
+        {
+            writeExchangeObject(exchange, reason, warc, storeBodies && bodyFiles == null, stored);
+            flushRecord();
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            if (stored != null)
+            {
+                discard(exchange, stored, e);
+            }
+            throw e;
+        }
+        if (stored != null)
+        {
+            bodyFiles.commit(stored);
+        }
+    }
+
+    private void discard(final JournalExchange exchange, final BodyFiles.Written stored, final Exception cause)
+    {
+        try
+        {
+            bodyFiles.discard(stored);
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            // The cut-back is retried before the body file takes another body or is sealed, so
+            // the retry of this exchange stalls until it succeeds rather than store it twice.
+            cause.addSuppressed(e);
+            logger.error("Could not take back the bodies of exchange {} after its JSON line failed", exchange.getRequestId(), e);
         }
     }
 
@@ -172,8 +235,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, reason, null, bodies);
-            flushRecord();
+            writeLine(exchange, reason, null, bodies);
         }
         catch (IOException e)
         {
@@ -211,8 +273,7 @@ public class JsonLinesWriter implements ExchangeCompletionListener
     {
         try
         {
-            writeExchangeObject(exchange, reason, null, bodies);
-            flushRecord();
+            writeLine(exchange, reason, null, bodies);
         }
         catch (final IOException | RuntimeException e)
         {
@@ -326,10 +387,10 @@ public class JsonLinesWriter implements ExchangeCompletionListener
      *   "route_id": "...",
      *   "start": "...", "end": "...", "duration": 0.012345,
      *   "remote_address": "...", "remote_address_source": "SOCKET",
-     *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body_truncated, body, checksum},
+     *   "client_request":    {level, method, path, query, protocol, headers, header_bytes, body_bytes, body_truncated, body | body_ref, checksum},
      *   "upstream_request":  {level, method, path, query, protocol, targets, headers},
      *   "upstream_response": {level, protocol, status, reason, headers, start, first_byte, end, duration},
-     *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body_truncated, body, checksum},
+     *   "client_response":   {level, protocol, status, reason, headers, header_bytes, body_bytes, body_truncated, body | body_ref, checksum},
      *   "attributes": {...},
      *   "warc": {file, offset, length}        only when a WARC file holds the exchange; no bodies when it stores them
      * }
@@ -350,9 +411,10 @@ public class JsonLinesWriter implements ExchangeCompletionListener
      * @param reason null for a complete record, otherwise why it is not one
      * @param warc        where a WARC file holds the exchange, written as {@code "warc"}; null for none
      * @param writeBodies whether the captured bodies go into this line
+     * @param stored      where body files hold this line's bodies, written as {@code body_ref}; null for none
      */
     private void writeExchangeObject(final JournalExchange exchange, final IncompleteReason reason, final WarcPointer warc,
-                                     final boolean writeBodies) throws IOException
+                                     final boolean writeBodies, final BodyFiles.Written stored) throws IOException
     {
         final boolean hasEndEvent = reason == null || reason.hasEndEvent();
 
@@ -393,6 +455,10 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         if (writeBodies)
         {
             writeBody(exchange.getRequestBodyFragments());
+        }
+        if (stored != null)
+        {
+            writeBodyRef(stored.request());
         }
         writeChecksums(exchange.getJournaledRequestChecksum(), exchange.getObservedRequestChecksum());
         generator.writeEndObject();
@@ -437,6 +503,10 @@ public class JsonLinesWriter implements ExchangeCompletionListener
         if (writeBodies)
         {
             writeBody(exchange.getResponseBodyFragments());
+        }
+        if (stored != null)
+        {
+            writeBodyRef(stored.response());
         }
         writeChecksums(exchange.getJournaledResponseChecksum(), exchange.getObservedResponseChecksum());
         generator.writeEndObject();
@@ -657,6 +727,23 @@ public class JsonLinesWriter implements ExchangeCompletionListener
             generator.writeName("body");
             generator.writeBinary(new SequenceByteBufferInputStream(fragments), -1);
         }
+    }
+
+    /**
+     * Where a body file holds this leg's body; nothing when the leg had no body.
+     */
+    private void writeBodyRef(final BodyFiles.BodyRef ref)
+    {
+        if (ref == null)
+        {
+            return;
+        }
+        generator.writeName("body_ref");
+        generator.writeStartObject();
+        generator.writeStringProperty("file", ref.file());
+        generator.writeNumberProperty("offset", ref.offset());
+        generator.writeNumberProperty("length", ref.length());
+        generator.writeEndObject();
     }
 
     /**

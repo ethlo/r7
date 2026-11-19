@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import com.ethlo.r7.json.JsonLinesWriter;
 import com.ethlo.r7.tailer.TailerOutput;
 import com.ethlo.r7.tailer.TailerRunner;
+import com.ethlo.r7.tailer.json.BodyFiles;
 import com.ethlo.r7.tailer.json.RollingFileOutputStream;
 import com.ethlo.r7.warc.PayloadDedupIndex;
 import com.ethlo.r7.warc.WarcExchangeWriter;
@@ -44,28 +45,47 @@ public final class TailerMain
                 jsonConfig.maxFileAge().toMillis())
                 : null;
 
-        final WarcExchangeWriter warc = warcFiles != null ? new WarcExchangeWriter(warcFiles, new PayloadDedupIndex(warcConfig.dedupCacheEntries()), warcConfig.bodies()) : null;
-        final JsonLinesWriter json = jsonConfig.enabled()
-                ? new JsonLinesWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.bodies())
+        final BodyFilesConfig bodyConfig = jsonConfig.bodyFiles();
+        final BodyFiles bodyFiles = jsonConfig.enabled() && jsonConfig.bodies() == JsonOutputConfig.Bodies.FILES
+                ? new BodyFiles(Paths.get(bodyConfig.outputDir()), bodyConfig.filePrefix(), bodyConfig.maxFileSize().bytes(),
+                bodyConfig.maxFileAge().toMillis(), bodyConfig.zstdLevel(), bodyConfig.dedupCacheEntries())
                 : null;
 
-        logger.info("Tailing journals from '{}' (checkpoints in '{}', poll every {}) -> WARC: {}; JSON: {}",
+        final WarcExchangeWriter warc = warcFiles != null ? new WarcExchangeWriter(warcFiles, new PayloadDedupIndex(warcConfig.dedupCacheEntries()), warcConfig.bodies()) : null;
+        final JsonLinesWriter json;
+        if (!jsonConfig.enabled())
+        {
+            json = null;
+        }
+        else if (bodyFiles != null)
+        {
+            json = new JsonLinesWriter(jsonFiles != null ? jsonFiles : System.out, bodyFiles);
+        }
+        else
+        {
+            json = new JsonLinesWriter(jsonFiles != null ? jsonFiles : System.out, jsonConfig.bodies() == JsonOutputConfig.Bodies.INLINE);
+        }
+
+        logger.info("Tailing journals from '{}' (checkpoints in '{}', poll every {}) -> WARC: {}; JSON: {}; JSON bodies: {}",
                 config.journalDir(), config.checkpointDir(), config.pollInterval(),
                 warcConfig.enabled() ? warcConfig.exchanges().name().toLowerCase() + " exchanges to " + warcConfig.outputDir()
                         + " (max " + warcConfig.maxFileSize().bytes() + " bytes, " + warcConfig.maxFileAge() + ", zstd level " + warcConfig.zstdLevel()
                         + ", CDXJ index " + (warcConfig.cdxjIndex() ? "on" : "off") + ")" : "off",
                 !jsonConfig.enabled() ? "off" : jsonFiles != null
                         ? "files in " + jsonConfig.outputDir() + " (max " + jsonConfig.maxFileSize().bytes() + " bytes, " + jsonConfig.maxFileAge() + ")"
-                        : "stdout");
+                        : "stdout",
+                bodyFiles == null ? jsonConfig.bodies().name().toLowerCase()
+                        : "files in " + bodyConfig.outputDir() + " (max " + bodyConfig.maxFileSize().bytes() + " bytes, " + bodyConfig.maxFileAge()
+                        + ", zstd level " + bodyConfig.zstdLevel() + ")");
 
-        TailerRunner.run(config, new ExchangeFanOut(warc, warcConfig.exchanges(), json), new Outputs(warcFiles, jsonFiles));
+        TailerRunner.run(config, new ExchangeFanOut(warc, warcConfig.exchanges(), json), new Outputs(warcFiles, jsonFiles, bodyFiles));
     }
 
     /**
      * Seals stale files after every read and closes them on shutdown, for each output that
-     * writes files. A failure in one does not keep the other from its turn.
+     * writes files. A failure in one does not keep the others from their turn.
      */
-    record Outputs(WarcFileWriter warc, RollingFileOutputStream json) implements TailerOutput
+    record Outputs(WarcFileWriter warc, RollingFileOutputStream json, BodyFiles bodies) implements TailerOutput
     {
         @Override
         public void afterTick() throws IOException
@@ -87,6 +107,17 @@ public final class TailerMain
                 try
                 {
                     json.rollIfStale();
+                }
+                catch (final IOException e)
+                {
+                    failure = addTo(failure, e);
+                }
+            }
+            if (bodies != null)
+            {
+                try
+                {
+                    bodies.rollIfStale();
                 }
                 catch (final IOException e)
                 {
@@ -128,6 +159,17 @@ public final class TailerMain
             else
             {
                 System.out.flush();
+            }
+            if (bodies != null)
+            {
+                try
+                {
+                    bodies.close();
+                }
+                catch (final IOException e)
+                {
+                    failure = addTo(failure, e);
+                }
             }
             if (failure != null)
             {

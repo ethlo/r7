@@ -23,7 +23,7 @@ class TailerAppConfigTest
         final TailerAppConfig config = TailerRunner.loadConfig(dir.resolve("tailer.yaml"), TailerAppConfig.class, TailerAppConfig::standard);
         assertThat(config.json().enabled()).isTrue();
         assertThat(config.json().output()).isEqualTo(JsonOutputConfig.Output.STDOUT);
-        assertThat(config.json().bodies()).isFalse();
+        assertThat(config.json().bodies()).isEqualTo(JsonOutputConfig.Bodies.NONE);
         assertThat(config.warc().enabled()).isTrue();
         assertThat(config.warc().exchanges()).isEqualTo(WarcOutputConfig.Exchanges.WITH_BODY);
         assertThat(config.warc().bodies()).isTrue();
@@ -100,6 +100,80 @@ class TailerAppConfigTest
                   hide_empty_fields: false
                 """))
                 .hasMessageContaining("Unknown configuration option: 'hide_empty_fields' at [json.hide_empty_fields]");
+    }
+
+    @Test
+    void bodyFilesBesideHeadersOnlyWarc() throws IOException
+    {
+        final TailerAppConfig config = load("""
+                warc:
+                  bodies: false
+                json:
+                  bodies: files
+                  body_files:
+                    output_dir: /var/r7/bodies
+                    max_file_age: 5m
+                """);
+        assertThat(config.json().bodies()).isEqualTo(JsonOutputConfig.Bodies.FILES);
+        assertThat(config.json().bodyFiles().outputDir()).isEqualTo("/var/r7/bodies");
+        assertThat(config.json().bodyFiles().maxFileAge()).hasMinutes(5);
+        assertThat(config.json().bodyFiles().zstdLevel()).isEqualTo(3);
+        assertThat(config.json().bodyFiles().maxFileSize().bytes()).isEqualTo(1024L * 1024 * 1024);
+    }
+
+    /**
+     * A body is stored once: with WARC records holding every body, the body files would stay
+     * empty.
+     */
+    @Test
+    void bodyFilesAreRefusedBesideWarcThatStoresBodies()
+    {
+        assertThatThrownBy(() -> load("""
+                json:
+                  bodies: files
+                """))
+                .hasMessageContaining("[json.bodies] files cannot be combined with a WARC output that stores bodies");
+    }
+
+    @Test
+    void bodyFileSettingsNeedBodyFiles()
+    {
+        assertThatThrownBy(() -> load("""
+                warc:
+                  enabled: false
+                json:
+                  bodies: inline
+                  body_files:
+                    output_dir: /bodies
+                """))
+                .hasMessageContaining("[json.body_files] applies only to bodies: files");
+        assertThatThrownBy(() -> load("""
+                warc:
+                  enabled: false
+                json:
+                  bodies: files
+                  body_files:
+                    zstd_level: 0
+                    max_file_size: 1kb
+                """))
+                .hasMessageContaining("[json.body_files.zstd_level] must be between 1 and 22")
+                .hasMessageContaining("[json.body_files.max_file_size]");
+    }
+
+    /**
+     * {@code bodies} was a boolean; a config still saying {@code true} is refused rather than
+     * guessed at.
+     */
+    @Test
+    void theBooleanBodiesSettingIsRefused()
+    {
+        assertThatThrownBy(() -> load("""
+                warc:
+                  enabled: false
+                json:
+                  bodies: true
+                """))
+                .hasMessageContaining("'true' is now 'inline'");
     }
 
     private TailerAppConfig load(final String yaml) throws IOException
